@@ -232,6 +232,154 @@ async fn term_school_copy_refuses_stale_sources_and_rolls_back_late_failure() {
 }
 
 #[tokio::test]
+async fn term_school_copy_and_standalone_clone_refuse_malformed_stored_period_days() {
+    let (pool, actor, source, schedule) = fixture("term_school_copy_stored_days").await;
+    let counts = || {
+        sqlx::query_as::<_, (i64, i64, i64, i64)>(
+        "SELECT (SELECT count(*) FROM academic_terms),(SELECT count(*) FROM bell_schedules),(SELECT count(*) FROM bell_schedule_periods),(SELECT count(*) FROM academic_audit_events)",
+    )
+    };
+    let clone_request = || CloneBellScheduleRequest {
+        academic_year_id: source.academic_year_id,
+        name: "Strict stored source clone".into(),
+        owning_organization_unit_id: None,
+        row_version: schedule.row_version,
+    };
+    for malformed in [" MON ", "mon", ""] {
+        sqlx::query(
+            "UPDATE bell_schedule_periods SET applicable_days=$2 WHERE bell_schedule_id=$1",
+        )
+        .bind(schedule.id)
+        .bind(malformed)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let before = counts().fetch_one(&pool).await.unwrap();
+        let source_before = serde_json::to_value(
+            bell_schedules::list_periods(&pool, schedule.id)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        for result in [
+            bell_schedules::clone_schedule(&pool, actor, schedule.id, clone_request())
+                .await
+                .map(|_| ()),
+            term_school_schedule::create(&pool, actor, create_request(&source, &schedule))
+                .await
+                .map(|_| ()),
+        ] {
+            assert!(
+                matches!(result, Err(school_errors::AppError::ValidationError(_))),
+                "{malformed:?}: {result:?}"
+            );
+        }
+        assert_eq!(counts().fetch_one(&pool).await.unwrap(), before);
+        assert_eq!(
+            serde_json::to_value(
+                bell_schedules::list_periods(&pool, schedule.id)
+                    .await
+                    .unwrap()
+            )
+            .unwrap(),
+            source_before
+        );
+    }
+    for valid in [None, Some("MON,TUE,WED,THU,FRI")] {
+        sqlx::query(
+            "UPDATE bell_schedule_periods SET applicable_days=$2 WHERE bell_schedule_id=$1",
+        )
+        .bind(schedule.id)
+        .bind(valid)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let cloned = bell_schedules::clone_schedule(&pool, actor, schedule.id, clone_request())
+            .await
+            .unwrap();
+        let periods = bell_schedules::list_periods(&pool, cloned.id)
+            .await
+            .unwrap();
+        assert_eq!(periods.periods[0].applicable_days.as_deref(), valid);
+        assert_ne!(periods.periods[0].bell_schedule_id, schedule.id);
+    }
+}
+
+#[tokio::test]
+async fn term_school_copy_refuses_source_schedule_outside_term_year_without_partial_writes() {
+    let (pool, actor, source, _) = fixture("term_school_copy_source_year").await;
+    let other_year = years_terms::create_year(
+        &pool,
+        actor,
+        CreateAcademicYearRequest {
+            year: 2911,
+            custom_name: None,
+            default_school_days: weekdays(false),
+        },
+    )
+    .await
+    .unwrap();
+    let other_schedule = bell_schedules::create(
+        &pool,
+        actor,
+        CreateBellScheduleRequest {
+            academic_year_id: other_year.id,
+            name: "Other year source".into(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let saved = bell_schedules::replace_periods(
+        &pool,
+        actor,
+        other_schedule.id,
+        ReplaceBellSchedulePeriodsRequest {
+            row_version: other_schedule.row_version,
+            periods: vec![BellSchedulePeriodInput {
+                name: Some("Other year wildcard".into()),
+                start_time: "08:00:00".parse().unwrap(),
+                end_time: "09:00:00".parse().unwrap(),
+                order_index: 1,
+                applicable_days: None,
+                is_active: true,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let other_schedule = bell_schedules::get(&pool, saved.snapshot.bell_schedule_id)
+        .await
+        .unwrap();
+    // The database's ID-only schedule FK permits this inconsistent legacy shape.
+    sqlx::query(
+        "UPDATE academic_terms SET bell_schedule_id=$2,row_version=row_version+1 WHERE id=$1",
+    )
+    .bind(source.id)
+    .bind(other_schedule.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let source = years_terms::get_term(&pool, source.id).await.unwrap();
+    let facts = "SELECT jsonb_build_object('terms',(SELECT jsonb_agg(to_jsonb(row) ORDER BY id) FROM academic_terms row),'schedules',(SELECT jsonb_agg(to_jsonb(row) ORDER BY id) FROM bell_schedules row),'periods',(SELECT jsonb_agg(to_jsonb(row) ORDER BY id) FROM bell_schedule_periods row),'audit',(SELECT jsonb_agg(to_jsonb(row) ORDER BY id) FROM academic_audit_events row))";
+    let before: serde_json::Value = sqlx::query_scalar(facts).fetch_one(&pool).await.unwrap();
+    let error =
+        term_school_schedule::create(&pool, actor, create_request(&source, &other_schedule))
+            .await
+            .unwrap_err();
+    assert!(
+        matches!(error, school_errors::AppError::Conflict(ref message)
+        if message.contains("ไม่อยู่ในปีการศึกษาที่ตรวจไว้")),
+        "{error:?}"
+    );
+    let after: serde_json::Value = sqlx::query_scalar(facts).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        after, before,
+        "refusal preserves exact source rows and audits without partial copies"
+    );
+}
+
+#[tokio::test]
 async fn term_school_copy_refuses_empty_inactive_and_oversized_period_sources() {
     let (pool, actor, source, schedule) = fixture("term_school_copy_unusable").await;
     let before: i64 = sqlx::query_scalar("SELECT count(*) FROM bell_schedules")

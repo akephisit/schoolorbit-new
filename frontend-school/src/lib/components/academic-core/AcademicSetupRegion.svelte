@@ -253,7 +253,12 @@
 		return true;
 	}
 	async function reconcileTermConflict(cause: unknown, identity: string): Promise<void> {
-		if (cause instanceof ApiClientError && cause.status === 409 && !disposed && identity === appIdentityKey())
+		if (
+			cause instanceof ApiClientError &&
+			cause.status === 409 &&
+			!disposed &&
+			identity === appIdentityKey()
+		)
 			await loadWorkspace();
 	}
 

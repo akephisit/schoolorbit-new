@@ -168,24 +168,10 @@ pub async fn clone_schedule(
         "academic_core.services.bell_schedules.clone_schedule",
     )
     .await?;
-    let result =
-        clone_schedule_in_transaction(&mut transaction, actor_user_id, source_id, request, false)
-            .await?;
-    transaction.commit().await?;
-    Ok(result)
-}
-
-pub(super) async fn clone_schedule_in_transaction(
-    transaction: &mut Transaction<'_, Postgres>,
-    actor_user_id: Uuid,
-    source_id: Uuid,
-    request: CloneBellScheduleRequest,
-    creating_term: bool,
-) -> Result<BellSchedule, AppError> {
     validate_schedule_fields(&request.name)?;
     parse_row_version(request.row_version)?;
-    lifecycle_guard::lock_transition_shared(transaction).await?;
-    let source_year: Uuid = DbSession::new(&mut **transaction)
+    lifecycle_guard::lock_transition_shared(&mut transaction).await?;
+    let source_year: Uuid = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.bell_schedules.clone_schedule",
             "SELECT academic_year_id FROM bell_schedules WHERE id=$1",
@@ -196,7 +182,7 @@ pub(super) async fn clone_schedule_in_transaction(
         .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบต้นฉบับ".into()))?;
     // Source may be historical. Lock both parents in a stable order without
     // applying the destination's writable-state rule to the historical source.
-    let _: Vec<Uuid> = DbSession::new(&mut **transaction)
+    let _: Vec<Uuid> = DbSession::new(&mut *transaction)
         .scalar(
             "academic_core.services.bell_schedules.clone_schedule",
             "SELECT id FROM academic_years WHERE id=ANY($1) ORDER BY id FOR UPDATE",
@@ -204,50 +190,101 @@ pub(super) async fn clone_schedule_in_transaction(
         .bind(vec![source_year, request.academic_year_id])
         .fetch_all()
         .await?;
-    if creating_term {
-        let status =
-            lifecycle_guard::require_year_write_exclusive(transaction, request.academic_year_id)
-                .await?;
-        if !matches!(
-            status,
-            AcademicYearStatus::Planning | AcademicYearStatus::Active
-        ) {
-            return Err(AppError::Conflict(
-                "สร้างภาคเรียนได้เฉพาะปีที่กำลังวางแผนหรือกำลังใช้งาน".into(),
-            ));
-        }
-    } else {
-        require_setup_year(transaction, request.academic_year_id).await?;
+    require_setup_year(&mut transaction, request.academic_year_id).await?;
+    let source = capture_copy_source(
+        &mut transaction,
+        source_id,
+        source_year,
+        request.row_version,
+    )
+    .await?;
+    let mut schedule =
+        clone_captured_schedule(&mut transaction, actor_user_id, &source, request).await?;
+    attach_editability(&mut transaction, std::slice::from_mut(&mut schedule)).await?;
+    transaction.commit().await?;
+    Ok(schedule)
+}
+
+/// Constructed only after the caller locks the source and destination years.
+/// Keep this evidence on the same transaction until the copy commits.
+pub(super) struct CapturedScheduleCopySource {
+    id: Uuid,
+    academic_year_id: Uuid,
+    row_version: i64,
+    periods: Vec<BellSchedulePeriod>,
+}
+
+impl CapturedScheduleCopySource {
+    pub(super) fn periods(&self) -> &[BellSchedulePeriod] {
+        &self.periods
     }
-    let actual_version: i64 = DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_core.services.bell_schedules.clone_schedule",
-            "SELECT row_version FROM bell_schedules WHERE id=$1 FOR SHARE",
+}
+
+pub(super) async fn capture_copy_source(
+    transaction: &mut Transaction<'_, Postgres>,
+    source_id: Uuid,
+    expected_year: Uuid,
+    expected_version: i64,
+) -> Result<CapturedScheduleCopySource, AppError> {
+    parse_row_version(expected_version)?;
+    let (academic_year_id, row_version): (Uuid, i64) = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_core.services.bell_schedules.capture_copy_source",
+            "SELECT academic_year_id,row_version FROM bell_schedules WHERE id=$1 AND academic_year_id=$2 FOR SHARE",
         )
         .bind(source_id)
-        .fetch_one()
-        .await?;
-    if actual_version != request.row_version {
+        .bind(expected_year)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::Conflict(
+            "ตารางคาบต้นฉบับไม่อยู่ในปีการศึกษาที่ตรวจไว้ กรุณาโหลดใหม่ก่อนทำสำเนา".into(),
+        ))?;
+    if row_version != expected_version {
         return Err(AppError::Conflict(
             "ตารางคาบต้นฉบับเปลี่ยนแล้ว กรุณาโหลดใหม่ก่อนทำสำเนา".into(),
         ));
     }
     let source_periods = list_periods_for_copy(transaction, source_id).await?;
-    let inputs: Vec<_> = source_periods
+    let inputs = source_periods
         .iter()
-        .map(|period| BellSchedulePeriodInput {
-            name: period.name.clone(),
-            start_time: period.start_time,
-            end_time: period.end_time,
-            order_index: period.order_index,
-            applicable_days: period
-                .applicable_days
-                .as_deref()
-                .map(|days| days.split(',').map(str::to_owned).collect()),
-            is_active: period.is_active,
+        .map(|period| {
+            Ok(BellSchedulePeriodInput {
+                name: period.name.clone(),
+                start_time: period.start_time,
+                end_time: period.end_time,
+                order_index: period.order_index,
+                applicable_days: period
+                    .applicable_days
+                    .as_deref()
+                    .map(super::school_days::parse_stored)
+                    .transpose()?,
+                is_active: period.is_active,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, AppError>>()?;
     validate_periods(&inputs)?;
+    Ok(CapturedScheduleCopySource {
+        id: source_id,
+        academic_year_id,
+        row_version,
+        periods: source_periods,
+    })
+}
+
+/// The owning entry point has checked its destination policy under the parent
+/// locks. Source identity, revision and periods come from the same transaction.
+pub(super) async fn clone_captured_schedule(
+    transaction: &mut Transaction<'_, Postgres>,
+    actor_user_id: Uuid,
+    source: &CapturedScheduleCopySource,
+    request: CloneBellScheduleRequest,
+) -> Result<BellSchedule, AppError> {
+    validate_schedule_fields(&request.name)?;
+    if source.row_version != request.row_version {
+        return Err(AppError::Conflict(
+            "ตารางคาบต้นฉบับเปลี่ยนแล้ว กรุณาโหลดใหม่ก่อนทำสำเนา".into(),
+        ));
+    }
     let count: i64 = DbSession::new(&mut **transaction)
         .scalar(
             "academic_core.services.bell_schedules.clone_schedule",
@@ -259,7 +296,7 @@ pub(super) async fn clone_schedule_in_transaction(
     let id = Uuid::now_v7();
     let sql = format!("INSERT INTO bell_schedules (id,academic_year_id,code,name,is_default,status,owning_organization_unit_id) \
         VALUES($1,$2,$3,$4,$5,'draft',$6) RETURNING {SCHEDULE_COLUMNS}");
-    let mut schedule: BellSchedule = DbSession::new(&mut **transaction)
+    let schedule: BellSchedule = DbSession::new(&mut **transaction)
         .query_as(
             "academic_core.services.bell_schedules.clone_schedule",
             sqlx::AssertSqlSafe(sql),
@@ -280,11 +317,10 @@ pub(super) async fn clone_schedule_in_transaction(
     DbSession::new(&mut **transaction).query("academic_core.services.bell_schedules.clone_schedule",
         "INSERT INTO bell_schedule_periods (id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days,is_active) \
          SELECT uuidv7(),$1,name,start_time,end_time,order_index,applicable_days,is_active FROM bell_schedule_periods WHERE bell_schedule_id=$2")
-        .bind(id).bind(source_id).execute().await?;
+        .bind(id).bind(source.id).execute().await?;
     append_audit(transaction, "bell_schedule.cloned", "bell_schedule", id,
         Some(request.academic_year_id), None, actor_user_id,
-        serde_json::json!({"sourceBellScheduleId": source_id, "sourceRowVersion": actual_version, "periodCount": source_periods.len()})).await?;
-    attach_editability(transaction, std::slice::from_mut(&mut schedule)).await?;
+        serde_json::json!({"sourceBellScheduleId": source.id, "sourceAcademicYearId": source.academic_year_id, "sourceRowVersion": source.row_version, "periodCount": source.periods.len()})).await?;
     Ok(schedule)
 }
 
@@ -661,7 +697,7 @@ pub(crate) async fn setup_year_ids(
         .await?)
 }
 
-async fn require_setup_year(
+pub(super) async fn require_setup_year(
     transaction: &mut Transaction<'_, Postgres>,
     academic_year_id: Uuid,
 ) -> Result<(), AppError> {
@@ -717,7 +753,7 @@ impl ScheduleEditState {
     }
 }
 
-async fn attach_editability(
+pub(super) async fn attach_editability(
     connection: &mut sqlx::PgConnection,
     schedules: &mut [BellSchedule],
 ) -> Result<(), AppError> {

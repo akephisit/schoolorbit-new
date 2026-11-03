@@ -103,7 +103,13 @@ async function mockShell(page: Page, academic: (route: Route, url: URL) => Promi
 				return;
 			}
 			if (await academic(route, url)) return;
-			if (route.request().method() === 'GET' && /^\/api\/academic\/terms\/[^/]+$/.test(url.pathname)) {await fulfill(route, {...term, id: url.pathname.split('/').at(-1)}); return;}
+			if (
+				route.request().method() === 'GET' &&
+				/^\/api\/academic\/terms\/[^/]+$/.test(url.pathname)
+			) {
+				await fulfill(route, { ...term, id: url.pathname.split('/').at(-1) });
+				return;
+			}
 			if (url.pathname.endsWith('/periods')) {
 				await fulfill(route, {
 					bellScheduleId: url.pathname.split('/').at(-2),

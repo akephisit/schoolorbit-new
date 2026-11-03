@@ -112,21 +112,14 @@ async fn copy(
         None
     };
     // Resolve and validate the exact source pair before creating any new rows.
-    let actual_schedule_version: i64 = DbSession::new(&mut *tx)
-        .scalar(
-            "academic_core.term_school_schedule.source_schedule",
-            "SELECT row_version FROM bell_schedules WHERE id=$1 FOR SHARE",
-        )
-        .bind(source.bell_schedule_id)
-        .fetch_one()
-        .await?;
-    if actual_schedule_version != schedule_version {
-        return Err(AppError::Conflict(
-            "ตารางคาบต้นฉบับเปลี่ยนแล้ว กรุณาโหลดใหม่ก่อนทำสำเนา".into(),
-        ));
-    }
-    let periods = bell_schedules::list_periods_for_copy(&mut tx, source.bell_schedule_id).await?;
-    copy_period_inputs(&periods, &target_days)?;
+    let copy_source = bell_schedules::capture_copy_source(
+        &mut tx,
+        source.bell_schedule_id,
+        source.academic_year_id,
+        schedule_version,
+    )
+    .await?;
+    copy_period_inputs(copy_source.periods(), &target_days)?;
     let target_name = match &target {
         Target::New(request) => {
             let sequence: i32 = DbSession::new(&mut *tx).scalar("academic_core.term_school_schedule.sequence",
@@ -148,17 +141,29 @@ async fn copy(
                 })?
         }
     };
-    let schedule = bell_schedules::clone_schedule_in_transaction(
+    if matches!(&target, Target::New(_)) {
+        let status = lifecycle_guard::require_year_write_exclusive(&mut tx, target_year).await?;
+        if !matches!(
+            status,
+            AcademicYearStatus::Planning | AcademicYearStatus::Active
+        ) {
+            return Err(AppError::Conflict(
+                "สร้างภาคเรียนได้เฉพาะปีที่กำลังวางแผนหรือกำลังใช้งาน".into(),
+            ));
+        }
+    } else {
+        bell_schedules::require_setup_year(&mut tx, target_year).await?;
+    }
+    let mut schedule = bell_schedules::clone_captured_schedule(
         &mut tx,
         actor,
-        source.bell_schedule_id,
+        &copy_source,
         CloneBellScheduleRequest {
             academic_year_id: target_year,
             name: format!("ตารางคาบ {target_name}"),
             owning_organization_unit_id: None,
             row_version: schedule_version,
         },
-        matches!(&target, Target::New(_)),
     )
     .await?;
     let term = match target {
@@ -203,7 +208,7 @@ async fn copy(
         Some(target_year), Some(term.id), actor,
         serde_json::json!({"sourceTermId":source.id,"sourceTermRowVersion":source_version,"sourceBellScheduleId":source.bell_schedule_id,"sourceBellScheduleRowVersion":schedule_version,"targetBellScheduleId":schedule.id})).await?;
     // Include the new assignment when computing exact returned capabilities.
-    let schedule = bell_schedules::get_on_connection(&mut tx, schedule.id).await?;
+    bell_schedules::attach_editability(&mut tx, std::slice::from_mut(&mut schedule)).await?;
     tx.commit().await?;
     Ok(AcademicTermSchoolScheduleCopyResponse {
         term,

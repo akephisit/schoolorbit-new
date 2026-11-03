@@ -66,7 +66,14 @@
 	);
 	onMount(() => {
 		if (sourceId) void chooseSource(sourceId);
-		return registerAcademicContextDirtySource(`school-schedule-preview:${sourceId}`, () => (sourceId !== defaultSourceId && sourceId !== '') || (retainedDays !== null && sourceDays !== null && JSON.stringify(retainedDays) !== JSON.stringify(sourceDays)));
+		return registerAcademicContextDirtySource(
+			`school-schedule-preview:${sourceId}`,
+			() =>
+				(sourceId !== defaultSourceId && sourceId !== '') ||
+				(retainedDays !== null &&
+					sourceDays !== null &&
+					JSON.stringify(retainedDays) !== JSON.stringify(sourceDays))
+		);
 	});
 	onDestroy(() => {
 		disposed = true;
@@ -78,7 +85,7 @@
 	async function chooseSource(id: string, preserveDays = false) {
 		const { revision, signal } = latest.begin();
 		const identity = appIdentityKey();
-		const draftDays = preserveDays && id === sourceId ? source?.schoolDays ?? retainedDays : null;
+		const draftDays = preserveDays && id === sourceId ? (source?.schoolDays ?? retainedDays) : null;
 		retainedDays = draftDays ? [...draftDays] : null;
 		sourceId = id;
 		source = null;
@@ -92,7 +99,8 @@
 			if (capturedTerm.id !== id) throw new Error('ข้อมูลภาคเรียนต้นแบบไม่ตรงกับรายการที่เลือก');
 			const snapshot = await onLoad(capturedTerm.bellScheduleId, { signal });
 			if (disposed || !latest.isCurrent(revision) || identity !== appIdentityKey()) return;
-			if (snapshot.bellScheduleId !== capturedTerm.bellScheduleId) throw new Error('ชุดคาบต้นแบบไม่ตรงกับตารางเวลาของภาคเรียน กรุณาโหลดต้นแบบอีกครั้ง');
+			if (snapshot.bellScheduleId !== capturedTerm.bellScheduleId)
+				throw new Error('ชุดคาบต้นแบบไม่ตรงกับตารางเวลาของภาคเรียน กรุณาโหลดต้นแบบอีกครั้ง');
 			for (const period of snapshot.periods) {
 				const parsed = parsePeriodSchoolDays(period);
 				if (!parsed.ok) throw new Error(parsed.error);
@@ -136,7 +144,11 @@
 			onValueChange={(id) => void chooseSource(id)}
 		>
 			<Select.Trigger id="school-schedule-source" class="w-full"
-				>{source?.term ? label(source.term) : currentTerm ? label(currentTerm) : 'เลือกภาคเรียนต้นแบบ'}</Select.Trigger
+				>{source?.term
+					? label(source.term)
+					: currentTerm
+						? label(currentTerm)
+						: 'เลือกภาคเรียนต้นแบบ'}</Select.Trigger
 			>
 			<Select.Content
 				>{#each terms as term (term.id)}<Select.Item value={term.id}>{label(term)}</Select.Item
@@ -180,8 +192,13 @@
 		{#if stale}<p role="alert" class="text-sm text-destructive">
 				ต้นแบบเปลี่ยนแล้ว ฉบับร่างวันเรียนของคุณยังอยู่ ตรวจต้นแบบล่าสุดก่อนบันทึก
 			</p>
-			{/if}
-		<Button type="button" variant="outline" {disabled} onclick={() => void chooseSource(sourceId, true)}>ตรวจต้นแบบล่าสุด</Button>
+		{/if}
+		<Button
+			type="button"
+			variant="outline"
+			{disabled}
+			onclick={() => void chooseSource(sourceId, true)}>ตรวจต้นแบบล่าสุด</Button
+		>
 	{/if}
 	{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>
 		<Button

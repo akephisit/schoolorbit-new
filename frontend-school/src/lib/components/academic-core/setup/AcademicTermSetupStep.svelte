@@ -93,7 +93,8 @@
 			!source.snapshot.periods.some((period) => period.isActive) ||
 			source.schoolDays.length === 0 ||
 			periodDaysOutsideTerm(source.snapshot.periods, source.schoolDays).length > 0 ||
-			(allTerms.find((term) => term.id === source?.term.id)?.rowVersion ?? 0) > source.term.rowVersion ||
+			(allTerms.find((term) => term.id === source?.term.id)?.rowVersion ?? 0) >
+				source.term.rowVersion ||
 			(allSchedules.find((schedule) => schedule.id === source?.term.bellScheduleId)?.rowVersion ??
 				0) > source.snapshot.rowVersion
 	);

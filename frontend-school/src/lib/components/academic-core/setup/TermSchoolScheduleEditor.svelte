@@ -71,7 +71,8 @@
 			!source.snapshot.periods.some((period) => period.isActive) ||
 			source.schoolDays.length === 0 ||
 			periodDaysOutsideTerm(source.snapshot.periods, source.schoolDays).length > 0 ||
-			(terms.find((item) => item.id === source?.term.id)?.rowVersion ?? 0) > source.term.rowVersion ||
+			(terms.find((item) => item.id === source?.term.id)?.rowVersion ?? 0) >
+				source.term.rowVersion ||
 			(schedules.find((schedule) => schedule.id === source?.term.bellScheduleId)?.rowVersion ?? 0) >
 				source.snapshot.rowVersion
 	);
@@ -158,7 +159,8 @@
 			{#if dirty}<Button
 					disabled={busy || stale || (copying ? sourceInvalid : days.length === 0)}
 					onclick={() => void save()}
-					>{copying ? 'บันทึกวันเรียนและคาบที่คัดลอก' : 'บันทึกวันเรียน'}</Button><Button variant="outline" disabled={busy} onclick={reset}>ยกเลิกการแก้ไขวันเรียน</Button>
+					>{copying ? 'บันทึกวันเรียนและคาบที่คัดลอก' : 'บันทึกวันเรียน'}</Button
+				><Button variant="outline" disabled={busy} onclick={reset}>ยกเลิกการแก้ไขวันเรียน</Button>
 			{:else if canCopy && terms.some((item) => item.id !== term.id)}<Button
 					variant="outline"
 					disabled={busy}
@@ -176,7 +178,9 @@
 			วันเรียนของภาคเรียนนี้เป็นข้อมูลอ่านอย่างเดียว เมื่อเริ่มใช้แล้วจะไม่เปิดแก้ไข
 			แม้กลับมาเป็นร่าง
 		</p>{/if}
-	{#if !canEditDays && dirty}<Button variant="outline" disabled={busy} onclick={reset}>ยกเลิกการแก้ไขวันเรียน</Button>{/if}
+	{#if !canEditDays && dirty}<Button variant="outline" disabled={busy} onclick={reset}
+			>ยกเลิกการแก้ไขวันเรียน</Button
+		>{/if}
 
 	{#if stale}<p role="alert" class="text-sm text-destructive">
 			ข้อมูลภาคเรียนเปลี่ยนระหว่างแก้ไข ฉบับร่างของคุณยังอยู่ ยกเลิกแล้วตรวจข้อมูลล่าสุดก่อนบันทึก
