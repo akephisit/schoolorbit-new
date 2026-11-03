@@ -54,4 +54,10 @@ test('readiness keeps every authoritative finding, detail, count and target link
 	assert.deepEqual(grouped[0].findings, [findings[1]]);
 	assert.deepEqual(grouped[1].findings, [findings[0], findings[2]]);
 	assert.equal(grouped[1].findings[0], findings[0]);
+	for (const code of ['opening.bell_period_days_missing', 'opening.bell_period_overlap']) {
+		const granular = { ...findings[1], code };
+		assert.deepEqual(groupReadinessFindings([granular]), [
+			{ key: 'time', label: 'ปฏิทินและตารางเวลา', findings: [granular] }
+		]);
+	}
 });

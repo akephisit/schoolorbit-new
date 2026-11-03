@@ -861,6 +861,13 @@ the schema change (`ACADEMIC_MEMBERSHIP154_PRESERVATION_FAILED`). Deploy it with
 backend, generated contracts and frontend under the coordinated all-tenant migration gate.
 Reconcile a refusal on a protected copy; never fabricate dates or rewrite immutable receipts.
 
+The additive schema remains compatible with the old binary only while all persisted data still
+has the old non-null dated shape. The first date-free manual rollover run, including a hold-only
+run with no destination placements, or the first annual membership with a null start date crosses
+the old-binary compatibility boundary. After either event, retain maintenance and repair forward
+with a compatible binary; do not assume that deploying the previous binary is a valid rollback.
+Preserve accepted intent, nullable context records and immutable history during recovery.
+
 Graduation/transfer finalize annual membership and placement through Core and update
 administrative registration through Students in the same transaction. Student UUIDs and
 historical year/room records remain. Account deactivation, session revocation and guardian

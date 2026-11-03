@@ -2691,7 +2691,9 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
 
     let periods = bell_schedules::replace_periods(&pool, actor, schedule.id, request.clone())
         .await
-        .unwrap();
+        .unwrap()
+        .snapshot
+        .periods;
     assert_eq!(periods.len(), 2);
     assert_eq!(periods[0].applicable_days.as_deref(), Some("MON,TUE"));
     let current = bell_schedules::get(&pool, schedule.id).await.unwrap();
@@ -2704,6 +2706,7 @@ async fn bell_schedule_period_replacement_is_atomic_and_rejects_stale_revisions(
         bell_schedules::list_periods(&pool, schedule.id)
             .await
             .unwrap()
+            .periods
             .len(),
         2
     );

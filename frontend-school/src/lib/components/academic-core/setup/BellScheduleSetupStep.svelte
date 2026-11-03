@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import type {
 		AcademicYear,
 		BellSchedule,
@@ -39,6 +41,10 @@
 	let editing = $state<BellSchedule | null>(null);
 	let editName = $state('');
 	let errorMessage = $state('');
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+	});
 	let cloning = $state<BellSchedule | null>(null);
 	let cloneName = $state('');
 	const defaultProtected = $derived(
@@ -51,6 +57,7 @@
 		event.preventDefault();
 		if (!cloning || !cloneName.trim() || !canManage || busy) return;
 		errorMessage = '';
+		const identity = appIdentityKey();
 		try {
 			const saved = await onClone(cloning.id, {
 				academicYearId: year.id,
@@ -58,9 +65,11 @@
 				owningOrganizationUnitId: cloning.owningOrganizationUnitId ?? null,
 				rowVersion: cloning.rowVersion
 			});
+			if (disposed || identity !== appIdentityKey()) return;
 			cloning = null;
 			onCloned(saved);
 		} catch (cause) {
+			if (disposed || identity !== appIdentityKey()) return;
 			errorMessage = cause instanceof Error ? cause.message : 'คัดลอกตารางเวลาไม่สำเร็จ';
 		}
 	}
@@ -73,15 +82,18 @@
 			errorMessage = 'กรุณาระบุชื่อตารางเวลาที่ครูเข้าใจได้';
 			return;
 		}
+		const identity = appIdentityKey();
 		try {
 			const saved = await onCreate({
 				academicYearId: year.id,
 				name: name.trim(),
 				owningOrganizationUnitId: null
 			});
+			if (disposed || identity !== appIdentityKey()) return;
 			name = '';
 			onSaved(saved);
 		} catch (error) {
+			if (disposed || identity !== appIdentityKey()) return;
 			errorMessage = error instanceof Error ? error.message : 'สร้างตารางเวลาไม่สำเร็จ';
 		}
 	}
@@ -104,6 +116,7 @@
 			busy
 		)
 			return;
+		const identity = appIdentityKey();
 		try {
 			const saved = await onUpdate(editing.id, {
 				name: editName.trim(),
@@ -111,9 +124,11 @@
 				owningOrganizationUnitId: editing.owningOrganizationUnitId ?? null,
 				rowVersion: editing.rowVersion
 			});
+			if (disposed || identity !== appIdentityKey()) return;
 			editing = null;
 			onSaved(saved);
 		} catch (error) {
+			if (disposed || identity !== appIdentityKey()) return;
 			errorMessage = error instanceof Error ? error.message : 'แก้ไขตารางเวลาไม่สำเร็จ';
 		}
 	}
@@ -121,6 +136,7 @@
 	async function makeDefault(schedule: BellSchedule) {
 		if (!canManage || schedule.editBlockedReason || defaultProtected || busy) return;
 		errorMessage = '';
+		const identity = appIdentityKey();
 		try {
 			const saved = await onUpdate(schedule.id, {
 				name: schedule.name,
@@ -128,8 +144,10 @@
 				owningOrganizationUnitId: schedule.owningOrganizationUnitId ?? null,
 				rowVersion: schedule.rowVersion
 			});
+			if (disposed || identity !== appIdentityKey()) return;
 			onSaved(saved);
 		} catch (error) {
+			if (disposed || identity !== appIdentityKey()) return;
 			errorMessage = error instanceof Error ? error.message : 'ตั้งตารางหลักไม่สำเร็จ';
 		}
 	}

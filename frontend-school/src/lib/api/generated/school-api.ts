@@ -101,6 +101,22 @@ export interface paths {
 		patch: operations['updateBellSchedule'];
 		trace?: never;
 	};
+	'/api/academic/bell-schedules/{id}/clone': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['cloneBellSchedule'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/bell-schedules/{id}/periods': {
 		parameters: {
 			query?: never;
@@ -1242,6 +1258,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/homerooms/{id}/capacity': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch: operations['updateHomeroomCapacity'];
+		trace?: never;
+	};
 	'/api/academic/homerooms/{id}/numbering-preview': {
 		parameters: {
 			query?: never;
@@ -1314,6 +1346,22 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['listHomeroomTransferTargets'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/academic/homerooms/year-context': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getHomeroomYearContext'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -8880,6 +8928,8 @@ export interface components {
 		};
 		AcademicSetupWorkspace: {
 			bellSchedules: components['schemas']['BellSchedule'][];
+			bellScheduleSetupTermIds: string[];
+			bellScheduleSetupYearIds: string[];
 			contextSettings: components['schemas']['AcademicContextSettings'];
 			terms: components['schemas']['AcademicTerm'][];
 			years: components['schemas']['AcademicYear'][];
@@ -9673,6 +9723,8 @@ export interface components {
 		ApiResponse_AcademicSetupWorkspace: {
 			data: {
 				bellSchedules: components['schemas']['BellSchedule'][];
+				bellScheduleSetupTermIds: string[];
+				bellScheduleSetupYearIds: string[];
 				contextSettings: components['schemas']['AcademicContextSettings'];
 				terms: components['schemas']['AcademicTerm'][];
 				years: components['schemas']['AcademicYear'][];
@@ -10355,9 +10407,11 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				academicYearId: string;
+				canClone: boolean;
 				code: string;
 				/** Format: date-time */
 				createdAt: string;
+				editBlockedReason?: components['schemas']['BellScheduleEditBlockReason'] | null;
 				/** Format: uuid */
 				id: string;
 				isDefault: boolean;
@@ -10369,6 +10423,17 @@ export interface components {
 				status: components['schemas']['VersionStatus'];
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BellSchedulePeriodsSnapshot: {
+			data: {
+				/** Format: uuid */
+				bellScheduleId: string;
+				periods: components['schemas']['BellSchedulePeriod'][];
+				/** Format: int64 */
+				rowVersion: number;
 			};
 			message?: string;
 			success: boolean;
@@ -12011,10 +12076,11 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				migrated: boolean;
+				placementScope?: components['schemas']['HomeroomPlacementScope'];
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: date */
-				startDate: string;
+				startDate?: string | null;
 				status: components['schemas']['HomeroomPlacementStatus'];
 				/** Format: uuid */
 				studentAcademicYearId: string;
@@ -14611,9 +14677,11 @@ export interface components {
 			data: {
 				/** Format: uuid */
 				academicYearId: string;
+				canClone: boolean;
 				code: string;
 				/** Format: date-time */
 				createdAt: string;
+				editBlockedReason?: components['schemas']['BellScheduleEditBlockReason'] | null;
 				/** Format: uuid */
 				id: string;
 				isDefault: boolean;
@@ -14625,23 +14693,6 @@ export interface components {
 				status: components['schemas']['VersionStatus'];
 				/** Format: date-time */
 				updatedAt: string;
-			}[];
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_Vec_BellSchedulePeriod: {
-			data: {
-				applicableDays?: string | null;
-				/** Format: uuid */
-				bellScheduleId: string;
-				endTime: string;
-				/** Format: uuid */
-				id: string;
-				isActive: boolean;
-				name?: string | null;
-				/** Format: int32 */
-				orderIndex: number;
-				startTime: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -15618,10 +15669,11 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				migrated: boolean;
+				placementScope?: components['schemas']['HomeroomPlacementScope'];
 				/** Format: int64 */
 				rowVersion: number;
 				/** Format: date */
-				startDate: string;
+				startDate?: string | null;
 				status: components['schemas']['HomeroomPlacementStatus'];
 				/** Format: uuid */
 				studentAcademicYearId: string;
@@ -16546,6 +16598,20 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_YearLifecycleContext: {
+			data: {
+				/** Format: uuid */
+				academicYearId: string;
+				name: string;
+				/** Format: int64 */
+				rowVersion: number;
+				status: components['schemas']['AcademicYearStatus'];
+				/** Format: int32 */
+				year: number;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_YearLifecycleWorkspace: {
 			data: {
 				availableActions: components['schemas']['YearTransitionAction'][];
@@ -16612,14 +16678,10 @@ export interface components {
 				findings: components['schemas']['LifecycleFinding'][];
 				grades: components['schemas']['PromotionGradeReference'][];
 				homerooms: components['schemas']['YearRolloverHomeroomReference'][];
-				/** Format: date */
-				outcomeEffectiveOn: string;
 				programs: components['schemas']['YearRolloverProgramReference'][];
 				sourceChecksum: string;
 				sourceYear: components['schemas']['YearLifecycleContext'];
 				students: components['schemas']['YearRolloverStudent'][];
-				/** Format: date */
-				targetPlacementStartsOn: string;
 				targetYear: components['schemas']['YearLifecycleContext'];
 			};
 			message?: string;
@@ -17468,9 +17530,11 @@ export interface components {
 		BellSchedule: {
 			/** Format: uuid */
 			academicYearId: string;
+			canClone: boolean;
 			code: string;
 			/** Format: date-time */
 			createdAt: string;
+			editBlockedReason?: components['schemas']['BellScheduleEditBlockReason'] | null;
 			/** Format: uuid */
 			id: string;
 			isDefault: boolean;
@@ -17483,6 +17547,13 @@ export interface components {
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		/** @enum {string} */
+		BellScheduleEditBlockReason:
+			| 'year_not_editable'
+			| 'no_unopened_term'
+			| 'already_used'
+			| 'pinned_timetable'
+			| 'timetable_references';
 		BellSchedulePeriod: {
 			applicableDays?: string | null;
 			/** Format: uuid */
@@ -17504,6 +17575,13 @@ export interface components {
 			/** Format: int32 */
 			orderIndex: number;
 			startTime: string;
+		};
+		BellSchedulePeriodsSnapshot: {
+			/** Format: uuid */
+			bellScheduleId: string;
+			periods: components['schemas']['BellSchedulePeriod'][];
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		BlockedWindow: {
 			endTime: string;
@@ -19308,6 +19386,15 @@ export interface components {
 			entryTypes?: string[] | null;
 			/** Format: uuid */
 			timetableVersionId: string;
+		};
+		CloneBellScheduleRequest: {
+			/** Format: uuid */
+			academicYearId: string;
+			name: string;
+			/** Format: uuid */
+			owningOrganizationUnitId?: string | null;
+			/** Format: int64 */
+			rowVersion: number;
 		};
 		CloneTimetableVersionRequest: {
 			/** Format: int64 */
@@ -22618,16 +22705,19 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			migrated: boolean;
+			placementScope?: components['schemas']['HomeroomPlacementScope'];
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: date */
-			startDate: string;
+			startDate?: string | null;
 			status: components['schemas']['HomeroomPlacementStatus'];
 			/** Format: uuid */
 			studentAcademicYearId: string;
 			/** Format: date-time */
 			updatedAt: string;
 		};
+		/** @enum {string} */
+		HomeroomPlacementScope: 'dated' | 'academic_year';
 		/** @enum {string} */
 		HomeroomPlacementStatus: 'planned' | 'current' | 'ended' | 'cancelled';
 		HomeroomPlacementTransfer: {
@@ -22671,10 +22761,11 @@ export interface components {
 			lastName: string;
 			/** Format: uuid */
 			placementId: string;
+			placementScope?: components['schemas']['HomeroomPlacementScope'];
 			/** Format: int64 */
 			rowVersion: number;
 			/** Format: date */
-			startDate: string;
+			startDate?: string | null;
 			status: components['schemas']['HomeroomPlacementStatus'];
 			/** Format: uuid */
 			studentAcademicYearId: string;
@@ -24361,7 +24452,7 @@ export interface components {
 			sourceYearId: string;
 			status: components['schemas']['PromotionRunStatus'];
 			/** Format: date */
-			targetPlacementStartsOn: string;
+			targetPlacementStartsOn?: string | null;
 			/** Format: uuid */
 			targetYearId: string;
 			/** Format: date-time */
@@ -28249,6 +28340,12 @@ export interface components {
 			examKind?: string | null;
 			name?: string | null;
 		};
+		UpdateHomeroomCapacityRequest: {
+			/** Format: int32 */
+			capacity: number;
+			/** Format: int64 */
+			rowVersion: number;
+		};
 		UpdateHomeroomNumbersRequest: {
 			numbers: components['schemas']['HomeroomNumberInput'][];
 			revision: string;
@@ -28854,24 +28951,16 @@ export interface components {
 			findings: components['schemas']['LifecycleFinding'][];
 			grades: components['schemas']['PromotionGradeReference'][];
 			homerooms: components['schemas']['YearRolloverHomeroomReference'][];
-			/** Format: date */
-			outcomeEffectiveOn: string;
 			programs: components['schemas']['YearRolloverProgramReference'][];
 			sourceChecksum: string;
 			sourceYear: components['schemas']['YearLifecycleContext'];
 			students: components['schemas']['YearRolloverStudent'][];
-			/** Format: date */
-			targetPlacementStartsOn: string;
 			targetYear: components['schemas']['YearLifecycleContext'];
 		};
 		YearRolloverPreviewInput: {
 			decisions: components['schemas']['YearRolloverStudentInput'][];
-			/** Format: date */
-			outcomeEffectiveOn: string;
 			/** Format: uuid */
 			sourceYearId: string;
-			/** Format: date */
-			targetPlacementStartsOn: string;
 			/** Format: uuid */
 			targetYearId: string;
 		};
@@ -29453,6 +29542,78 @@ export interface operations {
 			};
 		};
 	};
+	cloneBellSchedule: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Source bell schedule ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CloneBellScheduleRequest'];
+			};
+		};
+		responses: {
+			/** @description Bell schedule and all periods cloned atomically */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BellSchedule'];
+				};
+			};
+			/** @description Invalid schedule or incompatible periods */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic term management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source schedule or destination year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Source revision or destination lifecycle conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listBellSchedulePeriods: {
 		parameters: {
 			query?: never;
@@ -29471,7 +29632,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_BellSchedulePeriod'];
+					'application/json': components['schemas']['ApiResponse_BellSchedulePeriodsSnapshot'];
 				};
 			};
 			/** @description Authentication required */
@@ -29525,7 +29686,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_Vec_BellSchedulePeriod'];
+					'application/json': components['schemas']['ApiResponse_BellSchedulePeriodsSnapshot'];
 				};
 			};
 			/** @description Invalid bell schedule periods */
@@ -35461,6 +35622,78 @@ export interface operations {
 			};
 		};
 	};
+	updateHomeroomCapacity: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Homeroom ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['UpdateHomeroomCapacityRequest'];
+			};
+		};
+		responses: {
+			/** @description Homeroom capacity updated */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Homeroom'];
+				};
+			};
+			/** @description Capacity must be a positive integer */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom management permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale revision, insufficient capacity, or immutable year */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	previewHomeroomNumbers: {
 		parameters: {
 			query: {
@@ -35855,6 +36088,64 @@ export interface operations {
 			};
 			/** @description Homeroom not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getHomeroomYearContext: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Exact selected homeroom year context */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_YearLifecycleContext'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic year not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid academic year */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};

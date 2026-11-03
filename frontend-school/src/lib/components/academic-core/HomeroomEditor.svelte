@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
@@ -47,6 +47,7 @@
 		advisorsByHomeroom,
 		canManage = false,
 		yearStatus,
+		targetHomeroomId = null,
 		onCreate,
 		onUpdate,
 		onUpdateCapacity,
@@ -59,6 +60,7 @@
 		advisorsByHomeroom: Map<string, HomeroomAdvisor[]>;
 		canManage?: boolean;
 		yearStatus?: AcademicYear['status'];
+		targetHomeroomId?: string | null;
 		onCreate: (draft: HomeroomDraft) => Promise<Homeroom>;
 		onUpdate: (room: Homeroom, draft: UpdateHomeroomRequest) => Promise<Homeroom>;
 		onUpdateCapacity: (room: Homeroom, draft: UpdateHomeroomCapacityRequest) => Promise<Homeroom>;
@@ -75,6 +77,22 @@
 	let roomBusy = $state(false);
 	let roomError = $state('');
 	let editionId = $state('');
+	let roomTable = $state<HTMLDivElement | null>(null);
+	$effect(() => {
+		const target = targetHomeroomId;
+		const container = roomTable;
+		let current = true;
+		if (target && container)
+			void tick().then(() => {
+				if (!current) return;
+				const row = container.querySelector<HTMLTableRowElement>('[data-homeroom-target="true"]');
+				row?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+				row?.focus({ preventScroll: true });
+			});
+		return () => {
+			current = false;
+		};
+	});
 	let capacityRoom = $state<Homeroom | null>(null);
 	let capacityDraft = $state(1);
 	let capacityBusy = $state(false);
@@ -237,7 +255,8 @@
 	async function saveRoom(event: SubmitEvent) {
 		event.preventDefault();
 		if (!canManage || yearStatus !== 'planning' || roomBusy) return;
-		roomError = '';
+		roomError = homeroomCapacityError(roomDraft.capacity, editingRoom?.studentCount);
+		if (roomError) return;
 		if (!roomDraft.gradeLevelId || !roomDraft.studyProgramId || !roomDraft.roomNumber.trim()) {
 			roomError = 'กรุณาเลือกระดับชั้น แผนการเรียน และระบุเลขห้อง';
 			return;
@@ -330,7 +349,7 @@
 		{/if}
 	</div>
 
-	<div class="overflow-x-auto rounded-xl border bg-card">
+	<div class="overflow-x-auto rounded-xl border bg-card" bind:this={roomTable}>
 		<Table.Root>
 			<Table.Header>
 				<Table.Row>
@@ -344,7 +363,11 @@
 			</Table.Header>
 			<Table.Body>
 				{#each [...homerooms].sort(compareHomerooms) as room (room.id)}
-					<Table.Row>
+					<Table.Row
+						data-state={room.id === targetHomeroomId ? 'selected' : undefined}
+						data-homeroom-target={room.id === targetHomeroomId ? 'true' : undefined}
+						tabindex={room.id === targetHomeroomId ? -1 : undefined}
+					>
 						<Table.Cell class="border-s-4 border-s-primary ps-5">
 							<div class="flex items-center gap-3">
 								<div class="rounded-lg bg-primary/10 p-2 text-primary">
@@ -561,7 +584,7 @@
 					<Input
 						id="homeroom-capacity"
 						type="number"
-						min="1"
+						min={Math.max(1, editingRoom?.studentCount ?? 0)}
 						bind:value={roomDraft.capacity}
 						required
 					/>

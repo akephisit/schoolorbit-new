@@ -39,3 +39,15 @@ first. A date-free run also has nullable historical placement-date evidence.
 After that boundary, old binaries must
 not serve traffic; recovery rolls forward under the existing maintenance release
 workflow. Frontend assets and the new backend ship together under that boundary.
+
+Bell-period reads and replacements return a typed snapshot pairing the exact
+schedule version with its periods. Reads use one consistent transaction;
+replacements capture the accepted pair before commit. A later metadata refresh
+cannot become the edit base for older periods. Core retains diagnostic facts
+from the activation projection so explanation never rereads configuration or
+recounts rooms independently.
+
+Historical student and parent providers order annual NULL starts after actual
+dated transfers within the selected year, including when both spans are ended.
+Their public provider regressions preserve that history rather than checking
+only an equivalent standalone SQL query.

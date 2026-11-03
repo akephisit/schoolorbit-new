@@ -50,9 +50,18 @@ pub struct ActivationPlacement {
     pub status: HomeroomPlacementStatus,
     pub row_version: i64,
     pub room_row_version: Option<i64>,
+    pub homeroom_name: Option<String>,
     pub capacity: Option<i32>,
     pub reference_valid: bool,
     pub eligible: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActivationRoomCapacityIssue {
+    pub homeroom_id: Uuid,
+    pub homeroom_name: Option<String>,
+    pub capacity: i32,
+    pub student_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +71,10 @@ pub struct ActivationState {
     pub predecessor: Option<YearLifecycleContext>,
     pub students: Vec<ActivationStudent>,
     pub placements: Vec<ActivationPlacement>,
+    pub bell_schedule: Option<BellSchedule>,
+    pub bell_periods: Vec<BellSchedulePeriod>,
+    pub school_days: String,
+    pub over_capacity_rooms: Vec<ActivationRoomCapacityIssue>,
     pub issues: Vec<ActivationIssue>,
     pub source_checksum: String,
 }

@@ -1357,6 +1357,7 @@ fn build_schema_group_4() -> utoipa::openapi::OpenApi {
         UpdateBellScheduleRequest,
         BellSchedule,
         BellSchedulePeriod,
+        BellSchedulePeriodsSnapshot,
         GradeProgression,
         GradeProgressionSet,
         CatalogDisplayState,
@@ -1485,7 +1486,7 @@ fn build_schema_group_6() -> utoipa::openapi::OpenApi {
         ApiResponse<AcademicTerm>,
         ApiResponse<Vec<BellSchedule>>,
         ApiResponse<BellSchedule>,
-        ApiResponse<Vec<BellSchedulePeriod>>,
+        ApiResponse<BellSchedulePeriodsSnapshot>,
         ApiResponse<GradeProgressionSet>,
         ApiResponse<Vec<CatalogSubject>>,
         ApiResponse<CatalogSubjectOverview>,
@@ -7276,6 +7277,23 @@ mod tests {
         assert!(properties["studentAcademicYearId"].is_object());
         assert!(properties["closure"].is_object());
         assert!(properties["nationalId"].is_null());
+    }
+
+    #[test]
+    fn documents_bell_periods_as_versioned_snapshots() {
+        let document = school_api_value().unwrap();
+        let schema = &document["components"]["schemas"]["BellSchedulePeriodsSnapshot"];
+        let required = schema["required"].as_array().unwrap();
+        for field in ["bellScheduleId", "rowVersion", "periods"] {
+            assert!(required.contains(&serde_json::json!(field)));
+        }
+        for method in ["get", "put"] {
+            let reference = document["paths"]["/api/academic/bell-schedules/{id}/periods"][method]
+                ["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+                .as_str()
+                .unwrap();
+            assert!(reference.contains("BellSchedulePeriodsSnapshot"));
+        }
     }
 
     #[test]

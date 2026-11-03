@@ -30,6 +30,7 @@ export const load: PageLoad = ({ depends, fetch, url }) => {
 	return {
 		title: _meta.menu.title,
 		academicYearId,
+		requestedHomeroomId: url.searchParams.get('homeroomId')?.trim() || null,
 		workspace: academicYearId
 			? captureRouteLoad(
 					loadHomeroomCollections(

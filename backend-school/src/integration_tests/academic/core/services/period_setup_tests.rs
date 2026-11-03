@@ -7,6 +7,184 @@ use school_academic_core::services::{activation_context, lifecycle_guard, openin
 use school_errors::AppError;
 
 #[tokio::test]
+async fn period_setup_period_snapshots_keep_the_accepted_cas_base_across_later_and_concurrent_edits(
+) {
+    let pool = prepare_current_core_fixture("period_setup_period_snapshot").await;
+    let actor = fixture_actor(&pool).await;
+    let schedule = bell_schedules::create(
+        &pool,
+        actor,
+        CreateBellScheduleRequest {
+            academic_year_id: CURRENT_YEAR_ID,
+            name: "Paired periods".into(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let input = |version, name: &str| ReplaceBellSchedulePeriodsRequest {
+        row_version: version,
+        periods: vec![BellSchedulePeriodInput {
+            name: Some(name.into()),
+            start_time: NaiveTime::from_hms_opt(8, 0, 0).unwrap(),
+            end_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            order_index: 1,
+            applicable_days: vec!["MON".into()],
+            is_active: true,
+        }],
+    };
+    let initial = bell_schedules::list_periods(&pool, schedule.id)
+        .await
+        .unwrap();
+    assert_eq!(initial.row_version, schedule.row_version);
+    assert!(initial.periods.is_empty());
+    let accepted = bell_schedules::replace_periods(
+        &pool,
+        actor,
+        schedule.id,
+        input(initial.row_version, "Staff A periods"),
+    )
+    .await
+    .unwrap()
+    .snapshot;
+    assert_eq!(accepted.bell_schedule_id, schedule.id);
+    assert_eq!(accepted.row_version, initial.row_version + 1);
+    let metadata = bell_schedules::update(
+        &pool,
+        actor,
+        schedule.id,
+        UpdateBellScheduleRequest {
+            name: "Staff B metadata".into(),
+            is_default: false,
+            owning_organization_unit_id: None,
+            row_version: accepted.row_version,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(metadata.row_version, accepted.row_version + 1);
+    assert!(matches!(
+        bell_schedules::replace_periods(
+            &pool,
+            actor,
+            schedule.id,
+            input(accepted.row_version, "Stale A periods")
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    let mut base = bell_schedules::list_periods(&pool, schedule.id)
+        .await
+        .unwrap();
+    assert_eq!(base.row_version, metadata.row_version);
+    assert_eq!(base.periods[0].id, accepted.periods[0].id);
+    for index in 0..4 {
+        let change = input(base.row_version, &format!("Concurrent period {index}"));
+        let (reader, writer) = tokio::join!(
+            bell_schedules::list_periods(&pool, schedule.id),
+            bell_schedules::replace_periods(&pool, actor, schedule.id, change)
+        );
+        let reader = reader.unwrap();
+        let writer = writer.unwrap().snapshot;
+        assert!(reader.row_version == base.row_version || reader.row_version == writer.row_version);
+        let expected = if reader.row_version == base.row_version {
+            &base
+        } else {
+            &writer
+        };
+        assert_eq!(
+            serde_json::to_value(&reader.periods).unwrap(),
+            serde_json::to_value(&expected.periods).unwrap()
+        );
+        assert_eq!(writer.row_version, base.row_version + 1);
+        base = writer;
+    }
+    let first = input(base.row_version, "First CAS writer");
+    let second = input(base.row_version, "Second CAS writer");
+    let (first, second) = tokio::join!(
+        bell_schedules::replace_periods(&pool, actor, schedule.id, first),
+        bell_schedules::replace_periods(&pool, actor, schedule.id, second)
+    );
+    let winner = match (first, second) {
+        (Ok(outcome), Err(AppError::Conflict(_))) | (Err(AppError::Conflict(_)), Ok(outcome)) => {
+            outcome.snapshot
+        }
+        other => panic!("expected exactly one CAS winner: {other:?}"),
+    };
+    let latest = bell_schedules::list_periods(&pool, schedule.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(latest).unwrap(),
+        serde_json::to_value(winner).unwrap()
+    );
+}
+
+#[tokio::test]
+async fn period_setup_enrollment_readiness_links_use_the_real_owner_and_permissions() {
+    let pool = prepare_current_core_fixture("period_setup_enrollment_links").await;
+    let actor = fixture_actor(&pool).await;
+    let room = occupied_room(&pool).await;
+    let schedule: Uuid = sqlx::query_scalar(
+        "SELECT bell_schedule_id FROM academic_terms WHERE academic_year_id=$1 ORDER BY id LIMIT 1",
+    )
+    .bind(CURRENT_YEAR_ID)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let term = add_unopened_term(&pool, actor, schedule).await;
+    let pupil: Uuid = sqlx::query_scalar("INSERT INTO users(password_hash,first_name,last_name,user_type,status) VALUES('synthetic-not-login','Planned','Pupil','student','active') RETURNING id").fetch_one(&pool).await.unwrap();
+    sqlx::query("INSERT INTO student_academic_years(id,student_id,academic_year_id,grade_level_id,study_program_id,status) VALUES(uuidv7(),$1,$2,$3,$4,'planned')")
+        .bind(pupil).bind(CURRENT_YEAR_ID).bind(room.grade_level_id).bind(room.study_program_id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE grade_levels SET is_active=false WHERE id=$1")
+        .bind(room.grade_level_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_opening_policy SET require_homeroom_placements=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (permission, allowed) in [
+        (codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL, true),
+        (codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL, true),
+        (codes::ACADEMIC_YEAR_READ_SCHOOL, false),
+    ] {
+        let caller = ActorContext {
+            user_id: actor,
+            permissions: vec![
+                codes::ACADEMIC_LIFECYCLE_READ_SCHOOL.into(),
+                permission.into(),
+            ],
+        };
+        let workspace = school_academic_lifecycle::services::get_activation_workspace(
+            &pool,
+            &caller,
+            CURRENT_YEAR_ID,
+            term.id,
+        )
+        .await
+        .unwrap();
+        for code in [
+            "opening.student_reference",
+            "opening.homeroom_placement_missing",
+        ] {
+            let finding = workspace
+                .findings
+                .iter()
+                .find(|row| row.code == code)
+                .expect("induced enrollment finding");
+            assert_eq!(
+                finding.resolution_url,
+                allowed.then(|| format!(
+                    "/staff/academic/student-years?academicYearId={CURRENT_YEAR_ID}"
+                ))
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn period_setup_http_capabilities_deny_without_writes_and_read_hidden_context() {
     use axum::{
         body::Body,
@@ -39,6 +217,16 @@ async fn period_setup_http_capabilities_deny_without_writes_and_read_hidden_cont
             "GET",
             format!("/api/academic/homerooms/year-context?academicYearId={FUTURE_YEAR_ID}"),
             serde_json::Value::Null,
+        ),
+        (
+            "GET",
+            format!("/api/academic/bell-schedules/{schedule}/periods"),
+            serde_json::Value::Null,
+        ),
+        (
+            "PUT",
+            format!("/api/academic/bell-schedules/{schedule}/periods"),
+            json!({"rowVersion":1,"periods":[]}),
         ),
     ] {
         let app = crate::integration_tests::academic::delivery::authenticated_academic_router(
@@ -122,7 +310,9 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
         },
     )
     .await
-    .unwrap();
+    .unwrap()
+    .snapshot
+    .periods;
     let term = add_unopened_term(&pool, actor, schedule.id).await;
     // A valid accepted empty delivery graph with a real draft structural block.
     let delivery: Uuid = sqlx::query_scalar("INSERT INTO academic_delivery_versions(academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash,publication_no) VALUES($1,$2,CURRENT_DATE,'published','{\"offerings\":[]}', $3,now(),uuidv7(),repeat('a',64),1) RETURNING id")
@@ -152,7 +342,8 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
     assert_eq!(
         bell_schedules::list_periods(&pool, schedule.id)
             .await
-            .unwrap()[0]
+            .unwrap()
+            .periods[0]
             .id,
         periods[0].id
     );
@@ -499,7 +690,8 @@ async fn period_setup_shared_schedule_stays_locked_and_clone_is_atomic_for_unope
     assert!(source.can_clone);
     let original_periods = bell_schedules::list_periods(&pool, source.id)
         .await
-        .unwrap();
+        .unwrap()
+        .periods;
     assert!(!original_periods.is_empty());
     assert!(matches!(
         bell_schedules::replace_periods(
@@ -540,7 +732,10 @@ async fn period_setup_shared_schedule_stays_locked_and_clone_is_atomic_for_unope
         .unwrap();
     assert_ne!(clone.id, source.id);
     assert_eq!(clone.edit_blocked_reason, None);
-    let copied = bell_schedules::list_periods(&pool, clone.id).await.unwrap();
+    let copied = bell_schedules::list_periods(&pool, clone.id)
+        .await
+        .unwrap()
+        .periods;
     assert_eq!(copied.len(), original_periods.len());
     for (old, new) in original_periods.iter().zip(&copied) {
         assert_ne!(old.id, new.id);
@@ -607,6 +802,7 @@ async fn period_setup_shared_schedule_stays_locked_and_clone_is_atomic_for_unope
         bell_schedules::list_periods(&pool, source.id)
             .await
             .unwrap()
+            .periods
             .iter()
             .map(|row| row.id)
             .collect::<Vec<_>>(),
@@ -717,7 +913,7 @@ async fn period_setup_opening_diagnostics_preserve_raw_invalid_days_and_identify
             .any(|issue| issue.code
                 == school_academic_core::models::ActivationIssueCode::BellSchedule)
     );
-    let issues = opening_diagnostics::read(&mut tx, &state).await.unwrap();
+    let issues = opening_diagnostics::explain(&state);
     assert!(issues.iter().any(|issue| issue.resource
         == opening_diagnostics::DiagnosticResource::Homeroom(room.id)
         && issue.message.contains(&room.name)

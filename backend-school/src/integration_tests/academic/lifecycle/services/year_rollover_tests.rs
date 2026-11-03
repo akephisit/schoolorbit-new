@@ -34,7 +34,7 @@ async fn fixture(name: &str) -> (PgPool, ActorContext, YearRolloverPreviewInput)
     sqlx::query("INSERT INTO student_info(user_id,student_id,registration_status) SELECT student_id,student_id::text,'studying' FROM student_academic_years WHERE academic_year_id=$1 ON CONFLICT(user_id) DO NOTHING").bind(year).execute(&pool).await.unwrap();
     for index in 0..4 {
         let student = Uuid::new_v4();
-        sqlx::query("INSERT INTO users(id,password_hash,first_name,last_name,user_type,status) VALUES($1,'synthetic-not-login','นักเรียนทดสอบ',$2,'student','active')").bind(student).bind(format!("{index}")).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$1::text,'synthetic-not-login','นักเรียนทดสอบ',$2,'student','active')").bind(student).bind(format!("{index}")).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO student_info(user_id,student_id,registration_status) VALUES($1,$1::text,'studying')")
             .bind(student)
             .execute(&pool)
@@ -117,6 +117,7 @@ async fn confirm_input(
 async fn manual_year_rollover_all_outcomes_prepare_identity_history_and_exact_concurrent_replay_without_results(
 ) {
     let (pool, actor, input) = fixture("manual_rollover_outcomes").await;
+    let original_bounds: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(jsonb_build_array(id,start_date,end_date) ORDER BY id) FROM homeroom_placements WHERE academic_year_id=$1").bind(input.source_year_id).fetch_one(&pool).await.unwrap();
     let before: String =
         sqlx::query_scalar("SELECT md5(string_agg(to_jsonb(u)::text,'' ORDER BY id)) FROM users u")
             .fetch_one(&pool)
@@ -172,6 +173,11 @@ async fn manual_year_rollover_all_outcomes_prepare_identity_history_and_exact_co
     assert_eq!(open_terminal, 0);
     let absent_evidence:bool=sqlx::query_scalar("SELECT run.policy_id IS NULL AND bool_and(item.recommendation IS NULL AND item.annual_revision_id IS NULL) FROM academic_promotion_runs run JOIN academic_promotion_run_items item ON item.run_id=run.id WHERE run.id=$1 GROUP BY run.id").bind(first.run_id).fetch_one(&pool).await.unwrap();
     assert!(absent_evidence);
+    let preserved_bounds: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(jsonb_build_array(id,start_date,end_date) ORDER BY id) FROM homeroom_placements WHERE academic_year_id=$1").bind(input.source_year_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        preserved_bounds, original_bounds,
+        "annual finalization must not replace historical civil bounds"
+    );
     assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM homeroom_placements WHERE academic_year_id=$1 AND placement_scope='academic_year' AND start_date IS NULL AND end_date IS NULL").bind(input.target_year_id).fetch_one(&pool).await.unwrap(), 2);
     let workspace =
         school_academic_lifecycle::services::get_run_workspace(&pool, &actor, first.run_id)
@@ -1316,6 +1322,77 @@ async fn assert_annual_transfer_and_old_year_authorization(
         attendance_roster::advisor_for_student(pool, actor.user_id, student, event_date())
             .await
             .unwrap()
+    );
+    // Both spans are ended after annual finalization; actual providers must
+    // retain the latest dated transfer in the explicitly selected old year.
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE academic_year_id=$1")
+        .bind(input.target_year_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
+        .bind(input.target_year_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE student_academic_years SET status='completed' WHERE academic_year_id=$1 AND status='active'").bind(input.target_year_id).execute(pool).await.unwrap();
+    sqlx::query("UPDATE homeroom_placements SET status='ended' WHERE academic_year_id=$1 AND status='current'").bind(input.target_year_id).execute(pool).await.unwrap();
+    let latest_name = student_years::get_homeroom(pool, target)
+        .await
+        .unwrap()
+        .name;
+    let old_name = student_years::get_homeroom(pool, old_room)
+        .await
+        .unwrap()
+        .name;
+    let own =
+        school_students::services::get_own_profile(pool, student, input.target_year_id, false)
+            .await
+            .unwrap();
+    assert_eq!(own.info.homeroom.as_deref(), Some(latest_name.as_str()));
+    let register =
+        school_students::services::get_student(pool, student, Some(input.target_year_id), false)
+            .await
+            .unwrap();
+    assert_eq!(
+        register.info.homeroom.as_deref(),
+        Some(latest_name.as_str())
+    );
+    let source_profile =
+        school_students::services::get_own_profile(pool, student, input.source_year_id, false)
+            .await
+            .unwrap();
+    assert_eq!(
+        source_profile.info.homeroom.as_deref(),
+        Some(old_name.as_str())
+    );
+    let parent: Uuid = sqlx::query_scalar("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES(uuidv7(),'history-guardian-'||uuidv7()::text,'synthetic-not-login','History','Guardian','parent','active') RETURNING id").fetch_one(pool).await.unwrap();
+    sqlx::query("INSERT INTO student_parents(student_user_id,parent_user_id,relationship) VALUES($1,$2,'guardian')").bind(student).bind(parent).execute(pool).await.unwrap();
+    let child = school_students::parents::services::get_child_profile(
+        pool,
+        parent,
+        student,
+        input.target_year_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(child.info.homeroom.as_deref(), Some(latest_name.as_str()));
+    let parent_profile = school_students::parents::services::get_own_parent_profile(
+        pool,
+        parent,
+        input.target_year_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        parent_profile
+            .children
+            .iter()
+            .find(|row| row.id == student)
+            .unwrap()
+            .homeroom
+            .as_deref(),
+        Some(latest_name.as_str())
     );
 }
 

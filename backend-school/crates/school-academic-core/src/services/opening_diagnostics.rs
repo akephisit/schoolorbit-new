@@ -1,8 +1,5 @@
 use std::collections::{BTreeSet, HashSet};
 
-use school_database::DbSession;
-use school_errors::AppError;
-use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::models::{ActivationIssueCode, ActivationState, BellSchedulePeriod, VersionStatus};
@@ -20,73 +17,40 @@ pub struct OpeningDiagnostic {
     pub resource: DiagnosticResource,
 }
 
-/// Explain the exact Core blockers on the caller's consistent transaction.
-/// Stored period facts remain unchanged, including malformed migrated strings.
-pub async fn read(
-    tx: &mut Transaction<'_, Postgres>,
-    state: &ActivationState,
-) -> Result<Vec<OpeningDiagnostic>, AppError> {
+/// Explain the exact facts already accepted by the Core activation projection.
+/// No independent reads or room counts can diverge from that readiness evidence.
+pub fn explain(state: &ActivationState) -> Vec<OpeningDiagnostic> {
     let mut diagnostics = Vec::new();
     if state
         .issues
         .iter()
         .any(|issue| issue.code == ActivationIssueCode::BellSchedule)
     {
-        let schedule: Option<(Uuid, String, VersionStatus)> = DbSession::new(&mut **tx)
-            .query_as(
-                "academic_core.services.opening_diagnostics.read",
-                "SELECT academic_year_id,name,status FROM bell_schedules WHERE id=$1",
-            )
-            .bind(state.context.bell_schedule_id)
-            .fetch_optional()
-            .await?;
-        let periods = if schedule.is_some() {
-            super::bell_schedules::list_periods_on_connection(tx, state.context.bell_schedule_id)
-                .await?
-        } else {
-            Vec::new()
-        };
-        let days: String = DbSession::new(&mut **tx)
-            .scalar(
-                "academic_core.services.opening_diagnostics.read",
-                "SELECT school_days FROM academic_years WHERE id=$1",
-            )
-            .bind(state.context.academic_year_id)
-            .fetch_one()
-            .await?;
         diagnostics.extend(bell_diagnostics(
-            schedule
-                .as_ref()
-                .map(|(year, name, status)| (*year, name.as_str(), *status)),
+            state.bell_schedule.as_ref().map(|schedule| {
+                (
+                    schedule.academic_year_id,
+                    schedule.name.as_str(),
+                    schedule.status,
+                )
+            }),
             state.context.academic_year_id,
-            &periods,
-            &days,
+            &state.bell_periods,
+            &state.school_days,
         ));
     }
-    if state
-        .issues
-        .iter()
-        .any(|issue| issue.code == ActivationIssueCode::RoomCapacity)
-    {
-        let rooms: Vec<(Uuid, String, i32, i64)> = DbSession::new(&mut **tx)
-            .query_as("academic_core.services.opening_diagnostics.read",
-                r#"SELECT room.id,room.name,room.capacity,count(DISTINCT placement.student_academic_year_id)
-                   FROM homerooms room JOIN homeroom_placements placement ON placement.homeroom_id=room.id
-                   WHERE placement.academic_year_id=$1 AND placement.status IN ('planned','current')
-                     AND academic_placement_applies_on(placement.placement_scope,placement.start_date,placement.end_date,$2)
-                   GROUP BY room.id,room.name,room.capacity
-                   HAVING count(DISTINCT placement.student_academic_year_id)>room.capacity
-                   ORDER BY room.name,room.id"#)
-            .bind(state.context.academic_year_id).bind(state.context.operation_date).fetch_all().await?;
-        for (id, name, capacity, count) in rooms {
-            diagnostics.push(OpeningDiagnostic {
-                code: "opening.room_capacity",
-                message: format!("ห้อง {name} จัดนักเรียนไว้ {count} คน แต่ความจุ {capacity} คน กรุณาปรับความจุหรือย้ายสมาชิกห้อง"),
-                resource: DiagnosticResource::Homeroom(id),
-            });
-        }
+    for room in &state.over_capacity_rooms {
+        let name = room.homeroom_name.as_deref().unwrap_or("ไม่พบชื่อห้อง");
+        diagnostics.push(OpeningDiagnostic {
+            code: "opening.room_capacity",
+            message: format!(
+                "ห้อง {name} จัดนักเรียนไว้ {} คน แต่ความจุ {} คน กรุณาปรับความจุหรือย้ายสมาชิกห้อง",
+                room.student_count, room.capacity
+            ),
+            resource: DiagnosticResource::Homeroom(room.homeroom_id),
+        });
     }
-    Ok(diagnostics)
+    diagnostics
 }
 
 fn bell_diagnostics(

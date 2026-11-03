@@ -155,8 +155,8 @@ pub async fn read_activation_state(
         Code::TermConfiguration,
         usize::from(configuration_invalid),
     );
-    let bell: Option<BellSchedule> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state", "SELECT id,academic_year_id,code,name,is_default,status,owning_organization_unit_id,row_version,created_at,updated_at FROM bell_schedules WHERE id=$1 AND academic_year_id=$2")
-        .bind(context.bell_schedule_id).bind(year).fetch_optional().await?;
+    let bell: Option<BellSchedule> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state", "SELECT id,academic_year_id,code,name,is_default,status,owning_organization_unit_id,row_version,created_at,updated_at FROM bell_schedules WHERE id=$1")
+        .bind(context.bell_schedule_id).fetch_optional().await?;
     let periods: Vec<BellSchedulePeriod> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_activation_state", "SELECT id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days,is_active FROM bell_schedule_periods WHERE bell_schedule_id=$1 ORDER BY order_index,id LIMIT 1001")
         .bind(context.bell_schedule_id).fetch_all().await?;
     if periods.len() > 1000 {
@@ -182,7 +182,7 @@ pub async fn read_activation_state(
         .collect();
     let bell_invalid = bell
         .as_ref()
-        .is_none_or(|row| row.status == VersionStatus::Archived)
+        .is_none_or(|row| row.academic_year_id != year || row.status == VersionStatus::Archived)
         || active_periods.is_empty()
         || super::bell_schedules::validate_periods(&active_periods).is_err()
         || active_periods
@@ -223,7 +223,7 @@ pub async fn read_activation_state(
                     .count(),
         );
     }
-    let mut rooms: BTreeMap<Uuid, (Option<i32>, BTreeSet<Uuid>)> = BTreeMap::new();
+    let mut rooms: BTreeMap<Uuid, (Option<i32>, Option<String>, BTreeSet<Uuid>)> = BTreeMap::new();
     let mut placement_counts: BTreeMap<Uuid, usize> = BTreeMap::new();
     for row in placements.iter().filter(|row| {
         super::placement_interval::contains_date(
@@ -232,10 +232,12 @@ pub async fn read_activation_state(
             context.operation_date,
         )
     }) {
-        let room = rooms
-            .entry(row.homeroom_id)
-            .or_insert((row.capacity, BTreeSet::new()));
-        room.1.insert(row.student_academic_year_id);
+        let room = rooms.entry(row.homeroom_id).or_insert((
+            row.capacity,
+            row.homeroom_name.clone(),
+            BTreeSet::new(),
+        ));
+        room.2.insert(row.student_academic_year_id);
         *placement_counts
             .entry(row.student_academic_year_id)
             .or_default() += 1;
@@ -254,16 +256,20 @@ pub async fn read_activation_state(
             push(&mut issues, Code::PlacementReference, duplicates);
         }
     }
-    push(
-        &mut issues,
-        Code::RoomCapacity,
-        rooms
-            .values()
-            .filter(|(capacity, occupants)| {
-                capacity.is_some_and(|capacity| occupants.len() as i64 > i64::from(capacity))
-            })
-            .count(),
-    );
+    let over_capacity_rooms: Vec<_> = rooms
+        .into_iter()
+        .filter_map(|(homeroom_id, (capacity, homeroom_name, occupants))| {
+            capacity
+                .filter(|capacity| occupants.len() as i64 > i64::from(*capacity))
+                .map(|capacity| ActivationRoomCapacityIssue {
+                    homeroom_id,
+                    homeroom_name,
+                    capacity,
+                    student_count: occupants.len(),
+                })
+        })
+        .collect();
+    push(&mut issues, Code::RoomCapacity, over_capacity_rooms.len());
     let source_checksum = super::lifecycle_context::stable_checksum(&(
         &context,
         &years,
@@ -280,6 +286,10 @@ pub async fn read_activation_state(
         predecessor,
         students,
         placements,
+        bell_schedule: bell,
+        bell_periods: periods,
+        school_days,
+        over_capacity_rooms,
         issues,
         source_checksum,
     })
@@ -304,7 +314,7 @@ async fn read_enrollment(
     ).bind(context.academic_year_id).fetch_all().await?;
     let placements: Vec<ActivationPlacement> = DbSession::new(&mut **tx).query_as("academic_core.services.activation_context.read_enrollment",
         "SELECT p.id,p.student_academic_year_id,p.homeroom_id,p.placement_scope,p.start_date,p.end_date,p.status,p.row_version,
-         room.row_version AS room_row_version,room.capacity,
+         room.row_version AS room_row_version,room.name AS homeroom_name,room.capacity,
          COALESCE(room.academic_year_id=p.academic_year_id AND room.grade_level_id=student.grade_level_id
           AND room.study_program_id=student.study_program_id AND room.is_active IS TRUE
           AND student.status IN ('planned','active')

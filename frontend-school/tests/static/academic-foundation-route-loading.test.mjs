@@ -30,7 +30,12 @@ test('academic setup and curriculum list own first-visible reads in their route 
 		assert.match(loader, new RegExp(`\\b${entry.read}\\b`), entry.route);
 		assert.match(loader, /captureRouteLoad\(/, entry.route);
 		assert.match(loader, /requestFetch:\s*fetch/, entry.route);
-		assert.match(loader, new RegExp(`depends\\(${entry.dependency}\\)`), entry.route);
+		assert.match(
+			loader,
+			new RegExp(`depends\\([^)]*\\b${entry.dependency}\\b[^)]*\\)`),
+			entry.route
+		);
+		if (entry.route === 'core') assert.match(loader, /depends\([^)]*'school:app-identity'/);
 		assert.match(loader, new RegExp(`${entry.result}\\s*:`), entry.route);
 		if (entry.route === 'core')
 			assert.doesNotMatch(page, new RegExp(`\\b${entry.read}\\s*\\(`), entry.route);

@@ -18,7 +18,7 @@ export const _meta = {
 };
 
 export const load: PageLoad = ({ depends, fetch }) => {
-	depends(ACADEMIC_SETUP_WORKSPACE_DEPENDENCY);
+	depends('school:app-identity', ACADEMIC_SETUP_WORKSPACE_DEPENDENCY);
 	return {
 		title: _meta.menu.title,
 		workspace: captureRouteLoad(

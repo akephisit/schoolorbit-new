@@ -109,7 +109,7 @@ pub(crate) async fn activation_evidence_in_transaction(
         None
     };
 
-    let diagnostics = opening_diagnostics::read(tx, &state).await?;
+    let diagnostics = opening_diagnostics::explain(&state);
     let has_bell_details = diagnostics
         .iter()
         .any(|item| item.resource == DiagnosticResource::BellSchedule);
@@ -173,10 +173,13 @@ pub(crate) async fn activation_evidence_in_transaction(
             code: "opening.homeroom_placement_missing".into(),
             severity: LifecycleSeverity::Blocking,
             count: missing_placements,
-            message: "มีนักเรียนที่วางแผนเปิดปีแต่ยังไม่มีห้องประจำชั้นที่มีผลในวันเปิดภาค".into(),
-            resolution_url: actor
-                .has_permission(codes::STUDENT_READ_SCHOOL)
-                .then(|| format!("/staff/academic/students?academicYearId={academic_year_id}")),
+            message: "นักเรียนที่เตรียมไว้ยังไม่มีห้องประจำชั้นที่พร้อมเริ่มใช้".into(),
+            resolution_url: core_resolution_url(
+                actor,
+                academic_year_id,
+                academic_term_id,
+                ActivationIssueCode::PlacementReference,
+            ),
         });
     }
     if policy.require_published_offerings && offerings.count() == 0 {
@@ -328,12 +331,115 @@ fn core_finding(
         severity: LifecycleSeverity::Blocking,
         count: issue.count,
         message: message.into(),
-        resolution_url: actor
-            .has_permission(codes::ACADEMIC_YEAR_READ_SCHOOL)
-            .then(|| context_url("/staff/academic/core", year, term)),
+        resolution_url: core_resolution_url(actor, year, term, issue.code),
     }
+}
+
+fn core_resolution_url(
+    actor: &ActorContext,
+    year: Uuid,
+    term: Uuid,
+    code: ActivationIssueCode,
+) -> Option<String> {
+    use ActivationIssueCode as Code;
+    let has = |read, manage| actor.has_permission(read) || actor.has_permission(manage);
+    let year_access = has(
+        codes::ACADEMIC_YEAR_READ_SCHOOL,
+        codes::ACADEMIC_YEAR_MANAGE_SCHOOL,
+    );
+    let term_access = has(
+        codes::ACADEMIC_TERM_READ_SCHOOL,
+        codes::ACADEMIC_TERM_MANAGE_SCHOOL,
+    );
+    let (path, allowed) = match code {
+        Code::YearState | Code::OtherRunningYear | Code::EarlierYearOpen | Code::YearOverlap => {
+            ("/staff/academic/year-lifecycle", year_access)
+        }
+        Code::TermState | Code::OtherRunningTerm | Code::EarlierTermOpen | Code::NotFirstTerm => {
+            ("/staff/academic/year-lifecycle", term_access)
+        }
+        Code::TermConfiguration => ("/staff/academic/year-lifecycle", year_access && term_access),
+        Code::BellSchedule => ("/staff/academic/core", year_access && term_access),
+        Code::StudentReference | Code::PlacementReference | Code::ExistingActiveEnrollment => {
+            return has(
+                codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL,
+                codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL,
+            )
+            .then(|| format!("/staff/academic/student-years?academicYearId={year}"));
+        }
+        Code::RoomCapacity => (
+            "/staff/academic/homerooms",
+            has(codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL),
+        ),
+    };
+    allowed.then(|| context_url(path, year, term))
 }
 
 fn context_url(path: &str, year: Uuid, term: Uuid) -> String {
     format!("{path}?academicYearId={year}&academicTermId={term}")
+}
+
+#[cfg(test)]
+mod resolution_tests {
+    use super::*;
+
+    #[test]
+    fn readiness_resolution_uses_the_resource_owner_and_its_read_or_manage_permission() {
+        let year = Uuid::new_v4();
+        let term = Uuid::new_v4();
+        for (code, read, manage, path) in [
+            (
+                ActivationIssueCode::YearState,
+                codes::ACADEMIC_YEAR_READ_SCHOOL,
+                codes::ACADEMIC_YEAR_MANAGE_SCHOOL,
+                "/staff/academic/year-lifecycle",
+            ),
+            (
+                ActivationIssueCode::TermState,
+                codes::ACADEMIC_TERM_READ_SCHOOL,
+                codes::ACADEMIC_TERM_MANAGE_SCHOOL,
+                "/staff/academic/year-lifecycle",
+            ),
+            (
+                ActivationIssueCode::RoomCapacity,
+                codes::HOMEROOM_READ_SCHOOL,
+                codes::HOMEROOM_MANAGE_SCHOOL,
+                "/staff/academic/homerooms",
+            ),
+        ] {
+            let mut actor = ActorContext {
+                user_id: Uuid::new_v4(),
+                permissions: vec![],
+            };
+            assert!(core_resolution_url(&actor, year, term, code).is_none());
+            for permission in [read, manage] {
+                actor.permissions = vec![permission.into()];
+                assert_eq!(
+                    core_resolution_url(&actor, year, term, code),
+                    Some(context_url(path, year, term))
+                );
+            }
+        }
+        let mut actor = ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: vec![codes::ACADEMIC_YEAR_READ_SCHOOL.into()],
+        };
+        for code in [
+            ActivationIssueCode::TermConfiguration,
+            ActivationIssueCode::BellSchedule,
+        ] {
+            assert!(core_resolution_url(&actor, year, term, code).is_none());
+        }
+        actor
+            .permissions
+            .push(codes::ACADEMIC_TERM_MANAGE_SCHOOL.into());
+        assert_eq!(
+            core_resolution_url(&actor, year, term, ActivationIssueCode::TermConfiguration),
+            Some(context_url("/staff/academic/year-lifecycle", year, term))
+        );
+        assert_eq!(
+            core_resolution_url(&actor, year, term, ActivationIssueCode::BellSchedule),
+            Some(context_url("/staff/academic/core", year, term))
+        );
+    }
 }

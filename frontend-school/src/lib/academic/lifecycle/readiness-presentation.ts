@@ -10,7 +10,7 @@ const groups = [
 ] as const;
 
 function groupKey(code: string): (typeof groups)[number]['key'] {
-	if (/calendar|bell_schedule|timetable|term_configuration|year_overlap/.test(code)) return 'time';
+	if (/calendar|bell_|timetable|term_configuration|year_overlap/.test(code)) return 'time';
 	if (/student|placement|room_capacity|enrollment|roster/.test(code)) return 'roster';
 	if (
 		/year_state|term_state|running_year|running_term|earlier_year|earlier_term|first_term|source_state|target_state/.test(

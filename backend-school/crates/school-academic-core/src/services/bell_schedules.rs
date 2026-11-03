@@ -8,8 +8,8 @@ use school_errors::AppError;
 
 use super::super::models::{
     AcademicYearStatus, BellSchedule, BellScheduleEditBlockReason, BellSchedulePeriod,
-    BellSchedulePeriodInput, CloneBellScheduleRequest, CreateBellScheduleRequest,
-    ReplaceBellSchedulePeriodsRequest, UpdateBellScheduleRequest,
+    BellSchedulePeriodInput, BellSchedulePeriodsSnapshot, CloneBellScheduleRequest,
+    CreateBellScheduleRequest, ReplaceBellSchedulePeriodsRequest, UpdateBellScheduleRequest,
 };
 use super::years_terms::append_audit;
 use super::{lifecycle_guard, parse_row_version};
@@ -339,20 +339,41 @@ pub async fn update(
 pub async fn list_periods(
     pool: &PgPool,
     schedule_id: Uuid,
-) -> Result<Vec<BellSchedulePeriod>, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+) -> Result<BellSchedulePeriodsSnapshot, AppError> {
+    let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_core.services.bell_schedules.list_periods",
     )
     .await?;
-    list_periods_on_connection(&mut connection, schedule_id).await
+    DbSession::new(&mut *transaction)
+        .query(
+            "academic_core.services.bell_schedules.list_periods",
+            "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+        )
+        .execute()
+        .await?;
+    let row_version: i64 = DbSession::new(&mut *transaction)
+        .scalar(
+            "academic_core.services.bell_schedules.list_periods",
+            "SELECT row_version FROM bell_schedules WHERE id=$1",
+        )
+        .bind(schedule_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบตารางคาบ".into()))?;
+    let periods = list_periods_on_connection(&mut transaction, schedule_id).await?;
+    transaction.commit().await?;
+    Ok(BellSchedulePeriodsSnapshot {
+        bell_schedule_id: schedule_id,
+        row_version,
+        periods,
+    })
 }
 
-pub async fn list_periods_on_connection(
+pub(crate) async fn list_periods_on_connection(
     connection: &mut sqlx::PgConnection,
     schedule_id: Uuid,
 ) -> Result<Vec<BellSchedulePeriod>, AppError> {
-    ensure_schedule_exists(connection, schedule_id).await?;
     Ok(DbSession::new(connection)
         .query_as(
             "academic_core.services.bell_schedules.list_periods_on_connection",
@@ -369,12 +390,18 @@ pub async fn list_periods_on_connection(
         .await?)
 }
 
+#[derive(Debug)]
+pub struct BellSchedulePeriodsWriteOutcome {
+    pub academic_year_id: Uuid,
+    pub snapshot: BellSchedulePeriodsSnapshot,
+}
+
 pub async fn replace_periods(
     pool: &PgPool,
     actor_user_id: Uuid,
     schedule_id: Uuid,
     request: ReplaceBellSchedulePeriodsRequest,
-) -> Result<Vec<BellSchedulePeriod>, AppError> {
+) -> Result<BellSchedulePeriodsWriteOutcome, AppError> {
     parse_row_version(request.row_version)?;
     validate_periods(&request.periods)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
@@ -434,11 +461,11 @@ pub async fn replace_periods(
             .execute()
             .await?;
     }
-    DbSession::new(&mut *transaction).query("academic_core.services.bell_schedules.replace_periods",
-        "UPDATE bell_schedules SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
+    let row_version: i64 = DbSession::new(&mut *transaction).scalar("academic_core.services.bell_schedules.replace_periods",
+        "UPDATE bell_schedules SET row_version = row_version + 1, updated_at = now() WHERE id = $1 RETURNING row_version",
     )
     .bind(schedule_id)
-    .execute()
+    .fetch_one()
     .await?;
     append_audit(
         &mut transaction,
@@ -451,8 +478,17 @@ pub async fn replace_periods(
         serde_json::json!({}),
     )
     .await?;
+    let periods = list_periods_on_connection(&mut transaction, schedule_id).await?;
+    let outcome = BellSchedulePeriodsWriteOutcome {
+        academic_year_id,
+        snapshot: BellSchedulePeriodsSnapshot {
+            bell_schedule_id: schedule_id,
+            row_version,
+            periods,
+        },
+    };
     transaction.commit().await?;
-    list_periods(pool, schedule_id).await
+    Ok(outcome)
 }
 
 fn validate_schedule_fields(name: &str) -> Result<(), AppError> {
@@ -752,25 +788,6 @@ async fn clear_default_except(
         .execute()
         .await?;
     Ok(())
-}
-
-async fn ensure_schedule_exists(
-    connection: &mut sqlx::PgConnection,
-    schedule_id: Uuid,
-) -> Result<(), AppError> {
-    let exists: bool = DbSession::new(connection)
-        .scalar(
-            "academic_core.services.bell_schedules.ensure_schedule_exists",
-            "SELECT EXISTS (SELECT 1 FROM bell_schedules WHERE id = $1)",
-        )
-        .bind(schedule_id)
-        .fetch_one()
-        .await?;
-    if exists {
-        Ok(())
-    } else {
-        Err(AppError::NotFound("ไม่พบตารางคาบ".to_string()))
-    }
 }
 
 fn map_schedule_write_error(error: sqlx::Error) -> AppError {

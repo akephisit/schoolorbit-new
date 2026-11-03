@@ -8,6 +8,7 @@
 		AcademicYear,
 		BellSchedule,
 		BellSchedulePeriod,
+		BellSchedulePeriodsSnapshot,
 		ReplaceBellSchedulePeriodsRequest
 	} from '#lib/api/academic-core.js';
 	import {
@@ -46,12 +47,15 @@
 		schedules: BellSchedule[];
 		busy?: boolean;
 		canManage?: boolean;
-		onLoad: (id: string, options?: { signal?: AbortSignal }) => Promise<BellSchedulePeriod[]>;
+		onLoad: (
+			id: string,
+			options?: { signal?: AbortSignal }
+		) => Promise<BellSchedulePeriodsSnapshot>;
 		onReplace: (
 			id: string,
 			draft: ReplaceBellSchedulePeriodsRequest
-		) => Promise<BellSchedulePeriod[]>;
-		onSaved: (scheduleId: string, periods: BellSchedulePeriod[]) => void;
+		) => Promise<BellSchedulePeriodsSnapshot>;
+		onSaved: (snapshot: BellSchedulePeriodsSnapshot) => void;
 	} = $props();
 
 	let selectedScheduleId = $state('');
@@ -60,8 +64,9 @@
 	let errorMessage = $state('');
 	let baseVersion = $state<number | null>(null);
 	let savedDraft = $state('');
-	let comparison = $state<{ version: number; periods: BellSchedulePeriod[] } | null>(null);
+	let comparison = $state<BellSchedulePeriodsSnapshot | null>(null);
 	let comparing = $state(false);
+	let disposed = false;
 	const latest = new LatestRequest();
 	onMount(() =>
 		registerAcademicContextDirtySource(
@@ -69,14 +74,19 @@
 			() => savedDraft !== '' && JSON.stringify(periods) !== savedDraft
 		)
 	);
-	onDestroy(() => latest.abort());
+	onDestroy(() => {
+		disposed = true;
+		latest.abort();
+	});
 
 	const selectedSchedule = $derived(
 		schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null
 	);
 	const schoolDays = $derived(normalizeSchoolDays(year.schoolDays));
 	const editable = $derived(canManage && selectedSchedule?.editBlockedReason === null);
-	const changed = $derived(baseVersion !== null && baseVersion !== selectedSchedule?.rowVersion);
+	const changed = $derived(
+		baseVersion !== null && (selectedSchedule?.rowVersion ?? 0) > baseVersion
+	);
 
 	function draftFromPeriod(period?: BellSchedulePeriod): PeriodDraft {
 		const storedDays = period?.applicableDays?.match(/[A-Za-z]+/g) ?? [];
@@ -97,40 +107,39 @@
 		selectedScheduleId = id;
 		periods = [];
 		comparison = null;
-		baseVersion = schedules.find((schedule) => schedule.id === id)?.rowVersion ?? null;
+		baseVersion = null;
 		errorMessage = '';
 		if (!id) return;
 		loading = true;
 		try {
 			const result = await onLoad(id, { signal });
 			if (latest.isCurrent(revision) && identity === appIdentityKey()) {
-				periods = result.map((period) => draftFromPeriod(period));
+				periods = result.periods.map((period) => draftFromPeriod(period));
+				baseVersion = result.rowVersion;
 				savedDraft = JSON.stringify(periods);
 			}
 		} catch (error) {
-			if (latest.isCurrent(revision) && !isAbortError(error))
+			if (latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(error))
 				errorMessage = error instanceof Error ? error.message : 'โหลดคาบเรียนไม่สำเร็จ';
 		} finally {
-			if (latest.isCurrent(revision)) loading = false;
+			if (latest.isCurrent(revision) && identity === appIdentityKey()) loading = false;
 		}
 	}
 
 	async function compareLatest() {
 		if (!selectedSchedule || comparing || busy) return;
 		const scheduleId = selectedSchedule.id;
-		const version = selectedSchedule.rowVersion;
 		const { revision, signal } = latest.begin();
 		const identity = appIdentityKey();
 		comparing = true;
 		try {
 			const result = await onLoad(scheduleId, { signal });
-			if (latest.isCurrent(revision) && identity === appIdentityKey())
-				comparison = { version, periods: result };
+			if (latest.isCurrent(revision) && identity === appIdentityKey()) comparison = result;
 		} catch (cause) {
-			if (latest.isCurrent(revision) && !isAbortError(cause))
+			if (latest.isCurrent(revision) && identity === appIdentityKey() && !isAbortError(cause))
 				errorMessage = cause instanceof Error ? cause.message : 'โหลดคาบล่าสุดไม่สำเร็จ';
 		} finally {
-			if (latest.isCurrent(revision)) comparing = false;
+			if (latest.isCurrent(revision) && identity === appIdentityKey()) comparing = false;
 		}
 	}
 
@@ -174,8 +183,10 @@
 			errorMessage = 'ทุกคาบต้องเลือกวันเรียนอย่างน้อย 1 วัน';
 			return;
 		}
+		const identity = appIdentityKey();
+		const scheduleId = selectedSchedule.id;
 		try {
-			const saved = await onReplace(selectedSchedule.id, {
+			const saved = await onReplace(scheduleId, {
 				rowVersion: baseVersion,
 				periods: periods.map((period) => ({
 					...period,
@@ -183,12 +194,14 @@
 					applicableDays: normalizeSchoolDays(period.applicableDays)
 				}))
 			});
-			periods = saved.map((period) => draftFromPeriod(period));
-			baseVersion = selectedSchedule.rowVersion;
+			if (disposed || identity !== appIdentityKey() || scheduleId !== selectedScheduleId) return;
+			periods = saved.periods.map((period) => draftFromPeriod(period));
+			baseVersion = saved.rowVersion;
 			savedDraft = JSON.stringify(periods);
 			comparison = null;
-			onSaved(selectedSchedule.id, saved);
+			onSaved(saved);
 		} catch (error) {
+			if (disposed || identity !== appIdentityKey() || scheduleId !== selectedScheduleId) return;
 			errorMessage = error instanceof Error ? error.message : 'บันทึกคาบเรียนไม่สำเร็จ';
 		}
 	}
@@ -248,9 +261,9 @@
 					</p>{/each}<Button
 					type="button"
 					variant="outline"
-					disabled={busy || comparison.version !== selectedSchedule.rowVersion}
+					disabled={busy || selectedSchedule.rowVersion > comparison.rowVersion}
 					onclick={() => {
-						if (comparison) baseVersion = comparison.version;
+						if (comparison) baseVersion = comparison.rowVersion;
 					}}>ตรวจสอบแล้ว ใช้ฉบับล่าสุดเป็นฐาน</Button
 				>
 			</div>{/if}

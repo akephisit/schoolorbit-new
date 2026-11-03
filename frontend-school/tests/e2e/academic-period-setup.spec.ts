@@ -16,7 +16,13 @@ async function fixture(
 		closed?: boolean;
 		capacityConflict?: boolean;
 		periodConflict?: boolean;
+		successfulConcurrentWriter?: boolean;
+		initialSnapshotAhead?: boolean;
+		metadataGate?: Promise<void>;
+		authGate?: Promise<void>;
+		replacementWorkspaceGate?: Promise<void>;
 		termManagerOnly?: boolean;
+		readyLegacyName?: boolean;
 		hiddenPlanning?: boolean;
 		timetableDraft?: boolean;
 	} = {}
@@ -43,9 +49,14 @@ async function fixture(
 		academicYearId: yearId,
 		sequence: index + 1,
 		code: String(index + 1),
-		name: `ภาคเรียนที่ ${index + 1}`,
+		name: options.readyLegacyName && index === 1 ? 'ภาคเรียนที่ 7' : `ภาคเรียนที่ ${index + 1}`,
 		termType: 'regular' as const,
-		status: index === 0 ? ('active' as const) : ('planning' as const),
+		status:
+			index === 0
+				? ('active' as const)
+				: options.readyLegacyName
+					? ('ready' as const)
+					: ('planning' as const),
 		bellScheduleId: scheduleId,
 		includedInYearResult: true,
 		blocksYearClosure: true,
@@ -98,7 +109,16 @@ async function fixture(
 			applicableDays: 'MON,TUE,WED,THU,FRI'
 		}
 	];
+	let identitySwitched = false;
+	let periodStart = '08:30:00';
 	const observed = {
+		switchIdentity: () => {
+			identitySwitched = true;
+		},
+		metadataReads: 0,
+		authReads: 0,
+		scheduleWrites: 0,
+		scheduleBases: [] as number[],
 		capacities: [] as S['UpdateHomeroomCapacityRequest'][],
 		clones: [] as S['CloneBellScheduleRequest'][],
 		assignments: [] as S['UpdateAcademicTermRequest'][],
@@ -110,9 +130,11 @@ async function fixture(
 		async (route) => {
 			const path = new URL(route.request().url()).pathname,
 				method = route.request().method();
-			if (path === '/api/auth/me')
+			if (path === '/api/auth/me') {
+				observed.authReads++;
+				if (options.authGate) await options.authGate;
 				return fulfill(route, {
-					id: id(599),
+					id: identitySwitched ? id(598) : id(599),
 					username: 'period-synthetic',
 					firstName: 'วิชา',
 					lastName: 'ทดสอบ',
@@ -126,6 +148,7 @@ async function fixture(
 							? ['academic_year.read.school', 'academic_term.manage.school']
 							: ['*']
 				});
+			}
 			if (path === '/api/academic/context/options')
 				return fulfill(route, {
 					defaultAcademicYearId: yearId,
@@ -135,10 +158,12 @@ async function fixture(
 				});
 			if (path === '/api/academic/setup/workspace') {
 				observed.setupReads++;
+				if (identitySwitched && options.replacementWorkspaceGate)
+					await options.replacementWorkspaceGate;
 				return fulfill(route, {
-					years: options.hiddenPlanning ? [] : [year],
-					terms,
-					bellSchedules: schedules,
+					years: identitySwitched || options.hiddenPlanning ? [] : [year],
+					terms: identitySwitched ? [] : terms,
+					bellSchedules: identitySwitched ? [] : schedules,
 					bellScheduleSetupYearIds: options.closed ? [] : [yearId],
 					bellScheduleSetupTermIds: options.timetableDraft ? [] : [nextTermId],
 					contextSettings: {
@@ -183,36 +208,66 @@ async function fixture(
 					rowVersion: 1
 				};
 				schedules.push(clone);
-				return fulfill(route, clone, 201);
+				const accepted = { ...clone };
+				if (options.initialSnapshotAhead) {
+					clone.rowVersion = 3;
+					clone.name = 'ชื่อที่อีกคนแก้';
+				}
+				return fulfill(route, accepted, 201);
 			}
-			if (path === '/api/academic/bell-schedules') return fulfill(route, schedules);
+			if (path === '/api/academic/bell-schedules') {
+				observed.metadataReads++;
+				if (observed.scheduleWrites && options.metadataGate) await options.metadataGate;
+				return fulfill(route, schedules);
+			}
+			if (path === `/api/academic/bell-schedules/${id(510)}` && method === 'PATCH') {
+				observed.scheduleWrites++;
+				const body = route.request().postDataJSON();
+				const schedule = schedules.find((item) => item.id === id(510))!;
+				observed.scheduleBases.push(body.rowVersion);
+				if (body.rowVersion !== schedule.rowVersion)
+					return fulfill(route, 'ชื่อตารางเปลี่ยนระหว่างแก้ไข', 409);
+				Object.assign(schedule, body, { rowVersion: schedule.rowVersion + 1 });
+				return fulfill(route, schedule);
+			}
 			if (path.includes('/bell-schedules/') && path.endsWith('/periods')) {
 				const selected = path.split('/').at(-2)!;
+				const schedule = schedules.find((item) => item.id === selected)!;
 				if (method === 'PUT') {
 					const body = route.request().postDataJSON();
 					observed.periodWrites.push({ id: selected, body });
-					const schedule = schedules.find((item) => item.id === selected)!;
+					if (body.rowVersion !== schedule.rowVersion)
+						return fulfill(route, 'คาบเรียนเปลี่ยนระหว่างแก้ไข', 409);
 					schedule.rowVersion++;
 					if (options.periodConflict && observed.periodWrites.length === 1)
 						return fulfill(route, 'คาบเรียนเปลี่ยนระหว่างแก้ไข', 409);
-					return fulfill(
-						route,
-						body.periods.map((period: S['BellSchedulePeriodInput']) => ({
+					const accepted = {
+						bellScheduleId: selected,
+						rowVersion: schedule.rowVersion,
+						periods: body.periods.map((period: S['BellSchedulePeriodInput']) => ({
 							...period,
 							id: id(511),
 							bellScheduleId: selected,
 							applicableDays: period.applicableDays.join(',')
 						}))
-					);
+					};
+					if (options.successfulConcurrentWriter && observed.periodWrites.length === 1) {
+						schedule.rowVersion++;
+						periodStart = '10:00:00';
+					}
+					return fulfill(route, accepted);
 				}
-				return fulfill(
-					route,
-					periods.map((period) => ({
+				return fulfill(route, {
+					bellScheduleId: selected,
+					rowVersion: schedule.rowVersion,
+					periods: periods.map((period) => ({
 						...period,
+						startTime: selected === scheduleId ? period.startTime : periodStart,
+						endTime: periodStart === '10:00:00' ? '10:50:00' : period.endTime,
 						bellScheduleId: selected,
 						id: selected === scheduleId ? period.id : id(511)
 					}))
-				);
+				});
 			}
 			if (path === `/api/academic/terms/${nextTermId}` && method === 'PATCH') {
 				const body = route.request().postDataJSON();
@@ -225,6 +280,7 @@ async function fixture(
 				return fulfill(route, terms[1]);
 			}
 			if (path === '/api/menu/user') return fulfill(route, { groups: [] });
+			if (path === '/api/notifications') return fulfill(route, { items: [], unread_count: 0 });
 			if (path.includes('grade-level'))
 				return fulfill(route, [
 					{
@@ -373,7 +429,7 @@ test('a target term with timetable drafts links to that exact term and offers no
 		`/staff/academic/timetable?academicYearId=${yearId}&academicTermId=${nextTermId}`
 	);
 	await expect(
-		page.getByText('ภาคเรียนนี้มีฉบับร่างตารางสอนหรือประวัติอ้างอิงตารางเดิม', { exact: false })
+		page.getByText('ภาคเรียนนี้มีตารางสอนหรือประวัติอ้างอิงตารางเดิม', { exact: false })
 	).toBeVisible();
 	expect(observed.assignments).toEqual([]);
 });
@@ -433,4 +489,194 @@ test('time manager can prepare term two with year read and term manage permissio
 		page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true })
 	).toBeVisible();
 	await expect(page.getByLabel('ตารางเวลาที่ภาคเรียนนี้ใช้', { exact: true })).toBeVisible();
+});
+
+test('capacity diagnostic destination focuses only a matching room in the selected year', async ({
+	page
+}) => {
+	const observed = await fixture(page);
+	await page.goto(`/staff/academic/homerooms?academicYearId=${yearId}&homeroomId=${roomId}`);
+	const target = page.locator('[data-homeroom-target="true"]');
+	await expect(target).toHaveCount(1);
+	await expect(target).toContainText('ม.1/1');
+	await expect(target).toHaveAttribute('data-state', 'selected');
+	await expect(target).toBeFocused();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await page.goto(`/staff/academic/homerooms?academicYearId=${yearId}&homeroomId=${id(999)}`);
+	await expect(page.getByTestId('homerooms-ready')).toBeVisible();
+	await expect(page.locator('[data-homeroom-target="true"]')).toHaveCount(0);
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	expect(observed.capacities).toEqual([]);
+});
+
+test('ready-term table assignment preserves exact existing non-bell metadata', async ({ page }) => {
+	const observed = await fixture(page, { readyLegacyName: true });
+	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
+	await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ตารางภาคเรียนพร้อมใช้');
+	await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกตารางเวลาของภาคเรียน', exact: true }).click();
+	await expect.poll(() => observed.assignments.length).toBe(1);
+	expect(observed.assignments[0]).toEqual({
+		bellScheduleId: id(510),
+		rowVersion: 1,
+		customName: 'ภาคเรียนที่ 7',
+		termType: 'regular',
+		includedInYearResult: true,
+		blocksYearClosure: true
+	});
+});
+
+test('successful period save retains its paired revision when a concurrent writer advances metadata', async ({
+	page
+}) => {
+	const observed = await fixture(page, { successfulConcurrentWriter: true });
+	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
+	await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ตารางทดสอบสองผู้ใช้');
+	await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
+	await chooseOption(
+		page,
+		page.getByLabel('ตารางเวลาที่จะจัดคาบ', { exact: true }),
+		'ตารางทดสอบสองผู้ใช้'
+	);
+	await page.getByLabel('เริ่ม', { exact: true }).fill('09:00');
+	await page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true })).toBeEnabled();
+	const concurrent = await page.evaluate(
+		async (schedule) =>
+			(await (await fetch(`/api/academic/bell-schedules/${schedule}/periods`)).json()).data,
+		id(510)
+	);
+	expect(concurrent.rowVersion).toBe(3);
+	expect(concurrent.periods[0].startTime).toBe('10:00:00');
+	expect(observed.metadataReads).toBe(0);
+	await expect(page.getByLabel('เริ่ม', { exact: true })).toHaveValue('09:00');
+	await page.getByLabel('เริ่ม', { exact: true }).fill('09:05');
+	await page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true })).toBeDisabled();
+	await expect(page.getByLabel('เริ่ม', { exact: true })).toHaveValue('09:05');
+	expect(observed.periodWrites.map((request) => request.body.rowVersion)).toEqual([1, 2]);
+});
+
+test('term manager without timetable route permission gets contact guidance instead of a denied link', async ({
+	page
+}) => {
+	await fixture(page, { timetableDraft: true, termManagerOnly: true });
+	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await expect(
+		page.getByText('ติดต่อผู้ดูแลตารางสอนเพื่อตรวจสอบรายการอ้างอิงของภาคเรียนนี้', { exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByRole('link', { name: 'จัดการตารางสอนของ ภาคเรียนที่ 2', exact: true })
+	).toHaveCount(0);
+});
+
+test('delayed schedule success refresh cannot restore the previous identity workspace', async ({
+	page
+}) => {
+	let release = () => {};
+	const metadataGate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let releaseWorkspace = () => {};
+	const replacementWorkspaceGate = new Promise<void>((resolve) => {
+		releaseWorkspace = resolve;
+	});
+	const observed = await fixture(page, { metadataGate, replacementWorkspaceGate });
+	try {
+		await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+		await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
+		await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ข้อมูลตัวตนเก่า');
+		await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
+		await page.getByRole('button', { name: 'แก้ไข ข้อมูลตัวตนเก่า', exact: true }).click();
+		await page.getByLabel('แก้ไขชื่อตารางเวลา', { exact: true }).fill('ข้อมูลเก่าที่ตอบกลับช้า');
+		await page.getByRole('button', { name: 'บันทึกชื่อ', exact: true }).click();
+		await expect.poll(() => observed.metadataReads).toBe(1);
+		observed.switchIdentity();
+		await page.evaluate(async () => {
+			const modulePath = '/src/lib/stores/auth.ts';
+			const { authStore } = await import(modulePath);
+			authStore.setUser(
+				{
+					id: '10000000-0000-4000-8000-000000000598',
+					firstName: 'ตัวตนใหม่',
+					lastName: 'ทดสอบ',
+					role: 'staff',
+					user_type: 'staff',
+					status: 'active'
+				},
+				['*']
+			);
+		});
+		await expect(page.getByTestId('academic-setup-ready')).toHaveCount(0);
+		const completed = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === '/api/academic/bell-schedules'
+		);
+		release();
+		await completed;
+		await expect(page.getByTestId('academic-setup-ready')).toHaveCount(0);
+		await expect(page.getByText('ข้อมูลเก่าที่ตอบกลับช้า', { exact: true })).toHaveCount(0);
+		await expect.poll(() => observed.setupReads).toBeGreaterThanOrEqual(2);
+		releaseWorkspace();
+		await expect(page.getByTestId('academic-setup-ready')).toBeVisible();
+		await expect(page.getByText('ข้อมูลเก่าที่ตอบกลับช้า', { exact: true })).toHaveCount(0);
+	} finally {
+		release();
+		releaseWorkspace();
+	}
+});
+
+test('initial setup boot accepts its first authenticated route promise after delayed auth', async ({
+	page
+}) => {
+	let releaseAuth = () => {};
+	const authGate = new Promise<void>((resolve) => {
+		releaseAuth = resolve;
+	});
+	const observed = await fixture(page, { authGate });
+	try {
+		const navigation = page.goto(
+			`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`
+		);
+		await expect.poll(() => observed.authReads).toBe(1);
+		await expect(page.getByTestId('academic-setup-ready')).toHaveCount(0);
+		releaseAuth();
+		await navigation;
+		await expect(page.getByTestId('academic-setup-ready')).toBeVisible();
+		await expect(
+			page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true })
+		).toBeVisible();
+		expect(observed.setupReads).toBe(1);
+	} finally {
+		releaseAuth();
+	}
+});
+
+test('newer period GET does not rebase older name metadata and period writes use the paired revision', async ({
+	page
+}) => {
+	const observed = await fixture(page, { initialSnapshotAhead: true });
+	await page.goto(`/staff/academic/core?academicYearId=${yearId}&academicTermId=${nextTermId}`);
+	await page.getByRole('button', { name: 'คัดลอก ตารางเดิมภาคเรียนที่ 1', exact: true }).click();
+	await page.getByLabel('ชื่อตารางที่คัดลอก', { exact: true }).fill('ชื่อตารางในหน้าฉบับแรก');
+	await page.getByRole('button', { name: 'ยืนยันคัดลอกตาราง', exact: true }).click();
+	await chooseOption(
+		page,
+		page.getByLabel('ตารางเวลาที่จะจัดคาบ', { exact: true }),
+		'ชื่อตารางในหน้าฉบับแรก'
+	);
+	await expect(page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true })).toBeEnabled();
+	await page.getByLabel('เริ่ม', { exact: true }).fill('09:00');
+	await page.getByRole('button', { name: 'บันทึกคาบทั้งหมด', exact: true }).click();
+	await expect.poll(() => observed.periodWrites.length).toBe(1);
+	expect(observed.periodWrites[0].body.rowVersion).toBe(3);
+	await page.getByRole('button', { name: 'แก้ไข ชื่อตารางในหน้าฉบับแรก', exact: true }).click();
+	await page.getByLabel('แก้ไขชื่อตารางเวลา', { exact: true }).fill('ชื่อฉบับร่างของเรา');
+	await page.getByRole('button', { name: 'บันทึกชื่อ', exact: true }).click();
+	await expect(page.getByText('ชื่อตารางเปลี่ยนระหว่างแก้ไข', { exact: false })).toBeVisible();
+	expect(observed.scheduleBases).toEqual([1]);
+	await expect(page.getByLabel('แก้ไขชื่อตารางเวลา', { exact: true })).toHaveValue(
+		'ชื่อฉบับร่างของเรา'
+	);
 });

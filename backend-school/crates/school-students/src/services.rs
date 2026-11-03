@@ -63,7 +63,7 @@ pub async fn get_own_profile(
             FROM homeroom_placements
             WHERE student_academic_year_id = student_year.id
             ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
-                     start_date DESC, created_at DESC
+                     start_date DESC NULLS LAST, created_at DESC
             LIMIT 1
         ) placement ON true
         LEFT JOIN homerooms h ON placement.homeroom_id = h.id
@@ -355,7 +355,7 @@ pub async fn get_student(
             FROM homeroom_placements
             WHERE student_academic_year_id = student_year.id
             ORDER BY CASE status WHEN 'current' THEN 1 WHEN 'planned' THEN 2 ELSE 3 END,
-                     start_date DESC, created_at DESC, id
+                     start_date DESC NULLS LAST, created_at DESC, id
             LIMIT 1
         ) placement ON true
         LEFT JOIN homerooms h ON placement.homeroom_id = h.id

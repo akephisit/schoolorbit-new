@@ -14,6 +14,7 @@ export type AcademicTerm = Schemas['AcademicTerm'];
 export type AcademicTermType = Schemas['AcademicTermType'];
 export type BellSchedule = Schemas['BellSchedule'];
 export type BellSchedulePeriod = Schemas['BellSchedulePeriod'];
+export type BellSchedulePeriodsSnapshot = Schemas['BellSchedulePeriodsSnapshot'];
 export type SubjectGroup = Schemas['SubjectGroup'];
 export type CatalogSubject = Schemas['CatalogSubject'];
 export type CatalogSubjectOverview = Schemas['CatalogSubjectOverview'];
@@ -238,12 +239,15 @@ export const updateBellSchedule = (id: string, body: UpdateBellScheduleRequest) 
 	);
 export const listBellSchedulePeriods = (id: string, options: ApiRequestOptions = {}) =>
 	academicData(
-		apiClient.get<BellSchedulePeriod[]>(`/api/academic/bell-schedules/${id}/periods`, options),
+		apiClient.get<BellSchedulePeriodsSnapshot>(
+			`/api/academic/bell-schedules/${id}/periods`,
+			options
+		),
 		'ไม่สามารถโหลดคาบเรียนได้'
 	);
 export const replaceBellSchedulePeriods = (id: string, body: ReplaceBellSchedulePeriodsRequest) =>
 	academicData(
-		apiClient.put<BellSchedulePeriod[]>(`/api/academic/bell-schedules/${id}/periods`, body),
+		apiClient.put<BellSchedulePeriodsSnapshot>(`/api/academic/bell-schedules/${id}/periods`, body),
 		'บันทึกคาบเรียนไม่สำเร็จ'
 	);
 

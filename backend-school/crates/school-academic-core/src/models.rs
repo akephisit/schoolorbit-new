@@ -394,6 +394,15 @@ pub struct BellSchedulePeriod {
     pub is_active: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BellSchedulePeriodsSnapshot {
+    pub bell_schedule_id: Uuid,
+    pub row_version: i64,
+    pub periods: Vec<BellSchedulePeriod>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]

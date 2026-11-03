@@ -723,7 +723,7 @@ pub async fn update_bell_schedule(
     tag = "academic",
     params(("id" = Uuid, Path, description = "Bell schedule ID")),
     responses(
-        (status = 200, description = "Bell schedule periods", body = ApiResponse<Vec<BellSchedulePeriod>>),
+        (status = 200, description = "Bell schedule periods", body = ApiResponse<BellSchedulePeriodsSnapshot>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic term read permission denied", body = ApiErrorResponse),
         (status = 404, description = "Bell schedule not found", body = ApiErrorResponse)
@@ -752,7 +752,7 @@ pub async fn list_bell_schedule_periods(
     params(("id" = Uuid, Path, description = "Bell schedule ID")),
     request_body = ReplaceBellSchedulePeriodsRequest,
     responses(
-        (status = 200, description = "Bell schedule periods replaced", body = ApiResponse<Vec<BellSchedulePeriod>>),
+        (status = 200, description = "Bell schedule periods replaced", body = ApiResponse<BellSchedulePeriodsSnapshot>),
         (status = 400, description = "Invalid bell schedule periods", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Academic term management permission denied", body = ApiErrorResponse),
@@ -770,18 +770,17 @@ pub async fn replace_bell_schedule_periods(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_TERM_MANAGE_SCHOOL)?;
-    let periods = bell_schedules::replace_periods(&pool, actor.user_id, id, request).await?;
-    let schedule = bell_schedules::get(&pool, id).await?;
+    let outcome = bell_schedules::replace_periods(&pool, actor.user_id, id, request).await?;
     signal_core_changed(
         &state,
         &session,
         &actor,
         "bell_schedule_periods",
         Some(id),
-        Some(schedule.academic_year_id),
+        Some(outcome.academic_year_id),
         None,
     );
-    Ok(ok(periods))
+    Ok(ok(outcome.snapshot))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

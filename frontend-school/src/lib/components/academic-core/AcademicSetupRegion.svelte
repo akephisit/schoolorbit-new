@@ -19,6 +19,7 @@
 		type AcademicTerm,
 		type AcademicYear,
 		type BellSchedule,
+		type BellSchedulePeriodsSnapshot,
 		updateAcademicTerm,
 		updateAcademicYear,
 		updateBellSchedule
@@ -55,6 +56,10 @@
 	let errorMessage = $state('');
 	let mutationRevision = 0;
 	let regionIdentity = '';
+	const routeLoadOwners = new WeakMap<
+		Promise<RouteLoadResult<AcademicSetupWorkspace | null>>,
+		string
+	>();
 	const canRead = $derived(
 		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
 	);
@@ -117,6 +122,9 @@
 		const routeResult = workspaceLoad;
 		const identityState = $authStore;
 		const identity = appIdentityKey();
+		if (routeResult && identityState.isAuthenticated && !routeLoadOwners.has(routeResult))
+			routeLoadOwners.set(routeResult, identity);
+		const ownsRouteResult = !!routeResult && routeLoadOwners.get(routeResult) === identity;
 		const { revision } = latest.begin();
 		const initialMutationRevision = mutationRevision;
 		let current = true;
@@ -130,11 +138,12 @@
 				bellScheduleSetupTermIds = [];
 				contextSettings = null;
 				workspaceReady = false;
+				busy = { year: false, term: false, schedule: false, periods: false };
 			}
 			errorMessage = '';
 			regionIdentity = identity;
 		});
-		if (routeResult) {
+		if (routeResult && ownsRouteResult) {
 			void routeResult.then((result) => {
 				if (!current || !latest.isCurrent(revision) || identity !== appIdentityKey()) return;
 				untrack(() => {
@@ -144,7 +153,10 @@
 					loading = false;
 				});
 			});
-		}
+		} else
+			untrack(() => {
+				loading = false;
+			});
 		return () => {
 			current = false;
 			latest.abort();
@@ -186,7 +198,7 @@
 			termsByYear.set(created.id, []);
 			return created;
 		} finally {
-			busy.year = false;
+			if (identity === appIdentityKey()) busy.year = false;
 		}
 	}
 
@@ -205,7 +217,7 @@
 			);
 			return created;
 		} finally {
-			busy.term = false;
+			if (identity === appIdentityKey()) busy.term = false;
 		}
 	}
 
@@ -223,7 +235,7 @@
 				.sort((a, b) => b.year - a.year);
 			return updated;
 		} finally {
-			busy.year = false;
+			if (identity === appIdentityKey()) busy.year = false;
 		}
 	}
 
@@ -244,7 +256,7 @@
 			);
 			return updated;
 		} finally {
-			busy.term = false;
+			if (identity === appIdentityKey()) busy.term = false;
 		}
 	}
 
@@ -258,7 +270,7 @@
 			bellSchedules = [...bellSchedules, created];
 			return created;
 		} finally {
-			busy.schedule = false;
+			if (identity === appIdentityKey()) busy.schedule = false;
 		}
 	}
 	async function copyBellSchedule(id: string, draft: Parameters<typeof cloneBellSchedule>[1]) {
@@ -271,7 +283,7 @@
 			bellSchedules = [...bellSchedules, created];
 			return created;
 		} finally {
-			busy.schedule = false;
+			if (identity === appIdentityKey()) busy.schedule = false;
 		}
 	}
 
@@ -283,14 +295,36 @@
 			if (identity !== appIdentityKey()) return updated;
 			mutationRevision += 1;
 			const refreshed = await listBellSchedules(updated.academicYearId);
+			if (identity !== appIdentityKey()) return updated;
 			bellSchedules = [
 				...bellSchedules.filter((item) => item.academicYearId !== updated.academicYearId),
 				...refreshed
 			];
 			return refreshed.find((item) => item.id === id) ?? updated;
 		} finally {
-			busy.schedule = false;
+			if (identity === appIdentityKey()) busy.schedule = false;
 		}
+	}
+
+	function applyPeriodSnapshot(snapshot: BellSchedulePeriodsSnapshot, submittedBase: number) {
+		bellSchedules = bellSchedules.map((schedule) =>
+			schedule.id === snapshot.bellScheduleId &&
+			schedule.rowVersion === submittedBase &&
+			snapshot.rowVersion > schedule.rowVersion
+				? { ...schedule, rowVersion: snapshot.rowVersion }
+				: schedule
+		);
+	}
+
+	async function loadBellSchedulePeriods(
+		id: string,
+		options: Parameters<typeof listBellSchedulePeriods>[1] = {}
+	) {
+		const identity = appIdentityKey();
+		const snapshot = await listBellSchedulePeriods(id, options);
+		if (identity !== appIdentityKey()) return snapshot;
+		mutationRevision += 1;
+		return snapshot;
 	}
 
 	async function saveBellSchedulePeriods(
@@ -300,18 +334,11 @@
 		const identity = appIdentityKey();
 		busy.periods = true;
 		try {
-			const periods = await replaceBellSchedulePeriods(id, draft);
-			if (identity !== appIdentityKey()) return periods;
+			const snapshot = await replaceBellSchedulePeriods(id, draft);
+			if (identity !== appIdentityKey()) return snapshot;
 			mutationRevision += 1;
-			const schedule = bellSchedules.find((item) => item.id === id);
-			if (schedule) {
-				const refreshed = await listBellSchedules(schedule.academicYearId);
-				bellSchedules = [
-					...bellSchedules.filter((item) => item.academicYearId !== schedule.academicYearId),
-					...refreshed
-				];
-			}
-			return periods;
+			applyPeriodSnapshot(snapshot, draft.rowVersion);
+			return snapshot;
 		} catch (cause) {
 			if (
 				cause instanceof ApiClientError &&
@@ -321,16 +348,21 @@
 				const schedule = bellSchedules.find((item) => item.id === id);
 				if (schedule) {
 					const refreshed = await listBellSchedules(schedule.academicYearId);
-					if (identity === appIdentityKey())
+					if (identity === appIdentityKey()) {
+						const versions = new Map(bellSchedules.map((item) => [item.id, item]));
 						bellSchedules = [
 							...bellSchedules.filter((item) => item.academicYearId !== schedule.academicYearId),
-							...refreshed
+							...refreshed.map((item) => {
+								const current = versions.get(item.id);
+								return current && current.rowVersion > item.rowVersion ? current : item;
+							})
 						];
+					}
 				}
 			}
 			throw cause;
 		} finally {
-			busy.periods = false;
+			if (identity === appIdentityKey()) busy.periods = false;
 		}
 	}
 </script>
@@ -387,7 +419,7 @@
 					onCloneBellSchedule={copyBellSchedule}
 					onUpdateTerm={editTerm}
 					onUpdateBellSchedule={editBellSchedule}
-					onLoadBellSchedulePeriods={listBellSchedulePeriods}
+					onLoadBellSchedulePeriods={loadBellSchedulePeriods}
 					onReplaceBellSchedulePeriods={saveBellSchedulePeriods}
 				/>
 			{/if}

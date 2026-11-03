@@ -44,6 +44,13 @@
 	const canManage = $derived($can.has(PERMISSIONS.HOMEROOM_MANAGE_SCHOOL));
 	let yearContext = $state<YearLifecycleWorkspace['context'] | null>(null);
 	const yearStatus = $derived(yearContext?.status);
+	const targetHomeroomId = $derived(
+		homerooms.some(
+			(room) => room.id === data.requestedHomeroomId && room.academicYearId === academicYearId
+		)
+			? data.requestedHomeroomId
+			: null
+	);
 
 	function retryWorkspace() {
 		return invalidate(HOMEROOMS_WORKSPACE_DEPENDENCY);
@@ -181,6 +188,7 @@
 				{advisorsByHomeroom}
 				{canManage}
 				{yearStatus}
+				{targetHomeroomId}
 				onCreate={addHomeroom}
 				onUpdate={editHomeroom}
 				onUpdateCapacity={editCapacity}

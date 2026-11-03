@@ -2,21 +2,21 @@
 	import { onMount, untrack } from 'svelte';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { page } from '$app/state';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import type {
 		AcademicYear,
 		AcademicTerm,
 		BellSchedule,
-		BellSchedulePeriod,
+		BellSchedulePeriodsSnapshot,
 		CreateBellScheduleRequest,
 		CloneBellScheduleRequest,
 		UpdateBellScheduleRequest,
 		ReplaceBellSchedulePeriodsRequest,
 		UpdateAcademicTermRequest
 	} from '#lib/api/academic-core.js';
-	import {
-		customNameFromStored,
-		standardTermName
-	} from '#lib/academic-core/foundation-presentation.js';
+	import { standardTermName } from '#lib/academic-core/foundation-presentation.js';
 	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
 	import BellScheduleSetupStep from './setup/BellScheduleSetupStep.svelte';
 	import BellSchedulePeriodsStep from './setup/BellSchedulePeriodsStep.svelte';
@@ -52,11 +52,11 @@
 		onLoadBellSchedulePeriods: (
 			id: string,
 			options?: { signal?: AbortSignal }
-		) => Promise<BellSchedulePeriod[]>;
+		) => Promise<BellSchedulePeriodsSnapshot>;
 		onReplaceBellSchedulePeriods: (
 			id: string,
 			input: ReplaceBellSchedulePeriodsRequest
-		) => Promise<BellSchedulePeriod[]>;
+		) => Promise<BellSchedulePeriodsSnapshot>;
 	} = $props();
 	let selectedId = $state(
 		untrack(() => page.url.searchParams.get('academicYearId') ?? years[0]?.id ?? '')
@@ -77,6 +77,7 @@
 	let error = $state('');
 	onMount(() => registerAcademicContextDirtySource('bell-term-assignment', () => !!termBase));
 	const canSetup = $derived(!!year && canManage && setupYearIds.includes(year.id));
+	const canAccessTimetable = $derived($can.hasModule(PERMISSION_MODULES.ACADEMIC_TIMETABLE));
 	const canAssign = $derived(canSetup && !!term && setupTermIds.includes(term.id));
 	const termChanged = $derived(
 		!!termBase && term?.id === termBase.id && term.rowVersion !== termBase.rowVersion
@@ -98,22 +99,24 @@
 		)
 			return;
 		error = '';
+		const identity = appIdentityKey();
 		try {
 			await onUpdateTerm(termBase.id, {
 				termType: termBase.termType,
 				customName:
-					customNameFromStored(
-						termBase.name,
-						standardTermName(termBase.termType, termBase.sequence)
-					) || null,
+					termBase.name === standardTermName(termBase.termType, termBase.sequence)
+						? null
+						: termBase.name,
 				includedInYearResult: termBase.includedInYearResult,
 				blocksYearClosure: termBase.blocksYearClosure,
 				bellScheduleId: chosenScheduleId,
 				rowVersion: termBase.rowVersion
 			});
+			if (identity !== appIdentityKey()) return;
 			termBase = null;
 			chosenScheduleId = '';
 		} catch (cause) {
+			if (identity !== appIdentityKey()) return;
 			error = cause instanceof Error ? cause.message : 'บันทึกตารางเวลาของภาคเรียนไม่สำเร็จ';
 		}
 	}
@@ -200,14 +203,16 @@
 					{#if term && ['planning', 'ready'].includes(term.status) && canSetup}<p
 							class="text-sm text-muted-foreground"
 						>
-							ภาคเรียนนี้มีฉบับร่างตารางสอนหรือประวัติอ้างอิงตารางเดิม
-							จัดการตารางสอนเดิมก่อนเปลี่ยนตารางคาบ การคัดลอกไม่เปลี่ยนฉบับร่างให้อัตโนมัติ
+							ภาคเรียนนี้มีตารางสอนหรือประวัติอ้างอิงตารางเดิม จึงยังเปลี่ยนชุดคาบไม่ได้
+							ให้ผู้ดูแลตรวจสอบรายการอ้างอิงของภาคนี้ การคัดลอกไม่เปลี่ยนตารางสอนเดิมอัตโนมัติ
 						</p>
-						<Button
-							variant="outline"
-							href={`/staff/academic/timetable?academicYearId=${year.id}&academicTermId=${term.id}`}
-							>จัดการตารางสอนของ {term.name}</Button
-						>{/if}{/if}
+						{#if canAccessTimetable}<Button
+								variant="outline"
+								href={`/staff/academic/timetable?academicYearId=${year.id}&academicTermId=${term.id}`}
+								>จัดการตารางสอนของ {term.name}</Button
+							>{:else}<p class="text-sm text-muted-foreground">
+								ติดต่อผู้ดูแลตารางสอนเพื่อตรวจสอบรายการอ้างอิงของภาคเรียนนี้
+							</p>{/if}{/if}{/if}
 				{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
 			</section>{/if}
 		{#key year.id}<section class="rounded-xl border bg-card p-4">
