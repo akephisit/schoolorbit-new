@@ -1660,6 +1660,7 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
         groups::get(&pool, group).await,
         Err(AppError::NotFound(_))
     ));
+    assert!(offerings::get(&pool, offering.id).await.is_ok());
     change_sets::remove_draft_offering(
         &pool,
         context.teacher_id,
@@ -1669,10 +1670,21 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
     )
     .await
     .unwrap();
-    assert!(
-        offerings::get(&pool, offering.id).await.is_ok(),
-        "empty scope pins the activity identity"
-    );
+    assert!(matches!(
+        offerings::get(&pool, offering.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    let remaining_owned: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM activity_offering_details WHERE learning_offering_id=$1),
+            (SELECT count(*) FROM academic_delivery_revision_audiences
+                WHERE change_set_id=$2 AND learning_offering_id=$1)",
+    )
+    .bind(offering.id)
+    .bind(revision.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining_owned, (0, 0));
     assert!(draft_version(&pool, revision.id)
         .await
         .snapshot

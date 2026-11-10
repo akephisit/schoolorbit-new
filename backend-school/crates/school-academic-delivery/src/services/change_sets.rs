@@ -1578,7 +1578,7 @@ pub async fn delete_version_in_transaction(
 }
 fn deletion_error(error: sqlx::Error) -> AppError {
     if let sqlx::Error::Database(db) = &error {
-        if db.code().as_deref() == Some("23503") {
+        if matches!(db.code().as_deref(), Some("23503" | "23001")) {
             return AppError::Conflict("ลบรุ่นเปิดสอนไม่ได้: มีข้อมูลอื่นอ้างอิง กรุณาโหลดล่าสุด".into());
         }
     }
