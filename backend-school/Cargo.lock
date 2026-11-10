@@ -4251,6 +4251,7 @@ dependencies = [
  "school-file-platform",
  "school-http",
  "school-tenancy",
+ "school-test-db",
  "serde",
  "serde_json",
  "sqlx",
