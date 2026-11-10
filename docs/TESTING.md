@@ -2674,8 +2674,14 @@ retaining all fixture databases in one server. Coverage includes 143-to-144 unsc
 preservation, explicit empty versus absent intent, combined/split and central-group behavior,
 future added rooms, publication locks, scoped preview/apply replay and stale hashes, inheritance,
 actual HTTP permission/revision guards, and dated/pinned consumer eligibility. Published history,
-manual roster facts and grading evidence remain unchanged. Keep the API export/generation and
-consumer checks serialized with Rust source writers; use the existing target directory.
+manual roster facts and grading evidence remain unchanged. The `delivery_draft_removal` filter
+also verifies actual hard deletion of exclusive unused course/activity registry rows, details,
+groups, owned child rows and the selected audience; snapshot refresh cannot restore them.
+Catalogs/curriculum and unrelated contexts remain unchanged. Independent audience, snapshot and
+journal owners or downstream assessment plans retain registry data with a truthful removal audit;
+shared empty audience parents, published history, stale/lifecycle and HTTP permission guards keep
+their existing coverage. Keep the API export/generation and consumer checks serialized with Rust
+source writers; use the existing target directory.
 
 ### Assessment publication ownership and independent editing controls
 

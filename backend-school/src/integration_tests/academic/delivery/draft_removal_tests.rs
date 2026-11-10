@@ -1,7 +1,7 @@
 use super::*;
 use school_academic_delivery::models::{
     versions::{DeliverySnapshot, DeliveryVersion},
-    RemoveDeliveryDraftResourceRequest,
+    AcademicTermChangeItem, RemoveDeliveryDraftResourceRequest,
 };
 use school_academic_delivery::services::versions;
 use serde_json::{json, Value};
@@ -241,6 +241,570 @@ async fn delivery_draft_removal_is_local_persistent_and_clears_pending_commands(
         .await,
         Err(AppError::Conflict(_))
     ));
+}
+
+async fn catalog_and_curriculum_facts(pool: &PgPool) -> Value {
+    sqlx::query_scalar("SELECT jsonb_build_object(
+        'subjects',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM subjects s),
+        'subjectVersions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM subject_versions s),
+        'activities',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM activities a),
+        'activityVersions',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM activity_versions a),
+        'courses',(SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM curriculum_course_requirements c),
+        'activityRequirements',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM curriculum_activity_requirements a),
+        'publications',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM curriculum_publications p))")
+        .fetch_one(pool).await.unwrap()
+}
+
+async fn exclusive_offering_owned_counts(pool: &PgPool, offering: Uuid, group: Uuid) -> Value {
+    sqlx::query_scalar("SELECT jsonb_build_object(
+        'offering',(SELECT count(*) FROM learning_offerings WHERE id=$1),
+        'groups',(SELECT count(*) FROM learning_groups WHERE learning_offering_id=$1),
+        'details',((SELECT count(*) FROM course_offering_details WHERE learning_offering_id=$1)
+            +(SELECT count(*) FROM activity_offering_details WHERE learning_offering_id=$1)),
+        'targets',(SELECT count(*) FROM learning_offering_targets WHERE learning_offering_id=$1),
+        'teachers',(SELECT count(*) FROM learning_group_teachers WHERE learning_group_id=$2),
+        'homerooms',(SELECT count(*) FROM learning_group_homerooms WHERE learning_group_id=$2),
+        'preferences',(SELECT count(*) FROM learning_group_preferred_rooms WHERE learning_group_id=$2),
+        'tracking',(SELECT count(*) FROM learning_group_roster_tracking WHERE learning_group_id=$2),
+        'audiences',(SELECT count(*) FROM academic_delivery_revision_audiences WHERE learning_offering_id=$1),
+        'audienceRooms',(SELECT count(*) FROM academic_delivery_revision_audience_rooms WHERE learning_offering_id=$1))")
+        .bind(offering).bind(group).fetch_one(pool).await.unwrap()
+}
+
+#[tokio::test]
+async fn delivery_draft_removal_hard_deletes_unused_course_and_activity_owned_rows() {
+    use axum::http::StatusCode;
+    use school_permissions::registry::codes;
+    let pool = prepare_delivery_runtime_fixture("delivery_removal_hard_delete").await;
+    let context = planning_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "removal-hard-delete",
+    )
+    .await;
+    let sibling = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "removal-unrelated",
+    )
+    .await;
+    let sibling_before = serde_json::to_value(draft_version(&pool, sibling.id).await).unwrap();
+    let catalog_before = catalog_and_curriculum_facts(&pool).await;
+    let facts_before = preserved_facts(&pool).await;
+    let room: Uuid = sqlx::query_scalar("SELECT id FROM rooms ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    for activity in [false, true] {
+        let offering = if activity {
+            open_activity_with_catalog_target(
+                &pool,
+                &context,
+                revision.target_delivery_version_id,
+                ActivitySchedulingMode::Synchronized,
+                false,
+            )
+            .await
+        } else {
+            offerings::create_for_delivery(
+                &pool,
+                context.teacher_id,
+                Some(revision.target_delivery_version_id),
+                course_request(&context),
+            )
+            .await
+            .unwrap()
+        };
+        let group = groups::create(
+            &pool,
+            context.teacher_id,
+            offering.id,
+            CreateLearningGroupRequest {
+                name: "Unused owned group".into(),
+                description: None,
+                capacity: None,
+                preferred_room_ids: vec![room],
+            },
+        )
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source)
+            VALUES(gen_random_uuid(),$1,$2,$3,$4,'manual')")
+            .bind(group.id).bind(context.term_id).bind(context.year_id).bind(context.homeroom_id)
+            .execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on)
+            VALUES(gen_random_uuid(),$1,$2,$3,$4,'primary',$5)")
+            .bind(group.id).bind(context.term_id).bind(context.year_id).bind(context.teacher_id)
+            .bind(runtime_operation_date()).execute(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO learning_group_roster_tracking(learning_group_id,mode)
+            VALUES($1,'manual') ON CONFLICT DO NOTHING",
+        )
+        .bind(group.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        // This draft's own explicit audience must not permanently prevent unused-row cleanup.
+        sqlx::query(
+            "INSERT INTO academic_delivery_revision_audiences
+            VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
+        )
+        .bind(revision.id)
+        .bind(offering.id)
+        .bind(context.term_id)
+        .bind(context.year_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO academic_delivery_revision_audience_rooms
+            VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+        )
+        .bind(revision.id)
+        .bind(offering.id)
+        .bind(context.term_id)
+        .bind(context.year_id)
+        .bind(context.homeroom_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let counts = exclusive_offering_owned_counts(&pool, offering.id, group.id).await;
+        for (table, count) in counts.as_object().unwrap() {
+            assert!(
+                count.as_i64().unwrap() > 0,
+                "seeded owned {table}: {counts}"
+            );
+        }
+        let before = draft_version(&pool, revision.id).await;
+        let request = removal_request(&pool, revision.id).await;
+        let path = format!(
+            "/api/academic/term-change-sets/{}/offerings/{}",
+            revision.id, offering.id
+        );
+        let (status, body) = http_remove(
+            delivery_router(
+                &pool,
+                context.teacher_id,
+                &[codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+            ),
+            &path,
+            &request,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let after = draft_version(&pool, revision.id).await;
+        assert_eq!(after.row_version, before.row_version + 1);
+        assert!(!after
+            .snapshot
+            .offerings
+            .iter()
+            .any(|row| row.id == offering.id));
+        let current = change_sets::get_change_set(&pool, revision.id)
+            .await
+            .unwrap();
+        assert_eq!(current.row_version, request.change_set_row_version + 1);
+        assert!(current.items.iter().all(|item| match item {
+            AcademicTermChangeItem::AddOffering {
+                learning_offering_id,
+                ..
+            }
+            | AcademicTermChangeItem::StopOffering {
+                learning_offering_id,
+                ..
+            }
+            | AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
+                learning_offering_id,
+                ..
+            } => *learning_offering_id != offering.id,
+            AcademicTermChangeItem::AddGroupTeacher {
+                learning_group_id, ..
+            }
+            | AcademicTermChangeItem::AdjustGroupTeacherRole {
+                learning_group_id, ..
+            }
+            | AcademicTermChangeItem::StopGroupTeacher {
+                learning_group_id, ..
+            } => *learning_group_id != group.id,
+        }));
+        let counts = exclusive_offering_owned_counts(&pool, offering.id, group.id).await;
+        for (table, count) in counts.as_object().unwrap() {
+            assert_eq!(count.as_i64(), Some(0), "deleted owned {table}: {counts}");
+        }
+        assert!(matches!(
+            offerings::get(&pool, offering.id).await,
+            Err(AppError::NotFound(_))
+        ));
+        assert!(matches!(
+            groups::get(&pool, group.id).await,
+            Err(AppError::NotFound(_))
+        ));
+        let audit: Value = sqlx::query_scalar(
+            "SELECT payload FROM academic_audit_events
+            WHERE entity_id=$1 AND event_code='academic_delivery_draft_resource.removed'
+            AND payload->>'learningOfferingId'=$2",
+        )
+        .bind(revision.id)
+        .bind(offering.id.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit["deletedOffering"], json!(true));
+        assert_eq!(audit["deletedGroupCount"], json!(1));
+        let refreshed = change_sets::update_change_set(
+            &pool,
+            context.teacher_id,
+            revision.id,
+            UpdateAcademicTermChangeSetRequest {
+                row_version: current.row_version,
+                reference_date: current.reference_date,
+                reason: "Refresh after permanent draft removal".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let projection: sqlx::types::Json<DeliverySnapshot> =
+            sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1,$2)")
+                .bind(revision.id)
+                .bind(refreshed.reference_date + Duration::days(1))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(!projection.offerings.iter().any(|row| row.id == offering.id));
+        publication_preview(&pool, revision.id).await.unwrap();
+        assert!(!draft_version(&pool, revision.id)
+            .await
+            .snapshot
+            .offerings
+            .iter()
+            .any(|row| row.id == offering.id));
+        assert_eq!(facts_before, preserved_facts(&pool).await);
+        assert_eq!(catalog_before, catalog_and_curriculum_facts(&pool).await);
+        assert_eq!(
+            sibling_before,
+            serde_json::to_value(draft_version(&pool, sibling.id).await).unwrap()
+        );
+    }
+}
+
+async fn late_removal_rollback_facts(pool: &PgPool) -> Value {
+    json!({
+        "pending": pending_removal_facts(pool).await,
+        "owned": sqlx::query_scalar::<_, Value>("SELECT jsonb_build_object(
+            'courseDetails',(SELECT jsonb_agg(to_jsonb(d) ORDER BY learning_offering_id) FROM course_offering_details d),
+            'activityDetails',(SELECT jsonb_agg(to_jsonb(d) ORDER BY learning_offering_id) FROM activity_offering_details d),
+            'targets',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_offering_targets t),
+            'homerooms',(SELECT jsonb_agg(to_jsonb(h) ORDER BY id) FROM learning_group_homerooms h),
+            'preferences',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM learning_group_preferred_rooms p),
+            'tracking',(SELECT jsonb_agg(to_jsonb(t) ORDER BY learning_group_id) FROM learning_group_roster_tracking t),
+            'audiences',(SELECT jsonb_agg(to_jsonb(a) ORDER BY change_set_id,learning_offering_id) FROM academic_delivery_revision_audiences a),
+            'audienceRooms',(SELECT jsonb_agg(to_jsonb(r) ORDER BY change_set_id,learning_offering_id,homeroom_id) FROM academic_delivery_revision_audience_rooms r),
+            'blocker',(SELECT jsonb_agg(to_jsonb(b) ORDER BY offering_id) FROM delivery_removal_test_blocker b))")
+            .fetch_one(pool).await.unwrap(),
+    })
+}
+
+#[tokio::test]
+async fn delivery_draft_removal_late_foreign_key_refusal_rolls_back_all_changes() {
+    use axum::http::StatusCode;
+    use school_permissions::registry::codes;
+    let pool = prepare_delivery_runtime_fixture("delivery_removal_late_fk").await;
+    let context = planning_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "removal-late-fk",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(revision.target_delivery_version_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let room: Uuid = sqlx::query_scalar("SELECT id FROM rooms ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            name: "Late refusal rollback group".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: vec![room],
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source)
+        VALUES(gen_random_uuid(),$1,$2,$3,$4,'manual')")
+        .bind(group.id).bind(context.term_id).bind(context.year_id).bind(context.homeroom_id)
+        .execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on)
+        VALUES(gen_random_uuid(),$1,$2,$3,$4,'primary',$5)")
+        .bind(group.id).bind(context.term_id).bind(context.year_id).bind(context.teacher_id)
+        .bind(runtime_operation_date()).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO learning_group_roster_tracking(learning_group_id,mode)
+        VALUES($1,'manual') ON CONFLICT DO NOTHING",
+    )
+    .bind(group.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO academic_delivery_revision_audiences VALUES($1,$2,$3,$4)
+        ON CONFLICT DO NOTHING",
+    )
+    .bind(revision.id)
+    .bind(offering.id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO academic_delivery_revision_audience_rooms VALUES($1,$2,$3,$4,$5)
+        ON CONFLICT DO NOTHING",
+    )
+    .bind(revision.id)
+    .bind(offering.id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .bind(context.homeroom_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // The disposable fixture alone owns this unknown downstream FK. It refuses only the
+    // final offering DELETE, after command, audience and group cleanup have been attempted.
+    sqlx::raw_sql(
+        "CREATE TABLE delivery_removal_test_blocker (
+        offering_id uuid PRIMARY KEY REFERENCES learning_offerings(id) ON DELETE RESTRICT)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO delivery_removal_test_blocker(offering_id) VALUES($1)")
+        .bind(offering.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let counts = exclusive_offering_owned_counts(&pool, offering.id, group.id).await;
+    for (table, count) in counts.as_object().unwrap() {
+        assert!(
+            count.as_i64().unwrap() > 0,
+            "seeded owned {table}: {counts}"
+        );
+    }
+    let current = change_sets::get_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    assert!(current.items.iter().any(|item| matches!(item,
+        AcademicTermChangeItem::AddOffering { learning_offering_id, .. }
+        if *learning_offering_id == offering.id)));
+    let request = removal_request(&pool, revision.id).await;
+    let path = format!(
+        "/api/academic/term-change-sets/{}/offerings/{}",
+        revision.id, offering.id
+    );
+    let before = late_removal_rollback_facts(&pool).await;
+    let (status, body) = http_remove(
+        delivery_router(
+            &pool,
+            context.teacher_id,
+            &[codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+        ),
+        &path,
+        &request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(before, late_removal_rollback_facts(&pool).await,
+        "late FK refusal must restore registry, owned children, audience, commands, revisions, snapshot and audit");
+    sqlx::raw_sql("DROP TABLE delivery_removal_test_blocker")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The same captured request succeeds after removing only the synthetic blocker.
+    let (status, body) = http_remove(
+        delivery_router(
+            &pool,
+            context.teacher_id,
+            &[codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+        ),
+        &path,
+        &request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let counts = exclusive_offering_owned_counts(&pool, offering.id, group.id).await;
+    for (table, count) in counts.as_object().unwrap() {
+        assert_eq!(count.as_i64(), Some(0), "deleted owned {table}: {counts}");
+    }
+}
+
+#[tokio::test]
+async fn delivery_draft_removal_retains_independent_ownership_and_unused_downstream_data() {
+    let pool = prepare_delivery_runtime_fixture("delivery_removal_ownership").await;
+    let context = planning_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "removal-owned",
+    )
+    .await;
+    let sibling = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "removal-owner",
+    )
+    .await;
+    for ownership in ["audience", "snapshot", "journal", "assessment"] {
+        let offering = if ownership == "assessment" {
+            offerings::create_for_delivery(
+                &pool,
+                context.teacher_id,
+                Some(revision.target_delivery_version_id),
+                course_request(&context),
+            )
+            .await
+            .unwrap()
+        } else {
+            open_activity_with_catalog_target(
+                &pool,
+                &context,
+                revision.target_delivery_version_id,
+                ActivitySchedulingMode::Synchronized,
+                false,
+            )
+            .await
+        };
+        let group = groups::create(
+            &pool,
+            context.teacher_id,
+            offering.id,
+            CreateLearningGroupRequest {
+                name: format!("Protected by {ownership}"),
+                description: None,
+                capacity: None,
+                preferred_room_ids: vec![],
+            },
+        )
+        .await
+        .unwrap();
+        match ownership {
+            "audience" => {
+                sqlx::query("INSERT INTO academic_delivery_revision_audiences VALUES($1,$2,$3,$4)")
+                    .bind(sibling.id)
+                    .bind(offering.id)
+                    .bind(context.term_id)
+                    .bind(context.year_id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+            "snapshot" => {
+                let snapshot = draft_version(&pool, revision.id).await.snapshot;
+                sqlx::query("UPDATE academic_delivery_versions SET snapshot=$2 WHERE id=$1")
+                    .bind(sibling.target_delivery_version_id)
+                    .bind(sqlx::types::Json(snapshot))
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+            "journal" => {
+                sqlx::query("INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,
+                    action_kind,learning_offering_id,weekly_period_target,created_by)
+                    VALUES(gen_random_uuid(),$1,$2,$3,'add_offering',$4,0,$5)")
+                    .bind(sibling.id).bind(context.term_id).bind(context.year_id).bind(offering.id)
+                    .bind(context.teacher_id).execute(&pool).await.unwrap();
+            }
+            "assessment" => {
+                sqlx::query("INSERT INTO course_assessment_plans(learning_offering_id,academic_term_id,academic_year_id,subject_version_id)
+                    VALUES($1,$2,$3,$4)")
+                    .bind(offering.id).bind(context.term_id).bind(context.year_id).bind(context.subject_version_id)
+                    .execute(&pool).await.unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let protected_before: Value = sqlx::query_scalar("SELECT jsonb_build_object(
+            'revision',(SELECT to_jsonb(c) FROM academic_term_change_sets c WHERE id=$1),
+            'version',(SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$2),
+            'items',(SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM academic_term_change_items i WHERE change_set_id=$1),
+            'audiences',(SELECT jsonb_agg(to_jsonb(a) ORDER BY learning_offering_id) FROM academic_delivery_revision_audiences a WHERE change_set_id=$1),
+            'plans',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM course_assessment_plans p))")
+            .bind(sibling.id).bind(sibling.target_delivery_version_id).fetch_one(&pool).await.unwrap();
+        let facts_before = preserved_facts(&pool).await;
+        change_sets::remove_draft_offering(
+            &pool,
+            context.teacher_id,
+            revision.id,
+            offering.id,
+            removal_request(&pool, revision.id).await,
+        )
+        .await
+        .unwrap();
+        assert!(
+            offerings::get(&pool, offering.id).await.is_ok(),
+            "{ownership}"
+        );
+        assert!(groups::get(&pool, group.id).await.is_ok(), "{ownership}");
+        assert!(!draft_version(&pool, revision.id)
+            .await
+            .snapshot
+            .offerings
+            .iter()
+            .any(|row| row.id == offering.id));
+        assert_eq!(facts_before, preserved_facts(&pool).await, "{ownership}");
+        let protected_after: Value = sqlx::query_scalar("SELECT jsonb_build_object(
+            'revision',(SELECT to_jsonb(c) FROM academic_term_change_sets c WHERE id=$1),
+            'version',(SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$2),
+            'items',(SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM academic_term_change_items i WHERE change_set_id=$1),
+            'audiences',(SELECT jsonb_agg(to_jsonb(a) ORDER BY learning_offering_id) FROM academic_delivery_revision_audiences a WHERE change_set_id=$1),
+            'plans',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM course_assessment_plans p))")
+            .bind(sibling.id).bind(sibling.target_delivery_version_id).fetch_one(&pool).await.unwrap();
+        assert_eq!(protected_before, protected_after, "{ownership}");
+        let audit: Value = sqlx::query_scalar(
+            "SELECT payload FROM academic_audit_events
+            WHERE entity_id=$1 AND event_code='academic_delivery_draft_resource.removed'
+            AND payload->>'learningOfferingId'=$2",
+        )
+        .bind(revision.id)
+        .bind(offering.id.to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(audit["deletedOffering"], json!(false), "{ownership}");
+        assert_eq!(audit["deletedGroupCount"], json!(0), "{ownership}");
+        let parent_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM academic_delivery_revision_audiences
+            WHERE change_set_id=$1 AND learning_offering_id=$2",
+        )
+        .bind(revision.id)
+        .bind(offering.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            parent_count, 1,
+            "retained identity keeps explicit empty intent: {ownership}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -1096,6 +1660,7 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
         groups::get(&pool, group).await,
         Err(AppError::NotFound(_))
     ));
+    assert!(offerings::get(&pool, offering.id).await.is_ok());
     change_sets::remove_draft_offering(
         &pool,
         context.teacher_id,
@@ -1105,10 +1670,21 @@ async fn delivery_draft_removal_handles_synchronized_activity_groups_and_offerin
     )
     .await
     .unwrap();
-    assert!(
-        offerings::get(&pool, offering.id).await.is_ok(),
-        "empty scope pins the activity identity"
-    );
+    assert!(matches!(
+        offerings::get(&pool, offering.id).await,
+        Err(AppError::NotFound(_))
+    ));
+    let remaining_owned: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM activity_offering_details WHERE learning_offering_id=$1),
+            (SELECT count(*) FROM academic_delivery_revision_audiences
+                WHERE change_set_id=$2 AND learning_offering_id=$1)",
+    )
+    .bind(offering.id)
+    .bind(revision.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(remaining_owned, (0, 0));
     assert!(draft_version(&pool, revision.id)
         .await
         .snapshot

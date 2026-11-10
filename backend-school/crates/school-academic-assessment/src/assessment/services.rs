@@ -306,6 +306,16 @@ pub async fn list_assessment_plans_on_connection(
     let Some(year) = year else {
         return Ok(Vec::new());
     };
+    let published_offering_ids =
+        school_academic_delivery::services::versions::latest_published_course_offering_ids_on_connection(
+            connection,
+            year,
+            query.academic_term_id,
+        )
+        .await?;
+    if published_offering_ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let assigned_group_ids = if let Some(actor) = access.assigned_actor_id {
         school_academic_delivery::services::versions::assigned_group_ids_on_connection(
             connection,
@@ -376,6 +386,7 @@ pub async fn list_assessment_plans_on_connection(
         LEFT JOIN user_display_names coordinator ON coordinator.id = plan.assessment_coordinator_id
         WHERE offering.academic_term_id = $1
           AND offering.kind = 'course'
+          AND offering.id = ANY($10::uuid[])
           AND ($2::uuid IS NULL OR detail.subject_id = $2)
           AND ($3::uuid IS NULL OR EXISTS (
               SELECT 1
@@ -408,6 +419,7 @@ pub async fn list_assessment_plans_on_connection(
         .bind(current_actor_id)
         .bind(&instructor_group_ids)
         .bind(&assigned_group_ids)
+        .bind(&published_offering_ids)
         .fetch_all()
         .await?;
 

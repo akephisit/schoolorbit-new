@@ -519,13 +519,19 @@ async fn delivery_room_scope_http_guards_and_selected_room_only() {
     }
 }
 
-// Historical migration fixtures seed the pre-144 rows directly. Current creation
-// intentionally requires 144's audience owner and must not branch on schema presence.
+// Historical migration fixtures expose only seeded facts available in their schema.
+// Current runtime readers require newer publication columns and must not inspect these rows.
+pub(super) struct HistoricalRevision {
+    pub(super) id: Uuid,
+    pub(super) target_delivery_version_id: Uuid,
+    pub(super) reference_date: NaiveDate,
+}
+
 pub(super) async fn historical_revision(
     pool: &PgPool,
     c: &RuntimeContext,
     offset: i64,
-) -> super::super::models::AcademicTermChangeSet {
+) -> HistoricalRevision {
     let revision = Uuid::new_v4();
     let target = Uuid::new_v4();
     let base:Option<Uuid>=sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1").bind(c.term_id).fetch_optional(pool).await.unwrap();
@@ -542,7 +548,11 @@ pub(super) async fn historical_revision(
         .bind(revision).bind(c.term_id).bind(c.year_id).bind(date).bind(revision.to_string()).bind(c.teacher_id).bind(base).bind(target).execute(&mut *tx).await.unwrap();
     sqlx::query("UPDATE academic_delivery_versions SET snapshot=academic_delivery_revision_snapshot($1) WHERE id=$2").bind(revision).bind(target).execute(&mut *tx).await.unwrap();
     tx.commit().await.unwrap();
-    change_sets::get_change_set(pool, revision).await.unwrap()
+    HistoricalRevision {
+        id: revision,
+        target_delivery_version_id: target,
+        reference_date: date,
+    }
 }
 
 #[tokio::test]
@@ -569,20 +579,27 @@ async fn delivery_room_scope_migration_143_to_144_preserves_all_unscoped_bytes()
         .await
         .unwrap();
     assert_eq!(projection, projected);
-    let mut conn = pool.acquire().await.unwrap();
     let existing: Vec<Uuid> = sqlx::query_scalar(
         "SELECT id FROM learning_offerings WHERE academic_term_id=$1 ORDER BY id",
     )
     .bind(c.term_id)
-    .fetch_all(&mut *conn)
+    .fetch_all(&pool)
     .await
     .unwrap();
-    assert!(
-        audiences::dated_constraints_on_connection(&mut conn, &existing, rev.reference_date)
-            .await
-            .unwrap()
-            .is_empty()
-    );
+    assert!(!existing.is_empty());
+    // Inspect the historical 144 owner tables directly. No stored scope in any revision
+    // is stronger preservation evidence than an empty current projection for one date.
+    let invented_scopes: (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM academic_delivery_revision_audiences
+                WHERE learning_offering_id=ANY($1)),
+            (SELECT count(*) FROM academic_delivery_revision_audience_rooms
+                WHERE learning_offering_id=ANY($1))",
+    )
+    .bind(&existing)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(invented_scopes, (0, 0));
 }
 
 #[tokio::test]

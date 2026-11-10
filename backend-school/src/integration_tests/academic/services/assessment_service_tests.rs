@@ -227,13 +227,44 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
         "cloned offering must retain its source date"
     );
 
+    let access = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let before_publication = assessment_service::list_assessment_plans(
+        &pool,
+        &list_query(term_id),
+        &access,
+        current_actor_id,
+    )
+    .await
+    .unwrap();
+    assert!(before_publication
+        .iter()
+        .all(|plan| plan.offering_id != preferred_offering_id));
+    sqlx::query(
+        "INSERT INTO academic_delivery_versions(
+             id,academic_term_id,academic_year_id,publication_no,effective_from,status,snapshot,
+             published_by,published_at,publication_idempotency_key,publication_request_hash
+         ) SELECT uuidv7(),term.id,term.academic_year_id,
+                  (SELECT coalesce(max(publication_no),0)+1 FROM academic_delivery_versions
+                   WHERE academic_term_id=term.id),current_date,'published',
+                  academic_capture_delivery_snapshot(term.id,current_date,
+                      (SELECT jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1))
+                       FROM learning_offerings WHERE academic_term_id=term.id AND kind='course')),
+                  $2,now(),uuidv7(),repeat('a',64)
+           FROM academic_terms term WHERE term.id=$1",
+    )
+    .bind(term_id)
+    .bind(current_actor_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
     let plans = assessment_service::list_assessment_plans(
         &pool,
         &list_query(term_id),
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
+        &access,
         current_actor_id,
     )
     .await

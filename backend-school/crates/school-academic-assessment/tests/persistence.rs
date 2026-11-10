@@ -40,6 +40,182 @@ fn list_query(academic_term_id: Uuid) -> AssessmentPlanListQuery {
     }
 }
 
+async fn publish_assessment_list_source(
+    pool: &sqlx::PgPool,
+    term: Uuid,
+    publication_no: i64,
+    days_from_today: i32,
+    offering_ids: &[Uuid],
+) {
+    sqlx::query(
+        "INSERT INTO academic_delivery_versions(
+             id,academic_term_id,academic_year_id,publication_no,effective_from,status,snapshot,
+             published_by,published_at,publication_idempotency_key,publication_request_hash
+         ) SELECT uuidv7(),term.id,term.academic_year_id,$2,current_date+$3,'published',
+                  academic_capture_delivery_snapshot(term.id,current_date+$3,
+                      (SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1)),
+                                       '[]'::jsonb) FROM unnest($4::uuid[]) id)),
+                  '50000000-0000-0000-0000-000000000002'::uuid,now(),uuidv7(),repeat('a',64)
+           FROM academic_terms term WHERE term.id=$1",
+    )
+    .bind(term)
+    .bind(publication_no)
+    .bind(days_from_today)
+    .bind(offering_ids)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn assessment_list_requires_latest_exact_context_published_courses_before_limit() {
+    let pool = populated_canonical_pool("assessment_list_latest_source").await;
+    let teacher = Uuid::from_u128(0x50000000000000000000000000000002);
+    let source: Uuid = sqlx::query_scalar(
+        "SELECT learning_offering_id FROM course_assessment_plans ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let term = Uuid::now_v7();
+    sqlx::query(
+        "INSERT INTO academic_terms(school_days,id,academic_year_id,name,sequence_no,code,
+             term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id)
+         SELECT 'MON,TUE,WED,THU,FRI',$1,offering.academic_year_id,'Assessment list',1001,
+                'ASSESS-LIST','custom',false,false,'planning',term.bell_schedule_id
+         FROM learning_offerings offering JOIN academic_terms term ON term.id=offering.academic_term_id
+         WHERE offering.id=$2",
+    ).bind(term).bind(source).execute(&pool).await.unwrap();
+    // Distinct pins of one stable subject model a removed old course, a replacement,
+    // and over 500 unpublished/omitted registry courses ahead of the current codes.
+    let offerings: Vec<(Uuid, i32)> = sqlx::query_as(
+        "WITH pins AS (
+             INSERT INTO subject_versions
+             SELECT (jsonb_populate_record(NULL::subject_versions,to_jsonb(version)||
+                 jsonb_build_object('id',uuidv7(),'version_no',
+                     (SELECT max(version_no) FROM subject_versions WHERE subject_id=version.subject_id)+n,
+                     'name_th','Assessment pin '||n,'effective_from',current_date-100))).*
+             FROM course_offering_details detail
+             JOIN subject_versions version ON version.id=detail.subject_version_id,
+                  generate_series(1,504) n
+             WHERE detail.learning_offering_id=$2
+             RETURNING id,subject_id,version_no,credit
+         ), inserted AS (
+             INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,
+                 code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id)
+             SELECT pin.id,$1,source.academic_year_id,'course',
+                    CASE WHEN pin.version_no=(SELECT max(version_no) FROM pins) THEN 'ZZ-CURRENT'
+                         ELSE 'AA-'||pin.version_no END,
+                    'Offering pin '||pin.version_no,'draft',current_date-100,source.owning_organization_unit_id
+             FROM pins pin CROSS JOIN learning_offerings source WHERE source.id=$2
+             RETURNING id,academic_term_id,academic_year_id
+         )
+         INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,
+             subject_version_id,subject_id,credit,hours,assessment_total_score)
+         SELECT inserted.id,inserted.academic_term_id,inserted.academic_year_id,
+                pin.id,pin.subject_id,pin.credit,detail.hours,detail.assessment_total_score
+         FROM inserted JOIN pins pin ON pin.id=inserted.id
+         CROSS JOIN course_offering_details detail WHERE detail.learning_offering_id=$2
+         RETURNING learning_offering_id,
+                   (SELECT version_no FROM pins WHERE id=subject_version_id)",
+    ).bind(term).bind(source).fetch_all(&pool).await.unwrap();
+    assert_eq!(offerings.len(), 504);
+    let old = offerings
+        .iter()
+        .min_by_key(|(_, version)| version)
+        .unwrap()
+        .0;
+    let (current, current_revision) = *offerings.iter().max_by_key(|(_, version)| version).unwrap();
+    let no_plan = offerings
+        .iter()
+        .find(|(_, revision)| *revision == current_revision - 1)
+        .unwrap()
+        .0;
+    // Registry publication is deliberately insufficient for list membership.
+    sqlx::query("UPDATE learning_offerings SET status='published',published_at=now() WHERE academic_term_id=$1")
+        .bind(term).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO course_assessment_plans(id,academic_term_id,academic_year_id,subject_version_id,
+             learning_offering_id,assessment_coordinator_id)
+         SELECT uuidv7(),academic_term_id,academic_year_id,subject_version_id,learning_offering_id,$2
+         FROM course_offering_details WHERE learning_offering_id=$1",
+    ).bind(old).bind(teacher).execute(&pool).await.unwrap();
+    let access = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    assert!(
+        services::list_assessment_plans(&pool, &list_query(term), &access, teacher)
+            .await
+            .unwrap()
+            .is_empty(),
+        "registry courses and saved plans require a publication"
+    );
+    publish_assessment_list_source(&pool, term, 1, 90, &[old]).await;
+    let old_rows = services::list_assessment_plans(&pool, &list_query(term), &access, teacher)
+        .await
+        .unwrap();
+    assert_eq!(old_rows.len(), 1);
+    assert_eq!(old_rows[0].offering_id, old);
+    assert!(old_rows[0].plan_id.is_some());
+    // A later publication number wins even with an earlier effective date, and
+    // future publications are immediately the assessment preparation source.
+    publish_assessment_list_source(&pool, term, 2, 30, &[current, no_plan]).await;
+    sqlx::query(
+        "INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,
+             reference_date,status,snapshot)
+         SELECT uuidv7(),id,academic_year_id,current_date+200,version_status,
+                academic_capture_delivery_snapshot(id,current_date+200,'[]'::jsonb)
+         FROM academic_terms CROSS JOIN unnest(ARRAY['draft','cancelled']) version_status WHERE id=$1",
+    )
+    .bind(term)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut rows = services::list_assessment_plans(&pool, &list_query(term), &access, teacher)
+        .await
+        .unwrap();
+    rows.sort_by_key(|row| row.offering_id);
+    let mut expected = vec![current, no_plan];
+    expected.sort_unstable();
+    assert_eq!(
+        rows.iter().map(|row| row.offering_id).collect::<Vec<_>>(),
+        expected,
+        "membership must be applied before the 500-row limit"
+    );
+    assert!(rows.iter().all(|row| row.plan_id.is_none()));
+    let pinned = rows.iter().find(|row| row.offering_id == no_plan).unwrap();
+    assert_eq!(
+        pinned.subject_version_display_label,
+        format!("Assessment pin 503 · v{}", current_revision - 1)
+    );
+    assert_eq!(
+        pinned.offering_name,
+        format!("Offering pin {}", current_revision - 1)
+    );
+    assert_eq!(rows[0].subject_id, rows[1].subject_id);
+
+    let mut connection = pool.acquire().await.unwrap();
+    let year: Uuid = sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
+        .bind(term)
+        .fetch_one(&mut *connection)
+        .await
+        .unwrap();
+    for (year, term) in [(Uuid::now_v7(), term), (year, Uuid::now_v7())] {
+        assert!(school_academic_delivery::services::versions::latest_published_course_offering_ids_on_connection(
+            &mut connection,year,term).await.unwrap().is_empty());
+    }
+    drop(connection);
+    publish_assessment_list_source(&pool, term, 3, -30, &[]).await;
+    assert!(
+        services::list_assessment_plans(&pool, &list_query(term), &access, teacher)
+            .await
+            .unwrap()
+            .is_empty(),
+        "an empty latest graph cannot fall back to older courses"
+    );
+}
+
 async fn assert_assessment_assignment_scope(
     pool: &sqlx::PgPool,
     term: Uuid,

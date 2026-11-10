@@ -70,6 +70,33 @@ const VERSION_SELECT: &str = "SELECT version.publication_no,version.id,version.a
       AND next.publication_no>version.publication_no
     ) AS effective_until FROM academic_delivery_versions version";
 
+/// Course membership comes from the highest publication number in the exact
+/// year/term, including future publications. Missing or empty graphs have no fallback.
+pub async fn latest_published_course_offering_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_year_id: Uuid,
+    academic_term_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    Ok(DbSession::new(connection)
+        .scalar(
+            "academic_delivery.services.versions.latest_published_course_offering_ids_on_connection",
+            r#"WITH latest AS (
+                   SELECT snapshot FROM academic_delivery_versions
+                   WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published'
+                   ORDER BY publication_no DESC LIMIT 1
+               )
+               SELECT DISTINCT (offering->>'id')::uuid
+               FROM latest
+               CROSS JOIN LATERAL jsonb_array_elements(latest.snapshot->'offerings') offering
+               WHERE offering->>'kind'='course'
+               ORDER BY 1"#,
+        )
+        .bind(academic_year_id)
+        .bind(academic_term_id)
+        .fetch_all()
+        .await?)
+}
+
 /// Reads only the latest published graph in each requested offering's exact context.
 /// Missing versions or omitted offerings return no allocations, without a date fallback.
 pub async fn teacher_allocations_on_connection(
