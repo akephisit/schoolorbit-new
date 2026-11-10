@@ -233,8 +233,27 @@ async fn remove_resource(
                 ).bind(group).execute().await.map_err(deletion_error)?.rows_affected();
             }
         } else if offering_status == LearningOfferingStatus::Draft
-            && offering_is_exclusive(&mut tx, offering_id, version_id).await?
+            && offering_is_exclusive_except_audience(
+                &mut tx,
+                offering_id,
+                version_id,
+                Some(change_set_id),
+            )
+            .await?
         {
+            // This draft's empty audience records the removal intent for retained resources.
+            // Only an exclusive, unused offering may discard that parent before its registry row.
+            DbSession::new(&mut *tx)
+                .query(
+                    "academic_delivery.services.change_sets.remove_draft_resource",
+                    "DELETE FROM academic_delivery_revision_audiences
+                    WHERE change_set_id=$1 AND learning_offering_id=$2",
+                )
+                .bind(change_set_id)
+                .bind(offering_id)
+                .execute()
+                .await
+                .map_err(deletion_error)?;
             deleted_groups = DbSession::new(&mut *tx)
                 .query(
                     "academic_delivery.services.change_sets.remove_draft_resource",
@@ -283,11 +302,21 @@ pub(super) async fn offering_is_exclusive(
     offering_id: Uuid,
     version_id: Uuid,
 ) -> Result<bool, AppError> {
+    offering_is_exclusive_except_audience(tx, offering_id, version_id, None).await
+}
+
+async fn offering_is_exclusive_except_audience(
+    tx: &mut Transaction<'_, Postgres>,
+    offering_id: Uuid,
+    version_id: Uuid,
+    removable_audience_revision: Option<Uuid>,
+) -> Result<bool, AppError> {
     Ok(DbSession::new(&mut **tx).scalar(
         "academic_delivery.services.change_sets.offering_is_exclusive",
         "SELECT NOT EXISTS(SELECT 1 FROM academic_delivery_versions v,
             jsonb_array_elements(v.snapshot->'offerings') o WHERE v.id<>$2 AND (o->>'id')::uuid=$1)
-            AND NOT EXISTS(SELECT 1 FROM academic_delivery_revision_audiences WHERE learning_offering_id=$1)
+            AND NOT EXISTS(SELECT 1 FROM academic_delivery_revision_audiences
+                WHERE learning_offering_id=$1 AND change_set_id IS DISTINCT FROM $3::uuid)
             AND NOT EXISTS(SELECT 1 FROM academic_term_change_items item
                 LEFT JOIN learning_groups g ON g.id=item.learning_group_id
                 WHERE item.learning_offering_id=$1 OR g.learning_offering_id=$1)
@@ -296,5 +325,5 @@ pub(super) async fn offering_is_exclusive(
             AND NOT EXISTS(SELECT 1 FROM learning_group_teachers t JOIN learning_groups g ON g.id=t.learning_group_id
                 WHERE g.learning_offering_id=$1
                 AND (t.started_by_change_set_id IS NOT NULL OR t.ended_by_change_set_id IS NOT NULL))",
-    ).bind(offering_id).bind(version_id).fetch_one().await?)
+    ).bind(offering_id).bind(version_id).bind(removable_audience_revision).fetch_one().await?)
 }

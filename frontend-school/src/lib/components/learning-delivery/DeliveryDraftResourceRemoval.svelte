@@ -264,11 +264,22 @@
 					</p>
 				{:else}<p class="text-sm">
 						นำรายการ “{offering.name}” พร้อมทุกกลุ่มเรียน {offering.groups.length} กลุ่มออกจากแบบร่างนี้
+					</p>
+					<p class="text-sm text-muted-foreground">
+						หากรายการเปิดสอนนี้ยังไม่เคยใช้งานและไม่มีรุ่นอื่นใช้อยู่
+						รายการเปิดสอนพร้อมทุกกลุ่มเรียนจะถูกลบถาวร
+					</p>
+					<p class="text-sm text-muted-foreground">
+						หากเคยใช้งานหรือมีรุ่นอื่นใช้อยู่ จะนำออกเฉพาะแบบร่างที่เลือก โดยคะแนน การเช็กชื่อ
+						และประวัติเดิมยังคงอยู่
+					</p>
+					<p class="text-sm text-muted-foreground">
+						การลบนี้ไม่กระทบคลังรายวิชา กิจกรรม หรือโครงสร้างหลักสูตร
 					</p>{/if}
-				<p class="text-sm text-muted-foreground">
-					รุ่นที่เผยแพร่แล้ว ตารางสอน รายชื่อ คะแนน และประวัติเดิมยังคงอยู่
-					การนำออกมีผลเฉพาะแบบร่างที่เลือก
-				</p>
+				{#if groupId || homeroomId}<p class="text-sm text-muted-foreground">
+						รุ่นที่เผยแพร่แล้ว ตารางสอน รายชื่อ คะแนน และประวัติเดิมยังคงอยู่
+						การนำออกมีผลเฉพาะแบบร่างที่เลือก
+					</p>{/if}
 			{/if}
 			{#if saved}<p role="status" class="text-sm">นำออกจากแบบร่างแล้ว กำลังแสดงข้อมูลล่าสุด</p>{/if}
 			{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
