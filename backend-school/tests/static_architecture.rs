@@ -35,33 +35,19 @@ fn connection_work_body(source: &str, function: &str) -> String {
 }
 
 #[test]
-fn tenant_schema_verification_is_mandatory_and_composed_without_embedding_migrations() {
-    let tenancy = read_source(workspace_crate_dir("school-tenancy").join("Cargo.toml"));
-    let manager = read_source(workspace_crate_dir("school-tenancy").join("src/pool_manager.rs"));
-    let adapter = read_source(manifest_dir().join("src/adapters/tenant_schema.rs"));
-    let fixture = read_source(workspace_crate_dir("school-test-db").join("src/lib.rs"));
-    assert!(!tenancy.contains("school-migrations"));
-    assert!(!manager.contains("school_migrations"));
-    assert!(!manager.contains("impl Default for PoolManager {"));
-    assert!(manager.contains("pub type RuntimeSchemaVerifier = for<'connection> fn("));
-    assert!(manager.contains("&'connection mut PgConnection"));
-    assert!(manager.contains("pub fn new(verify_schema: RuntimeSchemaVerifier)"));
-    assert!(manager.contains("verify_schema: RuntimeSchemaVerifier,"));
-    let initialization =
-        extract_source_block(&manager, "pub async fn get_pool_without_migrations(", false);
-    assert!(initialization.contains("let verify_schema = self.verify_schema;"));
-    assert!(initialization.contains(".after_connect(move |connection, _|"));
-    assert!(initialization.contains("verify_schema(connection)"));
-    assert!(initialization.contains(".map_err(sqlx::Error::Protocol)?"));
-    assert!(initialization.contains("verified.store(true, Ordering::Release)"));
-    for provider in [&adapter, &fixture] {
-        assert!(provider.contains("Box::pin(school_migrations::verify_tenant_schema(connection))"));
+fn tenancy_normal_dependency_closure_excludes_embedded_migrations() {
+    let mut pending = vec!["school-tenancy".to_string()];
+    let mut visited = BTreeSet::new();
+    while let Some(package) = pending.pop() {
+        assert_ne!(
+            package, "school-migrations",
+            "tenancy must not embed migration SQL through its production dependencies"
+        );
+        if visited.insert(package.clone()) {
+            let manifest = read_source(workspace_crate_dir(&package).join("Cargo.toml"));
+            pending.extend(school_dependencies_in_section(&manifest, "dependencies"));
+        }
     }
-    assert!(!adapter.contains("PgPool"));
-    assert!(
-        !read_source(workspace_crate_dir("school-test-db").join("Cargo.toml"))
-            .contains("school-tenancy")
-    );
 }
 
 #[test]
@@ -1992,7 +1978,7 @@ fn school_tenancy_is_the_single_tenant_runtime_owner() {
     assert!(startup.contains("PoolManagerConfig::from_env()"));
     assert!(startup.contains("PoolManager::with_config("));
     assert!(startup.contains("pool_manager_config,"));
-    assert!(startup.contains("backend_school::adapters::tenant_schema::verify_tenant_schema"));
+    assert!(startup.contains("adapters::tenant_schema::verify_tenant_schema"));
     assert!(tenancy_api.contains("pub use pool_manager::{"));
     assert!(tenancy_api.contains("PoolManagerConfig"));
     assert!(tenancy_api.contains("pub use tenant_pool::{"));

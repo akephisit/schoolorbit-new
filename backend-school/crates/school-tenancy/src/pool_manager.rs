@@ -850,6 +850,146 @@ mod tests {
         assert!(count <= 2);
     }
 
+    fn probe_schema_verifier(
+        connection: &mut sqlx::PgConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i64, String>> + Send + '_>> {
+        Box::pin(async move {
+            let (version, accepted): (i64, bool) = sqlx::query_as(
+                "UPDATE schema_verifier_probe SET calls = calls + 1 RETURNING version, accepted",
+            )
+            .fetch_one(&mut *connection)
+            .await
+            .map_err(|_| "fixture verifier probe failed".to_string())?;
+            if !accepted {
+                return Err("fixture schema rejected".to_string());
+            }
+            sqlx::query("SELECT set_config('schoolorbit.verified_version', $1, false)")
+                .bind(version.to_string())
+                .execute(&mut *connection)
+                .await
+                .map_err(|_| "fixture verifier marker failed".to_string())?;
+            Ok(version)
+        })
+    }
+
+    async fn verifier_probe_fixture(name: &str) -> (sqlx::PgPool, reqwest::Url) {
+        let fixture = school_test_db::create_named_test_pool(name).await;
+        sqlx::raw_sql(
+            "CREATE TABLE schema_verifier_probe (calls integer NOT NULL, version bigint NOT NULL, accepted boolean NOT NULL);
+             INSERT INTO schema_verifier_probe VALUES (0, 9876543210, true)",
+        )
+        .execute(&fixture)
+        .await
+        .unwrap();
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        url.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        (fixture, url)
+    }
+
+    #[tokio::test]
+    async fn injected_verifier_borrows_initial_connection_and_runs_once_per_pool() {
+        let (fixture, url) = verifier_probe_fixture("schema_verifier_invocation").await;
+        let manager = super::PoolManager::with_config(
+            super::PoolManagerConfig::for_tests(2, 2, 1),
+            probe_schema_verifier,
+        );
+        let pool = manager.get_pool(url.as_str(), "verified").await.unwrap();
+        let mut initial = pool.acquire().await.unwrap();
+        let marker: String =
+            sqlx::query_scalar("SELECT current_setting('schoolorbit.verified_version')")
+                .fetch_one(&mut *initial)
+                .await
+                .unwrap();
+        assert_eq!(
+            marker, "9876543210",
+            "verification must use the admitted connection"
+        );
+        let mut subsequent = pool.acquire().await.unwrap();
+        let marker: Option<String> =
+            sqlx::query_scalar("SELECT current_setting('schoolorbit.verified_version', true)")
+                .fetch_one(&mut *subsequent)
+                .await
+                .unwrap();
+        assert_eq!(
+            marker, None,
+            "additional physical connections skip the verified pool's scan"
+        );
+        let cached = manager.get_pool(url.as_str(), "verified").await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT calls FROM schema_verifier_probe")
+                .fetch_one(&fixture)
+                .await
+                .unwrap(),
+            1
+        );
+        initial.return_to_pool().await;
+        subsequent.return_to_pool().await;
+        drop(cached);
+        drop(pool);
+        manager.retire_pool(url.as_str(), "verified").await.unwrap();
+        let reopened = manager.get_pool(url.as_str(), "verified").await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT calls FROM schema_verifier_probe")
+                .fetch_one(&fixture)
+                .await
+                .unwrap(),
+            2
+        );
+        drop(reopened);
+        manager.retire_pool(url.as_str(), "verified").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn injected_verifier_rejection_is_not_cached_and_releases_admission_for_retry() {
+        let (fixture, url) = verifier_probe_fixture("schema_verifier_rejection").await;
+        sqlx::query("UPDATE schema_verifier_probe SET accepted = false")
+            .execute(&fixture)
+            .await
+            .unwrap();
+        let mut manager = super::PoolManager::with_config(
+            super::PoolManagerConfig::for_tests(1, 1, 1),
+            probe_schema_verifier,
+        );
+        manager.lifecycle_timeout = Duration::from_millis(150);
+        assert!(manager.get_pool(url.as_str(), "rejected").await.is_err());
+        assert_eq!(manager.pool_count().await, 0);
+        assert!(
+            sqlx::query_scalar::<_, i32>("SELECT calls FROM schema_verifier_probe")
+                .fetch_one(&fixture)
+                .await
+                .unwrap()
+                > 0
+        );
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while manager.budget.available_permits() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("failed initialization must release its physical reservation after drainage");
+        sqlx::query("UPDATE schema_verifier_probe SET accepted = true")
+            .execute(&fixture)
+            .await
+            .unwrap();
+        manager.lifecycle_timeout = Duration::from_secs(5);
+        let recovered = manager.get_pool(url.as_str(), "rejected").await.unwrap();
+        assert_eq!(manager.pool_count().await, 1);
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT 1")
+                .fetch_one(&*recovered)
+                .await
+                .unwrap(),
+            1
+        );
+        drop(recovered);
+        manager.retire_pool(url.as_str(), "rejected").await.unwrap();
+    }
+
     #[tokio::test]
     async fn deployment_retirement_closes_old_clones_and_reopens_a_verified_pool() {
         let fixture = school_test_db::create_named_test_pool("runtime_pool_retirement").await;

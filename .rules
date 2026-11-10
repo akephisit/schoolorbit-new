@@ -632,8 +632,7 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
   `RuntimeSchemaVerifier` through its adapter to the canonical `school-migrations`
   verifier; tenancy must not depend on embedded migrations or supply a default
   verifier. The adapter checks the initialization connection without another checkout.
-  Bound pool
-  initialization (including tenant gate/schema reads) and graceful drainage; never
+  Bound pool initialization (including tenant gate/schema reads) and graceful drainage; never
   hold the tenant creation gate while waiting for borrowers to drain. Reject closed
   cached handles, fail deployment closed on timeout, and never replay ambiguous writes.
   Verify initial schema on an owned connection before admitting it to the pool, so
