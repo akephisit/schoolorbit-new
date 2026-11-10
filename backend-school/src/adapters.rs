@@ -10,3 +10,5 @@ pub mod staff_directory;
 pub mod budget;
 
 pub mod academic_retention;
+
+pub mod tenant_schema;

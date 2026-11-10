@@ -75,7 +75,8 @@ fn execution_method(name: &str) -> bool {
     )
 }
 
-// Bootstrap/schema inspection cannot depend on tenancy (tenancy itself owns migrations).
+// Migrations owns canonical DDL/history; tenancy owns runtime pools and its verifier port.
+// Bootstrap/schema inspection cannot depend on tenancy without coupling those owners.
 // These are function boundaries, not exemptions for all runtime code in an owner.
 fn native_exception(file: &Path, function: &str) -> bool {
     let file = file.to_string_lossy().replace('\\', "/");
@@ -264,6 +265,11 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
         (
             "school-academic-core/src/services/homeroom_roster.rs",
             &["read_transaction", "write_roster"],
+        ),
+        // Public create/copy_into delegate to this complete observed transaction owner.
+        (
+            "school-academic-core/src/services/term_school_schedule.rs",
+            &["copy"],
         ),
         (
             "school-academic-lifecycle/src/services/promotion_execution.rs",
@@ -939,6 +945,64 @@ fn guard_private_work_entries_keep_native_and_nested_pool_guards() {
         assert!(
             problems.iter().any(|problem| problem.contains(expected)),
             "registered work entry bypassed {expected}: {problems:?}"
+        );
+    }
+}
+
+#[test]
+fn guard_term_school_schedule_copy_requires_exact_transaction_owner() {
+    let owner = "crates/school-academic-core/src/services/term_school_schedule.rs";
+    let entry = "async fn copy(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; tx.commit().await?; }";
+    assert!(inspect_snippet_at(owner, entry).is_empty());
+
+    let helper = entry.replace("fn copy(", "fn hydrate_schedule(");
+    for (file, source) in [
+        (owner, helper.as_str()),
+        (
+            "crates/school-academic-core/src/services/other_schedule.rs",
+            entry,
+        ),
+        (
+            "crates/school-academic-delivery/src/services/term_school_schedule.rs",
+            entry,
+        ),
+    ] {
+        let problems = inspect_snippet_at(file, source);
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains("private query helper retains a pool capability")),
+            "unregistered schedule pool helper accepted at {file}: {source}"
+        );
+    }
+}
+
+#[test]
+fn guard_term_school_schedule_copy_keeps_native_and_nested_pool_guards() {
+    let owner = "crates/school-academic-core/src/services/term_school_schedule.rs";
+    for (operation, expected) in [
+        (
+            "sqlx::query(SQL).execute(pool).await?;",
+            "native execution accepts an executor",
+        ),
+        (
+            "sqlx::query(SQL).execute(&mut *tx).await?;",
+            "native execution accepts an executor",
+        ),
+        (
+            "let connection = pool.acquire().await?;",
+            "native pool admission bypasses observed work boundary",
+        ),
+        (
+            "let connection = TenantPool::observed_checkout_pool(pool, OP).await?;",
+            "pool helper observed_checkout_pool called while a connection or transaction is held",
+        ),
+    ] {
+        let entry = format!("async fn copy(pool: &PgPool) {{ let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; {operation} tx.commit().await?; }}");
+        let problems = inspect_snippet_at(owner, &entry);
+        assert!(
+            problems.iter().any(|problem| problem.contains(expected)),
+            "registered schedule transaction bypassed {expected}: {problems:?}"
         );
     }
 }

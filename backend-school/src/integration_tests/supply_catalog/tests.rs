@@ -964,7 +964,7 @@ async fn actual_app_catalog_routes_share_the_session_boundary_and_exact_prefix()
     use school_tenancy::{AdminClient, AdminClientConfig, PoolManager};
     use tower::ServiceExt;
     let (pool, _, _, _) = fixture("supply_route_session_boundary").await;
-    let pool_manager = Arc::new(PoolManager::new());
+    let pool_manager = Arc::new(PoolManager::new(school_test_db::verify_tenant_schema));
     pool_manager
         .insert_test_pool("test-pool://supply-route", pool)
         .await;

@@ -1027,7 +1027,10 @@ async fn delivery_preparation_preview_preserves_managed_one_connection_read_only
     url.query_pairs_mut()
         .append_pair("options", &format!("-csearch_path={schema},public"));
     fixture.close().await;
-    let manager = PoolManager::with_config(PoolManagerConfig::for_tests(1, 1, 1));
+    let manager = PoolManager::with_config(
+        PoolManagerConfig::for_tests(1, 1, 1),
+        school_test_db::verify_tenant_schema,
+    );
     let pool = manager
         .get_pool(url.as_str(), "preparation-read-only")
         .await
@@ -1099,7 +1102,10 @@ async fn preparation_database_failures_preserve_cause_and_release_managed_connec
     url.query_pairs_mut()
         .append_pair("options", &format!("-csearch_path={schema},public"));
     fixture.close().await;
-    let manager = PoolManager::with_config(PoolManagerConfig::for_tests(1, 1, 1));
+    let manager = PoolManager::with_config(
+        PoolManagerConfig::for_tests(1, 1, 1),
+        school_test_db::verify_tenant_schema,
+    );
     let pool = manager
         .get_pool(url.as_str(), "preparation-database-failure")
         .await

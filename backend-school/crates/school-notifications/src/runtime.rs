@@ -529,7 +529,7 @@ mod tests {
     #[tokio::test]
     async fn network_wait_holds_no_database_admission_and_cancellation_joins_items() {
         use school_tenancy::{background::TenantJobKind, PoolManager};
-        let turns = PoolManager::new().background_turns();
+        let turns = PoolManager::new(school_test_db::verify_tenant_schema).background_turns();
         let worker_turns = turns.clone();
         let (started, mut observed) = tokio::sync::mpsc::unbounded_channel();
         let task = tokio::spawn(async move {

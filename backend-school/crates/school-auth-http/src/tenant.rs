@@ -154,7 +154,7 @@ mod tests {
                 "test-secret".to_string(),
                 AdminClientConfig::for_tests(Duration::from_secs(1), 1, Duration::from_millis(1)),
             )),
-            pool_manager: Arc::new(PoolManager::new()),
+            pool_manager: Arc::new(PoolManager::new(school_test_db::verify_tenant_schema)),
             identity_cache: Arc::new(school_auth::session_cache::SessionCache::new()),
             permission_cache: Arc::new(PermissionCache::new()),
             config: Arc::new(SessionConfig::for_tests(SessionHmacKey::for_tests(

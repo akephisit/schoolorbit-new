@@ -2,11 +2,12 @@ use crate::{tenant_pool::Lease, TenantPool};
 use dashmap::DashMap;
 use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
-    ConnectOptions, PgPool,
+    ConnectOptions, PgConnection, PgPool,
 };
 use std::{
     collections::HashMap,
     future::Future,
+    pin::Pin,
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -168,7 +169,18 @@ impl Drop for PhysicalAdmissionObservation {
     }
 }
 
+/// Verifies immutable release history using the connection being initialized.
+/// Application composition must supply the canonical verifier. It must not acquire
+/// another connection or perform migrations; cancellation drops this borrowed future
+/// together with SQLx's owned initialization connection.
+pub type RuntimeSchemaVerifier = for<'connection> fn(
+    &'connection mut PgConnection,
+) -> Pin<
+    Box<dyn Future<Output = Result<i64, String>> + Send + 'connection>,
+>;
+
 pub struct PoolManager {
+    verify_schema: RuntimeSchemaVerifier,
     background_turns: Arc<crate::background::TenantTurnExecutor>,
     pools: Arc<RwLock<HashMap<String, PoolEntry>>>,
     creation_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
@@ -180,11 +192,12 @@ pub struct PoolManager {
     lifecycle_timeout: Duration,
 }
 impl PoolManager {
-    pub fn new() -> Self {
-        Self::with_config(PoolManagerConfig::default())
+    pub fn new(verify_schema: RuntimeSchemaVerifier) -> Self {
+        Self::with_config(PoolManagerConfig::default(), verify_schema)
     }
-    pub fn with_config(config: PoolManagerConfig) -> Self {
+    pub fn with_config(config: PoolManagerConfig, verify_schema: RuntimeSchemaVerifier) -> Self {
         Self {
+            verify_schema,
             background_turns: Arc::new(crate::background::TenantTurnExecutor::new(
                 config.background_turn_limit(config.background_turns),
             )),
@@ -390,6 +403,7 @@ impl PoolManager {
                 .map_err(|_| format!("Invalid database configuration for {subdomain}"))?
                 .statement_cache_capacity(100)
                 .disable_statement_logging();
+            let verify_schema = self.verify_schema;
             let verified = Arc::new(AtomicBool::new(false));
             let tenant = subdomain.to_owned();
             let pool = PgPoolOptions::new()
@@ -403,7 +417,7 @@ impl PoolManager {
                                 operation = "tenant_pool_creation",
                                 stage = "schema_history_started"
                             );
-                            let version = school_migrations::verify_tenant_schema(connection)
+                            let version = verify_schema(connection)
                                 .await
                                 .map_err(sqlx::Error::Protocol)?;
                             tracing::info!(
@@ -525,12 +539,6 @@ async fn close_pool_with_timeout(
             "Database pool drainage timed out".into()
         })
 }
-impl Default for PoolManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -548,7 +556,7 @@ mod tests {
                 super::parse_setting("TENANT_BACKGROUND_MAX_TURNS", Some(raw), 2, 1, 64).is_err()
             );
         }
-        let manager = super::PoolManager::new();
+        let manager = super::PoolManager::new(school_test_db::verify_tenant_schema);
         assert!(std::sync::Arc::ptr_eq(
             &manager.background_turns(),
             &manager.background_turns()
@@ -635,7 +643,7 @@ mod tests {
             let mut connection = super::connect_privileged_connection(url.as_str())
                 .await
                 .unwrap();
-            school_migrations::verify_tenant_schema(&mut *connection).await
+            school_test_db::verify_tenant_schema(&mut connection).await
         })
         .await;
         assert!(result.is_err());
@@ -649,12 +657,15 @@ mod tests {
     }
 
     fn small_manager() -> super::PoolManager {
-        super::PoolManager::with_config(super::PoolManagerConfig {
-            runtime_connections: 2,
-            per_tenant: 1,
-            admission_timeout: Duration::from_millis(100),
-            background_turns: 2,
-        })
+        super::PoolManager::with_config(
+            super::PoolManagerConfig {
+                runtime_connections: 2,
+                per_tenant: 1,
+                admission_timeout: Duration::from_millis(100),
+                background_turns: 2,
+            },
+            school_test_db::verify_tenant_schema,
+        )
     }
 
     #[tokio::test]
@@ -839,6 +850,146 @@ mod tests {
         assert!(count <= 2);
     }
 
+    fn probe_schema_verifier(
+        connection: &mut sqlx::PgConnection,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i64, String>> + Send + '_>> {
+        Box::pin(async move {
+            let (version, accepted): (i64, bool) = sqlx::query_as(
+                "UPDATE schema_verifier_probe SET calls = calls + 1 RETURNING version, accepted",
+            )
+            .fetch_one(&mut *connection)
+            .await
+            .map_err(|_| "fixture verifier probe failed".to_string())?;
+            if !accepted {
+                return Err("fixture schema rejected".to_string());
+            }
+            sqlx::query("SELECT set_config('schoolorbit.verified_version', $1, false)")
+                .bind(version.to_string())
+                .execute(&mut *connection)
+                .await
+                .map_err(|_| "fixture verifier marker failed".to_string())?;
+            Ok(version)
+        })
+    }
+
+    async fn verifier_probe_fixture(name: &str) -> (sqlx::PgPool, reqwest::Url) {
+        let fixture = school_test_db::create_named_test_pool(name).await;
+        sqlx::raw_sql(
+            "CREATE TABLE schema_verifier_probe (calls integer NOT NULL, version bigint NOT NULL, accepted boolean NOT NULL);
+             INSERT INTO schema_verifier_probe VALUES (0, 9876543210, true)",
+        )
+        .execute(&fixture)
+        .await
+        .unwrap();
+        let schema: String = sqlx::query_scalar("SELECT current_schema()::text")
+            .fetch_one(&fixture)
+            .await
+            .unwrap();
+        let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
+        url.query_pairs_mut()
+            .append_pair("options", &format!("-csearch_path={schema},public"));
+        (fixture, url)
+    }
+
+    #[tokio::test]
+    async fn injected_verifier_borrows_initial_connection_and_runs_once_per_pool() {
+        let (fixture, url) = verifier_probe_fixture("schema_verifier_invocation").await;
+        let manager = super::PoolManager::with_config(
+            super::PoolManagerConfig::for_tests(2, 2, 1),
+            probe_schema_verifier,
+        );
+        let pool = manager.get_pool(url.as_str(), "verified").await.unwrap();
+        let mut initial = pool.acquire().await.unwrap();
+        let marker: String =
+            sqlx::query_scalar("SELECT current_setting('schoolorbit.verified_version')")
+                .fetch_one(&mut *initial)
+                .await
+                .unwrap();
+        assert_eq!(
+            marker, "9876543210",
+            "verification must use the admitted connection"
+        );
+        let mut subsequent = pool.acquire().await.unwrap();
+        let marker: Option<String> =
+            sqlx::query_scalar("SELECT current_setting('schoolorbit.verified_version', true)")
+                .fetch_one(&mut *subsequent)
+                .await
+                .unwrap();
+        assert_eq!(
+            marker, None,
+            "additional physical connections skip the verified pool's scan"
+        );
+        let cached = manager.get_pool(url.as_str(), "verified").await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT calls FROM schema_verifier_probe")
+                .fetch_one(&fixture)
+                .await
+                .unwrap(),
+            1
+        );
+        initial.return_to_pool().await;
+        subsequent.return_to_pool().await;
+        drop(cached);
+        drop(pool);
+        manager.retire_pool(url.as_str(), "verified").await.unwrap();
+        let reopened = manager.get_pool(url.as_str(), "verified").await.unwrap();
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT calls FROM schema_verifier_probe")
+                .fetch_one(&fixture)
+                .await
+                .unwrap(),
+            2
+        );
+        drop(reopened);
+        manager.retire_pool(url.as_str(), "verified").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn injected_verifier_rejection_is_not_cached_and_releases_admission_for_retry() {
+        let (fixture, url) = verifier_probe_fixture("schema_verifier_rejection").await;
+        sqlx::query("UPDATE schema_verifier_probe SET accepted = false")
+            .execute(&fixture)
+            .await
+            .unwrap();
+        let mut manager = super::PoolManager::with_config(
+            super::PoolManagerConfig::for_tests(1, 1, 1),
+            probe_schema_verifier,
+        );
+        manager.lifecycle_timeout = Duration::from_millis(150);
+        assert!(manager.get_pool(url.as_str(), "rejected").await.is_err());
+        assert_eq!(manager.pool_count().await, 0);
+        assert!(
+            sqlx::query_scalar::<_, i32>("SELECT calls FROM schema_verifier_probe")
+                .fetch_one(&fixture)
+                .await
+                .unwrap()
+                > 0
+        );
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while manager.budget.available_permits() != 1 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("failed initialization must release its physical reservation after drainage");
+        sqlx::query("UPDATE schema_verifier_probe SET accepted = true")
+            .execute(&fixture)
+            .await
+            .unwrap();
+        manager.lifecycle_timeout = Duration::from_secs(5);
+        let recovered = manager.get_pool(url.as_str(), "rejected").await.unwrap();
+        assert_eq!(manager.pool_count().await, 1);
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT 1")
+                .fetch_one(&*recovered)
+                .await
+                .unwrap(),
+            1
+        );
+        drop(recovered);
+        manager.retire_pool(url.as_str(), "rejected").await.unwrap();
+    }
+
     #[tokio::test]
     async fn deployment_retirement_closes_old_clones_and_reopens_a_verified_pool() {
         let fixture = school_test_db::create_named_test_pool("runtime_pool_retirement").await;
@@ -850,7 +1001,7 @@ mod tests {
         let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
         url.query_pairs_mut()
             .append_pair("options", &format!("-csearch_path={schema},public"));
-        let manager = super::PoolManager::new();
+        let manager = super::PoolManager::new(school_test_db::verify_tenant_schema);
         let old = manager.get_pool(url.as_str(), "tenant").await.unwrap();
         assert_eq!(old.size(), 1);
         assert_eq!(
@@ -892,7 +1043,7 @@ mod tests {
             .execute(&mut *lock)
             .await
             .unwrap();
-        let mut manager = super::PoolManager::new();
+        let mut manager = super::PoolManager::new(school_test_db::verify_tenant_schema);
         manager.lifecycle_timeout = Duration::from_millis(100);
         let failed = tokio::time::timeout(
             Duration::from_secs(1),
@@ -956,7 +1107,7 @@ mod tests {
             .execute(&mut *lock)
             .await
             .unwrap();
-        let mut manager = super::PoolManager::new();
+        let mut manager = super::PoolManager::new(school_test_db::verify_tenant_schema);
         manager.lifecycle_timeout = Duration::from_millis(150);
         assert!(manager
             .get_pool(url.as_str(), "cancel_socket")
@@ -1019,7 +1170,7 @@ mod tests {
                 result.unwrap();
             }
         });
-        let mut manager = super::PoolManager::new();
+        let mut manager = super::PoolManager::new(school_test_db::verify_tenant_schema);
         manager.lifecycle_timeout = Duration::from_millis(100);
         let (failed, accepted) =
             tokio::join!(manager.get_pool(url.as_str(), "transport"), accepted_rx);
@@ -1050,7 +1201,7 @@ mod tests {
     async fn retirement_does_not_wait_indefinitely_for_a_checked_out_connection() {
         let fixture = school_test_db::create_named_test_pool("blocked_retirement").await;
         let held = fixture.acquire().await.unwrap();
-        let mut manager = super::PoolManager::new();
+        let mut manager = super::PoolManager::new(school_test_db::verify_tenant_schema);
         manager.lifecycle_timeout = Duration::from_millis(40);
         manager
             .insert_test_pool("postgres://retirement", fixture.clone())
@@ -1099,7 +1250,7 @@ mod tests {
             BEGIN RAISE EXCEPTION 'runtime must not reconcile permissions'; END $$;
             CREATE TRIGGER reject_runtime_sync BEFORE INSERT ON permissions FOR EACH STATEMENT EXECUTE FUNCTION reject_runtime_sync();"#)
             .execute(&pool).await.unwrap();
-        let manager = super::PoolManager::new();
+        let manager = super::PoolManager::new(school_test_db::verify_tenant_schema);
         manager.insert_test_pool("test-only-runtime", pool).await;
         for _ in 0..4 {
             manager
@@ -1129,7 +1280,7 @@ mod tests {
 
     #[tokio::test]
     async fn stalled_creation_releases_the_tenant_gate_and_allows_retry() {
-        let mut manager = PoolManager::new();
+        let mut manager = PoolManager::new(school_test_db::verify_tenant_schema);
         manager.lifecycle_timeout = Duration::from_millis(40);
         let stalled = tokio::time::timeout(
             Duration::from_millis(500),
@@ -1155,7 +1306,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_creator_releases_gate_for_waiting_request() {
-        let manager = Arc::new(PoolManager::new());
+        let manager = Arc::new(PoolManager::new(school_test_db::verify_tenant_schema));
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
         let creator_manager = Arc::clone(&manager);
         let creator = tokio::spawn(async move {
@@ -1183,7 +1334,7 @@ mod tests {
 
     #[tokio::test]
     async fn closed_cached_pool_is_replaced() {
-        let manager = PoolManager::new();
+        let manager = PoolManager::new(school_test_db::verify_tenant_schema);
         let old = lazy_pool("closed");
         manager
             .insert_test_pool("postgres://closed", old.clone())
@@ -1220,7 +1371,7 @@ mod tests {
 
     #[tokio::test]
     async fn cache_hit_updates_the_stored_last_used_time() {
-        let manager = PoolManager::new();
+        let manager = PoolManager::new(school_test_db::verify_tenant_schema);
         let database_url = "postgres://touch-cache";
         let started = Instant::now();
         let touched_at = started + Duration::from_secs(20);
@@ -1253,7 +1404,7 @@ mod tests {
 
     #[tokio::test]
     async fn expired_cache_entry_is_recreated() {
-        let manager = PoolManager::new();
+        let manager = PoolManager::new(school_test_db::verify_tenant_schema);
         let database_url = "postgres://expired";
         manager.pools.write().await.insert(
             database_url.to_string(),
@@ -1279,7 +1430,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_misses_for_one_tenant_create_one_pool() {
-        let manager = Arc::new(PoolManager::new());
+        let manager = Arc::new(PoolManager::new(school_test_db::verify_tenant_schema));
         let creations = Arc::new(AtomicUsize::new(0));
         let mut tasks = Vec::new();
 
@@ -1309,7 +1460,7 @@ mod tests {
 
     #[tokio::test]
     async fn different_tenants_create_pools_concurrently() {
-        let manager = Arc::new(PoolManager::new());
+        let manager = Arc::new(PoolManager::new(school_test_db::verify_tenant_schema));
         let entered = Arc::new(Barrier::new(2));
 
         let make_task = |subdomain: &'static str, database_url: &'static str| {
@@ -1339,7 +1490,7 @@ mod tests {
 
     #[tokio::test]
     async fn failed_creation_is_not_cached() {
-        let manager = PoolManager::new();
+        let manager = PoolManager::new(school_test_db::verify_tenant_schema);
         let creations = AtomicUsize::new(0);
 
         let first = manager

@@ -35,6 +35,22 @@ fn connection_work_body(source: &str, function: &str) -> String {
 }
 
 #[test]
+fn tenancy_normal_dependency_closure_excludes_embedded_migrations() {
+    let mut pending = vec!["school-tenancy".to_string()];
+    let mut visited = BTreeSet::new();
+    while let Some(package) = pending.pop() {
+        assert_ne!(
+            package, "school-migrations",
+            "tenancy must not embed migration SQL through its production dependencies"
+        );
+        if visited.insert(package.clone()) {
+            let manifest = read_source(workspace_crate_dir(&package).join("Cargo.toml"));
+            pending.extend(school_dependencies_in_section(&manifest, "dependencies"));
+        }
+    }
+}
+
+#[test]
 fn attendance_reads_and_digest_must_not_restore_placeholder_backfill() {
     let runtime = read_source(manifest_dir().join("crates/school-attendance/src/runtime.rs"));
     let adapter = read_source(manifest_dir().join("crates/school-attendance/src/application.rs"));
@@ -1062,7 +1078,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-tenancy",
             ],
         ),
-        ("school-tenancy", &["school-migrations"]),
+        ("school-tenancy", &[]),
         ("school-test-db", &["school-migrations"]),
         (
             "school-workflow",
@@ -1247,7 +1263,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
     }
     assert!(academic_core_dev_dependencies.contains("school-test-db = { workspace = true }"));
     assert!(test_db.contains("school-migrations = { workspace = true }"));
-    assert!(tenancy.contains("school-migrations = { workspace = true }"));
+    assert!(!tenancy.contains("school-migrations"));
     assert!(!tenancy.contains("school-authorization"));
     assert!(!tenancy.contains("school-http"));
     let file_platform_dependencies = file_platform
@@ -1960,7 +1976,9 @@ fn school_tenancy_is_the_single_tenant_runtime_owner() {
         );
     }
     assert!(startup.contains("PoolManagerConfig::from_env()"));
-    assert!(startup.contains("PoolManager::with_config(pool_manager_config)"));
+    assert!(startup.contains("PoolManager::with_config("));
+    assert!(startup.contains("pool_manager_config,"));
+    assert!(startup.contains("adapters::tenant_schema::verify_tenant_schema"));
     assert!(tenancy_api.contains("pub use pool_manager::{"));
     assert!(tenancy_api.contains("PoolManagerConfig"));
     assert!(tenancy_api.contains("pub use tenant_pool::{"));

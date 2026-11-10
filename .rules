@@ -627,8 +627,12 @@ The generated OpenAPI/TypeScript workflow below owns the School API. Admin chang
 - Runtime roles are DML-only and never run migrations, permission reconciliation or DDL.
   Admin migrations run as explicit owner jobs; tenant provisioning/deployment uses the
   canonical tenant runner and grants the matching runtime role after successful migration.
-  Verify immutable SQLx history before accepting a new runtime pool. Bound pool
-  initialization (including tenant gate/schema reads) and graceful drainage; never
+  Verify immutable SQLx history before accepting a new runtime pool. Application
+  composition must supply tenancy's mandatory connection-borrowing
+  `RuntimeSchemaVerifier` through its adapter to the canonical `school-migrations`
+  verifier; tenancy must not depend on embedded migrations or supply a default
+  verifier. The adapter checks the initialization connection without another checkout.
+  Bound pool initialization (including tenant gate/schema reads) and graceful drainage; never
   hold the tenant creation gate while waiting for borrowers to drain. Reject closed
   cached handles, fail deployment closed on timeout, and never replay ambiguous writes.
   Verify initial schema on an owned connection before admitting it to the pool, so

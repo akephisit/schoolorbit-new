@@ -35,7 +35,7 @@ impl FileCleaner {
         Self { pool, platform }
     }
     pub async fn reconcile_file_operations(&self) {
-        let pools = PoolManager::new();
+        let pools = PoolManager::new(school_test_db::verify_tenant_schema);
         let turns = pools.background_turns();
         let turn = turns
             .begin("fixture", TenantJobKind::FileReconciliation)
@@ -780,9 +780,10 @@ mod phase_tests {
         let url = database_url(&fixture).await;
         let directory = DirectoryServer::start(Uuid::new_v4(), url.to_string(), false).await;
         let admin = directory.client(2, Duration::from_secs(30));
-        let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
-            1, 1, 1,
-        )));
+        let manager = Arc::new(PoolManager::with_config(
+            PoolManagerConfig::for_tests(1, 1, 1),
+            school_test_db::verify_tenant_schema,
+        ));
         let provider = Arc::new(Provider {
             started: tokio::sync::Notify::new(),
             release: tokio::sync::Notify::new(),
@@ -882,9 +883,10 @@ mod phase_tests {
         let url = database_url(&fixture).await;
         let directory = DirectoryServer::start(Uuid::new_v4(), url.to_string(), true).await;
         let admin = directory.client(2, Duration::from_secs(30));
-        let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
-            2, 1, 1,
-        )));
+        let manager = Arc::new(PoolManager::with_config(
+            PoolManagerConfig::for_tests(2, 1, 1),
+            school_test_db::verify_tenant_schema,
+        ));
         let (provider, _) = platform(false);
         let platform = Arc::new(FilePlatform::with_config(
             provider,
@@ -962,9 +964,10 @@ mod phase_tests {
         let tenant_id = Uuid::new_v4();
         let directory = DirectoryServer::start(tenant_id, url.to_string(), false).await;
         let admin = directory.client(2, Duration::from_secs(30));
-        let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
-            2, 1, 1,
-        )));
+        let manager = Arc::new(PoolManager::with_config(
+            PoolManagerConfig::for_tests(2, 1, 1),
+            school_test_db::verify_tenant_schema,
+        ));
         let (provider, platform) = platform(true);
         let (signals, dispatcher) = PhaseSignals::for_phase("finish");
         let (worker_manager, worker_admin) = (manager.clone(), admin.clone());

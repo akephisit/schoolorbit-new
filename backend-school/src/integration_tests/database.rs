@@ -280,7 +280,10 @@ async fn observed_transaction_end_case(end: &str) {
     let mut url = reqwest::Url::parse(&std::env::var("TEST_DATABASE_URL").unwrap()).unwrap();
     url.query_pairs_mut()
         .append_pair("options", &format!("-csearch_path={schema},public"));
-    let manager = PoolManager::with_config(PoolManagerConfig::for_tests(2, 1, 1));
+    let manager = PoolManager::with_config(
+        PoolManagerConfig::for_tests(2, 1, 1),
+        school_test_db::verify_tenant_schema,
+    );
     let origin = manager
         .get_pool(url.as_str(), "transaction-origin")
         .await
