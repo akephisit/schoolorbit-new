@@ -446,7 +446,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
     run_test_migrations(&a).await;
     run_test_migrations(&b).await;
     let actor_id = user(&a, "public-http-teacher", "staff", None, "active").await;
-    let pool_manager = Arc::new(PoolManager::new());
+    let pool_manager = Arc::new(PoolManager::new(school_test_db::verify_tenant_schema));
     pool_manager
         .insert_test_pool("test-pool://public-a", a.clone())
         .await;

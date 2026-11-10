@@ -129,7 +129,7 @@ impl Fixture {
             "test-secret".into(),
             AdminClientConfig::from_env().unwrap(),
         ));
-        let pool_manager = Arc::new(PoolManager::new());
+        let pool_manager = Arc::new(PoolManager::new(school_test_db::verify_tenant_schema));
         let permission_cache = Arc::new(PermissionCache::new());
         let (session_events, _) = tokio::sync::broadcast::channel(8);
         let (permission_events, _) = tokio::sync::broadcast::channel(8);

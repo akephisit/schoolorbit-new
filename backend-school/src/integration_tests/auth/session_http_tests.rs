@@ -63,7 +63,7 @@ impl HandlerFixture {
                 "test-secret".to_string(),
                 AdminClientConfig::from_env().expect("default admin client config must be valid"),
             )),
-            pool_manager: Arc::new(PoolManager::new()),
+            pool_manager: Arc::new(PoolManager::new(school_test_db::verify_tenant_schema)),
             identity_cache: Arc::new(school_auth::session_cache::SessionCache::new()),
             permission_cache: Arc::new(PermissionCache::new()),
             config,
@@ -976,7 +976,7 @@ pub(crate) mod protected_router {
                     .expect("test directory must serve");
             });
 
-            let pool_manager = Arc::new(PoolManager::new());
+            let pool_manager = Arc::new(PoolManager::new(school_test_db::verify_tenant_schema));
             pool_manager
                 .insert_test_pool(&tenant_a_url, tenant_a_pool.clone())
                 .await;

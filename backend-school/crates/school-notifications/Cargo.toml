@@ -39,6 +39,7 @@ uuid = { workspace = true }
 web-push = { workspace = true }
 
 [dev-dependencies]
+school-test-db = { workspace = true }
 school-auth = { workspace = true, features = ["test-support"] }
 
 [lints]

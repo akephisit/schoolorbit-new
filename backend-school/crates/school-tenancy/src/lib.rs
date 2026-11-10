@@ -13,7 +13,7 @@ pub use admin_client::{
 pub use directory_cache::ResolvedTenantDatabase;
 pub use pool_manager::{
     close_pool, connect_privileged_connection, connect_privileged_pool, PoolManager,
-    PoolManagerConfig, PrivilegedConnection, PrivilegedPool,
+    PoolManagerConfig, PrivilegedConnection, PrivilegedPool, RuntimeSchemaVerifier,
 };
 pub use school_mapping::get_school_database_info;
 pub use tenant_pool::{ObservedConnection, ObservedTransaction, TenantPool, TenantPoolRetention};

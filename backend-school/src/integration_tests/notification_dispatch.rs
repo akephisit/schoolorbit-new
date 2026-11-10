@@ -383,7 +383,9 @@ async fn notification_dispatch_due_backlog_revisits_other_tenants_before_next_ba
             "fixture-internal".into(),
             school_tenancy::AdminClientConfig::from_env().unwrap(),
         )),
-        pool_manager: Arc::new(school_tenancy::PoolManager::new()),
+        pool_manager: Arc::new(school_tenancy::PoolManager::new(
+            school_test_db::verify_tenant_schema,
+        )),
         notification_channel: channel,
         eligibility: &ELIGIBILITY,
     };
@@ -509,9 +511,10 @@ async fn managed_batch_phase_case(name: &str, remap: bool, refresh: bool) {
     let _server = Abort(tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     }));
-    let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
-        2, 1, 1,
-    )));
+    let manager = Arc::new(PoolManager::with_config(
+        PoolManagerConfig::for_tests(2, 1, 1),
+        school_test_db::verify_tenant_schema,
+    ));
     let observed = manager.get_pool(url.as_str(), name).await.unwrap();
     let observed_raw = observed.as_ref().clone();
     drop(observed);
@@ -661,9 +664,10 @@ async fn notification_managed_slow_admin_http_allows_actual_other_kind_sql_and_c
     enqueue(&fixture, std::slice::from_ref(&queued)).await;
     let url = database_url(&fixture).await;
     let directory = DirectoryServer::start(Uuid::new_v4(), url.to_string(), true).await;
-    let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
-        2, 1, 1,
-    )));
+    let manager = Arc::new(PoolManager::with_config(
+        PoolManagerConfig::for_tests(2, 1, 1),
+        school_test_db::verify_tenant_schema,
+    ));
     assert_eq!(manager.background_turns().limit(), 1);
     let state = school_notifications::runtime::NotificationRuntimeState {
         admin_client: directory.client(2, Duration::from_secs(30)),
@@ -755,9 +759,10 @@ async fn notification_managed_queued_finish_case(name: &str, change: QueuedDirec
     let url = database_url(&fixture).await;
     let tenant_id = Uuid::new_v4();
     let directory = DirectoryServer::start(tenant_id, url.to_string(), false).await;
-    let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
-        2, 1, 1,
-    )));
+    let manager = Arc::new(PoolManager::with_config(
+        PoolManagerConfig::for_tests(2, 1, 1),
+        school_test_db::verify_tenant_schema,
+    ));
     let ttl = if matches!(change, QueuedDirectoryChange::Expiry) {
         Duration::from_secs(1)
     } else {
@@ -916,9 +921,10 @@ async fn notification_managed_physical_pool_wait_rechecks_same_uuid_rotated_cred
     let url = database_url(&fixture).await;
     let tenant_id = Uuid::new_v4();
     let directory = DirectoryServer::start(tenant_id, url.to_string(), false).await;
-    let manager = Arc::new(PoolManager::with_config(PoolManagerConfig::for_tests(
-        2, 1, 1,
-    )));
+    let manager = Arc::new(PoolManager::with_config(
+        PoolManagerConfig::for_tests(2, 1, 1),
+        school_test_db::verify_tenant_schema,
+    ));
     let mut first_url = url.clone();
     first_url
         .query_pairs_mut()
@@ -1208,7 +1214,9 @@ async fn notification_idle_runtime_is_woken_by_standalone_acceptance_without_rep
             "synthetic".into(),
             school_tenancy::AdminClientConfig::from_env().unwrap(),
         )),
-        pool_manager: Arc::new(school_tenancy::PoolManager::new()),
+        pool_manager: Arc::new(school_tenancy::PoolManager::new(
+            school_test_db::verify_tenant_schema,
+        )),
         notification_channel: channel,
         eligibility: &ELIGIBILITY,
     };

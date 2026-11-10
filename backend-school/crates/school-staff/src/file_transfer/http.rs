@@ -361,7 +361,9 @@ mod tests {
                 "fixture".into(),
                 school_tenancy::AdminClientConfig::from_env().unwrap(),
             )),
-            pool_manager: Arc::new(school_tenancy::PoolManager::new()),
+            pool_manager: Arc::new(school_tenancy::PoolManager::new(
+                school_test_db::verify_tenant_schema,
+            )),
             identity_cache: Arc::new(school_auth::session_cache::SessionCache::new()),
             permission_cache: Arc::new(school_authorization::PermissionCache::new()),
             config: Arc::new(school_auth::config::SessionConfig::for_tests(
