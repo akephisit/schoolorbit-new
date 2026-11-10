@@ -1,7 +1,7 @@
 use super::*;
 use school_academic_delivery::models::{
     versions::{DeliverySnapshot, DeliveryVersion},
-    RemoveDeliveryDraftResourceRequest,
+    AcademicTermChangeItem, RemoveDeliveryDraftResourceRequest,
 };
 use school_academic_delivery::services::versions;
 use serde_json::{json, Value};
@@ -408,10 +408,29 @@ async fn delivery_draft_removal_hard_deletes_unused_course_and_activity_owned_ro
             .await
             .unwrap();
         assert_eq!(current.row_version, request.change_set_row_version + 1);
-        assert!(current
-            .items
-            .iter()
-            .all(|item| item.learning_offering_id != Some(offering.id)));
+        assert!(current.items.iter().all(|item| match item {
+            AcademicTermChangeItem::AddOffering {
+                learning_offering_id,
+                ..
+            }
+            | AcademicTermChangeItem::StopOffering {
+                learning_offering_id,
+                ..
+            }
+            | AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
+                learning_offering_id,
+                ..
+            } => *learning_offering_id != offering.id,
+            AcademicTermChangeItem::AddGroupTeacher {
+                learning_group_id, ..
+            }
+            | AcademicTermChangeItem::AdjustGroupTeacherRole {
+                learning_group_id, ..
+            }
+            | AcademicTermChangeItem::StopGroupTeacher {
+                learning_group_id, ..
+            } => *learning_group_id != group.id,
+        }));
         let counts = exclusive_offering_owned_counts(&pool, offering.id, group.id).await;
         for (table, count) in counts.as_object().unwrap() {
             assert_eq!(count.as_i64(), Some(0), "deleted owned {table}: {counts}");
@@ -469,6 +488,169 @@ async fn delivery_draft_removal_hard_deletes_unused_course_and_activity_owned_ro
             sibling_before,
             serde_json::to_value(draft_version(&pool, sibling.id).await).unwrap()
         );
+    }
+}
+
+async fn late_removal_rollback_facts(pool: &PgPool) -> Value {
+    json!({
+        "pending": pending_removal_facts(pool).await,
+        "owned": sqlx::query_scalar::<_, Value>("SELECT jsonb_build_object(
+            'courseDetails',(SELECT jsonb_agg(to_jsonb(d) ORDER BY learning_offering_id) FROM course_offering_details d),
+            'activityDetails',(SELECT jsonb_agg(to_jsonb(d) ORDER BY learning_offering_id) FROM activity_offering_details d),
+            'targets',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM learning_offering_targets t),
+            'homerooms',(SELECT jsonb_agg(to_jsonb(h) ORDER BY id) FROM learning_group_homerooms h),
+            'preferences',(SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM learning_group_preferred_rooms p),
+            'tracking',(SELECT jsonb_agg(to_jsonb(t) ORDER BY learning_group_id) FROM learning_group_roster_tracking t),
+            'audiences',(SELECT jsonb_agg(to_jsonb(a) ORDER BY change_set_id,learning_offering_id) FROM academic_delivery_revision_audiences a),
+            'audienceRooms',(SELECT jsonb_agg(to_jsonb(r) ORDER BY change_set_id,learning_offering_id,homeroom_id) FROM academic_delivery_revision_audience_rooms r),
+            'blocker',(SELECT jsonb_agg(to_jsonb(b) ORDER BY offering_id) FROM delivery_removal_test_blocker b))")
+            .fetch_one(pool).await.unwrap(),
+    })
+}
+
+#[tokio::test]
+async fn delivery_draft_removal_late_foreign_key_refusal_rolls_back_all_changes() {
+    use axum::http::StatusCode;
+    use school_permissions::registry::codes;
+    let pool = prepare_delivery_runtime_fixture("delivery_removal_late_fk").await;
+    let context = planning_runtime_context(&pool).await;
+    let revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        1,
+        "removal-late-fk",
+    )
+    .await;
+    let offering = offerings::create_for_delivery(
+        &pool,
+        context.teacher_id,
+        Some(revision.target_delivery_version_id),
+        course_request(&context),
+    )
+    .await
+    .unwrap();
+    let room: Uuid = sqlx::query_scalar("SELECT id FROM rooms ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            name: "Late refusal rollback group".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: vec![room],
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source)
+        VALUES(gen_random_uuid(),$1,$2,$3,$4,'manual')")
+        .bind(group.id).bind(context.term_id).bind(context.year_id).bind(context.homeroom_id)
+        .execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on)
+        VALUES(gen_random_uuid(),$1,$2,$3,$4,'primary',$5)")
+        .bind(group.id).bind(context.term_id).bind(context.year_id).bind(context.teacher_id)
+        .bind(runtime_operation_date()).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO learning_group_roster_tracking(learning_group_id,mode)
+        VALUES($1,'manual') ON CONFLICT DO NOTHING",
+    )
+    .bind(group.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO academic_delivery_revision_audiences VALUES($1,$2,$3,$4)
+        ON CONFLICT DO NOTHING",
+    )
+    .bind(revision.id)
+    .bind(offering.id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO academic_delivery_revision_audience_rooms VALUES($1,$2,$3,$4,$5)
+        ON CONFLICT DO NOTHING",
+    )
+    .bind(revision.id)
+    .bind(offering.id)
+    .bind(context.term_id)
+    .bind(context.year_id)
+    .bind(context.homeroom_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // The disposable fixture alone owns this unknown downstream FK. It refuses only the
+    // final offering DELETE, after command, audience and group cleanup have been attempted.
+    sqlx::raw_sql(
+        "CREATE TABLE delivery_removal_test_blocker (
+        offering_id uuid PRIMARY KEY REFERENCES learning_offerings(id) ON DELETE RESTRICT)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO delivery_removal_test_blocker(offering_id) VALUES($1)")
+        .bind(offering.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let counts = exclusive_offering_owned_counts(&pool, offering.id, group.id).await;
+    for (table, count) in counts.as_object().unwrap() {
+        assert!(
+            count.as_i64().unwrap() > 0,
+            "seeded owned {table}: {counts}"
+        );
+    }
+    let current = change_sets::get_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    assert!(current.items.iter().any(|item| matches!(item,
+        AcademicTermChangeItem::AddOffering { learning_offering_id, .. }
+        if *learning_offering_id == offering.id)));
+    let request = removal_request(&pool, revision.id).await;
+    let path = format!(
+        "/api/academic/term-change-sets/{}/offerings/{}",
+        revision.id, offering.id
+    );
+    let before = late_removal_rollback_facts(&pool).await;
+    let (status, body) = http_remove(
+        delivery_router(
+            &pool,
+            context.teacher_id,
+            &[codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+        ),
+        &path,
+        &request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(before, late_removal_rollback_facts(&pool).await,
+        "late FK refusal must restore registry, owned children, audience, commands, revisions, snapshot and audit");
+    sqlx::raw_sql("DROP TABLE delivery_removal_test_blocker")
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The same captured request succeeds after removing only the synthetic blocker.
+    let (status, body) = http_remove(
+        delivery_router(
+            &pool,
+            context.teacher_id,
+            &[codes::LEARNING_OFFERING_MANAGE_SCHOOL],
+        ),
+        &path,
+        &request,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let counts = exclusive_offering_owned_counts(&pool, offering.id, group.id).await;
+    for (table, count) in counts.as_object().unwrap() {
+        assert_eq!(count.as_i64(), Some(0), "deleted owned {table}: {counts}");
     }
 }
 
