@@ -175,7 +175,10 @@ async fn run() -> Result<(), StartupError> {
 
     let pool_manager_config = PoolManagerConfig::from_env()
         .map_err(|error| StartupError::tenancy_configuration("tenant_connection_budget", &error))?;
-    let pool_manager = Arc::new(PoolManager::with_config(pool_manager_config));
+    let pool_manager = Arc::new(PoolManager::with_config(
+        pool_manager_config,
+        backend_school::adapters::tenant_schema::verify_tenant_schema,
+    ));
     let background_turns = pool_manager.background_turns();
     let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
     websocket_manager.clone().spawn_cleanup_task();

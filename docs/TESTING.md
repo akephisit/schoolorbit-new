@@ -488,6 +488,9 @@ ordering of session-identity invalidation, permission-cache invalidation, and on
 notification.
 
 `school-tenancy` owns backend-admin retry behavior and tenant pool/lazy-migration coordination.
+Its package tests supply the canonical connection-borrowing schema verifier from
+`school-test-db`; production composition supplies the application adapter to
+`school-migrations`, keeping embedded migration SQL outside tenancy's production graph.
 Its package tests include disposable-database coverage through its dev-only `school-test-db` edge;
 normal release dependency trees must expose neither `test-support` nor `school-test-db`.
 

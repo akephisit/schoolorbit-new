@@ -4,6 +4,14 @@ use std::env;
 use std::process;
 use std::sync::OnceLock;
 
+/// Supplies the canonical release-history check to fixture pool managers without
+/// depending on tenancy or duplicating migration validation.
+pub fn verify_tenant_schema(
+    connection: &mut sqlx::PgConnection,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<i64, String>> + Send + '_>> {
+    Box::pin(school_migrations::verify_tenant_schema(connection))
+}
+
 static SCHEMA_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static MIGRATION_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static TEST_SCHEMA: OnceLock<String> = OnceLock::new();

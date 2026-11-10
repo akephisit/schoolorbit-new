@@ -506,7 +506,7 @@ pub(crate) fn academic_router(
             "test-secret".into(),
             AdminClientConfig::from_env().unwrap(),
         )),
-        pool_manager: Arc::new(PoolManager::new()),
+        pool_manager: Arc::new(PoolManager::new(school_test_db::verify_tenant_schema)),
         permission_cache,
         identity_cache: Arc::new(school_auth::session_cache::SessionCache::new()),
         config: Arc::new(SessionConfig::for_tests(SessionHmacKey::for_tests(
