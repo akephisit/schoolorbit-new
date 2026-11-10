@@ -591,6 +591,7 @@ async fn assert_coordinator_membership(
     offering: Uuid,
     mut expected_teachers: Vec<Uuid>,
     expected_ready: bool,
+    expected_listed: bool,
 ) -> school_academic_assessment::assessment::models::AssessmentPlanDetail {
     let detail = services::get_plan_detail(pool, offering).await.unwrap();
     let mut teachers = detail
@@ -621,14 +622,16 @@ async fn assert_coordinator_membership(
     .unwrap();
     let summary = summaries
         .iter()
-        .find(|summary| summary.offering_id == offering)
-        .unwrap();
-    assert_eq!(
-        summary.assessment_coordinator_id,
-        detail.assessment_coordinator_id
-    );
-    assert_eq!(summary.readiness.ready, detail.readiness.ready);
-    assert_eq!(summary.readiness.findings, detail.readiness.findings);
+        .find(|summary| summary.offering_id == offering);
+    assert_eq!(summary.is_some(), expected_listed);
+    if let Some(summary) = summary {
+        assert_eq!(
+            summary.assessment_coordinator_id,
+            detail.assessment_coordinator_id
+        );
+        assert_eq!(summary.readiness.ready, detail.readiness.ready);
+        assert_eq!(summary.readiness.findings, detail.readiness.findings);
+    }
     let exam_count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM academic_exam_eligible_sources WHERE learning_offering_id=$1",
     )
@@ -705,9 +708,9 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
         .bind(&groups).fetch_one(&pool).await.unwrap();
 
     // An actual published offering and saved owner do not fabricate an allocation.
-    assert_coordinator_membership(&pool, id, vec![], false).await;
+    assert_coordinator_membership(&pool, id, vec![], false, false).await;
     publish_allocation(&pool, id, start + chrono::Duration::days(2)).await;
-    let retained = assert_coordinator_membership(&pool, id, vec![PRIMARY], true).await;
+    let retained = assert_coordinator_membership(&pool, id, vec![PRIMARY], true, true).await;
     assert_eq!(retained.suggested_coordinator_id, Some(PRIMARY));
     crate::integration_tests::academic::assessment_adapter::save_plan(
         &pool,
@@ -721,7 +724,7 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
 
     // The future-effective published allocation wins immediately; today's teacher does not.
     publish_allocation(&pool, id, start + chrono::Duration::days(31)).await;
-    let replaced = assert_coordinator_membership(&pool, id, vec![OTHER], false).await;
+    let replaced = assert_coordinator_membership(&pool, id, vec![OTHER], false, true).await;
     assert_eq!(replaced.assessment_coordinator_id, Some(PRIMARY));
     assert!(matches!(
         crate::integration_tests::academic::assessment_adapter::save_plan(
@@ -745,18 +748,18 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
     )
     .await
     .unwrap();
-    assert_coordinator_membership(&pool, id, vec![OTHER], true).await;
+    assert_coordinator_membership(&pool, id, vec![OTHER], true, true).await;
 
     sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,reference_date,snapshot,created_by) SELECT uuidv7(),academic_term_id,academic_year_id,$2,snapshot,$3 FROM academic_delivery_versions WHERE academic_term_id=(SELECT academic_term_id FROM learning_offerings WHERE id=$1) AND status='published' ORDER BY effective_from LIMIT 1")
         .bind(id).bind(start + chrono::Duration::days(50)).bind(PRIMARY).execute(&pool).await.unwrap();
-    assert_coordinator_membership(&pool, id, vec![OTHER], true).await;
+    assert_coordinator_membership(&pool, id, vec![OTHER], true, true).await;
 
     sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
         .bind(OTHER)
         .execute(&pool)
         .await
         .unwrap();
-    assert_coordinator_membership(&pool, id, vec![], false).await;
+    assert_coordinator_membership(&pool, id, vec![], false, true).await;
     sqlx::query("UPDATE users SET status='active' WHERE id=$1")
         .bind(OTHER)
         .execute(&pool)
@@ -765,7 +768,7 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
     // A registry group missing from the selected graph still prevents partial auto-selection.
     sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT uuidv7(),id,academic_term_id,academic_year_id,'UNALLOCATED','Unallocated','draft','draft' FROM learning_offerings WHERE id=$1")
         .bind(id).execute(&pool).await.unwrap();
-    let partial = assert_coordinator_membership(&pool, id, vec![OTHER], true).await;
+    let partial = assert_coordinator_membership(&pool, id, vec![OTHER], true, true).await;
     assert_eq!(partial.learning_group_ids.len(), 3);
     assert_eq!(partial.suggested_coordinator_id, None);
 
@@ -774,16 +777,16 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
         .execute(&pool)
         .await
         .unwrap();
-    assert_coordinator_membership(&pool, id, vec![], false).await;
+    assert_coordinator_membership(&pool, id, vec![], false, true).await;
     sqlx::query("UPDATE learning_groups SET status='published' WHERE id=ANY($1)")
         .bind(&groups)
         .execute(&pool)
         .await
         .unwrap();
-    assert_coordinator_membership(&pool, id, vec![OTHER], true).await;
+    assert_coordinator_membership(&pool, id, vec![OTHER], true, true).await;
     sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id AND status='published'),uuidv7(),academic_term_id,academic_year_id,$2,'published','{\"offerings\":[]}'::jsonb,$3,now(),uuidv7(),repeat('b',64) FROM learning_offerings WHERE id=$1")
         .bind(id).bind(start + chrono::Duration::days(60)).bind(PRIMARY).execute(&pool).await.unwrap();
-    assert_coordinator_membership(&pool, id, vec![], false).await;
+    assert_coordinator_membership(&pool, id, vec![], false, false).await;
     assert_eq!(
         sqlx::query_scalar::<_, Option<Uuid>>(
             "SELECT assessment_coordinator_id FROM course_assessment_plans WHERE id=$1"
