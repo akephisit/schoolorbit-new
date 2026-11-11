@@ -35,7 +35,9 @@ function runSchoolReleaseGate(workflow, overrides = {}) {
 }
 
 test('School acceptance remains fail closed while its bounded summary always runs', async () => {
-	const workflow = parseYaml(await readFile(path.join(repoRoot, '.github/workflows/deploy-school-release.yml'), 'utf8'));
+	const workflow = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/deploy-school-release.yml'), 'utf8')
+	);
 	const accept = workflow.jobs['accept-release'];
 	const gate = schoolReleaseGate(workflow);
 	assert.equal(workflow.jobs['release-summary'], undefined);
@@ -48,33 +50,83 @@ test('School acceptance remains fail closed while its bounded summary always run
 	assert.equal(accept.steps.at(-1).name, 'Report bounded release outcome');
 	assert.equal(accept.steps.at(-1).if, 'always()');
 	assert.equal(accept.steps.at(-1).env.ACCEPT_RESULT, '${{ job.status }}');
-	for (const [backend, frontend, scope] of [['true', 'false', 'backend'], ['false', 'true', 'frontend'], ['true', 'true', 'full']]) {
-		const valid = { NEEDS_BACKEND: backend, NEEDS_FRONTEND: frontend, RELEASE_SCOPE: scope,
+	for (const [backend, frontend, scope] of [
+		['true', 'false', 'backend'],
+		['false', 'true', 'frontend'],
+		['true', 'true', 'full']
+	]) {
+		const valid = {
+			NEEDS_BACKEND: backend,
+			NEEDS_FRONTEND: frontend,
+			RELEASE_SCOPE: scope,
 			BACKEND_RESULT: backend === 'true' ? 'success' : 'skipped',
 			DISCOVERY_RESULT: frontend === 'true' ? 'success' : 'skipped',
 			STAGE_RESULT: frontend === 'true' ? 'success' : 'skipped',
-			FRONTEND_RESULT: frontend === 'true' ? 'success' : 'skipped' };
+			FRONTEND_RESULT: frontend === 'true' ? 'success' : 'skipped'
+		};
 		assert.equal(runSchoolReleaseGate(workflow, valid).status, 0, scope);
-		const selected = ['CI_RESULT', ...(backend === 'true' ? ['BACKEND_RESULT'] : []), ...(frontend === 'true' ? ['DISCOVERY_RESULT', 'STAGE_RESULT', 'FRONTEND_RESULT'] : [])];
-		for (const field of selected) for (const result of ['failure', 'cancelled', 'skipped', '']) {
-			assert.notEqual(runSchoolReleaseGate(workflow, { ...valid, [field]: result }).status, 0, `${scope}/${field}/${result}`);
+		const selected = [
+			'CI_RESULT',
+			...(backend === 'true' ? ['BACKEND_RESULT'] : []),
+			...(frontend === 'true' ? ['DISCOVERY_RESULT', 'STAGE_RESULT', 'FRONTEND_RESULT'] : [])
+		];
+		for (const field of selected)
+			for (const result of ['failure', 'cancelled', 'skipped', '']) {
+				assert.notEqual(
+					runSchoolReleaseGate(workflow, { ...valid, [field]: result }).status,
+					0,
+					`${scope}/${field}/${result}`
+				);
+			}
+		for (const bad of [
+			{ RELEASE_ID: '' },
+			{ RELEASE_ID: 'c'.repeat(40) },
+			{ NEEDS_BACKEND: '' },
+			{ NEEDS_FRONTEND: '' },
+			{ RELEASE_SCOPE: '' }
+		]) {
+			assert.notEqual(
+				runSchoolReleaseGate(workflow, { ...valid, ...bad }).status,
+				0,
+				`${scope}/${JSON.stringify(bad)}`
+			);
 		}
-		for (const bad of [{ RELEASE_ID: '' }, { RELEASE_ID: 'c'.repeat(40) }, { NEEDS_BACKEND: '' }, { NEEDS_FRONTEND: '' }, { RELEASE_SCOPE: '' }]) {
-			assert.notEqual(runSchoolReleaseGate(workflow, { ...valid, ...bad }).status, 0, `${scope}/${JSON.stringify(bad)}`);
-		}
-		if (backend === 'true') for (const digest of ['', 'latest', `sha256:${'g'.repeat(64)}`]) {
-			assert.notEqual(runSchoolReleaseGate(workflow, { ...valid, BACKEND_IMAGE_DIGEST: digest }).status, 0);
-		}
+		if (backend === 'true')
+			for (const digest of ['', 'latest', `sha256:${'g'.repeat(64)}`]) {
+				assert.notEqual(
+					runSchoolReleaseGate(workflow, { ...valid, BACKEND_IMAGE_DIGEST: digest }).status,
+					0
+				);
+			}
 	}
-	assert.notEqual(runSchoolReleaseGate(workflow, { NEEDS_BACKEND: 'false', NEEDS_FRONTEND: 'false', RELEASE_SCOPE: 'backend' }).status, 0);
-	assert.notEqual(runSchoolReleaseGate(workflow, { NEEDS_BACKEND: 'true', NEEDS_FRONTEND: 'false', RELEASE_SCOPE: 'frontend' }).status, 0);
+	assert.notEqual(
+		runSchoolReleaseGate(workflow, {
+			NEEDS_BACKEND: 'false',
+			NEEDS_FRONTEND: 'false',
+			RELEASE_SCOPE: 'backend'
+		}).status,
+		0
+	);
+	assert.notEqual(
+		runSchoolReleaseGate(workflow, {
+			NEEDS_BACKEND: 'true',
+			NEEDS_FRONTEND: 'false',
+			RELEASE_SCOPE: 'frontend'
+		}).status,
+		0
+	);
 });
 
 test('School prepared image identity is validated in the public caller job before private discovery', async (t) => {
-	const workflow = parseYaml(await readFile(path.join(repoRoot, '.github/workflows/deploy-school-release.yml'), 'utf8'));
+	const workflow = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/deploy-school-release.yml'), 'utf8')
+	);
 	assert.equal(workflow.jobs['prepared-backend'], undefined);
 	const verify = workflow.jobs['verify-release-ci'];
-	assert.doesNotMatch(JSON.stringify(verify), /secrets\.|appleboy\/|INTERNAL_API_SECRET|CLOUDFLARE_API_TOKEN/);
+	assert.doesNotMatch(
+		JSON.stringify(verify),
+		/secrets\.|appleboy\/|INTERNAL_API_SECRET|CLOUDFLARE_API_TOKEN/
+	);
 	assert.deepEqual(verify.permissions, { actions: 'read', contents: 'read' });
 	assert.equal(verify.outputs.image_digest, '${{ steps.image.outputs.digest }}');
 	assert.equal(workflow.jobs['discover-schools'].needs, 'verify-release-ci');
@@ -88,13 +140,41 @@ test('School prepared image identity is validated in the public caller job befor
 	t.after(() => rm(temp, { recursive: true, force: true }));
 	await mkdir(path.join(temp, 'prepared'));
 	const output = path.join(temp, 'output');
-	const valid = { schemaVersion: 1, component: 'backend-school', sha: 'a'.repeat(40), inputHash: 'b'.repeat(64), digest: `sha256:${'c'.repeat(64)}` };
-	for (const mutation of [null, { schemaVersion: 2 }, { component: 'backend-admin' }, { sha: 'd'.repeat(40) }, { inputHash: 'e'.repeat(64) }, { digest: 'latest' }]) {
-		await writeFile(path.join(temp, 'prepared/backend-school.json'), JSON.stringify({ ...valid, ...mutation }));
+	const valid = {
+		schemaVersion: 1,
+		component: 'backend-school',
+		sha: 'a'.repeat(40),
+		inputHash: 'b'.repeat(64),
+		digest: `sha256:${'c'.repeat(64)}`
+	};
+	for (const mutation of [
+		null,
+		{ schemaVersion: 2 },
+		{ component: 'backend-admin' },
+		{ sha: 'd'.repeat(40) },
+		{ inputHash: 'e'.repeat(64) },
+		{ digest: 'latest' }
+	]) {
+		await writeFile(
+			path.join(temp, 'prepared/backend-school.json'),
+			JSON.stringify({ ...valid, ...mutation })
+		);
 		await writeFile(output, '');
-		const run = spawnSync('bash', ['-c', validation.run], { encoding: 'utf8', env: { PATH: process.env.PATH, RUNNER_TEMP: temp, GITHUB_SHA: valid.sha, INPUT_HASH: valid.inputHash, GITHUB_OUTPUT: output } });
+		const run = spawnSync('bash', ['-c', validation.run], {
+			encoding: 'utf8',
+			env: {
+				PATH: process.env.PATH,
+				RUNNER_TEMP: temp,
+				GITHUB_SHA: valid.sha,
+				INPUT_HASH: valid.inputHash,
+				GITHUB_OUTPUT: output
+			}
+		});
 		assert.equal(run.status === 0, mutation === null, JSON.stringify(mutation));
-		assert.equal(await readFile(output, 'utf8'), mutation === null ? `digest=${valid.digest}\n` : '');
+		assert.equal(
+			await readFile(output, 'utf8'),
+			mutation === null ? `digest=${valid.digest}\n` : ''
+		);
 	}
 });
 
@@ -480,7 +560,20 @@ test('CI refusal blocks backend-only, frontend-only and full production paths', 
 				])
 			);
 			needs['verify-release-ci'].result = ci;
-			assert.equal(runSchoolReleaseGate(workflow, { CI_RESULT: ci, NEEDS_BACKEND: backend, NEEDS_FRONTEND: frontend, RELEASE_SCOPE: backend === 'true' && frontend === 'true' ? 'full' : backend === 'true' ? 'backend' : 'frontend' }).status === 0, ci === 'success');
+			assert.equal(
+				runSchoolReleaseGate(workflow, {
+					CI_RESULT: ci,
+					NEEDS_BACKEND: backend,
+					NEEDS_FRONTEND: frontend,
+					RELEASE_SCOPE:
+						backend === 'true' && frontend === 'true'
+							? 'full'
+							: backend === 'true'
+								? 'backend'
+								: 'frontend'
+				}).status === 0,
+				ci === 'success'
+			);
 			if (backend === 'false') needs['deploy-backend'].result = 'skipped';
 			if (frontend === 'false') needs['stage-frontends'].result = 'skipped';
 			for (const job of ['deploy-backend', 'promote-frontends']) {
@@ -695,7 +788,10 @@ test('frontend promotion is gated by backend acceptance and ready waits for ever
 	);
 	assert.match(child.jobs['promote-frontends'].if, /deploy-backend.result == 'success'/);
 	assert.ok(child.jobs['accept-release'].needs.includes('promote-frontends'));
-	assert.equal(schoolReleaseGate(child).env.FRONTEND_RESULT, '${{ needs.promote-frontends.result }}');
+	assert.equal(
+		schoolReleaseGate(child).env.FRONTEND_RESULT,
+		'${{ needs.promote-frontends.result }}'
+	);
 	assert.match(schoolReleaseGate(child).run, /test "\$FRONTEND_RESULT" = success/);
 	const parent = parseYaml(
 		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
@@ -915,10 +1011,7 @@ test('release acceptance requires successful scope resolution', async () => {
 	const workflow = parseYaml(
 		await readWorkflowSource(repoRoot, '.github/workflows/deploy-school-release.yml')
 	);
-	assert.match(
-		schoolReleaseGate(workflow).run,
-		/test "\$CI_RESULT" = success/
-	);
+	assert.match(schoolReleaseGate(workflow).run, /test "\$CI_RESULT" = success/);
 });
 
 test('deployment status requests are bounded and application mount is observable', async () => {

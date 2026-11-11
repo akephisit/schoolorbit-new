@@ -48,6 +48,7 @@ The production panic-policy Clippy commands above match the current owning runne
 cargo test -p school-academic-core-http --locked
 cargo test -p school-academic-delivery-http --locked
 cargo test -p school-academic-assessment-http --locked
+cargo test -p school-academic-timetable-http --lib --locked
 cargo test -p school-academic-results-http --locked
 cargo test -p school-academic-lifecycle-http --locked
 cargo test -p school-academic-realtime --locked
@@ -57,11 +58,10 @@ cargo test -p school-database --locked
 cargo test --bin backend-school --features api-docs api_contract::tests --locked -- --nocapture
 ```
 
-Socket security includes database-backed cases, so those cases use the disposable fixture wrapper rather than an existing school database. At repository root, the focused contract/lifecycle checks include:
+Timetable HTTP's colocated socket/security unit tests use memory and channels, with a lazy invalid pool that performs no database work. Run them once with the raw package unit batch above. Actual application session/native-socket/collaboration integration fixtures use the disposable database wrapper rather than an existing school database. At repository root, the focused contract/lifecycle checks include:
 
 ```bash
 ./scripts/test_backend_school.sh concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries --locked -- --nocapture
-./scripts/test_backend_school.sh --package school-academic-timetable-http --locked -- --nocapture --test-threads=1
 ./scripts/test_backend_school.sh integration_tests::database --locked -- --test-threads=1
 ./scripts/test_backend_school.sh integration_tests::academic::services::timetable_block_service_tests --locked -- --test-threads=4
 ./scripts/test_backend_school.sh --package school-academic-delivery teacher_assignments --locked -- --test-threads=1
@@ -70,7 +70,7 @@ git diff --check
 git status --short
 ```
 
-Run the entire Timetable HTTP package once through the disposable fixture wrapper, covering its pure and database-backed socket/security tests without repeating a raw package test or the same security subset. Inspect the current transport fixture and add/retain assertions for every distributed management, public/personal and socket boundary. Run additional existing Core, Delivery, Assessment/Gradebook/Learner Evaluation, Timetable, Results and Lifecycle fixtures when the move touches their provider/authorization registration. Use isolated disposable databases and at most the documented thread count. Session/frontend static tests are chosen from the actual changed source guards and the existing auth/session contract suite; browser workflow execution is necessary only if independent assessment finds changed browser behavior.
+Do not repeat the Timetable HTTP unit batch through a database wrapper or repeat its socket/security subset. Inspect the current transport fixture and add/retain assertions for every distributed management, public/personal and socket boundary. Run additional existing Core, Delivery, Assessment/Gradebook/Learner Evaluation, Timetable, Results and Lifecycle fixtures when the move touches their provider/authorization registration. Use isolated disposable databases and at most the documented thread count. Session/frontend static tests are chosen from the actual changed source guards and the existing auth/session contract suite; browser workflow execution is necessary only if independent assessment finds changed browser behavior.
 
 Export baseline and candidate School OpenAPI using the tracked exporter in the same source path, with `api-docs` enabled outside timed production builds. Compare canonical documents exactly. Run the existing generated API/permission contract checks and verify tracked generated/UI/schema files are unchanged. Do not regenerate or bless changed outputs to hide a contract regression.
 

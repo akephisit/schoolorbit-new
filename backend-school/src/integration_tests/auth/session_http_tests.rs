@@ -1918,7 +1918,7 @@ pub(crate) mod protected_router {
         assert_eq!(public_body["success"], true);
         for personal_path in [
             "/api/me/academic-context/options",
-            "/api/me/activity-registrations",
+            "/api/me/activity-registrations?academicTermId=11000000-0000-0000-0000-000000000251",
         ] {
             for (request_origin, expected) in [
                 (origin, StatusCode::FORBIDDEN),
@@ -1945,7 +1945,10 @@ pub(crate) mod protected_router {
                 );
             }
         }
-        let activity_path = format!("/api/me/activity-registrations/{}", Uuid::new_v4());
+        let activity_path = format!(
+            "/api/me/activity-registrations/{}?academicTermId=11000000-0000-0000-0000-000000000251",
+            Uuid::new_v4()
+        );
         for csrf in [None, Some(fixture.csrf(session_id))] {
             let response = app
                 .clone()
@@ -1959,6 +1962,18 @@ pub(crate) mod protected_router {
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            if csrf.is_some() {
+                let body: serde_json::Value = serde_json::from_slice(
+                    &axum::body::to_bytes(response.into_body(), 1_048_576)
+                        .await
+                        .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    body["error"],
+                    "เฉพาะนักเรียนเท่านั้นที่จัดการการลงทะเบียนกิจกรรมของตนเองได้"
+                );
+            }
         }
 
         let timetable_list =
