@@ -2253,10 +2253,50 @@ fn staff_capabilities_and_file_contracts_have_singular_provider_owners() {
     );
 
     let identity = read_source(staff_root.join("src/services/staff_identity_query.rs"));
-    let pool_facade =
-        extract_braced_block(&identity, "pub async fn active_staff_display_name(", false);
+    let pool_facade_source =
+        extract_source_block(&identity, "pub async fn active_staff_display_name(", false);
+    let pool_facade = lexical_mask(&pool_facade_source, false).structural;
+    let checkout_arguments = |source: &str| {
+        let lexical = lexical_mask(source, false);
+        let call = Regex::new(r"\bschool_tenancy::TenantPool::observed_checkout_pool\s*\(")
+            .expect("valid observed checkout call regex");
+        let opening = call.find(&lexical.structural)?.end() - 1;
+        let closing = balanced_delimiter_end(&lexical.structural, opening, b'(', b')')?;
+        Some(split_invocation_arguments(
+            source,
+            &lexical,
+            opening + 1,
+            closing,
+        ))
+    };
+    let expected_checkout_arguments = vec![
+        "pool".to_string(),
+        "\"staff.file_transfer.staff_display_name\"".to_string(),
+    ];
     assert!(pool_facade.contains("observed_checkout_pool"));
-    assert!(pool_facade.contains("\"staff.file_transfer.staff_display_name\""));
+    assert_eq!(
+        checkout_arguments(&pool_facade_source),
+        Some(expected_checkout_arguments.clone())
+    );
+    // A comment, unrelated string or another function cannot supply the call's label.
+    let misleading_label = r#"
+        pub async fn active_staff_display_name(pool: &PgPool) {
+            // school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.file_transfer.staff_display_name");
+            let hint = "staff.file_transfer.staff_display_name";
+            school_tenancy::TenantPool::observed_checkout_pool(pool, "wrong.label").await;
+        }
+        fn other_scope() {
+            school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.file_transfer.staff_display_name");
+        }
+    "#;
+    assert_ne!(
+        checkout_arguments(&extract_source_block(
+            misleading_label,
+            "pub async fn active_staff_display_name(",
+            false,
+        )),
+        Some(expected_checkout_arguments)
+    );
     assert!(
         pool_facade.contains("active_staff_display_name_on_connection(&mut connection, user_id)")
     );
