@@ -591,11 +591,13 @@ test('exam invigilator staff loading is split from room option loading', () => {
 	);
 	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
 	const backendRoutes = readFileSync(
-		projectPath('../backend-school/crates/school-academic-http/src/routes.rs'),
+		projectPath('../backend-school/crates/school-academic-assessment-http/src/routes.rs'),
 		'utf8'
 	);
 	const backendHandler = readFileSync(
-		projectPath('../backend-school/crates/school-academic-http/src/handlers/exam_schedule.rs'),
+		projectPath(
+			'../backend-school/crates/school-academic-assessment-http/src/handlers/exam_schedule.rs'
+		),
 		'utf8'
 	);
 	const backendModels = readFileSync(
@@ -1689,7 +1691,7 @@ test('exam scheduling uses generated term and homeroom contracts end to end', ()
 	const handlers = readFileSync(
 		path.resolve(
 			projectRoot,
-			'../backend-school/crates/school-academic-http/src/handlers/exam_schedule.rs'
+			'../backend-school/crates/school-academic-assessment-http/src/handlers/exam_schedule.rs'
 		),
 		'utf8'
 	);

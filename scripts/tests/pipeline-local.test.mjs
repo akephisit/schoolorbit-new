@@ -78,6 +78,11 @@ test('local School verification executes tests and database fixtures rather than
  assert.ok(queryApi,'bound query API, safe errors and HTTP mappings execute');
  assert.ok(!queryApi.includes('--lib')&&!queryApi.includes('--test')&&!queryApi.includes('--doc'),'full packages include positive integration probes and compile-fail doctests');
  assert.ok(!tests.some(args=>args.includes('school-behavior')),'DB-backed Behavior unit suite belongs exclusively to the owned fixture stage');
+ const httpBatch=tests.find(args=>args.includes('school-auth-http')&&args.includes('--lib'));
+ assert.ok(httpBatch,'HTTP memory-only unit batch executes directly');
+ for(const owner of ['core','delivery','assessment','timetable','results','lifecycle'])assert.ok(httpBatch.includes('school-academic-'+owner+'-http'),owner);
+ assert.ok(httpBatch.includes('school-academic-realtime'),'shared protocol unit owner executes');
+ assert.ok(!httpBatch.includes('school-academic-http'),'retired combined owner must never be invoked');
  assert.ok(tests.some(args=>args.includes('school-staff')&&args.includes('api-docs')));
  const clippy=commands.filter(args=>args[0]==='clippy');
  assert.equal(clippy.length,2);

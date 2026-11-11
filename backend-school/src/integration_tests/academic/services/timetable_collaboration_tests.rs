@@ -13,13 +13,13 @@ use tokio_tungstenite::{
 use uuid::Uuid;
 
 use crate::integration_tests::auth::session_http_tests::protected_router::ProtectedFixture;
-use school_academic_http::{
-    state::{AcademicHttpState, AcademicWebSocketState},
-    websockets::{timetable_websocket_handler, WebSocketManager},
-};
 use school_academic_timetable::{
     collaboration::TimetableMutationContext, models::timetable_block::*,
     services::timetable_block_service,
+};
+use school_academic_timetable_http::{
+    state::{AcademicTimetableHttpState, AcademicWebSocketState},
+    websockets::{timetable_websocket_handler, WebSocketManager},
 };
 
 use super::timetable_block_service_tests::{draft_version, migrated_pool};
@@ -104,18 +104,14 @@ impl Fixture {
         manager
             .clone()
             .spawn_authority_invalidation_task(auth.runtime.permission_events.subscribe());
-        let http = AcademicHttpState {
+        let http = AcademicTimetableHttpState {
             collaboration: manager.collaboration(),
             staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
-            placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+
             auth_runtime: auth.runtime.clone(),
             websocket_manager: manager.clone(),
-            result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
-            assessment_publication:
-                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+
             publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
-            lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
-            retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
         };
         let ws = AcademicWebSocketState {
             collaboration: manager.collaboration(),
@@ -139,7 +135,7 @@ impl Fixture {
         let app = Router::new()
             .nest(
                 "/api/academic",
-                school_academic_http::routes::academic_routes().with_state(http),
+                school_academic_timetable_http::routes::academic_routes().with_state(http),
             )
             .nest(
                 "/api/facilities",
@@ -2794,7 +2790,7 @@ async fn workspace_cap_fixture(kind: &str) {
                 .unwrap()
                 .extend(extra);
             let next = Uuid::new_v4();
-            sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,effective_from,reference_date,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT $1,academic_term_id,academic_year_id,id,effective_from+1,reference_date,'published',$2,published_by,now(),gen_random_uuid(),repeat('0',64) FROM academic_delivery_versions WHERE id=$3")
+            sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,effective_from,reference_date,publication_no,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT $1,source.academic_term_id,source.academic_year_id,source.id,source.effective_from+1,source.reference_date,(SELECT COALESCE(max(published.publication_no),0)+1 FROM academic_delivery_versions published WHERE published.academic_term_id=source.academic_term_id AND published.status='published'),'published',$2,source.published_by,now(),gen_random_uuid(),repeat('0',64) FROM academic_delivery_versions source WHERE source.id=$3")
                 .bind(next).bind(snapshot).bind(source_id).execute(pool).await.unwrap();
             sqlx::query(
                 "UPDATE academic_timetable_versions SET delivery_version_id=$1 WHERE id=$2",

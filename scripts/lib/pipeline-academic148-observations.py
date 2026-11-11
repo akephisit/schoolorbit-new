@@ -128,9 +128,19 @@ def prepare():
     root = Path(os.environ['GITHUB_WORKSPACE']).resolve()
     output = Path(os.environ['RUNNER_TEMP']) / 'academic148-inputs'
     output.mkdir(mode=0o700); manifest = []
-    files = sorted((root/'backend-school/migrations').glob('*.sql'))
-    require(len(files) == 149)
-    for version, path in enumerate(files, 1):
+    # Current sources may extend beyond this observer's historical 001..148 prefix.
+    # Validate the entire authoritative local timeline without widening remote history.
+    files = list((root/'backend-school/migrations').glob('*.sql'))
+    require(len(files) >= 149)
+    versions = {}
+    for path in files:
+        match = re.fullmatch(r'([0-9]{3,})_[a-z0-9_]+\.sql', path.name)
+        require(match is not None)
+        version = int(match.group(1))
+        require(match.group(1) == f'{version:03d}' and version not in versions)
+        versions[version] = path
+    require(sorted(versions) == list(range(1, len(files) + 1)))
+    for version, path in sorted(versions.items()):
         require(re.fullmatch(f'{version:03d}_[a-z0-9_]+\\.sql', path.name))
         checksum = hashlib.sha384(regular(path)).hexdigest()
         if version <= 148:

@@ -38,7 +38,7 @@ use tokio_cron_scheduler::JobScheduler;
 pub struct AppState {
     pub admin_client: Arc<AdminClient>,
     pub pool_manager: Arc<PoolManager>,
-    pub websocket_manager: Arc<school_academic_http::websockets::WebSocketManager>,
+    pub websocket_manager: Arc<school_academic_timetable_http::websockets::WebSocketManager>,
     pub notification_channel: broadcast::Sender<TenantNotificationEvent>,
 
     pub work_event_channel: broadcast::Sender<WorkChangeEvent>,
@@ -180,7 +180,8 @@ async fn run() -> Result<(), StartupError> {
         adapters::tenant_schema::verify_tenant_schema,
     ));
     let background_turns = pool_manager.background_turns();
-    let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
+    let websocket_manager =
+        Arc::new(school_academic_timetable_http::websockets::WebSocketManager::new());
     websocket_manager.clone().spawn_cleanup_task();
 
     let (notification_tx, _) = broadcast::channel(100);

@@ -830,7 +830,7 @@ history for the next term. Closing terms/years and manually preparing a new rost
 require locked Results, annual credit calculations or a promotion policy. Attendance
 finalization/source delivery and actual successor/ownership conflicts retain their guards.
 
-Use the [canonical Lifecycle routes](../backend-school/crates/school-academic-http/src/lifecycle.rs)
+Use the [canonical Lifecycle routes](../backend-school/crates/school-academic-lifecycle-http/src/lifecycle.rs)
 and [typed roster contract](../backend-school/crates/school-academic-lifecycle/src/models/year_rollover.rs).
 `POST /api/academic/lifecycle/year-rollovers/preview` reads the complete roster and explicit source/destination
 year identities and decisions; `POST /api/academic/lifecycle/year-rollovers/confirm` accepts its current
@@ -1252,8 +1252,27 @@ added to it. An absent invocation is unavailable, not zero. API-readable annotat
 layer reuse/execution, recorded executable/link time and BuildKit export phases even when signed
 artifact downloads are inaccessible. Optimization, codegen units and runtime behavior are unchanged;
 use this evidence before choosing a compiler profile or runner size.
-The School caller proof and selected scope share `verify-release-ci`; all downstream runtime and
-acceptance guards still require its success.
+The School caller proof, selected scope and conditional prepared-backend manifest validation share
+`verify-release-ci`, a job without deployment secrets and with read-only Actions/contents permissions.
+Its backend digest remains bound to the exact release SHA and planned input hash. Tenant discovery
+stays separate because it consumes the internal API secret; do not move public identity outputs into
+that private context. Every runtime consumer requires successful verification.
+
+School acceptance always schedules after its selected branches finish so it can retain a bounded
+failure summary without another runner. Its first step fails closed unless scope/SHA transport is
+valid, verification succeeded, the selected backend succeeded with a valid digest, and the selected
+frontend discovery, staging and promotions all succeeded. Verification SSH follows that gate; an
+`always()` summary cannot turn a rejected, skipped or cancelled prerequisite into release success.
+The outer acceptance join, proxy smoke, accepted baselines and maintenance reopening are unchanged.
+
+This consolidation removes two School runner allocations on a full release, but does not remove
+checkout or Node setup from the retired jobs: neither had those steps. In observed main run
+[42835598970](https://github.com/akephisit/schoolorbit-new/actions/runs/42835598970), prepared manifest
+validation used a five-second job including a two-second artifact download, while the two-second
+summary followed a four-second interjob gap. Manifest download previously overlapped discovery;
+placing it in verification can delay the frontend path by that action time. These observations
+justify fewer runner boundaries, not a minute-scale or guaranteed net saving. Compare the actual
+critical path after deployment rather than adding parallel job durations.
 
 When retiring a cache-producing workflow, inspect the repository Actions cache inventory and
 remove only exact IDs in its unused namespace after confirming no current workflow consumes it.
@@ -1295,8 +1314,10 @@ it does not eliminate the final application build. OpenAPI documents were identi
 warm Cargo measurements, not complete build/push/deployment timings. The first changed workspace
 graph may require dependency-cache priming before those savings apply.
 
-Academic and certificate handlers now compile in `school-academic-http` and
-`school-certificates-http`. Menu models, templates, route synchronization and feature
+Academic HTTP handling is split into the Core, Delivery, Assessment, Timetable, Results and Lifecycle
+HTTP owners under `backend-school/crates/school-academic-*-http`. Shared academic event/port types
+belong to `school-academic-realtime`; the Timetable owner retains its WebSocket manager. Certificate
+handlers remain in `school-certificates-http`. Menu models, templates, route synchronization and feature
 toggles compile in `school-navigation`; notification persistence, tenant/user events,
 publishing and Web Push compile in `school-notifications`. `school-auth-http` provides
 their shared HTTP authentication context. The application owns routing, middleware,
@@ -1306,7 +1327,17 @@ identity and permission caches. New crates must never depend on the application 
 accept its whole `AppState`.
 
 Use the manual [HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml)
-to compare the pre-extraction commit and a candidate on one Docker runner. Its two samples
+to compare a baseline before the selected HTTP ownership change and a candidate on one Docker runner.
+The default baseline is the last combined Academic HTTP graph. Both snapshots use the same `/app`
+path and preserve compiler profiles and external lock identities. This standalone workflow compares
+full selected backend snapshots: its Python validator does not enforce a changed-file allowlist or
+establish that every other source input is unchanged. Inspect the selected source diff before
+attributing a timing difference to HTTP ownership alone. The separate Backend Build Benchmark's
+`http-routes` mode additionally enforces its bounded changed-file allowlist in the workflow; that
+path restriction does not come from the Python profile/lock validator.
+
+Owner probes resolve current split crates, the previous combined crate or historical application
+modules, and pristine reset builds between source families remain outside timed samples. Its two samples
 per source owner separate first-graph priming from warm compilation and record rebuilt
 packages, binary size, persistent-target reuse and exact OpenAPI equality. This comparison
 disables sccache to isolate Cargo invalidation; use production build statistics to assess
@@ -1833,9 +1864,10 @@ inventory/owner connections and one repeatable-read, read-only connection per te
 runs migrations nor changes maintenance or tenant status. Only a complete, validated aggregate
 is retained in the three-day `academic148-curriculum-<run>-<attempt>` artifact; refusal produces
 no successful evidence artifact. Keep maintenance active while investigating a failed cutover.
-The collector validates the trusted migration-001–149 source inventory and binds its fixed query
-to the unchanged 001–148 checksum prefix. It remains limited to historical database schemas
-147/148: schema 149 is explicitly unsupported and produces no successful evidence artifact.
+The collector validates the complete canonical, contiguous current local timeline `1..N`, with `N >= 149`,
+and binds its fixed query to the unchanged 001–148 SHA384 manifest. Remote observation remains
+limited to historical database schemas 147/148: schema 149 and later are explicitly unsupported
+and produce no successful evidence artifact.
 This diagnostic boundary is not a business fallback or a prerequisite for the approved recovery.
 Predicate masks preserve receipt/output multiplicity. Before-050 timing
 is correlation rather than proof of a historical client; matching SQLx history verifies the

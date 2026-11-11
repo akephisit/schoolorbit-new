@@ -74,7 +74,7 @@ try {
         if (/^utoipa(?:-gen)? v/m.test(productionDependencies)) throw new Error('Production dependency graph must exclude Utoipa');
         run('cargo', ['test', '--test', 'database_execution_architecture', '--test', 'static_architecture', '--locked'], cwd);
         run('cargo', ['test', '-p', 'school-database', '-p', 'school-errors', '-p', 'school-http', '--locked'], cwd);
-        run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-http', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-attendance', '--lib', '--locked'], cwd);
+        run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-core-http', '-p', 'school-academic-delivery-http', '-p', 'school-academic-assessment-http', '-p', 'school-academic-timetable-http', '-p', 'school-academic-results-http', '-p', 'school-academic-lifecycle-http', '-p', 'school-academic-realtime', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-attendance', '--lib', '--locked'], cwd);
         run('cargo', ['build', '--bin', 'backend-school', '--locked'], cwd);
         const executable = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--format-version', '1', '--no-deps'], { cwd, encoding: 'utf8' })).target_directory + '/debug/backend-school';
         const unsupportedExport = spawnSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8' });

@@ -131,8 +131,11 @@ test('academic comparison requires the owning HTTP crate to actually recompile',
   const f = fixture(t);
   const run = () => spawnSync('python3', [summary, f.folder, 'backend-school', 'default', 'academic', '2'], {encoding:'utf8'});
   assert.notEqual(run().status, 0);
-  for (const sample of [1, 2]) writeFileSync(path.join(f.folder, `compile-${sample}.log`), '   Compiling school-academic-http v0.1.0\n   Compiling backend-school v0.1.0\n');
+  writeFileSync(path.join(f.folder, 'source-owner-package.txt'), 'school-academic-core-http\n');
+  for (const sample of [1, 2]) writeFileSync(path.join(f.folder, `compile-${sample}.log`), '   Compiling school-academic-core-http v0.1.0\n   Compiling backend-school v0.1.0\n');
   assert.equal(run().status, 0);
+  writeFileSync(path.join(f.folder, 'source-owner-package.txt'), 'school-academic-timetable-http\n');
+  assert.notEqual(run().status, 0, 'a different HTTP owner cannot satisfy the academic probe');
 });
 test('Actions summary stays small even when full evidence contains many long compiler unit names', t => {
   const f = fixture(t), result = f.run();
@@ -216,28 +219,56 @@ for (const unrelated of [false, true]) test(`paired source comparison ${unrelate
   }
 });
 
-for (const unrelated of [false, true]) test(`HTTP route comparison ${unrelated ? 'rejects handler or profile changes' : 'archives frozen candidate and baseline sources'}`, t => {
+for (const mode of ['graph', 'profile', 'external', 'unrelated']) test(`HTTP ownership comparison ${mode}`, t => {
   const f = fixture(t);
   const source = readFileSync(path.join(repo, '.github/workflows/backend-build-benchmark.yml'), 'utf8');
   const body = source.match(/      - name: Select exact baseline source[^\n]*\n[\s\S]*?        run: \|\n([\s\S]*?)(?=\n      -)/)[1].replace(/^          /gm, '');
   mkdirSync(path.join(f.root, 'backend-school/src'), { recursive: true });
   writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'baseline router\n');
-  writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), 'baseline manifest\n');
+  writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), '[workspace]\nmembers = []\n');
+  writeFileSync(path.join(f.root, 'backend-school/Cargo.lock'), 'version = 4\n');
+  mkdirSync(path.join(f.root, 'scripts'), {recursive:true});
+  writeFileSync(path.join(f.root, 'scripts/validate_backend_benchmark_source.py'), readFileSync(path.join(repo, 'scripts/validate_backend_benchmark_source.py')));
   const git = (...args) => execFileSync('git', ['-C', f.root, ...args], {encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
   git('init','-q'); git('config','user.name','Fixture'); git('config','user.email','fixture@example.invalid');
   git('add','.'); git('commit','-qm','baseline');
   const baseline = git('rev-parse','HEAD');
   git('remote','add','origin',f.root);
   writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'candidate router\n');
-  if (unrelated) writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), 'changed optimization\n');
-  git('commit','-qam','candidate');
+  if (mode === 'profile') writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), '[workspace]\nmembers = []\n[profile.release]\nopt-level = 2\n');
+  if (mode === 'external') writeFileSync(path.join(f.root, 'backend-school/Cargo.lock'), 'version = 4\n[[package]]\nname = "serde"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + 'c'.repeat(64) + '"\n');
+  if (mode === 'unrelated') writeFileSync(path.join(f.root, 'backend-school/Dockerfile'), 'changed build flags\n');
+  if (mode === 'graph') {
+    writeFileSync(path.join(f.root, 'backend-school/Cargo.toml'), '[workspace]\nmembers = ["crates/school-academic-core-http"]\n');
+    mkdirSync(path.join(f.root, 'backend-school/crates/school-academic-core-http/src'), {recursive:true});
+    writeFileSync(path.join(f.root, 'backend-school/crates/school-academic-core-http/Cargo.toml'), '[package]\nname = "school-academic-core-http"\nversion = "0.1.0"\nedition = "2021"\n');
+    writeFileSync(path.join(f.root, 'backend-school/crates/school-academic-core-http/src/lib.rs'), 'pub fn router_owner() {}\n');
+  }
+  git('add','.'); git('commit','-qm','candidate');
   // The mounted candidate comes from Git, even if the checkout is later modified.
   writeFileSync(path.join(f.root, 'backend-school/src/app.rs'), 'uncommitted router\n');
   const result = spawnSync('bash',['-c',body],{cwd:f.root,encoding:'utf8',env:{...process.env,BENCH_BACKEND:'backend-school',BENCH_BASELINE:baseline,BENCH_VARIANTS:'default,http-routes',GITHUB_WORKSPACE:f.root,RUNNER_TEMP:path.join(f.root,'runner'),GITHUB_OUTPUT:path.join(f.root,'output')}});
-  if (unrelated) assert.equal(result.status,64,result.stderr);
+  if (mode !== 'graph') assert.equal(result.status,64,result.stderr);
   else {
     assert.equal(result.status,0,result.stderr);
     assert.equal(readFileSync(path.join(f.root,'runner/baseline/backend-school/src/app.rs'),'utf8'),'baseline router\n');
     assert.equal(readFileSync(path.join(f.root,'runner/candidate/backend-school/src/app.rs'),'utf8'),'candidate router\n');
+    assert.ok(readFileSync(path.join(f.root, 'runner/candidate/backend-school/Cargo.toml'), 'utf8').includes('school-academic-core-http'));
+    assert.ok(readFileSync(path.join(f.root, 'runner/candidate/backend-school/crates/school-academic-core-http/src/lib.rs'), 'utf8').includes('router_owner'));
+  }
+});
+
+
+test('academic benchmark source selection supports split, monolithic and historical owners', t => {
+  const f = fixture(t);
+  const helper = path.join(repo, 'scripts/backend_benchmark_source.sh');
+  const sources = ['src/modules/academic/core/handlers.rs', 'crates/school-academic-http/src/core/handlers.rs', 'crates/school-academic-core-http/src/core/handlers.rs'];
+  for (const source of sources) {
+    mkdirSync(path.dirname(path.join(f.root, source)), { recursive: true });
+    writeFileSync(path.join(f.root, source), '// source fixture\n');
+    const result = spawnSync('bash', ['-c', '. "$1"; source=$(benchmark_owner_source backend-school academic); printf "%s\n" "$source"; benchmark_owner_package "$source"', 'fixture', helper], { cwd: f.root, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    const expected = source.startsWith('crates/') ? source.split('/')[1] : 'backend-school';
+    assert.deepEqual(result.stdout.trim().split('\n'), [source, expected]);
   }
 });

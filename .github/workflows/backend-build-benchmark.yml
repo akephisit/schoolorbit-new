@@ -74,10 +74,11 @@ jobs:
               test -n "$changed"
               while IFS= read -r file; do
                 case "$file" in
-                  backend-school/src/app.rs|backend-school/src/modules/academic.rs|backend-school/src/modules/academic/core.rs|backend-school/src/modules/academic/delivery.rs|backend-school/src/modules/academic/gradebook.rs|backend-school/src/modules/academic/learner_evaluation.rs|backend-school/src/modules/academic/lifecycle.rs|backend-school/src/modules/academic/results.rs|backend-school/crates/school-academic-http/src/core.rs|backend-school/crates/school-academic-http/src/delivery.rs|backend-school/crates/school-academic-http/src/gradebook.rs|backend-school/crates/school-academic-http/src/learner_evaluation.rs|backend-school/crates/school-academic-http/src/lib.rs|backend-school/crates/school-academic-http/src/lifecycle.rs|backend-school/crates/school-academic-http/src/results.rs|backend-school/crates/school-academic-http/src/routes.rs|backend-school/src/modules/auth/session_http_tests.rs|backend-school/tests/static_architecture.rs) ;;
+                  backend-school/Cargo.toml|backend-school/Cargo.lock|backend-school/README.md|backend-school/src/main.rs|backend-school/src/api_contract.rs|backend-school/src/app.rs|backend-school/src/http_state.rs|backend-school/src/adapters/facility_changes.rs|backend-school/src/integration_tests/*|backend-school/tests/*|backend-school/src/modules/academic.rs|backend-school/src/modules/academic/*|backend-school/src/modules/auth/session_http_tests.rs|backend-school/crates/school-academic-http/*|backend-school/crates/school-academic-core-http/*|backend-school/crates/school-academic-delivery-http/*|backend-school/crates/school-academic-assessment-http/*|backend-school/crates/school-academic-timetable-http/*|backend-school/crates/school-academic-results-http/*|backend-school/crates/school-academic-lifecycle-http/*|backend-school/crates/school-academic-realtime/*|backend-school/crates/school-academic-core/src/policies*|backend-school/crates/school-academic-core/src/lib.rs|backend-school/crates/school-academic-delivery/Cargo.toml|backend-school/crates/school-academic-delivery/src/policies*|backend-school/crates/school-academic-delivery/src/lib.rs|backend-school/crates/school-database/src/lib.rs) ;;
                   *) printf 'Unrelated backend change: %s\n' "$file" >&2; exit 64 ;;
                 esac
               done <<< "$changed"
+              python3 scripts/validate_backend_benchmark_source.py "$BENCH_BASELINE" HEAD || exit 64
               mkdir -p "$RUNNER_TEMP/candidate/backend-school"
               git archive HEAD:backend-school | tar -xf - -C "$RUNNER_TEMP/candidate/backend-school"
             else
@@ -145,6 +146,7 @@ jobs:
             -v "$PWD/scripts/summarize_backend_benchmark.py:/summarize_backend_benchmark.py:ro" \
             -v "$PWD/scripts/profile_backend_compiler.sh:/profile.sh:ro" \
             -v "$PWD/scripts/export_benchmark_openapi.sh:/export_benchmark_openapi.sh:ro" \
+            -v "$PWD/scripts/backend_benchmark_source.sh:/backend_benchmark_source.sh:ro" \
             -v "$RUNNER_TEMP/build-benchmark:/benchmark-results" \
             --entrypoint sleep schoolorbit-benchmark:builder infinity
           trap 'docker rm --force schoolorbit-benchmark >/dev/null' EXIT

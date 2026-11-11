@@ -407,12 +407,12 @@ fn gradebook_review_group_phase_contract_uses_phase_codes() {
     use utoipa::OpenApi;
     #[derive(OpenApi)]
     #[openapi(paths(
-        school_academic_http::gradebook::handlers::get_group_phase_workspace,
-        school_academic_http::gradebook::handlers::create_item,
-        school_academic_http::gradebook::handlers::update_item,
-        school_academic_http::gradebook::handlers::remove_item,
-        school_academic_http::gradebook::handlers::save_scores_batch,
-        school_academic_http::gradebook::handlers::confirm_phase,
+        school_academic_assessment_http::gradebook::handlers::get_group_phase_workspace,
+        school_academic_assessment_http::gradebook::handlers::create_item,
+        school_academic_assessment_http::gradebook::handlers::update_item,
+        school_academic_assessment_http::gradebook::handlers::remove_item,
+        school_academic_assessment_http::gradebook::handlers::save_scores_batch,
+        school_academic_assessment_http::gradebook::handlers::confirm_phase,
     ))]
     struct GradebookPaths;
     let contract = serde_json::to_value(GradebookPaths::openapi()).unwrap();

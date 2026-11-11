@@ -692,7 +692,7 @@ test('student and parent history selectors use learner-scoped academic context e
 	const parentsApi = await readProjectFile('src/lib/api/parents.ts');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
 	const academicRoutes = await readFile(
-		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/routes.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-academic-core-http/src/routes.rs'),
 		'utf8'
 	);
 	const parentRoutes = await readFile(
@@ -700,7 +700,7 @@ test('student and parent history selectors use learner-scoped academic context e
 		'utf8'
 	);
 	const coreHandlers = await readFile(
-		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/core/handlers.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-academic-core-http/src/core/handlers.rs'),
 		'utf8'
 	);
 	const coreService = await readFile(
@@ -721,7 +721,7 @@ test('student and parent history selectors use learner-scoped academic context e
 		api,
 		/\/api\/parent\/students\/\$\{encodeURIComponent\(studentId\)\}\/academic-context\/options/
 	);
-	assert.match(app, /\.nest\(\s*"\/api",\s*school_academic_http::routes::personal_routes\(\)/);
+	assert.match(app, /\.nest\(\s*"\/api",\s*school_academic_core_http::routes::personal_routes\(\)/);
 	assert.match(
 		app,
 		/\.nest\(\s*"\/api",\s*school_students::parents::http::routes::protected_routes\(\)/
@@ -827,11 +827,11 @@ test('public calendar browses actual dates independently of academic boundaries'
 	const view = await readProjectFile('src/lib/components/calendar/PublicCalendarView.svelte');
 	const app = await readFile(path.join(repoRoot, 'backend-school/src/app.rs'), 'utf8');
 	const routes = await readFile(
-		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/routes.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-academic-core-http/src/routes.rs'),
 		'utf8'
 	);
 	const handlers = await readFile(
-		path.join(repoRoot, 'backend-school/crates/school-academic-http/src/core/handlers.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-academic-core-http/src/core/handlers.rs'),
 		'utf8'
 	);
 
@@ -843,7 +843,7 @@ test('public calendar browses actual dates independently of academic boundaries'
 	assert.match(loader, /publicCalendarRange\(month\)/);
 	assert.doesNotMatch(loader, /listMyAcademicContextOptions|apiClient\.get\(/);
 	assert.match(view, /listPublicCalendarEvents/);
-	assert.match(app, /\.nest\(\s*"\/api",\s*school_academic_http::routes::public_routes\(\)/);
+	assert.match(app, /\.nest\(\s*"\/api",\s*school_academic_core_http::routes::public_routes\(\)/);
 	assert.match(routes, /"\/public\/academic-context\/options"/);
 	assert.match(handlers, /pub async fn list_public_context_options/);
 });

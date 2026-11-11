@@ -3041,21 +3041,21 @@ fn results_endpoint_contract_requires_exact_context_and_typed_envelopes() {
 
     #[derive(OpenApi)]
     #[openapi(paths(
-        school_academic_http::results::handlers::list_policies,
-        school_academic_http::results::handlers::create_policy,
-        school_academic_http::results::handlers::activate_policy,
-        school_academic_http::results::handlers::get_course_workspace,
-        school_academic_http::results::handlers::save_selection,
-        school_academic_http::results::handlers::confirm_group_results,
-        school_academic_http::results::handlers::get_activity_workspace,
-        school_academic_http::results::handlers::save_activity_outcomes,
-        school_academic_http::results::handlers::confirm_activity,
-        school_academic_http::results::handlers::readiness,
-        school_academic_http::results::handlers::lock_course_subject,
-        school_academic_http::results::handlers::lock_activity_group,
-        school_academic_http::results::handlers::lock_all_ready_activities,
-        school_academic_http::results::handlers::search_effective_results,
-        school_academic_http::results::handlers::correct_result,
+        school_academic_results_http::results::handlers::list_policies,
+        school_academic_results_http::results::handlers::create_policy,
+        school_academic_results_http::results::handlers::activate_policy,
+        school_academic_results_http::results::handlers::get_course_workspace,
+        school_academic_results_http::results::handlers::save_selection,
+        school_academic_results_http::results::handlers::confirm_group_results,
+        school_academic_results_http::results::handlers::get_activity_workspace,
+        school_academic_results_http::results::handlers::save_activity_outcomes,
+        school_academic_results_http::results::handlers::confirm_activity,
+        school_academic_results_http::results::handlers::readiness,
+        school_academic_results_http::results::handlers::lock_course_subject,
+        school_academic_results_http::results::handlers::lock_activity_group,
+        school_academic_results_http::results::handlers::lock_all_ready_activities,
+        school_academic_results_http::results::handlers::search_effective_results,
+        school_academic_results_http::results::handlers::correct_result,
     ))]
     struct ResultPaths;
 

@@ -33,6 +33,7 @@ jobs:
       release_id: ${{ github.sha }}
       frontend_baseline: ${{ steps.scope.outputs.frontend_baseline }}
       backend_baseline: ${{ steps.scope.outputs.backend_baseline }}
+      image_digest: ${{ steps.image.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -65,18 +66,13 @@ jobs:
           const scope = frontend && backend ? 'full' : frontend ? 'frontend' : 'backend';
           appendFileSync(process.env.GITHUB_OUTPUT, `scope=${scope}\nneeds_frontend=${frontend}\nneeds_backend=${backend}\nfrontend_baseline=${state?.components['frontend-school']?.sha || ''}\nbackend_baseline=${state?.components['backend-school']?.sha || ''}\n`);
           NODE
-  prepared-backend:
-    needs: verify-release-ci
-    if: needs.verify-release-ci.outputs.needs_backend == 'true'
-    runs-on: ubuntu-24.04
-    outputs:
-      image_digest: ${{ steps.image.outputs.digest }}
-    steps:
       - uses: actions/download-artifact@v7
+        if: steps.scope.outputs.needs_backend == 'true'
         with:
           name: prepared-backend-school
           path: ${{ runner.temp }}/prepared
       - name: Validate prepared backend identity
+        if: steps.scope.outputs.needs_backend == 'true'
         id: image
         env:
           INPUT_HASH: ${{ fromJson(inputs.plan).hashes['backend-school'] }}
@@ -439,12 +435,10 @@ jobs:
   deploy-backend:
     needs:
       - verify-release-ci
-      - prepared-backend
       - stage-frontends
     if: |-
       ${{ always() && needs.verify-release-ci.result == 'success' &&
           needs.verify-release-ci.outputs.needs_backend == 'true' &&
-          needs.prepared-backend.result == 'success' &&
           (needs.verify-release-ci.outputs.needs_frontend != 'true' ||
            needs.stage-frontends.result == 'success') }}
     runs-on: ubuntu-24.04
@@ -499,7 +493,7 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
-          BACKEND_IMAGE_DIGEST: ${{ needs.prepared-backend.outputs.image_digest }}
+          BACKEND_IMAGE_DIGEST: ${{ needs.verify-release-ci.outputs.image_digest }}
           RELEASE_SHA: ${{ github.sha }}
       - name: Run Academic Core authenticated smoke
         uses: appleboy/ssh-action@v1.2.5
@@ -704,23 +698,49 @@ jobs:
   accept-release:
     needs:
       - verify-release-ci
-      - prepared-backend
+      - discover-schools
       - stage-frontends
       - deploy-backend
       - promote-frontends
-    if: |-
-      ${{ always() && needs.verify-release-ci.result == 'success' &&
-          (needs.verify-release-ci.outputs.needs_frontend != 'true' ||
-           needs.promote-frontends.result == 'success') &&
-          (needs.verify-release-ci.outputs.needs_backend != 'true' ||
-           needs.deploy-backend.result == 'success') }}
+    if: always()
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
     steps:
+      - name: Require successful selected School release prerequisites
+        id: release-gate
+        env:
+          CI_RESULT: ${{ needs.verify-release-ci.result }}
+          RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
+          RELEASE_SCOPE: ${{ needs.verify-release-ci.outputs.scope }}
+          NEEDS_BACKEND: ${{ needs.verify-release-ci.outputs.needs_backend }}
+          NEEDS_FRONTEND: ${{ needs.verify-release-ci.outputs.needs_frontend }}
+          BACKEND_IMAGE_DIGEST: ${{ needs.verify-release-ci.outputs.image_digest }}
+          DISCOVERY_RESULT: ${{ needs.discover-schools.result }}
+          STAGE_RESULT: ${{ needs.stage-frontends.result }}
+          BACKEND_RESULT: ${{ needs.deploy-backend.result }}
+          FRONTEND_RESULT: ${{ needs.promote-frontends.result }}
+        run: |
+          set -euo pipefail
+          test "$CI_RESULT" = success
+          test -n "$RELEASE_ID"
+          test "$RELEASE_ID" = "$GITHUB_SHA"
+          case "$NEEDS_BACKEND:$NEEDS_FRONTEND:$RELEASE_SCOPE" in
+            true:true:full|true:false:backend|false:true:frontend) ;;
+            *) echo 'Missing or inconsistent School release scope' >&2; exit 1 ;;
+          esac
+          if [ "$NEEDS_BACKEND" = true ]; then
+            test "$BACKEND_RESULT" = success
+            [[ "$BACKEND_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          fi
+          if [ "$NEEDS_FRONTEND" = true ]; then
+            test "$DISCOVERY_RESULT" = success
+            test "$STAGE_RESULT" = success
+            test "$FRONTEND_RESULT" = success
+          fi
       - name: Verify School release while public maintenance remains active
-        if: needs.verify-release-ci.outputs.needs_backend == 'true'
+        if: steps.release-gate.outcome == 'success' && needs.verify-release-ci.outputs.needs_backend == 'true'
         uses: appleboy/ssh-action@v1.2.5
         env:
           ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'sandbox' }}
@@ -728,7 +748,7 @@ jobs:
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
           RELEASE_SHA: ${{ github.sha }}
-          BACKEND_IMAGE_DIGEST: ${{ needs.prepared-backend.outputs.image_digest }}
+          BACKEND_IMAGE_DIGEST: ${{ needs.verify-release-ci.outputs.image_digest }}
           RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
         with:
           host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
@@ -738,24 +758,15 @@ jobs:
           command_timeout: 10m
           envs: ACADEMIC_CORE_SMOKE_SUBDOMAIN,SMOKE_USERNAME,SMOKE_PASSWORD,BASE_DOMAIN,RELEASE_SHA,BACKEND_IMAGE_DIGEST,RELEASE_ID
           script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/school-verify-release.sh
-  release-summary:
-    needs:
-      - verify-release-ci
-      - stage-frontends
-      - deploy-backend
-      - promote-frontends
-      - accept-release
-    if: always()
-    runs-on: ubuntu-24.04
-    steps:
       - name: Report bounded release outcome
+        if: always()
         env:
           RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
           RELEASE_SCOPE: ${{ needs.verify-release-ci.outputs.scope }}
           CI_RESULT: ${{ needs.verify-release-ci.result }}
           BACKEND_RESULT: ${{ needs.deploy-backend.result }}
           FRONTEND_RESULT: ${{ needs.promote-frontends.result }}
-          ACCEPT_RESULT: ${{ needs.accept-release.result }}
+          ACCEPT_RESULT: ${{ job.status }}
         run: |-
           set -euo pipefail
           printf 'scope=%s release=%s backend=%s frontend=%s accepted=%s\n' "$RELEASE_SCOPE" "$RELEASE_ID" "$BACKEND_RESULT" "$FRONTEND_RESULT" "$ACCEPT_RESULT" >> "$GITHUB_STEP_SUMMARY"

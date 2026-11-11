@@ -17,6 +17,11 @@ def summarize(folder, backend, variant, owner, count):
         reference = json.loads((folder / "../../openapi-baseline.json").read_text())
         if baseline != reference:
             raise ValueError("API differs from the default compiler profile")
+    source_owner = None
+    if backend == "backend-school" and owner == "academic":
+        source_owner = (folder / "source-owner-package.txt").read_text().strip()
+        if source_owner not in {"school-academic-core-http", "school-academic-http", "backend-school"}:
+            raise ValueError("Unknown academic source owner")
     samples = []
     for sample in range(1, count + 1):
         timings = (folder / f"cargo-timing-{sample}.html").read_text()
@@ -27,7 +32,7 @@ def summarize(folder, backend, variant, owner, count):
         compiled = re.findall(r"^\s*Compiling (\S+)", (folder / f"compile-{sample}.log").read_text(), re.M)
         if backend not in compiled:
             raise ValueError("Source-changing sample did not rebuild the application")
-        if backend == "backend-school" and owner == "academic" and "school-academic-http" not in compiled:
+        if source_owner is not None and source_owner not in compiled:
             raise ValueError("Academic source-changing sample did not rebuild its owning HTTP crate")
         link_times = (folder / f"link-nanoseconds-{sample}.txt").read_text().splitlines()
         if len(link_times) != 1:
@@ -50,6 +55,7 @@ def summarize(folder, backend, variant, owner, count):
     return {
         "backend": backend, "variant": variant, "owner": owner,
         "compiler_cache": "disabled for Cargo invalidation isolation; see builder-cache evidence separately",
+        "source_owner_package": source_owner,
         "prime_seconds": int((folder / "prime-nanoseconds.txt").read_text()) / 1e9,
         "unchanged_seconds": int((folder / "unchanged-nanoseconds.txt").read_text()) / 1e9,
         "mean_seconds": statistics.mean(sample["cargo_seconds"] for sample in samples),

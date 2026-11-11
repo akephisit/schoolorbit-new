@@ -37,7 +37,7 @@ BACKEND_SCHOOL_TEST_BIN=seed_sandbox ./scripts/test_backend_school.sh canonical_
 ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::auth::profile_integration_tests -- --test-threads=4
 ./scripts/test_backend_school.sh integration_tests::auth::staff_integration_tests -- --test-threads=4
-# WebSocket security tests now run in the school-academic-http unit owner.
+# WebSocket security tests run in the school-academic-timetable-http unit owner.
 
 # Attendance facts, guardian fan-out, special-group uniqueness and verified archival.
 ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integration_tests::attendance -- --test-threads=4

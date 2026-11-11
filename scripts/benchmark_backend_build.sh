@@ -11,13 +11,10 @@ case "$backend" in backend-school | backend-admin) ;; *) exit 64 ;; esac
 case "$variant" in default | opt2 | cgu64 | cgu256 | api-batches | http-routes | api-docs) ;; *) exit 64 ;; esac
 if [[ "$variant" == api-docs ]]; then [[ "$backend" == backend-school ]] || exit 64; fi
 [[ $samples =~ ^[2-5]$ ]] || exit 64
-case "$backend/$owner" in
-    */application) source_file=src/main.rs ;;
-    backend-school/academic) source_file=crates/school-academic-http/src/core/handlers.rs ;;
-    backend-school/attendance) source_file=crates/school-attendance/src/services/sessions.rs ;;
-    *) exit 64 ;;
-esac
-test -f "$source_file"
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=backend_benchmark_source.sh
+. "$(dirname "$0")/backend_benchmark_source.sh"
+source_file=$(benchmark_owner_source "$backend" "$owner")
 if [[ "$variant" == api-batches ]]; then
     [[ "$backend/$owner" == backend-school/application ]] || exit 64
     cp /candidate-api.rs src/api_contract.rs
@@ -25,18 +22,22 @@ fi
 if [[ "$variant" == http-routes ]]; then
     [[ "$backend" == backend-school ]] || exit 64
     if [[ "$owner" == application ]]; then
-        files=(src/app.rs src/modules/academic.rs crates/school-academic-http/src/lib.rs crates/school-academic-http/src/routes.rs)
-        for domain in core delivery gradebook learner_evaluation lifecycle results; do
-            files+=("src/modules/academic/$domain.rs" "crates/school-academic-http/src/$domain.rs")
-        done
-        # Preserve untouched dependency sources and their production fingerprints.
-        for file in "${files[@]}"; do cp "/candidate-backend/$file" "$file"; done
+        # Replace the frozen graph at the same /app path, including new package manifests.
+        # The caller validates unchanged compiler profiles and external lock identities.
+        [[ "$PWD" == /app && -d /candidate-backend/src && -d /candidate-backend/crates ]]
+        rm -rf src crates
+        cp -a /candidate-backend/src /candidate-backend/crates .
+        cp /candidate-backend/Cargo.toml /candidate-backend/Cargo.lock .
+        # Git archives preserve old mtimes; prevent stale workspace artifact reuse.
+        find src crates -type f -exec touch {} +
+        touch Cargo.toml Cargo.lock
         touch /tmp/schoolorbit-http-routes-applied
     else
         test -f /tmp/schoolorbit-http-routes-applied
     fi
 fi
 mkdir -p "$output"
+benchmark_owner_package "$source_file" "$backend" >"$output/source-owner-package.txt"
 unset RUSTC_WRAPPER
 export CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2
 
@@ -85,7 +86,9 @@ fi
 sha256sum src/main.rs >"$output/source-sha256.txt"
 if [[ "$backend" == backend-school ]]; then sha256sum src/api_contract.rs >>"$output/source-sha256.txt"; fi
 if [[ "$variant" == http-routes ]]; then
-    sha256sum src/app.rs crates/school-academic-http/src/routes.rs >>"$output/source-sha256.txt"
+    for source in Cargo.toml Cargo.lock src/app.rs crates/school-academic-http/src/routes.rs crates/school-academic-*-http/Cargo.toml crates/school-academic-*-http/src/routes.rs crates/school-academic-realtime/Cargo.toml; do
+        if [[ -f "$source" ]]; then sha256sum "$source" >>"$output/source-sha256.txt"; fi
+    done
 fi
 
 original=$(mktemp)
@@ -99,7 +102,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 for ((sample = 1; sample <= samples; sample++)); do
     cp "$original" "$source_file"
-    printf '\n// Docker invalidation benchmark: %s %s sample %s\n' "$variant" "$owner" "$sample" >>"$source_file"
+    printf '\n// Docker invalidation benchmark: %s %s sample %s\n#[allow(dead_code)]\npub const BUILD_BENCHMARK_SOURCE_MARKER: u64 = %s;\n' "$variant" "$owner" "$sample" "$sample" >>"$source_file"
     : >"$BENCH_LINK_LOG"
     : >"${BENCH_LINK_LOG}.driver"
     start=$(date +%s%N)

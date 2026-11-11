@@ -212,7 +212,7 @@ for raw in (b'{"a":1,"a":2}',b'{"a":NaN}',b'{"a":1}{}',b'x'*(m.MAX_BYTES+1)):
   );
 });
 
-test("trusted main preparation validates149 sources and emits the unchanged148 historical prefix", (t) => {
+test("trusted main preparation validates the complete current timeline and emits only the148 historical prefix", (t) => {
   const temporary = mkdtempSync(path.join(os.tmpdir(), "academic148-prepare-"));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
   const output = path.join(temporary, "academic148-inputs");
@@ -231,7 +231,7 @@ test("trusted main preparation validates149 sources and emits the unchanged148 h
   const migrations = readdirSync(path.join(root, "backend-school/migrations"))
     .filter((name) => name.endsWith(".sql"))
     .sort();
-  assert.equal(migrations.length, 149);
+  assert.ok(migrations.length >= 149);
   for (const [index, item] of manifest.entries()) {
     assert.equal(item.version, index + 1);
     assert.match(item.checksum, /^[a-f0-9]{96}$/);
@@ -272,7 +272,28 @@ test("trusted main preparation validates149 sources and emits the unchanged148 h
   assert.equal(denied.stderr.trim(), "academic148_observation=refused");
 });
 
-test("historical observer preparation refuses missing, extra or symlinked149 sources", () => {
+test("historical observer admits a contiguous future source tail without expanding its manifest", () => {
+  python(`import shutil,hashlib
+with tempfile.TemporaryDirectory() as directory:
+ root=pathlib.Path(directory);migrations=root/'backend-school/migrations';migrations.mkdir(parents=True)
+ source=pathlib.Path(sys.argv[1]).parents[2]
+ for path in (source/'backend-school/migrations').glob('*.sql'):shutil.copyfile(path,migrations/path.name)
+ for name in ('pipeline-academic148-observations.py','pipeline-academic148-observations.sql'):
+  target=root/'scripts/lib'/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source/'scripts/lib'/name,target)
+ def prepared():
+  with tempfile.TemporaryDirectory() as runtime,patch.dict(os.environ,{'GITHUB_REF':'refs/heads/main','GITHUB_WORKSPACE':str(root),'RUNNER_TEMP':runtime}):
+   m.prepare();return json.loads((pathlib.Path(runtime)/'academic148-inputs/manifest.json').read_text())
+ original=prepared();latest=max(int(path.name.split('_')[0]) for path in migrations.glob('*.sql'))
+ assert len(original)==148 and [item['version'] for item in original]==list(range(1,149))
+ future=migrations/f'{latest+1:03d}_future_fixture.sql';future.write_text('SELECT 1; -- private-observation-sentinel')
+ assert prepared()==original
+ for item in original:
+  path=next(migrations.glob(f"{item['version']:03d}_*.sql"))
+  assert item['checksum']==hashlib.sha384(path.read_bytes()).hexdigest()
+ assert 'private-observation-sentinel' not in json.dumps(original)`);
+});
+
+test("historical observer refuses missing, gapped, duplicate, unsafe and symlinked source history", () => {
   python(`import shutil
 with tempfile.TemporaryDirectory() as directory:
  root=pathlib.Path(directory);migrations=root/'backend-school/migrations';migrations.mkdir(parents=True)
@@ -285,19 +306,37 @@ with tempfile.TemporaryDirectory() as directory:
    try:m.prepare()
    except m.Refusal:pass
    else:raise AssertionError('invalid source inventory accepted')
- latest=next(migrations.glob('149_*.sql'));original=source/'backend-school/migrations'/latest.name
- latest.unlink();refused();latest.symlink_to(original);refused();latest.unlink();shutil.copyfile(original,latest)
- extra=migrations/'150_unreviewed.sql';extra.write_text('private-observation-sentinel');refused();extra.unlink()
- wrong=latest.with_name('149_wrong-uppercase-NAME.sql');latest.rename(wrong);refused()`);
+ for version in (1,148,149,150):
+  path=next(migrations.glob(f'{version:03d}_*.sql'));raw=path.read_bytes();path.unlink();refused();path.write_bytes(raw)
+ latest=max(migrations.glob('*.sql'),key=lambda path:int(path.name.split('_')[0]));original=source/'backend-school/migrations'/latest.name
+ latest.unlink();latest.symlink_to(original);refused();latest.unlink();shutil.copyfile(original,latest)
+ duplicate=migrations/'150_unreviewed.sql';duplicate.write_text('private-observation-sentinel');refused();duplicate.unlink()
+ next_version=int(latest.name.split('_')[0])+1
+ gap=migrations/f'{next_version+1:03d}_gapped_fixture.sql';gap.write_text('SELECT 1;');refused();gap.unlink()
+ wrong=latest.with_name(f'{int(latest.name.split("_")[0]):03d}_wrong-uppercase-NAME.sql');latest.rename(wrong);refused();wrong.rename(latest)
+ for path in list(migrations.glob('*.sql')):
+  if int(path.name.split('_')[0])>=149:path.unlink()
+ refused()`);
 });
 
-test("historical observer continues to refuse149 reports rather than becoming a runtime fallback", () => {
+test("historical observer rejects post148 reports even when current and future local sources are admitted", () => {
+  const current = Math.max(
+    ...readdirSync(path.join(root, "backend-school/migrations"))
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => Number(name.split("_")[0])),
+  );
   python(
-    `data['history_version']=149
-try:m.validate(data)
+    `for version in data['rejected_versions']:
+ value={**data['report'],'history_version':version}
+ try:m.validate(value)
+ except m.Refusal:pass
+ else:raise AssertionError('post148 history admitted')
+for version in (147,148):m.validate({**data['report'],'history_version':version})
+data['report']['history_verified']=False
+try:m.validate(data['report'])
 except m.Refusal:pass
-else:raise AssertionError('unsupported schema149 admitted')`,
-    empty(),
+else:raise AssertionError('unverified/tampered historical checksums admitted')`,
+    { report: empty(), rejected_versions: [149, current, current + 1] },
   );
 });
 
