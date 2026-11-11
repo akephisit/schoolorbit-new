@@ -12,6 +12,7 @@ export async function mockOrganization(
 		failAt?: number;
 		permissions?: string[];
 		units?: OrganizationUnit[];
+		canManageDelegations?: boolean;
 	} = {}
 ) {
 	const base = await mockStaffHome(page, {
@@ -49,6 +50,7 @@ export async function mockOrganization(
 	let units: OrganizationUnit[] =
 		options.units ??
 		[firstUnit, secondUnit].map((unitId, index) => ({
+			can_manage_delegations: options.canManageDelegations ?? true,
 			id: unitId,
 			code: index ? 'SECOND' : 'SCHOOL',
 			name: index ? 'หน่วยงานสอง' : 'หน่วยงานแรก',

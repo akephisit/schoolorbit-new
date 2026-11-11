@@ -18,9 +18,17 @@ async fn patch(
     user: Uuid,
     value: serde_json::Value,
 ) -> Result<(), school_errors::AppError> {
-    staff_service::update_staff(pool, user, serde_json::from_value(value).unwrap(), &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
-        .await
-        .map(|_| ())
+    staff_service::update_staff(
+        pool,
+        user,
+        serde_json::from_value(value).unwrap(),
+        &school_authorization::ActorContext {
+            user_id: user,
+            permissions: vec!["*".into()],
+        },
+    )
+    .await
+    .map(|_| ())
 }
 
 #[tokio::test]
@@ -101,7 +109,12 @@ async fn staff_profile_bilingual_validation_selection_search_and_pagination() {
         request["role_ids"] = serde_json::json!([]);
         assert!(staff_service::create_staff(
             &pool,
-            serde_json::from_value(request).unwrap(), &school_authorization::ActorContext { user_id: legacy, permissions: vec!["*".into()] })
+            serde_json::from_value(request).unwrap(),
+            &school_authorization::ActorContext {
+                user_id: legacy,
+                permissions: vec!["*".into()]
+            }
+        )
         .await
         .is_err());
     }
@@ -473,7 +486,14 @@ async fn staff_generated_username_and_profile_reads_work_with_one_connection() {
     .unwrap();
     let user = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        staff_service::create_staff(&pool, request, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] }),
+        staff_service::create_staff(
+            &pool,
+            request,
+            &school_authorization::ActorContext {
+                user_id: actor,
+                permissions: vec!["*".into()],
+            },
+        ),
     )
     .await
     .unwrap()
@@ -537,7 +557,14 @@ async fn staff_generated_username_query_errors_propagate_before_inserting_a_user
     .unwrap();
     let error = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        staff_service::create_staff(&pool, request, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] }),
+        staff_service::create_staff(
+            &pool,
+            request,
+            &school_authorization::ActorContext {
+                user_id: actor,
+                permissions: vec!["*".into()],
+            },
+        ),
     )
     .await
     .unwrap()

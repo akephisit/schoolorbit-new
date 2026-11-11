@@ -32,9 +32,11 @@ export function hasModulePermission(permissions: string[], module: string): bool
 export function workflowManagePermissions(permissions: string[]): string[] {
 	return Object.values(PERMISSIONS).filter((permission) => {
 		const [, action, scope] = permission.split('.');
-		return action === 'manage' &&
+		return (
+			action === 'manage' &&
 			['school', 'all', 'organization_unit', 'organization_tree'].includes(scope) &&
-			hasPermission(permissions, permission);
+			hasPermission(permissions, permission)
+		);
 	});
 }
 

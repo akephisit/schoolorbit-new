@@ -262,6 +262,10 @@ pub fn routes() -> Router<AcademicHttpState> {
             get(handlers::list_student_years).post(handlers::create_student_year),
         )
         .route(
+            "/student-years/homeroom-options",
+            get(handlers::list_student_year_homeroom_options),
+        )
+        .route(
             "/student-years/candidates",
             get(handlers::list_student_year_candidates),
         )

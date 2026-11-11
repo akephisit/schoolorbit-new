@@ -1,11 +1,13 @@
+use crate::models::WorkflowWindow;
 use school_authorization::ActorContext;
-use school_authorization::resource_access_policy::{accessible_organization_unit_ids, require_resource_access, ResourceAccessPermissions, ResourceAccessTarget, UserResourceListAccess};
+use school_authorization::{
+    accessible_exact_units_for_permission, accessible_tree_units_for_permission,
+};
+use school_errors::AppError;
+use school_permissions::registry::codes;
 use school_permissions::registry::{PermissionDef, ALL_PERMISSIONS};
 use sqlx::PgPool;
 use uuid::Uuid;
-use crate::models::WorkflowWindow;
-use school_errors::AppError;
-use school_permissions::registry::codes;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum WorkflowWindowManageAccess {
@@ -18,9 +20,14 @@ pub fn resolve_workflow_window_manage_access(actor: &ActorContext) -> WorkflowWi
         return WorkflowWindowManageAccess::All;
     }
 
-    WorkflowWindowManageAccess::Permissions(actor.permissions.iter()
-        .filter(|permission| eligible_management_permission(permission).is_some())
-        .cloned().collect())
+    WorkflowWindowManageAccess::Permissions(
+        actor
+            .permissions
+            .iter()
+            .filter(|permission| eligible_management_permission(permission).is_some())
+            .cloned()
+            .collect(),
+    )
 }
 
 pub fn require_workflow_window_manage_permission(
@@ -28,7 +35,8 @@ pub fn require_workflow_window_manage_permission(
     managed_by_permission: &str,
 ) -> Result<(), AppError> {
     if eligible_management_permission(managed_by_permission).is_some()
-        && actor.has_permission(managed_by_permission) {
+        && actor.has_permission(managed_by_permission)
+    {
         return Ok(());
     }
 
@@ -36,9 +44,14 @@ pub fn require_workflow_window_manage_permission(
 }
 
 fn eligible_management_permission(code: &str) -> Option<&'static PermissionDef> {
-    ALL_PERMISSIONS.iter().find(|permission| permission.code == code
-        && permission.action == "manage"
-        && matches!(permission.scope, "school" | "all" | "organization_unit" | "organization_tree"))
+    ALL_PERMISSIONS.iter().find(|permission| {
+        permission.code == code
+            && permission.action == "manage"
+            && matches!(
+                permission.scope,
+                "school" | "all" | "organization_unit" | "organization_tree"
+            )
+    })
 }
 
 pub async fn require_workflow_window_management_access(
@@ -50,17 +63,28 @@ pub async fn require_workflow_window_management_access(
     require_workflow_window_manage_permission(actor, managed_by_permission)?;
     let permission = eligible_management_permission(managed_by_permission)
         .ok_or_else(|| AppError::Forbidden("ไม่มีสิทธิ์จัดการรอบงานนี้".into()))?;
-    let permissions = match permission.scope {
-        "school" | "all" => return Ok(()),
-        "organization_unit" => ResourceAccessPermissions { organization_unit: Some(permission.code), ..Default::default() },
-        "organization_tree" => ResourceAccessPermissions { organization_tree: Some(permission.code), ..Default::default() },
+    if matches!(permission.scope, "school" | "all") {
+        return Ok(());
+    }
+    let unit = organization_unit_id
+        .ok_or_else(|| AppError::Forbidden("รอบงานแบบหน่วยงานต้องระบุหน่วยงาน".into()))?;
+    if actor.has_permission(codes::WILDCARD) {
+        return Ok(());
+    }
+    let units = match permission.scope {
+        "organization_unit" => {
+            accessible_exact_units_for_permission(pool, actor.user_id, permission.code).await?
+        }
+        "organization_tree" => {
+            accessible_tree_units_for_permission(pool, actor.user_id, permission.code).await?
+        }
         _ => return Err(AppError::Forbidden("ขอบเขตสิทธิ์ไม่รองรับรอบงานนี้".into())),
     };
-    let target = ResourceAccessTarget {
-        organization_unit_ids: organization_unit_id.into_iter().collect(),
-        ..Default::default()
-    };
-    require_resource_access(pool, actor, permissions, &target, "ไม่มีสิทธิ์จัดการรอบงานของหน่วยงานนี้").await.map(|_| ())
+    if units.contains(&unit) {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden("ไม่มีสิทธิ์จัดการรอบงานของหน่วยงานนี้".into()))
+    }
 }
 
 // module_code is a workflow namespace (e.g. organization_work/correspondence), not a
@@ -71,19 +95,50 @@ pub async fn filter_manageable_workflow_windows(
     windows: Vec<WorkflowWindow>,
 ) -> Result<Vec<WorkflowWindow>, AppError> {
     let wildcard = actor.has_permission(codes::WILDCARD);
-    let need_units = !wildcard && windows.iter().any(|window| eligible_management_permission(&window.managed_by_permission).is_some_and(|p| p.scope == "organization_unit"));
-    let need_tree = !wildcard && windows.iter().any(|window| eligible_management_permission(&window.managed_by_permission).is_some_and(|p| p.scope == "organization_tree"));
-    let units = if need_units { accessible_organization_unit_ids(pool, UserResourceListAccess::OrganizationUnit(actor.user_id)).await?.unwrap_or_default() } else { Vec::new() };
-    let tree = if need_tree { accessible_organization_unit_ids(pool, UserResourceListAccess::OrganizationTree(actor.user_id)).await?.unwrap_or_default() } else { Vec::new() };
-    Ok(windows.into_iter().filter(|window| {
-        let Some(permission) = eligible_management_permission(&window.managed_by_permission) else { return false; };
-        actor.has_permission(permission.code) && match permission.scope {
-            "school" | "all" => true,
-            "organization_unit" => window.organization_unit_id.is_some_and(|id| wildcard || units.contains(&id)),
-            "organization_tree" => window.organization_unit_id.is_some_and(|id| wildcard || tree.contains(&id)),
-            _ => false,
+    let mut allowed_by_permission = std::collections::HashMap::new();
+    for window in &windows {
+        let Some(permission) = eligible_management_permission(&window.managed_by_permission) else {
+            continue;
+        };
+        if wildcard
+            || !actor.has_permission(permission.code)
+            || allowed_by_permission.contains_key(permission.code)
+        {
+            continue;
         }
-    }).collect())
+        let units = match permission.scope {
+            "organization_unit" => {
+                accessible_exact_units_for_permission(pool, actor.user_id, permission.code).await?
+            }
+            "organization_tree" => {
+                accessible_tree_units_for_permission(pool, actor.user_id, permission.code).await?
+            }
+            _ => Vec::new(),
+        };
+        allowed_by_permission.insert(permission.code, units);
+    }
+    Ok(windows
+        .into_iter()
+        .filter(|window| {
+            let Some(permission) = eligible_management_permission(&window.managed_by_permission)
+            else {
+                return false;
+            };
+            actor.has_permission(permission.code)
+                && match permission.scope {
+                    "school" | "all" => true,
+                    "organization_unit" | "organization_tree" => {
+                        window.organization_unit_id.is_some_and(|id| {
+                            wildcard
+                                || allowed_by_permission
+                                    .get(permission.code)
+                                    .is_some_and(|units| units.contains(&id))
+                        })
+                    }
+                    _ => false,
+                }
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -108,6 +163,32 @@ mod tests {
         assert_eq!(
             resolve_workflow_window_manage_access(&actor),
             WorkflowWindowManageAccess::All
+        );
+    }
+
+    #[test]
+    fn permission_coverage_only_canonical_resolvable_management_grants_are_eligible() {
+        for code in [
+            codes::LEARNING_OFFERING_READ_SCHOOL,
+            codes::WILDCARD,
+            "invented.manage.school",
+            codes::LEARNING_OFFERING_MANAGE_ASSIGNED,
+        ] {
+            assert!(
+                require_workflow_window_manage_permission(&actor(&[codes::WILDCARD]), code)
+                    .is_err(),
+                "{code}"
+            );
+        }
+        let actor = actor(&[
+            codes::LEARNING_OFFERING_READ_SCHOOL,
+            codes::LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT,
+        ]);
+        assert_eq!(
+            resolve_workflow_window_manage_access(&actor),
+            WorkflowWindowManageAccess::Permissions(vec![
+                codes::LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT.into()
+            ])
         );
     }
 

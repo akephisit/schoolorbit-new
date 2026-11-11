@@ -61,6 +61,9 @@ export async function mock(
 		holdAt?: number;
 		term?: boolean;
 		observationStatus?: string;
+		canManage?: boolean;
+		canReview?: boolean;
+		averageRating?: number;
 	} = {}
 ) {
 	const reads: string[] = [];
@@ -70,6 +73,9 @@ export async function mock(
 	let cycleStatus = 'open';
 	let observationStatus = options.observationStatus ?? 'requested';
 	const observation = (academicYearId = year) => ({
+		canManage: options.canManage ?? true,
+		canReview: options.canReview ?? true,
+		averageRating: options.averageRating ?? null,
 		id: id(30),
 		cycleId: firstCycle,
 		academicYearId,

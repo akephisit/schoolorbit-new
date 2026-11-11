@@ -22,6 +22,49 @@ pub struct ScoreRow {
     pub score: Option<f64>,
 }
 
+#[derive(sqlx::FromRow, serde::Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct ScoreTrackApplicant {
+    pub id: Uuid,
+    pub application_number: Option<String>,
+    pub full_name: String,
+}
+
+pub async fn get_score_track_roster(
+    pool: &PgPool,
+    round_id: Uuid,
+    track_id: Uuid,
+) -> Result<Vec<ScoreTrackApplicant>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "admission.get_score_track_roster",
+    )
+    .await?;
+    let belongs: bool = DbSession::new(&mut *connection)
+        .scalar(
+            "admission.get_score_track_roster",
+            "SELECT EXISTS(SELECT 1 FROM admission_tracks WHERE id=$1 AND admission_round_id=$2)",
+        )
+        .bind(track_id)
+        .bind(round_id)
+        .fetch_one()
+        .await?;
+    if !belongs {
+        return Err(AppError::NotFound("ไม่พบสายการเรียนในรอบรับสมัครนี้".into()));
+    }
+    let rows:Vec<ScoreTrackApplicant>=DbSession::new(&mut *connection).query_as(
+        "admission.get_score_track_roster",
+        "SELECT id,application_number,CONCAT(COALESCE(title,''),first_name,' ',last_name) AS full_name FROM admission_applications WHERE admission_round_id=$1 AND admission_track_id=$2 AND status IN ('verified','scored','accepted','absent') ORDER BY application_number NULLS LAST,id LIMIT 10001",
+    ).bind(round_id).bind(track_id).fetch_all().await?;
+    if rows.len() > 10_000 {
+        return Err(AppError::ValidationError(
+            "จำนวนผู้สมัครในสายการเรียนเกินขีดจำกัด 10000 รายการ".into(),
+        ));
+    }
+    Ok(rows)
+}
+
 #[derive(sqlx::FromRow)]
 struct ScoreRoomSeatRow {
     exam_room_id: Uuid,

@@ -65,6 +65,32 @@ pub async fn learning_offering_list_access_on_connection(
     .await
 }
 
+pub async fn populate_offering_management_capabilities(
+    pool: &PgPool,
+    actor: &ActorContext,
+    offerings: &mut [&mut school_academic_delivery::models::LearningOffering],
+) -> Result<(), AppError> {
+    let filter = learning_offering_list_access(pool, actor, OfferingAction::Manage).await?;
+    let ids: Vec<_> = offerings.iter().map(|offering| offering.id).collect();
+    let assigned: Vec<Uuid> = if filter.assigned_actor_id.is_some() && !ids.is_empty() {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_http.policies.learning_offering_access_policy.populate_offering_management_capabilities").await?;
+        DbSession::new(&mut *connection).scalar(
+            "academic_http.policies.learning_offering_access_policy.populate_offering_management_capabilities",
+            "SELECT DISTINCT learning_group.learning_offering_id FROM learning_groups learning_group JOIN learning_group_teachers teacher ON teacher.learning_group_id=learning_group.id WHERE learning_group.learning_offering_id=ANY($1) AND teacher.teacher_id=$2",
+        ).bind(&ids).bind(actor.user_id).fetch_all().await?
+    } else {
+        Vec::new()
+    };
+    for offering in offerings {
+        offering.can_manage = resource_access_policy::academic_resource_access_for(
+            &filter,
+            Some(offering.owning_organization_unit_id),
+            assigned.contains(&offering.id),
+        ) != AcademicResourceAccess::None;
+    }
+    Ok(())
+}
+
 pub async fn learning_offering_access(
     pool: &PgPool,
     actor: &ActorContext,

@@ -199,3 +199,24 @@ test('write-only route access issues no observation or references', async ({ pag
 	expect(api.count(cyclePath)).toBe(0);
 	expect(api.count(summaryPath)).toBe(0);
 });
+
+test('unit manager reading another unit cannot manage or review its unreleased observation', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		permissions: ['supervision.read.school', 'supervision.manage.organization_unit'],
+		observationStatus: 'evaluators_submitted',
+		canManage: false,
+		canReview: false,
+		averageRating: 4.875
+	});
+	await page.goto(detailPath());
+	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: /รับรอง|แก้ไข|ยกเลิก|ดูรายละเอียดผล/ })
+	).toHaveCount(0);
+	await expect(page.getByTestId('supervision-detail')).not.toContainText('4.88');
+	expect(api.count(`${observationPath}/review`)).toBe(0);
+	expect(api.count(`${observationPath}/timetable-options`)).toBe(0);
+	expect(api.count(`${observationPath}/evaluator-availability`)).toBe(0);
+});

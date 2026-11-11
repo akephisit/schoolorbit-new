@@ -18,6 +18,7 @@ const makeUnit = (
 	parent: string | null,
 	order: number
 ): OrganizationUnit => ({
+	can_manage_delegations: false,
 	id,
 	name,
 	code: `INTERNAL-${order}`,

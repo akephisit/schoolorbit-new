@@ -27,6 +27,7 @@
 		years,
 		termsByYear,
 		bellSchedules,
+		canReadTerms,
 		canManageYears,
 		canManageTerms,
 		contextSettings,
@@ -43,6 +44,7 @@
 		years: AcademicYear[];
 		termsByYear: Map<string, AcademicTerm[]>;
 		bellSchedules: BellSchedule[];
+		canReadTerms: boolean;
 		canManageYears: boolean;
 		canManageTerms: boolean;
 		contextSettings: AcademicContextSettings | null;
@@ -133,7 +135,7 @@
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex items-center gap-2">
 				<h3 class="font-medium">{selectedYear.name}</h3>
-				<p class="text-sm text-muted-foreground">{terms.length} ภาคเรียน</p>
+				{#if canReadTerms}<p class="text-sm text-muted-foreground">{terms.length} ภาคเรียน</p>{/if}
 				<Badge variant="outline">{academicStatusLabel(selectedYear.status)}</Badge>
 			</div>
 			{#if canManageYears}<Button
@@ -145,31 +147,31 @@
 					}}>แก้ไขปีการศึกษา</Button
 				>{/if}
 		</div>
-		<section class="space-y-4" aria-label="ภาคเรียน">
-			<h3 class="font-semibold">ภาคเรียน</h3>
-			{#if canManageTerms}{#key selectedYear.id}<AcademicTermSetupStep
-						year={selectedYear}
-						{years}
-						allTerms={[...termsByYear.values()].flat()}
-						allSchedules={bellSchedules}
-						onCreateCopy={onCreateTermCopy}
-						onLoadPeriods={onLoadBellSchedulePeriods}
-						{schedules}
-						{terms}
-						busy={busy.term}
-						onCreate={onCreateTerm}
-						onUpdate={onUpdateTerm}
-						onSaved={() => {}}
-					/>{/key}{:else}<div class="space-y-2">
-					{#each terms as term (term.id)}<div
-							class="flex items-center justify-between rounded-lg border p-3"
-						>
-							<span>{term.name}</span><Badge variant="outline"
-								>{academicStatusLabel(term.status)}</Badge
+		{#if canReadTerms}<section class="space-y-4" aria-label="ภาคเรียน">
+				<h3 class="font-semibold">ภาคเรียน</h3>
+				{#if canManageTerms}{#key selectedYear.id}<AcademicTermSetupStep
+							year={selectedYear}
+							{years}
+							allTerms={[...termsByYear.values()].flat()}
+							allSchedules={bellSchedules}
+							onCreateCopy={onCreateTermCopy}
+							onLoadPeriods={onLoadBellSchedulePeriods}
+							{schedules}
+							{terms}
+							busy={busy.term}
+							onCreate={onCreateTerm}
+							onUpdate={onUpdateTerm}
+							onSaved={() => {}}
+						/>{/key}{:else}<div class="space-y-2">
+						{#each terms as term (term.id)}<div
+								class="flex items-center justify-between rounded-lg border p-3"
 							>
-						</div>{/each}
-				</div>{/if}
-		</section>
+								<span>{term.name}</span><Badge variant="outline"
+									>{academicStatusLabel(term.status)}</Badge
+								>
+							</div>{/each}
+					</div>{/if}
+			</section>{/if}
 		{#if contextSettings}<AcademicContextSettingsControls
 				year={selectedYear}
 				{terms}

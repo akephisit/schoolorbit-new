@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { admissionWorkflowBackHref } from '#lib/navigation/admission.js';
 	import { downloadXlsxWorkbook } from '#lib/utils/spreadsheet.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
@@ -662,7 +663,11 @@
 <PageShell
 	title="จัดห้องสอบ"
 	description={round?.name ?? 'ตั้งค่าห้องสอบและจัดเลขที่นั่งสอบ'}
-	backHref="/staff/academic/admission/{id}"
+	backHref={admissionWorkflowBackHref(
+		id,
+		round?.academicYearId,
+		$can.has(PERMISSIONS.ADMISSION_READ_ALL)
+	)}
 >
 	{#if roundLoading && roomsLoading && configLoading && !roundLoaded && !roomsLoaded && !configLoaded}
 		<PageSkeleton variant="detail" />

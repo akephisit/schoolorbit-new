@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type {
-		Homeroom,
+		HomeroomReference,
 		HomeroomPlacement,
 		HomeroomPlacementTransfer
 	} from '#lib/api/academic-core.js';
@@ -22,7 +22,7 @@
 	}: {
 		open: boolean;
 		placement: HomeroomPlacement | null;
-		homerooms: Homeroom[];
+		homerooms: HomeroomReference[];
 		onClose: () => void;
 		onTransfer: (draft: {
 			targetHomeroomId: string;

@@ -95,7 +95,8 @@ pub async fn create_work_item(
         &context.actor,
         &window.managed_by_permission,
         window.organization_unit_id,
-    ).await?;
+    )
+    .await?;
 
     if payload.module_code != window.module_code {
         return Err(AppError::BadRequest("โมดูลงานต้องตรงกับรอบงาน".into()));

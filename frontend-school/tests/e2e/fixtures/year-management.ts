@@ -182,6 +182,8 @@ export async function mockYearManagement(
 	}
 	function setupWorkspace(): S['AcademicSetupWorkspace'] {
 		return {
+			canReadYears: true,
+			canReadTerms: true,
 			contextSettings: settings,
 			bellScheduleSetupYearIds: [],
 			schoolDaysEditableTermIds: [id(4)],

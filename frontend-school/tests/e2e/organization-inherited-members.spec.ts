@@ -19,6 +19,7 @@ const unit = (
 	unit_type: string,
 	parent_unit_id: string | null
 ): OrganizationUnit => ({
+	can_manage_delegations: false,
 	id: unitId,
 	name,
 	unit_type,

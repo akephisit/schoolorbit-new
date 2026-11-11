@@ -313,9 +313,14 @@ pub async fn list_offerings(
         OfferingAction::Read,
     )
     .await?;
-    Ok(ok(
-        offerings::list(&context.tenant.pool, query, &filter).await?
-    ))
+    let mut offerings = offerings::list(&context.tenant.pool, query, &filter).await?;
+    learning_offering_access_policy::populate_offering_management_capabilities(
+        &context.tenant.pool,
+        &context.actor,
+        &mut offerings.iter_mut().collect::<Vec<_>>(),
+    )
+    .await?;
+    Ok(ok(offerings))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -343,12 +348,20 @@ pub async fn get_delivery_overview(
         OfferingAction::Read,
     )
     .await?;
-    Ok(ok(workspaces::delivery_overview(
+    let mut overview =
+        workspaces::delivery_overview(&context.tenant.pool, query.academic_term_id, &filter)
+            .await?;
+    learning_offering_access_policy::populate_offering_management_capabilities(
         &context.tenant.pool,
-        query.academic_term_id,
-        &filter,
+        &context.actor,
+        &mut overview
+            .offerings
+            .iter_mut()
+            .map(|item| &mut item.offering)
+            .collect::<Vec<_>>(),
     )
-    .await?))
+    .await?;
+    Ok(ok(overview))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -487,6 +500,8 @@ pub async fn create_offering(
         None,
         offering.row_version,
     );
+    let mut offering = offering;
+    offering.can_manage = true;
     Ok(created(offering))
 }
 
@@ -603,7 +618,14 @@ pub async fn get_offering(
         OfferingAction::Read,
     )
     .await?;
-    Ok(ok(offerings::get(&context.tenant.pool, id).await?))
+    let mut offering = offerings::get(&context.tenant.pool, id).await?;
+    learning_offering_access_policy::populate_offering_management_capabilities(
+        &context.tenant.pool,
+        &context.actor,
+        &mut [&mut offering],
+    )
+    .await?;
+    Ok(ok(offering))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -647,6 +669,8 @@ pub async fn update_offering(
         None,
         offering.row_version,
     );
+    let mut offering = offering;
+    offering.can_manage = true;
     Ok(ok(offering))
 }
 
@@ -697,6 +721,8 @@ pub async fn publish_offering(
         None,
         offering.row_version,
     );
+    let mut offering = offering;
+    offering.can_manage = true;
     Ok(ok(offering))
 }
 

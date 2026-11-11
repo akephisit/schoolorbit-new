@@ -47,6 +47,8 @@
 		mode?: 'year' | 'time';
 	} = $props();
 	let years = $state<AcademicYear[]>([]);
+	let workspaceCanReadYears = $state(false);
+	let workspaceCanReadTerms = $state(false);
 	const termsByYear = new SvelteMap<string, AcademicTerm[]>();
 	let bellSchedules = $state<BellSchedule[]>([]);
 	let bellScheduleSetupYearIds = $state<string[]>([]);
@@ -77,11 +79,25 @@
 			PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL
 		)
 	);
-	const canManageYears = $derived($can.has(PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL));
-	const canManageTerms = $derived($can.has(PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL));
+	const canReadYears = $derived(
+		workspaceCanReadYears &&
+			$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
+	);
+	const canReadTerms = $derived(
+		workspaceCanReadTerms &&
+			$can.hasAny(PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+	);
+	const canManageYears = $derived(
+		canReadYears && $can.has(PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
+	);
+	const canManageTerms = $derived(
+		canReadTerms && $can.has(PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+	);
 
 	const latest = new LatestRequest();
 	function applyWorkspace(workspace: AcademicSetupWorkspace) {
+		workspaceCanReadYears = workspace.canReadYears;
+		workspaceCanReadTerms = workspace.canReadTerms;
 		const nextYears = workspace.years.toSorted((a, b) => b.year - a.year);
 		const nextTerms = new SvelteMap(nextYears.map((year) => [year.id, [] as AcademicTerm[]]));
 		for (const term of workspace.terms) nextTerms.get(term.academicYearId)?.push(term);
@@ -146,6 +162,8 @@
 			loading = Boolean(routeResult);
 			if (!identityState.isAuthenticated || identity !== regionIdentity) {
 				years = [];
+				workspaceCanReadYears = false;
+				workspaceCanReadTerms = false;
 				termsByYear.clear();
 				bellSchedules = [];
 				bellScheduleSetupYearIds = [];
@@ -179,6 +197,7 @@
 	});
 
 	async function saveContextSettings(draft: UpdateAcademicContextSettingsRequest) {
+		if (!(canManageYears && canManageTerms)) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		const result = await updateAcademicContextSettings(draft);
 		if (disposed || identity !== appIdentityKey()) return result;
@@ -306,6 +325,7 @@
 		id: string,
 		draft: Parameters<typeof copyAcademicTermSchoolSchedule>[1]
 	) {
+		if (!canManageTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.term = true;
 		try {
@@ -364,6 +384,7 @@
 	}
 
 	async function addBellSchedule(draft: Parameters<typeof createBellSchedule>[0]) {
+		if (!canManageTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.schedule = true;
 		try {
@@ -377,6 +398,7 @@
 		}
 	}
 	async function copyBellSchedule(id: string, draft: Parameters<typeof cloneBellSchedule>[1]) {
+		if (!canManageTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.schedule = true;
 		try {
@@ -391,6 +413,7 @@
 	}
 
 	async function editBellSchedule(id: string, draft: Parameters<typeof updateBellSchedule>[1]) {
+		if (!canManageTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.schedule = true;
 		try {
@@ -423,6 +446,7 @@
 		id: string,
 		options: Parameters<typeof listBellSchedulePeriods>[1] = {}
 	) {
+		if (!canReadTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		const snapshot = await listBellSchedulePeriods(id, options);
 		if (disposed || identity !== appIdentityKey()) return snapshot;
@@ -434,6 +458,7 @@
 		id: string,
 		draft: Parameters<typeof replaceBellSchedulePeriods>[1]
 	) {
+		if (!canManageTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.periods = true;
 		try {
@@ -499,6 +524,7 @@
 					{years}
 					{termsByYear}
 					{bellSchedules}
+					{canReadTerms}
 					{canManageYears}
 					{canManageTerms}
 					{contextSettings}
@@ -512,7 +538,7 @@
 					onLoadBellSchedulePeriods={loadBellSchedulePeriods}
 					onUpdateTerm={editTerm}
 				/>
-			{:else}
+			{:else if canReadTerms}
 				<TimeSetupEditor
 					{years}
 					{bellSchedules}
@@ -529,6 +555,11 @@
 					onUpdateBellSchedule={editBellSchedule}
 					onLoadBellSchedulePeriods={loadBellSchedulePeriods}
 					onReplaceBellSchedulePeriods={saveBellSchedulePeriods}
+				/>
+			{:else}<PageState
+					variant="permission"
+					title="ไม่มีสิทธิ์ดูเวลาเรียน"
+					description="บัญชีนี้ดูข้อมูลปีการศึกษาได้ แต่ยังไม่มีสิทธิ์ดูภาคเรียนและเวลาเรียน"
 				/>
 			{/if}
 			{#if errorMessage}<div

@@ -56,7 +56,8 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
-	import { can } from '#lib/stores/permissions.js';
+	import { can, userPermissions } from '#lib/stores/permissions.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import {
 		deliveryReturnHref,
 		repairedDeliveryOfferingHref
@@ -145,6 +146,8 @@
 	let groupError = $state('');
 	let actionError = $state('');
 	let activeOfferingId = '';
+	let activeIdentity = '';
+	const routeOwners = new WeakMap<object, string>();
 	let routeSelectedGroupId = $state('');
 	let pendingCreatedGroup = $state.raw<{ group: LearningGroup; versionId: string } | null>(null);
 	let reconcilingCreatedGroup = $state(false);
@@ -153,12 +156,12 @@
 
 	let canManage = $derived(
 		offering?.canManage === true &&
-		$can.hasAny(
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
-		)
+			$can.hasAny(
+				PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
+				PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,
+				PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT,
+				PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
+			)
 	);
 	let offeringIsReadOnly = $derived(
 		offering?.status === 'cancelled' || offering?.status === 'closed'
@@ -176,6 +179,17 @@
 			selectedDeliveryOffering !== null
 	);
 	let canManageRoster = $derived(canManage && offering !== null && !offeringIsReadOnly);
+	$effect(() => {
+		if (!canManage) {
+			optionsRequest.abort();
+			optionsLoading = false;
+			managementOptions = null;
+			editorVisible = false;
+			rosterVisible = false;
+			rosterPreview = null;
+		}
+	});
+
 	let publishedRosterGroups = $derived(
 		groups.filter((group) =>
 			selectedDeliveryOffering?.groups.some((source) => source.id === group.id)
@@ -428,7 +442,8 @@
 			const loaded = await getLearningDeliveryManagementOptions(offering.academicTermId, {
 				signal
 			});
-			if (!optionsRequest.isCurrent(revision) || offering?.id !== ownerId) return null;
+			if (!optionsRequest.isCurrent(revision) || offering?.id !== ownerId || !canManage)
+				return null;
 			managementOptions = loaded;
 			return managementOptions;
 		} catch (error) {
@@ -743,6 +758,9 @@
 
 	$effect.pre(() => {
 		const id = data.offeringId;
+		const identity = `${$authStore.user?.id ?? ''}|${$userPermissions.toSorted().join(',')}`;
+		if (!routeOwners.has(data.offering)) routeOwners.set(data.offering, identity);
+		const ownsSource = routeOwners.get(data.offering) === identity;
 		const routeOffering = data.offering;
 		const routeGroups = data.groups;
 		const routeVersions = data.versions;
@@ -753,7 +771,8 @@
 		const initialSelectionRevision = selectionRevision;
 		let current = true;
 		untrack(() => {
-			if (activeOfferingId !== id) {
+			if (activeOfferingId !== id || activeIdentity !== identity) {
+				activeIdentity = identity;
 				activeOfferingId = id;
 				pendingCreatedGroup = null;
 				reconcilingCreatedGroup = false;
@@ -785,7 +804,7 @@
 			groupError = '';
 		});
 		void routeOffering.then((result) => {
-			if (!current) return;
+			if (!ownsSource || !current) return;
 			untrack(() => {
 				if (result.ok && mutationRevision === initialMutationRevision) offering = result.data;
 				else if (!result.ok) offeringError = result.error;
@@ -793,7 +812,7 @@
 			});
 		});
 		void routeGroups.then((result) => {
-			if (!current) return;
+			if (!ownsSource || !current) return;
 			untrack(() => {
 				if (result.ok) {
 					if (mutationRevision === initialMutationRevision)
@@ -806,7 +825,7 @@
 			});
 		});
 		void routeVersions.then((result) => {
-			if (!current) return;
+			if (!ownsSource || !current) return;
 			untrack(() => {
 				if (result.ok) {
 					deliveryVersions = result.data;
@@ -818,12 +837,12 @@
 			});
 		});
 		void routeDeliveryVersion.then((result) => {
-			if (!current) return;
+			if (!ownsSource || !current) return;
 			if (result.ok) deliveryVersion = result.data;
 			else versionsError = result.error;
 		});
 		void routeSelectedGroup.then((result) => {
-			if (!current) return;
+			if (!ownsSource || !current) return;
 			untrack(() => {
 				if (selectionRevision === initialSelectionRevision) {
 					if (result.ok && result.data && mutationRevision === initialMutationRevision) {

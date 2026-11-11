@@ -3,8 +3,7 @@ use uuid::Uuid;
 
 use crate::services::SupervisionObservationListAccess;
 use school_authorization::resource_access_policy::{
-    accessible_organization_unit_ids, require_user_resource_access, ResourceAccessPermissions,
-    UserResourceListAccess,
+    require_user_resource_access, ResourceAccessPermissions,
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
@@ -100,25 +99,40 @@ pub async fn resolve_observation_list_access(
         return Ok(access);
     }
 
-    if can_manage_organization_tree(actor)
-        || actor.has_permission(codes::SUPERVISION_READ_ORGANIZATION_TREE)
-    {
-        access.organization_unit_ids = accessible_organization_unit_ids(
-            pool,
-            UserResourceListAccess::OrganizationTree(actor.user_id),
-        )
-        .await?
-        .unwrap_or_default();
-    } else if can_manage_organization_unit(actor)
-        || actor.has_permission(codes::SUPERVISION_READ_ORGANIZATION_UNIT)
-    {
-        access.organization_unit_ids = accessible_organization_unit_ids(
-            pool,
-            UserResourceListAccess::OrganizationUnit(actor.user_id),
-        )
-        .await?
-        .unwrap_or_default();
+    let mut units = Vec::new();
+    for code in [
+        codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT,
+        codes::SUPERVISION_READ_ORGANIZATION_UNIT,
+    ] {
+        if actor.has_permission(code) {
+            units.extend(
+                school_authorization::accessible_exact_units_for_permission(
+                    pool,
+                    actor.user_id,
+                    code,
+                )
+                .await?,
+            );
+        }
     }
+    for code in [
+        codes::SUPERVISION_MANAGE_ORGANIZATION_TREE,
+        codes::SUPERVISION_READ_ORGANIZATION_TREE,
+    ] {
+        if actor.has_permission(code) {
+            units.extend(
+                school_authorization::accessible_tree_units_for_permission(
+                    pool,
+                    actor.user_id,
+                    code,
+                )
+                .await?,
+            );
+        }
+    }
+    units.sort_unstable();
+    units.dedup();
+    access.organization_unit_ids = units;
 
     Ok(access)
 }
@@ -129,8 +143,26 @@ pub async fn observation_management_user_ids(
     observed_user_ids: &[Uuid],
 ) -> Result<std::collections::HashSet<Uuid>, AppError> {
     school_authorization::resource_access_policy::authorized_user_resource_ids(
-        pool, actor, supervision_manage_permissions(), observed_user_ids,
-    ).await
+        pool,
+        actor,
+        supervision_manage_permissions(),
+        observed_user_ids,
+    )
+    .await
+}
+
+pub async fn observation_management_user_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    observed_user_ids: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, AppError> {
+    school_authorization::resource_access_policy::authorized_user_resource_ids_on_connection(
+        connection,
+        actor,
+        supervision_manage_permissions(),
+        observed_user_ids,
+    )
+    .await
 }
 
 pub async fn require_observation_management_access(
@@ -165,11 +197,10 @@ pub async fn require_observation_read_access(
         return Ok(());
     }
 
-    if require_observation_management_access(pool, actor, observed_user_id)
-        .await
-        .is_ok()
-    {
-        return Ok(());
+    match require_observation_management_access(pool, actor, observed_user_id).await {
+        Ok(()) => return Ok(()),
+        Err(AppError::Forbidden(_)) => {}
+        Err(error) => return Err(error),
     }
 
     require_user_resource_access(

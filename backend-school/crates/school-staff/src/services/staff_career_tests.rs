@@ -361,9 +361,17 @@ async fn staff_career_preserves_unrelated_profile_patch() {
     let (pool, user, actor) = career_fixture("career_domain_patch").await;
     let before = history(&pool, user).await;
     let request = serde_json::from_value(serde_json::json!({"staff_info":{"education":{"expected_revision":0,"items":[{"education_level":"master","major":"วิทยาศาสตร์"}]},"teaching_license_expiry":"2030-01-01"}})).unwrap();
-    super::staff_service::update_staff(&pool, user, request, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] })
-        .await
-        .unwrap();
+    super::staff_service::update_staff(
+        &pool,
+        user,
+        request,
+        &school_authorization::ActorContext {
+            user_id: actor,
+            permissions: vec!["*".into()],
+        },
+    )
+    .await
+    .unwrap();
     let after = history(&pool, user).await;
     assert_eq!(before.items, after.items);
     assert_eq!(before.current, after.current);

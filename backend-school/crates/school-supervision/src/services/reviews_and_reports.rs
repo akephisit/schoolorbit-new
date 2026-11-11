@@ -135,17 +135,43 @@ pub async fn acknowledge_observation(
 
 pub async fn cycle_progress(
     pool: &PgPool,
+    actor: &school_authorization::ActorContext,
     cycle_id: Uuid,
 ) -> Result<SupervisionCycleProgress, AppError> {
+    crate::access_policy::require_school_report_access(actor)?;
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "supervision.cycle_progress")
             .await?;
-    cycle_progress_on_connection(&mut connection, cycle_id).await
+    let can_view_all = crate::access_policy::can_manage_school(actor)
+        || crate::access_policy::can_approve_school(actor);
+    let managed_user_ids = if can_view_all {
+        Vec::new()
+    } else {
+        let observed_user_ids: Vec<Uuid> = DbSession::new(&mut *connection)
+            .scalar(
+                "supervision.cycle_progress_targets",
+                "SELECT DISTINCT observed_user_id FROM supervision_observations WHERE cycle_id=$1",
+            )
+            .bind(cycle_id)
+            .fetch_all()
+            .await?;
+        crate::access_policy::observation_management_user_ids_on_connection(
+            &mut connection,
+            actor,
+            &observed_user_ids,
+        )
+        .await?
+        .into_iter()
+        .collect()
+    };
+    cycle_progress_on_connection(&mut connection, cycle_id, can_view_all, &managed_user_ids).await
 }
 
-pub async fn cycle_progress_on_connection(
+async fn cycle_progress_on_connection(
     connection: &mut sqlx::PgConnection,
     cycle_id: Uuid,
+    can_view_all: bool,
+    managed_user_ids: &[Uuid],
 ) -> Result<SupervisionCycleProgress, AppError> {
     let row = DbSession::new(&mut *connection).query("supervision.services.reviews_and_reports.cycle_progress_on_connection",
         r#"
@@ -182,6 +208,7 @@ pub async fn cycle_progress_on_connection(
             JOIN supervision_evaluator_responses r ON r.evaluator_id = e.id
             JOIN supervision_template_items i ON i.id = r.template_item_id
             WHERE o.cycle_id = $1
+              AND ($2 OR o.status = ANY($3) OR o.observed_user_id = ANY($4))
               AND e.status = 'submitted'
               AND i.item_type = 'rating'
               AND r.rating_score IS NOT NULL
@@ -190,6 +217,9 @@ pub async fn cycle_progress_on_connection(
         "#,
         )
         .bind(cycle_id)
+        .bind(can_view_all)
+        .bind(super::shared::released_result_status_codes().to_vec())
+        .bind(managed_user_ids)
         .fetch_one()
         .await
         .map_err(|error| {

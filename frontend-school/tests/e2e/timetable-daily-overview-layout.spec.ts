@@ -760,3 +760,16 @@ for (const width of [390, 1280]) {
 		});
 	}
 }
+
+test('today-only reader sees daily teaching without planner authority', async ({ page }) => {
+	await installTimetableMock(page, {
+		periodCount: 10,
+		permissions: ['academic_timetable_today.read.school']
+	});
+	await page.route('**/api/academic/timetable/daily-teaching**', (route) =>
+		fulfill(route, overview())
+	);
+	await page.goto(todayUrl());
+	await expect(page.getByRole('table')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'จัดตาราง', exact: true })).toHaveCount(0);
+});

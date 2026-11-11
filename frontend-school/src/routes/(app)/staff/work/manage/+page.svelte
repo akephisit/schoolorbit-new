@@ -372,7 +372,12 @@
 		const epoch = ownerEpoch,
 			draft = createDraft;
 		const current = () => !disposed && epoch === ownerEpoch;
-		if (['organization_unit', 'organization_tree'].includes(windowForm.managedByPermission.split('.')[2]) && !windowForm.organizationUnitId) {
+		if (
+			['organization_unit', 'organization_tree'].includes(
+				windowForm.managedByPermission.split('.')[2]
+			) &&
+			!windowForm.organizationUnitId
+		) {
 			toast.error('กรุณาเลือกหน่วยงานเจ้าของรอบงานสำหรับสิทธิ์ระดับหน่วยงาน');
 			return;
 		}

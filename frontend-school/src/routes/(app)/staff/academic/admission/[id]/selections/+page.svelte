@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { admissionWorkflowBackHref } from '#lib/navigation/admission.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import {
@@ -802,7 +803,11 @@
 <PageShell
 	title="จัดห้องเรียน (เรียงคะแนน)"
 	description={round?.name ?? 'จัดผลคัดเลือกและกำหนดห้องเรียน'}
-	backHref={`/staff/academic/admission/${id}`}
+	backHref={admissionWorkflowBackHref(
+		id,
+		round?.academicYearId,
+		$can.has(PERMISSIONS.ADMISSION_READ_ALL)
+	)}
 >
 	{#if !canScoreAdmission}
 		<PageState

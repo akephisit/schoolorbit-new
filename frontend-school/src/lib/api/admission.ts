@@ -5,6 +5,7 @@ import type { components } from '#lib/api/generated/school-api.js';
 type Schemas = components['schemas'];
 type PortalCredentials = Schemas['PortalCredentials'];
 export type ScoreRoomGroup = Schemas['ScoreRoomGroup'];
+export type ScoreTrackApplicant = Schemas['ScoreTrackApplicant'];
 
 // ==========================================
 // Types
@@ -543,6 +544,18 @@ export async function getScoreRoomRoster(
 		options
 	);
 	return requireApiData(res, 'ไม่สามารถโหลดรายชื่อห้องสอบสำหรับกรอกคะแนนได้');
+}
+
+export async function getScoreTrackRoster(
+	roundId: string,
+	trackId: string,
+	options: ApiRequestOptions = {}
+): Promise<ScoreTrackApplicant[]> {
+	const res = await apiClient.get<ScoreTrackApplicant[]>(
+		`/api/admission/rounds/${roundId}/score-track-roster`,
+		{ ...options, query: { trackId } }
+	);
+	return requireApiData(res, 'ไม่สามารถโหลดรายชื่อสายการเรียนสำหรับกรอกคะแนนได้');
 }
 
 export async function getApplicationScores(id: string) {

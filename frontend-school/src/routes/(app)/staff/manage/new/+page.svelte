@@ -450,10 +450,12 @@
 					teaching_license_expiry: formData.personnel.teaching_license_expiry || undefined
 				},
 				role_ids: canChooseAuthority ? formData.role_ids : [],
-				primary_role_id: canChooseAuthority ? formData.primary_role_id || formData.role_ids[0] : undefined,
-				organization_assignments: canChooseAuthority ? formData.organization_assignments.filter(
-					(d) => d.organization_unit_id
-				) : []
+				primary_role_id: canChooseAuthority
+					? formData.primary_role_id || formData.role_ids[0]
+					: undefined,
+				organization_assignments: canChooseAuthority
+					? formData.organization_assignments.filter((d) => d.organization_unit_id)
+					: []
 			};
 
 			const result = await createStaff(payload);
@@ -464,7 +466,13 @@
 				clearStaffCreateDraft(localStorage, { origin: window.location.origin, userId: owner });
 
 				// Show success toast
-				toast.success('เพิ่มบุคลากรเรียบร้อยแล้ว');
+				toast.success(`เพิ่มบุคลากรเรียบร้อยแล้ว (${result.data.id})`);
+
+				if (!$can.has(PERMISSIONS.STAFF_PROFILE_READ_SCHOOL)) {
+					formData = createForm();
+					currentStep = 1;
+					return;
+				}
 
 				// Redirect to profile
 				await goto(

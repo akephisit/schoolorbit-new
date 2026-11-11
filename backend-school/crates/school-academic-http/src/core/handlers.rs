@@ -2181,12 +2181,22 @@ pub async fn list_study_program_options_for_year(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let filter = academic_curriculum_access_policy::require_academic_curriculum_list_access(
-        &pool,
-        &actor,
-        CurriculumAction::Read,
-    )
-    .await?;
+    let filter = if actor.has_any_permission(&[
+        codes::HOMEROOM_MANAGE_SCHOOL,
+        codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL,
+    ]) {
+        school_authorization::AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        }
+    } else {
+        academic_curriculum_access_policy::require_academic_curriculum_list_access(
+            &pool,
+            &actor,
+            CurriculumAction::Read,
+        )
+        .await?
+    };
     Ok(ok(curriculum::list_study_program_options_for_year(
         &pool,
         query.academic_year_id,
@@ -2699,6 +2709,32 @@ pub async fn homeroom_year_context(
         .actor
         .require_any_permission(&[codes::HOMEROOM_READ_SCHOOL, codes::HOMEROOM_MANAGE_SCHOOL])?;
     Ok(ok(student_years::homeroom_year_context(
+        &context.tenant.pool,
+        query.academic_year_id,
+    )
+    .await?))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get, path="/api/academic/student-years/homeroom-options", operation_id="listStudentYearHomeroomOptions", tag="academic",
+    params(AcademicYearQuery), responses(
+        (status=200,description="Complete minimal homeroom context for the selected student year",body=ApiResponse<Vec<HomeroomReference>>),
+        (status=422,description="Homeroom context exceeds supported size",body=ApiErrorResponse),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Student year read permission denied",body=ApiErrorResponse)
+    )
+))]
+pub async fn list_student_year_homeroom_options(
+    State(state): State<AcademicHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<AcademicYearQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    context.actor.require_any_permission(&[
+        codes::STUDENT_ACADEMIC_YEAR_READ_SCHOOL,
+        codes::STUDENT_ACADEMIC_YEAR_MANAGE_SCHOOL,
+    ])?;
+    Ok(ok(student_years::student_year_homeroom_options(
         &context.tenant.pool,
         query.academic_year_id,
     )

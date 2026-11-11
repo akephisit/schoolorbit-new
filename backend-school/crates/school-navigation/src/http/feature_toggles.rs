@@ -47,7 +47,8 @@ pub struct FeatureListResponse {
     tag = "system",
     responses(
         (status = 200, description = "Feature toggles for authorized feature managers", body = FeatureListResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse)
+        (status = 401, description = "Authentication required", body = ApiErrorResponse),
+        (status = 403, description = "Feature management read permission required", body = ApiErrorResponse)
     )
 ))]
 pub async fn list_features(

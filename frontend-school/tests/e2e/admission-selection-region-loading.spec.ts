@@ -116,8 +116,7 @@ async function mock(page: Page, options: { canScore?: boolean; globalDefault?: b
 					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
-					permissions:
-						options.canScore === false ? [] : ['admission.scores.all', 'admission.read.all']
+					permissions: options.canScore === false ? [] : ['admission.scores.all']
 				});
 			if (resource === '/api/academic/context/options')
 				return reply(route, {

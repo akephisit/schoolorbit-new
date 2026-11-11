@@ -135,7 +135,9 @@ test('homeroom collection batches advisor assignments once and indexes them by h
 	assert.equal(result.advisorsByHomeroomId.size, 300);
 	assert.equal(result.advisorsByHomeroomId.get('homeroom-299')?.[0]?.userId, 'staff-299');
 	assert.deepEqual(result.yearContext, { status: 'planning' });
-	for (const name of ['homerooms', 'advisors', 'gradeLevels', 'programs', 'yearContext'])
+	assert.equal(countCalls(calls, 'gradeLevels'), 0, 'editor grade choices stay lazy');
+	assert.equal(countCalls(calls, 'programs'), 0, 'editor curriculum choices stay lazy');
+	for (const name of ['homerooms', 'advisors', 'yearContext'])
 		assert.equal(countCalls(calls, name), 1, name);
 	assert.equal(
 		countCalls(calls, 'staff'),

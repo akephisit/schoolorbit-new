@@ -390,3 +390,23 @@ test('missing permissions start no admission reads on the three pages', async ({
 	}
 	expect(api.reads.filter((resource) => resource.startsWith('/api/admission/'))).toEqual([]);
 });
+
+for (const [action, permission] of [
+	['enrollment', 'admission.enroll.all'],
+	['student-ids', 'admission.manage.all']
+] as const) {
+	test(`${action} loads its context with only its action grant`, async ({ page }) => {
+		const api = await mock(page, { permissions: [permission] });
+		await page.goto(path(roundId, action));
+		await expect(page.getByText('รอบรับสมัครแรก', { exact: true })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
+			'href',
+			`/staff?academicYearId=${id(10)}`
+		);
+		await expect(page.locator('a[href*="/applications/"]')).toHaveCount(0);
+		await expect
+			.poll(() => api.reads.some((read) => read.includes(`/api/admission/rounds/${roundId}`)))
+			.toBe(true);
+		await expect(page.getByText('ไม่มีสิทธิ์', { exact: true })).toHaveCount(0);
+	});
+}

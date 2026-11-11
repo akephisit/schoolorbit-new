@@ -293,6 +293,7 @@ async function mockRoomScope(
 		]
 	};
 	const resource: LearningOffering = {
+		canManage: true,
 		id: offeringId,
 		academicYearId: ids.year,
 		academicTermId: ids.term,

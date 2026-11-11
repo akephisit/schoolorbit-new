@@ -979,7 +979,11 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
             format!("create-role-{}", &fixture[..8]),
             vec![inactive_role_id],
             None,
-        ), &school_authorization::ActorContext { user_id: delegator_user_id, permissions: vec!["*".into()] },
+        ),
+        &school_authorization::ActorContext {
+            user_id: delegator_user_id,
+            permissions: vec!["*".into()],
+        },
     )
     .await;
     assert!(create_with_inactive_role.is_err());
@@ -990,7 +994,11 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
             format!("create-unit-{}", &fixture[..8]),
             vec![],
             Some(vec![test_organization_assignment(inactive_unit_id)]),
-        ), &school_authorization::ActorContext { user_id: delegator_user_id, permissions: vec!["*".into()] },
+        ),
+        &school_authorization::ActorContext {
+            user_id: delegator_user_id,
+            permissions: vec!["*".into()],
+        },
     )
     .await;
     assert!(create_with_inactive_unit.is_err());
@@ -1008,7 +1016,11 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
     let update_with_inactive_role = staff_service::update_staff(
         &pool,
         target_user_id,
-        test_update_staff_request(Some(vec![inactive_role_id]), None), &school_authorization::ActorContext { user_id: delegator_user_id, permissions: vec!["*".into()] },
+        test_update_staff_request(Some(vec![inactive_role_id]), None),
+        &school_authorization::ActorContext {
+            user_id: delegator_user_id,
+            permissions: vec!["*".into()],
+        },
     )
     .await;
     assert!(update_with_inactive_role.is_err());
@@ -1030,7 +1042,11 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
         test_update_staff_request(
             None,
             Some(vec![test_organization_assignment(inactive_unit_id)]),
-        ), &school_authorization::ActorContext { user_id: delegator_user_id, permissions: vec!["*".into()] },
+        ),
+        &school_authorization::ActorContext {
+            user_id: delegator_user_id,
+            permissions: vec!["*".into()],
+        },
     )
     .await;
     assert!(update_with_inactive_unit.is_err());

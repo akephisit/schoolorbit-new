@@ -71,7 +71,12 @@ pub async fn list_rounds(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ADMISSION_READ_ALL)?;
+    actor.require_any_permission(&[
+        codes::ADMISSION_READ_ALL,
+        codes::ADMISSION_MANAGE_ALL,
+        codes::ADMISSION_SCORES_ALL,
+        codes::ADMISSION_ENROLL_ALL,
+    ])?;
     let rounds = round_service::list_rounds(&pool, query.academic_year_id).await?;
     Ok(Json(ApiResponse::ok(rounds)).into_response())
 }

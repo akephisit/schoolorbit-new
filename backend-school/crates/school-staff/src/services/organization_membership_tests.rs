@@ -558,9 +558,16 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
     let historical = unit(&pool, None).await;
     let future = unit(&pool, None).await;
     let payload:CreateStaffRequest=serde_json::from_value(serde_json::json!({"username":format!("bulk{}",Uuid::now_v7()),"password":"Test1234!","title":"นาย","first_name":"ทดสอบ","last_name":"บุคลากร","role_ids":[],"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":true},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true}]})).unwrap();
-    let user = staff_service::create_staff(&pool, payload, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] })
-        .await
-        .unwrap();
+    let user = staff_service::create_staff(
+        &pool,
+        payload,
+        &school_authorization::ActorContext {
+            user_id: actor,
+            permissions: vec!["*".into()],
+        },
+    )
+    .await
+    .unwrap();
     sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE-20 WHERE user_id=$1")
         .bind(user)
         .execute(&pool)
@@ -580,9 +587,17 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
             serde_json::json!({"nickname":"edited","organization_assignments":assignments}),
         )
         .unwrap();
-        staff_service::update_staff(&pool, user, update, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] })
-            .await
-            .unwrap();
+        staff_service::update_staff(
+            &pool,
+            user,
+            update,
+            &school_authorization::ActorContext {
+                user_id: actor,
+                permissions: vec!["*".into()],
+            },
+        )
+        .await
+        .unwrap();
     }
     let saved:Vec<(Uuid,chrono::NaiveDate,Option<chrono::NaiveDate>,bool)>=sqlx::query_as("SELECT id,started_at,ended_at,is_primary FROM organization_members WHERE user_id=$1 ORDER BY id").bind(user).fetch_all(&pool).await.unwrap();
     assert_eq!(
@@ -596,9 +611,17 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
         "whole-staff round trips retain custom assignment facts, including inactive sources"
     );
     let update:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":false},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true}]})).unwrap();
-    staff_service::update_staff(&pool, user, update, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] })
-        .await
-        .unwrap();
+    staff_service::update_staff(
+        &pool,
+        user,
+        update,
+        &school_authorization::ActorContext {
+            user_id: actor,
+            permissions: vec!["*".into()],
+        },
+    )
+    .await
+    .unwrap();
     let cancelled: bool =
         sqlx::query_scalar("SELECT ended_at=started_at FROM organization_members WHERE id=$1")
             .bind(future_id)
@@ -608,9 +631,17 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
     assert!(cancelled);
     // A cancelled future empty interval must stay absent on the next edit/save.
     let repeat:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":false},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true}]})).unwrap();
-    staff_service::update_staff(&pool, user, repeat, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] })
-        .await
-        .unwrap();
+    staff_service::update_staff(
+        &pool,
+        user,
+        repeat,
+        &school_authorization::ActorContext {
+            user_id: actor,
+            permissions: vec!["*".into()],
+        },
+    )
+    .await
+    .unwrap();
     let history_exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM organization_members WHERE id=$1)")
             .bind(history_id)
@@ -647,9 +678,17 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
     let old_admin:(Uuid,chrono::NaiveDate,Option<chrono::NaiveDate>,Option<String>,Option<String>)=sqlx::query_as("SELECT id,started_at,ended_at,position_title,responsibilities FROM organization_members WHERE user_id=$1 AND organization_unit_id=$2").bind(user).bind(admin).fetch_one(&pool).await.unwrap();
     let active_admin = unit(&pool, None).await;
     let takeover:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":area,"position_code":"member","is_primary":false},{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":false},{"organization_unit_id":active_admin,"position_code":"member","is_primary":true},{"organization_unit_id":same_day,"position_code":"member","is_primary":false}]})).unwrap();
-    staff_service::update_staff(&pool, user, takeover, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] })
-        .await
-        .unwrap();
+    staff_service::update_staff(
+        &pool,
+        user,
+        takeover,
+        &school_authorization::ActorContext {
+            user_id: actor,
+            permissions: vec!["*".into()],
+        },
+    )
+    .await
+    .unwrap();
     let retained_admin:(Uuid,chrono::NaiveDate,Option<chrono::NaiveDate>,Option<String>,Option<String>)=sqlx::query_as("SELECT id,started_at,ended_at,position_title,responsibilities FROM organization_members WHERE user_id=$1 AND organization_unit_id=$2").bind(user).bind(admin).fetch_one(&pool).await.unwrap();
     assert_eq!(
         old_admin, retained_admin,
@@ -660,7 +699,16 @@ async fn organization_membership_bulk_save_preserves_history_dates_and_primary_f
     let promote_inactive:UpdateStaffRequest=serde_json::from_value(serde_json::json!({"organization_assignments":[{"organization_unit_id":admin,"position_code":"member","position_title":"ตำแหน่งเดิม","responsibilities":"ภาระงานเดิม","is_primary":true}]})).unwrap();
     assert!(
         matches!(
-            staff_service::update_staff(&pool, user, promote_inactive, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] }).await,
+            staff_service::update_staff(
+                &pool,
+                user,
+                promote_inactive,
+                &school_authorization::ActorContext {
+                    user_id: actor,
+                    permissions: vec!["*".into()]
+                }
+            )
+            .await,
             Err(AppError::Conflict(_))
         ),
         "retaining an inactive assignment never permits a new promotion"

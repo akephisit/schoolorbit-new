@@ -34,6 +34,7 @@ function deferred() {
 
 function offering() {
 	return {
+		canManage: true,
 		id: ids.offering,
 		academicYearId: ids.year,
 		academicTermId: ids.term,
@@ -155,6 +156,7 @@ async function mockOffering(
 		failOnce?: string;
 		published?: boolean;
 		permissions?: string[];
+		canManage?: boolean;
 		trackingMode?: 'manual' | 'homeroom';
 		failTrackingSave?: boolean;
 		resourceDraft?: boolean;
@@ -253,6 +255,7 @@ async function mockOffering(
 			if (path === paths.offering)
 				return void (await fulfill(route, {
 					...offering(),
+					canManage: options.canManage ?? true,
 					status: options.resourceDraft ? 'draft' : 'published'
 				}));
 			if (path === paths.groups)
@@ -2057,4 +2060,21 @@ test('rendering an existing past tracking date preserves the saved configuration
 	await expect(panel).toContainText('สมาชิกใหม่เริ่มนับจากวันที่นี้');
 	await expect(panel).toContainText('กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง');
 	expect(writes).toEqual([]);
+});
+
+test('assigned management of a different offering does not expose current offering actions', async ({
+	page
+}) => {
+	const api = await mockOffering(page, {
+		permissions: ['learning_offering.read.school', 'learning_offering.manage.assigned'],
+		canManage: false
+	});
+	await page.goto(url());
+	await expect(
+		page.getByRole('heading', { name: 'คณิตศาสตร์พื้นฐาน', exact: true, level: 1 })
+	).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: /เพิ่มกลุ่ม|แก้ไขผู้สอน|แก้ไขคาบ|จัดกลุ่ม|จัดรายชื่อ/ })
+	).toHaveCount(0);
+	expect(api(paths.management)).toBe(0);
 });

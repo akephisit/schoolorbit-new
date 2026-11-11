@@ -268,6 +268,10 @@
 				organizationUnits = [];
 				organizationsLoaded = false;
 				loadingOrganizationUnits = false;
+				if (originalForm)
+					formData.organization_assignments = originalForm.organization_assignments.map(
+						(assignment) => ({ ...assignment })
+					);
 			} else if (step === 3 && !organizationsLoaded) void loadOrganizationOptions();
 		});
 		return () => {
@@ -330,9 +334,8 @@
 
 	function validateOrganizations(): boolean {
 		errors = {};
-		if (
-			formData.organization_assignments.some((item) => !item.organization_unit_id)
-		)
+		if (formData.organization_assignments.length === 0) return true;
+		if (formData.organization_assignments.some((item) => !item.organization_unit_id))
 			errors.organization_units = 'กรุณาเลือกหน่วยงานให้ครบทุกแถว';
 		else if (
 			new Set(formData.organization_assignments.map((item) => item.organization_unit_id)).size !==

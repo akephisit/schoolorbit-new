@@ -91,8 +91,14 @@ pub async fn list_delegations(
     organization_access_policy::can_approve_organization_work(&pool, &actor, organization_unit_id)
         .await?;
 
-    let delegations =
+    let mut delegations =
         organization_delegation_service::list_delegations(&pool, organization_unit_id).await?;
+    for delegation in &mut delegations {
+        delegation.can_revoke = organization_access_policy::can_revoke_organization_delegation(
+            &actor,
+            delegation.from_user_id,
+        );
+    }
     Ok(Json(ApiResponse::ok(delegations)).into_response())
 }
 

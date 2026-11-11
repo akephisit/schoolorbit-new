@@ -221,8 +221,7 @@ pub async fn update_staff(
     {
         crate::services::staff_license_service::require_manage(&actor, staff_id)?;
     }
-    let replaced_file_id =
-        staff_service::update_staff(&pool, staff_id, payload, &actor).await?;
+    let replaced_file_id = staff_service::update_staff(&pool, staff_id, payload, &actor).await?;
     // Status/roles are already committed; invalidate identity before fallible cleanup.
     state
         .auth_runtime

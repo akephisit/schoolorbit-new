@@ -1331,6 +1331,8 @@ pub struct PublishVersionRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Homeroom {
+    pub grade_level_name: Option<String>,
+    pub study_program_name: Option<String>,
     pub id: Uuid,
     pub code: String,
     pub name: String,
@@ -1346,6 +1348,18 @@ pub struct Homeroom {
     pub updated_at: DateTime<Utc>,
     #[sqlx(default)]
     pub student_count: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomReference {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    pub room_number: Option<String>,
+    pub grade_level_id: Uuid,
+    pub study_program_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

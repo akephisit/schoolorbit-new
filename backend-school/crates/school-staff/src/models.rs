@@ -85,6 +85,8 @@ pub struct UserRoleAssignmentResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct OrganizationUnit {
+    #[sqlx(skip)]
+    pub can_manage_delegations: bool,
     pub id: Uuid,
     pub code: String,
     pub name: String,
@@ -481,6 +483,7 @@ pub struct OrganizationMemberItem {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 pub struct DelegationItem {
+    pub can_revoke: bool,
     pub id: Uuid,
     pub from_user_id: Uuid,
     pub from_user_name: String,

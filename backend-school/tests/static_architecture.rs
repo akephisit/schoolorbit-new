@@ -4490,8 +4490,8 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
 
     assert!(daily_handler
         .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
-    assert!(daily_handler.contains("TimetableAction::Read"));
-    assert!(daily_handler.contains("requires_school_scope: true"));
+    assert!(daily_handler.contains("ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL"));
+    assert!(!daily_handler.contains("TimetableAction::Manage"));
     assert!(daily_handler.contains("daily_teaching_service::get_daily_teaching_overview"));
     assert!(daily_handler.contains("ApiResponse::ok(overview)"));
 

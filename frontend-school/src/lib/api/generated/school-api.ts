@@ -2730,6 +2730,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/academic/student-years/homeroom-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStudentYearHomeroomOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/academic/study-program-options': {
 		parameters: {
 			query?: never;
@@ -8962,6 +8978,8 @@ export interface components {
 			bellSchedules: components['schemas']['BellSchedule'][];
 			bellScheduleSetupTermIds: string[];
 			bellScheduleSetupYearIds: string[];
+			canReadTerms: boolean;
+			canReadYears: boolean;
 			contextSettings: components['schemas']['AcademicContextSettings'];
 			schoolDaysEditableTermIds: string[];
 			terms: components['schemas']['AcademicTerm'][];
@@ -9766,6 +9784,8 @@ export interface components {
 				bellSchedules: components['schemas']['BellSchedule'][];
 				bellScheduleSetupTermIds: string[];
 				bellScheduleSetupYearIds: string[];
+				canReadTerms: boolean;
+				canReadYears: boolean;
 				contextSettings: components['schemas']['AcademicContextSettings'];
 				schoolDaysEditableTermIds: string[];
 				terms: components['schemas']['AcademicTerm'][];
@@ -12070,6 +12090,7 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				gradeLevelId: string;
+				gradeLevelName?: string | null;
 				/** Format: uuid */
 				id: string;
 				isActive?: boolean | null;
@@ -12082,6 +12103,7 @@ export interface components {
 				studentCount?: number | null;
 				/** Format: uuid */
 				studyProgramId: string;
+				studyProgramName?: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			};
@@ -12281,6 +12303,8 @@ export interface components {
 					averageRating?: number | null;
 					/** Format: date-time */
 					cancelledAt?: string | null;
+					canManage: boolean;
+					canReview: boolean;
 					/** Format: date-time */
 					createdAt: string;
 					/** Format: uuid */
@@ -12493,6 +12517,7 @@ export interface components {
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
+				canManage: boolean;
 				codeSnapshot: string;
 				/** Format: date-time */
 				createdAt: string;
@@ -12743,6 +12768,7 @@ export interface components {
 		};
 		ApiResponse_OrganizationUnit: {
 			data: {
+				can_manage_delegations: boolean;
 				category: string;
 				code: string;
 				/** Format: date-time */
@@ -13669,6 +13695,8 @@ export interface components {
 				averageRating?: number | null;
 				/** Format: date-time */
 				cancelledAt?: string | null;
+				canManage: boolean;
+				canReview: boolean;
 				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
@@ -15435,6 +15463,7 @@ export interface components {
 		};
 		ApiResponse_Vec_DelegationItem: {
 			data: {
+				can_revoke: boolean;
 				/** Format: date-time */
 				expires_at: string | null;
 				/** Format: uuid */
@@ -15653,6 +15682,7 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				gradeLevelId: string;
+				gradeLevelName?: string | null;
 				/** Format: uuid */
 				id: string;
 				isActive?: boolean | null;
@@ -15665,6 +15695,7 @@ export interface components {
 				studentCount?: number | null;
 				/** Format: uuid */
 				studyProgramId: string;
+				studyProgramName?: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -15733,6 +15764,21 @@ export interface components {
 				studentAcademicYearId: string;
 				/** Format: date-time */
 				updatedAt: string;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_HomeroomReference: {
+			data: {
+				code: string;
+				/** Format: uuid */
+				gradeLevelId: string;
+				/** Format: uuid */
+				id: string;
+				name: string;
+				roomNumber?: string | null;
+				/** Format: uuid */
+				studyProgramId: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -15867,6 +15913,7 @@ export interface components {
 				academicTermId: string;
 				/** Format: uuid */
 				academicYearId: string;
+				canManage: boolean;
 				codeSnapshot: string;
 				/** Format: date-time */
 				createdAt: string;
@@ -16045,6 +16092,7 @@ export interface components {
 		};
 		ApiResponse_Vec_OrganizationUnit: {
 			data: {
+				can_manage_delegations: boolean;
 				category: string;
 				code: string;
 				/** Format: date-time */
@@ -20980,6 +21028,7 @@ export interface components {
 			delegation_id: string;
 		};
 		DelegationItem: {
+			can_revoke: boolean;
 			/** Format: date-time */
 			expires_at: string | null;
 			/** Format: uuid */
@@ -22633,6 +22682,7 @@ export interface components {
 			createdAt: string;
 			/** Format: uuid */
 			gradeLevelId: string;
+			gradeLevelName?: string | null;
 			/** Format: uuid */
 			id: string;
 			isActive?: boolean | null;
@@ -22645,6 +22695,7 @@ export interface components {
 			studentCount?: number | null;
 			/** Format: uuid */
 			studyProgramId: string;
+			studyProgramName?: string | null;
 			/** Format: date-time */
 			updatedAt: string;
 		};
@@ -22805,6 +22856,17 @@ export interface components {
 			endedPlacement: components['schemas']['HomeroomPlacement'];
 			newPlacement: components['schemas']['HomeroomPlacement'];
 			replayed: boolean;
+		};
+		HomeroomReference: {
+			code: string;
+			/** Format: uuid */
+			gradeLevelId: string;
+			/** Format: uuid */
+			id: string;
+			name: string;
+			roomNumber?: string | null;
+			/** Format: uuid */
+			studyProgramId: string;
 		};
 		HomeroomRoster: {
 			homeroom: components['schemas']['Homeroom'];
@@ -23062,6 +23124,8 @@ export interface components {
 				averageRating?: number | null;
 				/** Format: date-time */
 				cancelledAt?: string | null;
+				canManage: boolean;
+				canReview: boolean;
 				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
@@ -23293,6 +23357,7 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
+			canManage: boolean;
 			codeSnapshot: string;
 			/** Format: date-time */
 			createdAt: string;
@@ -23887,6 +23952,7 @@ export interface components {
 			position_code?: string | null;
 		};
 		OrganizationUnit: {
+			can_manage_delegations: boolean;
 			category: string;
 			code: string;
 			/** Format: date-time */
@@ -26820,6 +26886,8 @@ export interface components {
 			averageRating?: number | null;
 			/** Format: date-time */
 			cancelledAt?: string | null;
+			canManage: boolean;
+			canReview: boolean;
 			/** Format: date-time */
 			createdAt: string;
 			/** Format: uuid */
@@ -42637,6 +42705,55 @@ export interface operations {
 			};
 		};
 	};
+	listStudentYearHomeroomOptions: {
+		parameters: {
+			query: {
+				academicYearId: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Complete minimal homeroom context for the selected student year */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_HomeroomReference'];
+				};
+			};
+			/** @description Homeroom context exceeds supported size */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Student year read permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listStudyProgramOptionsForAcademicYear: {
 		parameters: {
 			query: {
@@ -46384,7 +46501,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Feature toggles visible to the current user */
+			/** @description Feature toggles for authorized feature managers */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -46434,7 +46551,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
-			/** @description Feature module access denied */
+			/** @description Feature management access denied */
 			403: {
 				headers: {
 					[name: string]: unknown;

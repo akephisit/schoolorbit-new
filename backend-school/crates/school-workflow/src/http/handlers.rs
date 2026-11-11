@@ -126,8 +126,11 @@ pub async fn list_manageable_workflow_windows(
     )
     .await?;
     let items = workflow_access_policy::filter_manageable_workflow_windows(
-        &context.tenant.pool, &context.actor, items,
-    ).await?;
+        &context.tenant.pool,
+        &context.actor,
+        items,
+    )
+    .await?;
     let now = Utc::now();
     let items = items
         .into_iter()
@@ -148,7 +151,8 @@ pub async fn create_workflow_window(
         &context.actor,
         &payload.managed_by_permission,
         payload.organization_unit_id,
-    ).await?;
+    )
+    .await?;
 
     let window = services::create_workflow_window(
         &context.tenant.pool,
@@ -188,7 +192,8 @@ pub async fn update_workflow_window(
         &context.actor,
         &existing.managed_by_permission,
         existing.organization_unit_id,
-    ).await?;
+    )
+    .await?;
 
     let window = match payload.status {
         WorkflowWindowStatus::Open => {

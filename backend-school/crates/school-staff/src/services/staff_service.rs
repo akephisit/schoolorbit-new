@@ -9,10 +9,10 @@ use super::{
 use crate::models::*;
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use school_crypto as field_encryption;
 use school_database::DbSession;
 use school_errors::AppError;
+use school_permissions::registry::codes;
 use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 use std::collections::HashMap;
@@ -118,10 +118,21 @@ fn require_role_changes(
     existing: &[UserRoleBulkRow],
     requested: &[UserRoleBulkRow],
 ) -> Result<(), AppError> {
-    if requested.iter().any(|row| !existing.contains(row)) {
+    if requested
+        .iter()
+        .any(|row| !existing.iter().any(|old| old.role_id == row.role_id))
+        || existing.iter().any(|old| {
+            requested
+                .iter()
+                .any(|row| row.role_id == old.role_id && row.is_primary != old.is_primary)
+        })
+    {
         actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
     }
-    if existing.iter().any(|row| !requested.iter().any(|next| next.role_id == row.role_id)) {
+    if existing
+        .iter()
+        .any(|row| !requested.iter().any(|next| next.role_id == row.role_id))
+    {
         actor.require_permission(codes::ROLES_REMOVE_ALL)?;
     }
     Ok(())
@@ -131,25 +142,74 @@ fn same_assignments<T: PartialEq>(existing: &[T], requested: &[T]) -> bool {
     existing.len() == requested.len() && existing.iter().all(|row| requested.contains(row))
 }
 
+#[derive(FromRow)]
+struct StaffRoleAssignmentRow {
+    id: Uuid,
+    role_id: Uuid,
+    is_primary: bool,
+    is_retained: bool,
+}
+
+struct StaffRoleChanges {
+    additions: Vec<UserRoleBulkRow>,
+    removals: Vec<Uuid>,
+    primary_updates: Vec<(Uuid, bool)>,
+}
+
 async fn authorize_staff_assignment_update(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     actor: &ActorContext,
     staff_id: Uuid,
     payload: &mut UpdateStaffRequest,
-) -> Result<(), AppError> {
+) -> Result<Option<StaffRoleChanges>, AppError> {
+    let mut role_changes = None;
     if let Some(role_ids) = &payload.role_ids {
-        let existing = DbSession::new(&mut **tx)
-            .query_as::<UserRoleBulkRow>(
+        let stored = DbSession::new(&mut **tx)
+            .query_as::<StaffRoleAssignmentRow>(
                 "staff.services.staff_service.authorize_staff_assignment_update",
-                "SELECT role_id, is_primary FROM user_roles WHERE user_id = $1 ORDER BY role_id FOR UPDATE",
+                "SELECT id, role_id, is_primary, (ended_at IS NULL OR ended_at > CURRENT_DATE) AND started_at < COALESCE(ended_at, 'infinity'::date) AS is_retained FROM user_roles WHERE user_id = $1 ORDER BY id FOR UPDATE",
             )
             .bind(staff_id)
             .fetch_all()
             .await?;
+        let current: Vec<_> = stored.iter().filter(|row| row.is_retained).collect();
+        let existing: Vec<_> = current
+            .iter()
+            .map(|row| UserRoleBulkRow {
+                role_id: row.role_id,
+                is_primary: row.is_primary,
+            })
+            .collect();
         let requested = user_role_bulk_rows(role_ids, payload.primary_role_id);
         require_role_changes(actor, &existing, &requested)?;
-        if same_assignments(&existing, &requested) {
+        let changes = StaffRoleChanges {
+            additions: requested
+                .iter()
+                .filter(|row| !existing.iter().any(|old| old.role_id == row.role_id))
+                .cloned()
+                .collect(),
+            removals: current
+                .iter()
+                .filter(|old| !requested.iter().any(|row| row.role_id == old.role_id))
+                .map(|old| old.id)
+                .collect(),
+            primary_updates: current
+                .iter()
+                .filter_map(|old| {
+                    requested
+                        .iter()
+                        .find(|row| row.role_id == old.role_id && row.is_primary != old.is_primary)
+                        .map(|row| (old.id, row.is_primary))
+                })
+                .collect(),
+        };
+        if changes.additions.is_empty()
+            && changes.removals.is_empty()
+            && changes.primary_updates.is_empty()
+        {
             payload.role_ids = None;
+        } else {
+            role_changes = Some(changes);
         }
     }
     if let Some(assignments) = &payload.organization_assignments {
@@ -169,7 +229,7 @@ async fn authorize_staff_assignment_update(
             actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
         }
     }
-    Ok(())
+    Ok(role_changes)
 }
 
 async fn insert_user_roles(
@@ -1034,8 +1094,16 @@ pub async fn create_staff(
     mut payload: CreateStaffRequest,
     actor: &ActorContext,
 ) -> Result<Uuid, AppError> {
-    require_role_changes(actor, &[], &user_role_bulk_rows(&payload.role_ids, payload.primary_role_id))?;
-    if payload.organization_assignments.as_ref().is_some_and(|assignments| !assignments.is_empty()) {
+    require_role_changes(
+        actor,
+        &[],
+        &user_role_bulk_rows(&payload.role_ids, payload.primary_role_id),
+    )?;
+    if payload
+        .organization_assignments
+        .as_ref()
+        .is_some_and(|assignments| !assignments.is_empty())
+    {
         actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
     }
     normalize_create_names(&mut payload)?;
@@ -1198,7 +1266,8 @@ pub async fn update_staff(
     })?;
 
     super::organization_member_service::lock_member_user(&mut tx, staff_id).await?;
-    authorize_staff_assignment_update(&mut tx, actor, staff_id, &mut payload).await?;
+    let role_changes =
+        authorize_staff_assignment_update(&mut tx, actor, staff_id, &mut payload).await?;
 
     if let Some(role_ids) = &payload.role_ids {
         validate_active_staff_roles(&mut tx, role_ids).await?;
@@ -1319,25 +1388,26 @@ SELECT true
         staff_info_service::patch_staff_info(&mut tx, staff_id, staff_info, actor.user_id).await?;
     }
 
-    if let Some(role_ids) = &payload.role_ids {
-        DbSession::new(&mut *tx)
-            .query(
+    if let Some(changes) = role_changes {
+        // End only removed current/scheduled grants; retain identities, scopes and provenance.
+        if !changes.removals.is_empty() {
+            DbSession::new(&mut *tx).query(
                 "staff.services.staff_service.update_staff",
-                "DELETE FROM user_roles WHERE user_id = $1",
-            )
-            .bind(staff_id)
-            .execute()
-            .await
-            .map_err(|e| {
-                tracing::error!(
-                    "❌ Failed to delete roles: {}",
-                    school_database::error_class(&e)
-                );
-                AppError::InternalServerError("ไม่สามารถอัพเดตบทบาทได้".to_string())
-            })?;
-
-        let role_rows = user_role_bulk_rows(role_ids, payload.primary_role_id);
-        insert_user_roles(&mut tx, staff_id, &role_rows).await?;
+                "UPDATE user_roles SET ended_at=greatest(started_at,CURRENT_DATE),updated_at=NOW() WHERE user_id=$1 AND id=ANY($2)",
+            ).bind(staff_id).bind(&changes.removals).execute().await?;
+        }
+        for (id, is_primary) in changes.primary_updates {
+            DbSession::new(&mut *tx)
+                .query(
+                    "staff.services.staff_service.update_staff",
+                    "UPDATE user_roles SET is_primary=$2,updated_at=NOW() WHERE id=$1",
+                )
+                .bind(id)
+                .bind(is_primary)
+                .execute()
+                .await?;
+        }
+        insert_user_roles(&mut tx, staff_id, &changes.additions).await?;
     }
 
     if let Some(organization_assignments) = &payload.organization_assignments {
@@ -1776,6 +1846,68 @@ mod tests {
     fn staff_title_or_default_uses_empty_string_when_missing() {
         assert_eq!(staff_title_or_default(None), "");
         assert_eq!(staff_title_or_default(Some("นาย".to_string())), "นาย");
+    }
+
+    #[test]
+    fn permission_coverage_role_changes_separate_add_remove_primary_and_unchanged() {
+        let actor = |codes: &[&str]| ActorContext {
+            user_id: Uuid::new_v4(),
+            permissions: codes.iter().map(|code| code.to_string()).collect(),
+        };
+        let a = UserRoleBulkRow {
+            role_id: Uuid::new_v4(),
+            is_primary: false,
+        };
+        let b = UserRoleBulkRow {
+            role_id: Uuid::new_v4(),
+            is_primary: false,
+        };
+        assert!(require_role_changes(
+            &actor(&[]),
+            std::slice::from_ref(&a),
+            std::slice::from_ref(&a)
+        )
+        .is_ok());
+        assert!(require_role_changes(
+            &actor(&[]),
+            std::slice::from_ref(&a),
+            &[a.clone(), b.clone()]
+        )
+        .is_err());
+        assert!(require_role_changes(
+            &actor(&[codes::ROLES_ASSIGN_ALL]),
+            std::slice::from_ref(&a),
+            &[a.clone(), b.clone()]
+        )
+        .is_ok());
+        assert!(require_role_changes(
+            &actor(&[codes::ROLES_ASSIGN_ALL]),
+            std::slice::from_ref(&a),
+            std::slice::from_ref(&b)
+        )
+        .is_err());
+        assert!(require_role_changes(
+            &actor(&[codes::ROLES_REMOVE_ALL]),
+            &[a.clone(), b.clone()],
+            std::slice::from_ref(&b)
+        )
+        .is_ok());
+        let primary = UserRoleBulkRow {
+            is_primary: true,
+            ..a.clone()
+        };
+        assert!(require_role_changes(
+            &actor(&[codes::ROLES_REMOVE_ALL]),
+            std::slice::from_ref(&a),
+            std::slice::from_ref(&primary)
+        )
+        .is_err());
+        assert!(require_role_changes(
+            &actor(&[codes::ROLES_ASSIGN_ALL]),
+            std::slice::from_ref(&a),
+            std::slice::from_ref(&primary)
+        )
+        .is_ok());
     }
 
     #[test]
