@@ -1,4 +1,4 @@
-pub use school_academic_http::policies::learning_offering_access_policy::*;
+pub use school_academic_delivery::policies::learning_offering_access_policy::*;
 
 #[cfg(test)]
 mod tests {

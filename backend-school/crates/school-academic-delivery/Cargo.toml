@@ -19,6 +19,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 school-academic-core = { workspace = true }
 school-authorization = { workspace = true }
+school-permissions = { workspace = true }
 school-errors = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

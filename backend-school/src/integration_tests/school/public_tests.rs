@@ -508,7 +508,9 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         pool_manager,
 
         auth_runtime: runtime,
-        websocket_manager: Arc::new(school_academic_http::websockets::WebSocketManager::new()),
+        websocket_manager: Arc::new(
+            school_academic_timetable_http::websockets::WebSocketManager::new(),
+        ),
         notification_channel: tokio::sync::broadcast::channel(8).0,
 
         work_event_channel: tokio::sync::broadcast::channel(8).0,
@@ -524,7 +526,60 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         ),
     };
     use axum::extract::FromRef;
-    let academic = school_academic_http::state::AcademicHttpState::from_ref(&state);
+    let academic = school_academic_core_http::state::AcademicCoreHttpState::from_ref(&state);
+    let delivery =
+        school_academic_delivery_http::state::AcademicDeliveryHttpState::from_ref(&state);
+    let assessment =
+        school_academic_assessment_http::state::AcademicAssessmentHttpState::from_ref(&state);
+    let timetable =
+        school_academic_timetable_http::state::AcademicTimetableHttpState::from_ref(&state);
+    let results = school_academic_results_http::state::AcademicResultsHttpState::from_ref(&state);
+    let lifecycle =
+        school_academic_lifecycle_http::state::AcademicLifecycleHttpState::from_ref(&state);
+    let sockets = school_academic_timetable_http::state::AcademicWebSocketState::from_ref(&state);
+    let realtime: Arc<dyn school_academic_realtime::AcademicRealtimePort> =
+        state.websocket_manager.clone();
+    for port in [
+        &academic.websocket_manager,
+        &delivery.websocket_manager,
+        &assessment.websocket_manager,
+        &timetable.websocket_manager,
+        &results.websocket_manager,
+        &lifecycle.websocket_manager,
+    ] {
+        assert!(Arc::ptr_eq(port, &realtime));
+    }
+    assert!(Arc::ptr_eq(
+        &sockets.websocket_manager,
+        &state.websocket_manager
+    ));
+    assert!(Arc::ptr_eq(
+        &sockets.collaboration,
+        &timetable.collaboration
+    ));
+    assert!(Arc::ptr_eq(
+        &timetable.collaboration,
+        &state.websocket_manager.collaboration()
+    ));
+    for runtime in [
+        &academic.auth_runtime,
+        &delivery.auth_runtime,
+        &assessment.auth_runtime,
+        &timetable.auth_runtime,
+        &results.auth_runtime,
+        &lifecycle.auth_runtime,
+        &sockets.auth_runtime,
+    ] {
+        assert!(Arc::ptr_eq(
+            &runtime.identity_cache,
+            &state.auth_runtime.identity_cache
+        ));
+        assert!(Arc::ptr_eq(
+            &runtime.permission_cache,
+            &state.auth_runtime.permission_cache
+        ));
+        assert!(Arc::ptr_eq(&runtime.pool_manager, &state.pool_manager));
+    }
     let certificates = school_certificates_http::state::CertificateHttpState::from_ref(&state);
     assert!(Arc::ptr_eq(
         &academic.auth_runtime.identity_cache,
@@ -560,7 +615,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
     let narrow_routes = Router::new()
         .route(
             "/academic",
-            get(school_academic_http::core::handlers::list_years),
+            get(school_academic_core_http::core::handlers::list_years),
         )
         .route(
             "/certificates",

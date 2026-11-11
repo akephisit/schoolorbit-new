@@ -246,7 +246,12 @@ async fn period_setup_http_capabilities_deny_without_writes_and_read_hidden_cont
             &pool,
             actor,
             &[],
-            school_academic_http::core::routes(),
+            school_academic_core_http::core::routes(),
+            |runtime, manager| school_academic_core_http::state::AcademicCoreHttpState {
+                auth_runtime: runtime,
+                websocket_manager: manager,
+                placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+            },
         );
         let response = app
             .oneshot(
@@ -268,7 +273,12 @@ async fn period_setup_http_capabilities_deny_without_writes_and_read_hidden_cont
             &pool,
             actor,
             &[permission],
-            school_academic_http::core::routes(),
+            school_academic_core_http::core::routes(),
+            |runtime, manager| school_academic_core_http::state::AcademicCoreHttpState {
+                auth_runtime: runtime,
+                websocket_manager: manager,
+                placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+            },
         );
         let response = app
             .oneshot(
@@ -742,7 +752,12 @@ async fn period_setup_term_school_schedule_http_accepts_manage_and_refuses_stale
         &pool,
         actor,
         &[codes::ACADEMIC_TERM_MANAGE_SCHOOL],
-        school_academic_http::core::routes(),
+        school_academic_core_http::core::routes(),
+        |runtime, manager| school_academic_core_http::state::AcademicCoreHttpState {
+            auth_runtime: runtime,
+            websocket_manager: manager,
+            placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+        },
     );
     let response = app
         .oneshot(
@@ -781,7 +796,12 @@ async fn period_setup_term_school_schedule_http_accepts_manage_and_refuses_stale
             &pool,
             actor,
             &[codes::ACADEMIC_TERM_MANAGE_SCHOOL],
-            school_academic_http::core::routes(),
+            school_academic_core_http::core::routes(),
+            |runtime, manager| school_academic_core_http::state::AcademicCoreHttpState {
+                auth_runtime: runtime,
+                websocket_manager: manager,
+                placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+            },
         );
         let response = app
             .oneshot(

@@ -6,7 +6,12 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use school_academic_http::state::AcademicHttpState;
+use school_academic_assessment_http::state::AcademicAssessmentHttpState;
+use school_academic_core_http::state::AcademicCoreHttpState;
+use school_academic_delivery_http::state::AcademicDeliveryHttpState;
+use school_academic_lifecycle_http::state::AcademicLifecycleHttpState;
+use school_academic_results_http::state::AcademicResultsHttpState;
+use school_academic_timetable_http::state::AcademicTimetableHttpState;
 use school_certificates_http::state::CertificateHttpState;
 use serde_json::json;
 
@@ -41,8 +46,8 @@ fn public_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_academic_http::routes::public_routes()
-                .with_state(AcademicHttpState::from_ref(state)),
+            school_academic_core_http::routes::public_routes()
+                .with_state(AcademicCoreHttpState::from_ref(state)),
         )
         .nest(
             "/api",
@@ -80,8 +85,9 @@ fn public_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/ws",
-            school_academic_http::routes::websocket_routes()
-                .with_state(school_academic_http::state::AcademicWebSocketState::from_ref(state)),
+            school_academic_timetable_http::routes::websocket_routes().with_state(
+                school_academic_timetable_http::state::AcademicWebSocketState::from_ref(state),
+            ),
         )
         .merge(internal_routes())
 }
@@ -169,8 +175,23 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_academic_http::routes::personal_routes()
-                .with_state(AcademicHttpState::from_ref(state)),
+            school_academic_core_http::routes::personal_routes()
+                .with_state(AcademicCoreHttpState::from_ref(state)),
+        )
+        .nest(
+            "/api",
+            school_academic_delivery_http::routes::personal_routes()
+                .with_state(AcademicDeliveryHttpState::from_ref(state)),
+        )
+        .nest(
+            "/api",
+            school_academic_assessment_http::routes::personal_routes()
+                .with_state(AcademicAssessmentHttpState::from_ref(state)),
+        )
+        .nest(
+            "/api",
+            school_academic_timetable_http::routes::personal_routes()
+                .with_state(AcademicTimetableHttpState::from_ref(state)),
         )
         .nest(
             "/api",
@@ -278,8 +299,28 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api/academic",
-            school_academic_http::routes::academic_routes()
-                .with_state(AcademicHttpState::from_ref(state))
+            school_academic_core_http::routes::academic_routes()
+                .with_state(AcademicCoreHttpState::from_ref(state))
+                .merge(
+                    school_academic_delivery_http::routes::academic_routes()
+                        .with_state(AcademicDeliveryHttpState::from_ref(state)),
+                )
+                .merge(
+                    school_academic_assessment_http::routes::academic_routes()
+                        .with_state(AcademicAssessmentHttpState::from_ref(state)),
+                )
+                .merge(
+                    school_academic_timetable_http::routes::academic_routes()
+                        .with_state(AcademicTimetableHttpState::from_ref(state)),
+                )
+                .merge(
+                    school_academic_results_http::routes::academic_routes()
+                        .with_state(AcademicResultsHttpState::from_ref(state)),
+                )
+                .merge(
+                    school_academic_lifecycle_http::routes::academic_routes()
+                        .with_state(AcademicLifecycleHttpState::from_ref(state)),
+                )
                 .nest(
                     "/question-bank",
                     school_question_bank::http::routes::question_bank_routes().with_state(

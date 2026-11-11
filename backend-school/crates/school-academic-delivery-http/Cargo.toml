@@ -1,0 +1,31 @@
+[package]
+name = "school-academic-delivery-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-core/api-docs",
+    "school-academic-delivery/api-docs",
+    "school-auth/api-docs",
+    "school-http/api-docs",
+]
+
+[dependencies]
+axum = { workspace = true }
+school-academic-core = { workspace = true }
+school-academic-delivery = { workspace = true }
+school-academic-realtime = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-authorization = { workspace = true }
+school-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

@@ -7,7 +7,13 @@ members = [
     "crates/school-administration",
     "crates/school-attendance",
     "crates/school-behavior",
-    "crates/school-academic-http",
+    "crates/school-academic-core-http",
+    "crates/school-academic-delivery-http",
+    "crates/school-academic-assessment-http",
+    "crates/school-academic-timetable-http",
+    "crates/school-academic-results-http",
+    "crates/school-academic-lifecycle-http",
+    "crates/school-academic-realtime",
     "crates/school-certificates-http",
     "crates/school-auth-http",
     "crates/school-notifications",
@@ -140,7 +146,13 @@ school-auth-http = { path = "crates/school-auth-http" }
 
 school-certificates-http = { path = "crates/school-certificates-http" }
 
-school-academic-http = { path = "crates/school-academic-http" }
+school-academic-core-http = { path = "crates/school-academic-core-http" }
+school-academic-delivery-http = { path = "crates/school-academic-delivery-http" }
+school-academic-assessment-http = { path = "crates/school-academic-assessment-http" }
+school-academic-timetable-http = { path = "crates/school-academic-timetable-http" }
+school-academic-results-http = { path = "crates/school-academic-results-http" }
+school-academic-lifecycle-http = { path = "crates/school-academic-lifecycle-http" }
+school-academic-realtime = { path = "crates/school-academic-realtime" }
 
 school-attendance = { path = "crates/school-attendance" }
 
@@ -162,7 +174,12 @@ api-docs = [
     "school-academic-assessment/api-docs",
     "school-academic-core/api-docs",
     "school-academic-delivery/api-docs",
-    "school-academic-http/api-docs",
+    "school-academic-core-http/api-docs",
+    "school-academic-delivery-http/api-docs",
+    "school-academic-assessment-http/api-docs",
+    "school-academic-timetable-http/api-docs",
+    "school-academic-results-http/api-docs",
+    "school-academic-lifecycle-http/api-docs",
     "school-academic-lifecycle/api-docs",
     "school-academic-results/api-docs",
     "school-academic-timetable/api-docs",
@@ -259,7 +276,13 @@ school-auth-http = { workspace = true }
 
 school-certificates-http = { workspace = true }
 
-school-academic-http = { workspace = true }
+school-academic-core-http = { workspace = true }
+school-academic-delivery-http = { workspace = true }
+school-academic-assessment-http = { workspace = true }
+school-academic-timetable-http = { workspace = true }
+school-academic-results-http = { workspace = true }
+school-academic-lifecycle-http = { workspace = true }
+school-academic-realtime = { workspace = true }
 
 [dev-dependencies]
 tokio-tungstenite = "0.29.0"

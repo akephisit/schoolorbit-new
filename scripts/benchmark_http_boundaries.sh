@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=backend_benchmark_source.sh
+. "$(dirname "$0")/backend_benchmark_source.sh"
 unset RUSTC_WRAPPER
 export CARGO_INCREMENTAL=0
 mkdir -p /results
@@ -12,11 +15,17 @@ export_api() {
     bash "$(dirname "$0")/export_benchmark_openapi.sh"
 }
 measure() {
-    local phase=$1 owner=$2 source=$3 sample start end output
+    local phase=$1 owner=$2 sample start end output source original
+    source=$(benchmark_owner_source backend-school "$owner")
+    original=$(mktemp)
+    cp "$source" "$original"
     output="/results/$phase/$owner"
     mkdir -p "$output"
+    # Restore the previous owner before measuring a new family.
+    build >"$output/pristine-prime.log" 2>&1
     for sample in 1 2; do
-        printf '\n// HTTP boundary invalidation: %s %s sample %s\n' "$phase" "$owner" "$sample" >>"$source"
+        cp "$original" "$source"
+        printf '\n// HTTP boundary invalidation: %s %s sample %s\n#[allow(dead_code)]\npub const BUILD_HTTP_BOUNDARY_MARKER: u64 = %s;\n' "$phase" "$owner" "$sample" "$sample" >>"$source"
         start=$(date +%s%N)
         build 2>&1 | tee "$output/compile-$sample.log"
         end=$(date +%s%N)
@@ -25,24 +34,31 @@ measure() {
         cp target/cargo-timings/cargo-timing.html "$output/cargo-timing-$sample.html"
         export_api >"$output/openapi-$sample.json"
     done
+    cp "$original" "$source"
+    rm -f "$original"
 }
 # Separate cache/flag priming from timed source-changing builds.
 build 2>&1 | tee /results/prime-before.log
 export_api >/results/openapi-baseline.json
-measure before application src/main.rs
-measure before certificates src/modules/certificates/handlers.rs
-measure before academic src/modules/academic/core/handlers.rs
-measure before navigation src/modules/menu/services/menu_service.rs
-measure before notifications src/services/notification.rs
+measure before application
+measure before certificates
+measure before academic
+measure before navigation
+measure before notifications
+[[ "$PWD" == /app && -d /candidate/src && -d /candidate/crates ]]
 rm -rf /app/src /app/crates
 cp -a /candidate/src /candidate/crates /app/
 cp -a /candidate/Cargo.toml /candidate/Cargo.lock /app/
+# Normalize source mtimes after the same-path graph swap, preserving source bytes.
+find src crates -type f -exec touch {} +
+touch Cargo.toml Cargo.lock
 build 2>&1 | tee /results/prime-after.log
-measure after application src/main.rs
-measure after certificates crates/school-certificates-http/src/handlers.rs
-measure after academic crates/school-academic-http/src/core/handlers.rs
-measure after navigation crates/school-navigation/src/services/menu_service.rs
-measure after notifications crates/school-notifications/src/publisher.rs
+measure after application
+measure after certificates
+measure after academic
+measure after navigation
+measure after notifications
+build >/results/final-pristine-prime.log 2>&1
 start=$(date +%s%N)
 build
 end=$(date +%s%N)

@@ -96,37 +96,42 @@ pub(crate) fn coverage_router(f: &ProtectedFixture) -> Router {
                 },
             ),
         );
-    let manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
-    let academic = school_academic_http::state::AcademicHttpState {
-        collaboration: manager.collaboration(),
-        staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
-        placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+    let manager = Arc::new(school_academic_timetable_http::websockets::WebSocketManager::new());
+    let core = school_academic_core_http::state::AcademicCoreHttpState {
         auth_runtime: f.runtime.clone(),
-        websocket_manager: manager,
-        result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
+        websocket_manager: manager.clone(),
+        placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+    };
+    let delivery = school_academic_delivery_http::state::AcademicDeliveryHttpState {
+        auth_runtime: f.runtime.clone(),
+        websocket_manager: manager.clone(),
         assessment_publication: &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
         publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
-        retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
     };
-    let routes = routes
-        .nest(
-            "/academic",
-            school_academic_http::routes::academic_routes().with_state(academic),
-        )
-        .nest(
-            "/admission",
-            school_admission::http::routes::admission_staff_routes().with_state(
-                school_admission::http::state::AdmissionHttpState {
-                    auth_runtime: f.runtime.clone(),
-                    placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
-                    file_authorization: &school_files_http::FILE_AUTHORIZATION,
-                    file_platform: Arc::new(
-                        crate::integration_tests::staff::career_integration_tests::file_platform(),
-                    ),
-                },
-            ),
-        );
+    let timetable = school_academic_timetable_http::state::AcademicTimetableHttpState {
+        auth_runtime: f.runtime.clone(),
+        websocket_manager: manager.clone(),
+        collaboration: manager.collaboration(),
+        staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
+        publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+    };
+    let academic = school_academic_core_http::routes::academic_routes()
+        .with_state(core)
+        .merge(school_academic_delivery_http::routes::academic_routes().with_state(delivery))
+        .merge(school_academic_timetable_http::routes::academic_routes().with_state(timetable));
+    let routes = routes.nest("/academic", academic).nest(
+        "/admission",
+        school_admission::http::routes::admission_staff_routes().with_state(
+            school_admission::http::state::AdmissionHttpState {
+                auth_runtime: f.runtime.clone(),
+                placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+                file_authorization: &school_files_http::FILE_AUTHORIZATION,
+                file_platform: Arc::new(
+                    crate::integration_tests::staff::career_integration_tests::file_platform(),
+                ),
+            },
+        ),
+    );
     Router::new()
         .nest("/api", routes)
         .route_layer(from_fn_with_state(
@@ -1145,7 +1150,7 @@ async fn permission_coverage_score_track_roster_is_minimal_filtered_and_complete
     .into_iter()
     .enumerate()
     {
-        sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,application_number,first_name,last_name,status,phone,address_line) VALUES($1,$2,'encrypted-score-fixture',$3,'Synthetic','Scoring',$4,'private-phone-sentinel','private-address-sentinel')")
+        sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,application_number,first_name,last_name,status,phone,address_line) VALUES($1,$2,'encrypted-score-fixture',$3,'Synthetic','Scoring',$4,'private-phone','private-address-sentinel')")
             .bind(round).bind(tracks[0]).bind(format!("COVERAGE-SCORE-{index}")).bind(status).execute(&f.tenant_a_pool).await.unwrap();
     }
     sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,first_name,last_name,status) VALUES($1,$2,'encrypted-score-fixture','Other','Track','verified')").bind(round).bind(tracks[1]).execute(&f.tenant_a_pool).await.unwrap();

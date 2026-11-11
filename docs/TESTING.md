@@ -261,8 +261,12 @@ cargo test -p school-staff --features api-docs personnel_schema_enum_matches_ser
 ```
 
 HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
-`cargo test -p school-academic-http`, `cargo test -p school-certificates-http`,
+the six `school-academic-{core,delivery,assessment,timetable,results,lifecycle}-http` packages,
+`cargo test -p school-academic-realtime`, `cargo test -p school-certificates-http`,
 `cargo test -p school-navigation`, and `cargo test -p school-notifications`.
+The backend pipeline's direct `--lib` unit batch includes all six Academic HTTP owners and
+the realtime contract. Timetable HTTP's socket/security units use memory, channels and a lazy
+invalid pool without database queries; run that unit batch once without a database wrapper.
 The other domain owners expose their concrete routes under `http`; changed owners also run
 through the disposable database wrapper when their tests need PostgreSQL.
 The application owns `FromRef` state selection and injected realtime, result-lock,
@@ -672,6 +676,10 @@ Select `options={"backend":"both","samples":"2","variants":"default,cgu64"}`;
 the optional `opt2` and `cgu256` variants are experiments, not production settings.
 Each case primes its compiler flags before two to five timed source changes and links exactly once.
 School also measures Academic HTTP and attendance domain changes under the default profile.
+The shared selector in `scripts/backend_benchmark_source.sh` resolves the Academic probe to
+`school-academic-core-http/src/core/handlers.rs` beneath `backend-school/crates`, with historical
+combined-crate and application-handler fallbacks for earlier snapshots. Probes append a public
+constant with a distinct sample value so each timed sample changes Rust source beyond a comment.
 Artifacts include per-unit Cargo times, actual linker flags, binary sizes, CPU/toolchain identity,
 and the original builder's cache evidence separately from warm Cargo measurements. All School
 exports must equal the default-profile OpenAPI, including across compiler variants. Documentation
@@ -681,15 +689,21 @@ Use `options={"backend":"backend-school","samples":"2","variants":"default,api-d
 to compare default production compilation with documentation enabled on the same source and runner.
 Both cases measure application and Academic HTTP edits; feature/dependency priming is separate.
 The final diagnostic compilation records compiler pass times and monomorphization estimates.
-Academic HTTP routes use concrete `Router<AcademicHttpState>` factories in their owning crate.
-The application binds its existing narrow state before applying the shared session boundary;
+Academic HTTP routes use concrete `Router<AcademicCoreHttpState>`, `Router<AcademicDeliveryHttpState>`,
+`Router<AcademicAssessmentHttpState>`, `Router<AcademicTimetableHttpState>`, `Router<AcademicResultsHttpState>`
+and `Router<AcademicLifecycleHttpState>` factories in their six owning transport crates.
+The application binds each narrow state before merging routers and applying the shared session boundary;
 this prevents the executable from regenerating domain handler futures and HTTP encoding.
 Route ownership guards and protected-router tests cover this boundary. Compare source-changing
 application and Academic HTTP builds before changing the factory's compile scope.
 For a paired route-factory comparison against an exact baseline commit, select
 `options={"backend":"backend-school","samples":"2","variants":"default,http-routes","baseline":"<40-character SHA>"}`.
-This validates a bounded source allowlist, freezes both sources from Git, and measures both
-application-only edits and Academic HTTP edits on the same runner without changing release flags.
+This freezes the complete `src`/`crates`/Cargo graph from both Git inputs and measures application-only
+and Academic HTTP edits at the same `/app` source path and persistent target. Graph swaps normalize
+source mtimes without changing bytes. `scripts/validate_backend_benchmark_source.py` resolves the
+Git revisions and compares manifest profile maps and external lockfile package identities.
+The `http-routes` branch in `backend-build-benchmark.yml` separately enforces its changed-file allowlist.
+Graph priming and pristine reset builds between owner families remain outside timed samples.
 Use `options={"backend":"backend-school","profile_only":true,"variants":"default"}`
 to collect only the compiler profile from the exact production builder. This mode skips warm
 comparison samples; it does not establish a speed improvement. Pass timings and monomorphization
@@ -721,13 +735,21 @@ The precedence regression and full generated-contract check protect both rules. 
 continues owning the entire OpenAPI composition, and the exporter runs without runtime credentials.
 
 The Operations `http-benchmark` task calls [Backend HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml) and
-compares a selected pre-extraction commit with the workflow's candidate commit. Both use
+compares a selected baseline commit with the workflow's candidate commit. Its default baseline is
+`2dd8a55675de48d7a24dfad2419b246238ccf6e2`, the last combined Academic HTTP graph; the input remains selectable.
+Both use
 the production Docker builder, two CPU quota, the same release profile, and one persistent
-Cargo target. It makes two source changes in each of the application, Academic HTTP,
+Cargo target at the same `/app` source path, replacing the complete frozen source/Cargo graph
+between cases and normalizing its source mtimes. The same input validator checks resolved revisions,
+manifest profile maps and external dependency identities. This full-snapshot comparator does not
+reject every unrelated Rust source change: review the complete commit diff and attribute measured
+differences to the entire compared snapshots while profiles and external dependencies remain fixed.
+It makes two source changes in each of the application, Academic HTTP,
 Certificates HTTP, Navigation, and Notifications owners. Initial dependency/graph priming,
 unchanged target reuse, compiled package names, binary sizes, Cargo timing reports, and
 exact OpenAPI equality are recorded separately. The source-changing comparison disables
-the compiler wrapper to measure Cargo invalidation; production sccache hits/misses must be
+the compiler wrapper to measure Cargo invalidation; graph priming and pristine resets between owner
+families are untimed. Production sccache hits/misses must be
 assessed in the actual image-build artifacts.
 
 `school-workflow`, `school-question-bank`, `school-admission`, `school-supervision`,
@@ -748,15 +770,18 @@ relationships, and cross-domain file authorization remain in the application pac
 `school-certificates` owns certificate policy, layout, issuance, rendering, verification, rate
 limiting, and purge behavior. `school-certificates-http` owns its handlers and API declarations;
 the application composes OpenAPI and supplies the cross-domain file-deletion adapter.
-`school-academic-http` owns academic handlers and their request policies, while the six
-academic domain crates retain business logic and transactions. Both HTTP owners receive
-concrete narrow state through application-owned `FromRef` implementations.
+The six Academic HTTP crates own their domain's handlers and concrete route factories; Core and
+Delivery own catalog/curriculum/roster and offering/change-set access policies respectively.
+The academic domain crates retain business logic and transactions. `school-academic-realtime`
+contains only the shared event/port contract; Timetable HTTP owns the socket manager and uses
+one application-composed collaboration runtime for HTTP, sockets and facility invalidation.
+Every transport owner receives concrete narrow state through application-owned `FromRef` implementations.
 `school-auth-http` owns the shared session-derived request context, tenant-origin resolution,
 client-address checks, and cookie/CSRF helpers. It uses the existing `AuthRuntime` and shared
 permission/identity caches, with no application dependency. Navigation owns menu persistence,
 templates, route synchronization and feature toggles; Notifications owns persistence,
-tenant/user events, the publisher and Web Push. Startup, routing, middleware and realtime
-connection management remain in the application. Use at most eight test
+tenant/user events, the publisher and Web Push. Startup, routing and middleware remain in the application; Timetable HTTP owns Academic realtime
+connection management. Use at most eight test
 threads for the database-heavy font and certificate package suites so concurrent migration
 fixtures do not exhaust the disposable PostgreSQL instance.
 
@@ -774,7 +799,11 @@ Docker database runner:
 The projection fixture traverses the real application adapter and Staff query, covering active,
 date-effective, deduplicated affiliations, unknown users and an empty selection. The workspace
 fixture checks directory injection, bounded distinct user IDs, retained group data and propagation
-of provider failures. The protected-router fixture covers the same concrete Academic state.
+of provider failures. The protected-router fixture exercises the production application composition and all six concrete
+Academic states, including public/personal routes and the question-bank nesting. The existing
+public transport fixture verifies shared auth caches and pointer identity across all six realtime
+ports, socket manager and collaboration runtime. The Delivery change-set policy provider fixture
+checks exact ordered IDs, empty/missing sets and Read/Manage grants and denials.
 Lookup DTO ownership changes also require the canonical API export comparison and the existing
 Administration lookup and Certificate transport checks; wire schema names and serialization stay
 unchanged. Before-and-after compile comparisons must prime each graph separately, use the same
@@ -818,7 +847,7 @@ cargo test --manifest-path backend-school/Cargo.toml -p school-academic-timetabl
 ./scripts/test_backend_school.sh integration_tests::academic::services::timetable_collaboration_tests -- --nocapture --test-threads=2
 ./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --nocapture --test-threads=2
 cargo test --manifest-path backend-school/Cargo.toml -p school-auth-http context::tests -- --nocapture
-cargo test --manifest-path backend-school/Cargo.toml -p school-academic-http websockets::security_tests -- --nocapture
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-timetable-http websockets::security_tests -- --nocapture
 ```
 
 The dedicated transport fixture uses the original protected-router directory/session owner with
@@ -862,7 +891,7 @@ realtime, profile/File Platform, and cross-domain behavior:
 ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --test-threads=4 --nocapture
 ./scripts/test_backend_school.sh integration_tests::auth::profile_integration_tests -- --nocapture
 ./scripts/test_backend_school.sh integration_tests::auth::staff_integration_tests -- --nocapture
-./scripts/test_backend_school.sh --package school-academic-http websockets::security_tests -- --nocapture
+./scripts/test_backend_school.sh --package school-academic-timetable-http websockets::security_tests -- --nocapture
 ```
 
 The session-auth HTTP target also exercises encrypted Student Care data. Generate a fresh
@@ -1884,7 +1913,7 @@ Session-cache and hidden-tab regressions can be exercised without a live tenant:
 ```bash
 ./scripts/test_backend_school.sh integration_tests::auth -- --nocapture --test-threads=1
 ./scripts/test_backend_school.sh --package school-notifications http::handlers::tests -- --nocapture --test-threads=1
-./scripts/test_backend_school.sh --package school-academic-http websockets::security_tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-academic-timetable-http websockets::security_tests -- --nocapture --test-threads=1
 cd frontend-school
 node --test tests/static/realtime-idle.test.mjs tests/static/notification-idle-runtime.test.mjs tests/static/auth-refresh-races.test.mjs tests/static/timetable-socket-runtime.test.mjs
 ```
@@ -2282,7 +2311,7 @@ disposable PostgreSQL, then the mocked browser workflow against the local fronte
 ```bash
 ./scripts/test_backend_school.sh --package school-academic-core learning_area -- --test-threads=4
 ./scripts/test_backend_school.sh --package school-staff organization_auto_codes -- --test-threads=1
-cargo test --manifest-path backend-school/Cargo.toml -p school-academic-http learning_area_registry --lib
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-core learning_area_registry --lib
 ./scripts/test_backend_school.sh organization_learning_area_cutover -- --test-threads=1
 ```
 
@@ -2569,8 +2598,9 @@ no test-only production bypass is supported. Do not log URL/key values in fixtur
 
 For the fixed academic-148 curriculum observation collector, run
 `node --test scripts/tests/pipeline-academic148-observations.test.mjs` with the pinned Node
-runtime. This covers exact trusted 001–149 source validation with an unchanged 001–148 historical
-manifest, explicit schema-149 refusal, private credential transport, fixed
+runtime. This covers the complete canonical, contiguous current local timeline `1..N`, with `N >= 149`,
+the unchanged fixed 001–148 SHA384 historical manifest, refusal of remote schemas 149 and later,
+private credential transport, fixed
 read-only identity/transaction controls, bounded failures, aggregate reconciliation and
 artifact rejection. Its focused disposable PostgreSQL/TLS case reuses the existing fixture
 owner; it does not contact production. The Backend-owned

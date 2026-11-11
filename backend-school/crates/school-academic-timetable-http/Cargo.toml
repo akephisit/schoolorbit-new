@@ -1,0 +1,44 @@
+[package]
+name = "school-academic-timetable-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-delivery/api-docs",
+    "school-academic-timetable/api-docs",
+    "school-auth/api-docs",
+    "school-http/api-docs",
+]
+
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+dashmap = { workspace = true }
+futures = { workspace = true }
+school-academic-delivery = { workspace = true }
+school-academic-realtime = { workspace = true }
+school-academic-timetable = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-authorization = { workspace = true }
+school-errors = { workspace = true }
+school-http = { workspace = true }
+school-permissions = { workspace = true }
+school-tenancy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+school-auth = { workspace = true, features = ["test-support"] }
+
+[lints]
+workspace = true

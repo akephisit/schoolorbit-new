@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use school_academic_http::websockets::WebSocketManager;
+use school_academic_timetable_http::websockets::WebSocketManager;
 use school_administration::http::state::FacilityResourceChangePort;
 use uuid::Uuid;
 

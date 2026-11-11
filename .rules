@@ -338,7 +338,7 @@ For each endpoint, establish this flow before writing code: router/session middl
 | Responsibility | School owner and rule |
 | --- | --- |
 | Startup and router composition | [Application router](backend-school/src/app.rs) and application-owned state. Register the route under the existing authentication/tenant boundary; do not create a feature-local auth flow. |
-| HTTP transport | The owning domain crate's `http/handlers.rs`, or its existing dedicated HTTP crate. Read [timetable handlers](backend-school/crates/school-academic-http/src/handlers/timetable_blocks.rs) for narrow HTTP state and typed service calls, or [calendar request handlers](backend-school/crates/school-calendar/src/http/request_handlers.rs) for a domain-owned transport. Neither is a license to copy an unrelated feature's state or permissions. |
+| HTTP transport | The owning domain crate's `http/handlers.rs`, or its existing dedicated HTTP crate. Read [timetable handlers](backend-school/crates/school-academic-timetable-http/src/handlers/timetable_blocks.rs) for narrow HTTP state and typed service calls, or [calendar request handlers](backend-school/crates/school-calendar/src/http/request_handlers.rs) for a domain-owned transport. Neither is a license to copy an unrelated feature's state or permissions. |
 | Business rules and persistence | The existing domain crate's typed models, policy, and service operations. Read [calendar requests](backend-school/crates/school-calendar/src/requests.rs) for validation, bounded reads, and transactional decisions. Keep related small capabilities as modules within their existing domain owner. |
 | Resource scope | The owning domain policy or existing application policy. [Staff access policy](backend-school/crates/school-staff/src/staff_access_policy.rs) illustrates reuse of the shared resource policy and separate PII access; select the policy matching the actual resource. |
 | Cross-domain side effects | Producers accept inbox notifications through `school-notifications::dispatch::create_in_transaction` inside the business transaction. [Calendar workflow](backend-school/crates/school-calendar/src/delivery/request_workflow.rs) only wakes presentation after commit; source-validity adapters live in application composition without a notification dependency back to Calendar. |
@@ -401,6 +401,8 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   improve ownership or invalidation scope, implement the crate boundary in the same change; crate
   evaluation is not optional. Otherwise keep the capability with its existing owner and record the
   reasoning in the approved design or review context.
+- Academic transport belongs to the six `school-academic-{core,delivery,assessment,timetable,results,lifecycle}-http` owners. Each receives its concrete narrow state from application-owned `FromRef` projections and binds it before shared middleware; Academic HTTP owners depend on domain providers, never sibling Academic HTTP crates. Core owns catalog/curriculum/roster resource policies and Delivery owns offering/change-set access policies.
+- `school-academic-realtime` owns only the existing Academic event DTOs, mutation classification and broadcast port, with `serde`, `uuid` and `school-errors` production dependencies. This cohesive protocol-only owner is an explicit bounded exception to the public-interface-narrower admission criterion: independent transport consumers share its contract without depending on socket implementation. Keep serialization/mutation tests and measured invalidation evidence; this is not a general exception for small utility or runtime crates.
 - Keep small code with the same owner and lifecycle as an existing domain as a module in that
   owner. File count alone never justifies a crate.
 - Prefer the smallest useful crate set. Do not create catch-all `common`, `shared`, or `utils`
@@ -974,7 +976,7 @@ These reviewed references guide the matching page responsibility. Inspect the cu
 
 ## 8. Realtime and Events
 
-- Socket connection/heartbeat state belongs to `school-academic-http::websockets::WebSocketManager`, composed once by the application. Timetable draft presence, reservations, commit exclusion, authorized projections and bounded replay belong to the single shared `school-academic-timetable::collaboration::TimetableCollaborationRuntime`; HTTP writes and draft sockets use that same instance.
+- Socket connection/heartbeat state belongs to `school-academic-timetable-http::websockets::WebSocketManager`, composed once by the application. Timetable draft presence, reservations, commit exclusion, authorized projections and bounded replay belong to the single shared `school-academic-timetable::collaboration::TimetableCollaborationRuntime`; HTTP writes and draft sockets use that same instance.
 - Authenticate and bind connection identity server-side. Do not trust client-supplied user/school identity after connection establishment.
 - Realtime authentication and authorization fail closed: reject the handshake or close the connection when identity, tenant, active-user status, or required permission cannot be verified or is revoked.
 - WebSocket clients implement ping/pong heartbeat (normally every 30 seconds), stale-connection cleanup, and bounded reconnect with backoff/jitter.

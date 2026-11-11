@@ -201,12 +201,13 @@ impl QueryObservation {
             error_class: "none",
         }
     }
-    fn complete<T>(&mut self, result: &Result<T, Error>) {
-        match result {
-            Ok(_) => {
+    #[inline(never)]
+    fn complete(&mut self, error: Option<&Error>) {
+        match error {
+            None => {
                 self.status = "ok";
             }
-            Err(error) => {
+            Some(error) => {
                 self.status = "error";
                 self.error_class = error_class(error);
             }
@@ -230,7 +231,7 @@ async fn observed<T>(
 ) -> Result<T, Error> {
     let mut observation = QueryObservation::new(operation);
     let result = future.await;
-    observation.complete(&result);
+    observation.complete(result.as_ref().err());
     result
 }
 /// A fixed safe category for domain context logs; never formats SQLx payloads.

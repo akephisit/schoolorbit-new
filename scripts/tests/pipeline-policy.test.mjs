@@ -197,6 +197,13 @@ test("reporting and orchestration retain artifact hashes; real build recipes inv
     [".github/workflows/prepare.yml", []],
     ["scripts/lib/pipeline-build-cache.mjs", []],
     [".github/workflows/pipeline.yml", []],
+    [".github/workflows/backend-build-benchmark.yml", []],
+    [".github/workflows/backend-http-boundary-experiment.yml", []],
+    ["scripts/backend_benchmark_source.sh", []],
+    ["scripts/validate_backend_benchmark_source.py", []],
+    ["scripts/benchmark_backend_build.sh", []],
+    ["scripts/benchmark_http_boundaries.sh", []],
+    ["scripts/pipeline.mjs", []],
     [
       ".github/actions/build-backend-image/action.yml",
       ["backend-admin", "backend-school"],

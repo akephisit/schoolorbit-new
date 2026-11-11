@@ -25,7 +25,11 @@ session boundary and system middleware. `src/system` owns internal provisioning,
 health operations. `src/adapters` binds cross-domain lifecycle, result-lock, Staff directory and
 Attendance/Behavior ports; process scheduling and cleanup remain application composition responsibilities.
 
-Existing Academic domain boundaries remain separate, with transport in `school-academic-http`.
+Academic transport follows the six domain owners in `school-academic-{core,delivery,assessment,timetable,results,lifecycle}-http`.
+Each has its own concrete state and route factories. Core and Delivery own their resource policies;
+transport consumes those public operations. `school-academic-realtime` owns the existing event/port
+contract, while Timetable HTTP owns the socket manager. Application composition injects one manager
+and collaboration runtime into all HTTP/socket consumers and facility-change adapters.
 Certificate transport stays in `school-certificates-http`. `school-auth` owns identity/session
 operations and consent; `school-auth-http` owns canonical cookie/origin/tenant/session context and
 Auth/Consent transport. `school-file-platform` owns storage/lifecycle and provider ports;
