@@ -2570,8 +2570,9 @@ no test-only production bypass is supported. Do not log URL/key values in fixtur
 
 For the fixed academic-148 curriculum observation collector, run
 `node --test scripts/tests/pipeline-academic148-observations.test.mjs` with the pinned Node
-runtime. This covers exact trusted 001–149 source validation with an unchanged 001–148 historical
-manifest, explicit schema-149 refusal, private credential transport, fixed
+runtime. This covers the complete canonical, contiguous current local timeline `1..N`, with `N >= 149`,
+the unchanged fixed 001–148 SHA384 historical manifest, refusal of remote schemas 149 and later,
+private credential transport, fixed
 read-only identity/transaction controls, bounded failures, aggregate reconciliation and
 artifact rejection. Its focused disposable PostgreSQL/TLS case reuses the existing fixture
 owner; it does not contact production. The Backend-owned

@@ -1864,9 +1864,10 @@ inventory/owner connections and one repeatable-read, read-only connection per te
 runs migrations nor changes maintenance or tenant status. Only a complete, validated aggregate
 is retained in the three-day `academic148-curriculum-<run>-<attempt>` artifact; refusal produces
 no successful evidence artifact. Keep maintenance active while investigating a failed cutover.
-The collector validates the trusted migration-001–149 source inventory and binds its fixed query
-to the unchanged 001–148 checksum prefix. It remains limited to historical database schemas
-147/148: schema 149 is explicitly unsupported and produces no successful evidence artifact.
+The collector validates the complete canonical, contiguous current local timeline `1..N`, with `N >= 149`,
+and binds its fixed query to the unchanged 001–148 SHA384 manifest. Remote observation remains
+limited to historical database schemas 147/148: schema 149 and later are explicitly unsupported
+and produce no successful evidence artifact.
 This diagnostic boundary is not a business fallback or a prerequisite for the approved recovery.
 Predicate masks preserve receipt/output multiplicity. Before-050 timing
 is correlation rather than proof of a historical client; matching SQLx history verifies the

@@ -112,7 +112,9 @@ test('backend routes assessment plans through offering IDs and registers OpenAPI
 	const handler = await readRepoFile(
 		'backend-school/crates/school-academic-assessment-http/src/handlers/assessment.rs'
 	);
-	const router = await readRepoFile('backend-school/crates/school-academic-assessment-http/src/routes.rs');
+	const router = await readRepoFile(
+		'backend-school/crates/school-academic-assessment-http/src/routes.rs'
+	);
 	const contract = await readRepoFile('backend-school/src/api_contract.rs');
 
 	assert.match(handler, /path = "\/api\/academic\/assessments\/offerings\/\{offering_id\}"/);
@@ -120,7 +122,10 @@ test('backend routes assessment plans through offering IDs and registers OpenAPI
 	assert.match(handler, /path = "\/api\/academic\/assessments\/phase-controls\/\{control_id\}"/);
 	assert.match(router, /\/assessments\/offerings\/\{offering_id\}/);
 	assert.match(router, /\/assessments\/phase-controls/);
-	assert.match(contract, /school_academic_assessment_http::handlers::assessment::get_assessment_plan/);
+	assert.match(
+		contract,
+		/school_academic_assessment_http::handlers::assessment::get_assessment_plan/
+	);
 	assert.match(contract, /AssessmentPlanDetail/);
 	assert.doesNotMatch(router, /quick-scores|assessments\/courses|\/submit|\/settings/);
 });

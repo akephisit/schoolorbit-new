@@ -595,7 +595,9 @@ test('exam invigilator staff loading is split from room option loading', () => {
 		'utf8'
 	);
 	const backendHandler = readFileSync(
-		projectPath('../backend-school/crates/school-academic-assessment-http/src/handlers/exam_schedule.rs'),
+		projectPath(
+			'../backend-school/crates/school-academic-assessment-http/src/handlers/exam_schedule.rs'
+		),
 		'utf8'
 	);
 	const backendModels = readFileSync(
