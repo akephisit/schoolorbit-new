@@ -9,12 +9,8 @@ use std::{env, time::Duration};
 use tokio::io::AsyncReadExt;
 use url::Url;
 
-use super::{
-    platform_types::{DownloadGrant, StorageClass},
-    storage_provider::{
-        ObjectMetadata, StorageError, StorageProvider, StoredObject, MAX_PRIVATE_DOWNLOAD_GRANT_TTL,
-    },
-};
+use school_file_contracts::platform_types::{DownloadGrant, StorageClass};
+use super::storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject, MAX_PRIVATE_DOWNLOAD_GRANT_TTL};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ObjectRequest {
@@ -609,11 +605,8 @@ fn public_location_for(base_url: &Url, object: &StoredObject) -> Result<Url, Sto
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        platform_types::{DetectedContent, FilePurpose},
-        purpose_registry::original_object_key,
-        storage_provider::{StoredObject, MAX_PRIVATE_DOWNLOAD_GRANT_TTL},
-    };
+use school_file_contracts::platform_types::{DetectedContent, FilePurpose};
+    use crate::{purpose_registry::original_object_key, storage_provider::{StoredObject, MAX_PRIVATE_DOWNLOAD_GRANT_TTL}};
     use bytes::Bytes;
     use std::{
         collections::VecDeque,

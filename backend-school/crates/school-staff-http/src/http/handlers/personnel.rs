@@ -1,10 +1,10 @@
 use crate::http::state::StaffHttpState;
-use crate::personnel::*;
-use crate::services::job_position_service;
+use school_staff::personnel::*;
+use school_staff::services::job_position_service;
 #[cfg(feature = "api-docs")]
-use crate::services::rank_milestone_service::RankMilestoneOverview;
-use crate::services::rank_milestone_service::RankMilestoneOverviewQuery;
-use crate::staff_access_policy;
+use school_staff::services::rank_milestone_service::RankMilestoneOverview;
+use school_staff::services::rank_milestone_service::RankMilestoneOverviewQuery;
+use school_staff::staff_access_policy;
 use axum::{
     extract::{Extension, Query, State},
     response::IntoResponse,
@@ -39,7 +39,7 @@ pub async fn get_personnel_overview(
         staff_access_policy::resolve_staff_profile_list_access(&context.actor)?,
     );
     Ok(Json(ApiResponse::ok(
-        crate::services::personnel_overview_service::get_personnel_overview(
+        school_staff::services::personnel_overview_service::get_personnel_overview(
             &context.tenant.pool,
             query,
             access,
@@ -61,7 +61,7 @@ pub async fn get_rank_milestone_overview(
     let Query(query) =
         query.map_err(|_| AppError::BadRequest("ตัวกรองกำหนดเวลาวิทยฐานะไม่ถูกต้อง".into()))?;
     Ok(Json(ApiResponse::ok(
-        crate::services::rank_milestone_service::get_rank_milestone_overview(
+        school_staff::services::rank_milestone_service::get_rank_milestone_overview(
             &context.tenant.pool,
             query,
             access,

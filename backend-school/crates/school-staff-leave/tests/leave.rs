@@ -1,10 +1,8 @@
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
 use school_permissions::registry::codes;
-use school_staff::{
-    career::StaffPersonnelType,
-    leave::{files, models::*, service},
-};
+use school_staff::career::StaffPersonnelType;
+use school_staff_leave::{files, models::*, service};
 use school_workflow::{process, process_models::*};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -566,11 +564,7 @@ async fn leave_evidence_is_private_resource_bound_and_immutable_after_submission
         .execute(&pool)
         .await
         .is_err());
-    use school_file_platform::{
-        access::FilePolicyAction,
-        platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
-        repository::PlatformFile,
-    };
+use school_file_contracts::{access::FilePolicyAction, platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility}, file::PlatformFile};
     let file = PlatformFile {
         id: f,
         owner_user_id: Some(owner.user_id),

@@ -11,8 +11,8 @@ use uuid::Uuid;
 
 use crate::http::state::StaffHttpState;
 #[cfg(feature = "api-docs")]
-use crate::models::OrganizationMemberItem;
-use crate::services::organization_member_service;
+use school_staff::models::OrganizationMemberItem;
+use school_staff::services::organization_member_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::context::current_user_tenant_context_from_session;

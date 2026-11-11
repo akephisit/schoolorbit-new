@@ -12,11 +12,11 @@ use uuid::Uuid;
 
 use crate::http::state::StaffHttpState;
 #[cfg(feature = "api-docs")]
-use crate::models::DelegationItem;
-use crate::organization_access_policy;
-use crate::services::organization_delegation_service;
+use school_staff::models::DelegationItem;
+use school_staff::organization_access_policy;
+use school_staff::services::organization_delegation_service;
 #[cfg(feature = "api-docs")]
-use crate::services::organization_delegation_service::DelegatablePermission;
+use school_staff::services::organization_delegation_service::DelegatablePermission;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]

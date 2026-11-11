@@ -2,12 +2,9 @@ use crate::supply_catalog::access_policy::require_action;
 use crate::supply_catalog::access_policy::SupplyAction;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_file_platform::access::FilePolicyAction;
-use school_file_platform::{
-    platform_service::FilePlatform,
-    platform_types::{FilePurpose, FileVisibility},
-    repository::{DeleteWork, PlatformFile, SqlFileRepository},
-};
+use school_file_contracts::access::FilePolicyAction;
+use school_file_platform::{platform_service::FilePlatform, repository::{DeleteWork, SqlFileRepository}};
+use school_file_contracts::{platform_types::{FilePurpose, FileVisibility}, file::PlatformFile};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 

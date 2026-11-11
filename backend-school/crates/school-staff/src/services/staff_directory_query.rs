@@ -303,68 +303,6 @@ mod pool_facade_tests {
             .is_empty());
     }
     #[tokio::test]
-    async fn pool_facade_preflight_leave_permissions_precede_checkout() {
-        let pool = closed_pool().await;
-        let actor = school_authorization::ActorContext {
-            user_id: Uuid::new_v4(),
-            permissions: vec![],
-        };
-        assert!(matches!(
-            crate::leave::service::routing_options(&pool, &actor).await,
-            Err(school_errors::AppError::Forbidden(_))
-        ));
-        assert!(matches!(
-            crate::leave::service::policies(&pool, &actor, Uuid::new_v4()).await,
-            Err(school_errors::AppError::Forbidden(_))
-        ));
-        assert!(matches!(
-            crate::leave::service::list_types(&pool, &actor, Default::default()).await,
-            Err(school_errors::AppError::Forbidden(_))
-        ));
-        assert!(matches!(
-            crate::leave::service::list(&pool, &actor, Default::default()).await,
-            Err(school_errors::AppError::Forbidden(_))
-        ));
-    }
-    #[tokio::test]
-    async fn pool_facade_preflight_invalid_leave_page_and_range_precede_checkout() {
-        use crate::leave::models::{LeaveListQuery, LeaveUsageQuery};
-        let pool = closed_pool().await;
-        let actor = school_authorization::ActorContext {
-            user_id: Uuid::new_v4(),
-            permissions: vec![
-                school_permissions::registry::codes::STAFF_LEAVE_READ_OWN.into(),
-                school_permissions::registry::codes::STAFF_LEAVE_DOWNLOAD_OWN.into(),
-            ],
-        };
-        assert!(matches!(
-            crate::leave::service::list(
-                &pool,
-                &actor,
-                LeaveListQuery {
-                    limit: Some(0),
-                    ..Default::default()
-                }
-            )
-            .await,
-            Err(school_errors::AppError::ValidationError(_))
-        ));
-        let from = chrono::NaiveDate::from_ymd_opt(2026, 10, 24).unwrap();
-        assert!(matches!(
-            crate::leave::service::usage(
-                &pool,
-                &actor,
-                LeaveUsageQuery {
-                    from,
-                    to: from - chrono::Duration::days(1),
-                    kind: None
-                }
-            )
-            .await,
-            Err(school_errors::AppError::ValidationError(_))
-        ));
-    }
-    #[tokio::test]
     async fn pool_facade_preflight_invalid_career_page_precedes_checkout() {
         let pool = closed_pool().await;
         let query = crate::career::StaffCareerHistoryQuery {
@@ -410,14 +348,6 @@ mod pool_facade_tests {
                 .await
                 .unwrap()
                 .is_empty());
-            assert!(matches!(
-                crate::leave::service::routing_options(&pool, &actor).await,
-                Err(AppError::Forbidden(_))
-            ));
-            assert!(matches!(
-                crate::leave::service::policies(&pool, &actor, Uuid::new_v4()).await,
-                Err(AppError::Forbidden(_))
-            ));
             assert!(matches!(
                 super::super::staff_license_service::authorize_upload(&pool, &actor, None).await,
                 Err(AppError::Forbidden(_))

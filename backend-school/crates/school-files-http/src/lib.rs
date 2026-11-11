@@ -7,12 +7,12 @@ mod test_support;
 pub struct DomainFileAuthorization;
 pub static FILE_AUTHORIZATION: DomainFileAuthorization = DomainFileAuthorization;
 #[async_trait::async_trait]
-impl school_file_platform::access::FileAuthorizationPort for DomainFileAuthorization {
+impl school_file_contracts::access::FileAuthorizationPort for DomainFileAuthorization {
     async fn authorize_create(
         &self,
         pool: &sqlx::PgPool,
         actor: &school_authorization::ActorContext,
-        purpose: school_file_platform::platform_types::FilePurpose,
+        purpose: school_file_contracts::platform_types::FilePurpose,
         resource_id: Option<uuid::Uuid>,
     ) -> Result<uuid::Uuid, school_errors::AppError> {
         access_policy::authorize_create(pool, actor, purpose, resource_id).await
@@ -21,8 +21,8 @@ impl school_file_platform::access::FileAuthorizationPort for DomainFileAuthoriza
         &self,
         pool: &sqlx::PgPool,
         actor: &school_authorization::ActorContext,
-        file: &school_file_platform::repository::PlatformFile,
-        action: school_file_platform::access::FilePolicyAction,
+        file: &school_file_contracts::file::PlatformFile,
+        action: school_file_contracts::access::FilePolicyAction,
         resource_id: Option<uuid::Uuid>,
     ) -> Result<(), school_errors::AppError> {
         access_policy::authorize_existing(pool, actor, file, action, resource_id).await

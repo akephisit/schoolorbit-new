@@ -160,7 +160,7 @@ struct PreviewStorage;
 impl school_file_platform::storage_provider::StorageProvider for PreviewStorage {
     fn namespace(
         &self,
-        storage_class: school_file_platform::platform_types::StorageClass,
+        storage_class: school_file_contracts::platform_types::StorageClass,
     ) -> Result<
         school_file_platform::storage_namespace::StorageNamespace,
         school_file_platform::storage_provider::StorageError,
@@ -169,8 +169,8 @@ impl school_file_platform::storage_provider::StorageProvider for PreviewStorage 
             "fixture",
             "https://fixture.invalid",
             match storage_class {
-                school_file_platform::platform_types::StorageClass::Public => "public",
-                school_file_platform::platform_types::StorageClass::Private => "private",
+                school_file_contracts::platform_types::StorageClass::Public => "public",
+                school_file_contracts::platform_types::StorageClass::Private => "private",
             },
         )
     }
@@ -220,11 +220,11 @@ impl school_file_platform::storage_provider::StorageProvider for PreviewStorage 
         filename: &str,
         ttl: Duration,
     ) -> Result<
-        school_file_platform::platform_types::DownloadGrant,
+        school_file_contracts::platform_types::DownloadGrant,
         school_file_platform::storage_provider::StorageError,
     > {
         Ok(
-            school_file_platform::platform_types::DownloadGrant::Redirect {
+            school_file_contracts::platform_types::DownloadGrant::Redirect {
                 location: format!("https://private.example.test/{filename}"),
                 expires_at: chrono::Utc::now()
                     + chrono::Duration::from_std(ttl).expect("test TTL should fit chrono"),
@@ -250,7 +250,7 @@ struct DeleteFailStorage {
 impl school_file_platform::storage_provider::StorageProvider for DeleteFailStorage {
     fn namespace(
         &self,
-        storage_class: school_file_platform::platform_types::StorageClass,
+        storage_class: school_file_contracts::platform_types::StorageClass,
     ) -> Result<
         school_file_platform::storage_namespace::StorageNamespace,
         school_file_platform::storage_provider::StorageError,
@@ -259,8 +259,8 @@ impl school_file_platform::storage_provider::StorageProvider for DeleteFailStora
             "fixture",
             "https://fixture.invalid",
             match storage_class {
-                school_file_platform::platform_types::StorageClass::Public => "public",
-                school_file_platform::platform_types::StorageClass::Private => "private",
+                school_file_contracts::platform_types::StorageClass::Public => "public",
+                school_file_contracts::platform_types::StorageClass::Private => "private",
             },
         )
     }
@@ -312,7 +312,7 @@ impl school_file_platform::storage_provider::StorageProvider for DeleteFailStora
         _filename: &str,
         _ttl: Duration,
     ) -> Result<
-        school_file_platform::platform_types::DownloadGrant,
+        school_file_contracts::platform_types::DownloadGrant,
         school_file_platform::storage_provider::StorageError,
     > {
         Err(school_file_platform::storage_provider::StorageError::OperationFailed)
@@ -335,7 +335,7 @@ struct BlockingGrantStorage {
 impl school_file_platform::storage_provider::StorageProvider for BlockingGrantStorage {
     fn namespace(
         &self,
-        storage_class: school_file_platform::platform_types::StorageClass,
+        storage_class: school_file_contracts::platform_types::StorageClass,
     ) -> Result<
         school_file_platform::storage_namespace::StorageNamespace,
         school_file_platform::storage_provider::StorageError,
@@ -344,8 +344,8 @@ impl school_file_platform::storage_provider::StorageProvider for BlockingGrantSt
             "fixture",
             "https://fixture.invalid",
             match storage_class {
-                school_file_platform::platform_types::StorageClass::Public => "public",
-                school_file_platform::platform_types::StorageClass::Private => "private",
+                school_file_contracts::platform_types::StorageClass::Public => "public",
+                school_file_contracts::platform_types::StorageClass::Private => "private",
             },
         )
     }
@@ -395,13 +395,13 @@ impl school_file_platform::storage_provider::StorageProvider for BlockingGrantSt
         filename: &str,
         ttl: Duration,
     ) -> Result<
-        school_file_platform::platform_types::DownloadGrant,
+        school_file_contracts::platform_types::DownloadGrant,
         school_file_platform::storage_provider::StorageError,
     > {
         self.entered.notify_one();
         self.release.notified().await;
         Ok(
-            school_file_platform::platform_types::DownloadGrant::Redirect {
+            school_file_contracts::platform_types::DownloadGrant::Redirect {
                 location: format!("https://private.example.test/{filename}"),
                 expires_at: chrono::Utc::now()
                     + chrono::Duration::from_std(ttl).expect("test TTL should fit chrono"),
@@ -584,11 +584,8 @@ async fn insert_ready_template_file(
         "certificate_template_image" => ("template-image", "image/jpeg", "jpg"),
         _ => panic!("unsupported certificate test purpose"),
     };
-    use school_file_platform::{
-        platform_types::{DetectedContent, FileVisibility, RetentionClass},
-        repository::NewUpload,
-        storage_provider::{StorageProvider, StoredObject},
-    };
+use school_file_contracts::platform_types::{DetectedContent, FileVisibility, RetentionClass};
+    use school_file_platform::{repository::NewUpload, storage_provider::{StorageProvider, StoredObject}};
     let file_id = Uuid::new_v4();
     let object = StoredObject::new(
         school_file_platform::purpose_registry::original_object_key(
@@ -659,11 +656,8 @@ async fn insert_ready_school_font_upload(
     style: &str,
     is_variable: bool,
 ) -> Uuid {
-    use school_file_platform::{
-        platform_types::{DetectedContent, FilePurpose, FileVisibility, RetentionClass},
-        repository::NewUpload,
-        storage_provider::{StorageProvider, StoredObject},
-    };
+use school_file_contracts::platform_types::{DetectedContent, FilePurpose, FileVisibility, RetentionClass};
+    use school_file_platform::{repository::NewUpload, storage_provider::{StorageProvider, StoredObject}};
     let file_id = Uuid::new_v4();
     let object = StoredObject::new(
         school_file_platform::purpose_registry::original_object_key(
@@ -4648,7 +4642,7 @@ async fn purge_provider_failure_is_durable_idempotent_and_retryable() {
 
 #[tokio::test]
 async fn purging_campaign_is_visible_only_as_delete_progress_and_hides_normal_resources() {
-    use school_file_platform::platform_types::FilePurpose;
+use school_file_contracts::platform_types::FilePurpose;
 
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_campaign_purging_visibility", 3151).await;

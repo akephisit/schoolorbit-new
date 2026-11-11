@@ -2,10 +2,7 @@ use school_authorization::ActorContext;
 use school_certificates::access_policy::{self as certificate_access_policy, CertificateAction};
 use school_database::DbSession;
 use school_errors::AppError;
-use school_file_platform::{
-    platform_types::{FilePurpose, FileVisibility},
-    repository::PlatformFile,
-};
+use school_file_contracts::{platform_types::{FilePurpose, FileVisibility}, file::PlatformFile};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -17,7 +14,7 @@ use school_staff::achievement::access_policy as achievement_access_policy;
 use school_staff::staff_access_policy;
 use school_students::access_policy as student_access_policy;
 
-pub use school_file_platform::access::FilePolicyAction;
+use school_file_contracts::access::FilePolicyAction;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProfileTargetKind {
@@ -120,7 +117,7 @@ pub async fn authorize_create(
             school_budget::files::authorize_create(pool, actor, resource_id).await
         }
         FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => {
-            school_staff::leave::files::authorize_create(pool, actor, purpose, resource_id).await
+            school_staff_leave::files::authorize_create(pool, actor, purpose, resource_id).await
         }
 
         FilePurpose::CorrespondenceDocument | FilePurpose::CorrespondenceSignature => {
@@ -254,7 +251,7 @@ pub async fn authorize_existing(
             school_budget::files::authorize_existing(pool, actor, file, action, resource_id).await
         }
         FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => {
-            school_staff::leave::files::authorize_existing(pool, actor, file, action, resource_id)
+            school_staff_leave::files::authorize_existing(pool, actor, file, action, resource_id)
                 .await
         }
 
@@ -1338,7 +1335,7 @@ mod tests {
             owner_user_id: Some(actor_id),
             purpose: FilePurpose::SchoolFont,
             visibility: FileVisibility::Private,
-            lifecycle_status: school_file_platform::platform_types::FileLifecycleStatus::Ready,
+            lifecycle_status: school_file_contracts::platform_types::FileLifecycleStatus::Ready,
             current_version: None,
             display_filename: "school-font-delete-guard.ttf".to_string(),
             detected_mime_type: "font/ttf".to_string(),
@@ -1474,7 +1471,7 @@ mod tests {
             owner_user_id: Some(actor_id),
             purpose: FilePurpose::SchoolFont,
             visibility: FileVisibility::Private,
-            lifecycle_status: school_file_platform::platform_types::FileLifecycleStatus::Ready,
+            lifecycle_status: school_file_contracts::platform_types::FileLifecycleStatus::Ready,
             current_version: None,
             display_filename: "certificate-school-font-delete-guard.ttf".to_string(),
             detected_mime_type: "font/ttf".to_string(),
@@ -1753,7 +1750,7 @@ mod connection_stage_tests {
             owner_user_id: Some(actor.user_id),
             purpose: FilePurpose::SchoolFont,
             visibility: FileVisibility::Private,
-            lifecycle_status: school_file_platform::platform_types::FileLifecycleStatus::Ready,
+            lifecycle_status: school_file_contracts::platform_types::FileLifecycleStatus::Ready,
             current_version: None,
             display_filename: "synthetic.ttf".into(),
             detected_mime_type: "font/ttf".into(),

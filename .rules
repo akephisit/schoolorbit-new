@@ -364,7 +364,7 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   encoding in the owning HTTP crate rather than regenerating them in the executable. Global
   prefixes, public/protected partitioning and cross-domain assembly remain application-owned.
 - Keep feature HTTP handlers, route factories, DTOs and policies with their domain owner, normally
-  under `crates/<owner>/src/http/`. Existing dedicated Academic, Certificate, Auth and File HTTP
+  under `crates/<owner>/src/http/`. Existing dedicated Academic, Certificate, Auth, Staff and File HTTP
   crates retain transport composition where importing it into a lower provider would create a
   dependency cycle. Do not retain production feature facades in the executable.
 - Group related small capabilities as modules in an existing cohesive owner. Parents belongs to
@@ -372,6 +372,15 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   School administration owns its settings, facility, supply-catalog and lookup modules. Global
   prefixes and public/protected separation remain in `src/app.rs`; internal operational endpoints
   remain in `src/system`. Deliberate cross-domain adapters live in `src/adapters`.
+- Staff personnel, career, organization, roles, policies and Achievement stay in `school-staff`.
+  `school-staff-leave` owns leave policy/workflow/evidence operations; its current-name and effective
+  personnel-type reads use Staff's public connection-bound providers with the caller's transaction
+  and explicit civil date. Keep the exact career winner ordering and consumer-specific missing-name
+  denials. `school-staff-file-transfer` owns the pure ephemeral discovery/pair/signaling runtime and
+  DTOs; it has no Staff query dependency. `school-staff-http` owns Staff, Achievement, Leave and
+  FileTransfer transport with their existing separate concrete states. Composition supplies the
+  sole process FileTransfer runtime; canonical Auth HTTP context and SSE revocation/disposal remain
+  unchanged. No core-to-Leave or domain-to-HTTP re-export may recreate a dependency cycle.
 - Academic years and terms are date-free identities with explicit visibility and independently persisted school defaults. Context discovery uses visible records and visible parents; lifecycle status never selects defaults or changes visibility. Managers change visibility/defaults atomically through Academic Core with a revision check. Actual dated events, calendars, publications and memberships remain with their domain owners; records carry explicit context foreign keys and runtime never infers context from dates.
 - Academic Core owns each term's independent `schoolDays`. The annual `defaultSchoolDays` is only an initial first-term preset and never a live term validator. Bell schedules remain reusable year-scoped templates; NULL period days mean all school days of the consuming term, while empty or malformed explicit days are invalid. Core's public weekday provider supplies effective days to activation, Timetable and new Attendance defaults. Saved Attendance configuration and historical term/schedule references remain unchanged. Copy term weekdays and periods atomically to fresh schedule/period identities using captured source and target revisions; never copy operational facts or repoint a timetable-referenced target. Unopened never-activated planning/ready term days may change independently of schedule assignability, but a day referenced by an existing timetable block cannot be removed.
 - Academic Lifecycle owns the canonical year-management workspace, direct period closure and manual year-roster preview/confirmation. Locked Results, annual credit calculations and promotion policies are not closure or manual-rollover prerequisites. Same-year term changes retain annual enrollment and room identities. Year confirmation requires a closed source and planning destination, explicit year identities and decisions, current preview evidence and one replay-safe confirmation; it prepares the destination without activating it. Staff choose promote, repeat, graduate, transfer out or hold. Keep historical statuses and receipts intact; the UI groups planning/ready as preparation and active/closing as in use. Retired promotion mutation routes must not remain a parallel writer; historical evidence stays readable. Core owns annual/room changes, Students owns graduation/transfer registration assertions through its transactional provider, and Auth independently owns account access and sessions.
@@ -406,6 +415,14 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   reasoning in the approved design or review context.
 - Academic transport belongs to the six `school-academic-{core,delivery,assessment,timetable,results,lifecycle}-http` owners. Each receives its concrete narrow state from application-owned `FromRef` projections and binds it before shared middleware; Academic HTTP owners depend on domain providers, never sibling Academic HTTP crates. Core owns catalog/curriculum/roster resource policies and Delivery owns offering/change-set access policies.
 - `school-academic-realtime` owns only the existing Academic event DTOs, mutation classification and broadcast port, with `serde`, `uuid` and `school-errors` production dependencies. This cohesive protocol-only owner is an explicit bounded exception to the public-interface-narrower admission criterion: independent transport consumers share its contract without depending on socket implementation. Keep serialization/mutation tests and measured invalidation evidence; this is not a general exception for small utility or runtime crates.
+- `school-file-contracts` is a second explicit bounded exception to the narrower-interface admission
+  criterion, owned by Files: it contains only the existing provider-neutral `platform_types` values,
+  `PlatformFile`, `FilePolicyAction` and `FileAuthorizationPort`. Independent policy consumers import
+  those definitions directly without storage/rendering/SDK dependencies. Keep serialization/schema
+  tests and measured invalidation evidence. Repository operations, storage providers, namespace and
+  trusted constructors, inspection/rendering, lifecycle and reconciliation remain in
+  `school-file-platform`; it depends on contracts and never on its policy consumers. This does not
+  create a general exception for utilities, new provider contracts or implementation extraction.
 - Keep small code with the same owner and lifecycle as an existing domain as a module in that
   owner. File count alone never justifies a crate.
 - Prefer the smallest useful crate set. Do not create catch-all `common`, `shared`, or `utils`

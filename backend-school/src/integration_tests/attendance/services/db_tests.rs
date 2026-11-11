@@ -2506,7 +2506,7 @@ async fn attendance_mixed_own_and_assigned_permissions_cannot_expand_student_his
         &f.pool,
         &mixed,
         &platform_file,
-        crate::integration_tests::policies::file_access_policy::FilePolicyAction::Read,
+        school_file_contracts::access::FilePolicyAction::Read,
         Some(STUDENT)
     )
     .await
@@ -2519,7 +2519,7 @@ async fn attendance_mixed_own_and_assigned_permissions_cannot_expand_student_his
         &f.pool,
         &linked,
         &platform_file,
-        crate::integration_tests::policies::file_access_policy::FilePolicyAction::Read,
+        school_file_contracts::access::FilePolicyAction::Read,
         Some(STUDENT),
     )
     .await
@@ -2561,11 +2561,8 @@ mod retention_tests {
     use async_trait::async_trait;
     use bytes::Bytes;
     use school_file_platform::platform_service::FilePlatform;
-    use school_file_platform::{
-        malware_scanner::{MalwareScanner, ScanOutcome},
-        platform_types::DownloadGrant,
-        storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
-    };
+use school_file_platform::{malware_scanner::{MalwareScanner, ScanOutcome}, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
+    use school_file_contracts::platform_types::DownloadGrant;
     use sha2::{Digest, Sha256};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::{
@@ -2584,7 +2581,7 @@ mod retention_tests {
     impl StorageProvider for RetentionStorage {
         fn namespace(
             &self,
-            storage_class: school_file_platform::platform_types::StorageClass,
+            storage_class: school_file_contracts::platform_types::StorageClass,
         ) -> Result<
             school_file_platform::storage_namespace::StorageNamespace,
             school_file_platform::storage_provider::StorageError,
@@ -2593,8 +2590,8 @@ mod retention_tests {
                 "fixture",
                 "https://fixture.invalid",
                 match storage_class {
-                    school_file_platform::platform_types::StorageClass::Public => "public",
-                    school_file_platform::platform_types::StorageClass::Private => "private",
+                    school_file_contracts::platform_types::StorageClass::Public => "public",
+                    school_file_contracts::platform_types::StorageClass::Private => "private",
                 },
             )
         }
@@ -5674,10 +5671,8 @@ async fn attendance_notification_enqueue_failure_rolls_back_real_save_and_replay
 
 #[tokio::test]
 async fn attendance_evidence_delete_and_arrival_preview_use_one_connection() {
-    use school_file_platform::{
-        access::FilePolicyAction,
-        repository::{FileRepository, SqlFileRepository},
-    };
+use school_file_contracts::access::FilePolicyAction;
+    use school_file_platform::repository::{FileRepository, SqlFileRepository};
     let f = fixture("attendance_evidence_one_connection").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();
     let device = specials::save_device(
@@ -5743,7 +5738,7 @@ async fn attendance_evidence_delete_and_arrival_preview_use_one_connection() {
             .unwrap()
             .file
             .lifecycle_status,
-        school_file_platform::platform_types::FileLifecycleStatus::DeleteRequested
+        school_file_contracts::platform_types::FileLifecycleStatus::DeleteRequested
     );
     assert!(matches!(
         evidence_delete_guard(&pool, &f.actor, &linked, Some(STUDENT)).await,

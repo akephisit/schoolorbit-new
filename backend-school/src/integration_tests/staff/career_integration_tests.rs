@@ -12,14 +12,10 @@ use school_auth::{
     session_service::AuthenticatedSession,
 };
 use school_authorization::PermissionCache;
-use school_file_platform::{
-    malware_scanner::{MalwareScanner, ScanOutcome},
-    platform_service::FilePlatform,
-    platform_types::DownloadGrant,
-    storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
-};
+use school_file_platform::{malware_scanner::{MalwareScanner, ScanOutcome}, platform_service::FilePlatform, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
+use school_file_contracts::platform_types::DownloadGrant;
 use school_permissions::registry::codes;
-use school_staff::http::handlers::{career, staff};
+use school_staff_http::http::handlers::{career, staff};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, TenantContext};
 use school_test_db::{create_named_test_pool_with_max_connections, run_test_migrations};
 use sqlx::PgPool;
@@ -34,7 +30,7 @@ struct UnexpectedStorageProvider;
 impl StorageProvider for UnexpectedStorageProvider {
     fn namespace(
         &self,
-        storage_class: school_file_platform::platform_types::StorageClass,
+        storage_class: school_file_contracts::platform_types::StorageClass,
     ) -> Result<
         school_file_platform::storage_namespace::StorageNamespace,
         school_file_platform::storage_provider::StorageError,
@@ -43,8 +39,8 @@ impl StorageProvider for UnexpectedStorageProvider {
             "fixture",
             "https://fixture.invalid",
             match storage_class {
-                school_file_platform::platform_types::StorageClass::Public => "public",
-                school_file_platform::platform_types::StorageClass::Private => "private",
+                school_file_contracts::platform_types::StorageClass::Public => "public",
+                school_file_contracts::platform_types::StorageClass::Private => "private",
             },
         )
     }
@@ -157,7 +153,7 @@ impl Fixture {
             work_event_channel: tokio::sync::broadcast::channel(8).0,
             file_platform: Arc::new(file_platform()),
             file_transfer: Arc::new(
-                school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+                school_staff_file_transfer::runtime::FileTransferRuntime::default(),
             ),
             certificate_verification_limiter: Arc::new(
                 school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
@@ -205,7 +201,7 @@ impl Fixture {
         Router::new()
             .route(
                 "/api/staff/personnel-rank-milestones",
-                get(school_staff::http::handlers::personnel::get_rank_milestone_overview),
+                get(school_staff_http::http::handlers::personnel::get_rank_milestone_overview),
             )
             .route(
                 "/api/staff/{id}/career-history",

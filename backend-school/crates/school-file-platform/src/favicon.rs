@@ -2,12 +2,8 @@ use bytes::Bytes;
 use image::{DynamicImage, ImageFormat, RgbaImage};
 use std::io::Cursor;
 
-use crate::{
-    file_inspector::inspect_file,
-    file_processor::ImageProcessor,
-    platform_service::FilePlatformError,
-    platform_types::{FilePurpose, PublicSchoolIconSize},
-};
+use crate::{file_inspector::inspect_file, file_processor::ImageProcessor, platform_service::FilePlatformError};
+use school_file_contracts::platform_types::{FilePurpose, PublicSchoolIconSize};
 
 /// Reinspect stored crest bytes before decoding, then preserve the complete crest on a square.
 pub(crate) fn render_png(

@@ -5,6 +5,8 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-staff-leave/api-docs",
+    "school-file-contracts/api-docs",
     "school-budget/api-docs",
     "school-administration/api-docs",
     "school-attendance/api-docs",
@@ -21,6 +23,8 @@ api-docs = [
 ]
 
 [dependencies]
+school-staff-leave = { workspace = true }
+school-file-contracts = { workspace = true }
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
 school-budget = { workspace = true }

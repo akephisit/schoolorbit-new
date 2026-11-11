@@ -1,7 +1,7 @@
 use crate::http::state::StaffHttpState;
 #[cfg(feature = "api-docs")]
-use crate::models::Permission;
-use crate::services::permission_service;
+use school_staff::models::Permission;
+use school_staff::services::permission_service;
 use axum::{
     extract::{Extension, State},
     http::StatusCode,

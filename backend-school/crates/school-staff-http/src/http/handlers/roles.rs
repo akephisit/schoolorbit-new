@@ -1,6 +1,6 @@
 use crate::http::state::StaffHttpState;
-use crate::models::*;
-use crate::services::{organization_unit_service, role_service};
+use school_staff::models::*;
+use school_staff::services::{organization_unit_service, role_service};
 use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
@@ -226,7 +226,7 @@ pub async fn list_organization_units(
     .await?;
     let ids: Vec<_> = units.iter().map(|unit| unit.id).collect();
     let allowed =
-        crate::organization_access_policy::delegation_management_unit_ids(&pool, &actor, &ids)
+        school_staff::organization_access_policy::delegation_management_unit_ids(&pool, &actor, &ids)
             .await?;
     for unit in &mut units {
         unit.can_manage_delegations = allowed.contains(&unit.id);
@@ -259,7 +259,7 @@ pub async fn get_organization_unit(
 
     let mut unit = organization_unit_service::get_organization_unit(&pool, unit_id).await?;
     unit.can_manage_delegations =
-        crate::organization_access_policy::delegation_management_unit_ids(
+        school_staff::organization_access_policy::delegation_management_unit_ids(
             &pool,
             &actor,
             &[unit_id],

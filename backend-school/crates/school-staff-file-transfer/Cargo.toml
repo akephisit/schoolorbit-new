@@ -1,0 +1,23 @@
+[package]
+name = "school-staff-file-transfer"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+]
+
+[dependencies]
+chrono = { workspace = true }
+school-errors = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

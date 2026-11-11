@@ -5,7 +5,7 @@ pub enum FilePolicyAction {
     Delete,
 }
 
-use crate::repository::PlatformFile;
+use crate::file::PlatformFile;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use sqlx::PgPool;

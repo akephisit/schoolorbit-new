@@ -1,18 +1,11 @@
 use super::{file_relationships, models::*, services};
-use crate::integration_tests::policies::file_access_policy::FilePolicyAction;
+use school_file_contracts::access::FilePolicyAction;
 use async_trait::async_trait;
 use bytes::Bytes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_file_platform::{
-    malware_scanner::{MalwareScanner, ScanOutcome},
-    platform_service::FilePlatform,
-    platform_types::DetectedContent,
-    platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility},
-    purpose_registry::original_object_key,
-    repository::{PlatformFile, SqlFileRepository},
-    storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
-};
+use school_file_platform::{malware_scanner::{MalwareScanner, ScanOutcome}, platform_service::FilePlatform, purpose_registry::original_object_key, repository::SqlFileRepository, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
+use school_file_contracts::{platform_types::{DetectedContent, DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility}, file::PlatformFile};
 use school_permissions::registry::codes;
 use school_test_db::{
     create_named_test_pool_with_max_connections, create_test_user, run_test_migrations,
@@ -27,7 +20,7 @@ struct FailingStorage;
 impl StorageProvider for FailingStorage {
     fn namespace(
         &self,
-        storage_class: school_file_platform::platform_types::StorageClass,
+        storage_class: school_file_contracts::platform_types::StorageClass,
     ) -> Result<
         school_file_platform::storage_namespace::StorageNamespace,
         school_file_platform::storage_provider::StorageError,
@@ -36,8 +29,8 @@ impl StorageProvider for FailingStorage {
             "fixture",
             "https://fixture.invalid",
             match storage_class {
-                school_file_platform::platform_types::StorageClass::Public => "public",
-                school_file_platform::platform_types::StorageClass::Private => "private",
+                school_file_contracts::platform_types::StorageClass::Public => "public",
+                school_file_contracts::platform_types::StorageClass::Private => "private",
             },
         )
     }
@@ -1009,7 +1002,7 @@ async fn actual_app_catalog_routes_share_the_session_boundary_and_exact_prefix()
         work_event_channel: tokio::sync::broadcast::channel(8).0,
         file_platform: Arc::new(platform()),
         file_transfer: Arc::new(
-            school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+            school_staff_file_transfer::runtime::FileTransferRuntime::default(),
         ),
         certificate_verification_limiter: Arc::new(
             school_certificates::verification_limiter::CertificateVerificationLimiter::new(),

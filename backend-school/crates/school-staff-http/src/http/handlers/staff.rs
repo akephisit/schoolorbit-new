@@ -1,7 +1,7 @@
 use crate::http::state::StaffHttpState;
-use crate::models::*;
-use crate::services::{dashboard_service, staff_service};
-use crate::staff_access_policy;
+use school_staff::models::*;
+use school_staff::services::{dashboard_service, staff_service};
+use school_staff::staff_access_policy;
 use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
@@ -57,7 +57,7 @@ pub(super) fn staff_list_access(access: UserResourceListAccess) -> StaffListAcce
     tag = "staff",
     params(StaffDashboardQuery),
     responses(
-        (status = 200, description = "Aggregate staff dashboard overview", body = ApiResponse<crate::services::dashboard_service::StaffDashboardOverview>),
+        (status = 200, description = "Aggregate staff dashboard overview", body = ApiResponse<school_staff::services::dashboard_service::StaffDashboardOverview>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Active staff account required", body = ApiErrorResponse)
     )
@@ -219,7 +219,7 @@ pub async fn update_staff(
         .as_ref()
         .is_some_and(|info| info.teaching_license_file.is_some())
     {
-        crate::services::staff_license_service::require_manage(&actor, staff_id)?;
+        school_staff::services::staff_license_service::require_manage(&actor, staff_id)?;
     }
     let replaced_file_id = staff_service::update_staff(&pool, staff_id, payload, &actor).await?;
     // Status/roles are already committed; invalidate identity before fallible cleanup.
@@ -292,7 +292,7 @@ pub async fn delete_staff(
     tag = "staff",
     params(("id" = Uuid, Path, description = "Staff user ID")),
     responses(
-        (status = 200, description = "Limited staff profile without national ID", body = ApiResponse<crate::services::staff_service::PublicStaffProfile>),
+        (status = 200, description = "Limited staff profile without national ID", body = ApiResponse<school_staff::services::staff_service::PublicStaffProfile>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 404, description = "Staff member not found", body = ApiErrorResponse)
     )

@@ -4,7 +4,8 @@ use crate::supply_catalog::access_policy::SupplyAction;
 use chrono::{DateTime, Utc};
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_file_platform::{platform_service::FilePlatform, platform_types::FilePurpose};
+use school_file_platform::platform_service::FilePlatform;
+use school_file_contracts::platform_types::FilePurpose;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 

@@ -24,10 +24,8 @@ pub(crate) async fn insert_ready_temporary_profile_image(
 }
 
 pub(crate) async fn insert_cleanup_profile_image(pool: &PgPool, owner_user_id: Uuid) -> Uuid {
-    use school_file_platform::{
-        platform_types::{DetectedContent, FilePurpose},
-        purpose_registry::original_object_key,
-    };
+use school_file_contracts::platform_types::{DetectedContent, FilePurpose};
+    use school_file_platform::purpose_registry::original_object_key;
 
     let file_id = Uuid::new_v4();
     let key = original_object_key(

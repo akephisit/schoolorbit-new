@@ -1,11 +1,6 @@
 //! Durable physical locators outlive business metadata. Absence never proves settlement.
-use super::{
-    platform_types::StorageClass,
-    purpose_registry::persisted_object_key,
-    repository::{NewUpload, RepositoryError, SqlFileRepository, STORAGE_PROVIDER_CODE},
-    storage_namespace::StorageNamespace,
-    storage_provider::{StorageError, StorageProvider, StoredObject},
-};
+use school_file_contracts::platform_types::StorageClass;
+use super::{purpose_registry::persisted_object_key, repository::{NewUpload, RepositoryError, SqlFileRepository, STORAGE_PROVIDER_CODE}, storage_namespace::StorageNamespace, storage_provider::{StorageError, StorageProvider, StoredObject}};
 use school_database::DbSession;
 use sqlx::{FromRow, PgConnection};
 use std::time::Duration;

@@ -7,8 +7,8 @@ use axum::{
 use uuid::Uuid;
 
 use crate::http::state::StaffHttpState;
-use crate::models::*;
-use crate::services::user_role_service::{self, AssignRoleOutcome};
+use school_staff::models::*;
+use school_staff::services::user_role_service::{self, AssignRoleOutcome};
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::HttpError as AppError;

@@ -2,7 +2,7 @@ use crate::access_policy::require_owner_action_on_connection;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_file_platform::platform_types::{FileInspectionMetadata, PdfPageBox};
+use school_file_contracts::platform_types::{FileInspectionMetadata, PdfPageBox};
 use school_fonts::{
     models::{
         AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontListResponse,

@@ -431,12 +431,8 @@ mod phase_tests {
     use super::*;
     use async_trait::async_trait;
     use bytes::Bytes;
-    use school_file_platform::{
-        malware_scanner::{MalwareScanner, ScanOutcome},
-        platform_types::DownloadGrant,
-        runtime_config::FilePlatformRuntimeConfig,
-        storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
-    };
+use school_file_platform::{malware_scanner::{MalwareScanner, ScanOutcome}, runtime_config::FilePlatformRuntimeConfig, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
+    use school_file_contracts::platform_types::DownloadGrant;
     use url::Url;
     struct Provider {
         started: tokio::sync::Notify,
@@ -449,7 +445,7 @@ mod phase_tests {
     impl StorageProvider for Provider {
         fn namespace(
             &self,
-            storage_class: school_file_platform::platform_types::StorageClass,
+            storage_class: school_file_contracts::platform_types::StorageClass,
         ) -> Result<
             school_file_platform::storage_namespace::StorageNamespace,
             school_file_platform::storage_provider::StorageError,
@@ -458,8 +454,8 @@ mod phase_tests {
                 "fixture",
                 "https://fixture.invalid",
                 match storage_class {
-                    school_file_platform::platform_types::StorageClass::Public => "public",
-                    school_file_platform::platform_types::StorageClass::Private => "private",
+                    school_file_contracts::platform_types::StorageClass::Public => "public",
+                    school_file_contracts::platform_types::StorageClass::Private => "private",
                 },
             )
         }

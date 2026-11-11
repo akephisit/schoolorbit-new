@@ -103,7 +103,7 @@ pub async fn get_public_organization_avatar(
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/school/public/favicon", operation_id = "getPublicSchoolFavicon", tag = "school",
-    params(("size" = Option<school_file_platform::platform_types::PublicSchoolIconSize>, Query, description = "Square PNG size; defaults to 256")),
+    params(("size" = Option<school_file_contracts::platform_types::PublicSchoolIconSize>, Query, description = "Square PNG size; defaults to 256")),
     responses(
         (status = 200, description = "Current school crest as a square PNG", content_type = "image/png", body = inline(PublicFileFaviconPng)),
         (status = 404, description = "Current public school crest not found", body = ApiErrorResponse)

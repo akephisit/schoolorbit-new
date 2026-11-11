@@ -1,5 +1,5 @@
-use crate::achievement::models::*;
-use crate::achievement::services as achievement_service;
+use school_staff::achievement::models::*;
+use school_staff::achievement::services as achievement_service;
 use crate::http::state::StaffHttpState;
 use axum::{
     extract::{Extension, Path, Query, State},

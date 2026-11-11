@@ -67,8 +67,8 @@ pub(crate) fn coverage_router(f: &ProtectedFixture) -> Router {
     let platform =
         Arc::new(crate::integration_tests::staff::career_integration_tests::file_platform());
     let (events, _) = tokio::sync::broadcast::channel(16);
-    let routes = school_staff::http::routes::protected_routes()
-        .with_state(school_staff::http::state::StaffHttpState {
+    let routes = school_staff_http::http::routes::protected_routes()
+        .with_state(school_staff_http::http::state::StaffHttpState {
             auth_runtime: f.runtime.clone(),
             file_platform: platform.clone(),
         })

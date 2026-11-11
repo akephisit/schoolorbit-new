@@ -2,10 +2,7 @@ use std::fmt;
 
 use uuid::Uuid;
 
-use super::platform_types::{
-    DerivativeRecipe, DetectedContent, FilePurpose, FileVisibility, RetentionClass,
-    ScanRequirement, StorageClass,
-};
+use school_file_contracts::platform_types::{DerivativeRecipe, DetectedContent, FilePurpose, FileVisibility, RetentionClass, ScanRequirement, StorageClass};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PolicyKey {
@@ -500,9 +497,7 @@ pub(crate) fn persisted_object_key(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform_types::{
-        DetectedContent, FilePurpose, FileVisibility, RetentionClass, ScanRequirement, StorageClass,
-    };
+use school_file_contracts::platform_types::{DetectedContent, FilePurpose, FileVisibility, RetentionClass, ScanRequirement, StorageClass};
     use uuid::Uuid;
 
     #[test]

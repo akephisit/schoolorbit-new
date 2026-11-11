@@ -16,9 +16,8 @@ use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::tenant::tenant_pool;
 use school_file_platform::consumer_service::map_platform_error;
 use school_file_platform::consumer_service::request_deletions;
-use school_file_platform::{
-    platform_service::UploadCommand, platform_types::FilePurpose, repository::SqlFileRepository,
-};
+use school_file_platform::{platform_service::UploadCommand, repository::SqlFileRepository};
+use school_file_contracts::platform_types::FilePurpose;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;

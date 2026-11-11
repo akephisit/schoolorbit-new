@@ -1,13 +1,5 @@
-use super::{
-    cleanup_watch::{perform_cleanup_watch, CleanupObservation},
-    malware_scanner::{MalwareScanner, ScanOutcome},
-    namespace_binding::{self, BindingError, ConfiguredNamespaces},
-    platform_service::{FilePlatform, UploadCommand},
-    platform_types::{DownloadGrant, FilePurpose, StorageClass},
-    repository::SqlFileRepository,
-    storage_namespace::StorageNamespace,
-    storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
-};
+use super::{cleanup_watch::{perform_cleanup_watch, CleanupObservation}, malware_scanner::{MalwareScanner, ScanOutcome}, namespace_binding::{self, BindingError, ConfiguredNamespaces}, platform_service::{FilePlatform, UploadCommand}, repository::SqlFileRepository, storage_namespace::StorageNamespace, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
+use school_file_contracts::platform_types::{DownloadGrant, FilePurpose, StorageClass};
 use async_trait::async_trait;
 use bytes::Bytes;
 use sqlx::PgPool;
@@ -135,7 +127,7 @@ async fn legacy_watch(pool: &PgPool) -> Uuid {
         FilePurpose::CertificateTemplateImage,
         file,
         1,
-        super::platform_types::DetectedContent::Png,
+        school_file_contracts::platform_types::DetectedContent::Png,
     )
     .unwrap();
     sqlx::query("INSERT INTO files(id,purpose_code,display_filename,visibility,lifecycle_status,retention_class,inspection_metadata) VALUES($1,'certificate_template_image','fixture.png','private','processing','temporary','{\"kind\":\"image\",\"width_px\":2,\"height_px\":2}')").bind(file).execute(pool).await.unwrap();

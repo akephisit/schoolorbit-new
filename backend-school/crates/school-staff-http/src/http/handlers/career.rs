@@ -1,6 +1,6 @@
 use crate::http::state::StaffHttpState;
-use crate::staff_access_policy;
-use crate::{career::*, services::staff_career_service};
+use school_staff::staff_access_policy;
+use school_staff::{career::*, services::staff_career_service};
 use axum::{
     extract::{Extension, Path, Query, State},
     response::IntoResponse,

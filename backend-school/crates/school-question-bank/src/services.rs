@@ -14,7 +14,7 @@ use crate::models::{
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_file_platform::platform_types::FilePurpose;
+use school_file_contracts::platform_types::FilePurpose;
 
 const VALID_QUESTION_TYPES: &[&str] =
     &["single_choice", "multiple_choice", "short_answer", "essay"];

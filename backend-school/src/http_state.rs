@@ -123,7 +123,7 @@ impl FromRef<AppState> for school_fonts::http::state::FontHttpState {
     }
 }
 
-impl FromRef<AppState> for school_staff::http::state::StaffHttpState {
+impl FromRef<AppState> for school_staff_http::http::state::StaffHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -280,7 +280,7 @@ impl FromRef<AppState> for school_student_care::http::state::StudentCareHttpStat
     }
 }
 
-impl FromRef<AppState> for school_staff::leave::http::LeaveHttpState {
+impl FromRef<AppState> for school_staff_http::leave::LeaveHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -299,7 +299,7 @@ impl FromRef<AppState> for school_budget::http::BudgetHttpState {
     }
 }
 
-impl FromRef<AppState> for school_staff::file_transfer::http::FileTransferHttpState {
+impl FromRef<AppState> for school_staff_http::file_transfer::FileTransferHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),

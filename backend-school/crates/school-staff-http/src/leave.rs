@@ -1,5 +1,5 @@
 //! Thin authenticated transport for Staff-owned leave workflows.
-use super::{models::*, service};
+use school_staff_leave::{models::*, service};
 use axum::{
     extract::{Extension, Path, Query, State},
     Json, Router,

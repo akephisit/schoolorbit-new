@@ -32,12 +32,26 @@ contract, while Timetable HTTP owns the socket manager. Application composition 
 and collaboration runtime into all HTTP/socket consumers and facility-change adapters.
 Certificate transport stays in `school-certificates-http`. `school-auth` owns identity/session
 operations and consent; `school-auth-http` owns canonical cookie/origin/tenant/session context and
-Auth/Consent transport. `school-file-platform` owns storage/lifecycle and provider ports;
+Auth/Consent transport. `school-file-contracts` owns provider-neutral File values and the
+authorization port; `school-file-platform` owns storage/lifecycle and implementation provider ports;
 `school-files-http` composes consumer-specific file authorization without a dependency back from
 storage to its consumers. Auth HTTP receives profile updates through `ProfileUpdatePort`;
 `src/adapters/auth_profile.rs` composes Auth's user mutation and Files' relationship promotion in
 one transaction, then requests replaced-image cleanup after commit. The shared request-context
 owner has no File Platform implementation dependency.
+
+`school-staff` owns personnel, career, organization, roles, resource policies and Achievement.
+`school-staff-leave` owns leave policy, workflow and evidence operations, using Staff's authoritative
+name and effective career providers on its existing transaction connection. Its Workflow/signature
+providers retain their legitimate File Platform dependencies. `school-staff-file-transfer` owns pure
+ephemeral discovery, pairing and signaling state; the application supplies its single process
+runtime. `school-staff-http` owns all four transport families with separate Staff, Leave and
+FileTransfer states and the existing canonical Auth HTTP context. Staff core retains Auth's name
+validators while using File contracts directly for license policy; storage fixtures are dev-only.
+The [identity query provider](crates/school-staff/src/services/staff_identity_query.rs) owns SQL
+observations under `staff.services.staff_identity_query`; FileTransfer retains its existing
+observed-checkout label. Career parsing retains `ValidationError("ประเภทบุคลากรไม่ถูกต้อง")`,
+and consumers retain their own missing-name denial messages.
 
 Parents lives within Students, Achievement within Staff, Work within Workflow, and menu, feature
 toggles and route registration within Navigation. `school-administration` keeps settings, facility,
@@ -88,7 +102,7 @@ See `.env.example` for names. Keep the session HMAC, encryption, and blind-index
 - [Testing](../docs/TESTING.md)
 - [Operations](../docs/OPERATIONS.md)
 
-Staff leave and planned school-exit requests live in `school-staff::leave`, with policy profiles resolved from effective Staff career classification. The domain uses Workflow provider operations for assignments, notifications and source-bound approvals; private evidence and signer images use dedicated File Platform purposes. School-configured limits are not statutory entitlements. Runtime configuration is available through the leave settings API; no legal quotas or approval recipients are seeded.
+Staff leave and planned school-exit requests live in `school-staff-leave`, with policy profiles resolved from effective Staff career classification. The domain uses Workflow provider operations for assignments, notifications and source-bound approvals; private evidence and signer images use dedicated File Platform purposes. School-configured limits are not statutory entitlements. Runtime configuration is available through the leave settings API; no legal quotas or approval recipients are seeded.
 
 Policy profiles are immutable and resolve by personnel category, effective date and version; disabling a later profile ends new eligibility while retaining submitted history. Calendar or working-day counting uses the profile's explicit weekdays and excluded dates. Half-day granularity counts a full day as two units and a single morning/afternoon as one; minute requests use planned same-day times. Unit and quota-year basis cannot change after a type's first policy, and requests crossing a quota year must be split. Pending reservations and approved usage share the annual allowance across policy versions. Usage reports aggregate requests starting in the selected interval; their recorded policy limit is not a current statutory or remaining-entitlement calculation.
 

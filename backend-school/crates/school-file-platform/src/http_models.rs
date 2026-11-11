@@ -4,11 +4,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::{
-    platform_service::PublicDelivery,
-    platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility},
-    repository::PlatformFile,
-};
+use crate::platform_service::PublicDelivery;
+use school_file_contracts::{platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility}, file::PlatformFile};
 
 #[cfg(feature = "api-docs")]
 pub struct FileUploadMultipart;

@@ -1,5 +1,5 @@
 //! Staff-owned leave and planned exit contracts. Amounts are always computed by the server.
-use crate::career::StaffPersonnelType;
+use school_staff::career::StaffPersonnelType;
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use school_workflow::process_models::{
     ProcessAction, ProcessInstance, ProcessTemplateStep, SignatureInput,

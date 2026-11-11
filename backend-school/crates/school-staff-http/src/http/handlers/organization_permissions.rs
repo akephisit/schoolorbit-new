@@ -1,8 +1,8 @@
 use crate::http::state::StaffHttpState;
-use crate::models::UpdateOrganizationPermissionsRequest;
-use crate::services::organization_permission_service;
+use school_staff::models::UpdateOrganizationPermissionsRequest;
+use school_staff::services::organization_permission_service;
 #[cfg(feature = "api-docs")]
-use crate::services::organization_permission_service::OrganizationPermissionGrant;
+use school_staff::services::organization_permission_service::OrganizationPermissionGrant;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiResponse;

@@ -1,7 +1,6 @@
-use super::{
+use school_staff_file_transfer::{
     models::*,
     runtime::{FileTransferIdentity, FileTransferRuntime},
-    staff_display_name,
 };
 use axum::{
     extract::{
@@ -32,6 +31,20 @@ use tokio::{
     time::{interval_at, Instant, MissedTickBehavior},
 };
 use uuid::Uuid;
+
+async fn staff_display_name(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+) -> Result<String, school_errors::AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.file_transfer.staff_display_name",
+    )
+    .await?;
+    school_staff::services::active_staff_display_name_on_connection(&mut connection, user_id)
+        .await?
+        .ok_or_else(|| school_errors::AppError::Forbidden("Active staff account required".into()))
+}
 
 #[derive(Clone)]
 pub struct FileTransferHttpState {
@@ -198,7 +211,7 @@ pub async fn signal(
 }
 
 fn session_stream<F, Fut>(
-    mut subscription: super::runtime::FileTransferSubscription,
+    mut subscription: school_staff_file_transfer::runtime::FileTransferSubscription,
     session: AuthenticatedSession,
     mut revoked: broadcast::Receiver<SessionRevocationEvent>,
     mut permissions: broadcast::Receiver<PermissionChangeEvent>,
@@ -343,7 +356,8 @@ mod tests {
     fn fixture() -> (
         FileTransferHttpState,
         AuthenticatedSession,
-        super::super::runtime::FileTransferSubscription,
+        school_staff_file_transfer::runtime::FileTransferSubscription,
+        Uuid,
     ) {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .connect_lazy("postgres://invalid:invalid@127.0.0.1:1/invalid")
@@ -390,7 +404,7 @@ mod tests {
                 "Staff".into(),
                 RegisterFileTransferDevice {
                     label: "Laptop".into(),
-                    protocol_version: Some(super::super::runtime::PROTOCOL_VERSION),
+                    protocol_version: Some(school_staff_file_transfer::runtime::PROTOCOL_VERSION),
                 },
                 Utc::now(),
             )
@@ -399,12 +413,11 @@ mod tests {
             .runtime
             .subscribe(identity(&session), snapshot.device.id, Utc::now())
             .unwrap();
-        (state, session, subscription)
+        (state, session, subscription, snapshot.device.id)
     }
     #[tokio::test]
     async fn file_transfer_revocation_prioritizes_control_and_removes_binding_before_yield() {
-        let (state, session, subscription) = fixture();
-        let id = subscription.guard.device_id;
+        let (state, session, subscription, id) = fixture();
         let mut peers = Vec::new();
         for _ in 0..3 {
             let peer = FileTransferIdentity {
@@ -419,7 +432,7 @@ mod tests {
                     "Peer".into(),
                     RegisterFileTransferDevice {
                         label: "Peer".into(),
-                        protocol_version: Some(super::super::runtime::PROTOCOL_VERSION),
+                        protocol_version: Some(school_staff_file_transfer::runtime::PROTOCOL_VERSION),
                     },
                     Utc::now(),
                 )
@@ -489,7 +502,7 @@ mod tests {
     #[tokio::test]
     async fn file_transfer_signal_loss_and_revalidation_failure_close_stream() {
         for lag in [true, false] {
-            let (state, session, subscription) = fixture();
+            let (state, session, subscription, _) = fixture();
             let revoked = state.auth_runtime.session_events.subscribe();
             let permissions = state.auth_runtime.permission_events.subscribe();
             if lag {

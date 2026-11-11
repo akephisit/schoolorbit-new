@@ -2,10 +2,8 @@
 use bytes::Bytes;
 use image::codecs::jpeg::JpegEncoder;
 
-use crate::{
-    file_inspector::inspect_supply_image, file_processor::ImageProcessor,
-    platform_types::FilePurpose,
-};
+use crate::{file_inspector::inspect_supply_image, file_processor::ImageProcessor};
+use school_file_contracts::platform_types::FilePurpose;
 
 const MAX_EDGE: u32 = 1600;
 

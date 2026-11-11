@@ -1,5 +1,5 @@
 use super::{models::*, policy::*};
-use crate::career::StaffPersonnelType;
+use school_staff::career::StaffPersonnelType;
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
@@ -45,17 +45,16 @@ pub(super) async fn staff_name(
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
 ) -> Result<String, AppError> {
-    DbSession::new(&mut **tx).scalar("staff.leave.repository.staff_name", "SELECT display_name FROM user_display_names WHERE id=$1 AND user_type='staff' AND status='active'").bind(actor).fetch_optional().await?.ok_or_else(denied)
+    school_staff::services::active_staff_display_name_on_connection(&mut **tx, actor)
+        .await?
+        .ok_or_else(denied)
 }
 pub(super) async fn category(
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
     date: NaiveDate,
 ) -> Result<Option<StaffPersonnelType>, AppError> {
-    let row:Option<Option<String>>=DbSession::new(&mut **tx).scalar("staff.leave.repository.category", "SELECT personnel_type FROM staff_career_history WHERE user_id=$1 AND kind='personnel_type' AND (effective_date<=$2 OR effective_date IS NULL) ORDER BY effective_date DESC NULLS LAST,created_at DESC,id DESC LIMIT 1").bind(actor).bind(date).fetch_optional().await?;
-    row.flatten()
-        .map(|v| v.parse().map_err(|_| invalid("ประเภทบุคลากรไม่ถูกต้อง")))
-        .transpose()
+    school_staff::services::effective_personnel_type_on_connection(&mut **tx, actor, date).await
 }
 pub(super) async fn preview_policy(
     tx: &mut Transaction<'_, Postgres>,

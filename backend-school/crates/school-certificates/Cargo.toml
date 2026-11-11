@@ -5,12 +5,14 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-file-contracts/api-docs",
     "dep:utoipa",
     "school-file-platform/api-docs",
     "school-fonts/api-docs",
 ]
 
 [dependencies]
+school-file-contracts = { workspace = true }
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
 base64 = { workspace = true }
