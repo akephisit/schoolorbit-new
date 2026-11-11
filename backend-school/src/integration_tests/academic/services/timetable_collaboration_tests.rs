@@ -2790,7 +2790,7 @@ async fn workspace_cap_fixture(kind: &str) {
                 .unwrap()
                 .extend(extra);
             let next = Uuid::new_v4();
-            sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,effective_from,reference_date,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT $1,academic_term_id,academic_year_id,id,effective_from+1,reference_date,'published',$2,published_by,now(),gen_random_uuid(),repeat('0',64) FROM academic_delivery_versions WHERE id=$3")
+            sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,source_version_id,effective_from,reference_date,publication_no,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT $1,source.academic_term_id,source.academic_year_id,source.id,source.effective_from+1,source.reference_date,(SELECT COALESCE(max(published.publication_no),0)+1 FROM academic_delivery_versions published WHERE published.academic_term_id=source.academic_term_id AND published.status='published'),'published',$2,source.published_by,now(),gen_random_uuid(),repeat('0',64) FROM academic_delivery_versions source WHERE source.id=$3")
                 .bind(next).bind(snapshot).bind(source_id).execute(pool).await.unwrap();
             sqlx::query(
                 "UPDATE academic_timetable_versions SET delivery_version_id=$1 WHERE id=$2",
