@@ -7,7 +7,7 @@ use uuid::Uuid;
 #[derive(Debug, Default, Deserialize)]
 pub struct PublicSchoolIconQuery {
     #[serde(default)]
-    pub size: school_file_platform::platform_types::PublicSchoolIconSize,
+    pub size: school_file_contracts::platform_types::PublicSchoolIconSize,
 }
 
 #[derive(Debug, FromRow)]

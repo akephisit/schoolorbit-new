@@ -5,27 +5,18 @@ edition.workspace = true
 
 [features]
 api-docs = [
-    "school-http/api-docs",
+    "school-file-contracts/api-docs",
     "school-auth/api-docs",
     "dep:utoipa",
-    "school-workflow/api-docs",
 ]
 
 [dependencies]
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
-school-workflow = { workspace = true }
-school-notifications = { workspace = true }
-async-trait = { workspace = true }
-async-stream = { workspace = true }
-futures = { workspace = true }
 school-permissions = { workspace = true }
 school-authorization = { workspace = true }
-school-file-platform = { workspace = true }
-school-http = { workspace = true }
-school-auth-http = { workspace = true }
+school-file-contracts = { workspace = true }
 school-auth = { workspace = true }
-axum = { workspace = true }
 bcrypt = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
@@ -34,12 +25,13 @@ school-errors = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+school-file-platform = { workspace = true }
+tokio = { workspace = true }
 school-auth = { workspace = true, features = ["test-support"] }
 school-authorization = { workspace = true }
 school-test-db = { workspace = true }

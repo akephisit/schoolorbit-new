@@ -5,6 +5,7 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-file-contracts/api-docs",
     "school-http/api-docs",
     "school-auth/api-docs",
     "dep:utoipa",
@@ -12,6 +13,7 @@ api-docs = [
 ]
 
 [dependencies]
+school-file-contracts = { workspace = true }
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
 school-http = { workspace = true }

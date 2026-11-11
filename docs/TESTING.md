@@ -261,6 +261,8 @@ cargo test -p school-staff --features api-docs personnel_schema_enum_matches_ser
 ```
 
 HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
+`cargo test -p school-staff-http`, `cargo test -p school-staff-file-transfer`,
+`cargo test -p school-file-contracts`,
 the six `school-academic-{core,delivery,assessment,timetable,results,lifecycle}-http` packages,
 `cargo test -p school-academic-realtime`, `cargo test -p school-certificates-http`,
 `cargo test -p school-navigation`, and `cargo test -p school-notifications`.
@@ -760,7 +762,17 @@ cross-domain deletion and side-effect orchestration, Calendar notification sched
 aggregate views. Keep database-heavy package suites at no more than eight threads when they share
 a disposable PostgreSQL instance.
 
-`school-file-platform` owns provider-neutral file inspection, purpose/object-key policy, repository,
+`school-staff-leave` owns the Leave integration target and validation-before-checkout tests. Use
+`./scripts/test_backend_school.sh --package school-staff-leave -- --test-threads=4` from the repository
+root for its policy/version, quota/replay/rollback, evidence, approval and cancellation cases. Staff's
+public identity/career provider fixtures run with
+`./scripts/test_backend_school.sh --package school-staff staff_identity -- --test-threads=1`; they
+cover active-Staff eligibility, explicit-date winner ordering, nullable facts, same-connection
+visibility and rollback. Its invalid-code unit preserves the original typed validation error.
+
+`school-file-contracts` owns the unchanged provider-neutral values, `PlatformFile` and the File
+authorization contract; serialization/schema tests remain with those definitions. Its consumers
+import contracts directly. `school-file-platform` owns file inspection, purpose/object-key policy, repository,
 storage and malware-scanner implementations, lifecycle operations, runtime configuration, and
 reconciliation. Its package tests exercise canonical migrations through a dev-only
 `school-test-db` edge. Axum handlers, wire models, tenant/actor resolution, cross-domain
@@ -2430,7 +2442,14 @@ fit at 5pt. Disposable correspondence cases cover old create/action/revision rep
 legacy base-annotation carryforward, subsequent signing, and rejection of missing/unknown new
 versions or edited unversioned text. Omitted legacy fields must keep old payload hashes intact.
 
-Staff leave and planned school exit use `./scripts/test_backend_school.sh --package school-staff leave -- --nocapture` for the focused policy and isolated lifecycle/authorization/ledger fixtures. Signature consent and revision binding use `./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`. Policies count school-configured calendar or working dates; half-day granularity represents a full counted day as two units. Quota-year crossing requires separate requests. No statutory entitlement is seeded by these fixtures.
+Staff leave and planned school exit use
+`./scripts/test_backend_school.sh --package school-staff-leave -- --nocapture` for the policy,
+preflight and complete isolated lifecycle/authorization/ledger integration target. Signature consent
+and revision binding use
+`./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`.
+Policies count school-configured calendar or working dates; half-day granularity represents a full
+counted day as two units. Quota-year crossing requires separate requests. No statutory entitlement
+is seeded by these fixtures.
 
 Directed routing uses synthetic staff and document fixtures in
 `frontend-school/tests/e2e/correspondence-directed.spec.ts`. After building the School frontend
@@ -2774,7 +2793,15 @@ compile the affected Academic owners in default and `api-docs` modes.
 
 ### Staff direct file transfer
 
-`school-staff::file_transfer` owns ephemeral same-school discovery, consent and host-only WebRTC signaling. Its pure/runtime and SSE lifecycle tests run with `cargo test -p school-staff file_transfer --lib` from `backend-school`. Run the protected cookie/CSRF, staff-only, tenant/session isolation, development SSE hint, body-limit and revocation fixture with `./scripts/test_backend_school.sh file_transfer_http -- --test-threads=1`; the exact stream-path hint guard is covered by `file_transfer_hint_tests`. Regenerate/check API contracts when changing its Rust DTOs or endpoints.
+`school-staff-file-transfer` owns ephemeral same-school discovery, consent and host-only WebRTC
+signaling. From `backend-school`, run its pure/runtime suite with
+`cargo test -p school-staff-file-transfer --lib` and the moved SSE lifecycle suite with
+`cargo test -p school-staff-http file_transfer --lib`. Staff HTTP retains the separate concrete
+states and root composition injects one runtime. Run the protected cookie/CSRF, staff-only,
+tenant/session isolation, development SSE hint, body-limit and revocation fixture with
+`./scripts/test_backend_school.sh file_transfer_http -- --test-threads=1`; the exact stream-path
+hint guard is covered by `file_transfer_hint_tests`. Regenerate/check API contracts when changing
+its Rust DTOs or endpoints.
 
 The loopback browser fixture uses native EventSource/WebRTC against a synthetic metadata-only HTTP/SSE service. From `frontend-school`, use the pinned Node runtime, complete type checks, build the production frontend, and start an owned preview in a separate shell:
 

@@ -5,10 +5,8 @@ use image::{DynamicImage, ImageFormat, RgbaImage};
 use std::{io::Cursor, sync::OnceLock};
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Stroke, Transform};
 
-use crate::{
-    file_inspector::inspect_file, platform_service::FilePlatformError, platform_types::FilePurpose,
-    ImageProcessor,
-};
+use crate::{file_inspector::inspect_file, platform_service::FilePlatformError, ImageProcessor};
+use school_file_contracts::platform_types::FilePurpose;
 
 const WIDTH: u32 = 1200;
 const HEIGHT: u32 = 630;

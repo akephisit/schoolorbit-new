@@ -1,0 +1,38 @@
+[package]
+name = "school-staff-leave"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-file-contracts/api-docs",
+    "school-staff/api-docs",
+    "school-workflow/api-docs",
+]
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+school-authorization = { workspace = true }
+school-database = { workspace = true }
+school-errors = { workspace = true }
+school-file-contracts = { workspace = true }
+school-permissions = { workspace = true }
+school-staff = { workspace = true }
+school-tenancy = { workspace = true }
+school-workflow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+school-file-platform = { workspace = true }
+school-test-db = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

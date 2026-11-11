@@ -8,18 +8,21 @@ use crate::{file_hash::FileHasher, file_processor::ImageProcessor};
 use super::{
     file_inspector::{inspect_file, FileInspectionError, ValidatedFile},
     malware_scanner::{MalwareScanner, ScanOutcome},
-    platform_types::{
-        DerivativeRecipe, DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility,
-    },
     purpose_registry::{
         derivative_object_key, original_object_key, purpose_definition, PurposeRegistryError,
     },
     repository::{
         derivative_is_required, DeleteWork, DeliveryRecord, FileRepository, NewDerivative,
-        NewUpload, PlatformFile, RepositoryError,
+        NewUpload, RepositoryError,
     },
     runtime_config::FilePlatformRuntimeConfig,
     storage_provider::{StorageError, StorageProvider, StoredObject},
+};
+use school_file_contracts::{
+    file::PlatformFile,
+    platform_types::{
+        DerivativeRecipe, DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility,
+    },
 };
 
 #[derive(Clone)]
@@ -322,9 +325,9 @@ impl FilePlatform {
     ) -> Result<Vec<super::storage_namespace::StorageNamespace>, FilePlatformError> {
         Ok(vec![
             self.provider
-                .namespace(super::platform_types::StorageClass::Public)?,
+                .namespace(school_file_contracts::platform_types::StorageClass::Public)?,
             self.provider
-                .namespace(super::platform_types::StorageClass::Private)?,
+                .namespace(school_file_contracts::platform_types::StorageClass::Private)?,
         ])
     }
 
@@ -369,7 +372,7 @@ impl FilePlatform {
         &self,
         repository: &dyn FileRepository,
         file_id: Uuid,
-        size: crate::platform_types::PublicSchoolIconSize,
+        size: school_file_contracts::platform_types::PublicSchoolIconSize,
     ) -> Result<Bytes, FilePlatformError> {
         let delivery = ready_delivery(repository, file_id).await?;
         if delivery.file.visibility != FileVisibility::Public
@@ -675,12 +678,12 @@ mod tests {
 
     use crate::{
         malware_scanner::MalwareScanner,
-        platform_types::{FileInspectionMetadata, StorageClass},
         purpose_registry::original_object_key,
         reconciler::reconcile_due_operations,
         repository::{DeleteWork, LeasedOperation, ObjectTarget, OperationWork, RepositoryError},
         storage_provider::{ObjectMetadata, StorageError},
     };
+    use school_file_contracts::platform_types::{FileInspectionMetadata, StorageClass};
 
     fn png() -> Bytes {
         let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(2, 2, Rgba([4, 8, 15, 255])));
@@ -717,15 +720,15 @@ mod tests {
     impl StorageProvider for FakeProvider {
         fn namespace(
             &self,
-            storage_class: crate::platform_types::StorageClass,
+            storage_class: school_file_contracts::platform_types::StorageClass,
         ) -> Result<crate::storage_namespace::StorageNamespace, crate::storage_provider::StorageError>
         {
             crate::storage_namespace::StorageNamespace::from_provider_locator(
                 "fixture",
                 "https://fixture.invalid",
                 match storage_class {
-                    crate::platform_types::StorageClass::Public => "public",
-                    crate::platform_types::StorageClass::Private => "private",
+                    school_file_contracts::platform_types::StorageClass::Public => "public",
+                    school_file_contracts::platform_types::StorageClass::Private => "private",
                 },
             )
         }
@@ -1228,7 +1231,7 @@ mod tests {
                 FilePurpose::ProfileImage,
                 file_id,
                 1,
-                crate::platform_types::DetectedContent::Png,
+                school_file_contracts::platform_types::DetectedContent::Png,
             )
             .unwrap(),
             "image/png",
@@ -1350,7 +1353,7 @@ mod tests {
                 FilePurpose::SchoolLogo,
                 id,
                 1,
-                crate::platform_types::DetectedContent::Png,
+                school_file_contracts::platform_types::DetectedContent::Png,
             )
             .unwrap(),
             "image/png",
@@ -1360,7 +1363,7 @@ mod tests {
                 .public_favicon(
                     &repository,
                     id,
-                    crate::platform_types::PublicSchoolIconSize::default()
+                    school_file_contracts::platform_types::PublicSchoolIconSize::default()
                 )
                 .await,
             Err(FilePlatformError::NotFound)
@@ -1420,7 +1423,7 @@ mod tests {
                 .public_favicon(
                     &repository,
                     id,
-                    crate::platform_types::PublicSchoolIconSize::default(),
+                    school_file_contracts::platform_types::PublicSchoolIconSize::default(),
                 )
                 .await;
             if status == FileLifecycleStatus::Ready
@@ -1451,7 +1454,7 @@ mod tests {
                 FilePurpose::SchoolLogo,
                 id,
                 1,
-                crate::platform_types::DetectedContent::Png,
+                school_file_contracts::platform_types::DetectedContent::Png,
             )
             .unwrap(),
             "image/png",
@@ -1558,7 +1561,7 @@ mod tests {
                 FilePurpose::ProfileImage,
                 file_id,
                 1,
-                crate::platform_types::DetectedContent::Png,
+                school_file_contracts::platform_types::DetectedContent::Png,
             )
             .unwrap(),
             "image/png",
@@ -1633,7 +1636,7 @@ mod tests {
                         FilePurpose::ProfileImage,
                         file_id,
                         1,
-                        crate::platform_types::DetectedContent::Png,
+                        school_file_contracts::platform_types::DetectedContent::Png,
                     )
                     .unwrap(),
                     "image/png",
@@ -1677,7 +1680,7 @@ mod tests {
                 FilePurpose::CorrespondenceDocument,
                 id,
                 1,
-                crate::platform_types::DetectedContent::Png,
+                school_file_contracts::platform_types::DetectedContent::Png,
             )
             .unwrap(),
             "image/png",

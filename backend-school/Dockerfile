@@ -1,5 +1,7 @@
 # syntax=docker/dockerfile:1.10
 
+ARG SCHOOL_CARGO_BUILD_STAGE=fresh-builder
+
 FROM docker.io/library/rust:1.98.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730 AS base
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -34,12 +36,14 @@ RUN --mount=type=cache,id=school-sccache-tool-build,target=/tmp/sccache-target \
 COPY scripts/sccache-startup.json /etc/sccache-school.json
 ENV SCCACHE_CONF=/etc/sccache-school.json
 
-FROM base AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends jq \
+FROM base AS compiler-tools
+RUN apt-get update && apt-get install -y --no-install-recommends jq python3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=sccache-tool /usr/local/bin/sccache /usr/local/bin/rustc-cache /usr/local/bin/
 COPY --from=sccache-tool /etc/sccache-school.json /etc/sccache-school.json
 ENV SCCACHE_CONF=/etc/sccache-school.json
+
+FROM compiler-tools AS dependencies
 COPY --from=planner /app/recipe.json recipe.json
 COPY scripts/build_release.sh scripts/release_linker.sh scripts/
 ARG SCHOOL_COMPILER_CACHE=off
@@ -49,6 +53,8 @@ RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
     --mount=type=secret,id=sccache_gha_token,target=/run/secrets/sccache_gha_token \
     --mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache \
     bash scripts/build_release.sh dependencies
+
+FROM dependencies AS fresh-builder
 COPY . .
 # Disable local ThinLTO only for the final application crate. Dependencies keep
 # their existing release settings and cargo-chef cache; opt-level is unchanged.
@@ -57,10 +63,78 @@ RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
     --mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache \
     bash scripts/build_release.sh
 
+# A cache carrier is data-only. Named image contexts are copied without inheriting
+# image configuration/ONBUILD. Validation performs no Cargo or compiler-tool build.
+FROM docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS snapshot-restored
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=cargo-snapshot-data /snapshot.tar /cache/snapshot.tar
+COPY --from=cargo-snapshot-data /snapshot.json /cache/snapshot.json
+COPY . /incoming/
+ARG SCHOOL_CARGO_CONFIG_HASH
+ARG SCHOOL_CARGO_SOURCE_MANIFEST_HASH
+RUN python3 /incoming/scripts/cargo_snapshot.py preflight /app --incoming /incoming \
+    --archive /cache/snapshot.tar --metadata /cache/snapshot.json \
+    --configuration-hash "$SCHOOL_CARGO_CONFIG_HASH" \
+    --source-manifest-hash "$SCHOOL_CARGO_SOURCE_MANIFEST_HASH"
+
+# Building compiler-tools is strict. A public identity mismatch is returned as
+# data before application Cargo runs; a compiler-tool build failure fails the job.
+FROM compiler-tools AS snapshot-native-check
+COPY scripts/cargo_snapshot.py /usr/local/lib/cargo_snapshot.py
+COPY --from=snapshot-restored /prevalidated.json /prevalidated.json
+RUN python3 /usr/local/lib/cargo_snapshot.py native-gate /app \
+    --metadata /prevalidated.json --destination /native-gate.json
+FROM scratch AS cargo-native-gate
+COPY --from=snapshot-native-check /native-gate.json /native-gate.json
+
+FROM compiler-tools AS snapshot-materialized
+COPY scripts/cargo_snapshot.py /usr/local/lib/cargo_snapshot.py
+COPY --from=snapshot-restored /app/ /app/
+COPY --from=snapshot-restored /prevalidated.json /prevalidated.json
+ARG SCHOOL_CARGO_CONFIG_HASH
+RUN python3 /usr/local/lib/cargo_snapshot.py materialize-gate /app --metadata /prevalidated.json \
+    --configuration-hash "$SCHOOL_CARGO_CONFIG_HASH" --destination /materialization-gate.json
+FROM scratch AS cargo-materialization-gate
+COPY --from=snapshot-materialized /materialization-gate.json /materialization-gate.json
+
+FROM snapshot-materialized AS snapshot-builder
+RUN python3 -c 'import json; assert json.load(open("/materialization-gate.json"))["compatible"] is True'
+ARG SCHOOL_COMPILER_CACHE=off
+RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
+    --mount=type=secret,id=sccache_gha_token,target=/run/secrets/sccache_gha_token \
+    --mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache \
+    bash scripts/build_release.sh
+
+FROM ${SCHOOL_CARGO_BUILD_STAGE} AS builder
+
+# A controlled TAR writes every target alias as regular bytes. Metadata and all
+# headers are validated before extraction into an empty private staging directory.
+FROM builder AS cargo-snapshot-seal
+ARG SCHOOL_CARGO_CONFIG_HASH
+RUN python3 scripts/cargo_snapshot.py archive /app --destination /snapshot \
+    --configuration-hash "$SCHOOL_CARGO_CONFIG_HASH"
+FROM scratch AS cargo-snapshot
+COPY --from=cargo-snapshot-seal /snapshot/snapshot.tar /snapshot.tar
+COPY --from=cargo-snapshot-seal /snapshot/snapshot.json /snapshot.json
+FROM scratch AS cargo-snapshot-metadata
+COPY --from=cargo-snapshot-seal /snapshot/snapshot.json /snapshot.json
+FROM scratch AS cargo-restore-evidence
+COPY --from=snapshot-builder /app/target/cargo-timings/snapshot-restore.json /snapshot-restore.json
+
+# Explicit diagnostic target only; the release/runtime graph never invokes it.
+FROM builder AS cargo-freshness-check
+ARG SCHOOL_FRESHNESS_PROBE
+RUN test -n "$SCHOOL_FRESHNESS_PROBE" && bash scripts/build_release.sh
+FROM scratch AS cargo-freshness-evidence
+COPY --from=cargo-freshness-check /app/target/cargo-timings/cargo-artifacts.jsonl /cargo-artifacts.jsonl
+
 FROM scratch AS build-timings
 COPY --from=builder /app/target/cargo-timings/cargo-timing.html /cargo-timing.html
 COPY --from=builder /app/target/cargo-timings/sccache-stats.json /sccache-stats.json
 COPY --from=builder /app/target/cargo-timings/build-metrics.json /build-metrics.json
+COPY --from=builder /app/target/cargo-timings/cargo-artifacts.jsonl /cargo-artifacts.jsonl
+COPY --from=builder /app/target/cargo-timings/snapshot-restore.json /snapshot-restore.json
 COPY --from=builder /app/target/cargo-timings/link-nanoseconds.txt /link-nanoseconds.txt
 COPY --from=builder /app/target/dependency-timings/build-metrics.json /dependency-build-metrics.json
 COPY --from=builder /app/target/dependency-timings/sccache-stats.json /dependency-sccache-stats.json

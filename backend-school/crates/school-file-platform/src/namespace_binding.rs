@@ -1,10 +1,8 @@
 //! Offline, explicitly attested legacy namespace binding. Never migrates or probes storage.
-use super::{
-    platform_types::StorageClass, storage_namespace::StorageNamespace,
-    storage_provider::StorageProvider,
-};
+use super::{storage_namespace::StorageNamespace, storage_provider::StorageProvider};
 use chrono::{DateTime, Utc};
 use school_database::DbSession;
+use school_file_contracts::platform_types::StorageClass;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{Connection, FromRow, PgConnection, PgPool};

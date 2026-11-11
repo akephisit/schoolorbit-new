@@ -1,0 +1,25 @@
+[package]
+name = "school-file-contracts"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+]
+
+[dependencies]
+async-trait = { workspace = true }
+chrono = { workspace = true }
+school-authorization = { workspace = true }
+school-errors = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

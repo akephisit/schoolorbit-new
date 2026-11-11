@@ -12,14 +12,14 @@ use school_auth::{
     session_service::AuthenticatedSession,
 };
 use school_authorization::PermissionCache;
+use school_file_contracts::platform_types::DownloadGrant;
 use school_file_platform::{
     malware_scanner::{MalwareScanner, ScanOutcome},
     platform_service::FilePlatform,
-    platform_types::DownloadGrant,
     storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
 };
 use school_permissions::registry::codes;
-use school_staff::http::handlers::{career, staff};
+use school_staff_http::http::handlers::{career, staff};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, TenantContext};
 use school_test_db::{create_named_test_pool_with_max_connections, run_test_migrations};
 use sqlx::PgPool;
@@ -34,7 +34,7 @@ struct UnexpectedStorageProvider;
 impl StorageProvider for UnexpectedStorageProvider {
     fn namespace(
         &self,
-        storage_class: school_file_platform::platform_types::StorageClass,
+        storage_class: school_file_contracts::platform_types::StorageClass,
     ) -> Result<
         school_file_platform::storage_namespace::StorageNamespace,
         school_file_platform::storage_provider::StorageError,
@@ -43,8 +43,8 @@ impl StorageProvider for UnexpectedStorageProvider {
             "fixture",
             "https://fixture.invalid",
             match storage_class {
-                school_file_platform::platform_types::StorageClass::Public => "public",
-                school_file_platform::platform_types::StorageClass::Private => "private",
+                school_file_contracts::platform_types::StorageClass::Public => "public",
+                school_file_contracts::platform_types::StorageClass::Private => "private",
             },
         )
     }
@@ -103,6 +103,7 @@ struct Fixture {
     pool: PgPool,
     state: AppState,
     tenant: TenantContext,
+    root_unit: Uuid,
     actor: Uuid,
     same_unit: Uuid,
     child_unit: Uuid,
@@ -157,7 +158,7 @@ impl Fixture {
             work_event_channel: tokio::sync::broadcast::channel(8).0,
             file_platform: Arc::new(file_platform()),
             file_transfer: Arc::new(
-                school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+                school_staff_file_transfer::runtime::FileTransferRuntime::default(),
             ),
             certificate_verification_limiter: Arc::new(
                 school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
@@ -172,11 +173,33 @@ impl Fixture {
             pool,
             state,
             tenant,
+            root_unit: root,
             actor: users[0],
             same_unit: users[1],
             child_unit: users[2],
             outside: users[3],
             student: users[4],
+        }
+    }
+    async fn grant_profile_scopes(&self) {
+        for code in [
+            codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+            codes::STAFF_PROFILE_READ_ORGANIZATION_TREE,
+        ] {
+            let inserted = sqlx::query(
+                "INSERT INTO organization_permission_grants(organization_unit_id,permission_id,created_by,position_code) SELECT $1,id,$2,'member' FROM permissions WHERE code=$3 AND is_active=true",
+            )
+            .bind(self.root_unit)
+            .bind(self.actor)
+            .bind(code)
+            .execute(&self.pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                inserted.rows_affected(),
+                1,
+                "active Root-unit grant: {code}"
+            );
         }
     }
     fn router(&self, permissions: &[&str]) -> Router {
@@ -205,7 +228,7 @@ impl Fixture {
         Router::new()
             .route(
                 "/api/staff/personnel-rank-milestones",
-                get(school_staff::http::handlers::personnel::get_rank_milestone_overview),
+                get(school_staff_http::http::handlers::personnel::get_rank_milestone_overview),
             )
             .route(
                 "/api/staff/{id}/career-history",
@@ -249,6 +272,23 @@ impl Fixture {
 #[tokio::test]
 async fn career_reads_preserve_own_unit_tree_school_and_union_scope() {
     let f = Fixture::new("career_http_read_scope").await;
+    // Cached scope codes plus membership cannot replace an authoritative grant origin.
+    for (permission, target) in [
+        (codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT, f.same_unit),
+        (codes::STAFF_PROFILE_READ_ORGANIZATION_TREE, f.child_unit),
+    ] {
+        let (status, body) = f
+            .request(
+                &[permission],
+                "GET",
+                &format!("/api/staff/{target}/career-history"),
+                serde_json::json!({}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "ungranted {permission}");
+        assert_eq!(body["success"], false);
+    }
+    f.grant_profile_scopes().await;
     for (permissions, target, expected) in [
         (vec![codes::STAFF_PROFILE_READ_OWN], f.actor, StatusCode::OK),
         (
@@ -512,6 +552,7 @@ async fn career_routes_require_authentication_through_production_router() {
 #[tokio::test]
 async fn rank_milestone_overview_preserves_profile_scopes_status_and_missing_info() {
     let f = Fixture::new("rank_milestone_scopes").await;
+    f.grant_profile_scopes().await;
     for (permission, count) in [
         (codes::STAFF_PROFILE_READ_OWN, 1),
         (codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT, 2),

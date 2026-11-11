@@ -6,6 +6,16 @@ on:
         description: Warm source and workspace samples per cache backend
         type: string
         default: "2"
+      phase:
+        description: Existing comparison or cross-run snapshot producer, consumer, cleanup
+        type: string
+        default: compare
+      producer_run_id:
+        type: string
+        default: ""
+      producer_run_attempt:
+        type: string
+        default: ""
 permissions:
   contents: read
   actions: read
@@ -16,19 +26,36 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
       - name: Validate bounded sample count
         env:
           BENCH_SAMPLES: ${{ inputs.samples }}
+          PHASE: ${{ inputs.phase }}
         run: |
           [[ "$BENCH_SAMPLES" =~ ^[2-3]$ ]]
+          case "$PHASE" in compare|producer|consumer|cleanup) ;; *) exit 64 ;; esac
+      - name: Verify previous run and resolve immutable trial state
+        id: trial-origin
+        if: inputs.phase == 'consumer' || inputs.phase == 'cleanup'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCER_RUN_ID: ${{ inputs.producer_run_id }}
+          PRODUCER_RUN_ATTEMPT: ${{ inputs.producer_run_attempt }}
+          TRIAL_OPERATION: ${{ inputs.phase == 'cleanup' && 'cleanup' || 'resolve' }}
+        run: node scripts/lib/pipeline-cargo-snapshot-trial.mjs "$TRIAL_OPERATION"
       - uses: docker/setup-buildx-action@v4
+        if: inputs.phase != 'cleanup'
         id: buildx
       - uses: docker/login-action@v4
+        if: inputs.phase != 'cleanup'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Expose BuildKit cache runtime
+        if: inputs.phase != 'cleanup'
         uses: actions/github-script@v8
         with:
           script: |
@@ -39,6 +66,7 @@ jobs:
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL);
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', 'true');
       - name: Freeze BuildKit image for every fresh builder
+        if: inputs.phase != 'cleanup'
         env:
           BUILDER: ${{ steps.buildx.outputs.name }}
         run: |
@@ -48,12 +76,36 @@ jobs:
           [[ "$pinned" =~ @sha256:[a-f0-9]{64}$ ]]
           printf 'BENCH_BUILDKIT_IMAGE=%s\n' "$pinned" >> "$GITHUB_ENV"
       - name: Compare isolated remote caches on one runner
+        if: inputs.phase == 'compare'
         env:
           BENCH_SAMPLES: ${{ inputs.samples }}
           BENCH_OUTPUT: ${{ runner.temp }}/backend-cache-benchmark
         run: python3 -B scripts/benchmark_backend_cache.py
+      - name: Run cross-run Cargo snapshot phase
+        id: snapshot-phase
+        if: inputs.phase == 'producer' || inputs.phase == 'consumer'
+        env:
+          SNAPSHOT_PHASE: ${{ inputs.phase }}
+          BENCH_SAMPLES: ${{ inputs.samples }}
+          BENCH_OUTPUT: ${{ runner.temp }}/backend-cache-benchmark
+        run: python3 -B scripts/benchmark_cargo_snapshot.py
+      - name: Validate trial producer authority
+        if: inputs.phase == 'producer'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BENCH_OUTPUT: ${{ runner.temp }}/backend-cache-benchmark
+        run: node scripts/lib/pipeline-cargo-snapshot-trial.mjs publish
+      - name: Publish cross-run Cargo snapshot locator
+        id: trial-published
+        if: inputs.phase == 'producer'
+        uses: actions/upload-artifact@v6
+        with:
+          name: cargo-snapshot-trial-producer
+          path: ${{ runner.temp }}/backend-cache-benchmark/cargo-snapshot-trial-producer.json
+          retention-days: 2
+          if-no-files-found: error
       - name: Publish complete benchmark evidence
-        if: always()
+        if: always() && inputs.phase != 'cleanup'
         uses: actions/upload-artifact@v6
         with:
           name: backend-cache-benchmark
@@ -61,17 +113,19 @@ jobs:
             ${{ runner.temp }}/backend-cache-benchmark
             !${{ runner.temp }}/backend-cache-benchmark/contexts/**
             !${{ runner.temp }}/backend-cache-benchmark/compiler-cache-snapshot/**
+            !${{ runner.temp }}/backend-cache-benchmark/**/snapshot.tar
           retention-days: 7
           if-no-files-found: error
       - name: Remove only this run's disposable registry package
-        if: always()
+        if: always() && (inputs.phase == 'compare' || inputs.phase == 'producer' && (steps.trial-published.outcome != 'success' || failure() || cancelled()) || (inputs.phase == 'consumer' || inputs.phase == 'cleanup') && steps.trial-origin.outcome == 'success')
         env:
           GH_TOKEN: ${{ github.token }}
           OWNER: ${{ github.repository_owner }}
           OWNER_TYPE: ${{ github.event.repository.owner.type }}
+          VERIFIED_PRODUCER_PACKAGE: ${{ steps.trial-origin.outputs.cleanup_package }}
         run: |
           set -euo pipefail
-          package="schoolorbit-cache-benchmark-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          package="${VERIFIED_PRODUCER_PACKAGE:-schoolorbit-cache-benchmark-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}}"
           [[ "$package" =~ ^schoolorbit-cache-benchmark-[0-9]+-[0-9]+$ ]]
           case "$OWNER_TYPE" in
             User) endpoint="/users/$OWNER/packages/container/$package" ;;

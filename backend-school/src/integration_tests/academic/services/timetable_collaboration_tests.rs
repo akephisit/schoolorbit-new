@@ -128,7 +128,7 @@ impl Fixture {
                 crate::adapters::facility_changes::ApplicationFacilityChanges(manager.clone()),
             ),
         };
-        let staff = school_staff::http::state::StaffHttpState {
+        let staff = school_staff_http::http::state::StaffHttpState {
             auth_runtime: auth.runtime.clone(),
             file_platform: files,
         };
@@ -144,7 +144,7 @@ impl Fixture {
             )
             .nest(
                 "/api",
-                school_staff::http::routes::protected_routes().with_state(staff),
+                school_staff_http::http::routes::protected_routes().with_state(staff),
             )
             .route_layer(from_fn_with_state(
                 auth.runtime.clone(),

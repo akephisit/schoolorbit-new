@@ -193,7 +193,7 @@ for (const phase of ["application", "dependencies"])
         const args = readFileSync(path.join(root, "args"), "utf8");
         assert.equal(args, phase === "dependencies"
           ? "chef\ncook\n--release\n--recipe-path\nrecipe.json\n"
-          : `rustc\n--release\n--locked\n--bin\nbackend-school\n--timings\n--\n-C\nlto=off\n-C\nlinker=${runRoot}/scripts/release_linker.sh\n`);
+          : `rustc\n--release\n--locked\n--bin\nbackend-school\n--timings\n--message-format=json-render-diagnostics\n--\n-C\nlto=off\n-C\nlinker=${runRoot}/scripts/release_linker.sh\n`);
         const cacheEnv = readFileSync(path.join(root, "cache-env"), "utf8").split("\n");
         assert.equal(cacheEnv[0], ["gha", "local"].includes(mode) ? path.join(bin, "rustc-cache") : "off");
         if (mode === "gha") assert.deepEqual(cacheEnv.slice(1, 3), ["true", "schoolorbit-backend-school"]);

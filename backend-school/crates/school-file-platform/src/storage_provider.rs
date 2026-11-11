@@ -3,10 +3,8 @@ use bytes::Bytes;
 use std::{fmt, time::Duration};
 use url::Url;
 
-use super::{
-    platform_types::{DownloadGrant, StorageClass},
-    purpose_registry::ObjectKey,
-};
+use super::purpose_registry::ObjectKey;
+use school_file_contracts::platform_types::{DownloadGrant, StorageClass};
 
 /// Maximum validity for a provider-issued private download grant.
 pub const MAX_PRIVATE_DOWNLOAD_GRANT_TTL: Duration = Duration::from_secs(300);
@@ -108,13 +106,13 @@ pub trait StorageProvider: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        platform_types::{DetectedContent, DownloadGrant, FilePurpose, StorageClass},
-        purpose_registry::original_object_key,
-    };
+    use crate::purpose_registry::original_object_key;
     use async_trait::async_trait;
     use bytes::Bytes;
     use chrono::Utc;
+    use school_file_contracts::platform_types::{
+        DetectedContent, DownloadGrant, FilePurpose, StorageClass,
+    };
     use std::{sync::Mutex, time::Duration};
     use url::Url;
     use uuid::Uuid;
@@ -142,15 +140,15 @@ mod tests {
     impl StorageProvider for FakeStorageProvider {
         fn namespace(
             &self,
-            storage_class: crate::platform_types::StorageClass,
+            storage_class: school_file_contracts::platform_types::StorageClass,
         ) -> Result<crate::storage_namespace::StorageNamespace, crate::storage_provider::StorageError>
         {
             crate::storage_namespace::StorageNamespace::from_provider_locator(
                 "fixture",
                 "https://fixture.invalid",
                 match storage_class {
-                    crate::platform_types::StorageClass::Public => "public",
-                    crate::platform_types::StorageClass::Private => "private",
+                    school_file_contracts::platform_types::StorageClass::Public => "public",
+                    school_file_contracts::platform_types::StorageClass::Private => "private",
                 },
             )
         }

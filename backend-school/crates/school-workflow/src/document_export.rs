@@ -9,10 +9,10 @@ use lopdf::{
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
+use school_file_contracts::platform_types::FilePurpose;
 use school_file_platform::{
     consumer_service::map_platform_error, file_inspector::inspect_file,
-    platform_service::FilePlatform, platform_types::FilePurpose, repository::SqlFileRepository,
-    ImageProcessor,
+    platform_service::FilePlatform, repository::SqlFileRepository, ImageProcessor,
 };
 use school_permissions::registry::codes;
 use sha2::{Digest, Sha256};

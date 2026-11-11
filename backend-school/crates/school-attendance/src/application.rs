@@ -927,8 +927,8 @@ async fn require_evidence_upload_on_connection(
 pub async fn require_evidence_file(
     pool: &PgPool,
     actor: &ActorContext,
-    file: &school_file_platform::repository::PlatformFile,
-    action: school_file_platform::access::FilePolicyAction,
+    file: &school_file_contracts::file::PlatformFile,
+    action: school_file_contracts::access::FilePolicyAction,
     resource: Option<Uuid>,
 ) -> Result<(), AppError> {
     evidence_student(file, resource)?;
@@ -946,7 +946,7 @@ pub async fn require_evidence_file(
     .await
 }
 fn evidence_student(
-    file: &school_file_platform::repository::PlatformFile,
+    file: &school_file_contracts::file::PlatformFile,
     resource: Option<Uuid>,
 ) -> Result<Uuid, AppError> {
     let student = file.owner_user_id.ok_or_else(|| invalid("ภาพไม่มีเจ้าของ"))?;
@@ -958,11 +958,11 @@ fn evidence_student(
 async fn require_evidence_file_on_connection(
     connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
-    file: &school_file_platform::repository::PlatformFile,
-    action: school_file_platform::access::FilePolicyAction,
+    file: &school_file_contracts::file::PlatformFile,
+    action: school_file_contracts::access::FilePolicyAction,
     resource: Option<Uuid>,
 ) -> Result<(), AppError> {
-    use school_file_platform::access::FilePolicyAction;
+    use school_file_contracts::access::FilePolicyAction;
     let student = evidence_student(file, resource)?;
     let linked: Option<(Uuid, Uuid)> = DbSession::new(&mut *connection)
         .query_as(
@@ -1009,7 +1009,7 @@ async fn require_evidence_file_on_connection(
 pub async fn evidence_delete_guard<'a>(
     pool: &'a PgPool,
     actor: &ActorContext,
-    file: &school_file_platform::repository::PlatformFile,
+    file: &school_file_contracts::file::PlatformFile,
     resource: Option<Uuid>,
 ) -> Result<school_tenancy::ObservedTransaction, AppError> {
     let mut tx =
@@ -1027,7 +1027,7 @@ pub async fn evidence_delete_guard<'a>(
         &mut tx,
         actor,
         file,
-        school_file_platform::access::FilePolicyAction::Delete,
+        school_file_contracts::access::FilePolicyAction::Delete,
         resource,
     )
     .await?;

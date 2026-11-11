@@ -5,9 +5,10 @@ edition.workspace = true
 
 [features]
 default = []
-api-docs = ["dep:utoipa", "school-file-platform/api-docs", "school-http/api-docs"]
+api-docs = ["school-file-contracts/api-docs", "dep:utoipa", "school-file-platform/api-docs", "school-http/api-docs"]
 
 [dependencies]
+school-file-contracts = { workspace = true }
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
 rustybuzz = { workspace = true }

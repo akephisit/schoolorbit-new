@@ -10,10 +10,8 @@ use axum::{
 };
 use futures::StreamExt;
 use school_auth::session_crypto::RawSessionToken;
-use school_staff::file_transfer::{
-    http::{routes, FileTransferHttpState},
-    runtime::FileTransferRuntime,
-};
+use school_staff_file_transfer::runtime::FileTransferRuntime;
+use school_staff_http::file_transfer::{routes, FileTransferHttpState};
 use school_test_db::{create_named_test_pool, run_test_migrations};
 use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
@@ -248,7 +246,7 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
     let ready = stream.next().await.unwrap().unwrap();
     assert!(String::from_utf8_lossy(&ready).contains("\"type\":\"ready\""));
     // Both completed peers can close the same pair; a receipt is never authorization.
-    let peer_identity = school_staff::file_transfer::runtime::FileTransferIdentity {
+    let peer_identity = school_staff_file_transfer::runtime::FileTransferIdentity {
         tenant_id: fixture.tenant_a_id,
         user_id: other,
         session_id: other_session,
@@ -257,7 +255,7 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
         .register(
             peer_identity,
             "Other".into(),
-            school_staff::file_transfer::models::RegisterFileTransferDevice {
+            school_staff_file_transfer::models::RegisterFileTransferDevice {
                 label: "Peer".into(),
                 protocol_version: Some(3),
             },
@@ -333,7 +331,7 @@ async fn file_transfer_http_rejects_unauthenticated_nonstaff_wrong_session_and_c
     assert!(String::from_utf8_lossy(&invalid).contains("session_invalid"));
     assert!(runtime
         .snapshot(
-            school_staff::file_transfer::runtime::FileTransferIdentity {
+            school_staff_file_transfer::runtime::FileTransferIdentity {
                 tenant_id: fixture.tenant_a_id,
                 user_id: staff,
                 session_id: staff_session

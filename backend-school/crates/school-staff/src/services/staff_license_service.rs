@@ -3,10 +3,10 @@ use crate::{personnel::ReplaceStaffTeachingLicenseFile, staff_access_policy};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_file_platform::{
+use school_file_contracts::{
     access::FilePolicyAction,
+    file::PlatformFile,
     platform_types::{FilePurpose, FileVisibility},
-    repository::PlatformFile,
 };
 use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};

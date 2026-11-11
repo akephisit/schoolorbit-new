@@ -2,11 +2,9 @@ use std::io::Cursor;
 
 use image::{ImageFormat, ImageReader};
 
-use super::{
-    platform_types::{
-        DetectedContent, FileInspectionMetadata, FilePurpose, FontInspectionStyle, PdfPageBox,
-    },
-    purpose_registry::{purpose_definition, ContentLimits},
+use super::purpose_registry::{purpose_definition, ContentLimits};
+use school_file_contracts::platform_types::{
+    DetectedContent, FileInspectionMetadata, FilePurpose, FontInspectionStyle, PdfPageBox,
 };
 
 const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
@@ -642,10 +640,10 @@ mod tests {
     use crate::file_processor::ImageProcessor;
     use crate::{
         file_inspector::{inspect_file, validate_image_limits, FileInspectionError},
-        platform_types::{
-            DetectedContent, FileInspectionMetadata, FilePurpose, FontInspectionStyle, PdfPageBox,
-        },
         purpose_registry::{purpose_definition, ContentLimits},
+    };
+    use school_file_contracts::platform_types::{
+        DetectedContent, FileInspectionMetadata, FilePurpose, FontInspectionStyle, PdfPageBox,
     };
 
     fn encoded_image(format: ImageFormat, width: u32, height: u32) -> Vec<u8> {

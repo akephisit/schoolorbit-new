@@ -1134,7 +1134,7 @@ repository merge settings enable merge commits and disable squash/rebase. Requir
 must be off so both parent histories can be retained; preserve all other branch protections.
 The `Pipeline gate` certifies planning and selected build success, not local test execution.
 Local commands/results belong in each PR; keep work in draft until affected checks pass.
-GitHub does not maintain test receipts or compiler snapshots. Deployed readiness, migrations,
+GitHub does not maintain local test receipts. Optional compiler-cache artifacts are performance data and never replace correctness or release gates. Deployed readiness, migrations,
 browser mount/assets and authenticated smoke always execute under universal maintenance.
 
 For the first PR that changes the merge strategy, verify the repository settings above before
@@ -1164,6 +1164,63 @@ evidence. Each sample removes its exact local builder/image. The workflow delete
 retention owns the isolated BuildKit entries. Compiler snapshots stay on the disposable runner and
 are excluded from uploaded evidence; their hashes and sizes are recorded. Do not delete shared BuildKit blobs.
 Keep the production cache backend until repeated warm build wall times and cache reuse justify a change.
+
+The same Operations entrypoint also supports a two-run Cargo target snapshot trial on the existing
+four-CPU Ubuntu runner class. Dispatch `cache-benchmark` with options
+`{"phase":"producer","samples":"2"}` on the reviewed branch commit. After that run succeeds,
+dispatch the **same commit and branch** with
+`{"phase":"consumer","samples":"2","producer_run_id":"<run>","producer_run_attempt":"<attempt>"}`.
+The second runner resolves only the first run's successful Operations artifact, pins all carrier and
+BuildKit references by digest, and checks the source/configuration and frozen compiler-cache hashes.
+Counterbalanced fresh-builder pairs cover source edits and added dependency-free workspace members.
+An explicit unchanged Cargo probe checks freshness after each pair; offline API output, runtime
+binary, user and command must agree. Diagnostic probes are builds, not a CI unit/database test suite.
+
+Cross-run transition costs include producer export, snapshot locator publication/upload, consumer
+lookup/download, archive preflight, native-tool compatibility checks, snapshot pull/materialization,
+application compilation and image push/cache export. Cache-only authority costs are charged to every
+snapshot pair. The transition timer is not total workflow elapsed: checkout, exact Node setup,
+registry login and common runner setup are excluded from both variants and cancel in the paired
+delta. Compiler seeding, frozen compiler fixture transport/priming, evidence extraction and
+API/unchanged verification are declared separately. Builder network counters include all traffic.
+A successful producer retains only its run-owned scratch GHCR package for the consumer; the consumer
+removes that exact package after publishing evidence. Failed producers clean their own state. To
+reclaim an abandoned/expired producer, use phase `cleanup` with its exact run and attempt from reviewed
+Operations code in the same repository, only after its consumer has ended. Cleanup may address an
+older commit/branch; consumption still requires the exact producer commit and branch. The verified
+completed run derives the sole scratch package name; callers cannot supply package names. The locator expires after 24 hours; artifact retention is two days. This
+Operations origin is diagnostic and cannot authorize production snapshot selection.
+The trial conservatively requires 32 GiB initially free and 8 GiB at filesystem checkpoints,
+recording actual workspace and Docker free space rather than assuming runner capacity. Insufficient
+space fails readiness; it never triggers global pruning or lower reserves. Snapshot export can
+transiently hold three TAR copies. Each owned verification image is removed immediately, the
+measured builder is destroyed before the offline API container, and the local export TAR is removed
+after its digest-bound data push. Fixture export/import/bootstrap/removal costs remain explicit.
+Any disk preparation needed by production snapshot reuse must be charged to that variant.
+
+Production target snapshots remain **disabled** in `prepare.yml` until repeated full-cost trials
+show net gain and freshness diagnostics pass. If enabled later, the sole locator authority is an
+artifact of a completed successful trusted main Pipeline run and its matching prepared School input
+hash. A mutable registry tag cannot authorize reuse. Branch manual image builds retain their existing
+package token capability; they cannot forge a trusted main run artifact or different bytes at a
+pinned digest. Missing, deleted, incompatible or corrupt snapshots fall back to the ordinary recipe.
+Application or compiler-tool build failures fail the job rather than triggering another build.
+One pure recipe selector consumes explicit preflight/native/materialization results before the
+single strict runtime build; malformed results are fatal. Publisher export through the compiler
+graph is also strict. Only the separate scratch/COPY-only carrier push and locator publication are
+optional. Prepared artifacts and snapshot locators must belong to the latest successful job attempt,
+with artifact creation/update inside that attempt's exact successful upload-step interval.
+
+The data carrier contains a controlled TAR and manifest. Complete path/type/mode/hash/duplicate/link
+validation precedes extraction into private empty staging; source and target are partitioned, source
+symlinks and archive hardlinks/special files are rejected, and Cargo's target aliases are exported as
+regular bytes. Hash-equal source files retain timestamps. Every changed input and affected surviving
+directory is fenced strictly after the original cached maximum, including after the final COPY;
+future/equal/coarse clocks refuse reuse. Current Rust/native executable, sysroot and package identity
+must match before application Cargo starts and is checked again at materialization. Cargo fingerprint
+files are never patched. Reports distinguish current application metrics from carried producer
+dependency metrics. Snapshot retention uses its separate School cargo-cache package and does not
+change immutable runtime image acceptance or production maintenance/readiness gates.
 
 School BuildKit layers use the dedicated `schoolorbit-backend-school-cache:buildcache` GHCR
 package; Admin uses its existing GHA scope. The [cache selector](../scripts/lib/pipeline-build-cache.mjs)

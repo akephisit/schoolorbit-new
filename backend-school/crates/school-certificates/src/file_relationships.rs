@@ -2,7 +2,7 @@
 
 use school_database::DbSession;
 use school_errors::AppError;
-use school_file_platform::platform_types::FilePurpose;
+use school_file_contracts::platform_types::FilePurpose;
 use sqlx::PgPool;
 use uuid::Uuid;
 

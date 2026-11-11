@@ -7,6 +7,7 @@ on:
         required: true
 permissions:
   contents: read
+  actions: read
   packages: write
 jobs:
   prepare:
@@ -25,6 +26,8 @@ jobs:
       PUBLIC_VAPID_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
       PUBLIC_API_URL: ${{ vars.BACKEND_ADMIN_URL }}
       BACKEND_SCHOOL_URL: ${{ vars.BACKEND_SCHOOL_URL }}
+      # Activate only after repeated full-cost paired trials establish a net gain.
+      SCHOOL_CARGO_SNAPSHOT_ENABLED: "false"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -81,8 +84,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - uses: docker/setup-buildx-action@v4
+      - name: Verify registry-only image tooling
         if: startsWith(matrix.component, 'backend-')
+        run: docker buildx imagetools inspect --help >/dev/null
       - name: Find exact reusable OCI inputs
         if: startsWith(matrix.component, 'backend-')
         id: image
@@ -99,10 +103,18 @@ jobs:
             exit 1
           fi
           printf 'repository=%s\nreference=%s\n' "$image" "$reference" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4
+        if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
       - name: Select backend BuildKit cache
         id: backend-cache
         if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
         run: node scripts/lib/pipeline-build-cache.mjs
+      - name: Resolve optional Cargo snapshot from a trusted main-run artifact
+        id: cargo-snapshot
+        if: matrix.component == 'backend-school' && steps.image.outputs.reused != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/lib/pipeline-cargo-snapshot.mjs resolve
       - name: Expose compiler cache runtime through BuildKit secrets
         if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
         uses: actions/github-script@v8
@@ -120,16 +132,24 @@ jobs:
           input_hash: ${{ env.INPUT_HASH }}
           cache_from: ${{ steps.backend-cache.outputs.from }}
           cache_to: ${{ steps.backend-cache.outputs.to }}
+          cargo_snapshot: ${{ steps.cargo-snapshot.outputs.reference }}
+          cargo_configuration_hash: ${{ steps.cargo-snapshot.outputs.configuration_hash }}
+          cargo_source_manifest_hash: ${{ steps.cargo-snapshot.outputs.source_manifest_hash }}
       - name: Export compiler evidence
         if: startsWith(matrix.component, 'backend-') && steps.image.outputs.reused != 'true'
         uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.component }}
           target: build-timings
+          build-contexts: ${{ steps.image-build.outputs.cargo_context }}
           platforms: linux/amd64
           outputs: type=local,dest=${{ runner.temp }}/timings-${{ matrix.component }}
           cache-from: ${{ steps.backend-cache.outputs.from }}
-          build-args: SCHOOL_COMPILER_CACHE=gha
+          build-args: |
+            SCHOOL_COMPILER_CACHE=gha
+            SCHOOL_CARGO_BUILD_STAGE=${{ steps.image-build.outputs.cargo_stage }}
+            SCHOOL_CARGO_CONFIG_HASH=${{ steps.cargo-snapshot.outputs.configuration_hash }}
+            SCHOOL_CARGO_SOURCE_MANIFEST_HASH=${{ steps.cargo-snapshot.outputs.source_manifest_hash }}
           secret-envs: |
             sccache_gha_url=ACTIONS_RESULTS_URL
             sccache_gha_token=ACTIONS_RUNTIME_TOKEN
@@ -183,4 +203,72 @@ jobs:
           name: prepared-${{ matrix.component }}
           path: ${{ runner.temp }}/${{ matrix.component }}.json
           retention-days: 90
+          if-no-files-found: error
+
+      - name: Verify optional Cargo snapshot publisher before registry writes
+        id: cargo-snapshot-publisher
+        if: matrix.component == 'backend-school' && steps.image.outputs.reused != 'true' && env.SCHOOL_CARGO_SNAPSHOT_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/lib/pipeline-cargo-snapshot.mjs publisher-check
+      - name: Export Cargo snapshot data through the strict compiler graph
+        id: cargo-snapshot-export
+        if: steps.cargo-snapshot-publisher.outcome == 'success'
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend-school
+          target: cargo-snapshot
+          build-contexts: ${{ steps.image-build.outputs.cargo_context }}
+          platforms: linux/amd64
+          outputs: type=local,dest=${{ runner.temp }}/cargo-snapshot-export
+          build-args: |
+            SCHOOL_COMPILER_CACHE=gha
+            SCHOOL_CARGO_BUILD_STAGE=${{ steps.image-build.outputs.cargo_stage }}
+            SCHOOL_CARGO_CONFIG_HASH=${{ steps.cargo-snapshot.outputs.configuration_hash }}
+            SCHOOL_CARGO_SOURCE_MANIFEST_HASH=${{ steps.cargo-snapshot.outputs.source_manifest_hash }}
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
+      - name: Prepare a data-only Cargo carrier context
+        id: cargo-snapshot-metadata
+        if: steps.cargo-snapshot-export.outcome == 'success'
+        run: |
+          python3 - <<'PYTHON'
+          import os, pathlib, shutil
+          temporary = pathlib.Path(os.environ['RUNNER_TEMP'])
+          carrier = temporary / 'cargo-snapshot-export'
+          (carrier / 'Dockerfile').write_text('FROM scratch\nCOPY snapshot.tar /snapshot.tar\nCOPY snapshot.json /snapshot.json\n')
+          metadata = temporary / 'cargo-snapshot-metadata'
+          metadata.mkdir()
+          shutil.copyfile(carrier / 'snapshot.json', metadata / 'snapshot.json')
+          PYTHON
+      - name: Publish optional data-only Cargo snapshot carrier
+        id: cargo-snapshot-build
+        if: steps.cargo-snapshot-metadata.outcome == 'success'
+        continue-on-error: true
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/cargo-snapshot-export
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.cargo-snapshot.outputs.snapshot_package }}:buildcache
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Bind Cargo snapshot digest to this main producer
+        id: cargo-snapshot-manifest
+        continue-on-error: true
+        if: steps.cargo-snapshot-build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SNAPSHOT_DIGEST: ${{ steps.cargo-snapshot-build.outputs.digest }}
+        run: node scripts/lib/pipeline-cargo-snapshot.mjs publish
+      - name: Publish run-bound Cargo snapshot locator
+        continue-on-error: true
+        if: steps.cargo-snapshot-manifest.outcome == 'success'
+        uses: actions/upload-artifact@v6
+        with:
+          overwrite: true
+          name: cargo-snapshot-backend-school
+          path: ${{ runner.temp }}/cargo-snapshot-backend-school.json
+          retention-days: 14
           if-no-files-found: error

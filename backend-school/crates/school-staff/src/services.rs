@@ -88,3 +88,9 @@ mod staff_profile_tests;
 
 #[cfg(test)]
 mod organization_membership_tests;
+
+mod staff_identity_query;
+pub use staff_identity_query::{
+    active_staff_display_name, active_staff_display_name_on_connection,
+    effective_personnel_type_on_connection,
+};

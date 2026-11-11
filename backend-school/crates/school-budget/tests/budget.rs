@@ -523,7 +523,7 @@ async fn budget_request_reservation_payment_refund_close_replay_and_private_file
         &f.pool,
         &f.other,
         &file_row,
-        school_file_platform::access::FilePolicyAction::Read,
+        school_file_contracts::access::FilePolicyAction::Read,
         Some(r.request.id)
     )
     .await

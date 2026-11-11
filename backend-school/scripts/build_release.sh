@@ -84,7 +84,7 @@ else
     mkdir -p "$metrics_dir"
     export SCHOOLORBIT_LINK_METRICS="$PWD/$metrics_dir/link-nanoseconds.txt"
     : >"$SCHOOLORBIT_LINK_METRICS"
-    cargo rustc --release --locked --bin backend-school --timings -- -C lto=off -C "linker=$PWD/scripts/release_linker.sh"
+    cargo rustc --release --locked --bin backend-school --timings --message-format=json-render-diagnostics -- -C lto=off -C "linker=$PWD/scripts/release_linker.sh" | tee "$metrics_dir/cargo-artifacts.jsonl"
 fi
 compile_nanoseconds=$(($(date +%s%N) - compile_started))
 
@@ -97,8 +97,16 @@ fi
 cache_write_wait_nanoseconds=$(($(date +%s%N) - cache_wait_started))
 
 mkdir -p "$metrics_dir"
-printf '{"schemaVersion":1,"compileNanoseconds":%s,"cacheMode":"%s","cacheEnabled":%s,"cacheWriteWaitNanoseconds":%s,"cacheWritesSettled":%s}\n' \
-    "$compile_nanoseconds" "$cache_mode" "$cache_enabled" "$cache_write_wait_nanoseconds" "$cache_writes_settled" >"$metrics_dir/build-metrics.json"
+snapshot_restored=false
+if [[ "$phase" == application ]]; then
+    if [[ -f "$metrics_dir/snapshot-restore.json" ]]; then
+        snapshot_restored=$(jq -r 'if (.restored | type) == "boolean" then .restored else error("Invalid restore evidence") end' "$metrics_dir/snapshot-restore.json")
+    else
+        printf '{"restored":false}\n' >"$metrics_dir/snapshot-restore.json"
+    fi
+fi
+printf '{"schemaVersion":1,"compileNanoseconds":%s,"cacheMode":"%s","cacheEnabled":%s,"cacheWriteWaitNanoseconds":%s,"cacheWritesSettled":%s,"snapshotRestored":%s}\n' \
+    "$compile_nanoseconds" "$cache_mode" "$cache_enabled" "$cache_write_wait_nanoseconds" "$cache_writes_settled" "$snapshot_restored" >"$metrics_dir/build-metrics.json"
 printf '{}\n' >"$metrics_dir/sccache-stats.json"
 if [[ -n ${RUSTC_WRAPPER:-} ]]; then
     # Metrics failure must not turn a successful compile into a failed release.

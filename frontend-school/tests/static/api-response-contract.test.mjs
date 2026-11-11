@@ -619,7 +619,7 @@ test('staff dashboard API uses a typed aggregate response scoped to the selected
 		'backend-school/crates/school-staff/src/services/dashboard_service.rs'
 	);
 	const backendHandler = await readRepoFile(
-		'backend-school/crates/school-staff/src/http/handlers/staff.rs'
+		'backend-school/crates/school-staff-http/src/http/handlers/staff.rs'
 	);
 
 	assert.match(

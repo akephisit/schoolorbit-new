@@ -1,5 +1,9 @@
 [workspace]
 members = [
+    "crates/school-file-contracts",
+    "crates/school-staff-http",
+    "crates/school-staff-leave",
+    "crates/school-staff-file-transfer",
     "crates/school-database",
     "crates/school-budget",
     "crates/school-student-care",
@@ -55,6 +59,10 @@ dead_code = "deny"
 unused_imports = "deny"
 
 [workspace.dependencies]
+school-file-contracts = { path = "crates/school-file-contracts" }
+school-staff-http = { path = "crates/school-staff-http" }
+school-staff-leave = { path = "crates/school-staff-leave" }
+school-staff-file-transfer = { path = "crates/school-staff-file-transfer" }
 syn = { version = "=2.0.119", features = ["full", "visit"] }
 school-database = { path = "crates/school-database" }
 school-budget = { path = "crates/school-budget" }
@@ -165,6 +173,10 @@ edition.workspace = true
 
 [features]
 api-docs = [
+    "school-file-contracts/api-docs",
+    "school-staff-http/api-docs",
+    "school-staff-leave/api-docs",
+    "school-staff-file-transfer/api-docs",
     "school-budget/api-docs",
     "school-student-care/api-docs",
     "school-workflow/api-docs",
@@ -203,6 +215,10 @@ api-docs = [
 ]
 
 [dependencies]
+school-file-contracts = { workspace = true }
+school-staff-http = { workspace = true }
+school-staff-leave = { workspace = true }
+school-staff-file-transfer = { workspace = true }
 school-database = { workspace = true }
 school-budget = { workspace = true }
 school-student-care = { workspace = true }

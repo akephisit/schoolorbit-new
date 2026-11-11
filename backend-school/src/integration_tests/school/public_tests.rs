@@ -15,10 +15,10 @@ use axum::{
 use bytes::Bytes;
 use school_auth::{config::SessionConfig, runtime::AuthRuntime, session_crypto::SessionHmacKey};
 use school_authorization::PermissionCache;
+use school_file_contracts::platform_types::DownloadGrant;
 use school_file_platform::{
     malware_scanner::{MalwareScanner, ScanOutcome},
     platform_service::FilePlatform,
-    platform_types::DownloadGrant,
     storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
 };
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager};
@@ -355,7 +355,7 @@ struct PublicTestStorageProvider {
 impl StorageProvider for PublicTestStorageProvider {
     fn namespace(
         &self,
-        storage_class: school_file_platform::platform_types::StorageClass,
+        storage_class: school_file_contracts::platform_types::StorageClass,
     ) -> Result<
         school_file_platform::storage_namespace::StorageNamespace,
         school_file_platform::storage_provider::StorageError,
@@ -364,8 +364,8 @@ impl StorageProvider for PublicTestStorageProvider {
             "fixture",
             "https://fixture.invalid",
             match storage_class {
-                school_file_platform::platform_types::StorageClass::Public => "public",
-                school_file_platform::platform_types::StorageClass::Private => "private",
+                school_file_contracts::platform_types::StorageClass::Public => "public",
+                school_file_contracts::platform_types::StorageClass::Private => "private",
             },
         )
     }
@@ -519,7 +519,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
             Arc::new(UnexpectedScanner),
         )),
         file_transfer: Arc::new(
-            school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+            school_staff_file_transfer::runtime::FileTransferRuntime::default(),
         ),
         certificate_verification_limiter: Arc::new(
             school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
@@ -624,7 +624,7 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
         .route(
             "/organization-test/{id}/permanent",
             axum::routing::delete(
-                school_staff::http::handlers::roles::delete_organization_unit_permanently,
+                school_staff_http::http::handlers::roles::delete_organization_unit_permanently,
             ),
         )
         .layer(axum::Extension(session))
@@ -671,10 +671,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
     let version = Uuid::new_v4();
     let object_key = school_file_platform::purpose_registry::original_object_key(
         Uuid::new_v4(),
-        school_file_platform::platform_types::FilePurpose::SchoolFont,
+        school_file_contracts::platform_types::FilePurpose::SchoolFont,
         private_file,
         1,
-        school_file_platform::platform_types::DetectedContent::Ttf,
+        school_file_contracts::platform_types::DetectedContent::Ttf,
     )
     .unwrap();
     sqlx::query("INSERT INTO file_versions (id, file_id, version_number, provider_code, storage_class, storage_status, object_key, detected_mime_type, canonical_extension, byte_size, checksum, scan_status, scanner_result_code, scanned_at, created_by) VALUES ($1,$2,1,'r2','private','stored',$3,'font/ttf','ttf',1,repeat('a',64),'clean','clean',now(),$4)")
@@ -717,10 +717,10 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
     let crest_version = Uuid::new_v4();
     let crest_key = school_file_platform::purpose_registry::original_object_key(
         Uuid::new_v4(),
-        school_file_platform::platform_types::FilePurpose::SchoolLogo,
+        school_file_contracts::platform_types::FilePurpose::SchoolLogo,
         crest,
         1,
-        school_file_platform::platform_types::DetectedContent::Png,
+        school_file_contracts::platform_types::DetectedContent::Png,
     )
     .unwrap();
     // Synthetic 40×80 RGBA PNG; no production assets or object writes.

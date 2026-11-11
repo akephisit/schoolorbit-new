@@ -4,9 +4,9 @@ use chrono::{Datelike, FixedOffset, Utc};
 use school_academic_core::services::lifecycle_guard;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_file_platform::{
+use school_file_contracts::{
+    file::PlatformFile,
     platform_types::{FileLifecycleStatus, FilePurpose},
-    repository::PlatformFile,
 };
 use serde::Serialize;
 use sqlx::{types::Json, PgPool};

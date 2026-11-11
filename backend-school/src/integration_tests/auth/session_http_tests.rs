@@ -1089,7 +1089,7 @@ pub(crate) mod protected_router {
                     crate::integration_tests::staff::career_integration_tests::file_platform(),
                 ),
                 file_transfer: Arc::new(
-                    school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+                    school_staff_file_transfer::runtime::FileTransferRuntime::default(),
                 ),
                 certificate_verification_limiter: Arc::new(
                     school_certificates::verification_limiter::CertificateVerificationLimiter::new(

@@ -1805,10 +1805,10 @@ async fn staged_file(pool: &PgPool, owner: Uuid, purpose: &str) -> (Uuid, Uuid) 
 }
 #[tokio::test]
 async fn document_files_and_signature_assets_have_distinct_owner_and_evidence_acl() {
-    use school_file_platform::{
+    use school_file_contracts::{
         access::FilePolicyAction,
+        file::PlatformFile,
         platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
-        repository::PlatformFile,
     };
     use school_workflow::correspondence_files as files;
     let (pool, creator, a, b) = fixture("correspondence_file_acl").await;

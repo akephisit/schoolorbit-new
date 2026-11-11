@@ -783,7 +783,7 @@ test('backend image workflows pass the selected cache policy to the hashed build
 	assert.equal(caller.uses, './.github/actions/build-backend-image');
 	assert.match(caller.if, /startsWith\(matrix.component, 'backend-'\)/);
 	const build = (await expandCompositeSteps(repoRoot, [caller])).find(
-		(x) => x.uses === 'docker/build-push-action@v7'
+		(x) => x.uses === 'docker/build-push-action@v7' && x.with?.target === 'runtime'
 	);
 	assert.equal(build.with['cache-from'], '${{ inputs.cache_from }}');
 	assert.equal(build.with['cache-to'], '${{ inputs.cache_to }}');
@@ -808,14 +808,42 @@ test('artifact-producing commands stay in the hashed recipe actions instead of r
 	assert.ok(
 		!steps.some((step) => /npm (?:ci|run build)|cargo (?:rustc|build)/.test(step.run || ''))
 	);
+	const publisher = steps.find((step) => step.id === 'cargo-snapshot-publisher');
+	assert.match(publisher.if, /github.ref == 'refs\/heads\/main'/);
+	assert.match(publisher.if, /SCHOOL_CARGO_SNAPSHOT_ENABLED == 'true'/);
+	assert.match(
+		publisher.if,
+		/github.event_name == 'push'.*github.event_name == 'workflow_dispatch'/
+	);
 	for (const step of steps.filter((step) => step.uses === 'docker/build-push-action@v7')) {
-		assert.equal(
-			step.with.target,
-			'build-timings',
-			'only evidence extraction may remain outside the artifact recipe'
-		);
-		assert.notEqual(step.with.push, true);
+		if (step.id === 'cargo-snapshot-export') {
+			assert.equal(step.with.target, 'cargo-snapshot');
+			assert.equal(step.if, "steps.cargo-snapshot-publisher.outcome == 'success'");
+			assert.notEqual(step['continue-on-error'], true, 'Cargo-reachable export must be strict');
+			assert.notEqual(step.with.push, true);
+		} else if (step.id === 'cargo-snapshot-build') {
+			assert.equal(step.with.context, '${{ runner.temp }}/cargo-snapshot-export');
+			assert.equal(step.if, "steps.cargo-snapshot-metadata.outcome == 'success'");
+			assert.equal(step.with.push, true);
+			assert.equal(
+				step['continue-on-error'],
+				true,
+				'Only the scratch data carrier push is optional'
+			);
+			assert.equal(step.with.target, undefined);
+			assert.equal(step.with['build-args'], undefined);
+			assert.equal(step.with['build-contexts'], undefined);
+			assert.equal(step.with['secret-envs'], undefined);
+		} else {
+			assert.equal(
+				step.with.target,
+				'build-timings',
+				'Only evidence and guarded data export/push may remain outside the artifact recipe'
+			);
+			assert.notEqual(step.with.push, true);
+		}
 	}
+
 	const frontend = parseYaml(
 		await readFile(path.join(repoRoot, '.github/actions/build-frontend-bundle/action.yml'), 'utf8')
 	);
@@ -903,7 +931,12 @@ test('backend runtime images use deterministic builders without ownership copy-u
 			assert.match(dockerfile, /bash scripts\/build_release\.sh/);
 			assert.match(
 				release,
-				/^\s+cargo rustc --release --locked --bin backend-school --timings -- -C lto=off -C "linker=\$PWD\/scripts\/release_linker\.sh"$/m
+				/^\s+cargo rustc --release --locked --bin backend-school --timings --message-format=json-render-diagnostics -- -C lto=off -C "linker=\$PWD\/scripts\/release_linker\.sh" \| tee "\$metrics_dir\/cargo-artifacts\.jsonl"$/m
+			);
+			assert.match(
+				release,
+				/^set -euo pipefail$/m,
+				'JSON tee must preserve compiler failure status'
 			);
 			assert.match(release, /SCCACHE_GHA_VERSION=schoolorbit-backend-school/);
 			assert.match(release, /ACTIONS_CACHE_SERVICE_V2=true/);
@@ -928,10 +961,28 @@ test('backend runtime images use deterministic builders without ownership copy-u
 test('backend workflows export Cargo timings and pass compiler cache credentials as secrets', async () => {
 	const d = parseYaml(await readRepo('.github/workflows/prepare.yml'));
 	const steps = d.jobs.prepare.steps;
-	for (const name of ['Build selected OCI image', 'Export compiler evidence']) {
+	for (const name of [
+		'Build selected OCI image',
+		'Export compiler evidence',
+		'Export Cargo snapshot data through the strict compiler graph'
+	]) {
 		const caller = steps.find((x) => x.name === name);
 		const expanded = await expandCompositeSteps(repoRoot, [caller]);
-		const step = expanded.find((x) => x.uses === 'docker/build-push-action@v7');
+		const step = expanded.find(
+			(x) =>
+				x.uses === 'docker/build-push-action@v7' &&
+				['runtime', 'build-timings', 'cargo-snapshot'].includes(x.with?.target)
+		);
+		assert.ok(step, `${name} must have a compiler consumer`);
+		for (const preflight of expanded.filter(
+			(x) => x.uses === 'docker/build-push-action@v7' && x.with?.target === 'snapshot-restored'
+		)) {
+			assert.equal(
+				preflight.with['secret-envs'],
+				undefined,
+				'Cache data preflight stays secret-free'
+			);
+		}
 		assert.match(step.with['secret-envs'], /sccache_gha_url=ACTIONS_RESULTS_URL/);
 		assert.match(step.with['secret-envs'], /sccache_gha_token=ACTIONS_RUNTIME_TOKEN/);
 		assert.doesNotMatch(step.with['build-args'], /TOKEN|URL/);
@@ -1018,6 +1069,7 @@ test('GHCR retention is bounded and dry-run by default with one readonly interlo
 	assert.deepEqual(retentionJob.strategy.matrix.include, [
 		{ package: 'schoolorbit-backend-admin', keep: 30 },
 		{ package: 'schoolorbit-backend-school', keep: 30 },
+		{ package: 'schoolorbit-backend-school-cargo-cache', keep: 2 },
 		{ package: 'schoolorbit-backend-school-cache', keep: 2 }
 	]);
 	const retentionStep = retentionJob.steps.find((step) => step.env?.PACKAGE_NAME);
@@ -1025,7 +1077,7 @@ test('GHCR retention is bounded and dry-run by default with one readonly interlo
 	assert.match(retentionStep.run, /--keep "\$KEEP"/);
 	assert.equal(
 		retentionStep.env.EXECUTE,
-		"${{ (github.event_name == 'schedule' && (matrix.package == 'schoolorbit-backend-school-cache' || vars.GHCR_RETENTION_ENABLED == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}"
+		"${{ (github.event_name == 'schedule' && ((matrix.package == 'schoolorbit-backend-school-cache' || matrix.package == 'schoolorbit-backend-school-cargo-cache') || vars.GHCR_RETENTION_ENABLED == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}"
 	);
 	assert.match(workflow, /--execute/);
 	assert.match(workflow, /GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);

@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::{
-    platform_service::PublicDelivery,
+use crate::platform_service::PublicDelivery;
+use school_file_contracts::{
+    file::PlatformFile,
     platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility},
-    repository::PlatformFile,
 };
 
 #[cfg(feature = "api-docs")]

@@ -2,7 +2,7 @@ use std::fmt;
 
 use uuid::Uuid;
 
-use super::platform_types::{
+use school_file_contracts::platform_types::{
     DerivativeRecipe, DetectedContent, FilePurpose, FileVisibility, RetentionClass,
     ScanRequirement, StorageClass,
 };
@@ -500,7 +500,7 @@ pub(crate) fn persisted_object_key(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform_types::{
+    use school_file_contracts::platform_types::{
         DetectedContent, FilePurpose, FileVisibility, RetentionClass, ScanRequirement, StorageClass,
     };
     use uuid::Uuid;

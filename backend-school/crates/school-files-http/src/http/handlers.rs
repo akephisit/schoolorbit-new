@@ -10,11 +10,11 @@ use school_certificates::file_relationships::{
     record_school_font_upload as record_certificate_school_font_upload,
     record_template_upload as record_certificate_template_upload,
 };
+use school_file_contracts::{file::PlatformFile, platform_types::FilePurpose};
 use school_file_platform::{
     platform_service::{FilePlatform, FilePlatformError, UploadCommand},
-    platform_types::FilePurpose,
     purpose_registry::{purpose_definition, purpose_from_code},
-    repository::{PlatformFile, SqlFileRepository},
+    repository::SqlFileRepository,
 };
 use school_fonts::file_relationships::record_upload as record_school_font_upload;
 #[cfg(feature = "api-docs")]
@@ -24,10 +24,10 @@ use school_http::HttpError as AppError;
 use uuid::Uuid;
 
 use crate::access_policy as file_access_policy;
-use crate::access_policy::FilePolicyAction;
 use crate::http::state::FileHttpState;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::tenant::tenant_context;
+use school_file_contracts::access::FilePolicyAction;
 
 use school_file_platform::consumer_service::{
     map_platform_error, map_public_platform_error, request_deletions,
@@ -186,7 +186,7 @@ async fn record_upload_relation_or_request_cleanup(
             )),
         }),
         FilePurpose::StaffLeaveEvidence => Some(
-            school_staff::leave::files::record_upload(
+            school_staff_leave::files::record_upload(
                 repository.pool(),
                 actor_user_id,
                 resource_id.ok_or_else(|| AppError::BadRequest("ต้องระบุคำขอ".into()))?,
@@ -390,7 +390,7 @@ pub async fn delete_file(
             .await?,
         ),
         FilePurpose::StaffLeaveEvidence | FilePurpose::StaffLeaveSignature => Some(
-            school_staff::leave::files::delete_guard(
+            school_staff_leave::files::delete_guard(
                 &context.tenant.pool,
                 &context.actor,
                 &file,
@@ -608,10 +608,10 @@ mod tests {
     use crate::test_support::insert_file;
     use crate::test_support::insert_template;
     use crate::test_support::school_font_upload_relations;
+    use school_file_contracts::platform_types::DownloadGrant;
     use school_file_platform::{
         malware_scanner::{MalwareScanner, ScanOutcome},
         platform_service::FilePlatform,
-        platform_types::DownloadGrant,
         storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
     };
     use school_test_db::{create_named_test_pool, create_test_user, run_test_migrations};
@@ -622,7 +622,7 @@ mod tests {
     impl StorageProvider for UnexpectedStorageProvider {
         fn namespace(
             &self,
-            storage_class: school_file_platform::platform_types::StorageClass,
+            storage_class: school_file_contracts::platform_types::StorageClass,
         ) -> Result<
             school_file_platform::storage_namespace::StorageNamespace,
             school_file_platform::storage_provider::StorageError,
@@ -631,8 +631,8 @@ mod tests {
                 "fixture",
                 "https://fixture.invalid",
                 match storage_class {
-                    school_file_platform::platform_types::StorageClass::Public => "public",
-                    school_file_platform::platform_types::StorageClass::Private => "private",
+                    school_file_contracts::platform_types::StorageClass::Public => "public",
+                    school_file_contracts::platform_types::StorageClass::Private => "private",
                 },
             )
         }
