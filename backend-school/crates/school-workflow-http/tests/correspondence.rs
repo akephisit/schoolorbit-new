@@ -2113,7 +2113,7 @@ fn memory_png() -> Vec<u8> {
     bytes
 }
 #[async_trait::async_trait]
-impl school_workflow::document_export::DocumentValidationPort for MemoryValidator {
+impl school_workflow::document_validation::DocumentValidationPort for MemoryValidator {
     async fn validate(
         &self,
         document: &CorrespondenceDocumentRevision,
@@ -2122,7 +2122,7 @@ impl school_workflow::document_export::DocumentValidationPort for MemoryValidato
         label: &str,
     ) -> Result<(), school_errors::AppError> {
         let original = document.original_file_id.map(|_| memory_png());
-        school_workflow::document_export::validate_document_bytes(
+        school_workflow_http::document_export::validate_document_bytes(
             document,
             original.as_deref(),
             annotations,
@@ -2324,7 +2324,7 @@ struct RacingValidator<'a> {
     next: Uuid,
 }
 #[async_trait::async_trait]
-impl school_workflow::document_export::DocumentValidationPort for RacingValidator<'_> {
+impl school_workflow::document_validation::DocumentValidationPort for RacingValidator<'_> {
     async fn validate(
         &self,
         document: &CorrespondenceDocumentRevision,

@@ -125,11 +125,11 @@ test('symlinked or public completion evidence fails closed', t => {
 
 test('every public and callable production mutator observes the guard before its first write', () => {
   const firstMutations = {
-    'release.yml': 'Upload read-only Admin account preflight',
+    'release.yml': 'Upload one immutable release bundle',
     'deploy-school-tenant.yml': 'Upload inactive accepted frontend',
-    'deploy-backend-admin.yml': 'Upload canonical runtime and proxy templates',
+    'deploy-backend-admin.yml': 'Deploy selected commit',
     'deploy-frontend-admin.yml': 'Create missing Admin Worker with an isolated maintenance response',
-    'deploy-school-release.yml': 'Upload canonical runtime',
+    'deploy-school-release.yml': 'Deploy to Server via SSH',
     'api-tls.yml': 'Upload shared certificate and maintenance owners',
     'recreate-admin-frontend.yml': 'Upload canonical maintenance implementation',
     'maintenance.yml': 'Retain bounded backend releases'

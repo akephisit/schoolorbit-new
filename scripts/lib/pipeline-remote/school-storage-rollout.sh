@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # No server, provider I/O or tenant SQL here: the exact image owns those operations.
 set -euo pipefail
+# shellcheck source=scripts/lib/pipeline-remote/release-paths.sh
+. "$(dirname "${BASH_SOURCE[0]}")/release-paths.sh"
+schoolorbit_release_paths "${BASH_SOURCE[0]}"
 mode=${1:?preflight or cutover is required}
 stack=${SCHOOLORBIT_STACK_ROOT:-/opt/stack}
-root="$stack/deployment"
+root=$schoolorbit_state_root
+code_root=$schoolorbit_code_root
 : "${RELEASE_SHA:?}"
 : "${BACKEND_IMAGE_DIGEST:?}"
 [[ $RELEASE_SHA =~ ^[0-9a-f]{40}$ && $BACKEND_IMAGE_DIGEST =~ ^sha256:[0-9a-f]{64}$ ]] || exit 64
@@ -12,9 +16,9 @@ journal="$root/releases/$RELEASE_SHA/storage-namespace"
 backend=schoolorbit-backend-school
 oneshot=schoolorbit-school-rollout
 # shellcheck source=scripts/lib/pipeline-remote/runtime-env.sh
-. "$root/scripts/lib/pipeline-remote/runtime-env.sh"
+. "$code_root/scripts/lib/pipeline-remote/runtime-env.sh"
 # shellcheck source=scripts/lib/pipeline-remote/storage-namespace-input.sh
-. "$root/scripts/lib/pipeline-remote/storage-namespace-input.sh"
+. "$code_root/scripts/lib/pipeline-remote/storage-namespace-input.sh"
 attestation=$(storage_namespace_input) || exit $?
 umask 077
 mkdir -p "$journal"

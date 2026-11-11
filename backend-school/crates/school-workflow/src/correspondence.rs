@@ -1,5 +1,5 @@
 //! Correspondence records, source ACL and immutable document/action decisions.
-use crate::document_export::DocumentValidationPort;
+use crate::document_validation::DocumentValidationPort;
 use crate::{
     correspondence_files, directed,
     process::{self, denied, invalid, stale},
@@ -1140,7 +1140,7 @@ async fn act_impl(
         let label = identity
             .as_ref()
             .map(|(name, role)| {
-                crate::document_export::signing_label(name, role.as_deref(), signing_time)
+                crate::document_validation::signing_label(name, role.as_deref(), signing_time)
             })
             .unwrap_or_default();
         validator

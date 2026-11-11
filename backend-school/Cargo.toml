@@ -33,6 +33,7 @@ members = [
     "crates/school-academic-results",
     "crates/school-academic-lifecycle",
     "crates/school-workflow",
+    "crates/school-workflow-http",
     "crates/school-question-bank",
     "crates/school-admission",
     "crates/school-supervision",
@@ -133,6 +134,7 @@ school-academic-assessment = { path = "crates/school-academic-assessment" }
 school-academic-results = { path = "crates/school-academic-results" }
 school-academic-lifecycle = { path = "crates/school-academic-lifecycle" }
 school-workflow = { path = "crates/school-workflow" }
+school-workflow-http = { path = "crates/school-workflow-http" }
 school-question-bank = { path = "crates/school-question-bank" }
 school-admission = { path = "crates/school-admission" }
 school-supervision = { path = "crates/school-supervision" }
@@ -180,6 +182,7 @@ api-docs = [
     "school-budget/api-docs",
     "school-student-care/api-docs",
     "school-workflow/api-docs",
+    "school-workflow-http/api-docs",
     "school-files-http/api-docs",
     "school-administration/api-docs",
     "dep:utoipa",
@@ -270,6 +273,7 @@ school-academic-assessment = { workspace = true }
 school-academic-results = { workspace = true }
 school-academic-lifecycle = { workspace = true }
 school-workflow = { workspace = true }
+school-workflow-http = { workspace = true }
 school-question-bank = { workspace = true }
 school-admission = { workspace = true }
 school-supervision = { workspace = true }

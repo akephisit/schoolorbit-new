@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -eu
+# shellcheck source=scripts/lib/pipeline-remote/release-paths.sh
+. "$(dirname "${BASH_SOURCE[0]}")/release-paths.sh"
+schoolorbit_release_paths "${BASH_SOURCE[0]}"
 BASE_DOMAIN=${BASE_DOMAIN:?BASE_DOMAIN is required}
 smoke_subdomain=${ACADEMIC_CORE_SMOKE_SUBDOMAIN:-}
 case "$smoke_subdomain" in
@@ -18,7 +21,7 @@ if [ -z "${SMOKE_USERNAME:-}" ] || [ -z "${SMOKE_PASSWORD:-}" ]; then
 fi
 
 base_domain="${BASE_DOMAIN}"
-deployment_root=${SCHOOLORBIT_STACK_ROOT:-/opt/stack}/deployment
+deployment_root=$schoolorbit_code_root
 smoke_script=$deployment_root/scripts/smoke_test.sh
 timing_helper_source=$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
 test -f "$smoke_script" || {

@@ -51,6 +51,24 @@ fn tenancy_normal_dependency_closure_excludes_embedded_migrations() {
 }
 
 #[test]
+fn workflow_business_consumers_do_not_inherit_file_platform_implementation() {
+    for consumer in ["school-workflow", "school-staff-leave", "school-budget"] {
+        let mut pending = vec![consumer.to_string()];
+        let mut visited = BTreeSet::new();
+        while let Some(package) = pending.pop() {
+            assert!(
+                !["school-file-platform", "school-workflow-http"].contains(&package.as_str()),
+                "{consumer} must not inherit {package} through production dependencies"
+            );
+            if visited.insert(package.clone()) {
+                let manifest = read_source(workspace_crate_dir(&package).join("Cargo.toml"));
+                pending.extend(school_dependencies_in_section(&manifest, "dependencies"));
+            }
+        }
+    }
+}
+
+#[test]
 fn attendance_reads_and_digest_must_not_restore_placeholder_backfill() {
     let runtime = read_source(manifest_dir().join("crates/school-attendance/src/runtime.rs"));
     let adapter = read_source(manifest_dir().join("crates/school-attendance/src/application.rs"));
@@ -465,18 +483,18 @@ fn application_route_source() -> String {
             "school_supervision::http::",
         ),
         (
-            "school_workflow::http::routes::work_routes",
-            "crates/school-workflow/src/http/work_handlers.rs",
+            "school_workflow_http::http::routes::work_routes",
+            "crates/school-workflow-http/src/http/work_handlers.rs",
             "routes",
             "/api",
-            "school_workflow::http::",
+            "school_workflow_http::http::",
         ),
         (
-            "school_workflow::http::routes::workflow_routes",
-            "crates/school-workflow/src/http/handlers.rs",
+            "school_workflow_http::http::routes::workflow_routes",
+            "crates/school-workflow-http/src/http/handlers.rs",
             "routes",
             "/api",
-            "school_workflow::http::",
+            "school_workflow_http::http::",
         ),
     ] {
         assert!(
@@ -1258,6 +1276,18 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         (
             "school-workflow",
             &[
+                "school-authorization",
+                "school-database",
+                "school-errors",
+                "school-file-contracts",
+                "school-notifications",
+                "school-permissions",
+                "school-tenancy",
+            ],
+        ),
+        (
+            "school-workflow-http",
+            &[
                 "school-auth",
                 "school-auth-http",
                 "school-authorization",
@@ -1269,6 +1299,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-notifications",
                 "school-permissions",
                 "school-tenancy",
+                "school-workflow",
             ],
         ),
         (
@@ -2798,8 +2829,8 @@ fn remaining_vertical_handlers_use_typed_session_identity() {
         "crates/school-administration/src/facility/http/handlers.rs",
         "crates/school-question-bank/src/http/handlers.rs",
         "crates/school-supervision/src/http/handlers.rs",
-        "crates/school-workflow/src/http/work_handlers.rs",
-        "crates/school-workflow/src/http/handlers.rs",
+        "crates/school-workflow-http/src/http/work_handlers.rs",
+        "crates/school-workflow-http/src/http/handlers.rs",
         "crates/school-administration/src/lookup/http/handlers.rs",
     ]);
 }
@@ -3764,7 +3795,7 @@ fn module_rs_files() -> Vec<PathBuf> {
         "crates/school-attendance/src/runtime.rs",
         "crates/school-behavior/src/http",
         "crates/school-student-care/src/http",
-        "crates/school-workflow/src/http",
+        "crates/school-workflow-http/src/http",
         "crates/school-auth-http/src/http",
         "crates/school-auth/src/consent",
     ]
@@ -7363,7 +7394,7 @@ fn permission_cache_and_process_events_are_tenant_explicit() {
     let publishers = format!(
         "{}\n{}",
         read_source(workspace_crate_dir("school-auth").join("src/runtime.rs")),
-        read_source(workspace_crate_dir("school-workflow").join("src/http/state.rs"))
+        read_source(workspace_crate_dir("school-workflow-http").join("src/http/state.rs"))
     );
 
     assert!(cache.contains("TenantUserKey"));
@@ -7930,11 +7961,12 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
         read_source(manifest_dir().join("crates/school-notifications/src/events.rs"));
     let notification_handler =
         read_source(manifest_dir().join("crates/school-notifications/src/http/handlers.rs"));
-    let app_state = read_source(workspace_crate_dir("school-workflow").join("src/http/state.rs"));
+    let app_state =
+        read_source(workspace_crate_dir("school-workflow-http").join("src/http/state.rs"));
     let work_handler =
-        read_source(manifest_dir().join("crates/school-workflow/src/http/work_handlers.rs"));
+        read_source(manifest_dir().join("crates/school-workflow-http/src/http/work_handlers.rs"));
     let workflow_handler =
-        read_source(manifest_dir().join("crates/school-workflow/src/http/handlers.rs"));
+        read_source(manifest_dir().join("crates/school-workflow-http/src/http/handlers.rs"));
 
     for expected in [
         "pub enum WorkChangeKind",

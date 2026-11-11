@@ -2,6 +2,9 @@ name: School release implementation
 on:
   workflow_call:
     inputs:
+      release_bundle_digest:
+        type: string
+        required: true
       plan:
         type: string
         required: true
@@ -470,15 +473,6 @@ jobs:
           validated=$(storage_namespace_input)
           printf 'NAMESPACE_ATTESTATION_JSON=%s\n' "$validated" >> "$GITHUB_ENV"
           printf 'NAMESPACE_ATTESTATION_MANUAL=%s\n' "$NAMESPACE_ATTESTATION_MANUAL" >> "$GITHUB_ENV"
-      - name: Upload canonical runtime and proxy templates
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          port: ${{ secrets.SERVER_PORT }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/smoke_test.sh,scripts/prune_runtime_images.sh,scripts/clamd_runtime_matches.sh,scripts/reconcile_r2_cors.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template,scripts/lib/pipeline-remote
-          target: /opt/stack/deployment
       - name: Deploy to Server via SSH
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -487,17 +481,20 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 30m
-          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/school-deploy-backend.sh
-          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,BACKEND_IMAGE_DIGEST,RELEASE_SHA,NAMESPACE_ATTESTATION_JSON,NAMESPACE_ATTESTATION_MANUAL
+          script: bash "/opt/stack/deployment/release-bundles/$RELEASE_SHA/$RELEASE_BUNDLE_SHA256/scripts/lib/pipeline-remote/school-deploy-backend.sh"
+          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,BACKEND_IMAGE_DIGEST,RELEASE_SHA,RELEASE_BUNDLE_SHA256,NAMESPACE_ATTESTATION_JSON,NAMESPACE_ATTESTATION_MANUAL
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
           BACKEND_IMAGE_DIGEST: ${{ needs.verify-release-ci.outputs.image_digest }}
           RELEASE_SHA: ${{ github.sha }}
+          RELEASE_BUNDLE_SHA256: ${{ inputs.release_bundle_digest }}
       - name: Run Academic Core authenticated smoke
         uses: appleboy/ssh-action@v1.2.5
         env:
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_BUNDLE_SHA256: ${{ inputs.release_bundle_digest }}
           ACADEMIC_CORE_SMOKE_SUBDOMAIN: ${{ inputs.academic_core_smoke_subdomain || 'sandbox' }}
           SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
@@ -508,8 +505,8 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 10m
-          envs: ACADEMIC_CORE_SMOKE_SUBDOMAIN,SMOKE_USERNAME,SMOKE_PASSWORD,BASE_DOMAIN
-          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/school-verify-academic.sh
+          envs: RELEASE_SHA,RELEASE_BUNDLE_SHA256,ACADEMIC_CORE_SMOKE_SUBDOMAIN,SMOKE_USERNAME,SMOKE_PASSWORD,BASE_DOMAIN
+          script: bash "/opt/stack/deployment/release-bundles/$RELEASE_SHA/$RELEASE_BUNDLE_SHA256/scripts/lib/pipeline-remote/school-verify-academic.sh"
   promote-frontends:
     needs:
       - verify-release-ci
@@ -748,6 +745,7 @@ jobs:
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
           RELEASE_SHA: ${{ github.sha }}
+          RELEASE_BUNDLE_SHA256: ${{ inputs.release_bundle_digest }}
           BACKEND_IMAGE_DIGEST: ${{ needs.verify-release-ci.outputs.image_digest }}
           RELEASE_ID: ${{ needs.verify-release-ci.outputs.release_id }}
         with:
@@ -756,8 +754,8 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 10m
-          envs: ACADEMIC_CORE_SMOKE_SUBDOMAIN,SMOKE_USERNAME,SMOKE_PASSWORD,BASE_DOMAIN,RELEASE_SHA,BACKEND_IMAGE_DIGEST,RELEASE_ID
-          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/school-verify-release.sh
+          envs: ACADEMIC_CORE_SMOKE_SUBDOMAIN,SMOKE_USERNAME,SMOKE_PASSWORD,BASE_DOMAIN,RELEASE_SHA,RELEASE_BUNDLE_SHA256,BACKEND_IMAGE_DIGEST,RELEASE_ID
+          script: bash "/opt/stack/deployment/release-bundles/$RELEASE_SHA/$RELEASE_BUNDLE_SHA256/scripts/lib/pipeline-remote/school-verify-release.sh"
       - name: Report bounded release outcome
         if: always()
         env:

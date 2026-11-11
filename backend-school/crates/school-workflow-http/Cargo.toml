@@ -1,0 +1,42 @@
+[package]
+name = "school-workflow-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+api-docs = ["dep:utoipa", "school-workflow/api-docs", "school-file-platform/api-docs", "school-http/api-docs"]
+
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+lopdf = { workspace = true }
+rustybuzz = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-authorization = { workspace = true }
+school-database = { workspace = true }
+school-errors = { workspace = true }
+school-file-contracts = { workspace = true }
+school-file-platform = { workspace = true }
+school-http = { workspace = true }
+school-notifications = { workspace = true }
+school-permissions = { workspace = true }
+school-tenancy = { workspace = true }
+school-workflow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+image = { workspace = true }
+school-test-db = { workspace = true }
+
+[lints]
+workspace = true

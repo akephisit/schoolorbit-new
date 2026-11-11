@@ -314,7 +314,10 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
             "school-workflow/src/correspondence.rs",
             &["explicit_read", "act_impl"],
         ),
-        ("school-workflow/src/document_export.rs", &["read_snapshot"]),
+        (
+            "school-workflow-http/src/document_export.rs",
+            &["read_snapshot"],
+        ),
     ];
     entries
         .iter()

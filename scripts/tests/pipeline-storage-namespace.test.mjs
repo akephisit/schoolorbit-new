@@ -81,6 +81,7 @@ function fixture(t, options = {}) {
   mkdirSync(path.join(stack, "bin"));
   mkdirSync(path.join(stack, "postgresql"));
   for (const name of [
+    "release-paths.sh",
     "runtime-env.sh",
     "storage-namespace-input.sh",
     "school-storage-rollout.sh",

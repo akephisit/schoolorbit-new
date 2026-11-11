@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -eu
+# shellcheck source=scripts/lib/pipeline-remote/release-paths.sh
+. "$(dirname "${BASH_SOURCE[0]}")/release-paths.sh"
+schoolorbit_release_paths "${BASH_SOURCE[0]}"
 BASE_DOMAIN=${BASE_DOMAIN:?BASE_DOMAIN is required}
 RELEASE_SHA=${RELEASE_SHA:?RELEASE_SHA is required}
 BACKEND_IMAGE_DIGEST=${BACKEND_IMAGE_DIGEST:?BACKEND_IMAGE_DIGEST is required}
@@ -9,9 +12,9 @@ smoke_subdomain=${ACADEMIC_CORE_SMOKE_SUBDOMAIN:-sandbox}
 proxy_source=/opt/stack/deployment/school-api.conf
 maintenance_proxy_source=/opt/stack/deployment/school-api.maintenance.conf
 proxy_target=/opt/stack/nginx/conf.d/school-api.conf
-smoke_script=/opt/stack/deployment/scripts/smoke_test.sh
-timing_helper_source=/opt/stack/deployment/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
-image_cleanup=/opt/stack/deployment/scripts/prune_runtime_images.sh
+smoke_script=$schoolorbit_code_root/scripts/smoke_test.sh
+timing_helper_source=$schoolorbit_code_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh
+image_cleanup=$schoolorbit_code_root/scripts/prune_runtime_images.sh
 test -f "$proxy_source"
 test -f "$maintenance_proxy_source"
 test -f "$smoke_script"

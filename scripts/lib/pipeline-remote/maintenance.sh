@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=scripts/lib/pipeline-remote/release-paths.sh
+. "$(dirname "${BASH_SOURCE[0]}")/release-paths.sh"
+schoolorbit_release_paths "${BASH_SOURCE[0]}"
 mode=${1:?enter, verify or accept is required}
 : "${BASE_DOMAIN:?}"
 : "${RELEASE_SHA:?}"
 [[ $RELEASE_SHA =~ ^[0-9a-f]{40}$ ]] || exit 64
 stack=${SCHOOLORBIT_STACK_ROOT:-/opt/stack}
-root="$stack/deployment"
-renderer="$root/scripts/render_nginx_config.sh"
+root=$schoolorbit_state_root
+code_root=$schoolorbit_code_root
+renderer="$code_root/scripts/render_nginx_config.sh"
 mkdir -p "$root/releases/$RELEASE_SHA"
 journal="$root/releases/$RELEASE_SHA"
 public_status() {
@@ -46,7 +50,7 @@ if [[ $mode == enter ]]; then
     fi
     probe=$(cat "$journal/probe-token")
     for part in school admin; do
-        source="$root/nginx-configs/${part}-api.maintenance.conf.template"
+        source="$code_root/nginx-configs/${part}-api.maintenance.conf.template"
         "$renderer" "$source" "$journal/${part}-maintenance.conf" "$BASE_DOMAIN" "$RELEASE_SHA" maintenance "$probe"
         chmod 0600 "$journal/${part}-maintenance.conf"
         target="$stack/nginx/conf.d/${part}-api.conf"
@@ -70,7 +74,7 @@ if [[ $mode == enter ]]; then
     printf '%s\n' "$RELEASE_SHA" >"$root/pending-release"
     if ! podman container exists schoolorbit-nginx; then
         test -f "$stack/.env"
-        cp "$root/podman-compose.yml" "$stack/podman-compose.yml"
+        cp "$code_root/podman-compose.yml" "$stack/podman-compose.yml"
         podman-compose -f "$stack/podman-compose.yml" up -d --no-deps nginx >/dev/null 2>&1
     else
         podman start schoolorbit-nginx >/dev/null
@@ -101,7 +105,7 @@ elif [[ $mode == accept || $mode == verify ]]; then
         SMOKE_ADMIN_API_URL="https://admin-api.${BASE_DOMAIN}" SMOKE_TENANT_URL="https://sandbox.${BASE_DOMAIN}" \
         SMOKE_ORIGIN="https://sandbox.${BASE_DOMAIN}" SMOKE_REQUIRE_AUTH=true SMOKE_ACADEMIC_CONTEXT=true \
         SMOKE_DIRECT_BACKEND=false SMOKE_RESOLVE_IP=127.0.0.1 \
-        SMOKE_RELEASE_PROBE_TOKEN="$probe" bash "$root/scripts/smoke_test.sh"
+        SMOKE_RELEASE_PROBE_TOKEN="$probe" bash "$code_root/scripts/smoke_test.sh"
     if [[ $mode == verify ]]; then
         if [[ -n ${PREPARED_IMAGES-} ]]; then
             printf '%s' "$PREPARED_IMAGES" | jq -e 'type == "object"' >/dev/null
@@ -111,7 +115,7 @@ elif [[ $mode == accept || $mode == verify ]]; then
                 repository="ghcr.io/akephisit/schoolorbit-${component}"
                 podman tag "${repository}@${digest}" "${repository}:${RELEASE_SHA}"
                 podman tag "${repository}@${digest}" "${repository}:latest"
-                bash "$root/scripts/prune_runtime_images.sh" "$repository" 3
+                bash "$code_root/scripts/prune_runtime_images.sh" "$repository" 3
             done < <(printf '%s' "$PREPARED_IMAGES" | jq -er 'to_entries[] | [.key,.value] | join("|")')
         fi
         echo "Private proxy readiness and authenticated smoke passed; maintenance remains enabled."
@@ -126,7 +130,7 @@ elif [[ $mode == accept || $mode == verify ]]; then
     # partially normal configurations for a later proxy restart.
     trap 'status=$?; if ((status != 0)); then restore_maintenance; fi' EXIT
     for part in school admin; do
-        "$renderer" "$root/nginx-configs/${part}-api.conf.template" "${stack}/nginx/conf.d/${part}-api.conf" "$BASE_DOMAIN" "$RELEASE_SHA" ready
+        "$renderer" "$code_root/nginx-configs/${part}-api.conf.template" "${stack}/nginx/conf.d/${part}-api.conf" "$BASE_DOMAIN" "$RELEASE_SHA" ready
     done
     if ! podman exec schoolorbit-nginx nginx -t || ! podman exec schoolorbit-nginx nginx -s reload; then
         restore_maintenance
