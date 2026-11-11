@@ -355,6 +355,9 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   receive narrow state through application-owned `FromRef` implementations, and use provider-owned
   ports for cross-domain operations. `school-auth-http` is the single session/tenant request-context
   and cookie/origin adapter owner; all callers use it directly without duplicating identity logic.
+  Its profile route receives the narrow `ProfileUpdatePort`; application composition owns the
+  atomic Auth/Files profile command and post-commit lifecycle cleanup. Keep File Platform types,
+  implementation dependencies and feature forwarding out of `school-auth-http`.
 - Keep domain route factories non-generic over the application state and return
   `Router<DomainHttpState>`. Bind the existing narrow `FromRef` state at application composition,
   before the shared session middleware. This keeps handler futures, extractors and response

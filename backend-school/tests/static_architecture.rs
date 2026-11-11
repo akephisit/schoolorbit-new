@@ -1034,7 +1034,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-auth",
                 "school-authorization",
                 "school-errors",
-                "school-file-platform",
                 "school-http",
                 "school-tenancy",
             ],
@@ -9101,6 +9100,64 @@ fn file_platform_blocks_new_provider_coupling_and_locator_responses() {
 }
 
 #[test]
+fn auth_http_profile_commands_keep_file_orchestration_in_application() {
+    let auth_http = workspace_crate_dir("school-auth-http");
+    let manifest = read_source(auth_http.join("Cargo.toml"));
+    assert!(!manifest.contains("school-file-platform"));
+    let sources = list_files(auth_http.join("src"), |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    })
+    .into_iter()
+    .map(read_source)
+    .collect::<String>();
+    assert!(!sources.contains("school_file_platform"));
+    assert!(!sources.contains("FilePlatform"));
+    assert!(!sources.contains("AppState"));
+
+    let state = strip_comments(&read_source(auth_http.join("src/http/state.rs")));
+    assert!(state.contains("pub trait ProfileUpdatePort: Send + Sync"));
+    assert!(state.contains("pub profile_updates: Arc<dyn ProfileUpdatePort>"));
+    assert!(state.contains("pub auth_runtime: AuthRuntime"));
+    let handlers = strip_comments(&read_source(auth_http.join("src/http/handlers.rs")));
+    assert!(handlers.contains("current_user_tenant_context_from_session(&session)"));
+    assert!(handlers.contains(".update_profile(&pool, user_id, payload)"));
+
+    let adapter = strip_comments(&read_source(
+        manifest_dir().join("src/adapters/auth_profile.rs"),
+    ));
+    assert!(adapter.contains("impl ProfileUpdatePort for ApplicationAuthProfile"));
+    assert!(adapter.contains("file_platform: Arc<FilePlatform>"));
+    assert!(adapter.contains("\"auth-http.profile_orchestrator.update_profile\""));
+    let ordered_steps = [
+        "promote_ready_owned_image(&mut transaction, file_id, user_id)",
+        "services::update_profile(&mut transaction, user_id, payload)",
+        "transaction.commit().await?",
+        "services::find_user_by_id(pool, user_id)",
+        "request_deletions(self.file_platform.as_ref(), pool, [file_id])",
+    ]
+    .map(|step| {
+        adapter
+            .find(step)
+            .expect("profile composition step must remain")
+    });
+    assert!(ordered_steps.windows(2).all(|steps| steps[0] < steps[1]));
+    for forbidden in [
+        "Cookie",
+        "AuthenticatedSession",
+        "load_actor_context",
+        "get_school_database_url",
+    ] {
+        assert!(
+            !adapter.contains(forbidden),
+            "profile composition must use caller context"
+        );
+    }
+    let projection = read_source(manifest_dir().join("src/http_state.rs"));
+    assert!(projection.contains("crate::adapters::auth_profile::ApplicationAuthProfile::new("));
+    assert!(!auth_http.join("src/http/profile_orchestrator.rs").exists());
+}
+
+#[test]
 fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
     let migration = strip_comments(&read_source(
         manifest_dir().join("migrations/031_file_platform_domain_references.sql"),
@@ -9141,7 +9198,7 @@ fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
         "crates/school-admission/src/http/handlers/portal.rs",
         "crates/school-admission/src/http/handlers/rounds.rs",
         "crates/school-question-bank/src/http/handlers.rs",
-        "crates/school-auth-http/src/http/profile_orchestrator.rs",
+        "src/adapters/auth_profile.rs",
         "crates/school-staff/src/http/handlers/staff.rs",
         "crates/school-staff/src/achievement/http/handlers.rs",
     ] {
