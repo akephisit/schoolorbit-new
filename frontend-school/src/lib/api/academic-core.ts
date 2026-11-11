@@ -83,6 +83,22 @@ export const updateAcademicContextSettings = (body: UpdateAcademicContextSetting
 	);
 
 export type Homeroom = Schemas['Homeroom'];
+export type HomeroomReference = Schemas['HomeroomReference'];
+type StudentYearHomeroomOptionsQuery = NonNullable<
+	operations['listStudentYearHomeroomOptions']['parameters']['query']
+>;
+export const listStudentYearHomeroomOptions = (
+	academicYearId: string,
+	options: ApiRequestOptions = {}
+) =>
+	academicData(
+		apiClient.get<HomeroomReference[]>('/api/academic/student-years/homeroom-options', {
+			...options,
+			query: { academicYearId } satisfies StudentYearHomeroomOptionsQuery
+		}),
+		'โหลดห้องอ้างอิงนักเรียนประจำปีไม่สำเร็จ'
+	);
+
 export const getHomeroomYearContext = (academicYearId: string, options: ApiRequestOptions = {}) =>
 	academicData(
 		apiClient.get<Schemas['YearLifecycleContext']>('/api/academic/homerooms/year-context', {

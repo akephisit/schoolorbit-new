@@ -21,7 +21,7 @@ const profileEndpoint = `/api/staff/${firstStaff}`;
 const rolesEndpoint = `/api/users/${firstStaff}/roles`;
 const permissionsEndpoint = `/api/users/${firstStaff}/permissions`;
 async function fillCreate(page: Page) {
-	await page.getByRole('button', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
+	await page.getByRole('combobox', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
 	await page.getByRole('option', { name: 'นาย', exact: true }).click();
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรใหม่');
 	await page.getByPlaceholder('นามสกุล', { exact: true }).fill('ทดสอบ');
@@ -363,7 +363,7 @@ test('create-only form keeps denied choices out of startup and their opened step
 	await page.goto('/staff/manage/new');
 	await fillCreate(page);
 	await next(page);
-	await expect(page.getByText('ไม่มีสิทธิ์อ่านตัวเลือกบทบาท', { exact: true })).toBeVisible();
+	await expect(page.getByText('สร้างบุคลากรโดยยังไม่มอบหมายบทบาท', { exact: true })).toBeVisible();
 	expect(api.reads).toHaveLength(0);
 });
 test('creation choices start only at their steps and have independent retry', async ({ page }) => {
@@ -609,4 +609,49 @@ test('old avatar upload cannot attach to the next person', async ({ page }) => {
 	await (await response).finished();
 	expect(api.writes.filter((write) => write.method === 'PUT')).toHaveLength(0);
 	await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('บุคลากรที่สอง');
+});
+
+for (const extra of [[], ['roles.read.all']]) {
+	test(`staff creator can finish without assigning authority (${extra.length ? 'reader' : 'create only'})`, async ({
+		page
+	}) => {
+		const api = await mockStaffDirectory(page, { permissions: ['staff.create.all', ...extra] });
+		await page.goto('/staff/manage/new');
+		await fillCreate(page);
+		await next(page, 3);
+		await expect(page.getByTestId('staff-create-review')).toContainText('บุคลากรใหม่');
+		expect(api.count('/api/roles')).toBe(0);
+		expect(api.count('/api/organization/units')).toBe(0);
+		const created = page.waitForRequest(
+			(request) => request.method() === 'POST' && new URL(request.url()).pathname === '/api/staff'
+		);
+		await page.getByRole('button', { name: 'สร้างบุคลากร', exact: true }).click();
+		expect((await created).postDataJSON()).toMatchObject({
+			role_ids: [],
+			organization_assignments: []
+		});
+		await expect(page.getByPlaceholder('ชื่อ', { exact: true })).toHaveValue('');
+		await expect(page).toHaveURL(/\/staff\/manage\/new$/);
+	});
+}
+
+test('revoking organization assignment discards its draft while retaining an ordinary profile edit', async ({
+	page
+}) => {
+	await mockStaffDirectory(page);
+	await page.goto(`${staffPath(firstStaff, '/edit')}?section=organizations`);
+	await page.getByPlaceholder('ระบุหน้าที่รับผิดชอบ...').fill('ร่างสังกัดที่ถูกเพิกถอน');
+	await page.evaluate(async () => {
+		const modulePath = '/src/lib/stores/permissions.ts';
+		const { setPermissions } = await import(modulePath);
+		setPermissions(['staff_profile.read.school', 'staff.update.all', 'roles.read.all']);
+	});
+	await expect(page.getByText('ไม่มีสิทธิ์แก้ไขสังกัดหน่วยงาน', { exact: true })).toBeVisible();
+	await page.getByRole('link', { name: 'ข้อมูลส่วนตัว', exact: true }).click();
+	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('ชื่อหลังเพิกถอน');
+	const saved = page.waitForRequest(
+		(request) => request.method() === 'PUT' && new URL(request.url()).pathname === profileEndpoint
+	);
+	await page.getByRole('button', { name: 'บันทึกการเปลี่ยนแปลง', exact: true }).click();
+	expect((await saved).postDataJSON()).toEqual({ first_name: 'ชื่อหลังเพิกถอน' });
 });

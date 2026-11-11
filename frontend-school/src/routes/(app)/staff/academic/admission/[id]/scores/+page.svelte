@@ -1,18 +1,19 @@
 <script lang="ts">
+	import { admissionWorkflowBackHref } from '#lib/navigation/admission.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
 	import {
 		getRound,
 		listTracks,
 		listSubjects,
-		listApplications,
+		getScoreTrackRoster,
 		bulkUpdateScores,
 		getScoreRoomRoster,
 		markAbsent,
 		type AdmissionRound,
 		type AdmissionTrack,
 		type AdmissionExamSubject,
-		type ApplicationListItem,
+		type ScoreTrackApplicant,
 		type ScoreRoomGroup,
 		type RawScore,
 		getAllScores
@@ -55,7 +56,7 @@
 	let subjectsLoaded = $state(false);
 	let subjectsLoading = $state(true);
 	let subjectsError = $state('');
-	let applications: ApplicationListItem[] = $state([]);
+	let applications: ScoreTrackApplicant[] = $state([]);
 	let appsTrackId = $state('');
 	let appsLoaded = $state(false);
 	let appsLoading = $state(false);
@@ -242,12 +243,10 @@
 		appsLoading = true;
 		appsError = '';
 		try {
-			const allApps = await listApplications(sourceId, { trackId: sourceTrack }, { signal });
+			const allApps = await getScoreTrackRoster(sourceId, sourceTrack, { signal });
 			if (!appsRequest.isCurrent(revision) || sourceId !== id || sourceTrack !== selectedTrack)
 				return;
-			applications = allApps.filter((app) =>
-				['verified', 'scored', 'accepted', 'absent'].includes(app.status)
-			);
+			applications = allApps;
 			ensureScoreRows(applications.map((app) => app.id));
 			appsLoaded = true;
 		} catch (cause) {
@@ -483,7 +482,11 @@
 	description={round
 		? `${round.name} | ${subjects.length} วิชา`
 		: 'กรอกและบันทึกคะแนนสอบของผู้สมัคร'}
-	backHref={`/staff/academic/admission/${id}`}
+	backHref={admissionWorkflowBackHref(
+		id,
+		round?.academicYearId,
+		$can.has(PERMISSIONS.ADMISSION_READ_ALL)
+	)}
 >
 	{#if !canScoreAdmission}
 		<PageState
@@ -634,8 +637,10 @@
 			<PageState
 				title="ยังไม่มีการจัดห้องสอบ"
 				description="กรุณาจัดห้องสอบก่อนใช้มุมมองนี้"
-				actionLabel="ไปหน้าห้องสอบ"
-				href={`/staff/academic/admission/${id}/exam-rooms`}
+				actionLabel={$can.has(PERMISSIONS.ADMISSION_MANAGE_ALL) ? 'ไปหน้าห้องสอบ' : undefined}
+				href={$can.has(PERMISSIONS.ADMISSION_MANAGE_ALL)
+					? `/staff/academic/admission/${id}/exam-rooms`
+					: undefined}
 			/>
 		{:else if viewMode === 'track' && tracks.length === 0}
 			<PageState title="ยังไม่มีสายการเรียน" description="เพิ่มสายการเรียนก่อนกรอกคะแนน" />

@@ -21,6 +21,7 @@ const assignment = (unit: string, user: string, position = 'head'): Organization
 	started_at: '2026-01-01'
 });
 const unit = (id: string, unit_type: string): OrganizationUnit => ({
+	can_manage_delegations: false,
 	id,
 	unit_type,
 	name: id,

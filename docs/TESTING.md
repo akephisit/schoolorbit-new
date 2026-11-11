@@ -1479,6 +1479,34 @@ PUBLIC_BACKEND_URL=http://localhost:3000 npm run check
 
 Commit the contract, `contracts/permissions.lock.json`, backend registry, frontend registry, migration when DB permission data changes, and focused authorization tests together.
 
+### School permission coverage
+
+Exercise policy scope and the actual protected HTTP routes through the disposable database owner:
+
+```bash
+./scripts/test_backend_school.sh permission_coverage -- --test-threads=1
+cargo test --manifest-path backend-school/Cargo.toml -p school-authorization --lib
+./scripts/test_backend_school.sh --package school-workflow --lib -- --test-threads=1
+```
+
+After generated API checks, run the pinned frontend type check, focused lint and production build.
+Stop the development server before `svelte-kit sync` or a production build, then restart it before
+browser fixtures so generated route nodes cannot remain stale. Use a ready local Vite development server for these fixtures: permission-revocation cases import
+the existing permission store to exercise live disposal. Run from `frontend-school`:
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:5173 npx playwright test tests/e2e/school-permission-coverage.spec.ts tests/e2e/staff-directory-region-loading.spec.ts tests/e2e/organization-region-loading.spec.ts tests/e2e/staff-leave.spec.ts tests/e2e/work-region-loading.spec.ts tests/e2e/settings-region-loading.spec.ts tests/e2e/supervision-detail-region-loading.spec.ts tests/e2e/delivery-offering-route-loading.spec.ts tests/e2e/timetable-daily-overview-layout.spec.ts --project=chromium --workers=2
+E2E_BASE_URL=http://127.0.0.1:5173 npx playwright test tests/e2e/admission-score-region-loading.spec.ts tests/e2e/admission-selection-region-loading.spec.ts tests/e2e/admission-final-region-loading.spec.ts tests/e2e/admission-exam-room-region-loading.spec.ts --project=chromium --workers=2
+```
+
+These synthetic browser sessions cover create-only staff without authority grants, exact action
+controls, mixed resource management and revocation capabilities, own versus school printing,
+independent year/term reads and edits, deferred editor choices with permission revocation,
+student-year-owned room references, daily-only timetable access, minimal score-track rosters and
+action-only admission context and return navigation.
+Backend fixtures establish grant escalation refusal and resource scope enforcement; mocked browser
+responses establish client behavior rather than deployed authorization.
+
 ## API Contract
 
 The local Backend School verification owner also runs curriculum migration preservation/refusal and Academic Core, activation, promotion, delivery and certificate consumer tests with the Docker database runner. Frontend validation includes full lint. Developer machines retain compiled test targets; GitHub prepares release artifacts without repeating these tests.

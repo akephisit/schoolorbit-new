@@ -18,6 +18,11 @@ use super::years_terms::append_audit;
 use super::{lifecycle_guard, parse_row_version};
 
 const HOMEROOM_COLUMNS: &str = r#"
+    (SELECT CASE grade.level_type WHEN 'kindergarten' THEN 'อนุบาลปีที่ ' || grade.year
+        WHEN 'primary' THEN 'ประถมศึกษาปีที่ ' || grade.year
+        WHEN 'secondary' THEN 'มัธยมศึกษาปีที่ ' || grade.year ELSE 'ระดับชั้น ' || grade.year END
+     FROM grade_levels grade WHERE grade.id=homerooms.grade_level_id) AS grade_level_name,
+    (SELECT program.name_th FROM published_study_programs program WHERE program.id=homerooms.study_program_id) AS study_program_name,
     id, code, name, academic_year_id, grade_level_id, room_number,
     study_program_id, capacity, is_active, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
@@ -115,6 +120,27 @@ pub async fn homeroom_year_context(
         .query_as("academic_core.services.student_years.homeroom_year_context", "SELECT id AS academic_year_id,year,name,status,row_version FROM academic_years WHERE id=$1")
         .bind(year).fetch_optional().await?
         .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษา".into()))
+}
+
+pub async fn student_year_homeroom_options(
+    pool: &PgPool,
+    academic_year_id: Uuid,
+) -> Result<Vec<crate::models::HomeroomReference>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_core.services.student_years.student_year_homeroom_options",
+    )
+    .await?;
+    let rooms: Vec<crate::models::HomeroomReference> = DbSession::new(&mut *connection).query_as(
+        "academic_core.services.student_years.student_year_homeroom_options",
+        "SELECT id,code,name,room_number,grade_level_id,study_program_id FROM homerooms WHERE academic_year_id=$1 ORDER BY code,id LIMIT 2001",
+    ).bind(academic_year_id).fetch_all().await?;
+    if rooms.len() > MAX_YEAR_RELATIONSHIP_ROWS {
+        return Err(AppError::ValidationError(
+            "จำนวนห้องเรียนเกินขีดจำกัด 2000 รายการ".into(),
+        ));
+    }
+    Ok(rooms)
 }
 
 pub async fn list_homerooms(
@@ -226,8 +252,9 @@ pub async fn create_homeroom(
         .execute()
         .await
         .map_err(map_homeroom_write_error)?;
+    let room = get_homeroom_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
-    get_homeroom(pool, id).await
+    Ok(room)
 }
 
 pub async fn update_homeroom(
@@ -302,8 +329,9 @@ pub async fn update_homeroom(
     if result.rows_affected() != 1 {
         return Err(AppError::Conflict("ห้องเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
     }
+    let room = get_homeroom_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
-    get_homeroom(pool, id).await
+    Ok(room)
 }
 
 /// Capacity is independently editable while the year's structure is already in use.

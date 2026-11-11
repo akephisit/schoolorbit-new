@@ -1,10 +1,8 @@
 import type { PageLoad } from './$types';
 import { HOMEROOMS_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
 import {
-	listGradeLevelOptions,
 	listHomeroomAdvisorsForAcademicYear,
 	listHomerooms,
-	listStudyProgramOptionsForAcademicYear,
 	getHomeroomYearContext
 } from '#lib/api/academic-core.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
@@ -37,9 +35,7 @@ export const load: PageLoad = ({ depends, fetch, url }) => {
 						{
 							listHomerooms,
 							getHomeroomYearContext,
-							listHomeroomAdvisorsForAcademicYear,
-							listGradeLevelOptions,
-							listStudyProgramOptionsForAcademicYear
+							listHomeroomAdvisorsForAcademicYear
 						},
 						academicYearId,
 						{ requestFetch: fetch }

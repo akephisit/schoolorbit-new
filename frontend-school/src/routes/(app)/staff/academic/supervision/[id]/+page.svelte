@@ -54,7 +54,7 @@
 	} from '#lib/utils/supervision-rubric.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import { can } from '#lib/stores/permissions.js';
+	import { can, userPermissions } from '#lib/stores/permissions.js';
 	import { cn } from '#lib/utils.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
@@ -108,6 +108,8 @@
 	let evaluatorAvailabilityLoaded = $state(false);
 	let contextEpoch = 0;
 	let contextId = '';
+	let contextIdentity = '';
+	const routeOwners = new WeakMap<object, string>();
 	let lessonWorkflowRevision = 0;
 	let evaluatorWorkflowRevision = 0;
 	const observationRequest = new LatestRequest();
@@ -144,16 +146,17 @@
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const canManageObservation = $derived(
-		$can.hasAny(
-			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.SUPERVISION_MANAGE_SCHOOL
-		)
+		observation?.canManage === true &&
+			$can.hasAny(
+				PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_UNIT,
+				PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_TREE,
+				PERMISSIONS.SUPERVISION_MANAGE_SCHOOL
+			)
 	);
 	const canApproveSchool = $derived($can.has(PERMISSIONS.SUPERVISION_APPROVE_SCHOOL));
 	const canViewReviewDetails = $derived(
 		Boolean(
-			observation && (actorCanRequestReview() || observationResultsReleased(observation.status))
+			observation?.canReview === true && $can.hasAny(...SUPERVISION_OBSERVATION_READ_PERMISSIONS)
 		)
 	);
 	const canCertifyResult = $derived(
@@ -242,8 +245,12 @@
 
 	$effect.pre(() => {
 		const source = data;
+		const identity = `${$authStore.user?.id ?? ''}|${$userPermissions.toSorted().join(',')}`;
+		if (!routeOwners.has(source.observation)) routeOwners.set(source.observation, identity);
+		const ownsSource = routeOwners.get(source.observation) === identity;
 		untrack(() => {
-			if (contextId !== source.observationId) {
+			if (contextId !== source.observationId || contextIdentity !== identity) {
+				contextIdentity = identity;
 				contextId = source.observationId;
 				contextEpoch += 1;
 				observation = null;
@@ -283,19 +290,19 @@
 			templateLoading = true;
 			templateError = '';
 			void source.observation.then((result) => {
-				if (!observationRequest.isCurrent(identityTicket.revision)) return;
+				if (!ownsSource || !observationRequest.isCurrent(identityTicket.revision)) return;
 				loading = false;
 				if (result.ok) observation = result.data;
 				else error = result.error;
 			});
 			void source.cycle.then((result) => {
-				if (!cycleRequest.isCurrent(cycleTicket.revision)) return;
+				if (!ownsSource || !cycleRequest.isCurrent(cycleTicket.revision)) return;
 				cycleLoading = false;
 				if (result.ok) cycle = result.data;
 				else cycleError = result.error;
 			});
 			void source.template.then((result) => {
-				if (!templateRequest.isCurrent(templateTicket.revision)) return;
+				if (!ownsSource || !templateRequest.isCurrent(templateTicket.revision)) return;
 				templateLoading = false;
 				if (result.ok) template = result.data;
 				else templateError = result.error;
@@ -312,6 +319,16 @@
 	});
 
 	$effect(() => {
+		if (!canViewReviewDetails) {
+			reviewOpen = false;
+			review = null;
+		}
+		if (!canEditLesson) editLessonOpen = false;
+		if (!canEditEvaluators) {
+			editEvaluatorsOpen = false;
+			availableEvaluators = [];
+		}
+		if (!canCancelObservation) cancelDialogOpen = false;
 		if (!reviewOpen) {
 			reviewRequest.abort();
 			loadingReview = false;
@@ -355,6 +372,8 @@
 	}
 
 	function observationAverageScoreLabel(item: SupervisionObservation): string {
+		if (!item.canReview && !observationResultsReleased(item.status))
+			return 'รอหัวหน้ากลุ่มบริหารวิชาการอนุมัติผล';
 		if (item.averageRating !== null && item.averageRating !== undefined) {
 			return item.averageRating.toFixed(2);
 		}
@@ -362,15 +381,6 @@
 			return 'รอหัวหน้ากลุ่มบริหารวิชาการอนุมัติผล';
 		}
 		return '-';
-	}
-
-	function actorCanRequestReview(): boolean {
-		return $can.hasAny(
-			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.SUPERVISION_MANAGE_SCHOOL,
-			PERMISSIONS.SUPERVISION_APPROVE_SCHOOL
-		);
 	}
 
 	function reviewableStatus(status: SupervisionObservationStatus): boolean {

@@ -47,10 +47,7 @@ async fn snapshot(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
 ) -> Result<HomeroomRoster, AppError> {
-    let room=DbSession::new(&mut **tx).query_as::<Homeroom>("academic_core.services.homeroom_roster.snapshot", r#"SELECT id,code,name,academic_year_id,grade_level_id,room_number,
-        study_program_id,capacity,is_active,row_version,migration_provenance <> '{}'::jsonb AS migrated,created_at,updated_at
-        FROM homerooms WHERE id=$1"#).bind(id).fetch_optional().await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบห้องประจำชั้น".into()))?;
+    let room = student_years::get_homeroom_on_connection(tx, id).await?;
     let year_status = DbSession::new(&mut **tx)
         .scalar(
             "academic_core.services.homeroom_roster.snapshot",

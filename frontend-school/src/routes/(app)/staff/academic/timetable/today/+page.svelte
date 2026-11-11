@@ -86,27 +86,21 @@
 	let interactionRevision = 0;
 	onDestroy(() => request.abort());
 
-	const canReadDailyTeaching = $derived(
-		$can.hasAny(
-			PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
-			PERMISSIONS.LEARNING_OFFERING_READ_SCHOOL,
-			PERMISSIONS.LEARNING_OFFERING_READ_ORGANIZATION_TREE,
-			PERMISSIONS.LEARNING_OFFERING_READ_ORGANIZATION_UNIT,
-			PERMISSIONS.LEARNING_OFFERING_READ_ASSIGNED,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
-		)
-	);
+	const canReadDailyTeaching = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL));
 	const canOpenPlanner = $derived(
 		$can.hasAny(
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.LEARNING_OFFERING_MANAGE_ASSIGNED
+			PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_TIMETABLE_READ_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_TIMETABLE_READ_ORGANIZATION_TREE,
+			PERMISSIONS.ACADEMIC_TIMETABLE_READ_ASSIGNED,
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_UNIT,
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_TREE,
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED,
+			PERMISSIONS.ACADEMIC_TIMETABLE_PUBLISH_SCHOOL
 		)
 	);
+
 	const rows = $derived(dailyTeachingRows(overview?.teachers ?? [], view));
 	const ownerOptions = $derived.by(() => {
 		const options = rows.map((row) => ({
@@ -168,7 +162,8 @@
 				},
 				{ signal }
 			);
-			if (request.isCurrent(revision) && academicTermId === termId) overview = loaded;
+			if (request.isCurrent(revision) && academicTermId === termId && canReadDailyTeaching)
+				overview = loaded;
 		} catch (error) {
 			if (isAbortError(error)) return;
 			if (request.isCurrent(revision)) {
@@ -261,8 +256,13 @@
 		period: DailyTeachingPeriod,
 		cell: DailyTeachingDisplayCell
 	): void {
+		if (!canReadDailyTeaching) return;
 		selectedCell = { row, period, cell, entries: cell.entries };
 		cellDialogOpen = true;
+	}
+
+	function printOverview() {
+		if (canReadDailyTeaching && overview) window.print();
 	}
 
 	function formatDate(value: string): string {
@@ -287,6 +287,7 @@
 	}
 
 	$effect.pre(() => {
+		const allowed = canReadDailyTeaching;
 		const termId = data.academicTermId;
 		const initialDate = data.initialDate;
 		const routeOverview = data.overview;
@@ -294,6 +295,18 @@
 		const initialInteractionRevision = interactionRevision;
 		let current = true;
 		untrack(() => {
+			if (!allowed) {
+				request.abort();
+				interactionRevision += 1;
+				activeTermId = null;
+				activeOverviewKey = '';
+				overview = null;
+				selectedCell = null;
+				cellDialogOpen = false;
+				loading = false;
+				errorMessage = '';
+				return;
+			}
 			if (activeTermId !== termId) {
 				activeTermId = termId;
 				selectedDate = initialDate;
@@ -309,7 +322,7 @@
 				errorMessage = '';
 			}
 		});
-		if (routeOverview && activeOverviewKey === routeKey) {
+		if (allowed && routeOverview && activeOverviewKey === routeKey) {
 			void routeOverview.then((result) => {
 				if (!current) return;
 				untrack(() => {
@@ -328,98 +341,98 @@
 </script>
 
 <PageShell title="ตารางสอนวันนี้" description="ตารางรายวัน แยกตามครูหรือห้องเรียน">
-	<header
-		class="print:hidden overflow-hidden rounded-xl border bg-background shadow-sm"
-		aria-label="เครื่องมือตารางสอนรายวัน"
-	>
-		<div class="h-1 bg-primary"></div>
-		<div class="flex flex-wrap items-end gap-3 p-3">
-			<div class="space-y-1.5">
-				<Label for="teaching-date" class="text-xs">วันที่</Label>
-				<div class="flex gap-1.5">
-					<Button
-						variant="outline"
-						size="icon"
-						aria-label="วันก่อนหน้า"
-						onclick={() => moveDate(-1)}><ChevronLeft /></Button
-					>
-					<DatePicker
-						id="teaching-date"
-						value={selectedDate}
-						onValueChange={handleDateChange}
-						class="min-w-48"
-					/>
-					<Button variant="outline" size="icon" aria-label="วันถัดไป" onclick={() => moveDate(1)}
-						><ChevronRight /></Button
-					>
-				</div>
-			</div>
-			<ToggleGroup.Root
-				type="single"
-				class="rounded-lg border bg-muted/45 p-1"
-				aria-label="มุมมองตารางสอนรายวัน"
-				bind:value={() => view, chooseView}
-			>
-				<ToggleGroup.Item
-					value="teacher"
-					class="h-8 rounded-md border-transparent px-3"
-					aria-label="ครู"><UsersRound class="size-3.5" aria-hidden="true" />ครู</ToggleGroup.Item
-				>
-				<ToggleGroup.Item
-					value="homeroom"
-					class="h-8 rounded-md border-transparent px-3"
-					aria-label="ห้องเรียน"
-					><School class="size-3.5" aria-hidden="true" />ห้องเรียน</ToggleGroup.Item
-				>
-			</ToggleGroup.Root>
-			<div class="w-full min-w-0 space-y-1.5 sm:w-56">
-				<p class="text-xs font-medium">เลือก{ownerLabel}</p>
-				<TimetableOwnerSelector
-					value={ownerId}
-					options={ownerOptions}
-					onValueChange={(value) => choosePresentation(view, value)}
-					ariaLabel={`เลือก${ownerLabel}`}
-					searchPlaceholder={`ค้นหา${ownerLabel}...`}
-					disabled={!overview}
-				/>
-			</div>
-			<div
-				class="w-full min-w-0 flex-none space-y-1.5 sm:min-w-44 sm:flex-1"
-				data-testid="daily-search-field"
-			>
-				<Label for="entry-search" class="text-xs">ค้นหาวิชา กิจกรรม หรือกลุ่มเรียน</Label>
-				<div class="relative">
-					<Search class="text-muted-foreground absolute top-2.5 left-3 size-4" />
-					<Input id="entry-search" bind:value={entrySearch} class="pl-9 text-xs" />
-				</div>
-			</div>
-			<div class="flex flex-wrap items-center gap-2" data-testid="daily-toolbar-actions">
-				{#if view === 'teacher'}
-					<div class="flex h-9 items-center gap-2 rounded-md border px-2">
-						<Switch
-							id="include-empty"
-							checked={includeEmptyTeachers}
-							onclick={toggleEmptyTeachers}
+	{#if canReadDailyTeaching}<header
+			class="print:hidden overflow-hidden rounded-xl border bg-background shadow-sm"
+			aria-label="เครื่องมือตารางสอนรายวัน"
+		>
+			<div class="h-1 bg-primary"></div>
+			<div class="flex flex-wrap items-end gap-3 p-3">
+				<div class="space-y-1.5">
+					<Label for="teaching-date" class="text-xs">วันที่</Label>
+					<div class="flex gap-1.5">
+						<Button
+							variant="outline"
+							size="icon"
+							aria-label="วันก่อนหน้า"
+							onclick={() => moveDate(-1)}><ChevronLeft /></Button
+						>
+						<DatePicker
+							id="teaching-date"
+							value={selectedDate}
+							onValueChange={handleDateChange}
+							class="min-w-48"
 						/>
-						<Label for="include-empty" class="text-xs">รวมครูที่ไม่มีคาบ</Label>
+						<Button variant="outline" size="icon" aria-label="วันถัดไป" onclick={() => moveDate(1)}
+							><ChevronRight /></Button
+						>
 					</div>
-				{/if}
-				{#if canOpenPlanner}<Button
-						variant="outline"
-						size="sm"
-						href={academicContextualMenuPath(
-							'/staff/academic/timetable',
-							{ academicYearId: data.academicYearId, academicTermId },
-							null
-						)}
-						data-sveltekit-preload-data="tap"><ExternalLink />จัดตาราง</Button
-					>{/if}
-				<Button variant="outline" size="sm" disabled={!overview} onclick={() => window.print()}
-					><Printer />พิมพ์</Button
+				</div>
+				<ToggleGroup.Root
+					type="single"
+					class="rounded-lg border bg-muted/45 p-1"
+					aria-label="มุมมองตารางสอนรายวัน"
+					bind:value={() => view, chooseView}
 				>
+					<ToggleGroup.Item
+						value="teacher"
+						class="h-8 rounded-md border-transparent px-3"
+						aria-label="ครู"><UsersRound class="size-3.5" aria-hidden="true" />ครู</ToggleGroup.Item
+					>
+					<ToggleGroup.Item
+						value="homeroom"
+						class="h-8 rounded-md border-transparent px-3"
+						aria-label="ห้องเรียน"
+						><School class="size-3.5" aria-hidden="true" />ห้องเรียน</ToggleGroup.Item
+					>
+				</ToggleGroup.Root>
+				<div class="w-full min-w-0 space-y-1.5 sm:w-56">
+					<p class="text-xs font-medium">เลือก{ownerLabel}</p>
+					<TimetableOwnerSelector
+						value={ownerId}
+						options={ownerOptions}
+						onValueChange={(value) => choosePresentation(view, value)}
+						ariaLabel={`เลือก${ownerLabel}`}
+						searchPlaceholder={`ค้นหา${ownerLabel}...`}
+						disabled={!overview}
+					/>
+				</div>
+				<div
+					class="w-full min-w-0 flex-none space-y-1.5 sm:min-w-44 sm:flex-1"
+					data-testid="daily-search-field"
+				>
+					<Label for="entry-search" class="text-xs">ค้นหาวิชา กิจกรรม หรือกลุ่มเรียน</Label>
+					<div class="relative">
+						<Search class="text-muted-foreground absolute top-2.5 left-3 size-4" />
+						<Input id="entry-search" bind:value={entrySearch} class="pl-9 text-xs" />
+					</div>
+				</div>
+				<div class="flex flex-wrap items-center gap-2" data-testid="daily-toolbar-actions">
+					{#if view === 'teacher'}
+						<div class="flex h-9 items-center gap-2 rounded-md border px-2">
+							<Switch
+								id="include-empty"
+								checked={includeEmptyTeachers}
+								onclick={toggleEmptyTeachers}
+							/>
+							<Label for="include-empty" class="text-xs">รวมครูที่ไม่มีคาบ</Label>
+						</div>
+					{/if}
+					{#if canOpenPlanner}<Button
+							variant="outline"
+							size="sm"
+							href={academicContextualMenuPath(
+								'/staff/academic/timetable',
+								{ academicYearId: data.academicYearId, academicTermId },
+								null
+							)}
+							data-sveltekit-preload-data="tap"><ExternalLink />จัดตาราง</Button
+						>{/if}
+					<Button variant="outline" size="sm" disabled={!overview} onclick={printOverview}
+						><Printer />พิมพ์</Button
+					>
+				</div>
 			</div>
-		</div>
-	</header>
+		</header>{/if}
 
 	{#if !canReadDailyTeaching}
 		<PageState
@@ -590,60 +603,60 @@
 	{/if}
 </PageShell>
 
-<Dialog.Root bind:open={cellDialogOpen}>
-	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-		<Dialog.Header
-			><Dialog.Title>{selectedCell?.row.displayName ?? 'รายละเอียดคาบ'}</Dialog.Title
-			><Dialog.Description
-				>{selectedCell
-					? `${periodLabel(selectedCell.period)} · ${periodTime(selectedCell.period)}`
-					: ''}</Dialog.Description
-			></Dialog.Header
-		>
-		<div class="space-y-3 py-2">
-			{#if selectedCell?.entries.length === 0}<p class="text-muted-foreground text-sm">
-					ไม่มีคาบสอนในช่วงเวลานี้
-				</p>{/if}
-			{#each selectedCell?.entries ?? [] as entry (entry.entryId)}
-				{@const detailTitle = entryTitle(entry)}
-				<div class="rounded-lg border p-4" data-daily-entry-id={entry.entryId}>
-					<div class="flex items-center justify-between gap-3">
-						<div class="min-w-0">
-							<p class="font-medium">{detailTitle}</p>
-							{#each entryDetailLabels(entry) as label (label)}
-								<p class="text-muted-foreground mt-1 text-sm">{label}</p>
-							{/each}
+{#if canReadDailyTeaching}<Dialog.Root bind:open={cellDialogOpen}>
+		<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+			<Dialog.Header
+				><Dialog.Title>{selectedCell?.row.displayName ?? 'รายละเอียดคาบ'}</Dialog.Title
+				><Dialog.Description
+					>{selectedCell
+						? `${periodLabel(selectedCell.period)} · ${periodTime(selectedCell.period)}`
+						: ''}</Dialog.Description
+				></Dialog.Header
+			>
+			<div class="space-y-3 py-2">
+				{#if selectedCell?.entries.length === 0}<p class="text-muted-foreground text-sm">
+						ไม่มีคาบสอนในช่วงเวลานี้
+					</p>{/if}
+				{#each selectedCell?.entries ?? [] as entry (entry.entryId)}
+					{@const detailTitle = entryTitle(entry)}
+					<div class="rounded-lg border p-4" data-daily-entry-id={entry.entryId}>
+						<div class="flex items-center justify-between gap-3">
+							<div class="min-w-0">
+								<p class="font-medium">{detailTitle}</p>
+								{#each entryDetailLabels(entry) as label (label)}
+									<p class="text-muted-foreground mt-1 text-sm">{label}</p>
+								{/each}
+							</div>
+							<div class="flex shrink-0 flex-wrap justify-end gap-1">
+								{#if entry.offeringCode && entry.offeringCode !== detailTitle}
+									<Badge variant="outline">{entry.offeringCode}</Badge>
+								{/if}
+								<Badge variant="outline">{entry.entryType}</Badge>
+							</div>
 						</div>
-						<div class="flex shrink-0 flex-wrap justify-end gap-1">
-							{#if entry.offeringCode && entry.offeringCode !== detailTitle}
-								<Badge variant="outline">{entry.offeringCode}</Badge>
-							{/if}
-							<Badge variant="outline">{entry.entryType}</Badge>
-						</div>
+						<p class="mt-2 text-sm">
+							ครูผู้สอน: {selectedCell
+								? dailyTeachingGroupInstructors([entry], selectedCell.cell)
+										.map((instructor) => instructor.displayName)
+										.join(', ')
+								: ''}
+						</p>
+						<p class="text-muted-foreground mt-2 text-sm">
+							{entrySubtitle(entry) || 'ไม่มีข้อมูลกลุ่มเรียน'}
+						</p>
+						{#if entry.note}<p class="mt-2 text-sm">
+								{entry.note}
+							</p>{/if}{#if entry.roomName?.trim() || entry.roomId}<p
+								class="mt-2 flex items-center gap-1 text-sm"
+							>
+								<MapPin class="size-4" />
+								{entry.roomName?.trim() || 'ไม่พบชื่อห้อง'}
+							</p>{/if}
 					</div>
-					<p class="mt-2 text-sm">
-						ครูผู้สอน: {selectedCell
-							? dailyTeachingGroupInstructors([entry], selectedCell.cell)
-									.map((instructor) => instructor.displayName)
-									.join(', ')
-							: ''}
-					</p>
-					<p class="text-muted-foreground mt-2 text-sm">
-						{entrySubtitle(entry) || 'ไม่มีข้อมูลกลุ่มเรียน'}
-					</p>
-					{#if entry.note}<p class="mt-2 text-sm">
-							{entry.note}
-						</p>{/if}{#if entry.roomName?.trim() || entry.roomId}<p
-							class="mt-2 flex items-center gap-1 text-sm"
-						>
-							<MapPin class="size-4" />
-							{entry.roomName?.trim() || 'ไม่พบชื่อห้อง'}
-						</p>{/if}
-				</div>
-			{/each}
-		</div>
-	</Dialog.Content>
-</Dialog.Root>
+				{/each}
+			</div>
+		</Dialog.Content>
+	</Dialog.Root>{/if}
 
 <style>
 	:global(.daily-teaching-table) {

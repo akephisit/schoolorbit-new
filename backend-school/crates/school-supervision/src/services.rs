@@ -2,6 +2,7 @@ mod cycles;
 mod evaluations;
 mod lifecycle;
 mod observations;
+mod response_visibility;
 mod reviews_and_reports;
 mod shared;
 mod templates;
@@ -15,6 +16,10 @@ pub use observations::{
     evaluator_availability, get_observation, list_observations, observation_timetable_options,
     request_observation, return_observation_request, update_observation,
     update_requested_observation,
+};
+pub use response_visibility::{
+    redact_observations_results_for_actor, redact_teacher_status_results_for_actor,
+    redacted_observation_for_actor,
 };
 pub use reviews_and_reports::{
     acknowledge_observation, approve_observation, certify_observation, cycle_progress,

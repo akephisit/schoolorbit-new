@@ -26,7 +26,8 @@ export const _meta = {
 	}
 };
 
-export const load: PageLoad = async ({ fetch, params, url }) => {
+export const load: PageLoad = async ({ fetch, params, url, depends }) => {
+	depends('school:app-identity');
 	const offeringId = params.offeringId;
 	const requestedGroupId = url.searchParams.get('groupId')?.trim() || null;
 	const offering = captureRouteLoad(

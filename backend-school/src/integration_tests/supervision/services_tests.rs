@@ -1190,9 +1190,16 @@ async fn completed_evaluations_flow_through_certification_approval_acknowledgeme
     assert_eq!(review.evaluator_results.len(), 2);
     assert_eq!(review.average_rating, Some(3.0));
 
-    let progress = services::cycle_progress(&pool, fixture.cycle.id)
-        .await
-        .expect("cycle progress should load");
+    let progress = services::cycle_progress(
+        &pool,
+        &school_authorization::ActorContext {
+            user_id: fixture.actor_id,
+            permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+        },
+        fixture.cycle.id,
+    )
+    .await
+    .expect("cycle progress should load");
     assert_eq!(progress.total_observations, 1);
     assert_eq!(progress.completed_count, 1);
     assert_eq!(progress.average_rating, Some(3.0));
@@ -1445,4 +1452,447 @@ async fn management_template_summaries_preserve_counts_without_rubric_payloads()
         services::get_template_summary(&pool, Uuid::new_v4()).await,
         Err(AppError::NotFound(_))
     ));
+}
+
+#[tokio::test]
+async fn permission_coverage_supervision_embargo_uses_exact_grant_origin_for_each_observed_user() {
+    use crate::integration_tests::auth::session_http_tests::protected_router::ProtectedFixture;
+    use crate::integration_tests::permission_coverage::{
+        coverage_actor, coverage_request, coverage_router,
+    };
+    use axum::http::{Method, StatusCode};
+    use school_permissions::registry::codes;
+    use serde_json::{json, Value};
+    let pool = migrated_pool_with_connections("permission_coverage_supervision", 4).await;
+    school_test_db::run_test_migrations(&pool).await;
+    let first = insert_fixture(&pool).await;
+    let second = insert_fixture(&pool).await;
+    let units: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM organization_units WHERE is_active ORDER BY id LIMIT 2")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    // Exact-source fixture: seeded position grants must not accidentally add a school scope.
+    sqlx::query("DELETE FROM organization_permission_grants WHERE organization_unit_id=ANY($1)")
+        .bind(&units)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let auth = ProtectedFixture::with_prepared_tenant_pool(
+        "permission_coverage_supervision",
+        pool.clone(),
+    )
+    .await;
+    let _managed_lease = auth
+        .runtime
+        .pool_manager
+        .get_pool("test-pool://session-router-tenant-a", "tenant-a")
+        .await
+        .unwrap();
+    let manager = coverage_actor(
+        &auth,
+        &[
+            codes::SUPERVISION_READ_SCHOOL,
+            codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT,
+        ],
+        61,
+    )
+    .await;
+    sqlx::query("UPDATE user_roles SET organization_unit_id=$2 WHERE user_id=$1")
+        .bind(manager.id)
+        .bind(units[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (user, unit) in [
+        (manager.id, units[0]),
+        (manager.id, units[1]),
+        (first.teacher_id, units[0]),
+        (first.teacher_id, units[1]),
+        (second.teacher_id, units[1]),
+    ] {
+        sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES($1,$2,'member')").bind(user).bind(unit).execute(&pool).await.unwrap();
+    }
+    let a = request_observation(&pool, &first).await;
+    let b = request_observation(&pool, &second).await;
+    for (fixture, observation) in [(&first, &a), (&second, &b)] {
+        approve_with(&pool, fixture, observation.id, vec![fixture.evaluator_id]).await;
+        services::submit_my_evaluation(
+            &pool,
+            fixture.evaluator_id,
+            observation.id,
+            evaluation_responses(&fixture.template, 4.0),
+        )
+        .await
+        .unwrap();
+    }
+    let app = coverage_router(&auth);
+    let scoped_reader =
+        coverage_actor(&auth, &[codes::SUPERVISION_READ_ORGANIZATION_UNIT], 65).await;
+    sqlx::query("UPDATE user_roles SET organization_unit_id=$2 WHERE user_id=$1")
+        .bind(scoped_reader.id)
+        .bind(units[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES($1,$2,'member')").bind(scoped_reader.id).bind(units[0]).execute(&pool).await.unwrap();
+    let actual_scoped = school_authorization::load_actor_context(
+        scoped_reader.id,
+        "tenant-a",
+        &pool,
+        &school_authorization::PermissionCache::new(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !actual_scoped.has_any_permission(&[
+            codes::SUPERVISION_READ_SCHOOL,
+            codes::SUPERVISION_MANAGE_SCHOOL,
+            codes::SUPERVISION_APPROVE_SCHOOL
+        ]),
+        "the metadata test must not inherit a school-wide scope"
+    );
+    let list = format!(
+        "/api/supervision/observations?academicYearId={}",
+        first.cycle.academic_year_id
+    );
+    let (status, listed) =
+        coverage_request(&app, &auth, &manager, Method::GET, &list, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{listed}");
+    for (observation, can_manage) in [(&a, true), (&b, false)] {
+        let item = listed["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == observation.id.to_string())
+            .unwrap();
+        assert_eq!(item["canManage"], can_manage);
+        assert_eq!(item["canReview"], can_manage);
+        assert_eq!(
+            item["averageRating"],
+            if can_manage { json!(4.0) } else { Value::Null }
+        );
+        let path = format!("/api/supervision/observations/{}", observation.id);
+        let (status, detail) =
+            coverage_request(&app, &auth, &manager, Method::GET, &path, Value::Null).await;
+        assert_eq!(status, StatusCode::OK, "{detail}");
+        assert_eq!(detail["data"]["canManage"], can_manage);
+        assert_eq!(detail["data"]["averageRating"], item["averageRating"]);
+        let (status, review) = coverage_request(
+            &app,
+            &auth,
+            &manager,
+            Method::GET,
+            &format!("{path}/review"),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(
+            status,
+            if can_manage {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            "{review}"
+        );
+    }
+    let reader = coverage_actor(&auth, &[codes::SUPERVISION_READ_SCHOOL], 63).await;
+    let approver = coverage_actor(&auth, &[codes::SUPERVISION_APPROVE_SCHOOL], 64).await;
+    for (cycle, scoped_rating) in [(first.cycle.id, true), (second.cycle.id, false)] {
+        let path = format!("/api/supervision/reports/cycles/{cycle}/progress");
+        for (actor, visible) in [
+            (&reader, false),
+            (&manager, scoped_rating),
+            (&approver, true),
+        ] {
+            let (status, report) =
+                coverage_request(&app, &auth, actor, Method::GET, &path, Value::Null).await;
+            assert_eq!(status, StatusCode::OK, "{report}");
+            assert_eq!(report["data"]["totalObservations"], 1);
+            assert_eq!(
+                report["data"]["averageRating"],
+                if visible { json!(4.0) } else { Value::Null }
+            );
+        }
+    }
+    // Single-resource mutation and batched response capabilities use the same exact source.
+    let actor = school_authorization::ActorContext {
+        user_id: manager.id,
+        permissions: vec![codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT.into()],
+    };
+    let users = [first.teacher_id, second.teacher_id];
+    let allowed =
+        school_supervision::access_policy::observation_management_user_ids(&pool, &actor, &users)
+            .await
+            .unwrap();
+    for user in users {
+        assert_eq!(
+            allowed.contains(&user),
+            school_supervision::access_policy::require_observation_management_access(
+                &pool, &actor, user
+            )
+            .await
+            .is_ok()
+        );
+    }
+    let delegated = coverage_actor(&auth, &[], 62).await;
+    sqlx::query("INSERT INTO organization_permission_delegations(from_user_id,to_user_id,organization_unit_id,permission_id) SELECT $1,$2,$3,id FROM permissions WHERE code=$4")
+        .bind(manager.id).bind(delegated.id).bind(units[0]).bind(codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT).execute(&pool).await.unwrap();
+    let delegated_actor = school_authorization::ActorContext {
+        user_id: delegated.id,
+        permissions: vec![codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT.into()],
+    };
+    assert!(
+        school_supervision::access_policy::require_observation_management_access(
+            &pool,
+            &delegated_actor,
+            first.teacher_id
+        )
+        .await
+        .is_ok(),
+        "valid delegation needs no incidental membership"
+    );
+    let delegated_allowed = school_supervision::access_policy::observation_management_user_ids(
+        &pool,
+        &delegated_actor,
+        &users,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        delegated_allowed,
+        std::collections::HashSet::from([first.teacher_id])
+    );
+    let tree_role:Uuid=sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES($1,'Tree union fixture','staff') RETURNING id").bind(format!("TREE_{}",Uuid::new_v4().simple())).fetch_one(&pool).await.unwrap();
+    sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2").bind(tree_role).bind(codes::SUPERVISION_MANAGE_ORGANIZATION_TREE).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO user_roles(user_id,role_id,organization_unit_id) VALUES($1,$2,$3)")
+        .bind(manager.id)
+        .bind(tree_role)
+        .bind(units[1])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let union_actor = school_authorization::ActorContext {
+        user_id: manager.id,
+        permissions: vec![
+            codes::SUPERVISION_MANAGE_ORGANIZATION_UNIT.into(),
+            codes::SUPERVISION_MANAGE_ORGANIZATION_TREE.into(),
+        ],
+    };
+    assert_eq!(
+        school_supervision::access_policy::observation_management_user_ids(
+            &pool,
+            &union_actor,
+            &users
+        )
+        .await
+        .unwrap(),
+        std::collections::HashSet::from(users),
+        "tree and independent exact-unit grants form a union"
+    );
+    for user in users {
+        assert!(
+            school_supervision::access_policy::require_observation_management_access(
+                &pool,
+                &union_actor,
+                user
+            )
+            .await
+            .is_ok()
+        );
+    }
+    // Fresh unused registry rows exercise each current-affiliation predicate without changing history.
+    let mut affiliations = Vec::new();
+    for name in [
+        "Temporal current",
+        "Temporal future",
+        "Inactive unit",
+        "Inactive registry",
+    ] {
+        let group = school_academic_core::services::catalog::create_subject_group(
+            &pool,
+            school_academic_core::models::CreateSubjectGroupRequest {
+                name_th: name.into(),
+                name_en: name.into(),
+                display_order: None,
+            },
+        )
+        .await
+        .unwrap();
+        affiliations.push(group);
+    }
+    for (index, group) in affiliations.iter().enumerate() {
+        sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at) VALUES($1,$2,'member',CURRENT_DATE+$3)").bind(first.teacher_id).bind(group.organization_unit_id).bind(if index==1 {1} else {-1}).execute(&pool).await.unwrap();
+    }
+    sqlx::query("UPDATE organization_units SET is_active=false WHERE id=$1")
+        .bind(affiliations[2].organization_unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE subject_groups SET is_active=false WHERE id=$1")
+        .bind(affiliations[3].id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Keep the independent projection flag active so the registry-status guard is tested itself.
+    sqlx::query("UPDATE organization_units SET is_active=true WHERE id=$1")
+        .bind(affiliations[3].organization_unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let scoped_list = format!(
+        "/api/supervision/observations?academicYearId={}&cycleId={}",
+        first.cycle.academic_year_id, first.cycle.id
+    );
+    let scoped_status = format!(
+        "/api/supervision/reports/cycles/{}/teacher-status",
+        first.cycle.id
+    );
+    for (starts, ends, visible) in [
+        (-1, None, true),
+        (1, None, false),
+        (-2, Some(0), false),
+        (0, None, true),
+    ] {
+        sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE+$3,ended_at=CASE WHEN $4::int IS NULL THEN NULL ELSE CURRENT_DATE+$4 END WHERE user_id=$1 AND organization_unit_id=$2").bind(first.teacher_id).bind(units[0]).bind(starts).bind(ends).execute(&pool).await.unwrap();
+        let (status, observations) = coverage_request(
+            &app,
+            &auth,
+            &scoped_reader,
+            Method::GET,
+            &scoped_list,
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{observations}");
+        assert_eq!(
+            observations["data"]["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["id"] == a.id.to_string()),
+            visible,
+            "observation discovery must use current target membership"
+        );
+        let (status, teachers) = coverage_request(
+            &app,
+            &auth,
+            &scoped_reader,
+            Method::GET,
+            &scoped_status,
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{teachers}");
+        let first_row = teachers["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["teacherId"] == first.teacher_id.to_string());
+        assert_eq!(
+            first_row.is_some(),
+            visible,
+            "teacher discovery must agree with observation/detail access"
+        );
+        assert!(
+            !teachers["data"]["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["teacherId"] == second.teacher_id.to_string()),
+            "the current B target is outside the exact A grant"
+        );
+        if let Some(row) = first_row {
+            let names = row["organizationUnitNames"].as_array().unwrap();
+            assert!(names.iter().any(|name| name == &affiliations[0].name_th));
+            for group in &affiliations[1..] {
+                assert!(
+                    !names.iter().any(|name| name == &group.name_th),
+                    "future and inactive affiliation names are not current affiliations"
+                );
+            }
+        }
+        let (status, detail) = coverage_request(
+            &app,
+            &auth,
+            &scoped_reader,
+            Method::GET,
+            &format!("/api/supervision/observations/{}", a.id),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(
+            status,
+            if visible {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            "{detail}"
+        );
+    }
+    sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE+1 WHERE user_id=$1")
+        .bind(first.teacher_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        school_supervision::access_policy::observation_management_user_ids(&pool, &actor, &users)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        school_supervision::access_policy::require_observation_management_access(
+            &pool,
+            &actor,
+            first.teacher_id
+        )
+        .await
+        .is_err()
+    );
+    sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE-1,ended_at=CURRENT_DATE WHERE user_id=$1").bind(first.teacher_id).execute(&pool).await.unwrap();
+    assert!(
+        school_supervision::access_policy::observation_management_user_ids(&pool, &actor, &users)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    sqlx::query("UPDATE organization_members SET ended_at=NULL WHERE user_id=$1")
+        .bind(first.teacher_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE organization_units SET is_active=false WHERE id=$1")
+        .bind(units[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        school_supervision::access_policy::observation_management_user_ids(&pool, &actor, &users)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    // General school readers may review results only after the domain release transition.
+    services::certify_observation(&pool, second.actor_id, b.id)
+        .await
+        .unwrap();
+    services::approve_observation(&pool, second.actor_id, b.id)
+        .await
+        .unwrap();
+    let (status, detail) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::GET,
+        &format!("/api/supervision/observations/{}", b.id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{detail}");
+    assert_eq!(detail["data"]["canManage"], false);
+    assert_eq!(detail["data"]["canReview"], true);
+    assert_eq!(detail["data"]["averageRating"], 4.0);
 }

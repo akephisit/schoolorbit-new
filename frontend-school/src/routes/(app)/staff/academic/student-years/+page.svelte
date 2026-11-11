@@ -11,7 +11,7 @@
 		listStudyProgramOptionsForAcademicYear,
 		transferHomeroomPlacement,
 		type GradeLevelOption,
-		type Homeroom,
+		type HomeroomReference,
 		type HomeroomPlacement,
 		type StudentAcademicYear,
 		type StudentYearCandidate,
@@ -39,7 +39,7 @@
 	const academicYearId = $derived(data.academicYearId);
 	let studentYears = $state<StudentAcademicYear[]>([]);
 	const placementsByStudentYear = new SvelteMap<string, HomeroomPlacement[]>();
-	let homerooms = $state<Homeroom[]>([]);
+	let homerooms = $state<HomeroomReference[]>([]);
 	const orderedStudentYears = $derived(
 		orderStudentYears(studentYears, placementsByStudentYear, homerooms)
 	);

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { admissionWorkflowBackHref } from '#lib/navigation/admission.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
@@ -292,7 +293,11 @@
 <PageShell
 	title="รับมอบตัว"
 	description={round?.name ?? 'ตรวจสอบผู้ผ่านคัดเลือกและสร้างข้อมูลนักเรียน'}
-	backHref={`/staff/academic/admission/${id}`}
+	backHref={admissionWorkflowBackHref(
+		id,
+		round?.academicYearId,
+		$can.has(PERMISSIONS.ADMISSION_READ_ALL)
+	)}
 >
 	{#if !canEnrollAdmission}
 		<PageState

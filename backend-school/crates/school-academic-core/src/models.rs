@@ -1309,6 +1309,8 @@ pub struct ReplaceCurriculumStructureRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicSetupWorkspace {
+    pub can_read_years: bool,
+    pub can_read_terms: bool,
     pub context_settings: AcademicContextSettings,
     pub years: Vec<AcademicYear>,
     pub terms: Vec<AcademicTerm>,
@@ -1329,6 +1331,10 @@ pub struct PublishVersionRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Homeroom {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub grade_level_name: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub study_program_name: Option<String>,
     pub id: Uuid,
     pub code: String,
     pub name: String,
@@ -1344,6 +1350,19 @@ pub struct Homeroom {
     pub updated_at: DateTime<Utc>,
     #[sqlx(default)]
     pub student_count: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct HomeroomReference {
+    pub id: Uuid,
+    pub code: String,
+    pub name: String,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub room_number: Option<String>,
+    pub grade_level_id: Uuid,
+    pub study_program_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

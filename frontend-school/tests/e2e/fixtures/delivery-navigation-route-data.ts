@@ -328,6 +328,7 @@ export async function mockDeliveryNavigation(
 	function offeringResource(id: string): LearningOffering {
 		const item = navigationVersion().snapshot.offerings.find((offering) => offering.id === id)!;
 		return {
+			canManage: true,
 			id: item.id,
 			academicYearId: navigationIds.year,
 			academicTermId: navigationIds.term,

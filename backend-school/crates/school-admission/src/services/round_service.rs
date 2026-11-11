@@ -163,7 +163,7 @@ pub async fn list_rounds_on_connection(
     connection: &mut sqlx::PgConnection,
     academic_year_id: Uuid,
 ) -> Result<Vec<AdmissionRound>, AppError> {
-    DbSession::new(&mut *connection).query_as::<AdmissionRound>("admission.services.round_service.list_rounds_on_connection", sqlx::AssertSqlSafe(format!(
+    let rounds = DbSession::new(&mut *connection).query_as::<AdmissionRound>("admission.services.round_service.list_rounds_on_connection", sqlx::AssertSqlSafe(format!(
         r#"SELECT ar.*, ay.name AS academic_year_name,
                   {grade_case} AS grade_level_name,
                   (SELECT COUNT(*) FROM admission_applications aa WHERE aa.admission_round_id = ar.id) AS application_count
@@ -171,7 +171,7 @@ pub async fn list_rounds_on_connection(
            JOIN academic_years ay ON ar.academic_year_id = ay.id
            JOIN grade_levels gl ON ar.grade_level_id = gl.id
            WHERE ar.academic_year_id = $1
-           ORDER BY ar.created_at DESC"#,
+           ORDER BY ar.created_at DESC, ar.id LIMIT 2001"#,
         grade_case = ROUND_GRADE_LEVEL_CASE
     )))
     .bind(academic_year_id)
@@ -179,7 +179,13 @@ pub async fn list_rounds_on_connection(
     .map_err(|e| {
         tracing::error!("Failed to fetch admission rounds: {}", school_database::error_class(&e));
         AppError::InternalServerError("Failed to fetch rounds".to_string())
-    })
+    })?;
+    if rounds.len() > 2_000 {
+        return Err(AppError::ValidationError(
+            "จำนวนรอบรับสมัครในปีเกินขีดจำกัด 2000 รายการ".into(),
+        ));
+    }
+    Ok(rounds)
 }
 
 pub async fn get_round(pool: &PgPool, id: Uuid) -> Result<AdmissionRound, AppError> {

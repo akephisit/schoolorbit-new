@@ -212,6 +212,8 @@ test('future term form keeps annual flags consistent and resets editing when swi
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [
 					{ ...year, status: 'active' },
 					{
@@ -290,6 +292,8 @@ test('creates a future planning year and configurable regular, summer, and custo
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [year],
 				terms: [
 					term,
@@ -373,6 +377,8 @@ test('derives term count from rows and exposes no stored count control', async (
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [year],
 				terms: [
 					term,
@@ -461,7 +467,10 @@ test('creates future placement without changing the active-year placement timeli
 			await fulfill(route, []);
 			return true;
 		}
-		if (url.pathname === '/api/academic/homerooms' || url.pathname === '/api/academic/placements') {
+		if (
+			url.pathname === '/api/academic/student-years/homeroom-options' ||
+			url.pathname === '/api/academic/placements'
+		) {
 			await fulfill(route, []);
 			return true;
 		}
@@ -563,6 +572,8 @@ test('hidden drafts expose separate visibility and default actions and retain an
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [previous, future],
 				terms: [draftTerm],
 				bellSchedules: [],
@@ -671,6 +682,8 @@ test('a single visible year clears term and all defaults explicitly with pending
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [year],
 				terms: [term],
 				bellSchedules: [],
@@ -791,6 +804,8 @@ test('a settings response with concurrent year metadata requires review before r
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [savedYear],
 				terms: [],
 				bellSchedules: [],
@@ -870,6 +885,8 @@ test('new term previews the previous term and atomically copies edited Saturday 
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [year],
 				terms: [term],
 				bellSchedules: [schedule],
@@ -987,6 +1004,8 @@ test('a newly created empty year copies its first term without a local bell sche
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [{ ...year, status: 'active' }],
 				terms: [{ ...sourceTerm, rowVersion: 1 }],
 				bellSchedules: [sourceSchedule],
@@ -1102,6 +1121,8 @@ test('an empty year without source terms keeps the schedule prerequisite and blo
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [year],
 				terms: [],
 				bellSchedules: [],
@@ -1139,6 +1160,8 @@ test('first term uses the retained year preset without requiring fabricated copi
 	await mockShell(page, async (route, url) => {
 		if (url.pathname === '/api/academic/setup/workspace') {
 			await fulfill(route, {
+				canReadYears: true,
+				canReadTerms: true,
 				years: [{ ...year, defaultSchoolDays: ['TUE', 'SAT'] }],
 				terms: [],
 				bellSchedules: [

@@ -126,12 +126,14 @@
 		)
 	);
 
-	let canManageDelegations = $derived.by(() =>
-		$can.hasAny(
-			PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
-			PERMISSIONS.ROLES_ASSIGN_ALL,
-			PERMISSIONS.ROLES_UPDATE_ALL
-		)
+	let canManageDelegations = $derived.by(
+		() =>
+			department?.can_manage_delegations === true &&
+			$can.hasAny(
+				PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
+				PERMISSIONS.ROLES_ASSIGN_ALL,
+				PERMISSIONS.ROLES_UPDATE_ALL
+			)
 	);
 
 	let parentUnit = $derived.by(() => {
@@ -355,7 +357,12 @@
 	}
 
 	async function handleRevoke(delegationId: string) {
-		if (!canManageDelegations || delegateSubmitting) return;
+		if (
+			!canManageDelegations ||
+			!delegations.find((item) => item.id === delegationId)?.can_revoke ||
+			delegateSubmitting
+		)
+			return;
 		const epoch = ownerEpoch;
 		const current = () => !disposed && epoch === ownerEpoch;
 		delegationsRequest.abort();
@@ -854,15 +861,16 @@
 													</p>
 												{/if}
 											</div>
-											<Button
-												variant="ghost"
-												size="sm"
-												onclick={() => handleRevoke(delegation.id)}
-												disabled={delegateSubmitting}
-												class="shrink-0 text-destructive hover:text-destructive"
-											>
-												<Trash2 class="h-4 w-4" />
-											</Button>
+											{#if delegation.can_revoke}<Button
+													variant="ghost"
+													size="sm"
+													aria-label={`เพิกถอนสิทธิ์จาก ${delegation.to_user_name}`}
+													onclick={() => handleRevoke(delegation.id)}
+													disabled={delegateSubmitting}
+													class="shrink-0 text-destructive hover:text-destructive"
+												>
+													<Trash2 class="h-4 w-4" />
+												</Button>{/if}
 										</div>
 									{/each}
 								</div>

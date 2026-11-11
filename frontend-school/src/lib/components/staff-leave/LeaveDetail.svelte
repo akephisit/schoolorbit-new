@@ -27,6 +27,7 @@
 	import { PERSONNEL_TYPE_LABELS } from '#lib/forms/staff-career.js';
 	import { pathData } from '#lib/correspondence/geometry.js';
 	import { can } from '#lib/stores/permissions.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState, LoadingButton } from '#lib/components/app-state/index.js';
@@ -64,7 +65,9 @@
 		$can.hasAny(PERMISSIONS.STAFF_LEAVE_UPDATE_ASSIGNED, PERMISSIONS.STAFF_LEAVE_MANAGE_SCHOOL)
 	);
 	const canPrint = $derived(
-		$can.hasAny(PERMISSIONS.STAFF_LEAVE_DOWNLOAD_OWN, PERMISSIONS.STAFF_LEAVE_DOWNLOAD_SCHOOL)
+		$can.has(PERMISSIONS.STAFF_LEAVE_DOWNLOAD_SCHOOL) ||
+			($can.has(PERMISSIONS.STAFF_LEAVE_DOWNLOAD_OWN) &&
+				detail?.request.ownerId === $authStore.user?.id)
 	);
 	$effect.pre(() => region.consume(source));
 	onDestroy(() => {

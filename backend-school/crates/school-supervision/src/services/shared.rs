@@ -137,17 +137,19 @@ pub(super) fn has_required_evaluator(evaluators: &[EvaluatorAssignmentInput]) ->
         .any(|evaluator| evaluator.is_required.unwrap_or(true))
 }
 
+pub(super) fn released_result_status_codes() -> [&'static str; 3] {
+    [
+        SupervisionObservationStatus::Published.as_str(),
+        SupervisionObservationStatus::Acknowledged.as_str(),
+        SupervisionObservationStatus::Completed.as_str(),
+    ]
+}
+
 pub fn can_view_observation_results(
     status: SupervisionObservationStatus,
     can_view_unreleased_results: bool,
 ) -> bool {
-    can_view_unreleased_results
-        || matches!(
-            status,
-            SupervisionObservationStatus::Published
-                | SupervisionObservationStatus::Acknowledged
-                | SupervisionObservationStatus::Completed
-        )
+    can_view_unreleased_results || released_result_status_codes().contains(&status.as_str())
 }
 
 pub fn all_required_evaluators_submitted(states: &[EvaluatorSubmissionState]) -> bool {

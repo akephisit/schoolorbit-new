@@ -703,3 +703,29 @@ test('pending submit disables repeated mutations and keeps the request summary v
 	await expect(page.getByTestId('leave-detail')).toContainText('รอพิจารณา');
 	expect(api.writes.filter((write) => write.path.endsWith('/submit'))).toHaveLength(1);
 });
+
+for (const role of ['owner', 'reviewer'] as const) {
+	test(`own leave download grant prints only an owned request (${role})`, async ({ page }) => {
+		await mockLeave(page, {
+			role,
+			permissions: [
+				PERMISSIONS.STAFF_LEAVE_READ_OWN,
+				PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED,
+				PERMISSIONS.STAFF_LEAVE_DOWNLOAD_OWN
+			]
+		});
+		await page.goto(leaveDetailPath);
+		await expect(page.getByTestId('leave-detail')).toContainText('เข้ารับการตรวจรักษา');
+		await expect(page.getByRole('button', { name: 'พิมพ์คำขอ', exact: true })).toHaveCount(
+			role === 'owner' ? 1 : 0
+		);
+	});
+}
+test('school leave download grant prints an assigned request', async ({ page }) => {
+	await mockLeave(page, {
+		role: 'reviewer',
+		permissions: [PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED, PERMISSIONS.STAFF_LEAVE_DOWNLOAD_SCHOOL]
+	});
+	await page.goto(leaveDetailPath);
+	await expect(page.getByRole('button', { name: 'พิมพ์คำขอ', exact: true })).toBeVisible();
+});

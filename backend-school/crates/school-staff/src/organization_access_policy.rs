@@ -22,6 +22,42 @@ pub async fn can_approve_organization_work(
     require_unit_leader_on_connection(&mut connection, actor, organization_unit_id).await
 }
 
+pub async fn delegation_management_unit_ids(
+    pool: &PgPool,
+    actor: &ActorContext,
+    unit_ids: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, AppError> {
+    if has_school_wide_organization_authorization(actor) {
+        return Ok(unit_ids.iter().copied().collect());
+    }
+    if !actor.has_permission(codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT)
+        || unit_ids.is_empty()
+    {
+        return Ok(Default::default());
+    }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.organization_access_policy.delegation_management_unit_ids",
+    )
+    .await?;
+    let leaders = organization_delegation_service::organization_unit_leader_ids_on_connection(
+        &mut connection,
+        actor.user_id,
+        unit_ids,
+    )
+    .await?;
+    let permitted = school_authorization::accessible_exact_units_for_permission_on_connection(
+        &mut connection,
+        actor.user_id,
+        codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
+    )
+    .await?;
+    Ok(leaders
+        .into_iter()
+        .filter(|unit| permitted.contains(unit))
+        .collect())
+}
+
 pub async fn can_approve_organization_work_on_connection(
     connection: &mut sqlx::PgConnection,
     actor: &ActorContext,
@@ -60,6 +96,16 @@ async fn require_unit_leader_on_connection(
         ));
     }
 
+    if !school_authorization::has_exact_unit_permission_on_connection(
+        connection,
+        actor.user_id,
+        organization_unit_id,
+        codes::ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
+    )
+    .await?
+    {
+        return Err(AppError::Forbidden("ไม่มีสิทธิ์มอบหมายงานในกลุ่มนี้".into()));
+    }
     Ok(())
 }
 

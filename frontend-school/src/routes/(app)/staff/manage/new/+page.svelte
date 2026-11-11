@@ -85,6 +85,8 @@
 	const rolesRequest = new LatestRequest(),
 		organizationRequest = new LatestRequest();
 	const canReadOptions = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const canAssignAuthority = $derived($can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
+	const canChooseAuthority = $derived(canReadOptions && canAssignAuthority);
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const canMutateStaff = $derived($can.has(PERMISSIONS.STAFF_CREATE_ALL));
 	let rolesLoaded = $state(false),
@@ -139,7 +141,7 @@
 
 	$effect.pre(() => {
 		const step = currentStep,
-			allowed = canReadOptions;
+			allowed = canChooseAuthority;
 		untrack(() => {
 			if (!allowed) {
 				rolesRequest.abort();
@@ -150,6 +152,9 @@
 				organizationsLoaded = false;
 				loadingRoles = false;
 				loadingOrganizationUnits = false;
+				formData.role_ids = [];
+				formData.primary_role_id = '';
+				formData.organization_assignments = [];
 			} else if (step === 2 && !rolesLoaded) void loadRoleOptions();
 			else if (step === 3 && !organizationsLoaded) void loadOrganizationOptions();
 		});
@@ -159,7 +164,7 @@
 		};
 	});
 	async function loadRoleOptions() {
-		if (!canReadOptions || currentStep !== 2) return;
+		if (!canChooseAuthority || currentStep !== 2) return;
 		const ticket = rolesRequest.begin();
 		loadingRoles = true;
 		rolesError = '';
@@ -177,7 +182,7 @@
 		} else rolesError = result.error;
 	}
 	async function loadOrganizationOptions() {
-		if (!canReadOptions || currentStep !== 3) return;
+		if (!canChooseAuthority || currentStep !== 3) return;
 		const ticket = organizationRequest.begin();
 		loadingOrganizationUnits = true;
 		organizationError = '';
@@ -287,10 +292,7 @@
 	function validateStep3(): boolean {
 		errors = {};
 
-		if (formData.role_ids.length === 0) {
-			errors.roles = 'กรุณาเลือกบทบาทอย่างน้อย 1 บทบาท';
-			return false;
-		}
+		if (!canChooseAuthority || formData.role_ids.length === 0) return true;
 
 		if (!formData.primary_role_id || !formData.role_ids.includes(formData.primary_role_id)) {
 			errors.primary_role = 'กรุณาเลือกบทบาทหลัก';
@@ -303,10 +305,7 @@
 	function validateStep4(): boolean {
 		errors = {};
 
-		if (formData.organization_assignments.length === 0) {
-			errors.organization_units = 'กรุณาเพิ่มสังกัดหน่วยงานอย่างน้อย 1 หน่วยงาน';
-			return false;
-		}
+		if (!canChooseAuthority || formData.organization_assignments.length === 0) return true;
 
 		if (formData.organization_assignments.some((item) => !item.organization_unit_id)) {
 			errors.organization_units = 'กรุณาเลือกหน่วยงานให้ครบทุกแถว';
@@ -450,11 +449,13 @@
 					teaching_license_number: formData.personnel.teaching_license_number || undefined,
 					teaching_license_expiry: formData.personnel.teaching_license_expiry || undefined
 				},
-				role_ids: formData.role_ids,
-				primary_role_id: formData.primary_role_id || formData.role_ids[0],
-				organization_assignments: formData.organization_assignments.filter(
-					(d) => d.organization_unit_id
-				)
+				role_ids: canChooseAuthority ? formData.role_ids : [],
+				primary_role_id: canChooseAuthority
+					? formData.primary_role_id || formData.role_ids[0]
+					: undefined,
+				organization_assignments: canChooseAuthority
+					? formData.organization_assignments.filter((d) => d.organization_unit_id)
+					: []
 			};
 
 			const result = await createStaff(payload);
@@ -465,7 +466,13 @@
 				clearStaffCreateDraft(localStorage, { origin: window.location.origin, userId: owner });
 
 				// Show success toast
-				toast.success('เพิ่มบุคลากรเรียบร้อยแล้ว');
+				toast.success(`เพิ่มบุคลากรเรียบร้อยแล้ว (${result.data.id})`);
+
+				if (!$can.has(PERMISSIONS.STAFF_PROFILE_READ_SCHOOL)) {
+					formData = createForm();
+					currentStep = 1;
+					return;
+				}
 
 				// Redirect to profile
 				await goto(
@@ -772,9 +779,10 @@
 						<!-- Step 2: Roles -->
 						<h2 class="text-xl font-semibold mb-6">บทบาทและตำแหน่ง</h2>
 
-						{#if !canReadOptions}<PageState
+						{#if !canChooseAuthority}<PageState
 								variant="permission"
-								title="ไม่มีสิทธิ์อ่านตัวเลือกบทบาท"
+								title="สร้างบุคลากรโดยยังไม่มอบหมายบทบาท"
+								description="ผู้มีสิทธิ์มอบหมายบทบาทสามารถเพิ่มบทบาทภายหลังได้ กดถัดไปเพื่อดำเนินการต่อ"
 							/>
 						{:else if loadingRoles}<div role="status" aria-label="กำลังโหลดตัวเลือกบทบาท">
 								<PageSkeleton variant="form" rows={3} />
@@ -863,9 +871,10 @@
 						<!-- Step 3: Organization Units -->
 						<h2 class="text-xl font-semibold mb-6">สังกัดหน่วยงาน</h2>
 
-						{#if !canReadOptions}<PageState
+						{#if !canChooseAuthority}<PageState
 								variant="permission"
-								title="ไม่มีสิทธิ์อ่านตัวเลือกหน่วยงาน"
+								title="สร้างบุคลากรโดยยังไม่มอบหมายสังกัด"
+								description="ผู้มีสิทธิ์มอบหมายสังกัดสามารถเพิ่มหน่วยงานภายหลังได้ กดถัดไปเพื่อดำเนินการต่อ"
 							/>
 						{:else if loadingOrganizationUnits}<div
 								role="status"

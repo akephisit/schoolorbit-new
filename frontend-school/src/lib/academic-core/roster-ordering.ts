@@ -1,4 +1,9 @@
-import type { Homeroom, HomeroomPlacement, StudentAcademicYear } from '#lib/api/academic-core.js';
+import type {
+	Homeroom,
+	HomeroomReference,
+	HomeroomPlacement,
+	StudentAcademicYear
+} from '#lib/api/academic-core.js';
 
 const natural = new Intl.Collator('th', { numeric: true });
 function levelRank(value: string): number {
@@ -14,7 +19,10 @@ function homeroomGrade(code: string): string {
 }
 
 /** Canonical room codes retain the grade even when a room has a custom display name. */
-export function compareHomerooms(left: Homeroom, right: Homeroom): number {
+export function compareHomerooms(
+	left: Pick<Homeroom, 'code' | 'roomNumber' | 'id'>,
+	right: Pick<Homeroom, 'code' | 'roomNumber' | 'id'>
+): number {
 	const leftGrade = homeroomGrade(left.code);
 	const rightGrade = homeroomGrade(right.code);
 	return (
@@ -30,7 +38,7 @@ export function compareHomerooms(left: Homeroom, right: Homeroom): number {
 export function orderStudentYears(
 	students: StudentAcademicYear[],
 	placements: ReadonlyMap<string, HomeroomPlacement[]>,
-	rooms: Homeroom[]
+	rooms: HomeroomReference[]
 ): StudentAcademicYear[] {
 	const roomById = new Map(rooms.map((room) => [room.id, room]));
 	const active = new Map(

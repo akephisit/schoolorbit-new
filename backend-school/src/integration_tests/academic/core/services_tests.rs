@@ -4971,15 +4971,37 @@ async fn curriculum_program_workspace_resolves_requirement_labels() {
         vec![codes::ACADEMIC_YEAR_READ_SCHOOL.to_string()],
         vec![codes::ACADEMIC_TERM_READ_SCHOOL.to_string()],
     ] {
-        let incomplete_actor = ActorContext {
+        let year_authorized = permissions[0] == codes::ACADEMIC_YEAR_READ_SCHOOL;
+        let actor = ActorContext {
             user_id: actor_user_id,
             permissions,
         };
-        assert!(matches!(
-            workspaces::setup_workspace(&pool, &incomplete_actor).await,
-            Err(school_errors::AppError::Forbidden(_))
-        ));
+        let workspace = workspaces::setup_workspace(&pool, &actor).await.unwrap();
+        assert_eq!(workspace.can_read_years, year_authorized);
+        assert_eq!(workspace.can_read_terms, !year_authorized);
+        assert!(
+            !workspace.years.is_empty(),
+            "terms retain parent year context"
+        );
+        if year_authorized {
+            assert!(workspace.terms.is_empty());
+            assert!(workspace.bell_schedules.is_empty());
+            assert!(workspace.bell_schedule_setup_year_ids.is_empty());
+            assert!(workspace.bell_schedule_setup_term_ids.is_empty());
+            assert!(workspace.school_days_editable_term_ids.is_empty());
+        } else {
+            assert_eq!(workspace.terms.len(), expected_terms.len());
+            assert_eq!(workspace.bell_schedules.len(), expected_schedules.len());
+        }
     }
+    let denied = ActorContext {
+        user_id: actor_user_id,
+        permissions: vec![],
+    };
+    assert!(matches!(
+        workspaces::setup_workspace(&pool, &denied).await,
+        Err(school_errors::AppError::Forbidden(_))
+    ));
 }
 
 #[tokio::test]
