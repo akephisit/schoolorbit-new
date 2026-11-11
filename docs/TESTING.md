@@ -1472,7 +1472,7 @@ Exercise policy scope and the actual protected HTTP routes through the disposabl
 ```bash
 ./scripts/test_backend_school.sh permission_coverage -- --test-threads=1
 cargo test --manifest-path backend-school/Cargo.toml -p school-authorization --lib
-cargo test --manifest-path backend-school/Cargo.toml -p school-workflow --lib
+./scripts/test_backend_school.sh --package school-workflow --lib -- --test-threads=1
 ```
 
 After generated API checks, run the pinned frontend type check, focused lint and production build.

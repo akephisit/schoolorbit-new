@@ -1472,6 +1472,12 @@ async fn permission_coverage_supervision_embargo_uses_exact_grant_origin_for_eac
             .fetch_all(&pool)
             .await
             .unwrap();
+    // Exact-source fixture: seeded position grants must not accidentally add a school scope.
+    sqlx::query("DELETE FROM organization_permission_grants WHERE organization_unit_id=ANY($1)")
+        .bind(&units)
+        .execute(&pool)
+        .await
+        .unwrap();
     let auth = ProtectedFixture::with_prepared_tenant_pool(
         "permission_coverage_supervision",
         pool.clone(),
@@ -1502,6 +1508,7 @@ async fn permission_coverage_supervision_embargo_uses_exact_grant_origin_for_eac
         (manager.id, units[0]),
         (manager.id, units[1]),
         (first.teacher_id, units[0]),
+        (first.teacher_id, units[1]),
         (second.teacher_id, units[1]),
     ] {
         sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES($1,$2,'member')").bind(user).bind(unit).execute(&pool).await.unwrap();
@@ -1520,6 +1527,31 @@ async fn permission_coverage_supervision_embargo_uses_exact_grant_origin_for_eac
         .unwrap();
     }
     let app = coverage_router(&auth);
+    let scoped_reader =
+        coverage_actor(&auth, &[codes::SUPERVISION_READ_ORGANIZATION_UNIT], 65).await;
+    sqlx::query("UPDATE user_roles SET organization_unit_id=$2 WHERE user_id=$1")
+        .bind(scoped_reader.id)
+        .bind(units[0])
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES($1,$2,'member')").bind(scoped_reader.id).bind(units[0]).execute(&pool).await.unwrap();
+    let actual_scoped = school_authorization::load_actor_context(
+        scoped_reader.id,
+        "tenant-a",
+        &pool,
+        &school_authorization::PermissionCache::new(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !actual_scoped.has_any_permission(&[
+            codes::SUPERVISION_READ_SCHOOL,
+            codes::SUPERVISION_MANAGE_SCHOOL,
+            codes::SUPERVISION_APPROVE_SCHOOL
+        ]),
+        "the metadata test must not inherit a school-wide scope"
+    );
     let list = format!(
         "/api/supervision/observations?academicYearId={}",
         first.cycle.academic_year_id
@@ -1668,6 +1700,136 @@ async fn permission_coverage_supervision_embargo_uses_exact_grant_origin_for_eac
             )
             .await
             .is_ok()
+        );
+    }
+    // Fresh unused registry rows exercise each current-affiliation predicate without changing history.
+    let mut affiliations = Vec::new();
+    for name in [
+        "Temporal current",
+        "Temporal future",
+        "Inactive unit",
+        "Inactive registry",
+    ] {
+        let group = school_academic_core::services::catalog::create_subject_group(
+            &pool,
+            school_academic_core::models::CreateSubjectGroupRequest {
+                name_th: name.into(),
+                name_en: name.into(),
+                display_order: None,
+            },
+        )
+        .await
+        .unwrap();
+        affiliations.push(group);
+    }
+    for (index, group) in affiliations.iter().enumerate() {
+        sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code,started_at) VALUES($1,$2,'member',CURRENT_DATE+$3)").bind(first.teacher_id).bind(group.organization_unit_id).bind(if index==1 {1} else {-1}).execute(&pool).await.unwrap();
+    }
+    sqlx::query("UPDATE organization_units SET is_active=false WHERE id=$1")
+        .bind(affiliations[2].organization_unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE subject_groups SET is_active=false WHERE id=$1")
+        .bind(affiliations[3].id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Keep the independent projection flag active so the registry-status guard is tested itself.
+    sqlx::query("UPDATE organization_units SET is_active=true WHERE id=$1")
+        .bind(affiliations[3].organization_unit_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let scoped_list = format!(
+        "/api/supervision/observations?academicYearId={}&cycleId={}",
+        first.cycle.academic_year_id, first.cycle.id
+    );
+    let scoped_status = format!(
+        "/api/supervision/reports/cycles/{}/teacher-status",
+        first.cycle.id
+    );
+    for (starts, ends, visible) in [
+        (-1, None, true),
+        (1, None, false),
+        (-2, Some(0), false),
+        (0, None, true),
+    ] {
+        sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE+$3,ended_at=CASE WHEN $4::int IS NULL THEN NULL ELSE CURRENT_DATE+$4 END WHERE user_id=$1 AND organization_unit_id=$2").bind(first.teacher_id).bind(units[0]).bind(starts).bind(ends).execute(&pool).await.unwrap();
+        let (status, observations) = coverage_request(
+            &app,
+            &auth,
+            &scoped_reader,
+            Method::GET,
+            &scoped_list,
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{observations}");
+        assert_eq!(
+            observations["data"]["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["id"] == a.id.to_string()),
+            visible,
+            "observation discovery must use current target membership"
+        );
+        let (status, teachers) = coverage_request(
+            &app,
+            &auth,
+            &scoped_reader,
+            Method::GET,
+            &scoped_status,
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{teachers}");
+        let first_row = teachers["data"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["teacherId"] == first.teacher_id.to_string());
+        assert_eq!(
+            first_row.is_some(),
+            visible,
+            "teacher discovery must agree with observation/detail access"
+        );
+        assert!(
+            !teachers["data"]["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["teacherId"] == second.teacher_id.to_string()),
+            "the current B target is outside the exact A grant"
+        );
+        if let Some(row) = first_row {
+            let names = row["organizationUnitNames"].as_array().unwrap();
+            assert!(names.iter().any(|name| name == &affiliations[0].name_th));
+            for group in &affiliations[1..] {
+                assert!(
+                    !names.iter().any(|name| name == &group.name_th),
+                    "future and inactive affiliation names are not current affiliations"
+                );
+            }
+        }
+        let (status, detail) = coverage_request(
+            &app,
+            &auth,
+            &scoped_reader,
+            Method::GET,
+            &format!("/api/supervision/observations/{}", a.id),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(
+            status,
+            if visible {
+                StatusCode::OK
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            "{detail}"
         );
     }
     sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE+1 WHERE user_id=$1")

@@ -789,7 +789,7 @@ async fn list_observation_rows(
                       AND om.organization_unit_id = ANY(",
             );
             builder.push_bind(access.organization_unit_ids);
-            builder.push(") AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE))");
+            builder.push(") AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE))");
         }
 
         builder.push(")");

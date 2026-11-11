@@ -1,3 +1,6 @@
+import { get } from 'svelte/store';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
+import { can } from '#lib/stores/permissions.js';
 import type { PageLoad } from './$types';
 import { currentLocalDate, getDailyTeachingOverview } from '#lib/api/timetable.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
@@ -7,12 +10,7 @@ export const _meta = {
 	academicContext: 'term_required' as const,
 	access: {
 		user_type: 'staff',
-		permission: [
-			PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
-			PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL,
-			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
-			PERMISSIONS.ACADEMIC_TIMETABLE_PUBLISH_SCHOOL
-		]
+		permission: PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL
 	},
 	menu: {
 		title: 'ตารางสอนวันนี้',
@@ -25,7 +23,8 @@ export const _meta = {
 	}
 };
 
-export const load: PageLoad = ({ fetch, url }) => {
+export const load: PageLoad = ({ fetch, url, depends }) => {
+	depends('school:app-identity');
 	const academicYearId = url.searchParams.get('academicYearId')?.trim() || null;
 	const academicTermId = url.searchParams.get('academicTermId')?.trim() || null;
 	const initialDate = currentLocalDate();
@@ -36,9 +35,14 @@ export const load: PageLoad = ({ fetch, url }) => {
 		initialDate,
 		overview: academicTermId
 			? captureRouteLoad(
-					getDailyTeachingOverview(
-						{ academicTermId, date: initialDate, includeEmptyTeachers: false },
-						{ requestFetch: fetch }
+					waitForAuthenticatedUser().then((user) =>
+						user?.user_type === 'staff' &&
+						get(can).has(PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL)
+							? getDailyTeachingOverview(
+									{ academicTermId, date: initialDate, includeEmptyTeachers: false },
+									{ requestFetch: fetch }
+								)
+							: null
 					),
 					'โหลดตารางสอนรายวันไม่สำเร็จ'
 				)

@@ -45,3 +45,20 @@ test('the volatile school-wide daily overview preloads on tap in both sidebar mo
 	assert.match(sidebar, /onpointerdown=\{\(\) => preloadMenuItem\(item, 'tap'\)\}/);
 	assert.match(sidebar, /data-sveltekit-preload-data=\{menuPreloadPolicy\(item\)\}/);
 });
+
+test('daily route metadata and preloaded reads require the exact daily permission', async () => {
+	const [loader, page] = await Promise.all([
+		source('src/routes/(app)/staff/academic/timetable/today/+page.ts'),
+		source('src/routes/(app)/staff/academic/timetable/today/+page.svelte')
+	]);
+	assert.match(loader, /permission: PERMISSIONS\.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL/);
+	assert.match(loader, /depends\('school:app-identity'\)/);
+	assert.match(loader, /waitForAuthenticatedUser\(\)\.then/);
+	assert.match(loader, /get\(can\)\.has\(PERMISSIONS\.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL\)/);
+	assert.doesNotMatch(loader, /PERMISSIONS\.ACADEMIC_TIMETABLE_(READ|MANAGE|PUBLISH)_SCHOOL/);
+	assert.match(
+		page,
+		/const canReadDailyTeaching = \$derived\(\s*\$can\.has\(PERMISSIONS\.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL\)/
+	);
+	assert.match(page, /const canOpenPlanner = \$derived/);
+});

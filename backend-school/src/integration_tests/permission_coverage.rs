@@ -1110,6 +1110,30 @@ async fn permission_coverage_delegation_capabilities_require_current_unit_leader
         .unwrap()
         .iter()
         .all(|row| row["can_revoke"] == true));
+    for position in ["member", "coordinator"] {
+        sqlx::query("UPDATE organization_members SET position_code=$3 WHERE user_id=$1 AND organization_unit_id=$2").bind(leader.id).bind(units[0]).bind(position).execute(&f.tenant_a_pool).await.unwrap();
+        let (status, body) = coverage_request(
+            &app,
+            &f,
+            &leader,
+            Method::GET,
+            &format!("/api/organization/units/{}", units[0]),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            body["data"]["can_manage_delegations"], false,
+            "{position} does not confer delegation leadership"
+        );
+        assert_eq!(
+            coverage_request(&app, &f, &leader, Method::GET, &path, Value::Null)
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    sqlx::query("UPDATE organization_members SET position_code='head' WHERE user_id=$1 AND organization_unit_id=$2").bind(leader.id).bind(units[0]).execute(&f.tenant_a_pool).await.unwrap();
     for (start, end) in [(1, None), (-2, Some(0))] {
         sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE+$3,ended_at=CASE WHEN $4::int IS NULL THEN NULL ELSE CURRENT_DATE+$4 END WHERE user_id=$1 AND organization_unit_id=$2").bind(leader.id).bind(units[0]).bind(start).bind(end).execute(&f.tenant_a_pool).await.unwrap();
         let (status, body) = coverage_request(

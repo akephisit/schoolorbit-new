@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
+import { PERMISSIONS } from '../../src/lib/permissions/registry.generated';
 import { installTimetableMock, timetableIds } from './timetable-test-harness';
 import type { DailyTeachingEntry, DailyTeachingOverview } from '../../src/lib/api/timetable.js';
 
@@ -136,9 +137,14 @@ function fulfill(route: Route, data: unknown) {
 	});
 }
 
-async function installDailyOverview(page: Page, data = overview()): Promise<void> {
-	await installTimetableMock(page, { periodCount: 10 });
-	await page.route('**/api/academic/timetable/daily-teaching**', (route) => fulfill(route, data));
+async function installDailyOverview(page: Page, data = overview(), permissions?: string[]) {
+	const fixture = await installTimetableMock(page, { periodCount: 10, permissions });
+	let reads = 0;
+	await page.route('**/api/academic/timetable/daily-teaching**', (route) => {
+		reads += 1;
+		return fulfill(route, data);
+	});
+	return { count: () => reads, setPermissions: fixture.setPermissions };
 }
 
 test('fits ten equal daily periods inside the desktop table', async ({ page }) => {
@@ -762,14 +768,115 @@ for (const width of [390, 1280]) {
 }
 
 test('today-only reader sees daily teaching without planner authority', async ({ page }) => {
-	await installTimetableMock(page, {
-		periodCount: 10,
-		permissions: ['academic_timetable_today.read.school']
-	});
-	await page.route('**/api/academic/timetable/daily-teaching**', (route) =>
-		fulfill(route, overview())
-	);
+	const api = await installDailyOverview(page, overview(), [
+		PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL
+	]);
 	await page.goto(todayUrl());
 	await expect(page.getByRole('table')).toBeVisible();
+	expect(api.count()).toBe(1);
 	await expect(page.getByRole('link', { name: 'จัดตาราง', exact: true })).toHaveCount(0);
+});
+
+for (const permission of [
+	PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL,
+	PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
+	PERMISSIONS.ACADEMIC_TIMETABLE_PUBLISH_SCHOOL
+]) {
+	test(`planner-only ${permission} cannot navigate or preload the daily timetable`, async ({
+		page
+	}) => {
+		const api = await installDailyOverview(page, overview(), [permission]);
+		await page.goto(todayUrl());
+		await expect(page).toHaveURL(/\/403/);
+		await expect(page.getByRole('table')).toHaveCount(0);
+		await expect(page.getByTestId('daily-toolbar-actions')).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'พิมพ์', exact: true })).toHaveCount(0);
+		expect(api.count()).toBe(0);
+		const status = await page.evaluate(async (href) => {
+			// This is the installed public $app/navigation entry used by the Vite app.
+			const modulePath = '/node_modules/@sveltejs/kit/src/runtime/app/navigation/client.js';
+			const { preloadData } = await import(modulePath);
+			return (await preloadData(href)).status;
+		}, `${todayUrl()}&preloadProbe=1`);
+		expect(status).toBeLessThan(500);
+		expect(api.count()).toBe(0);
+	});
+}
+
+test('daily reader with planner authority keeps the exact planner context link', async ({
+	page
+}) => {
+	await installDailyOverview(page, overview(), [
+		PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+		PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL
+	]);
+	await page.goto(todayUrl());
+	await expect(page.getByRole('table')).toBeVisible();
+	await expect(page.getByRole('link', { name: 'จัดตาราง', exact: true })).toHaveAttribute(
+		'href',
+		`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}`
+	);
+});
+
+test('revoking daily access removes toolbar and discards a delayed date response', async ({
+	page
+}) => {
+	const fixture = await installTimetableMock(page, {
+		permissions: [
+			PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL
+		]
+	});
+	let reads = 0;
+	let release = () => {};
+	let complete = () => {};
+	const completed = new Promise<void>((resolve) => {
+		complete = resolve;
+	});
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await page.route('**/api/academic/timetable/daily-teaching**', async (route) => {
+		reads += 1;
+		if (reads > 1) await gate;
+		await fulfill(route, overview());
+		if (reads > 1) complete();
+	});
+	await page.goto(todayUrl());
+	await expect(page.getByRole('table')).toBeVisible();
+	await page.getByRole('button', { name: 'วันถัดไป', exact: true }).click();
+	await expect.poll(() => reads).toBe(2);
+	fixture.setPermissions([PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL]);
+	await page.evaluate(async () => {
+		const modulePath = '/src/lib/stores/permissions.ts';
+		const { setPermissions } = await import(modulePath);
+		setPermissions(['academic_timetable.read.school']);
+	});
+	await expect(page.getByTestId('daily-toolbar-actions')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'พิมพ์', exact: true })).toHaveCount(0);
+	release();
+	await completed;
+	await expect(page.getByRole('table')).toHaveCount(0);
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	expect(reads).toBe(2);
+});
+
+test('revoking daily access closes an opened period detail', async ({ page }) => {
+	const api = await installDailyOverview(page, overview(), [
+		PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+		PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL
+	]);
+	await page.goto(todayUrl());
+	await page.getByRole('table').locator('tbody button').first().click();
+	await expect(page.getByRole('dialog')).toBeVisible();
+	api.setPermissions([PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL]);
+	await page.evaluate(async () => {
+		const modulePath = '/src/lib/stores/permissions.ts';
+		const { setPermissions } = await import(modulePath);
+		setPermissions(['academic_timetable.read.school']);
+	});
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(page.getByTestId('daily-toolbar-actions')).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'พิมพ์', exact: true })).toHaveCount(0);
+	expect(api.count()).toBe(1);
 });

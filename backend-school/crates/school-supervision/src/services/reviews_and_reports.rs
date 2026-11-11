@@ -278,8 +278,10 @@ pub async fn cycle_teacher_status(
             SELECT ARRAY_AGG(DISTINCT sg.name_th ORDER BY sg.name_th) AS organization_unit_names
             FROM organization_members om
             JOIN organization_units ou ON ou.id = om.organization_unit_id
-            JOIN subject_groups sg ON sg.id = ou.subject_group_id
+              AND ou.is_active AND ou.unit_type = 'subject_group'
+            JOIN subject_groups sg ON sg.id = ou.subject_group_id AND sg.is_active
             WHERE om.user_id = u.id
+              AND om.started_at <= CURRENT_DATE
               AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         ) units ON true
         LEFT JOIN LATERAL (
@@ -341,6 +343,7 @@ pub async fn cycle_teacher_status(
         builder.push(
             r#"
                 )
+                AND om_scope.started_at <= CURRENT_DATE
                 AND (om_scope.ended_at IS NULL OR om_scope.ended_at > CURRENT_DATE)
           )
             "#,
