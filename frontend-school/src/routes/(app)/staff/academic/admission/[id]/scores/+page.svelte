@@ -56,7 +56,7 @@
 	let subjectsLoaded = $state(false);
 	let subjectsLoading = $state(true);
 	let subjectsError = $state('');
-	let applications: ApplicationListItem[] = $state([]);
+	let applications: ScoreTrackApplicant[] = $state([]);
 	let appsTrackId = $state('');
 	let appsLoaded = $state(false);
 	let appsLoading = $state(false);

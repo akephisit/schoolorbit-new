@@ -167,7 +167,7 @@ async fn authorize_staff_assignment_update(
         let stored = DbSession::new(&mut **tx)
             .query_as::<StaffRoleAssignmentRow>(
                 "staff.services.staff_service.authorize_staff_assignment_update",
-                "SELECT assignment.id, assignment.role_id, assignment.is_primary, role.is_active AND (assignment.ended_at IS NULL OR assignment.ended_at > CURRENT_DATE) AND assignment.started_at < COALESCE(assignment.ended_at, 'infinity'::date) AS is_retained FROM user_roles assignment JOIN roles role ON role.id=assignment.role_id WHERE assignment.user_id=$1 ORDER BY assignment.id FOR UPDATE OF assignment",
+                "SELECT assignment.id, assignment.role_id, COALESCE(assignment.is_primary,false) AS is_primary, COALESCE(role.is_active,false) AND (assignment.ended_at IS NULL OR assignment.ended_at > CURRENT_DATE) AND assignment.started_at < COALESCE(assignment.ended_at, 'infinity'::date) AS is_retained FROM user_roles assignment JOIN roles role ON role.id=assignment.role_id WHERE assignment.user_id=$1 ORDER BY assignment.id FOR UPDATE OF assignment",
             )
             .bind(staff_id)
             .fetch_all()

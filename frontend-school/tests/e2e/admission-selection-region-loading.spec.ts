@@ -200,6 +200,11 @@ test('slow subjects show a focused skeleton while round and tracks are usable', 
 	state.holdSubjects();
 	await page.goto(path, { waitUntil: 'domcontentloaded' });
 	await expect(page.getByRole('button', { name: /สายวิทย์/ })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
+		'href',
+		`/staff?academicYearId=${yearId}`
+	);
+	await expect(page.locator('a[href*="/applications/"]')).toHaveCount(0);
 	await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
 	expect(state.reads.some((read) => read.includes(`/tracks/${firstTrackId}/ranking`))).toBe(false);
 	state.releaseSubjects();

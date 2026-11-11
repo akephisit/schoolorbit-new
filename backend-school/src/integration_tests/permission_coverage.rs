@@ -547,6 +547,12 @@ async fn permission_coverage_staff_retained_role_rows_keep_scope_dates_notes_and
         sqlx::query("INSERT INTO user_roles(user_id,role_id,organization_unit_id,started_at,ended_at,notes) VALUES($1,$2,$3,CURRENT_DATE+$4,CASE WHEN $5::int IS NULL THEN NULL ELSE CURRENT_DATE+$5 END,'immutable provenance')")
             .bind(target).bind(roles[index]).bind(scope).bind(start).bind(end).execute(&f.tenant_a_pool).await.unwrap();
     }
+    sqlx::query("UPDATE user_roles SET is_primary=NULL WHERE user_id=$1 AND role_id=$2")
+        .bind(target)
+        .bind(roles[1])
+        .execute(&f.tenant_a_pool)
+        .await
+        .unwrap();
     let original: Vec<Value> = sqlx::query_scalar(
         "SELECT to_jsonb(role) FROM user_roles role WHERE user_id=$1 ORDER BY role_id,id",
     )
@@ -1150,10 +1156,10 @@ async fn permission_coverage_score_track_roster_is_minimal_filtered_and_complete
     .into_iter()
     .enumerate()
     {
-        sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,application_number,first_name,last_name,status,phone,address_line) VALUES($1,$2,'encrypted-score-fixture',$3,'Synthetic','Scoring',$4,'private-phone','private-address-sentinel')")
+        sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,national_id_hash,application_number,first_name,last_name,status,phone,address_line) VALUES($1,$2,'encrypted-score-fixture',md5(gen_random_uuid()::text)||md5(gen_random_uuid()::text),$3,'Synthetic','Scoring',$4,'private-phone','private-address-sentinel')")
             .bind(round).bind(tracks[0]).bind(format!("COVERAGE-SCORE-{index}")).bind(status).execute(&f.tenant_a_pool).await.unwrap();
     }
-    sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,first_name,last_name,status) VALUES($1,$2,'encrypted-score-fixture','Other','Track','verified')").bind(round).bind(tracks[1]).execute(&f.tenant_a_pool).await.unwrap();
+    sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,national_id_hash,first_name,last_name,status) VALUES($1,$2,'encrypted-score-fixture',md5(gen_random_uuid()::text)||md5(gen_random_uuid()::text),'Other','Track','verified')").bind(round).bind(tracks[1]).execute(&f.tenant_a_pool).await.unwrap();
     let path = format!(
         "/api/admission/rounds/{round}/score-track-roster?trackId={}",
         tracks[0]
@@ -1213,7 +1219,7 @@ async fn permission_coverage_score_track_roster_is_minimal_filtered_and_complete
         .0,
         StatusCode::NOT_FOUND
     );
-    sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,first_name,last_name,status) SELECT $1,$2,'encrypted-score-fixture','Bounded','Roster','verified' FROM generate_series(1,10001)").bind(round).bind(tracks[0]).execute(&f.tenant_a_pool).await.unwrap();
+    sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,national_id_hash,first_name,last_name,status) SELECT $1,$2,'encrypted-score-fixture',md5(gen_random_uuid()::text)||md5(gen_random_uuid()::text),'Bounded','Roster','verified' FROM generate_series(1,10001)").bind(round).bind(tracks[0]).execute(&f.tenant_a_pool).await.unwrap();
     let (status, body) = coverage_request(&app, &f, &scorer, Method::GET, &path, Value::Null).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_ne!(body["success"], true);

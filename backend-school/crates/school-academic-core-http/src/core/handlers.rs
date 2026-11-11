@@ -2725,7 +2725,7 @@ pub async fn homeroom_year_context(
     )
 ))]
 pub async fn list_student_year_homeroom_options(
-    State(state): State<AcademicHttpState>,
+    State(state): State<AcademicCoreHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<AcademicYearQuery>,
 ) -> Result<Response, AppError> {
