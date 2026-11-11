@@ -42,15 +42,38 @@ def main():
  println!("cargo:rerun-if-changed=migrations");
  println!("cargo:rerun-if-env-changed=SNAPSHOT_PROBE_VALUE");
  let mut names=std::fs::read_dir("migrations").unwrap().map(|x|x.unwrap().path()).collect::<Vec<_>>();names.sort();
- let value=names.iter().map(|x|format!("{}={}",x.file_name().unwrap().to_str().unwrap(),std::fs::read_to_string(x).unwrap())).collect::<Vec<_>>().join(";");
+ let value=names.iter().map(|x|{
+  let name=x.file_name().unwrap().to_str().unwrap();
+  if x.is_dir(){format!("{}/",name)}else{format!("{}={}",name,std::fs::read_to_string(x).unwrap())}
+ }).collect::<Vec<_>>().join(";");
  println!("cargo:rustc-env=MIGRATIONS={}",value);
  println!("cargo:rustc-env=WATCHED={}",std::env::var("SNAPSHOT_PROBE_VALUE").unwrap());
 }\n''')
-        def build(name):
+        def build(name, expected_missing_include=False):
             process = subprocess.run([str(args.cargo), 'build', '--release', '--offline', '--message-format=json-render-diagnostics'],
                                      cwd=app, env=environment, capture_output=True, text=True)
             (args.output / f'{name}.jsonl').write_text(process.stdout)
             (args.output / f'{name}.stderr').write_text(process.stderr)
+            (args.output / f'{name}.status.json').write_text(json.dumps({
+                'exitCode': process.returncode, 'expectedMissingInclude': expected_missing_include,
+                'rawCargoMessages': f'{name}.jsonl', 'rawStderr': f'{name}.stderr'}, indent=2) + '\n')
+            if expected_missing_include:
+                messages = [json.loads(line) for line in process.stdout.splitlines()]
+                finished = [record['success'] for record in messages if record.get('reason') == 'build-finished']
+                errors = [record['message'] for record in messages
+                          if record.get('reason') == 'compiler-message'
+                          and record['target']['name'] == 'snapshot-freshness-fixture'
+                          and record['target']['kind'] == ['bin']
+                          and record['message']['level'] == 'error'
+                          and "couldn't read" in record['message']['message']
+                          and 'src/value.rs' in record['message']['message']]
+                artifacts = [record for record in messages if record.get('reason') == 'compiler-artifact']
+                if (process.returncode != 101 or finished != [False] or not errors
+                        or any(record['target']['kind'] == ['bin'] for record in artifacts)):
+                    raise AssertionError('Missing include! input did not cause the expected compiler refusal')
+                return {'exitCode': process.returncode, 'buildFinished': False,
+                        'expectedMissingIncludeRefusal': True, 'binaryExecuted': False,
+                        'artifacts': len(artifacts), 'missingIncludeDiagnostics': errors}
             process.check_returncode()
             artifacts = [json.loads(line) for line in process.stdout.splitlines()]
             artifacts = [record for record in artifacts if record.get('reason') == 'compiler-artifact']
@@ -68,7 +91,7 @@ def main():
         # Native gate has its own real compiler-stage check; this fixture isolates Cargo/source freshness.
         with patch.object(cache, 'native_identity', return_value={'schemaVersion': 1, 'diagnosticFixture': True}):
             metadata = cache.create_archive(app, root / 'snapshot', 'fixture-configuration')
-            def restore(name, change=None):
+            def restore(name, change=None, expected_missing_include=False):
                 shutil.rmtree(app)
                 case = root / f'incoming-{name}'; shutil.copytree(incoming, case)
                 if change: change(case)
@@ -78,7 +101,7 @@ def main():
                 for path in [app, *(p for p in app.rglob('*') if p.is_dir())]:
                     os.utime(path, None)
                 cache.materialize(app, root / 'prevalidated.json', 'fixture-configuration')
-                observed = build(name)
+                observed = build(name, expected_missing_include=expected_missing_include)
                 records[name] = {'restore': result, **observed}
                 return observed
             unchanged = restore('unchanged')
@@ -95,9 +118,21 @@ def main():
             assert observed['dirty'] > 0 and 'one.sql=' not in observed['binaryOutput']
             observed = restore('mode', lambda case: (case / 'src/value.rs').chmod(0o755))
             assert observed['dirty'] > 0
+            def add_watched_sql(case):
+                path = case / 'migrations/two.sql'; path.write_text('SELECT 2;'); os.utime(path, ns=(1, 1))
+            observed = restore('add-watched-sql', add_watched_sql)
+            assert observed['dirty'] > 0 and 'two.sql=SELECT 2;' in observed['binaryOutput']
+            def add_empty_watched_directory(case):
+                path = case / 'migrations/empty'; path.mkdir()
+                os.utime(path, ns=(1, 1)); os.utime(path.parent, ns=(1, 1))
+            observed = restore('add-empty-watched-directory', add_empty_watched_directory)
+            assert observed['dirty'] > 0 and 'empty/' in observed['binaryOutput']
             environment['SNAPSHOT_PROBE_VALUE'] = 'environment-B'
             observed = restore('tracked-environment')
             assert observed['dirty'] > 0 and observed['binaryOutput'].endswith('environment-B')
+            observed = restore('delete-include-input', lambda case: (case / 'src/value.rs').unlink(),
+                               expected_missing_include=True)
+            assert observed['exitCode'] == 101 and observed['expectedMissingIncludeRefusal'] and not observed['binaryExecuted']
         (args.output / 'complete.json').write_text(json.dumps({'passed': True, 'cases': records,
             'scope': 'Actual tiny Cargo fixture at one fixed path; native identity mocked here and verified separately by compiler-stage gate.',
             'applicationTargetUsed': False}, indent=2) + '\n')

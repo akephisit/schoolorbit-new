@@ -117,6 +117,16 @@ class SnapshotFilesystem(unittest.TestCase):
             self.restore()
         self.assertFalse(self.destination.exists())
 
+    def test_wrong_configuration_refuses_before_extraction_and_selects_fresh_recipe(self):
+        with patch.object(cache.tempfile, 'mkdtemp', side_effect=AssertionError('extraction attempted')):
+            with self.assertRaisesRegex(cache.SnapshotRefused, '^snapshot_identity$'):
+                cache.preflight(self.bundle / 'snapshot.tar', self.bundle / 'snapshot.json', self.incoming,
+                                self.destination, 'wrong-configuration', self.metadata['sourceManifestSha256'])
+        self.assertFalse(self.destination.exists())
+        self.assertEqual(list(self.root.glob('cargo-restore-*')), [])
+        self.assertEqual(cache.select_recipe('failure', self.root / 'uncreated-native.json',
+                                             self.root / 'uncreated-materialization.json'), 'fresh-builder')
+
     def test_missing_source_declaration_refuses_before_any_extraction(self):
         self.metadata['sourceManifest'] = [record for record in self.metadata['sourceManifest']
                                            if record['path'] != 'src/main.rs']

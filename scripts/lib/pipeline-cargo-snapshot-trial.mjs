@@ -58,6 +58,16 @@ export function validateTrialPublisher(value, run, current, { job, attempt }) {
   }
 }
 
+export function selectTrialProducerJob(jobs, artifact, run) {
+  // Operations also has an unrelated job named "benchmark". Only this reusable-workflow
+  // callsite publishes the trial locator; check uniqueness before validating its outcome.
+  const matching = Array.isArray(jobs) ? jobs.filter(job => job.name === 'cache-benchmark / benchmark') : [];
+  if (matching.length !== 1 || !artifactFromJobAttempt(artifact, matching[0], run, 'Publish cross-run Cargo snapshot locator')) {
+    throw new Error('trial_job_origin');
+  }
+  return matching[0];
+}
+
 function context() {
   return { repository: process.env.GITHUB_REPOSITORY, sha: process.env.GITHUB_SHA,
     ref: process.env.GITHUB_REF, runId: process.env.GITHUB_RUN_ID };
@@ -88,12 +98,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         const archive = execFileSync('gh', ['api', `/repos/${current.repository}/actions/artifacts/${artifacts[0].id}/zip`],
           { maxBuffer: 1024 * 1024, timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] });
         const value = validateTrialManifest(decodeArtifact(archive, `${TRIAL_ARTIFACT}.json`), run, current);
-        const jobs = api(`/repos/${current.repository}/actions/runs/${run.id}/attempts/${producerAttempt}/jobs?per_page=100`).jobs
-          .filter(job => /(?:^| \/ )benchmark$/.test(job.name));
-        if (jobs.length !== 1 || !artifactFromJobAttempt(artifacts[0], jobs[0], run, 'Publish cross-run Cargo snapshot locator')) throw new Error('trial_job_origin');
+        const job = selectTrialProducerJob(
+          api(`/repos/${current.repository}/actions/runs/${run.id}/attempts/${producerAttempt}/jobs?per_page=100`).jobs,
+          artifacts[0], run);
         const chargedNames = ['Validate trial producer authority', 'Publish cross-run Cargo snapshot locator'];
         const chargedSteps = chargedNames.map(name => {
-          const matching = jobs[0].steps?.filter(step => step.name === name && step.conclusion === 'success') || [];
+          const matching = job.steps?.filter(step => step.name === name && step.conclusion === 'success') || [];
           if (matching.length !== 1) throw new Error('trial_publisher_step_evidence');
           const step = matching[0];
           const seconds = (Date.parse(step.completed_at) - Date.parse(step.started_at)) / 1000;

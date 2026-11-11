@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { selectTrialProducerJob } from '../lib/pipeline-cargo-snapshot-trial.mjs';
 
 const repo = path.resolve(import.meta.dirname, '../..');
 const prepare = readFileSync(path.join(repo, '.github/workflows/prepare.yml'), 'utf8');
@@ -18,6 +19,40 @@ function stepById(id) {
   const end = prepare.indexOf('\n      - ', start);
   return prepare.slice(start, end < 0 ? undefined : end);
 }
+
+test('trial locator selects the exact Operations callsite from the full job list and binds its upload', () => {
+  const run = { id: 43018406385, run_attempt: 1, head_sha: '5db5839ddd3a997bfe1cdddf02ad4c26fd1e3d76' };
+  const artifact = { workflow_run: { id: run.id }, created_at: '2026-11-11T06:40:05Z', updated_at: '2026-11-11T06:40:05Z' };
+  const producer = { name: 'cache-benchmark / benchmark', run_id: run.id, run_attempt: run.run_attempt,
+    head_sha: run.head_sha, status: 'completed', conclusion: 'success',
+    started_at: '2026-11-11T06:29:20Z', completed_at: '2026-11-11T06:40:16Z', steps: [
+      { name: 'Publish cross-run Cargo snapshot locator', conclusion: 'success',
+        started_at: '2026-11-11T06:40:04Z', completed_at: '2026-11-11T06:40:05Z' }
+    ] };
+  // Mirror the other Operations callsites, including the observed skipped bare "benchmark".
+  const unrelated = ['owned-load-cleanup', 'api-dns', 'recreate-admin-frontend', 'smoke', 'diagnostics',
+    'benchmark', 'http-benchmark', 'compiler-cache-diagnostic', 'provision']
+    .map(name => ({ name, status: 'completed', conclusion: 'skipped' }));
+  const jobs = [...unrelated, producer];
+  assert.equal(jobs.filter(job => /(?:^| \/ )benchmark$/.test(job.name)).length, 2, 'reproduce the former suffix ambiguity');
+  assert.equal(selectTrialProducerJob(jobs, artifact, run), producer);
+
+  const refused = (list, value = artifact) => assert.throws(() => selectTrialProducerJob(list, value, run), /trial_job_origin/);
+  refused([...jobs, { ...producer, conclusion: 'skipped' }]); // Do not filter success to hide duplicates.
+  refused([...jobs, { ...producer }]);
+  refused(unrelated);
+  refused([...unrelated, { ...producer, name: 'other-caller / benchmark' }]);
+  for (const change of [
+    { run_id: run.id + 1 }, { run_attempt: 2 }, { head_sha: 'a'.repeat(40) },
+    { status: 'in_progress' }, { conclusion: 'failure' }, { conclusion: 'skipped' },
+    { steps: [] }, { steps: [{ ...producer.steps[0], conclusion: 'failure' }] },
+    { steps: [...producer.steps, { ...producer.steps[0] }] }
+  ]) refused([...unrelated, { ...producer, ...change }]);
+  refused(jobs, { ...artifact, workflow_run: { id: run.id + 1 } });
+  // The matching SHA and locator contents cannot bless an artifact from an earlier attempt.
+  refused(jobs, { ...artifact, created_at: '2026-11-11T05:40:05Z', updated_at: '2026-11-11T05:40:05Z' });
+  refused(jobs, { ...artifact, updated_at: '2026-11-11T06:40:06Z' });
+});
 
 test('optional publisher executes a scratch/COPY-only context; compiler-reachable export is strict', t => {
   const root = fixture(t), carrier = path.join(root,'cargo-snapshot-export');
