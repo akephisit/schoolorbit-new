@@ -74,3 +74,12 @@ test('cleanup targets only the already-verified producer package and fails on un
     else assert.throws(()=>readFileSync(calls));
   }
 });
+
+
+test('failure evidence retains snapshot metadata and logs while excluding every opaque snapshot TAR', () => {
+  const workflow=readFileSync(path.join(repo,'.github/workflows/backend-cache-benchmark.yml'),'utf8');
+  const evidence=workflow.slice(workflow.indexOf('      - name: Publish complete benchmark evidence')).split('      - name: Remove only')[0];
+  assert.match(evidence,/if: always\(\) && inputs.phase != 'cleanup'/);
+  assert.match(evidence,/!\$\{\{ runner.temp \}\}\/backend-cache-benchmark\/\*\*\/snapshot\.tar/);
+  assert.doesNotMatch(evidence,/!.*snapshot\.json|!.*snapshot-data\/\*\*|!.*resource|!.*\.log/);
+});

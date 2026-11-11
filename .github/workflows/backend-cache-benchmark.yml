@@ -26,6 +26,9 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
       - name: Validate bounded sample count
         env:
           BENCH_SAMPLES: ${{ inputs.samples }}
@@ -110,6 +113,7 @@ jobs:
             ${{ runner.temp }}/backend-cache-benchmark
             !${{ runner.temp }}/backend-cache-benchmark/contexts/**
             !${{ runner.temp }}/backend-cache-benchmark/compiler-cache-snapshot/**
+            !${{ runner.temp }}/backend-cache-benchmark/**/snapshot.tar
           retention-days: 7
           if-no-files-found: error
       - name: Remove only this run's disposable registry package

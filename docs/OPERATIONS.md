@@ -1179,7 +1179,9 @@ binary, user and command must agree. Diagnostic probes are builds, not a CI unit
 Cross-run transition costs include producer export, snapshot locator publication/upload, consumer
 lookup/download, archive preflight, native-tool compatibility checks, snapshot pull/materialization,
 application compilation and image push/cache export. Cache-only authority costs are charged to every
-snapshot pair. Compiler seeding, frozen compiler fixture transport/priming, evidence extraction and
+snapshot pair. The transition timer is not total workflow elapsed: checkout, exact Node setup,
+registry login and common runner setup are excluded from both variants and cancel in the paired
+delta. Compiler seeding, frozen compiler fixture transport/priming, evidence extraction and
 API/unchanged verification are declared separately. Builder network counters include all traffic.
 A successful producer retains only its run-owned scratch GHCR package for the consumer; the consumer
 removes that exact package after publishing evidence. Failed producers clean their own state. To

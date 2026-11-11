@@ -390,7 +390,8 @@ def consumer(root, output, value, samples):
              'consumerRunId': os.environ['GITHUB_RUN_ID'], 'distinctRuns': True,
              'fixtureTransport': fixture_transport, 'allPairsNetPositive': all(gain > 0 for gain in gains), 'pairedNetSeconds': gains,
              'meanNetSeconds': statistics.mean(gains), 'productionActivation': 'OFF; requires reviewed repeated net gain and diagnostic freshness proof',
-             'limits': ['Diagnostic Operations origin, not a production MAIN Pipeline origin attestation.',
+             'limits': ['Transition costs are not total workflow elapsed: checkout, exact Node setup, login and common runner setup are excluded/common to both variants and cancel in the paired delta.',
+                        'Diagnostic Operations origin, not a production MAIN Pipeline origin attestation.',
                         'Controlled same4CPU runner class; hosted machines differ between runs.',
                         'Fixture compiler seeding/transfer/priming and offline API checks are reported separately from production-style transition costs.',
                         'OCI timestamps/history may differ; paired runtime binary, USER/CMD and offline API must match.']})
