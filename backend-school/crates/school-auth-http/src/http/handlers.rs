@@ -12,7 +12,6 @@ use school_auth::{
     session_service::AuthenticatedSession,
 };
 
-use super::profile_orchestrator;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
@@ -69,9 +68,10 @@ pub async fn update_profile(
     let pool = context.tenant.pool;
     let user_id = context.user_id;
 
-    let user =
-        profile_orchestrator::update_profile(state.file_platform.as_ref(), &pool, user_id, payload)
-            .await?;
+    let user = state
+        .profile_updates
+        .update_profile(&pool, user_id, payload)
+        .await?;
     let primary_role_name = services::get_primary_role_name(&pool, user.id).await?;
 
     let mut profile_response = ProfileResponse::from(user);

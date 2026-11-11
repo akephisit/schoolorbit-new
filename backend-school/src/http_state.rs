@@ -181,7 +181,11 @@ impl FromRef<AppState> for school_auth_http::http::state::AuthHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
-            file_platform: state.file_platform.clone(),
+            profile_updates: std::sync::Arc::new(
+                crate::adapters::auth_profile::ApplicationAuthProfile::new(
+                    state.file_platform.clone(),
+                ),
+            ),
         }
     }
 }
