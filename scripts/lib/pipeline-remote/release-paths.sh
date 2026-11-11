@@ -12,4 +12,6 @@ schoolorbit_release_paths() {
         [[ $actual == "$expected" && ! -L $expected && -f $expected/release-bundle.json ]] || return 78
         schoolorbit_code_root=$expected
     fi
+    # Public path results are also available to nested release invocations.
+    export schoolorbit_code_root schoolorbit_state_root
 }

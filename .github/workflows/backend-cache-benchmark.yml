@@ -7,7 +7,7 @@ on:
         type: string
         default: "2"
       phase:
-        description: Existing comparison or cross-run snapshot producer, consumer, cleanup
+        description: Cache backend compare, exporters, or cross-run snapshot producer, consumer, cleanup
         type: string
         default: compare
       producer_run_id:
@@ -35,7 +35,7 @@ jobs:
           PHASE: ${{ inputs.phase }}
         run: |
           [[ "$BENCH_SAMPLES" =~ ^[2-3]$ ]]
-          case "$PHASE" in compare|producer|consumer|cleanup) ;; *) exit 64 ;; esac
+          case "$PHASE" in compare|exporters|producer|consumer|cleanup) ;; *) exit 64 ;; esac
       - name: Verify previous run and resolve immutable trial state
         id: trial-origin
         if: inputs.phase == 'consumer' || inputs.phase == 'cleanup'
@@ -89,6 +89,12 @@ jobs:
           BENCH_SAMPLES: ${{ inputs.samples }}
           BENCH_OUTPUT: ${{ runner.temp }}/backend-cache-benchmark
         run: python3 -B scripts/benchmark_cargo_snapshot.py
+      - name: Compare full-cost isolated BuildKit exporters on CPU4
+        if: inputs.phase == 'exporters'
+        env:
+          BENCH_SAMPLES: ${{ inputs.samples }}
+          BENCH_OUTPUT: ${{ runner.temp }}/backend-cache-benchmark
+        run: python3 -B scripts/benchmark_backend_export.py
       - name: Validate trial producer authority
         if: inputs.phase == 'producer'
         env:
@@ -117,7 +123,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - name: Remove only this run's disposable registry package
-        if: always() && (inputs.phase == 'compare' || inputs.phase == 'producer' && (steps.trial-published.outcome != 'success' || failure() || cancelled()) || (inputs.phase == 'consumer' || inputs.phase == 'cleanup') && steps.trial-origin.outcome == 'success')
+        if: always() && (inputs.phase == 'compare' || inputs.phase == 'exporters' || inputs.phase == 'producer' && (steps.trial-published.outcome != 'success' || failure() || cancelled()) || (inputs.phase == 'consumer' || inputs.phase == 'cleanup') && steps.trial-origin.outcome == 'success')
         env:
           GH_TOKEN: ${{ github.token }}
           OWNER: ${{ github.repository_owner }}

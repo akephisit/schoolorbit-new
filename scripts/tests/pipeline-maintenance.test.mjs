@@ -9,6 +9,8 @@ import {
   rmSync,
   statSync,
   existsSync,
+  chmodSync,
+  readdirSync,
 } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -24,10 +26,19 @@ function fixture(
     reloadFailure = false,
     reloadDelay = false,
     bootEnableFailure = false,
+    immutable = false,
   } = {},
 ) {
   const stack = mkdtempSync(path.join(os.tmpdir(), "pipeline-maintenance-"));
-  t.after(() => rmSync(stack, { recursive: true, force: true }));
+  const writable = (directory) => {
+    chmodSync(directory, 0o755);
+    for (const entry of readdirSync(directory, { withFileTypes: true }))
+      if (entry.isDirectory()) writable(path.join(directory, entry.name));
+  };
+  t.after(() => {
+    if (immutable) writable(stack);
+    rmSync(stack, { recursive: true, force: true });
+  });
   const root = path.join(stack, "deployment");
   mkdirSync(path.join(stack, "nginx/conf.d"), { recursive: true });
   mkdirSync(path.join(stack, "bin"));
@@ -112,17 +123,102 @@ fi
     BASE_DOMAIN: "example.test",
     RELEASE_SHA: "a".repeat(40),
   };
-  const run = (mode) => {
+  let script = path.join(repo, "scripts/lib/pipeline-remote/maintenance.sh"),
+    codeRoot = root;
+  if (immutable) {
+    env.RELEASE_BUNDLE_SHA256 = "b".repeat(64);
+    codeRoot = path.join(
+      root,
+      "release-bundles",
+      env.RELEASE_SHA,
+      env.RELEASE_BUNDLE_SHA256,
+    );
+    mkdirSync(codeRoot, { recursive: true });
+    for (const name of ["scripts", "nginx-configs", "podman-compose.yml"]) {
+      cpSync(path.join(root, name), path.join(codeRoot, name), {
+        recursive: true,
+      });
+      rmSync(path.join(root, name), { recursive: true });
+    }
+    const remote = path.join(codeRoot, "scripts/lib/pipeline-remote");
+    mkdirSync(remote, { recursive: true });
+    for (const name of ["maintenance.sh", "release-paths.sh"])
+      cpSync(
+        path.join(repo, "scripts/lib/pipeline-remote", name),
+        path.join(remote, name),
+      );
+    writeFileSync(path.join(codeRoot, "release-bundle.json"), "{}");
+    const seal = (directory) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const file = path.join(directory, entry.name);
+        if (entry.isDirectory()) seal(file);
+        else chmodSync(file, entry.name.endsWith(".sh") ? 0o555 : 0o444);
+      }
+      chmodSync(directory, 0o555);
+    };
+    seal(codeRoot);
+    script = path.join(remote, "maintenance.sh");
+  }
+  const run = (mode, override = {}) => {
     if (reloadDelay && ["enter", "accept"].includes(mode))
       writeFileSync(path.join(stack, "delayed-reload"), "");
-    return spawnSync(
-      "bash",
-      [path.join(repo, "scripts/lib/pipeline-remote/maintenance.sh"), mode],
-      { env, encoding: "utf8" },
-    );
+    return spawnSync("bash", [script, mode], {
+      env: { ...env, ...override },
+      encoding: "utf8",
+    });
   };
-  return { stack, root, run, reloadFailure };
+  return { stack, root, codeRoot, run, reloadFailure };
 }
+test("immutable maintenance runs real code with stable journals and private probes", (t) => {
+  const f = fixture(t, { immutable: true, fresh: true });
+  for (const mode of ["enter", "verify", "accept"]) {
+    const result = f.run(mode);
+    assert.equal(result.status, 0, result.stderr);
+  }
+  assert.equal(
+    readFileSync(path.join(f.root, "accepted-release"), "utf8").trim(),
+    "a".repeat(40),
+  );
+  assert.equal(
+    statSync(path.join(f.root, "releases", "a".repeat(40), "probe-token"))
+      .mode & 0o777,
+    0o600,
+  );
+  assert.equal(existsSync(path.join(f.codeRoot, "releases")), false);
+  assert.equal(existsSync(path.join(f.codeRoot, "accepted-release")), false);
+  assert.equal(statSync(f.codeRoot).mode & 0o777, 0o555);
+});
+test("immutable maintenance refuses missing/wrong identity and failed acceptance retains public maintenance", (t) => {
+  const f = fixture(t, { immutable: true, smokeFailure: true });
+  assert.equal(f.run("enter").status, 0);
+  const probe = readFileSync(
+    path.join(f.root, "releases", "a".repeat(40), "probe-token"),
+    "utf8",
+  );
+  for (const value of ["", "c".repeat(64), "../shared"])
+    assert.notEqual(
+      f.run("verify", { RELEASE_BUNDLE_SHA256: value }).status,
+      0,
+    );
+  assert.notEqual(f.run("accept").status, 0);
+  assert.equal(existsSync(path.join(f.root, "pending-release")), true);
+  assert.equal(existsSync(path.join(f.root, "accepted-release")), false);
+  assert.equal(
+    readFileSync(
+      path.join(f.root, "releases", "a".repeat(40), "probe-token"),
+      "utf8",
+    ),
+    probe,
+  );
+  for (const part of ["school", "admin"])
+    assert.match(
+      readFileSync(
+        path.join(f.stack, "nginx/conf.d", part + "-api.conf"),
+        "utf8",
+      ),
+      /return 503/,
+    );
+});
 test("fresh origin starts only a maintenance proxy without unresolved backend upstreams", (t) => {
   const f = fixture(t, { fresh: true });
   const result = f.run("enter");

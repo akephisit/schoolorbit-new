@@ -239,13 +239,18 @@ test('reconciled hashes leave a secret-free job and missing transport blocks mai
 	const privateJob = release.jobs['private-preflight'];
 	assert.deepEqual(publicJob.outputs, {
 		plan: '${{ steps.reconcile.outputs.plan }}',
-		deploy: '${{ steps.reconcile.outputs.deploy }}'
+		deploy: '${{ steps.reconcile.outputs.deploy }}',
+		bundle_digest: '${{ steps.bundle.outputs.digest }}'
 	});
 	assert.doesNotMatch(
 		JSON.stringify(publicJob),
 		/secrets\.|appleboy\/|CLOUDFLARE_API_TOKEN|ADMIN_BOOTSTRAP/
 	);
-	assert.equal(publicJob.steps.at(-1).run, 'node scripts/release_preflight.mjs');
+	assert.equal(
+		publicJob.steps.find((step) => step.id === 'reconcile').run,
+		'node scripts/release_preflight.mjs'
+	);
+	assert.equal(publicJob.steps.at(-1).run, 'node scripts/lib/pipeline-release-bundle.mjs');
 	assert.equal(privateJob.outputs, undefined);
 	assert.equal(privateJob.needs, 'preflight');
 	assert.deepEqual(release.jobs.maintenance.needs, ['preflight', 'private-preflight']);
@@ -319,6 +324,60 @@ test('reconciled hashes leave a secret-free job and missing transport blocks mai
 		});
 		assert.equal(enabled, false, result);
 	}
+});
+
+test('one exact release bundle replaces repeated uploads without adding SSH or artifact transfers', async () => {
+	const release = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8')
+	);
+	const privateSteps = release.jobs['private-preflight'].steps;
+	const upload = privateSteps.findIndex((step) => step.uses?.startsWith('appleboy/scp-action@'));
+	const interlock = privateSteps.findIndex(
+		(step) => step.uses === './.github/actions/owned-cleanup-interlock'
+	);
+	const reconstruct = privateSteps.findIndex(
+		(step) => step.run === 'node scripts/lib/pipeline-release-bundle.mjs reconstruct'
+	);
+	assert.ok(interlock < reconstruct && reconstruct < upload);
+	assert.equal(
+		privateSteps[reconstruct].env.RELEASE_BUNDLE_SHA256,
+		'${{ needs.preflight.outputs.bundle_digest }}'
+	);
+	assert.equal(privateSteps[upload].with.source, 'build/release-bundle/release-bundle.tar');
+	assert.equal(privateSteps[upload].with.strip_components, 2);
+	assert.equal(
+		privateSteps.filter((step) => step.uses?.startsWith('appleboy/ssh-action@')).length,
+		1
+	);
+	assert.equal(
+		privateSteps.find((step) => step.uses?.startsWith('appleboy/ssh-action@')).with.script_path,
+		'scripts/lib/pipeline-remote/install-release-bundle.sh'
+	);
+	const enter = release.jobs.maintenance.steps.find((step) =>
+		step.uses?.startsWith('appleboy/ssh-action@')
+	);
+	assert.equal(enter.with.script_path, 'scripts/lib/pipeline-remote/install-release-bundle.sh');
+	assert.equal(enter.env.BUNDLE_ENTER_MAINTENANCE, 'true');
+	assert.match(enter.env.BUNDLE_INSTALL, /!contains.*backend-admin/);
+	let uploads = 0;
+	for (const file of ['release.yml', 'deploy-backend-admin.yml', 'deploy-school-release.yml']) {
+		const source = await readFile(path.join(repoRoot, '.github/workflows', file), 'utf8');
+		const workflow = parseYaml(source);
+		uploads += [...source.matchAll(/uses: appleboy\/scp-action@/g)].length;
+		assert.doesNotMatch(
+			source,
+			/name: release-bundle-.*|uses: actions\/upload-artifact.*release-bundle/
+		);
+		for (const job of Object.values(workflow.jobs)) {
+			for (const step of job.steps || []) {
+				if (!step.with?.script?.startsWith('bash "/opt/stack/deployment/release-bundles/'))
+					continue;
+				assert.match(step.with.script, /\$RELEASE_SHA\/\$RELEASE_BUNDLE_SHA256\/scripts\//);
+				assert.ok(step.with.envs.split(',').includes('RELEASE_BUNDLE_SHA256'));
+			}
+		}
+	}
+	assert.equal(uploads, 1);
 });
 
 test('Admin deploy resolves its image artifact locally instead of crossing a secret-bearing job output', async () => {

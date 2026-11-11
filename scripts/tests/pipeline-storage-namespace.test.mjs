@@ -73,7 +73,17 @@ test("only explicit manual strict bounded attestation JSON reaches transport", (
 });
 function fixture(t, options = {}) {
   const stack = mkdtempSync(path.join(os.tmpdir(), "storage-rollout-"));
-  t.after(() => rmSync(stack, { recursive: true, force: true }));
+  t.after(() => {
+    if (options.immutable) {
+      const writable = (directory) => {
+        chmodSync(directory, 0o755);
+        for (const entry of readdirSync(directory, { withFileTypes: true }))
+          if (entry.isDirectory()) writable(path.join(directory, entry.name));
+      };
+      writable(stack);
+    }
+    rmSync(stack, { recursive: true, force: true });
+  });
   const root = path.join(stack, "deployment");
   mkdirSync(path.join(root, "scripts/lib/pipeline-remote"), {
     recursive: true,
@@ -195,8 +205,33 @@ if(process.argv[3]?.includes('/stopped-'))process.exit(1);const r=require('node:
     NAMESPACE_ATTESTATION_JSON: options.attest ? JSON.stringify(evidence) : "",
     NAMESPACE_ATTESTATION_MANUAL: options.attest ? "true" : "false",
   };
+  let codeRoot = root;
+  if (options.immutable) {
+    env.RELEASE_BUNDLE_SHA256 = "b".repeat(64);
+    codeRoot = path.join(
+      root,
+      "release-bundles",
+      sha,
+      env.RELEASE_BUNDLE_SHA256,
+    );
+    mkdirSync(codeRoot, { recursive: true });
+    cpSync(path.join(root, "scripts"), path.join(codeRoot, "scripts"), {
+      recursive: true,
+    });
+    rmSync(path.join(root, "scripts"), { recursive: true });
+    writeFileSync(path.join(codeRoot, "release-bundle.json"), "{}");
+    const seal = (directory) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const file = path.join(directory, entry.name);
+        if (entry.isDirectory()) seal(file);
+        else chmodSync(file, entry.name.endsWith(".sh") ? 0o555 : 0o444);
+      }
+      chmodSync(directory, 0o555);
+    };
+    seal(codeRoot);
+  }
   const script = path.join(
-    root,
+    codeRoot,
     "scripts/lib/pipeline-remote/school-storage-rollout.sh",
   );
   const run = (mode, override = {}) =>
@@ -222,13 +257,14 @@ if(process.argv[3]?.includes('/stopped-'))process.exit(1);const r=require('node:
         `deployment_root="$1"\nexport_school_compose_env(){ :; }\nunset_school_compose_env(){ :; }\ncompose_up_quiet(){ touch "$FIXTURE_ROOT/started"; }\nvalidate_backend_network(){ :; }\n` +
           block,
         "fixture",
-        root,
+        codeRoot,
       ],
       { env, encoding: "utf8" },
     );
   return {
     stack,
     root,
+    codeRoot,
     env,
     run,
     maintenance,
@@ -244,6 +280,23 @@ if(process.argv[3]?.includes('/stopped-'))process.exit(1);const r=require('node:
         : [],
   };
 }
+test("immutable rollout keeps durable snapshots in the stable release journal", (t) => {
+  const f = fixture(t, { immutable: true });
+  const preflight = f.run("preflight");
+  assert.equal(preflight.status, 0, preflight.stderr);
+  const proof = readFileSync(path.join(f.journal, "old-context.json"));
+  assert.notEqual(f.run("preflight", { RELEASE_BUNDLE_SHA256: "" }).status, 0);
+  f.maintenance();
+  const result = f.cutover();
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(existsSync(path.join(f.stack, "started")), true);
+  assert.deepEqual(
+    readFileSync(path.join(f.journal, "old-context.json")),
+    proof,
+  );
+  assert.equal(existsSync(path.join(f.codeRoot, "releases")), false);
+  assert.equal(statSync(f.codeRoot).mode & 0o777, 0o555);
+});
 test("regular release executes real headless stages before actual production start block, never attests", (t) => {
   const f = fixture(t);
   assert.equal(f.run("preflight").status, 0);
@@ -571,7 +624,14 @@ test("migration histogram accepts every exact version-bound refusal and no tenan
       "ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED",
       "ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID",
     ],
-    151: ["PUBLICATION_151_SOURCE_LINEAGE_INVALID","PUBLICATION_151_PRESERVATION_FAILED","PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID","PUBLICATION_151_RECONCILIATION_FAILED","PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE","PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE"],
+    151: [
+      "PUBLICATION_151_SOURCE_LINEAGE_INVALID",
+      "PUBLICATION_151_PRESERVATION_FAILED",
+      "PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID",
+      "PUBLICATION_151_RECONCILIATION_FAILED",
+      "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE",
+      "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
+    ],
   };
   const buckets = Object.entries(codes).flatMap(([version, messages]) =>
     messages

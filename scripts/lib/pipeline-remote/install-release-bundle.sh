@@ -4,14 +4,17 @@ set -euo pipefail
 if [[ ${BUNDLE_OPERATION:-install} != describe ]]; then
     [[ ${RELEASE_SHA-} =~ ^[0-9a-f]{40}$ && ${RELEASE_BUNDLE_SHA256-} =~ ^[0-9a-f]{64}$ ]] || exit 64
 fi
-command -v python3 >/dev/null || { echo 'Release bundle requires existing Python 3' >&2; exit 78; }
+command -v python3 >/dev/null || {
+    echo 'Release bundle requires existing Python 3' >&2
+    exit 78
+}
 case ${BUNDLE_INSTALL:-true} in
     true) ;;
     false) ;;
     *) exit 64 ;;
 esac
 if [[ ${BUNDLE_INSTALL:-true} == true ]]; then
-python3 - <<'PY'
+    python3 - <<'PY'
 import hashlib, io, json, os, pathlib, re, shutil, stat, tarfile, tempfile
 
 # Single fixed protocol allowlist, also read by the public archive producer.

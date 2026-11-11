@@ -30,8 +30,15 @@ export async function readWorkflowSource(root, file) {
 	const workflow = parse(source);
 	for (const job of Object.values(workflow.jobs || {})) {
 		for (const step of job.steps || []) {
-			if (!step.with?.script?.startsWith('bash /opt/stack/deployment/scripts/')) continue;
-			const file = step.with.script.replace('bash /opt/stack/deployment/', '').split(' ')[0];
+			const script = step.with?.script || '';
+			const legacy = script.match(/^bash \/opt\/stack\/deployment\/(scripts\/[^\s]+\.sh)(?:\s|$)/);
+			const immutable = script.match(
+				/^bash "\/opt\/stack\/deployment\/release-bundles\/\$RELEASE_SHA\/\$RELEASE_BUNDLE_SHA256\/(scripts\/[^"\s]+\.sh)"(?:\s|$)/
+			);
+			const file = (immutable || legacy)?.[1];
+			if (!file) continue;
+			if (file.split('/').includes('..'))
+				throw new Error('Remote implementation must stay in scripts');
 			let body = await readFile(path.join(root, file), 'utf8');
 			for (const [name, value] of Object.entries(step.env || {})) {
 				if (typeof value === 'string' && value.startsWith('${{'))

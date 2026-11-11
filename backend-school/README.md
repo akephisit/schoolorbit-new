@@ -43,7 +43,10 @@ owner has no File Platform implementation dependency.
 `school-staff` owns personnel, career, organization, roles, resource policies and Achievement.
 `school-staff-leave` owns leave policy, workflow and evidence operations, using Staff's authoritative
 name and effective career providers on its existing transaction connection. Its Workflow/signature
-providers retain their legitimate File Platform dependencies. `school-staff-file-transfer` owns pure
+providers use Workflow core's business operations and document-validation contract. Concrete
+Workflow HTTP state/routes and PDF/file rendering belong to `school-workflow-http`, which depends
+on core and File Platform; core does not re-export that implementation. Budget and Staff Leave
+retain core operations without inheriting renderer implementation changes. `school-staff-file-transfer` owns pure
 ephemeral discovery, pairing and signaling state; the application supplies its single process
 runtime. `school-staff-http` owns all four transport families with separate Staff, Leave and
 FileTransfer states and the existing canonical Auth HTTP context. Staff core retains Auth's name
