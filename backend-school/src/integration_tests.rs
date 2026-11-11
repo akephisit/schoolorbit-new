@@ -6,6 +6,7 @@ pub mod calendar;
 pub mod certificates;
 pub mod database;
 pub mod notification_dispatch;
+pub(crate) mod permission_coverage;
 pub mod policies;
 pub mod question_bank;
 pub mod school;

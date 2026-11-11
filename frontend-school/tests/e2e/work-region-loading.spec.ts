@@ -234,3 +234,42 @@ for (const [route, testId] of [
 		await expect(region).toHaveText(loadedText);
 	});
 }
+
+for (const permissions of [
+	['achievement.read.own'],
+	['invented.manage.school'],
+	['learning_offering.manage.assigned']
+]) {
+	test(`ineligible workflow authority cannot open management: ${permissions[0]}`, async ({
+		page
+	}) => {
+		const api = await mockWork(page, { permissions });
+		await page.goto('/staff/work/manage');
+		await expect(page).toHaveURL(/403/);
+		expect(api.count(windowsPath)).toBe(0);
+		expect(api.writes).toHaveLength(0);
+	});
+}
+test('workflow permission selector excludes read grants and unknown management codes', async ({
+	page
+}) => {
+	await mockWork(page, {
+		permissions: [
+			'learning_offering.manage.school',
+			'achievement.read.own',
+			'invented.manage.school'
+		]
+	});
+	await page.goto('/staff/work/manage');
+	await page.getByRole('button', { name: 'เปิดฟอร์มสร้างรอบงาน', exact: true }).click();
+	await page.locator('#managed-permission').click();
+	await expect(
+		page.getByRole('option', { name: 'learning_offering.manage.school', exact: true })
+	).toBeVisible();
+	await expect(page.getByRole('option', { name: 'achievement.read.own', exact: true })).toHaveCount(
+		0
+	);
+	await expect(
+		page.getByRole('option', { name: 'invented.manage.school', exact: true })
+	).toHaveCount(0);
+});

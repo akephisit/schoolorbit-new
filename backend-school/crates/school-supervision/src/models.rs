@@ -464,6 +464,8 @@ pub struct SupervisionAction {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionObservation {
+    pub can_manage: bool,
+    pub can_review: bool,
     pub id: Uuid,
     pub cycle_id: Uuid,
     pub academic_year_id: Uuid,

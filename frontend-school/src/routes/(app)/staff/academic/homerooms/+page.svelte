@@ -7,6 +7,8 @@
 		createHomeroom,
 		getHomeroom,
 		listStaffOptions,
+		listGradeLevelOptions,
+		listStudyProgramOptionsForAcademicYear,
 		replaceHomeroomAdvisors,
 		updateHomeroom,
 		updateHomeroomCapacity,
@@ -84,8 +86,6 @@
 						advisorsByHomeroom.clear();
 						for (const [roomId, advisors] of outcome.data.advisorsByHomeroomId)
 							advisorsByHomeroom.set(roomId, advisors);
-						gradeLevelOptions = outcome.data.gradeLevels;
-						programOptions = outcome.data.programs;
 						hasWorkspace = true;
 					} else if (!outcome.ok) errorMessage = outcome.error;
 					loading = false;
@@ -96,6 +96,15 @@
 			current = false;
 		};
 	});
+
+	async function loadEditorOptions(options: { signal: AbortSignal }) {
+		if (!academicYearId || !canManage) throw new Error('ไม่มีสิทธิ์จัดการห้องประจำชั้น');
+		const [gradeLevels, programs] = await Promise.all([
+			listGradeLevelOptions(academicYearId, options),
+			listStudyProgramOptionsForAcademicYear(academicYearId, options)
+		]);
+		return { gradeLevels, programs };
+	}
 
 	async function addHomeroom(draft: Omit<CreateHomeroomRequest, 'academicYearId'>) {
 		if (!academicYearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
@@ -193,6 +202,7 @@
 				onUpdate={editHomeroom}
 				onUpdateCapacity={editCapacity}
 				onLoadStaffOptions={listStaffOptions}
+				onLoadEditorOptions={loadEditorOptions}
 				onSaveAdvisors={saveAdvisors}
 			/>
 			{#if errorMessage && hasWorkspace}<div

@@ -1,8 +1,11 @@
+import { get } from 'svelte/store';
+import { can } from '#lib/stores/permissions.js';
+import { waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
 import type { PageLoad } from './$types';
 import { getAcademicSetupWorkspace } from '#lib/api/academic-core.js';
 import { ACADEMIC_SETUP_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
-import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
+import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 
 export const _meta = {
 	academicContext: 'none',
@@ -13,7 +16,7 @@ export const _meta = {
 		workspace: 'academic',
 		order: 10,
 		user_type: 'staff',
-		permission: PERMISSION_MODULES.ACADEMIC_YEAR
+		permission: [PERMISSION_MODULES.ACADEMIC_YEAR, PERMISSION_MODULES.ACADEMIC_TERM]
 	}
 };
 
@@ -22,7 +25,17 @@ export const load: PageLoad = ({ depends, fetch }) => {
 	return {
 		title: _meta.menu.title,
 		workspace: captureRouteLoad(
-			getAcademicSetupWorkspace({ requestFetch: fetch }),
+			waitForAuthenticatedUser().then((user) =>
+				user?.user_type === 'staff' &&
+				get(can).hasAny(
+					PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL,
+					PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL,
+					PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL,
+					PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL
+				)
+					? getAcademicSetupWorkspace({ requestFetch: fetch })
+					: null
+			),
 			'โหลดโครงสร้างปีการศึกษาไม่สำเร็จ'
 		)
 	};

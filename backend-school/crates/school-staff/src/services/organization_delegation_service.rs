@@ -94,6 +94,7 @@ pub async fn list_delegations_on_connection(
     Ok(rows
         .into_iter()
         .map(|row| DelegationItem {
+            can_revoke: false,
             id: row.get("id"),
             from_user_id: row.get("from_user_id"),
             from_user_name: delegation_display_name(row.get("from_user_name")),
@@ -127,20 +128,22 @@ pub async fn is_organization_unit_leader_on_connection(
     user_id: Uuid,
     organization_unit_id: Uuid,
 ) -> Result<bool, AppError> {
-    let r: bool = DbSession::new(connection).scalar("staff.services.organization_delegation_service.is_organization_unit_leader_on_connection",
-        "SELECT EXISTS(
-             SELECT 1 FROM organization_members
-             WHERE user_id = $1
-               AND organization_unit_id = $2
-               AND position_code IN ('director', 'deputy_director', 'head', 'deputy_head')
-               AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
-         )",
+    Ok(
+        organization_unit_leader_ids_on_connection(connection, user_id, &[organization_unit_id])
+            .await?
+            .contains(&organization_unit_id),
     )
-    .bind(user_id)
-    .bind(organization_unit_id)
-    .fetch_one()
-    .await?;
-    Ok(r)
+}
+
+pub async fn organization_unit_leader_ids_on_connection(
+    connection: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    organization_unit_ids: &[Uuid],
+) -> Result<Vec<Uuid>, AppError> {
+    DbSession::new(connection).scalar(
+        "staff.services.organization_delegation_service.organization_unit_leader_ids_on_connection",
+        "SELECT DISTINCT member.organization_unit_id FROM organization_members member JOIN organization_units unit ON unit.id=member.organization_unit_id AND unit.is_active=true WHERE member.user_id=$1 AND member.organization_unit_id=ANY($2) AND member.position_code IN ('director','deputy_director','head','deputy_head') AND member.started_at<=CURRENT_DATE AND (member.ended_at IS NULL OR member.ended_at>CURRENT_DATE)",
+    ).bind(user_id).bind(organization_unit_ids).fetch_all().await.map_err(Into::into)
 }
 
 pub async fn is_organization_member(

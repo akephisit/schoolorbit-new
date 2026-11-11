@@ -9,7 +9,7 @@ const routes = [
 		path: '/staff/academic/core',
 		apiPath: '/api/academic/setup/workspace',
 		readyTestId: 'academic-setup-ready',
-		response: { years: [], terms: [], bellSchedules: [] },
+		response: { canReadYears: true, canReadTerms: true, years: [], terms: [], bellSchedules: [] },
 		optionalPath: '/api/academic/bell-schedules/'
 	},
 	{

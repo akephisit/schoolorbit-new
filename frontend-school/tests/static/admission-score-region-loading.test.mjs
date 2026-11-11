@@ -26,6 +26,9 @@ test('score route owns independent visible regions and uses a minimal score-room
 	assert.match(route, /requestFetch: fetch/);
 	assert.doesNotMatch(route, /getExamSeats\(/);
 	assert.doesNotMatch(route, /listApplications\(/);
+	assert.doesNotMatch(page, /listApplications\(/);
+	assert.match(page, /getScoreTrackRoster\(/);
+	assert.match(api, /function getScoreTrackRoster\(/);
 	assert.doesNotMatch(page, /onMount\(loadAll\)/);
 	assert.doesNotMatch(page, /[Hh]ref="\/staff\/academic\/admission\/\{id\}/);
 	assert.match(api, /function getScoreRoomRoster\(/);

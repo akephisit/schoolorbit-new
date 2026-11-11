@@ -801,7 +801,6 @@ test('staff module workspace routes use module-level menu permission gates', asy
 		],
 		['frontend-school/src/routes/(app)/staff/academic/admission/+page.ts', 'ADMISSION'],
 		['frontend-school/src/routes/(app)/staff/academic/timetable/+page.ts', 'ACADEMIC_TIMETABLE'],
-		['frontend-school/src/routes/(app)/staff/academic/core/+page.ts', 'ACADEMIC_YEAR'],
 		['frontend-school/src/routes/(app)/staff/academic/homerooms/+page.ts', 'HOMEROOM'],
 		['frontend-school/src/routes/(app)/staff/academic/curricula/+page.ts', 'ACADEMIC_CURRICULUM'],
 		['frontend-school/src/routes/(app)/staff/academic/delivery/+page.ts', 'LEARNING_OFFERING'],
@@ -821,6 +820,21 @@ test('staff module workspace routes use module-level menu permission gates', asy
 	}
 
 	assert.deepEqual(violations, []);
+	const core = stripComments(
+		await readFile(
+			path.join(repoRoot, 'frontend-school/src/routes/(app)/staff/academic/core/+page.ts'),
+			'utf8'
+		)
+	);
+	const corePermissions = core.match(/permission:\s*\[([^\]]+)\]/)?.[1] ?? '';
+	assert.deepEqual(
+		corePermissions
+			.split(',')
+			.map((permission) => permission.trim())
+			.filter(Boolean)
+			.sort(),
+		['PERMISSION_MODULES.ACADEMIC_TERM', 'PERMISSION_MODULES.ACADEMIC_YEAR']
+	);
 });
 
 test('staff manage pilot uses shadcn-svelte surfaces and permission gates', async () => {
@@ -1158,7 +1172,7 @@ test('academic course planning pages gate read and manage actions', async () => 
 		{
 			file: 'frontend-school/src/routes/(app)/staff/academic/timetable/today/+page.svelte',
 			imports: ['#lib/components/app-state/index.js', '#lib/components/app-layout/index.js'],
-			permissions: ['PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL', ...offeringPermissions],
+			permissions: ['PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL'],
 			identifiers: [
 				'getDailyTeachingOverview',
 				'canReadDailyTeaching',
@@ -1206,6 +1220,16 @@ test('daily teaching overview page is table based and read only', async () => {
 		)
 	);
 	assert.match(meta, /PERMISSION_MODULES\.ACADEMIC_TIMETABLE_TODAY/);
+	assert.match(meta, /permission: PERMISSIONS\.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL/);
+	assert.doesNotMatch(meta, /PERMISSIONS\.ACADEMIC_TIMETABLE_(READ|MANAGE|PUBLISH)_SCHOOL/);
+	const dailyAccess = page.slice(
+		page.indexOf('const canReadDailyTeaching'),
+		page.indexOf('const canOpenPlanner')
+	);
+	assert.match(dailyAccess, /\$can\.has\(PERMISSIONS\.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL\)/);
+	assert.doesNotMatch(dailyAccess, /ACADEMIC_TIMETABLE_(READ|MANAGE|PUBLISH)_|LEARNING_OFFERING_/);
+	assert.doesNotMatch(page, /PERMISSIONS\.LEARNING_OFFERING_/);
+
 	assert.match(meta, /title:\s*'ตารางสอนวันนี้'/);
 	assert.match(meta, /group:\s*'academic_delivery'/);
 	assert.match(meta, /workspace:\s*'academic'/);
@@ -1614,7 +1638,7 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 		studentTimetable,
 		/import PersonalTimetable from '#lib\/components\/student\/PersonalTimetable\.svelte'/
 	);
-	assert.match(studentTimetable, /<PersonalTimetable \{blocks\}\s*\/>/);
+
 	assert.doesNotMatch(
 		studentTimetable,
 		/PERMISSION_MODULES|PERMISSIONS|getTimetableEntries|listPeriods/
@@ -1624,7 +1648,15 @@ test('dashboard and self-view routes stay user-scoped with permission-filtered s
 		parentTimetable,
 		/import PersonalTimetable from '#lib\/components\/student\/PersonalTimetable\.svelte'/
 	);
-	assert.match(parentTimetable, /<PersonalTimetable \{blocks\}\s*\/>/);
+	for (const timetable of [studentTimetable, parentTimetable]) {
+		const props = timetable.match(/<PersonalTimetable\b([\s\S]*?)\/>/)?.[1] ?? '';
+		assert.match(props, /\{blocks\}/);
+		assert.match(
+			props,
+			/schoolDays=\{termOptions\.find\(\(term\) => term\.id === selectedTermId\)\?\.schoolDays \?\? \[\]\}/
+		);
+	}
+
 	assert.doesNotMatch(parentTimetable, /getMyTimetable|getTimetableEntries|listPeriods/);
 	assert.match(personalTimetable, /periodsFromTimetableBlocks\(blocks\)/);
 	assert.doesNotMatch(

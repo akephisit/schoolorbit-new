@@ -219,11 +219,18 @@ pub async fn list_organization_units(
     let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
-    let units = organization_unit_service::list_organization_units(
+    let mut units = organization_unit_service::list_organization_units(
         &pool,
         query.include_inactive.unwrap_or(false),
     )
     .await?;
+    let ids: Vec<_> = units.iter().map(|unit| unit.id).collect();
+    let allowed =
+        crate::organization_access_policy::delegation_management_unit_ids(&pool, &actor, &ids)
+            .await?;
+    for unit in &mut units {
+        unit.can_manage_delegations = allowed.contains(&unit.id);
+    }
     Ok(Json(ApiResponse::ok(units)).into_response())
 }
 
@@ -250,7 +257,15 @@ pub async fn get_organization_unit(
     let actor = context.actor;
     actor.require_permission(codes::ROLES_READ_ALL)?;
 
-    let unit = organization_unit_service::get_organization_unit(&pool, unit_id).await?;
+    let mut unit = organization_unit_service::get_organization_unit(&pool, unit_id).await?;
+    unit.can_manage_delegations =
+        crate::organization_access_policy::delegation_management_unit_ids(
+            &pool,
+            &actor,
+            &[unit_id],
+        )
+        .await?
+        .contains(&unit_id);
     Ok(Json(ApiResponse::ok(unit)).into_response())
 }
 

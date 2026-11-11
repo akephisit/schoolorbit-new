@@ -1,5 +1,9 @@
 <script lang="ts">
-	import type { Homeroom, HomeroomPlacement, StudentAcademicYear } from '#lib/api/academic-core.js';
+	import type {
+		HomeroomReference,
+		HomeroomPlacement,
+		StudentAcademicYear
+	} from '#lib/api/academic-core.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
@@ -19,7 +23,7 @@
 	}: {
 		studentYear: StudentAcademicYear;
 		placements: HomeroomPlacement[];
-		homerooms: Homeroom[];
+		homerooms: HomeroomReference[];
 		canManage?: boolean;
 		onCreatePlacement: (draft: {
 			homeroomId: string;

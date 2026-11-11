@@ -16,6 +16,7 @@ const makeUnit = (
 	unit_type: string,
 	display_order = 0
 ): OrganizationUnit => ({
+	can_manage_delegations: false,
 	id,
 	name,
 	parent_unit_id,

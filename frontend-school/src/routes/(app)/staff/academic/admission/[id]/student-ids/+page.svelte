@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { admissionWorkflowBackHref } from '#lib/navigation/admission.js';
 	import { downloadXlsxWorkbook, readSpreadsheetFile } from '#lib/utils/spreadsheet.js';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
@@ -43,6 +44,7 @@
 	let renderedId = '';
 
 	let roundName = $state('');
+	let roundAcademicYearId = $state<string | null>(null);
 	let assignmentMode = $state<'per_track' | 'global' | undefined>(undefined);
 	let roundLoaded = $state(false);
 	let roundLoading = $state(true);
@@ -95,6 +97,7 @@
 			const value = await getRound(sourceId, { signal });
 			if (!roundRequest.isCurrent(revision) || sourceId !== id) return;
 			roundName = value.name ?? '';
+			roundAcademicYearId = value.academicYearId;
 			assignmentMode = value.selectionSettings?.assignmentMode;
 			roundLoaded = true;
 		} catch (cause) {
@@ -134,6 +137,7 @@
 			if (renderedId !== routeId) {
 				renderedId = routeId;
 				roundName = '';
+				roundAcademicYearId = null;
 				assignmentMode = undefined;
 				roundLoaded = false;
 				entries = [];
@@ -157,6 +161,7 @@
 			untrack(() => {
 				if (result.ok && result.data) {
 					roundName = result.data.name ?? '';
+					roundAcademicYearId = result.data.academicYearId;
 					assignmentMode = result.data.selectionSettings?.assignmentMode;
 					roundLoaded = true;
 				} else if (!result.ok) roundError = result.error;
@@ -477,7 +482,11 @@
 <PageShell
 	title="กำหนดเลขประจำตัวนักเรียน"
 	description={roundName || 'เรียงรายชื่อ นำเข้าไฟล์ และบันทึกเลขประจำตัว'}
-	backHref={`/staff/academic/admission/${id}`}
+	backHref={admissionWorkflowBackHref(
+		id,
+		roundAcademicYearId,
+		$can.has(PERMISSIONS.ADMISSION_READ_ALL)
+	)}
 >
 	{#if !canManageAdmission}
 		<PageState

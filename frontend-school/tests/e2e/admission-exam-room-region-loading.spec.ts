@@ -233,7 +233,11 @@ test('room list cannot hold back the round and config regions', async ({ page })
 		waitUntil: 'domcontentloaded'
 	});
 	await expect(page.getByText(round.name, { exact: true })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'ลำดับต่อเนื่อง' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
+		'href',
+		`/staff?academicYearId=${round.academicYearId}`
+	);
+	await expect(page.getByRole('combobox').filter({ hasText: 'ลำดับต่อเนื่อง' })).toBeVisible();
 	await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
 	expect(state.reads).toContain(`/api/admission/rounds/${roundId}/exam-rooms`);
 	expect(state.reads).not.toContain(`/api/admission/rounds/${roundId}/exam-seats`);
@@ -252,7 +256,7 @@ test('config failure retries only config while room list stays usable', async ({
 	await expect(page.getByText(examRoom.roomName, { exact: true })).toBeVisible();
 	await expect(page.getByText('โหลดการตั้งค่าที่นั่งไม่สำเร็จ')).toBeVisible();
 	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
-	await expect(page.getByRole('button', { name: 'ลำดับต่อเนื่อง' })).toBeVisible();
+	await expect(page.getByRole('combobox').filter({ hasText: 'ลำดับต่อเนื่อง' })).toBeVisible();
 	expect(state.reads.filter((path) => path.endsWith('/exam-rooms'))).toHaveLength(1);
 	expect(state.reads.filter((path) => path.endsWith('/exam-config'))).toHaveLength(2);
 });
@@ -269,7 +273,7 @@ test('facility choices load only after opening add-room workflow', async ({ page
 	await expect
 		.poll(() => state.reads.filter((path) => path === '/api/facilities/rooms').length)
 		.toBe(1);
-	await page.getByRole('dialog').getByRole('button', { name: '— เลือกห้อง —' }).click();
+	await page.getByRole('dialog').getByRole('combobox').filter({ hasText: '— เลือกห้อง —' }).click();
 	await expect(page.getByRole('option', { name: /ห้องอาคาร/ })).toBeVisible();
 });
 
@@ -280,7 +284,7 @@ test('adding a facility room patches only the room region', async ({ page }) => 
 	});
 	await expect(page.getByText(examRoom.roomName, { exact: true })).toBeVisible();
 	await page.getByRole('button', { name: 'เพิ่มห้อง', exact: true }).click();
-	await page.getByRole('dialog').getByRole('button', { name: '— เลือกห้อง —' }).click();
+	await page.getByRole('dialog').getByRole('combobox').filter({ hasText: '— เลือกห้อง —' }).click();
 	await page.getByRole('option', { name: /ห้องอาคาร/ }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'เพิ่มห้อง' }).click();
 	await expect(page.getByText('ห้องอาคาร', { exact: true })).toBeVisible();
@@ -341,7 +345,7 @@ test('saving config does not reread the room list or config', async ({ page }) =
 	await page.goto(`/staff/academic/admission/${roundId}/exam-rooms`, {
 		waitUntil: 'domcontentloaded'
 	});
-	await expect(page.getByRole('button', { name: 'ลำดับต่อเนื่อง' })).toBeVisible();
+	await expect(page.getByRole('combobox').filter({ hasText: 'ลำดับต่อเนื่อง' })).toBeVisible();
 	await page.getByRole('button', { name: 'บันทึก config' }).click();
 	await expect
 		.poll(() => state.writes.filter((path) => path.endsWith('/exam-config')).length)
@@ -356,7 +360,7 @@ test('assigning seats patches room counts from seats without rereading setup', a
 		waitUntil: 'domcontentloaded'
 	});
 	await expect(page.getByText(examRoom.roomName, { exact: true })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'ลำดับต่อเนื่อง' })).toBeVisible();
+	await expect(page.getByRole('combobox').filter({ hasText: 'ลำดับต่อเนื่อง' })).toBeVisible();
 	await page.getByRole('button', { name: 'จัดใหม่ทั้งหมด' }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'ยืนยันจัดที่นั่ง' }).click();
 	await expect(page.getByText('เด็กชาย ทดสอบ')).toBeVisible();
@@ -375,7 +379,7 @@ test('copy-round choices and decrypted seat rows stay interaction-lazy', async (
 	await expect(page.getByText(examRoom.roomName, { exact: true })).toBeVisible();
 	expect(state.reads).not.toContain('/api/admission/rounds');
 	expect(state.reads).not.toContain(`/api/admission/rounds/${roundId}/exam-seats`);
-	await page.getByRole('button', { name: '— เลือกรอบ —' }).click();
+	await page.getByRole('combobox').filter({ hasText: '— เลือกรอบ —' }).click();
 	await expect
 		.poll(() => state.reads.filter((path) => path === '/api/admission/rounds').length)
 		.toBe(1);
@@ -394,7 +398,7 @@ test('copying rooms invalidates old seat results until the tab reloads them', as
 	await page.getByRole('button', { name: 'ผลจัดที่นั่ง' }).click();
 	await expect(page.getByText('เด็กชาย ทดสอบ')).toBeVisible();
 	await page.getByRole('button', { name: 'ตั้งค่าห้องสอบ' }).click();
-	await page.getByRole('button', { name: '— เลือกรอบ —' }).click();
+	await page.getByRole('combobox').filter({ hasText: '— เลือกรอบ —' }).click();
 	await page.getByRole('option', { name: 'รอบต้นทาง' }).click();
 	await page.getByRole('button', { name: 'Copy ห้องสอบ (แทนที่ของเดิม)' }).click();
 	await expect(page.getByText(otherRoom.roomName, { exact: true })).toBeVisible();

@@ -293,3 +293,49 @@ test('ordinary detail links preload their destination and preserve one primary r
 	expect(api.count(endpoint('unit', secondUnit))).toBe(1);
 	expect(api.count(endpoint('delegations'))).toBe(0);
 });
+
+test('approval in another unit does not expose delegation reads or controls for this unit', async ({
+	page
+}) => {
+	const api = await mockOrganization(page, {
+		permissions: ['roles.read.all', 'organization_work.approve.organization_unit'],
+		canManageDelegations: false
+	});
+	await page.goto(unitPath());
+	await expect(page.getByTestId('organization-unit')).toContainText('หน่วยงานแรก');
+	await expect(page.getByRole('button', { name: 'มอบหมายสิทธิ์', exact: true })).toHaveCount(0);
+	expect(api.count(endpoint('delegations'))).toBe(0);
+	expect(api.count(endpoint('delegatable-permissions'))).toBe(0);
+});
+
+test('delegation rows expose revoke only for the server-authorized creator or school manager', async ({
+	page
+}) => {
+	await mockOrganization(page);
+	await page.route(`**${endpoint('delegations')}`, (route) =>
+		route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify({
+				success: true,
+				data: [true, false].map((allowed, index) => ({
+					id: `delegation-${index}`,
+					to_user_name: allowed ? 'มอบหมายโดยเรา' : 'มอบหมายโดยผู้อื่น',
+					permission_name: 'สิทธิ์ทดสอบ',
+					permission_code: 'staff_profile.read.own',
+					can_revoke: allowed,
+					expires_at: null,
+					reason: null
+				}))
+			})
+		})
+	);
+	await page.goto(unitPath());
+	await page.getByRole('button', { name: 'มอบหมายสิทธิ์', exact: true }).click();
+	await expect(page.getByText('มอบหมายโดยผู้อื่น', { exact: true })).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'เพิกถอนสิทธิ์จาก มอบหมายโดยเรา', exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'เพิกถอนสิทธิ์จาก มอบหมายโดยผู้อื่น', exact: true })
+	).toHaveCount(0);
+});

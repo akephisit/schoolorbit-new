@@ -14,6 +14,8 @@ function fixture(): HomeroomRoster {
 			name: 'ม.1/3',
 			academicYearId: year,
 			gradeLevelId: id(82),
+			gradeLevelName: null,
+			studyProgramName: null,
 			roomNumber: '3',
 			studyProgramId: id(83),
 			capacity: 40,

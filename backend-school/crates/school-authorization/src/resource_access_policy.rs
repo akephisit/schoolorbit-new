@@ -118,6 +118,82 @@ pub fn resolve_user_resource_list_access(
     None
 }
 
+/// Resolve the same user-resource policy for a response batch with bounded queries.
+pub async fn authorized_user_resource_ids(
+    pool: &PgPool,
+    actor: &ActorContext,
+    permissions: ResourceAccessPermissions,
+    target_user_ids: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "authorization.authorized_user_resource_ids",
+    )
+    .await?;
+    authorized_user_resource_ids_on_connection(&mut connection, actor, permissions, target_user_ids)
+        .await
+}
+
+pub async fn authorized_user_resource_ids_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    permissions: ResourceAccessPermissions,
+    target_user_ids: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, AppError> {
+    use std::collections::HashSet;
+    if has_optional_permission(actor, permissions.school) {
+        return Ok(target_user_ids.iter().copied().collect());
+    }
+    let mut allowed = HashSet::new();
+    if target_user_ids.contains(&actor.user_id) && has_optional_permission(actor, permissions.own) {
+        allowed.insert(actor.user_id);
+    }
+    if target_user_ids.is_empty()
+        || (!has_optional_permission(actor, permissions.organization_unit)
+            && !has_optional_permission(actor, permissions.organization_tree))
+    {
+        return Ok(allowed);
+    }
+    let mut units = Vec::new();
+    if let Some(code) = permissions
+        .organization_unit
+        .filter(|code| actor.has_permission(code))
+    {
+        units.extend(
+            crate::accessible_exact_units_for_permission_on_connection(
+                &mut *connection,
+                actor.user_id,
+                code,
+            )
+            .await?,
+        );
+    }
+    if let Some(code) = permissions
+        .organization_tree
+        .filter(|code| actor.has_permission(code))
+    {
+        units.extend(
+            crate::accessible_tree_units_for_permission_on_connection(
+                &mut *connection,
+                actor.user_id,
+                code,
+            )
+            .await?,
+        );
+    }
+    units.sort_unstable();
+    units.dedup();
+    if units.is_empty() {
+        return Ok(allowed);
+    }
+    let users: Vec<Uuid> = school_database::DbSession::new(&mut *connection).scalar(
+        "authorization.authorized_user_resource_ids",
+        "SELECT DISTINCT om.user_id FROM organization_members om JOIN organization_units active_unit ON active_unit.id = om.organization_unit_id AND active_unit.is_active = true WHERE om.user_id = ANY($1) AND om.organization_unit_id = ANY($2) AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)",
+    ).bind(target_user_ids).bind(&units).fetch_all().await?;
+    allowed.extend(users);
+    Ok(allowed)
+}
+
 pub async fn require_user_resource_access(
     pool: &PgPool,
     actor: &ActorContext,
@@ -236,32 +312,47 @@ pub async fn require_resource_access_on_connection(
         return Ok(grant);
     }
 
-    if !target.organization_unit_ids.is_empty()
-        && has_optional_permission(actor, permissions.organization_unit)
-        && actor_is_member_of_any_organization_unit(
-            &mut *connection,
-            actor.user_id,
-            &target.organization_unit_ids,
-        )
-        .await?
-    {
-        return Ok(ResourceAccessGrant {
-            scope: ResourceAccessScope::OrganizationUnit,
-        });
-    }
-
-    if !target.organization_unit_ids.is_empty()
-        && has_optional_permission(actor, permissions.organization_tree)
-        && actor_organization_tree_contains_any(
-            &mut *connection,
-            actor.user_id,
-            &target.organization_unit_ids,
-        )
-        .await?
-    {
-        return Ok(ResourceAccessGrant {
-            scope: ResourceAccessScope::OrganizationTree,
-        });
+    if !target.organization_unit_ids.is_empty() {
+        if let Some(code) = permissions
+            .organization_unit
+            .filter(|code| actor.has_permission(code))
+        {
+            let allowed = crate::accessible_exact_units_for_permission_on_connection(
+                connection,
+                actor.user_id,
+                code,
+            )
+            .await?;
+            if target
+                .organization_unit_ids
+                .iter()
+                .any(|id| allowed.contains(id))
+            {
+                return Ok(ResourceAccessGrant {
+                    scope: ResourceAccessScope::OrganizationUnit,
+                });
+            }
+        }
+        if let Some(code) = permissions
+            .organization_tree
+            .filter(|code| actor.has_permission(code))
+        {
+            let allowed = crate::accessible_tree_units_for_permission_on_connection(
+                connection,
+                actor.user_id,
+                code,
+            )
+            .await?;
+            if target
+                .organization_unit_ids
+                .iter()
+                .any(|id| allowed.contains(id))
+            {
+                return Ok(ResourceAccessGrant {
+                    scope: ResourceAccessScope::OrganizationTree,
+                });
+            }
+        }
     }
 
     Err(AppError::Forbidden(forbidden_message.to_string()))
@@ -353,6 +444,7 @@ async fn user_resource_target(
           ON active_unit.id = om.organization_unit_id
          AND active_unit.is_active = true
         WHERE om.user_id = $1
+          AND om.started_at <= CURRENT_DATE
           AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         "#,
         )
@@ -369,88 +461,6 @@ async fn user_resource_target(
 
     Ok(ResourceAccessTarget::owned_by(target_user_id)
         .with_organization_units(organization_unit_ids))
-}
-
-async fn actor_is_member_of_any_organization_unit(
-    connection: &mut PgConnection,
-    actor_user_id: Uuid,
-    target_organization_unit_ids: &[Uuid],
-) -> Result<bool, AppError> {
-    school_database::DbSession::new(&mut *connection)
-        .scalar(
-            "authorization.src.resource_access_policy.actor_is_member_of_any_organization_unit",
-            r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM organization_members om
-            JOIN organization_units active_unit
-              ON active_unit.id = om.organization_unit_id
-             AND active_unit.is_active = true
-            WHERE om.user_id = $1
-              AND om.organization_unit_id = ANY($2)
-              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
-        )
-        "#,
-        )
-        .bind(actor_user_id)
-        .bind(target_organization_unit_ids)
-        .fetch_one()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                error_class = school_database::error_class(&error),
-                "Failed to check organization unit resource access"
-            );
-            AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์หน่วยงานได้".to_string())
-        })
-}
-
-async fn actor_organization_tree_contains_any(
-    connection: &mut PgConnection,
-    actor_user_id: Uuid,
-    target_organization_unit_ids: &[Uuid],
-) -> Result<bool, AppError> {
-    school_database::DbSession::new(&mut *connection)
-        .scalar(
-            "authorization.src.resource_access_policy.actor_organization_tree_contains_any",
-            r#"
-        WITH RECURSIVE actor_roots AS (
-            SELECT om.organization_unit_id
-            FROM organization_members om
-            JOIN organization_units active_unit
-              ON active_unit.id = om.organization_unit_id
-             AND active_unit.is_active = true
-            WHERE om.user_id = $1
-              AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
-        ),
-        organization_tree AS (
-            SELECT organization_unit_id
-            FROM actor_roots
-            UNION
-            SELECT child.id
-            FROM organization_units child
-            JOIN organization_tree parent_tree
-              ON child.parent_unit_id = parent_tree.organization_unit_id
-            WHERE child.is_active = true
-        )
-        SELECT EXISTS (
-            SELECT 1
-            FROM organization_tree
-            WHERE organization_unit_id = ANY($2)
-        )
-        "#,
-        )
-        .bind(actor_user_id)
-        .bind(target_organization_unit_ids)
-        .fetch_one()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                error_class = school_database::error_class(&error),
-                "Failed to check organization tree resource access"
-            );
-            AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์สายงานได้".to_string())
-        })
 }
 
 fn has_optional_permission(actor: &ActorContext, permission: Option<&str>) -> bool {

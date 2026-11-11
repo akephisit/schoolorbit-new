@@ -18,7 +18,8 @@ export const _meta = {
 	}
 };
 
-export const load: PageLoad = ({ params, fetch, url }) => {
+export const load: PageLoad = ({ params, fetch, url, depends }) => {
+	depends('school:app-identity');
 	const identity = Promise.all([
 		waitForSupervisionAccess(_meta.access.permission),
 		waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS)

@@ -655,6 +655,12 @@
             },
             "type": "array"
           },
+          "canReadTerms": {
+            "type": "boolean"
+          },
+          "canReadYears": {
+            "type": "boolean"
+          },
           "contextSettings": {
             "$ref": "#/components/schemas/AcademicContextSettings"
           },
@@ -679,6 +685,8 @@
           }
         },
         "required": [
+          "canReadYears",
+          "canReadTerms",
           "contextSettings",
           "years",
           "terms",
@@ -3440,6 +3448,12 @@
                 },
                 "type": "array"
               },
+              "canReadTerms": {
+                "type": "boolean"
+              },
+              "canReadYears": {
+                "type": "boolean"
+              },
               "contextSettings": {
                 "$ref": "#/components/schemas/AcademicContextSettings"
               },
@@ -3464,6 +3478,8 @@
               }
             },
             "required": [
+              "canReadYears",
+              "canReadTerms",
               "contextSettings",
               "years",
               "terms",
@@ -12057,6 +12073,12 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "gradeLevelName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "id": {
                 "format": "uuid",
                 "type": "string"
@@ -12094,12 +12116,20 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "studyProgramName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "updatedAt": {
                 "format": "date-time",
                 "type": "string"
               }
             },
             "required": [
+              "gradeLevelName",
+              "studyProgramName",
               "id",
               "code",
               "name",
@@ -12831,6 +12861,12 @@
                         "null"
                       ]
                     },
+                    "canManage": {
+                      "type": "boolean"
+                    },
+                    "canReview": {
+                      "type": "boolean"
+                    },
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
@@ -12921,6 +12957,8 @@
                     }
                   },
                   "required": [
+                    "canManage",
+                    "canReview",
                     "id",
                     "cycleId",
                     "academicYearId",
@@ -13605,6 +13643,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "canManage": {
+                "type": "boolean"
+              },
               "codeSnapshot": {
                 "type": "string"
               },
@@ -13691,6 +13732,7 @@
               }
             },
             "required": [
+              "canManage",
               "id",
               "academicTermId",
               "academicYearId",
@@ -14581,6 +14623,9 @@
         "properties": {
           "data": {
             "properties": {
+              "can_manage_delegations": {
+                "type": "boolean"
+              },
               "category": {
                 "type": "string"
               },
@@ -14661,6 +14706,7 @@
               }
             },
             "required": [
+              "can_manage_delegations",
               "id",
               "code",
               "name",
@@ -18051,6 +18097,12 @@
                   "null"
                 ]
               },
+              "canManage": {
+                "type": "boolean"
+              },
+              "canReview": {
+                "type": "boolean"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -18141,6 +18193,8 @@
               }
             },
             "required": [
+              "canManage",
+              "canReview",
               "id",
               "cycleId",
               "academicYearId",
@@ -24601,6 +24655,9 @@
           "data": {
             "items": {
               "properties": {
+                "can_revoke": {
+                  "type": "boolean"
+                },
                 "expires_at": {
                   "format": "date-time",
                   "type": [
@@ -24648,6 +24705,7 @@
                 }
               },
               "required": [
+                "can_revoke",
                 "id",
                 "from_user_id",
                 "from_user_name",
@@ -25365,6 +25423,12 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "gradeLevelName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
@@ -25402,12 +25466,20 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "studyProgramName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "updatedAt": {
                   "format": "date-time",
                   "type": "string"
                 }
               },
               "required": [
+                "gradeLevelName",
+                "studyProgramName",
                 "id",
                 "code",
                 "name",
@@ -25640,6 +25712,61 @@
                 "migrated",
                 "createdAt",
                 "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_HomeroomReference": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "gradeLevelId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "roomNumber": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "studyProgramId": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "code",
+                "name",
+                "roomNumber",
+                "gradeLevelId",
+                "studyProgramId"
               ],
               "type": "object"
             },
@@ -26127,6 +26254,9 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "canManage": {
+                  "type": "boolean"
+                },
                 "codeSnapshot": {
                   "type": "string"
                 },
@@ -26213,6 +26343,7 @@
                 }
               },
               "required": [
+                "canManage",
                 "id",
                 "academicTermId",
                 "academicYearId",
@@ -26826,6 +26957,9 @@
           "data": {
             "items": {
               "properties": {
+                "can_manage_delegations": {
+                  "type": "boolean"
+                },
                 "category": {
                   "type": "string"
                 },
@@ -26906,6 +27040,7 @@
                 }
               },
               "required": [
+                "can_manage_delegations",
                 "id",
                 "code",
                 "name",
@@ -27625,6 +27760,47 @@
                 "examRoomId",
                 "roomName",
                 "seats"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_ScoreTrackApplicant": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "applicationNumber": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "fullName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "applicationNumber",
+                "fullName"
               ],
               "type": "object"
             },
@@ -45007,6 +45183,9 @@
       },
       "DelegationItem": {
         "properties": {
+          "can_revoke": {
+            "type": "boolean"
+          },
           "expires_at": {
             "format": "date-time",
             "type": [
@@ -45054,6 +45233,7 @@
           }
         },
         "required": [
+          "can_revoke",
           "id",
           "from_user_id",
           "from_user_name",
@@ -50837,6 +51017,12 @@
             "format": "uuid",
             "type": "string"
           },
+          "gradeLevelName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -50874,12 +51060,20 @@
             "format": "uuid",
             "type": "string"
           },
+          "studyProgramName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
           }
         },
         "required": [
+          "gradeLevelName",
+          "studyProgramName",
           "id",
           "code",
           "name",
@@ -51474,6 +51668,43 @@
           "endedPlacement",
           "newPlacement",
           "replayed"
+        ],
+        "type": "object"
+      },
+      "HomeroomReference": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "roomNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "studyProgramId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "roomNumber",
+          "gradeLevelId",
+          "studyProgramId"
         ],
         "type": "object"
       },
@@ -52394,6 +52625,12 @@
                     "null"
                   ]
                 },
+                "canManage": {
+                  "type": "boolean"
+                },
+                "canReview": {
+                  "type": "boolean"
+                },
                 "createdAt": {
                   "format": "date-time",
                   "type": "string"
@@ -52484,6 +52721,8 @@
                 }
               },
               "required": [
+                "canManage",
+                "canReview",
                 "id",
                 "cycleId",
                 "academicYearId",
@@ -53209,6 +53448,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "canManage": {
+            "type": "boolean"
+          },
           "codeSnapshot": {
             "type": "string"
           },
@@ -53295,6 +53537,7 @@
           }
         },
         "required": [
+          "canManage",
           "id",
           "academicTermId",
           "academicYearId",
@@ -55376,6 +55619,9 @@
       },
       "OrganizationUnit": {
         "properties": {
+          "can_manage_delegations": {
+            "type": "boolean"
+          },
           "category": {
             "type": "string"
           },
@@ -55456,6 +55702,7 @@
           }
         },
         "required": [
+          "can_manage_delegations",
           "id",
           "code",
           "name",
@@ -62706,6 +62953,29 @@
         ],
         "type": "object"
       },
+      "ScoreTrackApplicant": {
+        "properties": {
+          "applicationNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "applicationNumber",
+          "fullName"
+        ],
+        "type": "object"
+      },
       "SearchApplicationByIdentifierRequest": {
         "properties": {
           "identifier": {
@@ -66066,6 +66336,12 @@
               "null"
             ]
           },
+          "canManage": {
+            "type": "boolean"
+          },
+          "canReview": {
+            "type": "boolean"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -66156,6 +66432,8 @@
           }
         },
         "required": [
+          "canManage",
+          "canReview",
           "id",
           "cycleId",
           "academicYearId",
@@ -92376,6 +92654,67 @@
         ]
       }
     },
+    "/api/academic/student-years/homeroom-options": {
+      "get": {
+        "operationId": "listStudentYearHomeroomOptions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_HomeroomReference"
+                }
+              }
+            },
+            "description": "Complete minimal homeroom context for the selected student year"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Student year read permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom context exceeds supported size"
+          }
+        },
+        "tags": [
+          "academic"
+        ]
+      }
+    },
     "/api/academic/study-program-options": {
       "get": {
         "operationId": "listStudyProgramOptionsForAcademicYear",
@@ -97700,7 +98039,7 @@
                 }
               }
             },
-            "description": "Feature toggles visible to the current user"
+            "description": "Feature toggles for authorized feature managers"
           },
           "401": {
             "content": {
@@ -97711,6 +98050,16 @@
               }
             },
             "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Feature management read permission required"
           }
         },
         "tags": [
@@ -97762,7 +98111,7 @@
                 }
               }
             },
-            "description": "Feature module access denied"
+            "description": "Feature management access denied"
           },
           "404": {
             "content": {
@@ -99554,6 +99903,87 @@
               }
             },
             "description": "Admission score permission required"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/rounds/{round_id}/score-track-roster": {
+      "get": {
+        "operationId": "getAdmissionScoreTrackRoster",
+        "parameters": [
+          {
+            "description": "Admission round ID",
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trackId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ScoreTrackApplicant"
+                }
+              }
+            },
+            "description": "Eligible score-entry applicants in the exact round and track, without private application fields"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission score permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Track does not belong to the admission round"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Score track roster exceeds the complete supported size"
           }
         },
         "tags": [

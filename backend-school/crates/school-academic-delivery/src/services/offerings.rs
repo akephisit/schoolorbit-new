@@ -1272,6 +1272,7 @@ async fn hydrate_many(
                 }
             };
             Ok(LearningOffering {
+                can_manage: false,
                 id: row.id,
                 academic_term_id: row.academic_term_id,
                 academic_year_id: row.academic_year_id,

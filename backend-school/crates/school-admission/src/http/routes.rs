@@ -92,6 +92,10 @@ pub fn admission_staff_routes() -> Router<AdmissionHttpState> {
             "/tracks/{id}/capacity",
             get(handlers::rounds::get_track_capacity),
         )
+        .route(
+            "/rounds/{round_id}/score-track-roster",
+            get(handlers::scores::get_score_track_roster),
+        )
         // === Applications ===
         .route(
             "/rounds/{id}/applications",

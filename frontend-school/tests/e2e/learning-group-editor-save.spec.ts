@@ -100,6 +100,7 @@ async function mockEditor(
 		rowVersion: 3
 	};
 	const offering: LearningOffering = {
+		canManage: true,
 		id: ids.offering,
 		academicYearId: ids.year,
 		academicTermId: ids.term,

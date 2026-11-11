@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
+	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { PageSkeleton } from '#lib/components/app-state/index.js';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
@@ -52,6 +54,7 @@
 		onUpdate,
 		onUpdateCapacity,
 		onLoadStaffOptions,
+		onLoadEditorOptions,
 		onSaveAdvisors
 	}: {
 		homerooms: Homeroom[];
@@ -65,12 +68,19 @@
 		onUpdate: (room: Homeroom, draft: UpdateHomeroomRequest) => Promise<Homeroom>;
 		onUpdateCapacity: (room: Homeroom, draft: UpdateHomeroomCapacityRequest) => Promise<Homeroom>;
 		onLoadStaffOptions: () => Promise<StaffOption[]>;
+		onLoadEditorOptions: (options: {
+			signal: AbortSignal;
+		}) => Promise<{ gradeLevels: GradeLevelOption[]; programs: StudyProgramOption[] }>;
 		onSaveAdvisors: (
 			room: Homeroom,
 			advisors: ReplaceHomeroomAdvisorsRequest['advisors']
 		) => Promise<HomeroomAdvisor[]>;
 	} = $props();
 
+	const editorOptionsRequest = new LatestRequest();
+	let editorOptionsLoading = $state(false);
+	let editorOptionsReady = $state(false);
+	onDestroy(() => editorOptionsRequest.abort());
 	let roomDialogOpen = $state(false);
 	let editingRoom = $state<Homeroom | null>(null);
 	let roomDraft = $state<HomeroomDraft>(emptyRoomDraft());
@@ -233,10 +243,6 @@
 		};
 	}
 
-	function gradeLabel(id: string): string {
-		return gradeLevelOptions.find((option) => option.id === id)?.name ?? 'ไม่พบระดับชั้นที่อ้างอิง';
-	}
-
 	function programLabel(id: string): string {
 		const program = programOptions.find((option) => option.id === id);
 		return program ? studyProgramLabel(program) : 'ไม่พบแผนการเรียนที่อ้างอิง';
@@ -250,32 +256,70 @@
 		return customNameFromStored(room.name, standard) || null;
 	}
 
+	async function loadEditorOptions() {
+		if (!canManage || !roomDialogOpen) return;
+		const ticket = editorOptionsRequest.begin();
+		const identity = appIdentityKey();
+		editorOptionsLoading = true;
+		editorOptionsReady = false;
+		roomError = '';
+		try {
+			const result = await onLoadEditorOptions({ signal: ticket.signal });
+			if (
+				!editorOptionsRequest.isCurrent(ticket.revision) ||
+				identity !== appIdentityKey() ||
+				!canManage
+			)
+				return;
+			editorOptionsReady = true;
+			gradeLevelOptions = result.gradeLevels;
+			programOptions = result.programs;
+			if (editingRoom) {
+				editionId =
+					programOptions.find((program) => program.id === editingRoom?.studyProgramId)?.editionId ??
+					'';
+				roomDraft.customName = customNameForRoom(editingRoom);
+			}
+		} catch (cause) {
+			if (!isAbortError(cause) && editorOptionsRequest.isCurrent(ticket.revision))
+				roomError = cause instanceof Error ? cause.message : 'โหลดตัวเลือกห้องไม่สำเร็จ';
+		} finally {
+			if (editorOptionsRequest.isCurrent(ticket.revision)) editorOptionsLoading = false;
+		}
+	}
+	$effect(() => {
+		if (!canManage) roomDialogOpen = false;
+		if (!roomDialogOpen) {
+			editorOptionsRequest.abort();
+			editorOptionsLoading = false;
+		}
+	});
 	function openCreateDialog() {
+		if (!canCreate) return;
 		editingRoom = null;
 		roomDraft = emptyRoomDraft();
 		editionId = '';
-		roomError = '';
 		roomDialogOpen = true;
+		void loadEditorOptions();
 	}
-
 	function openEditDialog(room: Homeroom) {
+		if (!canManage || yearStatus !== 'planning') return;
 		editingRoom = room;
-		editionId =
-			programOptions.find((program) => program.id === room.studyProgramId)?.editionId ?? '';
+		editionId = '';
 		roomDraft = {
-			customName: customNameForRoom(room),
+			customName: room.name,
 			gradeLevelId: room.gradeLevelId,
 			roomNumber: room.roomNumber ?? '',
 			studyProgramId: room.studyProgramId,
 			capacity: room.capacity
 		};
-		roomError = '';
 		roomDialogOpen = true;
+		void loadEditorOptions();
 	}
 
 	async function saveRoom(event: SubmitEvent) {
 		event.preventDefault();
-		if (!canManage || yearStatus !== 'planning' || roomBusy) return;
+		if (!canManage || yearStatus !== 'planning' || roomBusy || !editorOptionsReady) return;
 		roomError = homeroomCapacityError(roomDraft.capacity, editingRoom?.studentCount);
 		if (roomError) return;
 		if (!roomDraft.gradeLevelId || !roomDraft.studyProgramId || !roomDraft.roomNumber.trim()) {
@@ -405,8 +449,10 @@
 								</div>
 							</div>
 						</Table.Cell>
-						<Table.Cell>{gradeLabel(room.gradeLevelId)}</Table.Cell>
-						<Table.Cell class="whitespace-normal">{programLabel(room.studyProgramId)}</Table.Cell>
+						<Table.Cell>{room.gradeLevelName ?? 'ไม่พบระดับชั้นที่อ้างอิง'}</Table.Cell>
+						<Table.Cell class="whitespace-normal"
+							>{room.studyProgramName ?? 'ไม่พบแผนการเรียนที่อ้างอิง'}</Table.Cell
+						>
 						<Table.Cell class="text-center tabular-nums"
 							>{room.studentCount ?? '—'} / {room.capacity}</Table.Cell
 						>
@@ -533,99 +579,107 @@
 				>เลือกระดับชั้น เลขห้อง และแผนการเรียน ระบบจะสร้างชื่อกับรหัสให้ตรงกัน</Dialog.Description
 			>
 		</Dialog.Header>
-		<form class="min-w-0 space-y-4" onsubmit={saveRoom}>
-			<div class="rounded-xl border border-primary/20 bg-primary/[0.04] p-3">
-				<p class="text-xs font-medium text-primary">ชื่อห้องที่จะแสดง</p>
-				<p class="mt-1 font-semibold">{roomPreview}</p>
-			</div>
-			<div class="grid gap-4 sm:grid-cols-2">
+		{#if editorOptionsLoading}<PageSkeleton variant="form" rows={3} />{:else}
+			<form class="min-w-0 space-y-4" onsubmit={saveRoom}>
+				<div class="rounded-xl border border-primary/20 bg-primary/[0.04] p-3">
+					<p class="text-xs font-medium text-primary">ชื่อห้องที่จะแสดง</p>
+					<p class="mt-1 font-semibold">{roomPreview}</p>
+				</div>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div class="space-y-1.5">
+						<Label for="homeroom-grade">ระดับชั้น</Label>
+						<Select.Root type="single" bind:value={roomDraft.gradeLevelId}>
+							<Select.Trigger id="homeroom-grade" class="w-full"
+								>{selectedGrade?.name ?? 'เลือกระดับชั้น'}</Select.Trigger
+							>
+							<Select.Content
+								>{#each gradeLevelOptions as option (option.id)}<Select.Item value={option.id}
+										>{option.name}</Select.Item
+									>{/each}</Select.Content
+							>
+						</Select.Root>
+					</div>
+					<div class="space-y-1.5">
+						<Label for="homeroom-number">เลขห้อง</Label>
+						<Input
+							id="homeroom-number"
+							bind:value={roomDraft.roomNumber}
+							placeholder="3"
+							required
+						/>
+					</div>
+				</div>
 				<div class="space-y-1.5">
-					<Label for="homeroom-grade">ระดับชั้น</Label>
-					<Select.Root type="single" bind:value={roomDraft.gradeLevelId}>
-						<Select.Trigger id="homeroom-grade" class="w-full"
-							>{selectedGrade?.name ?? 'เลือกระดับชั้น'}</Select.Trigger
+					<Label for="homeroom-edition">ฉบับหลักสูตร</Label>
+					<Select.Root type="single" bind:value={editionId}>
+						<Select.Trigger
+							id="homeroom-edition"
+							class="h-auto min-h-9 w-full whitespace-normal text-start"
+							disabled={!roomDraft.gradeLevelId}
+							>{editions.find((edition) => edition.id === editionId)?.name ??
+								'เลือกฉบับหลักสูตร'}</Select.Trigger
 						>
 						<Select.Content
-							>{#each gradeLevelOptions as option (option.id)}<Select.Item value={option.id}
-									>{option.name}</Select.Item
+							>{#each editions as edition (edition.id)}<Select.Item value={edition.id}
+									>{edition.name}</Select.Item
 								>{/each}</Select.Content
 						>
 					</Select.Root>
 				</div>
 				<div class="space-y-1.5">
-					<Label for="homeroom-number">เลขห้อง</Label>
-					<Input id="homeroom-number" bind:value={roomDraft.roomNumber} placeholder="3" required />
+					<Label for="homeroom-program">แผนการเรียน</Label>
+					<Select.Root type="single" bind:value={roomDraft.studyProgramId}>
+						<Select.Trigger
+							id="homeroom-program"
+							disabled={!editionId}
+							class="h-auto min-h-9 w-full whitespace-normal text-start"
+							><span class="min-w-0 flex-1"
+								>{programLabel(roomDraft.studyProgramId).replace(
+									'ไม่พบแผนการเรียนที่อ้างอิง',
+									'เลือกแผนการเรียน'
+								)}</span
+							></Select.Trigger
+						>
+						<Select.Content class="max-w-[calc(100vw-2rem)]"
+							>{#each eligiblePrograms as option (option.id)}<Select.Item
+									value={option.id}
+									class="whitespace-normal">{studyProgramLabel(option)}</Select.Item
+								>{/each}</Select.Content
+						>
+					</Select.Root>
+					<p class="text-xs text-muted-foreground">
+						เลือกฉบับที่โรงเรียนกำหนดให้ห้องนี้ใช้ ปีปรับปรุงหลักสูตรอาจต่างจากปีการศึกษาของห้อง
+					</p>
 				</div>
-			</div>
-			<div class="space-y-1.5">
-				<Label for="homeroom-edition">ฉบับหลักสูตร</Label>
-				<Select.Root type="single" bind:value={editionId}>
-					<Select.Trigger
-						id="homeroom-edition"
-						class="h-auto min-h-9 w-full whitespace-normal text-start"
-						disabled={!roomDraft.gradeLevelId}
-						>{editions.find((edition) => edition.id === editionId)?.name ??
-							'เลือกฉบับหลักสูตร'}</Select.Trigger
-					>
-					<Select.Content
-						>{#each editions as edition (edition.id)}<Select.Item value={edition.id}
-								>{edition.name}</Select.Item
-							>{/each}</Select.Content
-					>
-				</Select.Root>
-			</div>
-			<div class="space-y-1.5">
-				<Label for="homeroom-program">แผนการเรียน</Label>
-				<Select.Root type="single" bind:value={roomDraft.studyProgramId}>
-					<Select.Trigger
-						id="homeroom-program"
-						disabled={!editionId}
-						class="h-auto min-h-9 w-full whitespace-normal text-start"
-						><span class="min-w-0 flex-1"
-							>{programLabel(roomDraft.studyProgramId).replace(
-								'ไม่พบแผนการเรียนที่อ้างอิง',
-								'เลือกแผนการเรียน'
-							)}</span
-						></Select.Trigger
-					>
-					<Select.Content class="max-w-[calc(100vw-2rem)]"
-						>{#each eligiblePrograms as option (option.id)}<Select.Item
-								value={option.id}
-								class="whitespace-normal">{studyProgramLabel(option)}</Select.Item
-							>{/each}</Select.Content
-					>
-				</Select.Root>
-				<p class="text-xs text-muted-foreground">
-					เลือกฉบับที่โรงเรียนกำหนดให้ห้องนี้ใช้ ปีปรับปรุงหลักสูตรอาจต่างจากปีการศึกษาของห้อง
-				</p>
-			</div>
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="space-y-1.5">
-					<Label for="homeroom-capacity">ความจุ</Label>
-					<Input
-						id="homeroom-capacity"
-						type="number"
-						min={Math.max(1, editingRoom?.studentCount ?? 0)}
-						bind:value={roomDraft.capacity}
-						required
-					/>
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div class="space-y-1.5">
+						<Label for="homeroom-capacity">ความจุ</Label>
+						<Input
+							id="homeroom-capacity"
+							type="number"
+							min={Math.max(1, editingRoom?.studentCount ?? 0)}
+							bind:value={roomDraft.capacity}
+							required
+						/>
+					</div>
+					<div class="space-y-1.5">
+						<Label for="homeroom-custom-name">ชื่ออื่น (ไม่บังคับ)</Label>
+						<Input
+							id="homeroom-custom-name"
+							bind:value={roomDraft.customName}
+							placeholder="เว้นว่างเพื่อใช้ชื่อมาตรฐาน"
+						/>
+					</div>
 				</div>
-				<div class="space-y-1.5">
-					<Label for="homeroom-custom-name">ชื่ออื่น (ไม่บังคับ)</Label>
-					<Input
-						id="homeroom-custom-name"
-						bind:value={roomDraft.customName}
-						placeholder="เว้นว่างเพื่อใช้ชื่อมาตรฐาน"
-					/>
-				</div>
-			</div>
-			{#if roomError}<p role="alert" class="text-sm text-destructive">{roomError}</p>{/if}
-			<Dialog.Footer
-				><Button type="submit" disabled={roomBusy}
-					>{editingRoom ? 'บันทึกห้อง' : 'สร้างห้อง'}</Button
-				></Dialog.Footer
-			>
-		</form>
+				{#if roomError}<p role="alert" class="text-sm text-destructive">{roomError}</p>
+					<Button type="button" variant="outline" onclick={loadEditorOptions}>ลองอีกครั้ง</Button
+					>{/if}
+				<Dialog.Footer
+					><Button type="submit" disabled={roomBusy || !editorOptionsReady}
+						>{editingRoom ? 'บันทึกห้อง' : 'สร้างห้อง'}</Button
+					></Dialog.Footer
+				>
+			</form>{/if}
 	</Dialog.Content>
 </Dialog.Root>
 

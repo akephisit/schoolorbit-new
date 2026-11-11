@@ -90,11 +90,17 @@ pub async fn create_work_item(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let window =
         workflow::get_workflow_window(&context.tenant.pool, payload.workflow_window_id).await?;
-    workflow_access_policy::require_workflow_window_manage_permission(
+    workflow_access_policy::require_workflow_window_management_access(
+        &context.tenant.pool,
         &context.actor,
         &window.managed_by_permission,
-    )?;
+        window.organization_unit_id,
+    )
+    .await?;
 
+    if payload.module_code != window.module_code {
+        return Err(AppError::BadRequest("โมดูลงานต้องตรงกับรอบงาน".into()));
+    }
     let id = services::create_work_item(
         &context.tenant.pool,
         CreateWorkItemInput {

@@ -44,7 +44,9 @@ test('homeroom workspace uses one advisor relationship collection', async () => 
 	);
 	assert.match(loader, /loadHomeroomCollections/);
 	assert.match(loader, /listHomeroomAdvisorsForAcademicYear/);
-	assert.match(loader, /listStudyProgramOptionsForAcademicYear/);
+	assert.doesNotMatch(loader, /listStudyProgramOptionsForAcademicYear/);
+	assert.doesNotMatch(loader, /listGradeLevelOptions/);
+	assert.match(page, /onLoadEditorOptions/);
 	assert.match(loader, /requestFetch:\s*fetch/);
 	assert.match(page, /data\.workspace/);
 	assert.doesNotMatch(page, /\bonMount\s*\(/);

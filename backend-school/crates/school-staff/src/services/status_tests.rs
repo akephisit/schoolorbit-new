@@ -980,7 +980,10 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
             vec![inactive_role_id],
             None,
         ),
-        delegator_user_id,
+        &school_authorization::ActorContext {
+            user_id: delegator_user_id,
+            permissions: vec!["*".into()],
+        },
     )
     .await;
     assert!(create_with_inactive_role.is_err());
@@ -992,7 +995,10 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
             vec![],
             Some(vec![test_organization_assignment(inactive_unit_id)]),
         ),
-        delegator_user_id,
+        &school_authorization::ActorContext {
+            user_id: delegator_user_id,
+            permissions: vec!["*".into()],
+        },
     )
     .await;
     assert!(create_with_inactive_unit.is_err());
@@ -1011,7 +1017,10 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
         &pool,
         target_user_id,
         test_update_staff_request(Some(vec![inactive_role_id]), None),
-        delegator_user_id,
+        &school_authorization::ActorContext {
+            user_id: delegator_user_id,
+            permissions: vec!["*".into()],
+        },
     )
     .await;
     assert!(update_with_inactive_role.is_err());
@@ -1034,7 +1043,10 @@ async fn inactive_assignment_targets_are_rejected_before_existing_access_is_repl
             None,
             Some(vec![test_organization_assignment(inactive_unit_id)]),
         ),
-        delegator_user_id,
+        &school_authorization::ActorContext {
+            user_id: delegator_user_id,
+            permissions: vec!["*".into()],
+        },
     )
     .await;
     assert!(update_with_inactive_unit.is_err());

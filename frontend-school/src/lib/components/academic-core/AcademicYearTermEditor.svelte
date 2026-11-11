@@ -27,7 +27,9 @@
 		years,
 		termsByYear,
 		bellSchedules,
-		canManage,
+		canReadTerms,
+		canManageYears,
+		canManageTerms,
 		contextSettings,
 		busy,
 		onUpdateContextSettings,
@@ -42,7 +44,9 @@
 		years: AcademicYear[];
 		termsByYear: Map<string, AcademicTerm[]>;
 		bellSchedules: BellSchedule[];
-		canManage: boolean;
+		canReadTerms: boolean;
+		canManageYears: boolean;
+		canManageTerms: boolean;
 		contextSettings: AcademicContextSettings | null;
 		busy: { year: boolean; term: boolean };
 		onUpdateContextSettings: (
@@ -97,7 +101,7 @@
 				></Select.Root
 			>
 		</div>
-		{#if canManage}<Button
+		{#if canManageYears}<Button
 				variant="outline"
 				onclick={() => {
 					creating = true;
@@ -105,7 +109,7 @@
 				}}>เพิ่มปีการศึกษา</Button
 			>{/if}
 	</div>
-	{#if canManage && (creating || editing || !selectedYear)}<div
+	{#if canManageYears && (creating || editing || !selectedYear)}<div
 			class="space-y-3 rounded-lg border p-4"
 		>
 			{#key creating ? 'new' : selectedYear?.id}<AcademicYearSetupStep
@@ -131,10 +135,10 @@
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<div class="flex items-center gap-2">
 				<h3 class="font-medium">{selectedYear.name}</h3>
-				<p class="text-sm text-muted-foreground">{terms.length} ภาคเรียน</p>
+				{#if canReadTerms}<p class="text-sm text-muted-foreground">{terms.length} ภาคเรียน</p>{/if}
 				<Badge variant="outline">{academicStatusLabel(selectedYear.status)}</Badge>
 			</div>
-			{#if canManage}<Button
+			{#if canManageYears}<Button
 					size="sm"
 					variant="ghost"
 					onclick={() => {
@@ -143,36 +147,36 @@
 					}}>แก้ไขปีการศึกษา</Button
 				>{/if}
 		</div>
-		<section class="space-y-4" aria-label="ภาคเรียน">
-			<h3 class="font-semibold">ภาคเรียน</h3>
-			{#if canManage}{#key selectedYear.id}<AcademicTermSetupStep
-						year={selectedYear}
-						{years}
-						allTerms={[...termsByYear.values()].flat()}
-						allSchedules={bellSchedules}
-						onCreateCopy={onCreateTermCopy}
-						onLoadPeriods={onLoadBellSchedulePeriods}
-						{schedules}
-						{terms}
-						busy={busy.term}
-						onCreate={onCreateTerm}
-						onUpdate={onUpdateTerm}
-						onSaved={() => {}}
-					/>{/key}{:else}<div class="space-y-2">
-					{#each terms as term (term.id)}<div
-							class="flex items-center justify-between rounded-lg border p-3"
-						>
-							<span>{term.name}</span><Badge variant="outline"
-								>{academicStatusLabel(term.status)}</Badge
+		{#if canReadTerms}<section class="space-y-4" aria-label="ภาคเรียน">
+				<h3 class="font-semibold">ภาคเรียน</h3>
+				{#if canManageTerms}{#key selectedYear.id}<AcademicTermSetupStep
+							year={selectedYear}
+							{years}
+							allTerms={[...termsByYear.values()].flat()}
+							allSchedules={bellSchedules}
+							onCreateCopy={onCreateTermCopy}
+							onLoadPeriods={onLoadBellSchedulePeriods}
+							{schedules}
+							{terms}
+							busy={busy.term}
+							onCreate={onCreateTerm}
+							onUpdate={onUpdateTerm}
+							onSaved={() => {}}
+						/>{/key}{:else}<div class="space-y-2">
+						{#each terms as term (term.id)}<div
+								class="flex items-center justify-between rounded-lg border p-3"
 							>
-						</div>{/each}
-				</div>{/if}
-		</section>
+								<span>{term.name}</span><Badge variant="outline"
+									>{academicStatusLabel(term.status)}</Badge
+								>
+							</div>{/each}
+					</div>{/if}
+			</section>{/if}
 		{#if contextSettings}<AcademicContextSettingsControls
 				year={selectedYear}
 				{terms}
 				settings={contextSettings}
-				{canManage}
+				canManage={canManageYears && canManageTerms}
 				onsave={onUpdateContextSettings}
 				onreload={onReloadContextSettings}
 			/>{/if}

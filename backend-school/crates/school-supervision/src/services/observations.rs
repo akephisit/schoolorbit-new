@@ -789,7 +789,7 @@ async fn list_observation_rows(
                       AND om.organization_unit_id = ANY(",
             );
             builder.push_bind(access.organization_unit_ids);
-            builder.push(") AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE))");
+            builder.push(") AND om.started_at <= CURRENT_DATE AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE))");
         }
 
         builder.push(")");
@@ -896,6 +896,8 @@ async fn hydrate_observations(
             let observation_id = row.id;
             let manual_lesson = manual_lesson_from_row(&row);
             Ok(SupervisionObservation {
+                can_manage: false,
+                can_review: false,
                 id: observation_id,
                 cycle_id: row.cycle_id,
                 academic_year_id: row.academic_year_id,

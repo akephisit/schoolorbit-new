@@ -1,7 +1,7 @@
 import type { PageLoad } from './$types';
 import { STUDENT_YEARS_WORKSPACE_DEPENDENCY } from '#lib/academic-core/foundation-route.js';
 import {
-	listHomerooms,
+	listStudentYearHomeroomOptions,
 	listPlacementsForAcademicYear,
 	listStudentAcademicYears,
 	getStudentAcademicYear,
@@ -39,7 +39,7 @@ export const load: PageLoad = ({ depends, fetch, url }) => {
 							listStudentAcademicYears: (yearId, options) =>
 								listStudentAcademicYears(yearId, {}, options),
 							listPlacementsForAcademicYear,
-							listHomerooms
+							listHomerooms: listStudentYearHomeroomOptions
 						},
 						academicYearId,
 						{ requestFetch: fetch }

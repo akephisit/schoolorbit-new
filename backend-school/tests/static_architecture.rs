@@ -4670,8 +4670,8 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
 
     assert!(daily_handler
         .contains("actor_tenant_context_from_session(&state.auth_runtime, &session).await?"));
-    assert!(daily_handler.contains("TimetableAction::Read"));
-    assert!(daily_handler.contains("requires_school_scope: true"));
+    assert!(daily_handler.contains("ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL"));
+    assert!(!daily_handler.contains("TimetableAction::Manage"));
     assert!(daily_handler.contains("daily_teaching_service::get_daily_teaching_overview"));
     assert!(daily_handler.contains("ApiResponse::ok(overview)"));
 
@@ -5407,15 +5407,38 @@ fn organization_delegation_authorizing_positions_are_explicit() {
     let delegation_service = strip_comments(&read_source(
         manifest_dir().join("crates/school-staff/src/services/organization_delegation_service.rs"),
     ));
-
-    assert!(delegation_service
-        .contains("position_code IN ('director', 'deputy_director', 'head', 'deputy_head')"));
-    assert!(!delegation_service.contains(
-        "position_code IN ('director', 'deputy_director', 'head', 'deputy_head', 'coordinator'"
-    ));
-    assert!(!delegation_service.contains(
-        "position_code IN ('director', 'deputy_director', 'head', 'deputy_head', 'member'"
-    ));
+    let single = extract_braced_block(
+        &delegation_service,
+        "pub async fn is_organization_unit_leader_on_connection",
+        false,
+    );
+    assert!(
+        single.contains("organization_unit_leader_ids_on_connection("),
+        "single and batch leadership checks must share the authoritative provider"
+    );
+    let provider = extract_source_block(
+        &delegation_service,
+        "pub async fn organization_unit_leader_ids_on_connection",
+        false,
+    );
+    let predicate =
+        Regex::new(r"(?:\b[a-zA-Z_][a-zA-Z_0-9]*\.)?position_code\s+IN\s*\(([^)]*)\)").unwrap();
+    let lists = predicate.captures_iter(&provider).collect::<Vec<_>>();
+    assert_eq!(
+        lists.len(),
+        1,
+        "the authoritative provider must contain one explicit leadership allowlist"
+    );
+    let positions = lists[0][1]
+        .split(',')
+        .map(|value| value.trim().trim_matches('\''))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        positions,
+        BTreeSet::from(["director", "deputy_director", "head", "deputy_head"])
+    );
+    assert!(!provider.contains("'coordinator'"));
+    assert!(!provider.contains("'member'"));
 }
 
 #[test]

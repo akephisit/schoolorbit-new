@@ -130,6 +130,7 @@ async function mockContextActions(
 	};
 	function resource(): LearningOffering {
 		return {
+			canManage: true,
 			id: selected.id,
 			kind: selected.kind,
 			codeSnapshot: selected.code,

@@ -101,6 +101,8 @@ async function fixture(
 		id: roomId,
 		academicYearId: yearId,
 		gradeLevelId: id(506),
+		gradeLevelName: 'มัธยมศึกษาปีที่ 1',
+		studyProgramName: 'แผนการเรียนทดสอบ',
 		studyProgramId: id(507),
 		code: 'M1-1',
 		name: 'ม.1/1',
@@ -221,6 +223,8 @@ async function fixture(
 				if (identitySwitched && options.replacementWorkspaceGate)
 					await options.replacementWorkspaceGate;
 				return fulfill(route, {
+					canReadYears: !options.hiddenPlanning,
+					canReadTerms: !options.hiddenPlanning,
 					years:
 						identitySwitched || options.hiddenPlanning
 							? []

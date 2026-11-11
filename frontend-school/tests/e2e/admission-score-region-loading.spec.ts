@@ -112,7 +112,7 @@ async function mock(page: Page, canScore = true, validContext = false) {
 					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
-					permissions: canScore ? ['admission.scores.all', 'admission.read.all'] : []
+					permissions: canScore ? ['admission.scores.all'] : []
 				});
 			if (path === '/api/academic/context/options')
 				return reply(route, {
@@ -167,10 +167,19 @@ async function mock(page: Page, canScore = true, validContext = false) {
 							: [{ ...roster[0], examRoomId: id(11), roomName: 'ห้องสอบรอบใหม่' }]
 				);
 			}
-			if (path === `/api/admission/rounds/${activeRound}/applications` && method === 'GET') {
-				if (holdFirstTrackApps && url.searchParams.get('track_id') === trackId)
+			if (path === `/api/admission/rounds/${activeRound}/score-track-roster` && method === 'GET') {
+				if (holdFirstTrackApps && url.searchParams.get('trackId') === trackId)
 					await firstTrackAppsGate;
-				return reply(route, url.searchParams.get('track_id') === trackId ? applications : []);
+				return reply(
+					route,
+					url.searchParams.get('trackId') === trackId
+						? applications.map(({ id, applicationNumber, fullName }) => ({
+								id,
+								applicationNumber,
+								fullName
+							}))
+						: []
+				);
 			}
 			if (path === `/api/admission/rounds/${activeRound}/scores/bulk` && method === 'PUT') {
 				bulkPayloads.push(route.request().postDataJSON());
@@ -207,7 +216,7 @@ test('slow room roster does not hide independent round and subject regions', asy
 	await expect(page.getByRole('button', { name: 'โหลดวิชาสอบใหม่' })).toHaveCount(0);
 	await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
 	expect(state.reads.some((read) => read.endsWith('/exam-seats'))).toBe(false);
-	expect(state.reads.some((read) => read.includes('/applications'))).toBe(false);
+	expect(state.reads.some((read) => read.includes('/score-track-roster'))).toBe(false);
 	state.releaseRoster();
 	await expect(page.getByText('ห้องสอบ A', { exact: true }).first()).toBeVisible();
 	await expect(page.getByText('เด็กชาย ตัวอย่าง', { exact: true })).toBeVisible();
@@ -250,10 +259,10 @@ test('track application rows remain view-lazy and an empty roster falls back to 
 	const state = await mock(page);
 	await page.goto(path, { waitUntil: 'domcontentloaded' });
 	await expect(page.getByText('ห้องสอบ A', { exact: true }).first()).toBeVisible();
-	expect(state.reads.some((read) => read.includes('/applications'))).toBe(false);
+	expect(state.reads.some((read) => read.includes('/score-track-roster'))).toBe(false);
 	await page.getByRole('button', { name: 'ตามสาย' }).click();
 	await expect(page.getByText('เด็กชาย ตัวอย่าง', { exact: true })).toBeVisible();
-	expect(state.reads.filter((read) => read.includes('/applications')).length).toBe(1);
+	expect(state.reads.filter((read) => read.includes('/score-track-roster')).length).toBe(1);
 
 	const emptyPage = await page.context().newPage();
 	const emptyState = await mock(emptyPage);
@@ -261,7 +270,13 @@ test('track application rows remain view-lazy and an empty roster falls back to 
 	await emptyPage.goto(path, { waitUntil: 'domcontentloaded' });
 	await expect(emptyPage.getByRole('button', { name: /สายวิทย์/ })).toBeVisible();
 	await expect(emptyPage.getByText('เด็กชาย ตัวอย่าง', { exact: true })).toBeVisible();
-	expect(emptyState.reads.some((read) => read.includes('/applications'))).toBe(true);
+	expect(emptyState.reads.some((read) => read.includes('/score-track-roster'))).toBe(true);
+	expect(emptyState.reads.some((read) => /\/rounds\/[^/]+\/applications/.test(read))).toBe(false);
+	await expect(emptyPage.getByRole('link', { name: 'ย้อนกลับ', exact: true })).toHaveAttribute(
+		'href',
+		`/staff?academicYearId=${yearId}`
+	);
+	await expect(emptyPage.getByRole('link', { name: 'ไปหน้าห้องสอบ', exact: true })).toHaveCount(0);
 	await emptyPage.close();
 });
 
@@ -316,7 +331,7 @@ test('a slow former track cannot replace the newly selected track', async ({ pag
 	await expect(page.getByText('ไม่มีผู้สมัครที่พร้อมกรอกคะแนน')).toBeVisible();
 	state.releaseFirstTrackApps();
 	await expect(page.getByText('ไม่มีผู้สมัครที่พร้อมกรอกคะแนน')).toBeVisible();
-	expect(state.reads.some((read) => read.includes(`track_id=${nextTrackId}`))).toBe(true);
+	expect(state.reads.some((read) => read.includes(`trackId=${nextTrackId}`))).toBe(true);
 });
 
 test('an old room response cannot replace the next round', async ({ page }) => {

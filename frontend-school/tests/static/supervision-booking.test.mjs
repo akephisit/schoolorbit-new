@@ -17,6 +17,7 @@ const supervisionServiceFiles = [
 	'backend-school/crates/school-supervision/src/services/evaluations.rs',
 	'backend-school/crates/school-supervision/src/services/observations.rs',
 	'backend-school/crates/school-supervision/src/services/reviews_and_reports.rs',
+	'backend-school/crates/school-supervision/src/services/response_visibility.rs',
 	'backend-school/crates/school-supervision/src/services/shared.rs',
 	'backend-school/crates/school-supervision/src/services/templates.rs'
 ];
@@ -324,7 +325,11 @@ test('teaching supervision detail hides scores until academic approval releases 
 	assert.match(detailPage, /function observationAverageScoreLabel/);
 	assert.match(detailPage, /รอหัวหน้ากลุ่มบริหารวิชาการอนุมัติผล/);
 	assert.match(detailPage, /observationAverageScoreLabel\(observation\)/);
-	assert.match(supervisionHandlers, /redact_observation_results_for_actor/);
+	assert.match(supervisionHandlers, /services::redacted_observation_for_actor/);
+	assert.match(supervisionHandlers, /services::redact_observations_results_for_actor/);
+	assert.match(supervisionService, /fn redact_observation_results_for_actor/);
+	assert.match(supervisionService, /managed_user_ids\.contains\(&observation\.observed_user_id\)/);
+	assert.doesNotMatch(supervisionHandlers, /fn redact_observation_results_for_actor/);
 	assert.match(supervisionHandlers, /redact_teacher_status_results_for_actor/);
 	assert.match(supervisionService, /can_view_observation_results/);
 	assert.match(supervisionService, /SupervisionObservationStatus::Published/);

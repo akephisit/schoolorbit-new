@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import type { Writable, Readable } from 'svelte/store';
-import { PERMISSIONS, WILDCARD_PERMISSION } from '#lib/permissions/registry.js';
+import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 export const userPermissions: Writable<string[]> = writable([]);
 
@@ -30,11 +30,14 @@ export function hasModulePermission(permissions: string[], module: string): bool
 }
 
 export function workflowManagePermissions(permissions: string[]): string[] {
-	if (permissions.includes(WILDCARD_PERMISSION)) {
-		return Object.values(PERMISSIONS).filter((permission) => permission.includes('.manage.'));
-	}
-
-	return permissions.filter((permission) => permission.includes('.manage.'));
+	return Object.values(PERMISSIONS).filter((permission) => {
+		const [, action, scope] = permission.split('.');
+		return (
+			action === 'manage' &&
+			['school', 'all', 'organization_unit', 'organization_tree'].includes(scope) &&
+			hasPermission(permissions, permission)
+		);
+	});
 }
 
 export function hasWorkflowManagePermission(permissions: string[]): boolean {

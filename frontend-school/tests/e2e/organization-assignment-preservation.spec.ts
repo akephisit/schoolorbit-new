@@ -92,6 +92,7 @@ test('bulk primary edit retains inactive source custom titles and original null 
 		profile: { organization_units: [administration, learningArea] }
 	});
 	const units: OrganizationUnit[] = [administration, learningArea].map((source, index) => ({
+		can_manage_delegations: false,
 		id: source.id,
 		name: source.name,
 		code: source.code,
