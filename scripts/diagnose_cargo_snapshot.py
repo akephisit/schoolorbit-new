@@ -50,7 +50,7 @@ def main():
  println!("cargo:rustc-env=WATCHED={}",std::env::var("SNAPSHOT_PROBE_VALUE").unwrap());
 }\n''')
         def build(name, expected_missing_include=False):
-            process = subprocess.run([str(args.cargo), 'build', '--release', '--offline', '--message-format=json-render-diagnostics'],
+            process = subprocess.run([str(args.cargo), 'build', '--release', '--offline', '--message-format=json'],
                                      cwd=app, env=environment, capture_output=True, text=True)
             (args.output / f'{name}.jsonl').write_text(process.stdout)
             (args.output / f'{name}.stderr').write_text(process.stderr)
