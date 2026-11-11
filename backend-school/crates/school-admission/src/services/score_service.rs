@@ -27,6 +27,7 @@ pub struct ScoreRow {
 #[serde(rename_all = "camelCase")]
 pub struct ScoreTrackApplicant {
     pub id: Uuid,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub application_number: Option<String>,
     pub full_name: String,
 }

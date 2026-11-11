@@ -3882,6 +3882,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/admission/rounds/{round_id}/score-track-roster': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getAdmissionScoreTrackRoster'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/admission/tracks/{id}/ranking': {
 		parameters: {
 			query?: never;
@@ -12090,7 +12106,7 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				gradeLevelId: string;
-				gradeLevelName?: string | null;
+				gradeLevelName: string | null;
 				/** Format: uuid */
 				id: string;
 				isActive?: boolean | null;
@@ -12103,7 +12119,7 @@ export interface components {
 				studentCount?: number | null;
 				/** Format: uuid */
 				studyProgramId: string;
-				studyProgramName?: string | null;
+				studyProgramName: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			};
@@ -15682,7 +15698,7 @@ export interface components {
 				createdAt: string;
 				/** Format: uuid */
 				gradeLevelId: string;
-				gradeLevelName?: string | null;
+				gradeLevelName: string | null;
 				/** Format: uuid */
 				id: string;
 				isActive?: boolean | null;
@@ -15695,7 +15711,7 @@ export interface components {
 				studentCount?: number | null;
 				/** Format: uuid */
 				studyProgramId: string;
-				studyProgramName?: string | null;
+				studyProgramName: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -15776,7 +15792,7 @@ export interface components {
 				/** Format: uuid */
 				id: string;
 				name: string;
-				roomNumber?: string | null;
+				roomNumber: string | null;
 				/** Format: uuid */
 				studyProgramId: string;
 			}[];
@@ -16297,6 +16313,16 @@ export interface components {
 				examRoomId: string;
 				roomName: string;
 				seats: components['schemas']['ScoreRoomSeat'][];
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_ScoreTrackApplicant: {
+			data: {
+				applicationNumber: string | null;
+				fullName: string;
+				/** Format: uuid */
+				id: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -22682,7 +22708,7 @@ export interface components {
 			createdAt: string;
 			/** Format: uuid */
 			gradeLevelId: string;
-			gradeLevelName?: string | null;
+			gradeLevelName: string | null;
 			/** Format: uuid */
 			id: string;
 			isActive?: boolean | null;
@@ -22695,7 +22721,7 @@ export interface components {
 			studentCount?: number | null;
 			/** Format: uuid */
 			studyProgramId: string;
-			studyProgramName?: string | null;
+			studyProgramName: string | null;
 			/** Format: date-time */
 			updatedAt: string;
 		};
@@ -22864,7 +22890,7 @@ export interface components {
 			/** Format: uuid */
 			id: string;
 			name: string;
-			roomNumber?: string | null;
+			roomNumber: string | null;
 			/** Format: uuid */
 			studyProgramId: string;
 		};
@@ -25993,6 +26019,12 @@ export interface components {
 			fullName: string;
 			/** Format: int32 */
 			seatNumber: number;
+		};
+		ScoreTrackApplicant: {
+			applicationNumber: string | null;
+			fullName: string;
+			/** Format: uuid */
+			id: string;
 		};
 		SearchApplicationByIdentifierRequest: {
 			identifier: string;
@@ -42725,15 +42757,6 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_Vec_HomeroomReference'];
 				};
 			};
-			/** @description Homeroom context exceeds supported size */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
 			/** @description Authentication required */
 			401: {
 				headers: {
@@ -42745,6 +42768,15 @@ export interface operations {
 			};
 			/** @description Student year read permission denied */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Homeroom context exceeds supported size */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -46519,6 +46551,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Feature management read permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	getFeature: {
@@ -48003,6 +48044,67 @@ export interface operations {
 			};
 			/** @description Admission score permission required */
 			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getAdmissionScoreTrackRoster: {
+		parameters: {
+			query: {
+				trackId: string;
+			};
+			header?: never;
+			path: {
+				/** @description Admission round ID */
+				round_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Eligible score-entry applicants in the exact round and track, without private application fields */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_ScoreTrackApplicant'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Admission score permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Track does not belong to the admission round */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Score track roster exceeds the complete supported size */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};

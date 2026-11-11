@@ -521,12 +521,17 @@ async fn permission_coverage_staff_retained_role_rows_keep_scope_dates_notes_and
             .fetch_all(&f.tenant_a_pool)
             .await
             .unwrap();
-    let roles: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM roles WHERE is_active AND user_type='staff' ORDER BY id LIMIT 4",
-    )
-    .fetch_all(&f.tenant_a_pool)
-    .await
-    .unwrap();
+    let mut roles = Vec::new();
+    for permission in [
+        codes::ROLES_ASSIGN_ALL,
+        codes::WILDCARD,
+        codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+        codes::STAFF_READ_ALL,
+    ] {
+        let role:Uuid=sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES($1,'Historical authority fixture','staff') RETURNING id").bind(format!("HISTORY_{}",Uuid::new_v4().simple())).fetch_one(&f.tenant_a_pool).await.unwrap();
+        sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2").bind(role).bind(permission).execute(&f.tenant_a_pool).await.unwrap();
+        roles.push(role);
+    }
     // Each row contains authority-defining provenance the ordinary editor must preserve.
     for (index, scope, start, end) in [
         (0, None, -30, Some(-1)),
@@ -545,6 +550,13 @@ async fn permission_coverage_staff_retained_role_rows_keep_scope_dates_notes_and
     .await
     .unwrap();
     let app = coverage_router(&f);
+    let _managed_lease = f
+        .runtime
+        .pool_manager
+        .get_pool("test-pool://session-router-tenant-a", "tenant-a")
+        .await
+        .unwrap();
+
     // Regranting an ended role requires ASSIGN, even when paired with a valid removal.
     for retained in [roles[0]] {
         let (status, body) = coverage_request(
@@ -591,12 +603,18 @@ async fn permission_coverage_staff_retained_role_rows_keep_scope_dates_notes_and
     );
     let active_count:i64=sqlx::query_scalar("SELECT count(*) FROM user_roles WHERE user_id=$1 AND started_at<=CURRENT_DATE AND (ended_at IS NULL OR ended_at>CURRENT_DATE)").bind(target).fetch_one(&f.tenant_a_pool).await.unwrap();
     assert_eq!(active_count, 1);
-    let _managed_lease = f
-        .runtime
-        .pool_manager
-        .get_pool("test-pool://session-router-tenant-a", "tenant-a")
-        .await
-        .unwrap();
+    let effective = school_authorization::load_actor_context(
+        target,
+        "tenant-a",
+        &f.tenant_a_pool,
+        &school_authorization::PermissionCache::new(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        !effective.has_permission(codes::WILDCARD),
+        "retained future wildcard role is not effective before its actual start"
+    );
     let actor = ActorContext {
         user_id: editor.id,
         permissions: vec![
@@ -630,6 +648,32 @@ async fn permission_coverage_staff_retained_role_rows_keep_scope_dates_notes_and
             .iter()
             .find(|row| row["role_id"] == roles[0].to_string())
             .unwrap()
+    );
+    let canceled: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(role) FROM user_roles role WHERE user_id=$1 AND role_id=$2",
+    )
+    .bind(target)
+    .bind(roles[1])
+    .fetch_one(&f.tenant_a_pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        canceled["ended_at"], canceled["started_at"],
+        "explicit future removal cancels only the future interval"
+    );
+    let (status, body) = coverage_request(
+        &app,
+        &f,
+        &editor,
+        Method::PUT,
+        &format!("/api/staff/{target}"),
+        json!({"role_ids":[roles[1],roles[2]]}),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "a canceled scheduled role requires a new ASSIGN grant: {body}"
     );
 }
 
@@ -857,6 +901,22 @@ async fn permission_coverage_admission_context_does_not_grant_applicant_reads() 
             StatusCode::FORBIDDEN
         );
     }
+    sqlx::query("INSERT INTO admission_rounds(academic_year_id,grade_level_id,name,apply_start_date,apply_end_date) SELECT $1,$2,'Bounded context '||n,CURRENT_DATE,CURRENT_DATE+1 FROM generate_series(1,2001) n").bind(year).bind(grade).execute(&f.tenant_a_pool).await.unwrap();
+    let manager = coverage_actor(&f, &[codes::ADMISSION_MANAGE_ALL], 95).await;
+    let (status, body) = coverage_request(
+        &app,
+        &f,
+        &manager,
+        Method::GET,
+        &format!("/api/admission/rounds?academicYearId={year}"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "round options reject overflow instead of silently truncating: {body}"
+    );
 }
 
 #[tokio::test]
@@ -1059,4 +1119,97 @@ async fn permission_coverage_delegation_capabilities_require_current_unit_leader
             StatusCode::FORBIDDEN
         );
     }
+}
+
+#[tokio::test]
+async fn permission_coverage_score_track_roster_is_minimal_filtered_and_complete() {
+    let f = academic_fixture("permission_coverage_score_track").await;
+    let app = coverage_router(&f);
+    let scorer = coverage_actor(&f, &[codes::ADMISSION_SCORES_ALL], 131).await;
+    let unrelated = coverage_actor(&f, &[codes::ADMISSION_READ_ALL], 132).await;
+    let (year,grade,program):(Uuid,Uuid,Uuid)=sqlx::query_as("SELECT academic_year_id,grade_level_id,study_program_id FROM homerooms ORDER BY id LIMIT 1").fetch_one(&f.tenant_a_pool).await.unwrap();
+    let round:Uuid=sqlx::query_scalar("INSERT INTO admission_rounds(academic_year_id,grade_level_id,name,apply_start_date,apply_end_date) VALUES($1,$2,'Score context',CURRENT_DATE,CURRENT_DATE+1) RETURNING id").bind(year).bind(grade).fetch_one(&f.tenant_a_pool).await.unwrap();
+    let mut tracks = Vec::new();
+    for name in ["Track A", "Track B"] {
+        let id:Uuid=sqlx::query_scalar("INSERT INTO admission_tracks(admission_round_id,academic_year_id,study_program_id,name) VALUES($1,$2,$3,$4) RETURNING id").bind(round).bind(year).bind(program).bind(name).fetch_one(&f.tenant_a_pool).await.unwrap();
+        tracks.push(id);
+    }
+    for (index, status) in [
+        "submitted",
+        "verified",
+        "scored",
+        "accepted",
+        "absent",
+        "rejected",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,application_number,first_name,last_name,status,phone,address_line) VALUES($1,$2,'encrypted-score-fixture',$3,'Synthetic','Scoring',$4,'private-phone-sentinel','private-address-sentinel')")
+            .bind(round).bind(tracks[0]).bind(format!("COVERAGE-SCORE-{index}")).bind(status).execute(&f.tenant_a_pool).await.unwrap();
+    }
+    sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,first_name,last_name,status) VALUES($1,$2,'encrypted-score-fixture','Other','Track','verified')").bind(round).bind(tracks[1]).execute(&f.tenant_a_pool).await.unwrap();
+    let path = format!(
+        "/api/admission/rounds/{round}/score-track-roster?trackId={}",
+        tracks[0]
+    );
+    assert_eq!(
+        coverage_request(&app, &f, &unrelated, Method::GET, &path, Value::Null)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, body) = coverage_request(&app, &f, &scorer, Method::GET, &path, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = body["data"].as_array().unwrap();
+    assert_eq!(
+        rows.len(),
+        4,
+        "only score-eligible statuses enter the roster"
+    );
+    for row in rows {
+        assert_eq!(
+            row.as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>(),
+            std::collections::BTreeSet::from(["id", "applicationNumber", "fullName"])
+        );
+        assert_eq!(row["fullName"], "Synthetic Scoring");
+    }
+    assert_eq!(
+        coverage_request(
+            &app,
+            &f,
+            &scorer,
+            Method::GET,
+            &format!("/api/admission/rounds/{round}/applications"),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        coverage_request(
+            &app,
+            &f,
+            &scorer,
+            Method::GET,
+            &format!(
+                "/api/admission/rounds/{}/score-track-roster?trackId={}",
+                Uuid::new_v4(),
+                tracks[0]
+            ),
+            Value::Null
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    sqlx::query("INSERT INTO admission_applications(admission_round_id,admission_track_id,national_id,first_name,last_name,status) SELECT $1,$2,'encrypted-score-fixture','Bounded','Roster','verified' FROM generate_series(1,10001)").bind(round).bind(tracks[0]).execute(&f.tenant_a_pool).await.unwrap();
+    let (status, body) = coverage_request(&app, &f, &scorer, Method::GET, &path, Value::Null).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_ne!(body["success"], true);
 }

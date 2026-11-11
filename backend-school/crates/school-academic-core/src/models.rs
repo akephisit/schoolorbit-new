@@ -1331,7 +1331,9 @@ pub struct PublishVersionRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct Homeroom {
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub grade_level_name: Option<String>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub study_program_name: Option<String>,
     pub id: Uuid,
     pub code: String,
@@ -1357,6 +1359,7 @@ pub struct HomeroomReference {
     pub id: Uuid,
     pub code: String,
     pub name: String,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub room_number: Option<String>,
     pub grade_level_id: Uuid,
     pub study_program_id: Uuid,

@@ -12128,6 +12128,8 @@
               }
             },
             "required": [
+              "gradeLevelName",
+              "studyProgramName",
               "id",
               "code",
               "name",
@@ -25476,6 +25478,8 @@
                 }
               },
               "required": [
+                "gradeLevelName",
+                "studyProgramName",
                 "id",
                 "code",
                 "name",
@@ -25760,6 +25764,7 @@
                 "id",
                 "code",
                 "name",
+                "roomNumber",
                 "gradeLevelId",
                 "studyProgramId"
               ],
@@ -27755,6 +27760,47 @@
                 "examRoomId",
                 "roomName",
                 "seats"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_ScoreTrackApplicant": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "applicationNumber": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "fullName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "applicationNumber",
+                "fullName"
               ],
               "type": "object"
             },
@@ -51026,6 +51072,8 @@
           }
         },
         "required": [
+          "gradeLevelName",
+          "studyProgramName",
           "id",
           "code",
           "name",
@@ -51654,6 +51702,7 @@
           "id",
           "code",
           "name",
+          "roomNumber",
           "gradeLevelId",
           "studyProgramId"
         ],
@@ -62900,6 +62949,29 @@
         "required": [
           "seatNumber",
           "applicationId",
+          "fullName"
+        ],
+        "type": "object"
+      },
+      "ScoreTrackApplicant": {
+        "properties": {
+          "applicationNumber": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fullName": {
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "applicationNumber",
           "fullName"
         ],
         "type": "object"
@@ -92607,16 +92679,6 @@
             },
             "description": "Complete minimal homeroom context for the selected student year"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Homeroom context exceeds supported size"
-          },
           "401": {
             "content": {
               "application/json": {
@@ -92636,6 +92698,16 @@
               }
             },
             "description": "Student year read permission denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Homeroom context exceeds supported size"
           }
         },
         "tags": [
@@ -97978,6 +98050,16 @@
               }
             },
             "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Feature management read permission required"
           }
         },
         "tags": [
@@ -99821,6 +99903,87 @@
               }
             },
             "description": "Admission score permission required"
+          }
+        },
+        "tags": [
+          "admission"
+        ]
+      }
+    },
+    "/api/admission/rounds/{round_id}/score-track-roster": {
+      "get": {
+        "operationId": "getAdmissionScoreTrackRoster",
+        "parameters": [
+          {
+            "description": "Admission round ID",
+            "in": "path",
+            "name": "round_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trackId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_ScoreTrackApplicant"
+                }
+              }
+            },
+            "description": "Eligible score-entry applicants in the exact round and track, without private application fields"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Admission score permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Track does not belong to the admission round"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Score track roster exceeds the complete supported size"
           }
         },
         "tags": [
