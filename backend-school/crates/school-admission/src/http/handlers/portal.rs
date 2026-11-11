@@ -14,11 +14,11 @@ use crate::http::state::AdmissionHttpState;
 use crate::portal as portal_service;
 use school_auth_http::tenant::tenant_context;
 use school_auth_http::tenant::tenant_pool;
+use school_file_contracts::platform_types::FilePurpose;
 use school_file_platform::consumer_service::map_platform_error;
 use school_file_platform::consumer_service::request_deletions;
 use school_file_platform::http_models::FileDownloadGrantResponse;
 use school_file_platform::{platform_service::UploadCommand, repository::SqlFileRepository};
-use school_file_contracts::platform_types::FilePurpose;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;

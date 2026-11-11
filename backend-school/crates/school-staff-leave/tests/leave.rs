@@ -564,7 +564,11 @@ async fn leave_evidence_is_private_resource_bound_and_immutable_after_submission
         .execute(&pool)
         .await
         .is_err());
-use school_file_contracts::{access::FilePolicyAction, platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility}, file::PlatformFile};
+    use school_file_contracts::{
+        access::FilePolicyAction,
+        file::PlatformFile,
+        platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
+    };
     let file = PlatformFile {
         id: f,
         owner_user_id: Some(owner.user_id),

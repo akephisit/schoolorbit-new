@@ -2,7 +2,10 @@ use school_authorization::ActorContext;
 use school_certificates::access_policy::{self as certificate_access_policy, CertificateAction};
 use school_database::DbSession;
 use school_errors::AppError;
-use school_file_contracts::{platform_types::{FilePurpose, FileVisibility}, file::PlatformFile};
+use school_file_contracts::{
+    file::PlatformFile,
+    platform_types::{FilePurpose, FileVisibility},
+};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 

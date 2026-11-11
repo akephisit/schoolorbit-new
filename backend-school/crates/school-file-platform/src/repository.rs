@@ -1,11 +1,17 @@
-use school_file_contracts::file::PlatformFile;
 use async_trait::async_trait;
+use school_file_contracts::file::PlatformFile;
 use sqlx::{Connection, PgPool, Postgres, Row, Transaction};
 use std::{fmt, time::Duration};
 use uuid::Uuid;
 
-use school_file_contracts::platform_types::{DerivativeRecipe, FileInspectionMetadata, FileLifecycleStatus, FilePurpose, FileVisibility, RetentionClass, StorageClass};
-use super::{purpose_registry::{persisted_object_key, purpose_from_code}, storage_provider::StoredObject};
+use super::{
+    purpose_registry::{persisted_object_key, purpose_from_code},
+    storage_provider::StoredObject,
+};
+use school_file_contracts::platform_types::{
+    DerivativeRecipe, FileInspectionMetadata, FileLifecycleStatus, FilePurpose, FileVisibility,
+    RetentionClass, StorageClass,
+};
 
 pub const STORAGE_PROVIDER_CODE: &str = "r2";
 
@@ -88,7 +94,6 @@ pub struct NewUpload {
     pub inspection_metadata: FileInspectionMetadata,
     pub derivatives: Vec<NewDerivative>,
 }
-
 
 #[derive(Clone)]
 pub struct DeliveryRecord {
@@ -1975,8 +1980,10 @@ fn parse_lifecycle(value: &str) -> Result<FileLifecycleStatus, RepositoryError> 
 #[cfg(test)]
 mod tests {
     use super::*;
-use school_file_contracts::platform_types::{DerivativeRecipe, DetectedContent, FileInspectionMetadata};
     use crate::purpose_registry::{derivative_object_key, original_object_key};
+    use school_file_contracts::platform_types::{
+        DerivativeRecipe, DetectedContent, FileInspectionMetadata,
+    };
     use school_test_db::{create_named_test_pool_with_max_connections, run_test_migrations};
 
     static REPOSITORY_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -2872,8 +2879,10 @@ WHERE file_id = $1
             _: &StoredObject,
             _: &str,
             _: Duration,
-        ) -> Result<school_file_contracts::platform_types::DownloadGrant, crate::storage_provider::StorageError>
-        {
+        ) -> Result<
+            school_file_contracts::platform_types::DownloadGrant,
+            crate::storage_provider::StorageError,
+        > {
             Err(crate::storage_provider::StorageError::OperationFailed)
         }
         fn public_location(

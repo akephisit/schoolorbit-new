@@ -7,7 +7,11 @@ use crate::{
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_file_contracts::{access::FilePolicyAction, platform_types::{FilePurpose, FileVisibility}, file::PlatformFile};
+use school_file_contracts::{
+    access::FilePolicyAction,
+    file::PlatformFile,
+    platform_types::{FilePurpose, FileVisibility},
+};
 use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;

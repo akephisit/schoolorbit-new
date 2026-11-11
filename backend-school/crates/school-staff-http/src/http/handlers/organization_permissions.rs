@@ -1,8 +1,4 @@
 use crate::http::state::StaffHttpState;
-use school_staff::models::UpdateOrganizationPermissionsRequest;
-use school_staff::services::organization_permission_service;
-#[cfg(feature = "api-docs")]
-use school_staff::services::organization_permission_service::OrganizationPermissionGrant;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiResponse;
@@ -10,6 +6,10 @@ use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]
 use school_http::{ApiErrorResponse, EmptyData};
 use school_permissions::registry::codes;
+use school_staff::models::UpdateOrganizationPermissionsRequest;
+use school_staff::services::organization_permission_service;
+#[cfg(feature = "api-docs")]
+use school_staff::services::organization_permission_service::OrganizationPermissionGrant;
 
 use axum::{
     extract::{Extension, Path, State},

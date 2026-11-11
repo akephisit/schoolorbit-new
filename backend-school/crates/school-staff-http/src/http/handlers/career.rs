@@ -1,6 +1,4 @@
 use crate::http::state::StaffHttpState;
-use school_staff::staff_access_policy;
-use school_staff::{career::*, services::staff_career_service};
 use axum::{
     extract::{Extension, Path, Query, State},
     response::IntoResponse,
@@ -12,6 +10,8 @@ use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError as AppError};
 use school_permissions::registry::codes;
+use school_staff::staff_access_policy;
+use school_staff::{career::*, services::staff_career_service};
 use uuid::Uuid;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/staff/{id}/career-history",operation_id="listStaffCareerHistory",tag="staff",params(("id"=Uuid,Path,description="Staff user ID"),StaffCareerHistoryQuery),responses((status=200,description="Scoped history and current entries",body=ApiResponse<StaffCareerHistoryPage>),(status=400,description="Invalid cursor or page size",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Profile read permission denied",body=ApiErrorResponse),(status=404,description="Staff member not found",body=ApiErrorResponse))))]

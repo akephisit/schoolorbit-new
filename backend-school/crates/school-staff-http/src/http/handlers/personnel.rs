@@ -1,10 +1,4 @@
 use crate::http::state::StaffHttpState;
-use school_staff::personnel::*;
-use school_staff::services::job_position_service;
-#[cfg(feature = "api-docs")]
-use school_staff::services::rank_milestone_service::RankMilestoneOverview;
-use school_staff::services::rank_milestone_service::RankMilestoneOverviewQuery;
-use school_staff::staff_access_policy;
 use axum::{
     extract::{Extension, Query, State},
     response::IntoResponse,
@@ -15,6 +9,12 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError as AppError};
+use school_staff::personnel::*;
+use school_staff::services::job_position_service;
+#[cfg(feature = "api-docs")]
+use school_staff::services::rank_milestone_service::RankMilestoneOverview;
+use school_staff::services::rank_milestone_service::RankMilestoneOverviewQuery;
+use school_staff::staff_access_policy;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get, path="/api/staff/job-positions", operation_id="listStaffJobPositions", tag="staff", params(JobPositionListQuery), responses((status=200, description="Reference catalog", body=ApiResponse<JobPositionPage>),(status=401, description="Authentication required", body=ApiErrorResponse),(status=403, description="Permission denied", body=ApiErrorResponse))))]
 pub async fn list_job_positions(

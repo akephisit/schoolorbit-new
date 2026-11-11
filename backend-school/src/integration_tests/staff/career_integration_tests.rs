@@ -12,8 +12,12 @@ use school_auth::{
     session_service::AuthenticatedSession,
 };
 use school_authorization::PermissionCache;
-use school_file_platform::{malware_scanner::{MalwareScanner, ScanOutcome}, platform_service::FilePlatform, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
 use school_file_contracts::platform_types::DownloadGrant;
+use school_file_platform::{
+    malware_scanner::{MalwareScanner, ScanOutcome},
+    platform_service::FilePlatform,
+    storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
+};
 use school_permissions::registry::codes;
 use school_staff_http::http::handlers::{career, staff};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, TenantContext};

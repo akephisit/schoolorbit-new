@@ -1,6 +1,4 @@
 use crate::http::state::StaffHttpState;
-use school_staff::models::*;
-use school_staff::services::{organization_unit_service, role_service};
 use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
@@ -14,6 +12,8 @@ use school_http::HttpError as AppError;
 use school_http::{ApiErrorResponse, EmptyData, UuidIdData};
 use school_http::{ApiResponse, IdData};
 use school_permissions::registry::codes;
+use school_staff::models::*;
+use school_staff::services::{organization_unit_service, role_service};
 use serde::Deserialize;
 #[cfg(feature = "api-docs")]
 use utoipa::IntoParams;
@@ -225,9 +225,10 @@ pub async fn list_organization_units(
     )
     .await?;
     let ids: Vec<_> = units.iter().map(|unit| unit.id).collect();
-    let allowed =
-        school_staff::organization_access_policy::delegation_management_unit_ids(&pool, &actor, &ids)
-            .await?;
+    let allowed = school_staff::organization_access_policy::delegation_management_unit_ids(
+        &pool, &actor, &ids,
+    )
+    .await?;
     for unit in &mut units {
         unit.can_manage_delegations = allowed.contains(&unit.id);
     }

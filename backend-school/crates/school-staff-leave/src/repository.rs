@@ -1,10 +1,10 @@
 use super::{models::*, policy::*};
-use school_staff::career::StaffPersonnelType;
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_permissions::registry::codes;
+use school_staff::career::StaffPersonnelType;
 use school_workflow::{process, process_models::*};
 use serde::Serialize;
 use sqlx::{types::Json, Postgres, Transaction};

@@ -1,7 +1,4 @@
 use crate::http::state::StaffHttpState;
-use school_staff::models::*;
-use school_staff::services::{dashboard_service, staff_service};
-use school_staff::staff_access_policy;
 use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
@@ -17,6 +14,9 @@ use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
 use school_http::{ApiResponse, IdData};
 use school_permissions::registry::codes;
+use school_staff::models::*;
+use school_staff::services::{dashboard_service, staff_service};
+use school_staff::staff_access_policy;
 use serde::Serialize;
 #[cfg(feature = "api-docs")]
 use utoipa::ToSchema;

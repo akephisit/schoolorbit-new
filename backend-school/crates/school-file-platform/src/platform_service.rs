@@ -5,8 +5,25 @@ use uuid::Uuid;
 
 use crate::{file_hash::FileHasher, file_processor::ImageProcessor};
 
-use super::{file_inspector::{inspect_file, FileInspectionError, ValidatedFile}, malware_scanner::{MalwareScanner, ScanOutcome}, purpose_registry::{derivative_object_key, original_object_key, purpose_definition, PurposeRegistryError}, repository::{derivative_is_required, DeleteWork, DeliveryRecord, FileRepository, NewDerivative, NewUpload, RepositoryError}, runtime_config::FilePlatformRuntimeConfig, storage_provider::{StorageError, StorageProvider, StoredObject}};
-use school_file_contracts::{platform_types::{DerivativeRecipe, DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility}, file::PlatformFile};
+use super::{
+    file_inspector::{inspect_file, FileInspectionError, ValidatedFile},
+    malware_scanner::{MalwareScanner, ScanOutcome},
+    purpose_registry::{
+        derivative_object_key, original_object_key, purpose_definition, PurposeRegistryError,
+    },
+    repository::{
+        derivative_is_required, DeleteWork, DeliveryRecord, FileRepository, NewDerivative,
+        NewUpload, RepositoryError,
+    },
+    runtime_config::FilePlatformRuntimeConfig,
+    storage_provider::{StorageError, StorageProvider, StoredObject},
+};
+use school_file_contracts::{
+    file::PlatformFile,
+    platform_types::{
+        DerivativeRecipe, DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility,
+    },
+};
 
 #[derive(Clone)]
 pub struct UploadCommand {
@@ -659,7 +676,13 @@ mod tests {
     use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
     use std::{collections::VecDeque, io::Cursor, sync::Mutex, time::Duration};
 
-use crate::{malware_scanner::MalwareScanner, purpose_registry::original_object_key, reconciler::reconcile_due_operations, repository::{DeleteWork, LeasedOperation, ObjectTarget, OperationWork, RepositoryError}, storage_provider::{ObjectMetadata, StorageError}};
+    use crate::{
+        malware_scanner::MalwareScanner,
+        purpose_registry::original_object_key,
+        reconciler::reconcile_due_operations,
+        repository::{DeleteWork, LeasedOperation, ObjectTarget, OperationWork, RepositoryError},
+        storage_provider::{ObjectMetadata, StorageError},
+    };
     use school_file_contracts::platform_types::{FileInspectionMetadata, StorageClass};
 
     fn png() -> Bytes {

@@ -1,7 +1,15 @@
-use super::{cleanup_watch::{perform_cleanup_watch, CleanupObservation}, malware_scanner::{MalwareScanner, ScanOutcome}, namespace_binding::{self, BindingError, ConfiguredNamespaces}, platform_service::{FilePlatform, UploadCommand}, repository::SqlFileRepository, storage_namespace::StorageNamespace, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
-use school_file_contracts::platform_types::{DownloadGrant, FilePurpose, StorageClass};
+use super::{
+    cleanup_watch::{perform_cleanup_watch, CleanupObservation},
+    malware_scanner::{MalwareScanner, ScanOutcome},
+    namespace_binding::{self, BindingError, ConfiguredNamespaces},
+    platform_service::{FilePlatform, UploadCommand},
+    repository::SqlFileRepository,
+    storage_namespace::StorageNamespace,
+    storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
+};
 use async_trait::async_trait;
 use bytes::Bytes;
+use school_file_contracts::platform_types::{DownloadGrant, FilePurpose, StorageClass};
 use sqlx::PgPool;
 use std::{
     collections::HashMap,

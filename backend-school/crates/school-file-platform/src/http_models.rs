@@ -5,7 +5,10 @@ use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 use crate::platform_service::PublicDelivery;
-use school_file_contracts::{platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility}, file::PlatformFile};
+use school_file_contracts::{
+    file::PlatformFile,
+    platform_types::{DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility},
+};
 
 #[cfg(feature = "api-docs")]
 pub struct FileUploadMultipart;

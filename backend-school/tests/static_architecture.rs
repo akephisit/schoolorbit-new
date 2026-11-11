@@ -1163,10 +1163,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         ("school-http", &["school-errors"]),
         (
             "school-migrations",
-            &[
-                "school-database",
-                "school-permissions",
-            ],
+            &["school-database", "school-permissions"],
         ),
         (
             "school-navigation",
@@ -1276,10 +1273,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         ),
         (
             "school-file-contracts",
-            &[
-                "school-authorization",
-                "school-errors",
-            ],
+            &["school-authorization", "school-errors"],
         ),
         (
             "school-staff-http",
@@ -2259,12 +2253,16 @@ fn staff_capabilities_and_file_contracts_have_singular_provider_owners() {
     );
 
     let identity = read_source(staff_root.join("src/services/staff_identity_query.rs"));
-    let pool_facade = extract_braced_block(&identity, "pub async fn active_staff_display_name(", false);
+    let pool_facade =
+        extract_braced_block(&identity, "pub async fn active_staff_display_name(", false);
     assert!(pool_facade.contains("observed_checkout_pool"));
     assert!(pool_facade.contains("\"staff.file_transfer.staff_display_name\""));
-    assert!(pool_facade.contains("active_staff_display_name_on_connection(&mut connection, user_id)"));
+    assert!(
+        pool_facade.contains("active_staff_display_name_on_connection(&mut connection, user_id)")
+    );
     assert!(!pool_facade.contains(".begin("));
-    let file_transfer_http = strip_cfg_test_modules(&read_source(transport.join("src/file_transfer.rs")));
+    let file_transfer_http =
+        strip_cfg_test_modules(&read_source(transport.join("src/file_transfer.rs")));
     assert!(!file_transfer_http.contains("observed_checkout_pool"));
     assert!(!file_transfer_http.contains("DbSession"));
     assert!(!file_transfer_http.contains("&sqlx::PgPool"));
@@ -2283,14 +2281,18 @@ fn staff_capabilities_and_file_contracts_have_singular_provider_owners() {
     let leave = workspace_crate_dir("school-staff-leave");
     let leave_repository = read_source(leave.join("src/repository.rs"));
     assert!(leave_repository.contains("active_staff_display_name_on_connection(&mut **tx, actor)"));
-    assert!(leave_repository.contains("effective_personnel_type_on_connection(&mut **tx, actor, date)"));
+    assert!(
+        leave_repository.contains("effective_personnel_type_on_connection(&mut **tx, actor, date)")
+    );
     assert!(!leave_repository.contains("SELECT personnel_type FROM staff_career_history"));
     assert!(!leave_repository.contains("SELECT display_name FROM user_display_names"));
     assert!(leave.join("tests/leave.rs").exists());
     assert!(!staff_root.join("tests/leave.rs").exists());
     assert!(leave.join("src/pool_facade_tests.rs").exists());
-    assert!(!read_source(staff_root.join("src/services/staff_directory_query.rs"))
-        .contains("crate::leave"));
+    assert!(
+        !read_source(staff_root.join("src/services/staff_directory_query.rs"))
+            .contains("crate::leave")
+    );
 
     let contracts = workspace_crate_dir("school-file-contracts");
     let platform = workspace_crate_dir("school-file-platform");
@@ -5537,7 +5539,8 @@ fn organization_delegation_handlers_use_policy_layer_for_authorization() {
         manifest_dir().join("crates/school-staff/src/organization_access_policy.rs"),
     ));
     let delegation_handler = strip_comments(&read_source(
-        manifest_dir().join("crates/school-staff-http/src/http/handlers/organization_delegations.rs"),
+        manifest_dir()
+            .join("crates/school-staff-http/src/http/handlers/organization_delegations.rs"),
     ));
 
     assert!(policies_root.contains("pub mod organization_access_policy;"));
@@ -7259,7 +7262,8 @@ fn auth_me_rejects_inactive_users_before_loading_roles_or_permissions() {
 
 #[test]
 fn deleting_staff_revokes_cached_and_active_permissions_after_soft_delete() {
-    let source = read_source(manifest_dir().join("crates/school-staff-http/src/http/handlers/staff.rs"));
+    let source =
+        read_source(manifest_dir().join("crates/school-staff-http/src/http/handlers/staff.rs"));
     let handler = extract_braced_block(&source, "pub async fn delete_staff", false)
         .chars()
         .filter(|c| !c.is_whitespace())

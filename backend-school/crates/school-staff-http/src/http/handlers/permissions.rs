@@ -1,7 +1,4 @@
 use crate::http::state::StaffHttpState;
-#[cfg(feature = "api-docs")]
-use school_staff::models::Permission;
-use school_staff::services::permission_service;
 use axum::{
     extract::{Extension, State},
     http::StatusCode,
@@ -15,6 +12,9 @@ use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 use school_permissions::registry::codes;
+#[cfg(feature = "api-docs")]
+use school_staff::models::Permission;
+use school_staff::services::permission_service;
 
 // ===================================================================
 // List All Permissions

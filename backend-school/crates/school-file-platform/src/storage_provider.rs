@@ -3,8 +3,8 @@ use bytes::Bytes;
 use std::{fmt, time::Duration};
 use url::Url;
 
-use school_file_contracts::platform_types::{DownloadGrant, StorageClass};
 use super::purpose_registry::ObjectKey;
+use school_file_contracts::platform_types::{DownloadGrant, StorageClass};
 
 /// Maximum validity for a provider-issued private download grant.
 pub const MAX_PRIVATE_DOWNLOAD_GRANT_TTL: Duration = Duration::from_secs(300);
@@ -106,11 +106,13 @@ pub trait StorageProvider: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-use school_file_contracts::platform_types::{DetectedContent, DownloadGrant, FilePurpose, StorageClass};
     use crate::purpose_registry::original_object_key;
     use async_trait::async_trait;
     use bytes::Bytes;
     use chrono::Utc;
+    use school_file_contracts::platform_types::{
+        DetectedContent, DownloadGrant, FilePurpose, StorageClass,
+    };
     use std::{sync::Mutex, time::Duration};
     use url::Url;
     use uuid::Uuid;

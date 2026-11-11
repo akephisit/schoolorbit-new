@@ -2560,9 +2560,12 @@ mod retention_tests {
     use crate::services::cleaner::FileCleaner;
     use async_trait::async_trait;
     use bytes::Bytes;
-    use school_file_platform::platform_service::FilePlatform;
-use school_file_platform::{malware_scanner::{MalwareScanner, ScanOutcome}, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
     use school_file_contracts::platform_types::DownloadGrant;
+    use school_file_platform::platform_service::FilePlatform;
+    use school_file_platform::{
+        malware_scanner::{MalwareScanner, ScanOutcome},
+        storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
+    };
     use sha2::{Digest, Sha256};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::{
@@ -5671,7 +5674,7 @@ async fn attendance_notification_enqueue_failure_rolls_back_real_save_and_replay
 
 #[tokio::test]
 async fn attendance_evidence_delete_and_arrival_preview_use_one_connection() {
-use school_file_contracts::access::FilePolicyAction;
+    use school_file_contracts::access::FilePolicyAction;
     use school_file_platform::repository::{FileRepository, SqlFileRepository};
     let f = fixture("attendance_evidence_one_connection").await;
     let date = NaiveDate::from_ymd_opt(2025, 10, 9).unwrap();

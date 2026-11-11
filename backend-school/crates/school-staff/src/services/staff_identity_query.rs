@@ -174,9 +174,24 @@ mod tests {
             .unwrap();
         for (id, personnel_type, effective_date, created_at) in [
             (1_u128, Some("civil_servant"), None, "2026-01-04T00:00:00Z"),
-            (2, Some("government_employee"), Some("2026-01-01"), "2026-01-01T00:00:00Z"),
-            (3, Some("contract_employee"), Some("2026-01-01"), "2026-01-02T00:00:00Z"),
-            (4, Some("permanent_employee"), Some("2026-01-01"), "2026-01-02T00:00:00Z"),
+            (
+                2,
+                Some("government_employee"),
+                Some("2026-01-01"),
+                "2026-01-01T00:00:00Z",
+            ),
+            (
+                3,
+                Some("contract_employee"),
+                Some("2026-01-01"),
+                "2026-01-02T00:00:00Z",
+            ),
+            (
+                4,
+                Some("permanent_employee"),
+                Some("2026-01-01"),
+                "2026-01-02T00:00:00Z",
+            ),
             (5, None, Some("2026-02-01"), "2026-01-03T00:00:00Z"),
             (6, Some("other"), Some("2026-12-01"), "2026-01-03T00:00:00Z"),
         ] {
@@ -197,9 +212,13 @@ mod tests {
             ("2026-12-01", Some(StaffPersonnelType::Other)),
         ] {
             assert_eq!(
-                effective_personnel_type_on_connection(&mut connection, user, date.parse().unwrap())
-                    .await
-                    .unwrap(),
+                effective_personnel_type_on_connection(
+                    &mut connection,
+                    user,
+                    date.parse().unwrap()
+                )
+                .await
+                .unwrap(),
                 expected
             );
         }

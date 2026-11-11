@@ -1,5 +1,4 @@
 //! Thin authenticated transport for Staff-owned leave workflows.
-use school_staff_leave::{models::*, service};
 use axum::{
     extract::{Extension, Path, Query, State},
     Json, Router,
@@ -9,6 +8,7 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, EmptyData, HttpError};
+use school_staff_leave::{models::*, service};
 use uuid::Uuid;
 #[derive(Clone)]
 pub struct LeaveHttpState {

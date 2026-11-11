@@ -15,8 +15,12 @@ use axum::{
 use bytes::Bytes;
 use school_auth::{config::SessionConfig, runtime::AuthRuntime, session_crypto::SessionHmacKey};
 use school_authorization::PermissionCache;
-use school_file_platform::{malware_scanner::{MalwareScanner, ScanOutcome}, platform_service::FilePlatform, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
 use school_file_contracts::platform_types::DownloadGrant;
+use school_file_platform::{
+    malware_scanner::{MalwareScanner, ScanOutcome},
+    platform_service::FilePlatform,
+    storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
+};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager};
 use school_test_db::{create_named_test_pool, run_test_migrations};
 use sqlx::PgPool;

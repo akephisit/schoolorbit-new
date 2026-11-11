@@ -962,7 +962,7 @@ async fn require_evidence_file_on_connection(
     action: school_file_contracts::access::FilePolicyAction,
     resource: Option<Uuid>,
 ) -> Result<(), AppError> {
-use school_file_contracts::access::FilePolicyAction;
+    use school_file_contracts::access::FilePolicyAction;
     let student = evidence_student(file, resource)?;
     let linked: Option<(Uuid, Uuid)> = DbSession::new(&mut *connection)
         .query_as(

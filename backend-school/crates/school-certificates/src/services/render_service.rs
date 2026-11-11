@@ -2,8 +2,11 @@ use school_authorization::ActorContext;
 use school_crypto as field_encryption;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_file_platform::{platform_service::{FilePlatform, FilePlatformError}, repository::SqlFileRepository};
 use school_file_contracts::platform_types::DownloadGrant;
+use school_file_platform::{
+    platform_service::{FilePlatform, FilePlatformError},
+    repository::SqlFileRepository,
+};
 use school_fonts::models::SchoolFontStyle;
 use std::{
     collections::{BTreeMap, BTreeSet},

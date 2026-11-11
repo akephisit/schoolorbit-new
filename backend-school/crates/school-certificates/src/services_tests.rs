@@ -584,8 +584,11 @@ async fn insert_ready_template_file(
         "certificate_template_image" => ("template-image", "image/jpeg", "jpg"),
         _ => panic!("unsupported certificate test purpose"),
     };
-use school_file_contracts::platform_types::{DetectedContent, FileVisibility, RetentionClass};
-    use school_file_platform::{repository::NewUpload, storage_provider::{StorageProvider, StoredObject}};
+    use school_file_contracts::platform_types::{DetectedContent, FileVisibility, RetentionClass};
+    use school_file_platform::{
+        repository::NewUpload,
+        storage_provider::{StorageProvider, StoredObject},
+    };
     let file_id = Uuid::new_v4();
     let object = StoredObject::new(
         school_file_platform::purpose_registry::original_object_key(
@@ -656,8 +659,13 @@ async fn insert_ready_school_font_upload(
     style: &str,
     is_variable: bool,
 ) -> Uuid {
-use school_file_contracts::platform_types::{DetectedContent, FilePurpose, FileVisibility, RetentionClass};
-    use school_file_platform::{repository::NewUpload, storage_provider::{StorageProvider, StoredObject}};
+    use school_file_contracts::platform_types::{
+        DetectedContent, FilePurpose, FileVisibility, RetentionClass,
+    };
+    use school_file_platform::{
+        repository::NewUpload,
+        storage_provider::{StorageProvider, StoredObject},
+    };
     let file_id = Uuid::new_v4();
     let object = StoredObject::new(
         school_file_platform::purpose_registry::original_object_key(
@@ -4642,7 +4650,7 @@ async fn purge_provider_failure_is_durable_idempotent_and_retryable() {
 
 #[tokio::test]
 async fn purging_campaign_is_visible_only_as_delete_progress_and_hides_normal_resources() {
-use school_file_contracts::platform_types::FilePurpose;
+    use school_file_contracts::platform_types::FilePurpose;
 
     let (pool, actor, academic_year_id) =
         school_campaign_fixture("certificate_campaign_purging_visibility", 3151).await;

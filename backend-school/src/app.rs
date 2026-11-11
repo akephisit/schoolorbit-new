@@ -143,13 +143,15 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_staff_http::http::routes::protected_routes()
-                .with_state(school_staff_http::http::state::StaffHttpState::from_ref(state)),
+            school_staff_http::http::routes::protected_routes().with_state(
+                school_staff_http::http::state::StaffHttpState::from_ref(state),
+            ),
         )
         .nest(
             "/api",
-            school_staff_http::achievement::routes::protected_routes()
-                .with_state(school_staff_http::http::state::StaffHttpState::from_ref(state)),
+            school_staff_http::achievement::routes::protected_routes().with_state(
+                school_staff_http::http::state::StaffHttpState::from_ref(state),
+            ),
         )
         .nest(
             "/api",

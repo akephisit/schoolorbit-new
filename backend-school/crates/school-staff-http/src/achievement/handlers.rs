@@ -1,5 +1,3 @@
-use school_staff::achievement::models::*;
-use school_staff::achievement::services as achievement_service;
 use crate::http::state::StaffHttpState;
 use axum::{
     extract::{Extension, Path, Query, State},
@@ -13,6 +11,8 @@ use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
+use school_staff::achievement::models::*;
+use school_staff::achievement::services as achievement_service;
 use uuid::Uuid;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

@@ -1,7 +1,3 @@
-use school_staff_file_transfer::{
-    models::*,
-    runtime::{FileTransferIdentity, FileTransferRuntime},
-};
 use axum::{
     extract::{
         rejection::{JsonRejection, PathRejection},
@@ -25,6 +21,10 @@ use school_auth::{
 #[cfg(feature = "api-docs")]
 use school_http::{ApiErrorResponse, EmptyData};
 use school_http::{ApiResponse, HttpError};
+use school_staff_file_transfer::{
+    models::*,
+    runtime::{FileTransferIdentity, FileTransferRuntime},
+};
 use std::{future::Future, sync::Arc, time::Duration};
 use tokio::{
     sync::broadcast,
@@ -33,8 +33,7 @@ use tokio::{
 use uuid::Uuid;
 
 fn require_staff_display_name(name: Option<String>) -> Result<String, school_errors::AppError> {
-    name
-        .ok_or_else(|| school_errors::AppError::Forbidden("Active staff account required".into()))
+    name.ok_or_else(|| school_errors::AppError::Forbidden("Active staff account required".into()))
 }
 
 #[derive(Clone)]
@@ -96,11 +95,9 @@ async fn staff(session: &AuthenticatedSession) -> Result<String, HttpError> {
             "กรุณาเข้าสู่ระบบด้วยบัญชีบุคลากรที่ใช้งานอยู่".into(),
         ));
     }
-    let name = school_staff::services::active_staff_display_name(
-        &session.tenant.pool,
-        session.user_id,
-    )
-    .await?;
+    let name =
+        school_staff::services::active_staff_display_name(&session.tenant.pool, session.user_id)
+            .await?;
     Ok(require_staff_display_name(name)?)
 }
 
@@ -305,9 +302,12 @@ pub async fn events(
                 if tenant.tenant_id != bound_identity.tenant_id {
                     return Ok(false);
                 }
-                match school_staff::services::active_staff_display_name(&tenant.pool, session.user_id)
-                    .await
-                    .and_then(require_staff_display_name)
+                match school_staff::services::active_staff_display_name(
+                    &tenant.pool,
+                    session.user_id,
+                )
+                .await
+                .and_then(require_staff_display_name)
                 {
                     Ok(_) => {}
                     Err(school_errors::AppError::Forbidden(_)) => return Ok(false),
@@ -359,7 +359,10 @@ mod tests {
             require_staff_display_name(None),
             Err(school_errors::AppError::Forbidden(message)) if message == "Active staff account required"
         ));
-        assert_eq!(require_staff_display_name(Some("Staff Name".into())).unwrap(), "Staff Name");
+        assert_eq!(
+            require_staff_display_name(Some("Staff Name".into())).unwrap(),
+            "Staff Name"
+        );
     }
 
     fn fixture() -> (
@@ -441,7 +444,9 @@ mod tests {
                     "Peer".into(),
                     RegisterFileTransferDevice {
                         label: "Peer".into(),
-                        protocol_version: Some(school_staff_file_transfer::runtime::PROTOCOL_VERSION),
+                        protocol_version: Some(
+                            school_staff_file_transfer::runtime::PROTOCOL_VERSION,
+                        ),
                     },
                     Utc::now(),
                 )

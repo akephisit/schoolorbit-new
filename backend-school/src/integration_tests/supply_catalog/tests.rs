@@ -1,11 +1,22 @@
 use super::{file_relationships, models::*, services};
-use school_file_contracts::access::FilePolicyAction;
 use async_trait::async_trait;
 use bytes::Bytes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_file_platform::{malware_scanner::{MalwareScanner, ScanOutcome}, platform_service::FilePlatform, purpose_registry::original_object_key, repository::SqlFileRepository, storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject}};
-use school_file_contracts::{platform_types::{DetectedContent, DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility}, file::PlatformFile};
+use school_file_contracts::access::FilePolicyAction;
+use school_file_contracts::{
+    file::PlatformFile,
+    platform_types::{
+        DetectedContent, DownloadGrant, FileLifecycleStatus, FilePurpose, FileVisibility,
+    },
+};
+use school_file_platform::{
+    malware_scanner::{MalwareScanner, ScanOutcome},
+    platform_service::FilePlatform,
+    purpose_registry::original_object_key,
+    repository::SqlFileRepository,
+    storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
+};
 use school_permissions::registry::codes;
 use school_test_db::{
     create_named_test_pool_with_max_connections, create_test_user, run_test_migrations,
