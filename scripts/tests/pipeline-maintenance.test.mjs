@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   mkdtempSync,
@@ -27,6 +28,7 @@ function fixture(
     reloadDelay = false,
     bootEnableFailure = false,
     immutable = false,
+    nginxStartFailure = false,
   } = {},
 ) {
   const stack = mkdtempSync(path.join(os.tmpdir(), "pipeline-maintenance-"));
@@ -75,9 +77,11 @@ exit 0
   );
   writeFileSync(
     path.join(stack, "bin/podman-compose"),
-    '#!/bin/bash\nprintf "compose %s\\n" "$*" >> "$SCHOOLORBIT_STACK_ROOT/commands"\n',
+    '#!/bin/bash\nprintf "compose %s\\n" "$*" >> "$SCHOOLORBIT_STACK_ROOT/commands"\nif [[ -f $SCHOOLORBIT_STACK_ROOT/fail-nginx-start ]]; then rm "$SCHOOLORBIT_STACK_ROOT/fail-nginx-start"; exit 23; fi\n',
     { mode: 0o755 },
   );
+  if (nginxStartFailure)
+    writeFileSync(path.join(stack, "fail-nginx-start"), "");
   writeFileSync(
     path.join(stack, "bin/systemctl"),
     `#!/bin/bash
@@ -169,6 +173,60 @@ fi
   };
   return { stack, root, codeRoot, run, reloadFailure };
 }
+test("immutable fresh maintenance retries a failed nginx start with a writable runtime Compose", (t) => {
+  assert.notEqual(
+    process.getuid(),
+    0,
+    "permission regressions require an unprivileged process",
+  );
+  const f = fixture(t, {
+    immutable: true,
+    fresh: true,
+    nginxStartFailure: true,
+  });
+  const source = path.join(f.codeRoot, "podman-compose.yml"),
+    active = path.join(f.stack, "podman-compose.yml");
+  const hash = createHash("sha256").update(readFileSync(source)).digest("hex");
+  assert.equal(f.run("enter").status, 23);
+  assert.equal(statSync(active).mode & 0o777, 0o644);
+  const probe = readFileSync(
+    path.join(f.root, "releases", "a".repeat(40), "probe-token"),
+  );
+  const retry = f.run("enter");
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.equal(statSync(active).mode & 0o777, 0o644);
+  assert.deepEqual(readFileSync(active), readFileSync(source));
+  assert.equal(
+    createHash("sha256").update(readFileSync(source)).digest("hex"),
+    hash,
+  );
+  assert.equal(statSync(source).mode & 0o777, 0o444);
+  assert.deepEqual(
+    readFileSync(path.join(f.root, "releases", "a".repeat(40), "probe-token")),
+    probe,
+  );
+});
+for (const mode of [0o400, 0o444])
+  test(`immutable fresh maintenance recovers a stranded ${mode.toString(8)} active Compose`, (t) => {
+    assert.notEqual(
+      process.getuid(),
+      0,
+      "permission regressions require an unprivileged process",
+    );
+    const f = fixture(t, { immutable: true, fresh: true });
+    const source = path.join(f.codeRoot, "podman-compose.yml"),
+      active = path.join(f.stack, "podman-compose.yml");
+    const bytes = readFileSync(source);
+    writeFileSync(active, "stranded prior bytes\n", { mode });
+    chmodSync(active, mode);
+    assert.equal(statSync(active).mode & 0o777, mode);
+    const result = f.run("enter");
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(statSync(active).mode & 0o777, 0o644);
+    assert.deepEqual(readFileSync(active), bytes);
+    assert.deepEqual(readFileSync(source), bytes);
+    assert.equal(statSync(source).mode & 0o777, 0o444);
+  });
 test("immutable maintenance runs real code with stable journals and private probes", (t) => {
   const f = fixture(t, { immutable: true, fresh: true });
   for (const mode of ["enter", "verify", "accept"]) {

@@ -150,7 +150,7 @@ bash "$deployment_root/scripts/lib/pipeline-remote/school-storage-rollout.sh" pr
 
 install -m 0755 "$renderer_source" "$renderer"
 export_school_compose_env
-cp "$runtime_source" "${runtime_compose}.next"
+install -m 0644 "$runtime_source" "${runtime_compose}.next"
 podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null 2>&1
 unset_school_compose_env
 mv "${runtime_compose}.next" "$runtime_compose"

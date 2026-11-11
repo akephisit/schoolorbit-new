@@ -88,7 +88,7 @@ validate_backend_network() {
 }
 
 install -m 0755 "$renderer_source" "$renderer"
-cp "$runtime_source" "${runtime_compose}.next"
+install -m 0644 "$runtime_source" "${runtime_compose}.next"
 podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-admin >/dev/null 2>&1
 mv "${runtime_compose}.next" "$runtime_compose"
 

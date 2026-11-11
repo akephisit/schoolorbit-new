@@ -165,7 +165,7 @@ test('backend-school deployment validates session runtime before compose activat
 	const validatorStart = workflow.indexOf('            runtime_env_value() {');
 	const exportDefinition = workflow.indexOf('            export_school_compose_env() {');
 	const composeActivation = workflow.indexOf(
-		'            cp "$runtime_source" "${runtime_compose}.next"'
+		'            install -m 0644 "$runtime_source" "${runtime_compose}.next"'
 	);
 
 	assert.ok(validatorStart >= 0, 'runtime environment decoder must exist');

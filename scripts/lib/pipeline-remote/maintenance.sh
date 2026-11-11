@@ -74,7 +74,7 @@ if [[ $mode == enter ]]; then
     printf '%s\n' "$RELEASE_SHA" >"$root/pending-release"
     if ! podman container exists schoolorbit-nginx; then
         test -f "$stack/.env"
-        cp "$code_root/podman-compose.yml" "$stack/podman-compose.yml"
+        install -m 0644 "$code_root/podman-compose.yml" "$stack/podman-compose.yml"
         podman-compose -f "$stack/podman-compose.yml" up -d --no-deps nginx >/dev/null 2>&1
     else
         podman start schoolorbit-nginx >/dev/null
