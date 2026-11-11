@@ -122,6 +122,9 @@ jobs:
     uses: ./.github/workflows/backend-cache-benchmark.yml
     with:
       samples: ${{ fromJson(inputs.options).samples || '2' }}
+      phase: ${{ fromJson(inputs.options).phase || 'compare' }}
+      producer_run_id: ${{ fromJson(inputs.options).producer_run_id || '' }}
+      producer_run_attempt: ${{ fromJson(inputs.options).producer_run_attempt || '' }}
   compiler-cache-diagnostic:
     if: inputs.operation == 'compiler-cache-diagnostic'
     uses: ./.github/workflows/compiler-cache-diagnostic.yml

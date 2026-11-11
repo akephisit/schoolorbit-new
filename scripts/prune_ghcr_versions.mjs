@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { SNAPSHOT_PACKAGE } from './lib/pipeline-cargo-snapshot.mjs';
 
 import { pathToFileURL } from 'node:url';
 import { SCHOOL_BUILD_CACHE_PACKAGE } from './lib/pipeline-build-cache.mjs';
@@ -6,7 +7,8 @@ import { SCHOOL_BUILD_CACHE_PACKAGE } from './lib/pipeline-build-cache.mjs';
 const ALLOWED_PACKAGES = new Set([
 	'schoolorbit-backend-admin',
 	'schoolorbit-backend-school',
-	SCHOOL_BUILD_CACHE_PACKAGE
+	SCHOOL_BUILD_CACHE_PACKAGE,
+	SNAPSHOT_PACKAGE
 ]);
 const SHA_TAG = /^[0-9a-f]{40}$/;
 const RELEASE_TAG = /^(?:[0-9a-f]{40}|input-[0-9a-f]{64})$/;
@@ -215,7 +217,7 @@ export async function pruneGhcrVersions({
 	fetchImpl = globalThis.fetch
 }) {
 	const normalizedApiBase = validateTarget({ owner, packageName, keep, token, apiBase });
-	const cacheOnly = packageName === SCHOOL_BUILD_CACHE_PACKAGE;
+	const cacheOnly = [SCHOOL_BUILD_CACHE_PACKAGE, SNAPSHOT_PACKAGE].includes(packageName);
 	if (cacheOnly && (!Array.isArray(protectedTags) || protectedTags.length)) throw new Error('Cache retention does not accept release protection tags');
 	if (typeof fetchImpl !== 'function') throw new Error('Fetch implementation is unavailable');
 	if (typeof logger !== 'function') throw new Error('Logger is unavailable');

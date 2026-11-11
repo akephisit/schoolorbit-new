@@ -42,6 +42,8 @@ jobs:
             keep: 30
           - package: schoolorbit-backend-school
             keep: 30
+          - package: schoolorbit-backend-school-cargo-cache
+            keep: 2
           - package: schoolorbit-backend-school-cache
             keep: 2
     steps:
@@ -66,7 +68,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PACKAGE_NAME: ${{ matrix.package }}
-          EXECUTE: ${{ (github.event_name == 'schedule' && (matrix.package == 'schoolorbit-backend-school-cache' || vars.GHCR_RETENTION_ENABLED == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
+          EXECUTE: ${{ (github.event_name == 'schedule' && ((matrix.package == 'schoolorbit-backend-school-cache' || matrix.package == 'schoolorbit-backend-school-cargo-cache') || vars.GHCR_RETENTION_ENABLED == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false) }}
           KEEP: ${{ matrix.keep }}
         run: |
           arguments=(

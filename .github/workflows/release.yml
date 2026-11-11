@@ -281,7 +281,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - uses: docker/setup-buildx-action@v4
+      - name: Verify registry-only image tooling
+        run: docker buildx imagetools create --help >/dev/null
       - name: Publish selected accepted image aliases
         env:
           PLAN: ${{ needs.preflight.outputs.plan }}

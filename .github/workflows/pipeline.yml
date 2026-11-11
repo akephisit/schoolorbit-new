@@ -110,6 +110,7 @@ jobs:
     secrets: inherit
     permissions:
       contents: read
+      actions: read
       packages: write
   gate:
     name: Pipeline gate

@@ -47,11 +47,11 @@ def context(root, destination, scenario, sample, readonly=True):
     dockerfile = destination / "Dockerfile"
     text = dockerfile.read_text()
     if readonly:
-        marker = "FROM base AS builder\n"
+        marker = "FROM base AS compiler-tools\n" if "FROM base AS compiler-tools\n" in text else "FROM base AS builder\n"
         if text.count(marker) != 1:
             raise ValueError("School builder owner changed")
         mount = "--mount=type=cache,id=backend-school-sccache,target=/var/cache/sccache"
-        if text.count(mount) != 2:
+        if text.count(mount) != (3 if "AS snapshot-builder\n" in text else 2):
             raise ValueError("School compiler cache mounts changed")
         text = text.replace(marker, marker + "ENV SCCACHE_LOCAL_RW_MODE=READ_ONLY\n")
         # sccache's disk LRU updates entry timestamps even in READ_ONLY mode.

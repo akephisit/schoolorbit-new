@@ -119,6 +119,8 @@ def summary(component, folder, log_file):
     layer = phases.get("compiler layer", {})
     state = "cached" if layer.get("cached") else "executed" if "duration" in layer else "unconfirmed"
     elapsed = number(metrics.get("compileNanoseconds"))
+    snapshot_restored = metrics.get("snapshotRestored") is True
+    dependency_origin = "snapshot producer (carried evidence; no current dependency execution claimed)" if snapshot_restored else "chef layer (may be cached)"
     dependency_elapsed = number(dependency_metrics.get("compileNanoseconds"))
     dependency_hits = counter(dependency_stats, "cache_hits")
     dependency_misses = counter(dependency_stats, "cache_misses")
@@ -126,7 +128,7 @@ def summary(component, folder, log_file):
              f"- Recorded Cargo invocation: {seconds(elapsed / 1e9 if elapsed is not None else None)}.",
              f"- Recorded executable unit (includes link): {seconds(executable_seconds(component, units))}.",
              f"- Recorded final link (within executable unit): {seconds(link_seconds(folder))}.",
-             f"- Recorded dependency cook: {seconds(dependency_elapsed / 1e9 if dependency_elapsed is not None else None)}.",
+             f"- Cargo snapshot restored: {str(snapshot_restored).lower()}. Dependency evidence origin: {dependency_origin}.\n- Recorded dependency cook: {seconds(dependency_elapsed / 1e9 if dependency_elapsed is not None else None)}.",
              f"- Dependency Rust library cache: hits={dependency_hits if dependency_hits is not None else 'unavailable'}, misses={dependency_misses if dependency_misses is not None else 'unavailable'}.",
              "- Builder-layer evidence can come from an earlier invocation when BuildKit reuses that layer.",
              "", "| BuildKit phase | Duration |", "| --- | ---: |"]

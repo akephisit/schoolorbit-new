@@ -48,7 +48,8 @@ def classify_private_log(raw):
 
 
 def probe_recipe(dockerfile):
-    prefix, separator, _ = dockerfile.partition("FROM base AS builder\n")
+    marker = "FROM base AS compiler-tools\n" if "FROM base AS compiler-tools\n" in dockerfile else "FROM base AS builder\n"
+    prefix, separator, _ = dockerfile.partition(marker)
     if not separator or "FROM base AS sccache-tool\n" not in prefix:
         raise ValueError("Pinned compiler owner changed")
     return prefix + "FROM sccache-tool AS compiler-cache-probe\nWORKDIR /probe\n"
