@@ -1902,19 +1902,24 @@ pub(crate) mod protected_router {
             .oneshot(request(
                 Method::GET,
                 "/api/public/academic-context/options",
-                Some(origin),
+                // Public tenant selection retains its supported production-domain contract.
+                Some("https://tenant-a.schoolorbit.app"),
                 None,
                 None,
             ))
             .await
             .unwrap();
-        assert_eq!(public.status(), StatusCode::OK);
-        let public_body: serde_json::Value = serde_json::from_slice(
-            &axum::body::to_bytes(public.into_body(), 1_048_576)
-                .await
-                .unwrap(),
-        )
-        .unwrap();
+        let public_status = public.status();
+        let public_bytes = axum::body::to_bytes(public.into_body(), 1_048_576)
+            .await
+            .unwrap();
+        assert_eq!(
+            public_status,
+            StatusCode::OK,
+            "anonymous public context response: {:.256}",
+            String::from_utf8_lossy(&public_bytes)
+        );
+        let public_body: serde_json::Value = serde_json::from_slice(&public_bytes).unwrap();
         assert_eq!(public_body["success"], true);
         for personal_path in [
             "/api/me/academic-context/options",
