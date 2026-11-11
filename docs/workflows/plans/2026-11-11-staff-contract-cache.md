@@ -87,7 +87,10 @@ uses isolated frozen archive inputs; live edits may proceed after the explicit p
   design. Move exact active-Staff name and effective personnel-type SQL from Leave/FileTransfer;
   preserve nullable results, parse error, caller dates and complete winner ordering.
 - [ ] Keep missing-name mapping in each consumer so existing Forbidden messages remain unchanged.
-  Providers acquire no pool connection, transaction, clock or extra lock.
+  Connection providers acquire no pool connection, transaction, clock or extra lock. The Senior's
+  bounded review refinement places the existing observed checkout/label in a public Staff pool
+  facade delegating to the connection provider; HTTP uses that facade plus a pure missing-name
+  mapper, without a handler-local pool/database helper or a new rule exception.
 - [ ] Apply only the three intentional SQL operation-label moves listed in the design; retain
   FileTransfer's observed-checkout label and other existing instrumentation/logging semantics.
 - [ ] Create `school-staff-leave`; move every non-HTTP Leave module and its package integration
@@ -100,7 +103,8 @@ uses isolated frozen archive inputs; live edits may proceed after the explicit p
   Staff Leave modules/re-exports and forwarding, preserving all routes/contracts.
 - [ ] Add or retain focused provider cases for inactive/non-Staff/missing names, effective-date
   ties/NULLs and same-transaction visibility/rollback. Exercise existing Leave tests rather than
-  duplicating its full business suite in Staff.
+  duplicating its full business suite in Staff. Verify facade eligibility and the pure HTTP denial
+  mapping while preserving the existing closed/exhausted-pool preflight assertions.
 
 ## 4. Extract FileTransfer runtime and all Staff transport
 

@@ -2259,6 +2259,16 @@ fn staff_capabilities_and_file_contracts_have_singular_provider_owners() {
     );
 
     let identity = read_source(staff_root.join("src/services/staff_identity_query.rs"));
+    let pool_facade = extract_braced_block(&identity, "pub async fn active_staff_display_name(", false);
+    assert!(pool_facade.contains("observed_checkout_pool"));
+    assert!(pool_facade.contains("\"staff.file_transfer.staff_display_name\""));
+    assert!(pool_facade.contains("active_staff_display_name_on_connection(&mut connection, user_id)"));
+    assert!(!pool_facade.contains(".begin("));
+    let file_transfer_http = strip_cfg_test_modules(&read_source(transport.join("src/file_transfer.rs")));
+    assert!(!file_transfer_http.contains("observed_checkout_pool"));
+    assert!(!file_transfer_http.contains("DbSession"));
+    assert!(!file_transfer_http.contains("&sqlx::PgPool"));
+    assert!(file_transfer_http.contains("school_staff::services::active_staff_display_name("));
     for operation in [
         "active_staff_display_name_on_connection",
         "effective_personnel_type_on_connection",

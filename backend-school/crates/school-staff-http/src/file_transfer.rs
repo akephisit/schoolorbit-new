@@ -32,17 +32,8 @@ use tokio::{
 };
 use uuid::Uuid;
 
-async fn staff_display_name(
-    pool: &sqlx::PgPool,
-    user_id: Uuid,
-) -> Result<String, school_errors::AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "staff.file_transfer.staff_display_name",
-    )
-    .await?;
-    school_staff::services::active_staff_display_name_on_connection(&mut connection, user_id)
-        .await?
+fn require_staff_display_name(name: Option<String>) -> Result<String, school_errors::AppError> {
+    name
         .ok_or_else(|| school_errors::AppError::Forbidden("Active staff account required".into()))
 }
 
@@ -105,7 +96,12 @@ async fn staff(session: &AuthenticatedSession) -> Result<String, HttpError> {
             "กรุณาเข้าสู่ระบบด้วยบัญชีบุคลากรที่ใช้งานอยู่".into(),
         ));
     }
-    Ok(staff_display_name(&session.tenant.pool, session.user_id).await?)
+    let name = school_staff::services::active_staff_display_name(
+        &session.tenant.pool,
+        session.user_id,
+    )
+    .await?;
+    Ok(require_staff_display_name(name)?)
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(post, path="/api/staff/file-transfer/devices", operation_id="registerFileTransferDevice", tag="file-transfer", request_body=RegisterFileTransferDevice, responses((status=413,description="Request exceeds the 64 KiB wire budget",body=ApiErrorResponse),(status=200,description="Protocol 3 device registration and school-online snapshot with recipient admission limit",body=ApiResponse<FileTransferSnapshot>),(status=400,description="Invalid label or unsupported protocol; refresh both devices",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Active staff required",body=ApiErrorResponse),(status=429,description="Device limit reached",body=ApiErrorResponse))))]
@@ -309,7 +305,10 @@ pub async fn events(
                 if tenant.tenant_id != bound_identity.tenant_id {
                     return Ok(false);
                 }
-                match staff_display_name(&tenant.pool, session.user_id).await {
+                match school_staff::services::active_staff_display_name(&tenant.pool, session.user_id)
+                    .await
+                    .and_then(require_staff_display_name)
+                {
                     Ok(_) => {}
                     Err(school_errors::AppError::Forbidden(_)) => return Ok(false),
                     Err(error) => return Err(error),
@@ -353,6 +352,16 @@ impl std::error::Error for FileTransferEncodingError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_transfer_missing_active_staff_name_keeps_the_existing_forbidden_error() {
+        assert!(matches!(
+            require_staff_display_name(None),
+            Err(school_errors::AppError::Forbidden(message)) if message == "Active staff account required"
+        ));
+        assert_eq!(require_staff_display_name(Some("Staff Name".into())).unwrap(), "Staff Name");
+    }
+
     fn fixture() -> (
         FileTransferHttpState,
         AuthenticatedSession,

@@ -2442,7 +2442,14 @@ fit at 5pt. Disposable correspondence cases cover old create/action/revision rep
 legacy base-annotation carryforward, subsequent signing, and rejection of missing/unknown new
 versions or edited unversioned text. Omitted legacy fields must keep old payload hashes intact.
 
-Staff leave and planned school exit use `./scripts/test_backend_school.sh --package school-staff leave -- --nocapture` for the focused policy and isolated lifecycle/authorization/ledger fixtures. Signature consent and revision binding use `./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`. Policies count school-configured calendar or working dates; half-day granularity represents a full counted day as two units. Quota-year crossing requires separate requests. No statutory entitlement is seeded by these fixtures.
+Staff leave and planned school exit use
+`./scripts/test_backend_school.sh --package school-staff-leave -- --nocapture` for the policy,
+preflight and complete isolated lifecycle/authorization/ledger integration target. Signature consent
+and revision binding use
+`./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`.
+Policies count school-configured calendar or working dates; half-day granularity represents a full
+counted day as two units. Quota-year crossing requires separate requests. No statutory entitlement
+is seeded by these fixtures.
 
 Directed routing uses synthetic staff and document fixtures in
 `frontend-school/tests/e2e/correspondence-directed.spec.ts`. After building the School frontend

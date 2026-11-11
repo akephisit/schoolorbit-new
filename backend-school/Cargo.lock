@@ -828,6 +828,7 @@ dependencies = [
  "school-crypto",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-files-http",
  "school-fonts",
@@ -838,6 +839,9 @@ dependencies = [
  "school-permissions",
  "school-question-bank",
  "school-staff",
+ "school-staff-file-transfer",
+ "school-staff-http",
+ "school-staff-leave",
  "school-student-care",
  "school-students",
  "school-supervision",
@@ -4218,6 +4222,7 @@ dependencies = [
  "school-authorization",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-http",
  "school-permissions",
@@ -4248,6 +4253,7 @@ dependencies = [
  "school-crypto",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-http",
  "school-permissions",
@@ -4281,6 +4287,7 @@ dependencies = [
  "school-crypto",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-http",
  "school-notifications",
@@ -4413,6 +4420,7 @@ dependencies = [
  "school-authorization",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-http",
  "school-notifications",
@@ -4471,6 +4479,7 @@ dependencies = [
  "school-crypto",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-fonts",
  "school-http",
@@ -4551,6 +4560,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-file-contracts"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "school-authorization",
+ "school-errors",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "school-file-platform"
 version = "0.1.0"
 dependencies = [
@@ -4569,6 +4593,7 @@ dependencies = [
  "school-authorization",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-tenancy",
  "school-test-db",
  "serde",
@@ -4602,12 +4627,14 @@ dependencies = [
  "school-certificates",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-fonts",
  "school-http",
  "school-permissions",
  "school-question-bank",
  "school-staff",
+ "school-staff-leave",
  "school-students",
  "school-tenancy",
  "school-test-db",
@@ -4633,6 +4660,7 @@ dependencies = [
  "school-authorization",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-http",
  "school-permissions",
@@ -4750,6 +4778,7 @@ dependencies = [
  "school-authorization",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-http",
  "school-permissions",
@@ -4766,23 +4795,84 @@ dependencies = [
 name = "school-staff"
 version = "0.1.0"
 dependencies = [
- "async-stream",
- "async-trait",
- "axum",
  "bcrypt",
  "chrono",
  "chrono-tz",
+ "school-auth",
+ "school-authorization",
+ "school-crypto",
+ "school-database",
+ "school-errors",
+ "school-file-contracts",
+ "school-file-platform",
+ "school-permissions",
+ "school-tenancy",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-staff-file-transfer"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "school-errors",
+ "serde",
+ "serde_json",
+ "tokio",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-staff-http"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "axum",
+ "chrono",
  "futures",
  "school-auth",
  "school-auth-http",
  "school-authorization",
- "school-crypto",
- "school-database",
  "school-errors",
  "school-file-platform",
  "school-http",
  "school-notifications",
  "school-permissions",
+ "school-staff",
+ "school-staff-file-transfer",
+ "school-staff-leave",
+ "school-tenancy",
+ "school-test-db",
+ "serde",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-staff-leave"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "school-authorization",
+ "school-database",
+ "school-errors",
+ "school-file-contracts",
+ "school-file-platform",
+ "school-permissions",
+ "school-staff",
  "school-tenancy",
  "school-test-db",
  "school-workflow",
@@ -4790,7 +4880,6 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
- "tracing",
  "utoipa",
  "uuid",
 ]
@@ -4932,6 +5021,7 @@ dependencies = [
  "school-authorization",
  "school-database",
  "school-errors",
+ "school-file-contracts",
  "school-file-platform",
  "school-http",
  "school-notifications",

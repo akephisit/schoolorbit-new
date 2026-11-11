@@ -55,7 +55,7 @@ Workflow, Notifications, Auth HTTP, HTTP and File Platform. Exact sources and ca
 | --- | --- | --- |
 | Staff/Achievement HTTP | `crates/school-staff/src/http*`, `achievement/http*` | Root `src/app.rs`, `src/http_state.rs`, `src/api_contract.rs`, permission coverage and Staff/Academic fixtures move to the transport owner. |
 | Leave domain | `crates/school-staff/src/leave/` except `http.rs` | Root API schemas and Files HTTP use the new Leave owner; `tests/leave.rs` moves with the domain. |
-| Staff name/career queries | `leave/repository.rs` functions `staff_name` and `category`; `file_transfer.rs::staff_display_name` | Move the SQL to Staff public providers. Leave keeps its denial mapping and same transaction; FileTransfer HTTP keeps its active-account mapping and observed checkout. |
+| Staff name/career queries | `leave/repository.rs` functions `staff_name` and `category`; `file_transfer.rs::staff_display_name` | Move the SQL to Staff public providers. Leave keeps its denial mapping and same transaction; FileTransfer HTTP keeps its active-account mapping and calls the Staff-owned observed pool facade. |
 | FileTransfer domain | `file_transfer/models.rs`, `runtime.rs`, `tests.rs` | Root owns the sole `Arc<FileTransferRuntime>`; HTTP consumes runtime public operations. The runtime currently has no Staff SQL/provider dependency. |
 | File values and policy contract | File Platform `platform_types.rs`, `repository.rs::PlatformFile`, `access.rs` | Move those definitions to one canonical contract owner; update consumers to import that owner directly. |
 
@@ -99,6 +99,11 @@ pub async fn active_staff_display_name_on_connection(
     user_id: uuid::Uuid,
 ) -> Result<Option<String>, school_errors::AppError>;
 
+pub async fn active_staff_display_name(
+    pool: &sqlx::PgPool,
+    user_id: uuid::Uuid,
+) -> Result<Option<String>, school_errors::AppError>;
+
 pub async fn effective_personnel_type_on_connection(
     connection: &mut sqlx::PgConnection,
     user_id: uuid::Uuid,
@@ -115,10 +120,13 @@ Database errors propagate unchanged. The career query preserves `kind='personnel
 `effective_date DESC NULLS LAST, created_at DESC, id DESC LIMIT 1`. Preserve NULL flattening and
 the existing `ValidationError("ประเภทบุคลากรไม่ถูกต้อง")` for an invalid persisted personnel type.
 
-Both providers use `DbSession` on the supplied connection, without checkout, transaction, clock,
-cache, or new locks. Leave supplies `&mut **tx` from its current transaction and retains all date
-calculation/validation in its existing caller. FileTransfer HTTP checks out through the existing
-observed pool boundary before the name query. Query labels follow their authoritative Staff owner;
+Both connection providers use `DbSession` on the supplied connection, without checkout, transaction,
+clock, cache, or new locks. Leave supplies `&mut **tx` from its current transaction and retains all
+date calculation/validation in its existing caller. As the Senior's bounded review refinement,
+Staff's public pool facade owns the exact existing observed checkout and delegates to its connection
+provider; FileTransfer HTTP calls that facade and maps missing names through a pure helper without
+a pool argument or database work. This follows the existing request-context rule rather than adding
+a handler-local database-helper exception. Query labels follow their authoritative Staff owner;
 query text, values and call ordering remain unchanged. The intentional label changes are:
 
 | Existing SQL operation label | New provider operation label |
@@ -127,8 +135,8 @@ query text, values and call ordering remain unchanged. The intentional label cha
 | `staff.file_transfer.staff_display_name` | `staff.services.staff_identity_query.active_staff_display_name_on_connection` |
 | `staff.leave.repository.category` | `staff.services.staff_identity_query.effective_personnel_type_on_connection` |
 
-FileTransfer HTTP retains its existing `staff.file_transfer.staff_display_name` observed-checkout
-label; only SQL attribution moves to the authoritative provider. Preserve other operation labels,
+The Staff pool facade retains FileTransfer's existing `staff.file_transfer.staff_display_name`
+observed-checkout label; only SQL attribution moves to the authoritative provider. Preserve other operation labels,
 query observations and logging behavior, avoiding incidental observability changes.
 
 ### Leave

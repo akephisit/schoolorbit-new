@@ -2,8 +2,21 @@ use crate::career::StaffPersonnelType;
 use chrono::NaiveDate;
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::PgConnection;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
+
+/// Pool entry for consumers without an existing transaction.
+pub async fn active_staff_display_name(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<Option<String>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "staff.file_transfer.staff_display_name",
+    )
+    .await?;
+    active_staff_display_name_on_connection(&mut connection, user_id).await
+}
 
 /// Current active Staff name, read on the caller's existing connection or transaction.
 pub async fn active_staff_display_name_on_connection(
@@ -144,6 +157,15 @@ mod tests {
                     .is_some(),
                 eligible
             );
+            drop(connection);
+            assert_eq!(
+                active_staff_display_name(&pool, user)
+                    .await
+                    .unwrap()
+                    .is_some(),
+                eligible
+            );
+            connection = pool.acquire().await.unwrap();
         }
         sqlx::query("UPDATE users SET user_type='staff',status='active' WHERE id=$1")
             .bind(user)
