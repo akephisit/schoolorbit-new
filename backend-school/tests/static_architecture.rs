@@ -7398,7 +7398,7 @@ fn academic_router_codegen_stays_with_its_concrete_http_state() {
     }
     let app = read_source(manifest_dir().join("src/app.rs"));
     let startup = extract_braced_block(&app, "pub fn build_app", false);
-    let protected = extract_braced_block(&app, "fn protected_routes", false);
+    let protected = extract_source_block(&app, "fn protected_routes", false);
     let public = extract_braced_block(&app, "fn public_routes", false);
     for (owner, state) in [
         ("core", "AcademicCoreHttpState"),
@@ -7428,8 +7428,43 @@ fn academic_router_codegen_stays_with_its_concrete_http_state() {
                 .find("protected.route_layer(from_fn_with_state(runtime, session_middleware))")
                 .unwrap()
     );
-    assert!(protected.contains("school_question_bank::http::routes::question_bank_routes()"));
-    assert!(protected.contains("\"/question-bank\""));
+    let academic_mount =
+        extract_method_invocations(&protected, &lexical_mask(&protected, false), "nest")
+            .into_iter()
+            .find(|invocation| {
+                invocation.arguments.first().map(String::as_str) == Some("\"/api/academic\"")
+            })
+            .expect("academic management routes must be mounted inside protected_routes");
+    let academic_router = academic_mount
+        .arguments
+        .get(1)
+        .expect("academic mount must receive its bound router");
+    let question_bank = extract_method_invocations(
+        academic_router,
+        &lexical_mask(academic_router, false),
+        "nest",
+    )
+    .into_iter()
+    .find(|invocation| {
+        invocation.arguments.first().map(String::as_str) == Some("\"/question-bank\"")
+    })
+    .expect("question bank must remain nested inside protected academic management routes");
+    let question_bank_router = question_bank
+        .arguments
+        .get(1)
+        .expect("question-bank router");
+    assert!(question_bank_router
+        .starts_with("school_question_bank::http::routes::question_bank_routes().with_state("));
+    let state_bindings = extract_method_invocations(
+        question_bank_router,
+        &lexical_mask(question_bank_router, false),
+        "with_state",
+    );
+    assert_eq!(state_bindings.len(), 1);
+    assert_eq!(
+        state_bindings[0].arguments,
+        ["school_question_bank::http::state::QuestionBankHttpState::from_ref(state)"]
+    );
 }
 
 #[test]
@@ -8390,7 +8425,61 @@ fn coordinated_school_release_keeps_maintenance_until_acceptance() {
     let deploy =
         read_source(repo_root().join("scripts/lib/pipeline-remote/school-deploy-backend.sh"))
             .replace(r#"\""#, "\"");
-    assert!(child.contains("needs.promote-frontends.result == 'success'"));
+    let acceptance = child
+        .split_once("\n  accept-release:\n")
+        .expect("School acceptance job")
+        .1;
+    let next_job = Regex::new(r"(?m)^  [A-Za-z0-9_-]+:\s*$").unwrap();
+    let acceptance = &acceptance[..next_job
+        .find(acceptance)
+        .map_or(acceptance.len(), |job| job.start())];
+    let steps: Vec<_> = acceptance.split("\n      - name: ").collect();
+    assert!(steps[0].contains("    if: always()"));
+    let gate = steps
+        .get(1)
+        .expect("acceptance prerequisites must run first");
+    assert!(gate.starts_with("Require successful selected School release prerequisites\n"));
+    assert!(gate.contains("id: release-gate"));
+    assert!(gate.contains("set -euo pipefail"));
+    assert!(gate.contains("test \"$CI_RESULT\" = success"));
+    for binding in [
+        "CI_RESULT: ${{ needs.verify-release-ci.result }}",
+        "NEEDS_FRONTEND: ${{ needs.verify-release-ci.outputs.needs_frontend }}",
+        "DISCOVERY_RESULT: ${{ needs.discover-schools.result }}",
+        "STAGE_RESULT: ${{ needs.stage-frontends.result }}",
+        "FRONTEND_RESULT: ${{ needs.promote-frontends.result }}",
+    ] {
+        assert!(
+            gate.contains(binding),
+            "missing prerequisite binding: {binding}"
+        );
+    }
+    let selected_frontend = gate
+        .split_once("if [ \"$NEEDS_FRONTEND\" = true ]; then")
+        .expect("frontend acceptance must follow the selected scope")
+        .1
+        .split("\n          fi")
+        .next()
+        .unwrap();
+    for result in ["DISCOVERY_RESULT", "STAGE_RESULT", "FRONTEND_RESULT"] {
+        assert!(selected_frontend.contains(&format!("test \"${result}\" = success")));
+    }
+    assert!(!gate.contains("secrets."));
+    assert!(!acceptance.contains("continue-on-error:"));
+    let verification = steps
+        .iter()
+        .skip(2)
+        .find(|step| {
+            step.starts_with("Verify School release while public maintenance remains active\n")
+        })
+        .expect("private verification must follow the prerequisite gate");
+    assert!(verification.contains("if: steps.release-gate.outcome == 'success' && needs.verify-release-ci.outputs.needs_backend == 'true'"));
+    assert!(verification.contains("uses: appleboy/ssh-action@"));
+    assert!(verification.contains("secrets.SMOKE_PASSWORD"));
+    let summary = steps.last().expect("acceptance outcome summary");
+    assert!(summary.starts_with("Report bounded release outcome\n"));
+    assert!(summary.contains("if: always()"));
+    assert!(summary.contains("ACCEPT_RESULT: ${{ job.status }}"));
     assert!(parent.contains("needs.school.result == 'success'"));
     assert!(parent.contains("Verify proxy smoke then leave maintenance"));
     assert!(maintenance.contains("Public release readiness failed; maintenance restored"));
