@@ -176,6 +176,29 @@ for (const [name, mutation] of Object.entries({
     assert.notEqual(result.status, 0);
     assert.equal(existsSync(result.destination), false);
   });
+for (const location of ["root", "nested"])
+  for (const mode of [0o755, 0o500])
+    test(`published ${location} mode drift ${mode.toString(8).padStart(4, "0")} refuses replay`, (t) => {
+      const f = fixture(t),
+        first = f.install();
+      assert.equal(first.status, 0, first.stderr);
+      const directory =
+        location === "root"
+          ? first.destination
+          : path.join(first.destination, "scripts");
+      chmodSync(directory, mode);
+      const replay = f.install();
+      assert.notEqual(
+        replay.status,
+        0,
+        "published directory mode drift was accepted",
+      );
+      assert.equal(
+        statSync(directory).mode & 0o777,
+        mode,
+        "refusal must not repair or replace published state",
+      );
+    });
 for (const mode of ["changed", "extra-directory", "symlink"])
   test(`published bundle replay refuses ${mode}`, (t) => {
     const f = fixture(t),

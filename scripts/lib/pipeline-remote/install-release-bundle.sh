@@ -70,6 +70,11 @@ def directory(path, create=False):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
         fail()
 
+def published_directory(path):
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o555:
+        fail()
+
 # Reject ancestor substitution before opening any archive or publishing code.
 directory(root)
 incoming = root / 'release-bundle-incoming' / sha / digest / (run + '-' + attempt)
@@ -108,7 +113,7 @@ directory(bundles, create=True)
 directory(bundles / sha, create=True)
 destination = bundles / sha / digest
 if destination.exists() or destination.is_symlink():
-    directory(destination)
+    published_directory(destination)
     found = set()
     for path in destination.rglob('*'):
         if path.is_symlink():
@@ -116,7 +121,8 @@ if destination.exists() or destination.is_symlink():
         relative = path.relative_to(destination).as_posix()
         info = path.lstat()
         if stat.S_ISDIR(info.st_mode):
-            if info.st_mode & 0o222 or not any(name.startswith(relative + '/') for name in payload):
+            published_directory(path)
+            if not any(name.startswith(relative + '/') for name in payload):
                 fail()
             continue
         if not stat.S_ISREG(info.st_mode) or relative not in payload or info.st_uid != os.getuid():
