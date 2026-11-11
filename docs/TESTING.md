@@ -270,7 +270,7 @@ invalid pool without database queries; run that unit batch once without a databa
 The other domain owners expose their concrete routes under `http`; changed owners also run
 through the disposable database wrapper when their tests need PostgreSQL.
 The application owns `FromRef` state selection and injected realtime, result-lock,
-lifecycle and file-deletion adapters. Architecture guards inspect the actual crate
+lifecycle, profile-update and file-deletion adapters. Architecture guards inspect the actual crate
 implementation paths; cross-domain/database fixtures retain application-level ownership in
 `src/integration_tests`, and shared migration fixtures use `school-test-db`. Keep the full OpenAPI artifact byte-identical when
 moving handlers without changing their contract.
@@ -500,10 +500,11 @@ normal release dependency trees must expose neither `test-support` nor `school-t
 
 `school-auth` owns session credentials, policy, persistence, throttling, audit events, the identity
 cache, user-profile domain operations, and the root-independent auth runtime. Its package tests use
-dev-only database and test-support edges. `school-auth-http` owns cookie/CSRF, origin, trusted-client-address and tenant/session
-request-context adapters. The application package retains login/profile Axum handlers,
-File Platform profile-image orchestration, and deliberate
-cross-domain tests such as staff soft-delete followed by session invalidation.
+dev-only database and test-support edges. `school-auth-http` owns cookie/CSRF, origin,
+trusted-client-address and tenant/session request-context adapters, plus Auth/Consent handlers
+including login and profile transport. The application supplies its narrow `ProfileUpdatePort`
+with atomic Auth/File Platform profile-image orchestration and retains deliberate cross-domain
+tests such as staff soft-delete followed by session invalidation.
 
 The public school HTTP fixture also exercises the composed domain routers: anonymous access
 is refused across protected feature owners, unknown paths remain 404, authenticated `/api/auth/me`
@@ -892,6 +893,19 @@ ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integrat
 ./scripts/test_backend_school.sh integration_tests::auth::profile_integration_tests -- --nocapture
 ./scripts/test_backend_school.sh integration_tests::auth::staff_integration_tests -- --nocapture
 ./scripts/test_backend_school.sh --package school-academic-timetable-http websockets::security_tests -- --nocapture
+```
+
+The profile suite invokes the production application adapter through `dyn ProfileUpdatePort`.
+It checks promotion and profile acceptance together, existing-image omission/same/replacement/null
+semantics, exact foreign-owner/purpose/readiness refusals, rollback after promotion and surfaced
+repository cleanup failure after commit. Its cleanup observer requires the detached-file lifecycle
+transition to see the committed new profile and retained image. Synthetic unbound storage namespaces
+remain durable retry work rather than being reported physically deleted. The session HTTP suite
+also exercises real `build_app` profile attachment and a counted injected port to prove session,
+tenant and CSRF refusal happens before the command. Error-mapping units need no database:
+
+```bash
+cargo test --locked --manifest-path backend-school/Cargo.toml --bin backend-school adapters::auth_profile::tests
 ```
 
 The session-auth HTTP target also exercises encrypted Student Care data. Generate a fresh

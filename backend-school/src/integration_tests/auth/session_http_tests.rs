@@ -886,7 +886,7 @@ pub(crate) mod protected_router {
 
     use axum::{
         body::{to_bytes, Body, Bytes},
-        extract::{rejection::JsonRejection, DefaultBodyLimit, Extension, Path, State},
+        extract::{rejection::JsonRejection, DefaultBodyLimit, Extension, FromRef, Path, State},
         http::{header, HeaderValue, Method, Request, StatusCode},
         middleware::from_fn_with_state,
         response::{IntoResponse, Response},
@@ -1074,11 +1074,55 @@ pub(crate) mod protected_router {
             session_csrf_token(self.runtime.config.hmac_key(), self.tenant_a_id, session_id)
                 .expose_for_header()
         }
+
+        fn application_state(&self) -> crate::AppState {
+            crate::AppState {
+                admin_client: self.runtime.admin_client.clone(),
+                pool_manager: self.runtime.pool_manager.clone(),
+                auth_runtime: self.runtime.clone(),
+                websocket_manager: Arc::new(
+                    school_academic_timetable_http::websockets::WebSocketManager::new(),
+                ),
+                notification_channel: broadcast::channel(8).0,
+                work_event_channel: broadcast::channel(8).0,
+                file_platform: Arc::new(
+                    crate::integration_tests::staff::career_integration_tests::file_platform(),
+                ),
+                file_transfer: Arc::new(
+                    school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+                ),
+                certificate_verification_limiter: Arc::new(
+                    school_certificates::verification_limiter::CertificateVerificationLimiter::new(
+                    ),
+                ),
+            }
+        }
     }
 
     impl Drop for ProtectedFixture {
         fn drop(&mut self) {
             self.server.abort();
+        }
+    }
+
+    struct ProfilePortProbe {
+        calls: AtomicUsize,
+        expected_user_id: Uuid,
+    }
+
+    #[async_trait::async_trait]
+    impl school_auth_http::http::state::ProfileUpdatePort for ProfilePortProbe {
+        async fn update_profile(
+            &self,
+            _pool: &sqlx::PgPool,
+            user_id: Uuid,
+            _payload: school_auth::models::UpdateProfileRequest,
+        ) -> Result<school_auth::models::User, school_errors::AppError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(user_id, self.expected_user_id);
+            Err(school_errors::AppError::ValidationError(
+                "profile_port_probe_invoked".to_string(),
+            ))
         }
     }
 
@@ -1843,6 +1887,205 @@ pub(crate) mod protected_router {
     }
 
     #[tokio::test]
+    async fn profile_command_uses_production_composition_and_rejects_before_the_port() {
+        use crate::integration_tests::auth::profile_integration_tests::insert_cleanup_profile_image;
+        use school_auth_http::http::state::{AuthHttpState, ProfileUpdatePort};
+
+        let fixture = ProtectedFixture::new("profile_command_router_boundary").await;
+        let user_id = fixture
+            .insert_user(&fixture.tenant_a_pool, "profile-router-user", "active")
+            .await;
+        let other_user = fixture
+            .insert_user(&fixture.tenant_a_pool, "profile-router-other", "active")
+            .await;
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, first_name, last_name, user_type,
+                                status, nickname)
+             VALUES ($1, 'profile-router-other-tenant', 'unused', 'Other', 'Tenant', 'staff',
+                     'active', 'Other tenant')",
+        )
+        .bind(user_id)
+        .execute(&fixture._tenant_b_pool)
+        .await
+        .unwrap();
+        let old_image = insert_cleanup_profile_image(&fixture.tenant_a_pool, user_id).await;
+        let image = insert_cleanup_profile_image(&fixture.tenant_a_pool, user_id).await;
+        let state = fixture.application_state();
+        AuthHttpState::from_ref(&state)
+            .profile_updates
+            .update_profile(
+                &fixture.tenant_a_pool,
+                user_id,
+                serde_json::from_value(json!({
+                    "nickname": "Original", "profileImageFileId": old_image
+                }))
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (session_id, token) = fixture
+            .insert_session(&fixture.tenant_a_pool, user_id, 81, false)
+            .await;
+        let csrf = fixture.csrf(session_id);
+        let origin = "https://tenant-a.schoolorbit.test";
+        let app = crate::app::build_app(state);
+        let probe = Arc::new(ProfilePortProbe {
+            calls: AtomicUsize::new(0),
+            expected_user_id: user_id,
+        });
+        let probe_port: Arc<dyn ProfileUpdatePort> = probe.clone();
+        let probe_app = Router::new()
+            .nest(
+                "/api",
+                school_auth_http::http::routes::protected_routes().with_state(AuthHttpState {
+                    auth_runtime: fixture.runtime.clone(),
+                    profile_updates: probe_port,
+                }),
+            )
+            .route_layer(from_fn_with_state(
+                fixture.runtime.clone(),
+                session_middleware,
+            ));
+
+        let profile_request = |origin, token, csrf, image, nickname| {
+            let mut req = request(Method::PUT, "/api/auth/me/profile", origin, token, csrf);
+            req.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            *req.body_mut() =
+                Body::from(json!({"nickname": nickname, "profileImageFileId": image}).to_string());
+            req
+        };
+        for (request_origin, request_token, request_csrf, status) in [
+            (
+                Some(origin),
+                None,
+                Some(csrf.as_str()),
+                StatusCode::UNAUTHORIZED,
+            ),
+            (Some(origin), Some(&token), None, StatusCode::FORBIDDEN),
+            (
+                Some(origin),
+                Some(&token),
+                Some("wrong-csrf"),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                None,
+                Some(&token),
+                Some(csrf.as_str()),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                Some("https://evil.test"),
+                Some(&token),
+                Some(csrf.as_str()),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                Some("https://tenant-b.schoolorbit.test"),
+                Some(&token),
+                Some(csrf.as_str()),
+                StatusCode::UNAUTHORIZED,
+            ),
+        ] {
+            for router in [&app, &probe_app] {
+                let response = (*router)
+                    .clone()
+                    .oneshot(profile_request(
+                        request_origin,
+                        request_token,
+                        request_csrf,
+                        Uuid::new_v4(),
+                        "Refused mutation sentinel",
+                    ))
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), status);
+            }
+            assert_eq!(probe.calls.load(Ordering::SeqCst), 0);
+        }
+        let untouched: (Option<String>, Option<Uuid>) =
+            sqlx::query_as("SELECT nickname, profile_image_file_id FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_one(&fixture.tenant_a_pool)
+                .await
+                .unwrap();
+        assert_eq!(untouched, (Some("Original".to_string()), Some(old_image)));
+
+        let accepted = app
+            .oneshot(profile_request(
+                Some(origin),
+                Some(&token),
+                Some(&csrf),
+                image,
+                "Attached",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(accepted.into_body(), 32 * 1024).await.unwrap())
+                .unwrap();
+        assert_eq!(body["success"], true);
+        assert_eq!(body["data"]["profileImageFileId"], image.to_string());
+        assert_eq!(body["data"]["nickname"], "Attached");
+        let current: (Option<String>, Option<Uuid>) =
+            sqlx::query_as("SELECT nickname, profile_image_file_id FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_one(&fixture.tenant_a_pool)
+                .await
+                .unwrap();
+        assert_eq!(current, (Some("Attached".to_string()), Some(image)));
+        let retained: (String, Option<chrono::DateTime<Utc>>) =
+            sqlx::query_as("SELECT retention_class, expires_at FROM files WHERE id = $1")
+                .bind(image)
+                .fetch_one(&fixture.tenant_a_pool)
+                .await
+                .unwrap();
+        assert_eq!(retained, ("standard".to_string(), None));
+        let old_lifecycle: String =
+            sqlx::query_scalar("SELECT lifecycle_status FROM files WHERE id = $1")
+                .bind(old_image)
+                .fetch_one(&fixture.tenant_a_pool)
+                .await
+                .unwrap();
+        assert_eq!(old_lifecycle, "delete_requested");
+        let unrelated: (Option<String>, Option<Uuid>) =
+            sqlx::query_as("SELECT nickname, profile_image_file_id FROM users WHERE id = $1")
+                .bind(other_user)
+                .fetch_one(&fixture.tenant_a_pool)
+                .await
+                .unwrap();
+        assert_eq!(unrelated, (None, None));
+        let other_tenant: (Option<String>, Option<Uuid>) =
+            sqlx::query_as("SELECT nickname, profile_image_file_id FROM users WHERE id = $1")
+                .bind(user_id)
+                .fetch_one(&fixture._tenant_b_pool)
+                .await
+                .unwrap();
+        assert_eq!(other_tenant, (Some("Other tenant".to_string()), None));
+
+        let reached_port = probe_app
+            .oneshot(profile_request(
+                Some(origin),
+                Some(&token),
+                Some(&csrf),
+                image,
+                "Probe",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(reached_port.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(probe.calls.load(Ordering::SeqCst), 1);
+        let probe_body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(reached_port.into_body(), 32 * 1024).await.unwrap())
+                .unwrap();
+        assert_eq!(probe_body["error"], "profile_port_probe_invoked");
+    }
+
+    #[tokio::test]
     async fn concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries() {
         let fixture = ProtectedFixture::new("academic_router_boundary").await;
         let user_id = fixture
@@ -1851,25 +2094,7 @@ pub(crate) mod protected_router {
         let (session_id, token) = fixture
             .insert_session(&fixture.tenant_a_pool, user_id, 74, false)
             .await;
-        let state = crate::AppState {
-            admin_client: fixture.runtime.admin_client.clone(),
-            pool_manager: fixture.runtime.pool_manager.clone(),
-            auth_runtime: fixture.runtime.clone(),
-            websocket_manager: Arc::new(
-                school_academic_timetable_http::websockets::WebSocketManager::new(),
-            ),
-            notification_channel: broadcast::channel(8).0,
-            work_event_channel: broadcast::channel(8).0,
-            file_platform: Arc::new(
-                crate::integration_tests::staff::career_integration_tests::file_platform(),
-            ),
-            file_transfer: Arc::new(
-                school_staff::file_transfer::runtime::FileTransferRuntime::default(),
-            ),
-            certificate_verification_limiter: Arc::new(
-                school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
-            ),
-        };
+        let state = fixture.application_state();
         // Exercise the actual production FromRef projections, public/protected mounts and middleware.
         let app = crate::app::build_app(state);
         let origin = "https://tenant-a.schoolorbit.test";

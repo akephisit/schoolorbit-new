@@ -34,7 +34,10 @@ Certificate transport stays in `school-certificates-http`. `school-auth` owns id
 operations and consent; `school-auth-http` owns canonical cookie/origin/tenant/session context and
 Auth/Consent transport. `school-file-platform` owns storage/lifecycle and provider ports;
 `school-files-http` composes consumer-specific file authorization without a dependency back from
-storage to its consumers.
+storage to its consumers. Auth HTTP receives profile updates through `ProfileUpdatePort`;
+`src/adapters/auth_profile.rs` composes Auth's user mutation and Files' relationship promotion in
+one transaction, then requests replaced-image cleanup after commit. The shared request-context
+owner has no File Platform implementation dependency.
 
 Parents lives within Students, Achievement within Staff, Work within Workflow, and menu, feature
 toggles and route registration within Navigation. `school-administration` keeps settings, facility,
