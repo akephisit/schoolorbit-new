@@ -428,6 +428,13 @@ def validate_archive(archive, metadata):
         if expected[name]['type'] != 'file' or expected[name]['mode'] != record['mode'] or not re.fullmatch('[0-9a-f]{64}', record['sha256']):
             raise SnapshotRefused('source_metadata_type')
         source_records[name] = record
+    expected_source_files = {name for name, record in expected.items()
+                             if record['type'] == 'file' and name.split('/')[0] != 'target'}
+    if set(source_records) != expected_source_files:
+        raise SnapshotRefused('source_metadata_complete')
+    if expected.get('target', {}).get('type') != 'directory' or not any(
+            name.startswith('target/') and record['type'] == 'file' for name, record in expected.items()):
+        raise SnapshotRefused('target_inventory')
     if 'Cargo.lock' not in source_records or 'Cargo.toml' not in source_records:
         raise SnapshotRefused('source_metadata_identity')
     if hashlib.sha256(canonical(metadata.get('sourceManifest'))).hexdigest() != metadata.get('sourceManifestSha256'):
@@ -529,9 +536,41 @@ def materialize(root, metadata_path, configuration_hash):
     return {'restored': True, **proof}
 
 
+def select_recipe(preflight_outcome, native_path, materialization_path):
+    if preflight_outcome in {'failure', 'skipped'}:
+        return 'fresh-builder'
+    if preflight_outcome != 'success':
+        raise SnapshotRefused('preflight_outcome')
+    native = read_metadata(native_path)
+    if type(native.get('compatible')) is not bool:
+        raise SnapshotRefused('native_gate_result')
+    if not native['compatible']:
+        return 'fresh-builder'
+    materialized = read_metadata(materialization_path)
+    if type(materialized.get('compatible')) is not bool:
+        raise SnapshotRefused('materialization_gate_result')
+    return 'snapshot-builder' if materialized['compatible'] else 'fresh-builder'
+
+
+def materialize_gate(root, metadata_path, configuration_hash, output):
+    try:
+        proof = materialize(root, metadata_path, configuration_hash)
+        result = {'compatible': True, 'restore': proof}
+    except SnapshotRefused as error:
+        # Only typed cache-validation refusal selects the ordinary recipe. Native
+        # tool execution and unexpected late identity changes remain fatal.
+        if root.is_symlink() or root.is_file():
+            root.unlink()
+        elif root.is_dir():
+            shutil.rmtree(root)
+        result = {'compatible': False, 'refusal': str(error)}
+    output.write_bytes(canonical(result) + b'\n')
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('operation', choices=['identity', 'archive', 'preflight', 'native-gate', 'materialize'])
+    parser.add_argument('operation', choices=['identity', 'archive', 'preflight', 'native-gate', 'materialize-gate', 'materialize'])
     parser.add_argument('root', type=Path)
     parser.add_argument('--incoming', type=Path)
     parser.add_argument('--destination', type=Path)
@@ -546,6 +585,8 @@ def main():
             result = identity(args.root, args.cache_mode)
         elif args.operation == 'archive':
             result = create_archive(args.root, args.destination, args.configuration_hash)
+        elif args.operation == 'materialize-gate':
+            result = materialize_gate(args.root, args.metadata, args.configuration_hash, args.destination)
         elif args.operation == 'native-gate':
             result = native_gate(args.metadata, args.destination)
         elif args.operation == 'preflight':

@@ -45,8 +45,8 @@ export function validateSnapshotManifest(manifest, { run, repository, identity, 
     producerRunId: producer.runId, producerRunAttempt: producer.runAttempt };
 }
 
-const api = route => JSON.parse(execFileSync('gh', ['api', route], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }));
-const pages = route => JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', route], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }));
+const api = route => JSON.parse(execFileSync('gh', ['api', route], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] }));
+const pages = route => JSON.parse(execFileSync('gh', ['api', '--paginate', '--slurp', route], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] }));
 
 export function decodeArtifact(archive, filename) {
   if (!Buffer.isBuffer(archive) || archive.length > 1024 * 1024) throw new Error('artifact_size');
@@ -56,7 +56,7 @@ raw=sys.stdin.buffer.read(1048577)
 assert len(raw)<=1048576
 z=zipfile.ZipFile(io.BytesIO(raw)); names=z.namelist(); assert names==[sys.argv[1]]
 i=z.getinfo(sys.argv[1]); assert 0<i.file_size<=65536 and not i.is_dir() and not i.flag_bits&1
-mode=i.external_attr>>16; assert not stat.S_ISLNK(mode)
+mode=i.external_attr>>16; assert stat.S_IFMT(mode) in (0,stat.S_IFREG) and not mode&0o7000
 def unique(pairs):
  d={}
  for k,v in pairs:
@@ -67,11 +67,24 @@ value=json.loads(z.read(i),object_pairs_hook=unique)
 assert isinstance(value,dict)
 print(json.dumps(value,separators=(',',':')))
 `;
-  return JSON.parse(execFileSync('python3', ['-c', code, filename], { input: archive, maxBuffer: 128 * 1024, stdio: ['pipe', 'pipe', 'pipe'] }).toString());
+  return JSON.parse(execFileSync('python3', ['-c', code, filename], { input: archive, maxBuffer: 128 * 1024, timeout: 30_000, stdio: ['pipe', 'pipe', 'pipe'] }).toString());
 }
 
 const download = (repository, artifact, filename) => decodeArtifact(
-  execFileSync('gh', ['api', `/repos/${repository}/actions/artifacts/${artifact.id}/zip`], { maxBuffer: 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] }), filename);
+  execFileSync('gh', ['api', `/repos/${repository}/actions/artifacts/${artifact.id}/zip`], { maxBuffer: 1024 * 1024, timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] }), filename);
+
+export function artifactFromJobAttempt(artifact, job, run, uploadName) {
+  if (job?.run_id !== run.id || job.run_attempt !== run.run_attempt || job.head_sha !== run.head_sha ||
+      job.status !== 'completed' || job.conclusion !== 'success' || artifact?.workflow_run?.id !== run.id) return false;
+  const steps = job.steps?.filter(step => step.name === uploadName && step.conclusion === 'success') || [];
+  if (steps.length !== 1) return false;
+  const jobStart = Date.parse(job.started_at), jobEnd = Date.parse(job.completed_at);
+  const start = Date.parse(steps[0].started_at), end = Date.parse(steps[0].completed_at);
+  const created = Date.parse(artifact.created_at), updated = Date.parse(artifact.updated_at);
+  return [jobStart, jobEnd, start, end, created, updated].every(Number.isFinite) &&
+    jobStart <= start && start <= end && end <= jobEnd &&
+    start <= created && created <= updated && updated <= end;
+}
 
 export function resolveSnapshot({ repository, identity, list = pages, get = api, read = download }) {
   if (!REPOSITORY.test(repository || '')) throw new Error('repository');
@@ -86,10 +99,10 @@ export function resolveSnapshot({ repository, identity, list = pages, get = api,
       if (manifest.producer?.runAttempt !== run.run_attempt) continue;
       const jobs = list(`/repos/${repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?per_page=100`)
         .flatMap(page => page.jobs || []).filter(job => /(?:^| \/ )Prepare backend-school$/.test(job.name));
-      if (jobs.length !== 1 || jobs[0].status !== 'completed' || jobs[0].conclusion !== 'success' || jobs[0].head_sha !== run.head_sha) continue;
+      if (jobs.length !== 1 || !artifactFromJobAttempt(artifact, jobs[0], run, 'Publish run-bound Cargo snapshot locator')) continue;
       const prepared = list(`/repos/${repository}/actions/runs/${run.id}/artifacts?per_page=100`)
         .flatMap(page => page.artifacts || []).filter(a => !a.expired && a.name === 'prepared-backend-school' && a.workflow_run?.id === run.id);
-      if (prepared.length !== 1) continue;
+      if (prepared.length !== 1 || !artifactFromJobAttempt(prepared[0], jobs[0], run, 'Publish immutable OCI manifest')) continue;
       return validateSnapshotManifest(manifest, { run, repository, identity,
         prepared: read(repository, prepared[0], 'backend-school.json') });
     } catch {

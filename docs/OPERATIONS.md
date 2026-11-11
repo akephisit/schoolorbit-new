@@ -1183,9 +1183,18 @@ snapshot pair. Compiler seeding, frozen compiler fixture transport/priming, evid
 API/unchanged verification are declared separately. Builder network counters include all traffic.
 A successful producer retains only its run-owned scratch GHCR package for the consumer; the consumer
 removes that exact package after publishing evidence. Failed producers clean their own state. To
-reclaim an abandoned/expired producer, use phase `cleanup` with its exact run and attempt on the same
-reviewed commit/branch. The locator expires after 24 hours; artifact retention is two days. This
+reclaim an abandoned/expired producer, use phase `cleanup` with its exact run and attempt from reviewed
+Operations code in the same repository, only after its consumer has ended. Cleanup may address an
+older commit/branch; consumption still requires the exact producer commit and branch. The verified
+completed run derives the sole scratch package name; callers cannot supply package names. The locator expires after 24 hours; artifact retention is two days. This
 Operations origin is diagnostic and cannot authorize production snapshot selection.
+The trial conservatively requires 32 GiB initially free and 8 GiB at filesystem checkpoints,
+recording actual workspace and Docker free space rather than assuming runner capacity. Insufficient
+space fails readiness; it never triggers global pruning or lower reserves. Snapshot export can
+transiently hold three TAR copies. Each owned verification image is removed immediately, the
+measured builder is destroyed before the offline API container, and the local export TAR is removed
+after its digest-bound data push. Fixture export/import/bootstrap/removal costs remain explicit.
+Any disk preparation needed by production snapshot reuse must be charged to that variant.
 
 Production target snapshots remain **disabled** in `prepare.yml` until repeated full-cost trials
 show net gain and freshness diagnostics pass. If enabled later, the sole locator authority is an
@@ -1194,6 +1203,11 @@ hash. A mutable registry tag cannot authorize reuse. Branch manual image builds 
 package token capability; they cannot forge a trusted main run artifact or different bytes at a
 pinned digest. Missing, deleted, incompatible or corrupt snapshots fall back to the ordinary recipe.
 Application or compiler-tool build failures fail the job rather than triggering another build.
+One pure recipe selector consumes explicit preflight/native/materialization results before the
+single strict runtime build; malformed results are fatal. Publisher export through the compiler
+graph is also strict. Only the separate scratch/COPY-only carrier push and locator publication are
+optional. Prepared artifacts and snapshot locators must belong to the latest successful job attempt,
+with artifact creation/update inside that attempt's exact successful upload-step interval.
 
 The data carrier contains a controlled TAR and manifest. Complete path/type/mode/hash/duplicate/link
 validation precedes extraction into private empty staging; source and target are partitioned, source

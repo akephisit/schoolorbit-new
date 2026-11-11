@@ -99,11 +99,41 @@ class SnapshotFilesystem(unittest.TestCase):
                     self.restore()
                 self.assertFalse(self.destination.exists())
 
+    def test_coarse_filesystem_timestamp_readback_refuses_without_partial_state(self):
+        original_utime = os.utime
+        def coarse(path, *, ns, follow_symlinks=True):
+            rounded = tuple(value // 1_000_000_000 * 1_000_000_000 for value in ns)
+            return original_utime(path, ns=rounded, follow_symlinks=follow_symlinks)
+        with patch.object(cache.os, 'utime', side_effect=coarse):
+            with self.assertRaisesRegex(cache.SnapshotRefused, 'metadata_clock_precision'):
+                self.restore()
+        self.assertFalse(self.destination.exists())
+        self.assertEqual(list(self.root.glob('cargo-restore-*')), [])
+
     def test_incoming_symlink_never_followed(self):
         (self.incoming / 'src/main.rs').unlink()
         (self.incoming / 'src/main.rs').symlink_to('/etc/passwd')
         with self.assertRaises(cache.SnapshotRefused):
             self.restore()
+        self.assertFalse(self.destination.exists())
+
+    def test_missing_source_declaration_refuses_before_any_extraction(self):
+        self.metadata['sourceManifest'] = [record for record in self.metadata['sourceManifest']
+                                           if record['path'] != 'src/main.rs']
+        self.metadata['sourceManifestSha256'] = hashlib.sha256(cache.canonical(self.metadata['sourceManifest'])).hexdigest()
+        self.save_metadata()
+        with patch.object(cache.tempfile, 'mkdtemp', side_effect=AssertionError('extraction attempted')):
+            with self.assertRaisesRegex(cache.SnapshotRefused, 'source_metadata_complete'):
+                self.restore()
+        self.assertFalse(self.destination.exists())
+
+    def test_empty_target_inventory_refuses_before_any_extraction(self):
+        self.metadata['fileMetadata'] = [record for record in self.metadata['fileMetadata']
+                                         if not record['path'].startswith('target/')]
+        self.save_metadata()
+        with patch.object(cache.tempfile, 'mkdtemp', side_effect=AssertionError('extraction attempted')):
+            with self.assertRaisesRegex(cache.SnapshotRefused, 'target_inventory'):
+                self.restore()
         self.assertFalse(self.destination.exists())
 
     def test_archive_header_attacks_refuse_before_extraction(self):
@@ -144,6 +174,45 @@ class SnapshotFilesystem(unittest.TestCase):
         with patch.object(cache, 'native_identity', side_effect=RuntimeError('tool failed')):
             with self.assertRaisesRegex(RuntimeError, 'tool failed'):
                 cache.native_gate(self.root / 'prevalidated.json', self.root / 'gate.json')
+
+    def test_final_materialization_refusal_discards_state_and_returns_fallback_bool(self):
+        self.restore()
+        (self.destination / 'src/main.rs').write_text('corrupted after COPY')
+        output = self.root / 'materialization.json'
+        result = cache.materialize_gate(self.destination, self.root / 'prevalidated.json', 'configuration', output)
+        self.assertIs(result['compatible'], False)
+        self.assertFalse(self.destination.exists())
+        self.assertEqual(json.loads(output.read_text()), result)
+
+    def test_late_native_failure_is_fatal_in_materialization_gate(self):
+        self.restore()
+        with patch.object(cache, 'native_identity', return_value={'schemaVersion': 1, 'tool': 'different'}):
+            with self.assertRaisesRegex(RuntimeError, 'identity changed'):
+                cache.materialize_gate(self.destination, self.root / 'prevalidated.json', 'configuration', self.root / 'gate.json')
+        self.assertFalse((self.root / 'gate.json').exists())
+
+    def test_authoritative_recipe_selector_executes_refusal_and_success_paths(self):
+        native = self.root / 'native.json'
+        materialized = self.root / 'materialized.json'
+        for outcome in ('failure', 'skipped'):
+            self.assertEqual(cache.select_recipe(outcome, native, materialized), 'fresh-builder')
+        native.write_text('{"compatible":false}')
+        self.assertEqual(cache.select_recipe('success', native, materialized), 'fresh-builder')
+        native.write_text('{"compatible":true}')
+        materialized.write_text('{"compatible":false}')
+        self.assertEqual(cache.select_recipe('success', native, materialized), 'fresh-builder')
+        materialized.write_text('{"compatible":true}')
+        self.assertEqual(cache.select_recipe('success', native, materialized), 'snapshot-builder')
+        for path in (native, materialized):
+            path.write_text('{"compatible":"true"}')
+            with self.assertRaises(cache.SnapshotRefused):
+                cache.select_recipe('success', native, materialized)
+            path.write_text('{"compatible":true}')
+        native.unlink()
+        with self.assertRaises(FileNotFoundError):
+            cache.select_recipe('success', native, materialized)
+        with self.assertRaises(cache.SnapshotRefused):
+            cache.select_recipe('unexpected', native, materialized)
 
     def test_application_compiler_failure_propagates_through_tee(self):
         tools = self.root / 'tools'

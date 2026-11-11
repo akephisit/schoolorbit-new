@@ -2,6 +2,7 @@
 """Two-run Cargo snapshot experiment. Scratch packages never become release artifacts."""
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -13,10 +14,40 @@ from datetime import datetime, timedelta, timezone
 
 from benchmark_backend_cache import Benchmark, context, context_digest, network_bytes, run, compiler_evidence
 
+DOCKER_ROOT = None
+
 
 def save(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + '\n')
+
+
+def resource_checkpoint(output, label, minimum_gib=8):
+    paths = [output] + ([DOCKER_ROOT] if DOCKER_ROOT is not None else [])
+    filesystems = [{'path': str(path), 'freeBytes': os.statvfs(path).f_bavail * os.statvfs(path).f_frsize} for path in paths]
+    free = min(item['freeBytes'] for item in filesystems)
+    path = output / 'resource-checkpoints.json'
+    records = json.loads(path.read_text()) if path.exists() else []
+    records.append({'label': label, 'freeBytes': free, 'minimumBytes': minimum_gib * 1024**3,
+                    'timeNs': time.time_ns(), 'filesystems': filesystems, 'scope': 'runner temporary/workspace and Docker filesystem'})
+    save(path, records)
+    if free < minimum_gib * 1024**3:
+        raise ValueError('Diagnostic disk reserve reached; no global/shared pruning permitted')
+
+
+def required_seconds(values, key):
+    value = values.get(key)
+    if type(value) not in {float, int} or not math.isfinite(value) or value < 0:
+        raise ValueError('Required timing evidence unavailable: ' + key)
+    return value
+
+
+def validate_costs(value):
+    for key in ('commonProducerSeconds', 'snapshotExportSeconds', 'compilerFixtureExportSeconds',
+                'producerBuilderRemovalSeconds', 'frozenCompilerSeedSeconds', 'fixturePrimingSeconds'):
+        required_seconds(value.get('cost', {}), key)
+    for key in ('producerSnapshotOnlySeconds', 'consumerResolveSeconds'):
+        required_seconds(value.get('orchestration', {}), key)
 
 
 def image_digest(metadata):
@@ -47,6 +78,7 @@ class Trial:
             'cp -a /compiler-cache/. /var/cache/sccache/\n')
 
     def builder(self, label):
+        resource_checkpoint(self.output, label + '-before-builder')
         self.sequence += 1
         name = f'cargo-snapshot-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}-{self.sequence}'
         folder = self.output / label
@@ -65,6 +97,7 @@ class Trial:
         fixture_started = time.monotonic()
         run(self.base(name) + ['--target', 'compiler-cache-prime', '--build-context',
              f'compiler-cache={self.compiler_snapshot}', '--output', 'type=cacheonly', str(self.prime)], folder / 'compiler-prime.log')
+        resource_checkpoint(self.output, label + '-after-compiler-prime')
         return name, bootstrap, time.monotonic() - fixture_started
 
     def base(self, builder):
@@ -81,7 +114,7 @@ class Trial:
         artifacts = [record for record in artifacts if record.get('reason') == 'compiler-artifact']
         if not artifacts or not all(type(record.get('fresh')) is bool for record in artifacts):
             raise ValueError('Actual Cargo freshness evidence unavailable')
-        external = sorted((record['package_id'], tuple(record.get('features', [])),
+        external = sorted((record['package_id'], tuple(sorted(record.get('features', []))),
                            json.dumps(record['profile'], sort_keys=True))
                           for record in artifacts if record['package_id'].startswith('registry+'))
         if not external:
@@ -95,32 +128,53 @@ class Trial:
         return compiler
 
     def runtime(self, reference):
-        # Image verification is separate from production-style image push timing.
+        # Verification/cleanup is outside production-style push timing.
         run(['docker', 'pull', reference])
         self.local_images.append(reference)
-        config = json.loads(run(['docker', 'image', 'inspect', reference]))[0]['Config']
-        if config['User'] != 'appuser' or config['Cmd'] != ['/app/backend-school']:
-            raise ValueError('Runtime USER/CMD changed')
-        uid = run(['docker', 'run', '--rm', '--entrypoint', 'id', reference, '-u'])
-        binary = run(['docker', 'run', '--rm', '--entrypoint', 'sha256sum', reference, '/app/backend-school']).split()[0]
-        if uid != '1000' or not re.fullmatch(r'[0-9a-f]{64}', binary):
-            raise ValueError('Runtime identity unavailable')
-        return {'user': config['User'], 'uid': 1000, 'cmd': config['Cmd'], 'binarySha256': binary}
+        try:
+            config = json.loads(run(['docker', 'image', 'inspect', reference]))[0]['Config']
+            if config['User'] != 'appuser' or config['Cmd'] != ['/app/backend-school']:
+                raise ValueError('Runtime USER/CMD changed')
+            uid = run(['docker', 'run', '--rm', '--entrypoint', 'id', reference, '-u'])
+            binary = run(['docker', 'run', '--rm', '--entrypoint', 'sha256sum', reference, '/app/backend-school']).split()[0]
+            if uid != '1000' or not re.fullmatch(r'[0-9a-f]{64}', binary):
+                raise ValueError('Runtime identity unavailable')
+            return {'user': config['User'], 'uid': 1000, 'cmd': config['Cmd'], 'binarySha256': binary}
+        finally:
+            run(['docker', 'image', 'rm', reference])
+            self.local_images.remove(reference)
 
     def api(self, builder, source, folder, args):
+        started = time.monotonic()
         image = f'schoolorbit-cargo-snapshot-docs:{os.environ["GITHUB_RUN_ID"]}-{self.sequence}'
         self.local_images.append(image)
-        run(self.base(builder) + args + ['--target', 'builder', '--load', '--tag', image, str(source)], folder / 'documentation-builder.log')
-        document = run(['docker', 'run', '--rm', '--cpus=4', '--entrypoint', 'bash',
-                        '-v', f'{self.root / "scripts/export_benchmark_openapi.sh"}:/export_benchmark_openapi.sh:ro',
-                        image, '/export_benchmark_openapi.sh'])
-        if json.loads(document) != self.reference:
-            raise ValueError('Fresh offline OpenAPI changed')
-        return hashlib.sha256(document.encode()).hexdigest()
+        try:
+            run(self.base(builder) + args + ['--target', 'builder', '--load', '--tag', image, str(source)], folder / 'documentation-builder.log')
+            # All measured/evidence/unchanged work is complete. Avoid retaining a
+            # BuildKit filesystem alongside the large offline API container.
+            removal_seconds = self.remove_builder(builder)
+            resource_checkpoint(self.output, folder.name + '-before-api-container')
+            with (folder / 'offline-api.stderr').open('wb') as errors:
+                raw = subprocess.check_output(['docker', 'run', '--rm', '--cpus=4', '--entrypoint', 'bash',
+                    '-v', f'{self.root / "scripts/export_benchmark_openapi.sh"}:/export_benchmark_openapi.sh:ro',
+                    image, '/export_benchmark_openapi.sh'], stderr=errors)
+            (folder / 'offline-api.json').write_bytes(raw)
+            decoded = json.loads(raw)
+            if decoded != self.reference:
+                raise ValueError('Fresh offline OpenAPI changed')
+            return {'canonicalSha256': hashlib.sha256(json.dumps(decoded, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
+                    'rawSha256': hashlib.sha256(raw).hexdigest(), 'rawBytes': len(raw),
+                    'builderRemovalSeconds': removal_seconds,
+                    'verificationSeconds': time.monotonic() - started}
+        finally:
+            run(['docker', 'image', 'rm', image])
+            self.local_images.remove(image)
 
     def remove_builder(self, builder):
+        started = time.monotonic()
         run(['docker', 'buildx', 'rm', '--force', builder])
         self.builders.remove(builder)
+        return time.monotonic() - started
 
     def cleanup(self):
         for builder in self.builders:
@@ -155,26 +209,34 @@ def producer(root, output, buildkit_image):
         common = time.monotonic() - started
         snapshot_args = ['--build-arg', f'SCHOOL_CARGO_CONFIG_HASH={identity["buildConfigurationHash"]}']
         started = time.monotonic()
-        run(trial.base(builder) + snapshot_args + ['--target', 'cargo-snapshot', '--push', '--tag', package + ':cargo-snapshot',
-            '--metadata-file', str(folder / 'snapshot-image.json'), str(source)], folder / 'snapshot-export.log')
-        run(trial.base(builder) + snapshot_args + ['--target', 'cargo-snapshot-metadata', '--output',
-            f'type=local,dest={folder / "snapshot-metadata"}', str(source)], folder / 'snapshot-metadata.log')
+        carrier = folder / 'snapshot-data'
+        run(trial.base(builder) + snapshot_args + ['--target', 'cargo-snapshot', '--output',
+            f'type=local,dest={carrier}', str(source)], folder / 'snapshot-local-export.log')
+        (carrier / 'Dockerfile').write_text('FROM scratch\nCOPY snapshot.tar /snapshot.tar\nCOPY snapshot.json /snapshot.json\n')
+        run(trial.base(builder) + ['--push', '--tag', package + ':cargo-snapshot',
+            '--metadata-file', str(folder / 'snapshot-image.json'), str(carrier)], folder / 'snapshot-export.log')
+        image_digest(folder / 'snapshot-image.json')  # Verify immutable push metadata before retiring local transport state.
+        metadata = json.loads((folder / 'snapshot-data/snapshot.json').read_text())
+        (folder / 'snapshot-data/snapshot.tar').unlink()
         snapshot_seconds = time.monotonic() - started
+        resource_checkpoint(output, 'after-snapshot-export-and-push')
         after = network_bytes(builder)
+        compiler_export_started = time.monotonic()
         carrier = output / 'contexts/compiler-carrier'
         carrier.mkdir(parents=True)
         (carrier / 'Dockerfile').write_text('FROM scratch\nCOPY --from=compiler-cache / /compiler-cache/\n')
         run(trial.base(builder) + ['--build-context', f'compiler-cache={seed.snapshot}', '--push', '--tag', package + ':compiler-cache',
             '--metadata-file', str(folder / 'compiler-image.json'), str(carrier)], folder / 'compiler-export.log')
+        compiler_export_seconds = time.monotonic() - compiler_export_started
         cache_description = run(['docker', 'buildx', 'imagetools', 'inspect', package + ':producer-buildcache'])
         cache_matches = re.findall(r'^Digest:\s*(sha256:[0-9a-f]{64})\s*$', cache_description, re.M)
         if len(cache_matches) != 1:
             raise ValueError('Producer BuildKit cache digest unavailable')
         cache_digest = cache_matches[0]
-        metadata = json.loads((folder / 'snapshot-metadata/snapshot.json').read_text())
         runtime = trial.runtime(package + '@' + image_digest(folder / 'runtime-metadata.json'))
         compiler = trial.evidence(builder, source, folder, [])
-        api_hash = trial.api(builder, source, folder, [])
+        api_evidence = trial.api(builder, source, folder, [])
+        api_hash = api_evidence['canonicalSha256']
         value = {'schemaVersion': 1, 'producer': {'repository': os.environ['GITHUB_REPOSITORY'],
             'workflowPath': '.github/workflows/operations.yml', 'runId': os.environ['GITHUB_RUN_ID'],
             'runAttempt': int(os.environ['GITHUB_RUN_ATTEMPT']), 'sha': os.environ['GITHUB_SHA'],
@@ -183,19 +245,25 @@ def producer(root, output, buildkit_image):
                        'compilerCache': image_digest(folder / 'compiler-image.json'), 'buildkitCache': cache_digest},
             'identity': identity, 'sourceManifestHash': metadata['sourceManifestSha256'],
             'compilerSnapshotHash': seed.snapshot_digest, 'sourceContextHash': source_hash, 'buildkitImage': buildkit_image,
-            'cpus': 4, 'runtime': runtime, 'apiHash': api_hash,
+            'storage': {'snapshotArchiveBytes': metadata['archiveBytes'],
+                        'compilerFixtureBytes': sum(p.stat().st_size for p in seed.snapshot.rglob('*') if p.is_file()),
+                        'snapshotTarCopiesDuringExport': 3, 'apiDebugOutputForecastBytes': int(1.5 * 1024**3)},
+            'cpus': 4, 'runtime': runtime, 'apiHash': api_hash, 'apiEvidence': api_evidence,
             'cost': {'commonProducerSeconds': common + bootstrap, 'snapshotExportSeconds': snapshot_seconds,
                      'frozenCompilerSeedSeconds': seed_seconds, 'fixturePrimingSeconds': fixture,
+                     'compilerFixtureExportSeconds': compiler_export_seconds,
                      'networkReceivedBytes': after[0] - before[0], 'networkSentBytes': after[1] - before[1]},
             'compiler': compiler, 'expiresAt': (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()}
+        value['cost']['producerBuilderRemovalSeconds'] = api_evidence['builderRemovalSeconds']
         save(output / 'cargo-snapshot-trial-producer.json', value)
-        trial.remove_builder(builder)
     finally:
         trial.cleanup()
 
 
 def consumer(root, output, value, samples):
+    validate_costs(value)
     package = value['registryPackage']
+    fixture_started = time.monotonic()
     compiler_root = output / 'compiler-cache-snapshot'
     export_context = output / 'contexts/compiler-import'
     export_context.mkdir(parents=True)
@@ -204,14 +272,26 @@ def consumer(root, output, value, samples):
     import_builder = f'cargo-snapshot-import-{os.environ["GITHUB_RUN_ID"]}-{os.environ["GITHUB_RUN_ATTEMPT"]}'
     run(['docker', 'buildx', 'create', '--name', import_builder, '--driver', 'docker-container', '--driver-opt',
          f'image={value["buildkitImage"]}', '--bootstrap'])
+    fixture_bootstrap_seconds = time.monotonic() - fixture_started
     try:
         run(['docker', 'update', '--cpus', '4', f'buildx_buildkit_{import_builder}0'])
+        import_started = time.monotonic()
         run(['docker', 'buildx', 'build', '--builder', import_builder, '--build-context',
              f'compiler-carrier=docker-image://{package}@{value["images"]["compilerCache"]}', '--output', f'type=local,dest={compiler_root}', str(export_context)], output / 'compiler-import.log')
+        fixture_import_seconds = time.monotonic() - import_started
     finally:
+        removal_started = time.monotonic()
         run(['docker', 'buildx', 'rm', '--force', import_builder])
+        fixture_removal_seconds = time.monotonic() - removal_started
+    validation_started = time.monotonic()
     if context_digest(compiler_root) != value['compilerSnapshotHash']:
         raise ValueError('Cross-run frozen compiler state mismatch')
+    fixture_transport = {'producerExportSeconds': required_seconds(value['cost'], 'compilerFixtureExportSeconds'),
+                         'consumerBootstrapSeconds': fixture_bootstrap_seconds, 'consumerImportSeconds': fixture_import_seconds,
+                         'consumerRemovalSeconds': fixture_removal_seconds,
+                         'consumerValidationSeconds': time.monotonic() - validation_started,
+                         'consumerTotalSeconds': time.monotonic() - fixture_started,
+                         'includedInNetGain': False}
     trial = Trial(root, output, value['buildkitImage'], package, compiler_root)
     records = []
     try:
@@ -243,12 +323,18 @@ def consumer(root, output, value, samples):
                         native = json.loads((folder / 'native-gate/native-gate.json').read_text())
                         if native.get('compatible') is not True:
                             raise ValueError('Diagnostic snapshot refused by current native compiler identity')
+                        run(trial.base(builder) + args + ['--target', 'cargo-materialization-gate', '--output',
+                            f'type=local,dest={folder / "materialization-gate"}', str(source)], folder / 'materialization-gate.log')
+                        materialized = json.loads((folder / 'materialization-gate/materialization-gate.json').read_text())
+                        if materialized.get('compatible') is not True:
+                            raise ValueError('Diagnostic snapshot refused during final COPY validation')
                         preflight_seconds = time.monotonic() - preflight_started
                     tag = package + ':' + f'consumer-{os.environ["GITHUB_RUN_ID"]}-{label}'
                     run(trial.base(builder) + args + ['--target', 'runtime', '--push', '--tag', tag,
                         '--cache-to', f'type=registry,ref={tag}-buildcache,mode=max,image-manifest=true,oci-mediatypes=true',
                         '--metadata-file', str(folder / 'runtime-metadata.json'), str(source)], folder / 'runtime-build.log')
                     elapsed = time.monotonic() - started + bootstrap
+                    resource_checkpoint(output, label + '-after-runtime-push')
                     after = network_bytes(builder)
                     runtime = trial.runtime(package + '@' + image_digest(folder / 'runtime-metadata.json'))
                     compiler = trial.evidence(builder, source, folder, args)
@@ -275,14 +361,16 @@ def consumer(root, output, value, samples):
                     if not unchanged or not all(record.get('fresh') is True for record in unchanged):
                         raise ValueError('Explicit unchanged Cargo probe compiled or lacked evidence')
                     unchanged_seconds = time.monotonic() - unchanged_started
-                    api_hash = trial.api(builder, source, folder, args)
+                    api_evidence = trial.api(builder, source, folder, args)
+                    api_hash = api_evidence['canonicalSha256']
                     record = {'variant': variant, 'scenario': scenario, 'sample': sample, 'consumerSeconds': elapsed + (value['orchestration']['consumerResolveSeconds'] if variant == 'snapshot' else 0),
                         'producerSeconds': value['cost']['commonProducerSeconds'] + (value['cost']['snapshotExportSeconds'] + value['orchestration']['producerSnapshotOnlySeconds'] if variant == 'snapshot' else 0),
-                        'preflightAndNativeGateSeconds': preflight_seconds, 'restoration': restoration,
+                        'preflightNativeAndMaterializationSeconds': preflight_seconds, 'restoration': restoration,
                         'unchangedDiagnosticSeconds': unchanged_seconds, 'unchangedArtifacts': len(unchanged),
                         'authorityCost': value['orchestration'] if variant == 'snapshot' else {},
+                        'fixtureTransport': fixture_transport,
                         'fixturePrimingSeconds': fixture, 'sourceContextHash': source_hash,
-                        'compilerSnapshotHash': value['compilerSnapshotHash'], 'runtime': runtime, 'apiHash': api_hash,
+                        'compilerSnapshotHash': value['compilerSnapshotHash'], 'runtime': runtime, 'apiHash': api_hash, 'apiEvidence': api_evidence,
                         'compiler': compiler, 'dependencyMetricsReusedFromProducer': variant == 'snapshot',
                         'networkReceivedBytes': after[0] - before[0], 'networkSentBytes': after[1] - before[1],
                         'producerRunId': value['producer']['runId'], 'consumerRunId': os.environ['GITHUB_RUN_ID'],
@@ -290,7 +378,8 @@ def consumer(root, output, value, samples):
                     record['transitionSeconds'] = record['producerSeconds'] + record['consumerSeconds']
                     pair.append(record); records.append(record)
                     save(output / 'results.json', records)
-                    trial.remove_builder(builder)
+                    record['fixtureBuilderRemovalSeconds'] = api_evidence['builderRemovalSeconds']
+                    save(output / 'results.json', records)
                 if pair[0]['runtime'] != pair[1]['runtime'] or pair[0]['apiHash'] != pair[1]['apiHash']:
                     raise ValueError('Paired runtime binary/configuration or fresh offline API differs')
         pairs = [(next(r for r in records if r['scenario'] == scenario and r['sample'] == sample and r['variant'] == 'control'),
@@ -299,7 +388,7 @@ def consumer(root, output, value, samples):
         gains = [control['transitionSeconds'] - snapshot['transitionSeconds'] for control, snapshot in pairs]
         save(output / 'complete.json', {'complete': True, 'producerRunId': value['producer']['runId'],
              'consumerRunId': os.environ['GITHUB_RUN_ID'], 'distinctRuns': True,
-             'allPairsNetPositive': all(gain > 0 for gain in gains), 'pairedNetSeconds': gains,
+             'fixtureTransport': fixture_transport, 'allPairsNetPositive': all(gain > 0 for gain in gains), 'pairedNetSeconds': gains,
              'meanNetSeconds': statistics.mean(gains), 'productionActivation': 'OFF; requires reviewed repeated net gain and diagnostic freshness proof',
              'limits': ['Diagnostic Operations origin, not a production MAIN Pipeline origin attestation.',
                         'Controlled same4CPU runner class; hosted machines differ between runs.',
@@ -310,12 +399,20 @@ def consumer(root, output, value, samples):
 
 
 def main():
+    global DOCKER_ROOT
     phase = os.environ.get('SNAPSHOT_PHASE')
     if phase not in {'producer', 'consumer'} or os.cpu_count() != 4:
         raise ValueError('Producer/consumer phase on existing4CPU runner required')
     root = Path(__file__).resolve().parents[1]
     output = Path(os.environ['BENCH_OUTPUT']).resolve()
     output.mkdir(parents=True, exist_ok=True)
+    DOCKER_ROOT = Path(run(['docker', 'info', '--format', '{{.DockerRootDir}}']))
+    (output / 'initial-df.txt').write_text(run(['df', '-B1', str(output), str(DOCKER_ROOT)]) + '\n')
+    save(output / 'resource-plan.json', {'initialFreeGiBRequired': 32, 'stageFreeGiBRequired': 8,
+         'estimatedPeakAdditionalGiB': '20–30, not guaranteed fit',
+         'model': 'One owned builder; target ~3.3GiB, source/target carrier and strict export can temporarily hold three TAR copies; fixture ~1GiB; API debug ~1.5GiB. Verification images removed immediately; builder removed before API container.',
+         'cleanup': 'Only owned local builders/images/TARs; no global or shared pruning.'})
+    resource_checkpoint(output, 'initial', 32)
     if phase == 'producer':
         producer(root, output, os.environ['BENCH_BUILDKIT_IMAGE'])
     else:

@@ -212,50 +212,52 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/lib/pipeline-cargo-snapshot.mjs publisher-check
-      - name: Publish optional main-owned Cargo snapshot carrier
-        id: cargo-snapshot-build
+      - name: Export Cargo snapshot data through the strict compiler graph
+        id: cargo-snapshot-export
         if: steps.cargo-snapshot-publisher.outcome == 'success'
-        continue-on-error: true
         uses: docker/build-push-action@v7
         with:
           context: ./backend-school
           target: cargo-snapshot
           build-contexts: ${{ steps.image-build.outputs.cargo_context }}
           platforms: linux/amd64
+          outputs: type=local,dest=${{ runner.temp }}/cargo-snapshot-export
+          build-args: |
+            SCHOOL_COMPILER_CACHE=gha
+            SCHOOL_CARGO_BUILD_STAGE=${{ steps.image-build.outputs.cargo_stage }}
+            SCHOOL_CARGO_CONFIG_HASH=${{ steps.cargo-snapshot.outputs.configuration_hash }}
+            SCHOOL_CARGO_SOURCE_MANIFEST_HASH=${{ steps.cargo-snapshot.outputs.source_manifest_hash }}
+          secret-envs: |
+            sccache_gha_url=ACTIONS_RESULTS_URL
+            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
+      - name: Prepare a data-only Cargo carrier context
+        id: cargo-snapshot-metadata
+        if: steps.cargo-snapshot-export.outcome == 'success'
+        run: |
+          python3 - <<'PYTHON'
+          import os, pathlib, shutil
+          temporary = pathlib.Path(os.environ['RUNNER_TEMP'])
+          carrier = temporary / 'cargo-snapshot-export'
+          (carrier / 'Dockerfile').write_text('FROM scratch\nCOPY snapshot.tar /snapshot.tar\nCOPY snapshot.json /snapshot.json\n')
+          metadata = temporary / 'cargo-snapshot-metadata'
+          metadata.mkdir()
+          shutil.copyfile(carrier / 'snapshot.json', metadata / 'snapshot.json')
+          PYTHON
+      - name: Publish optional data-only Cargo snapshot carrier
+        id: cargo-snapshot-build
+        if: steps.cargo-snapshot-metadata.outcome == 'success'
+        continue-on-error: true
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/cargo-snapshot-export
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.cargo-snapshot.outputs.snapshot_package }}:buildcache
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          build-args: |
-            SCHOOL_COMPILER_CACHE=gha
-            SCHOOL_CARGO_BUILD_STAGE=${{ steps.image-build.outputs.cargo_stage }}
-            SCHOOL_CARGO_CONFIG_HASH=${{ steps.cargo-snapshot.outputs.configuration_hash }}
-            SCHOOL_CARGO_SOURCE_MANIFEST_HASH=${{ steps.cargo-snapshot.outputs.source_manifest_hash }}
-          secret-envs: |
-            sccache_gha_url=ACTIONS_RESULTS_URL
-            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
-      - name: Export Cargo snapshot metadata
-        id: cargo-snapshot-metadata
-        continue-on-error: true
-        if: steps.cargo-snapshot-build.outcome == 'success'
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend-school
-          target: cargo-snapshot-metadata
-          build-contexts: ${{ steps.image-build.outputs.cargo_context }}
-          platforms: linux/amd64
-          outputs: type=local,dest=${{ runner.temp }}/cargo-snapshot-metadata
-          build-args: |
-            SCHOOL_COMPILER_CACHE=gha
-            SCHOOL_CARGO_BUILD_STAGE=${{ steps.image-build.outputs.cargo_stage }}
-            SCHOOL_CARGO_CONFIG_HASH=${{ steps.cargo-snapshot.outputs.configuration_hash }}
-            SCHOOL_CARGO_SOURCE_MANIFEST_HASH=${{ steps.cargo-snapshot.outputs.source_manifest_hash }}
-          secret-envs: |
-            sccache_gha_url=ACTIONS_RESULTS_URL
-            sccache_gha_token=ACTIONS_RUNTIME_TOKEN
       - name: Bind Cargo snapshot digest to this main producer
         id: cargo-snapshot-manifest
         continue-on-error: true
-        if: steps.cargo-snapshot-metadata.outcome == 'success'
+        if: steps.cargo-snapshot-build.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           SNAPSHOT_DIGEST: ${{ steps.cargo-snapshot-build.outputs.digest }}

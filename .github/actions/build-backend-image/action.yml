@@ -28,13 +28,13 @@ inputs:
 outputs:
   metadata:
     description: BuildKit record and image metadata
-    value: ${{ steps.snapshot-build.outcome == 'success' && steps.snapshot-build.outputs.metadata || steps.build.outputs.metadata }}
+    value: ${{ steps.build.outputs.metadata }}
   cargo_stage:
     description: Actual successful compiler path, reused by evidence and snapshot export
-    value: ${{ steps.snapshot-build.outcome == 'success' && 'snapshot-builder' || 'fresh-builder' }}
+    value: ${{ steps.select.outputs.stage }}
   cargo_context:
     description: Data-only image context used by the successful validated snapshot path
-    value: ${{ steps.snapshot-build.outcome == 'success' && format('cargo-snapshot-data=docker-image://{0}', inputs.cargo_snapshot) || '' }}
+    value: ${{ steps.select.outputs.stage == 'snapshot-builder' && format('cargo-snapshot-data=docker-image://{0}', inputs.cargo_snapshot) || '' }}
 runs:
   using: composite
   steps:
@@ -80,7 +80,7 @@ runs:
       env:
         NATIVE_GATE: ${{ runner.temp }}/cargo-native-gate-${{ inputs.component }}/native-gate.json
       run: |
-        python3 - <<'PYTHON'
+        python3 -B - <<'PYTHON'
         import json, os
         with open(os.environ['NATIVE_GATE']) as stream:
             result = json.load(stream)
@@ -89,31 +89,55 @@ runs:
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             output.write('compatible=' + str(result['compatible']).lower() + '\n')
         PYTHON
-    - name: Try authorized Cargo snapshot
-      id: snapshot-build
+    - name: Validate final COPY materialization before application Cargo
+      id: snapshot-materialization-gate
       if: steps.snapshot-native-check.outputs.compatible == 'true'
       uses: docker/build-push-action@v7
       with:
         context: ./backend-school
-        target: runtime
+        target: cargo-materialization-gate
         platforms: linux/amd64
-        push: true
-        tags: ${{ inputs.reference }}
-        labels: org.schoolorbit.input-hash=${{ inputs.input_hash }}
+        outputs: type=local,dest=${{ runner.temp }}/cargo-materialization-gate-${{ inputs.component }}
         build-contexts: cargo-snapshot-data=docker-image://${{ inputs.cargo_snapshot }}
         cache-from: ${{ inputs.cache_from }}
-        cache-to: ${{ inputs.cache_to }}
         build-args: |
-          SCHOOL_COMPILER_CACHE=gha
-          SCHOOL_CARGO_BUILD_STAGE=snapshot-builder
           SCHOOL_CARGO_CONFIG_HASH=${{ inputs.cargo_configuration_hash }}
           SCHOOL_CARGO_SOURCE_MANIFEST_HASH=${{ inputs.cargo_source_manifest_hash }}
-        secret-envs: |
-          sccache_gha_url=ACTIONS_RESULTS_URL
-          sccache_gha_token=ACTIONS_RUNTIME_TOKEN
-    - name: Build selected OCI image
+    - name: Read final materialization compatibility
+      id: snapshot-materialization-check
+      if: steps.snapshot-materialization-gate.outcome == 'success'
+      shell: bash
+      env:
+        MATERIALIZATION_GATE: ${{ runner.temp }}/cargo-materialization-gate-${{ inputs.component }}/materialization-gate.json
+      run: |
+        python3 -B - <<'PYTHON'
+        import json, os
+        with open(os.environ['MATERIALIZATION_GATE']) as stream:
+            result = json.load(stream)
+        if type(result.get('compatible')) is not bool:
+            raise ValueError('Missing materialization compatibility result')
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('compatible=' + str(result['compatible']).lower() + '\n')
+        PYTHON
+    - name: Select the validated compiler recipe before the only application build
+      id: select
+      shell: bash
+      env:
+        PREFLIGHT_OUTCOME: ${{ steps.snapshot-preflight.outcome }}
+        NATIVE_GATE: ${{ runner.temp }}/cargo-native-gate-${{ inputs.component }}/native-gate.json
+        MATERIALIZATION_GATE: ${{ runner.temp }}/cargo-materialization-gate-${{ inputs.component }}/materialization-gate.json
+      run: |
+        python3 -B - <<'PYTHON'
+        import importlib.util, os, pathlib
+        spec = importlib.util.spec_from_file_location('snapshot', 'backend-school/scripts/cargo_snapshot.py')
+        snapshot = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(snapshot)
+        stage = snapshot.select_recipe(os.environ['PREFLIGHT_OUTCOME'], pathlib.Path(os.environ['NATIVE_GATE']), pathlib.Path(os.environ['MATERIALIZATION_GATE']))
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('stage=' + stage + '\n')
+        PYTHON
+    - name: Build selected OCI image with no compiler fallback
       id: build
-      if: steps.snapshot-preflight.outcome != 'success' || (steps.snapshot-native-gate.outcome == 'success' && steps.snapshot-native-check.outputs.compatible == 'false')
       uses: docker/build-push-action@v7
       with:
         context: ./${{ inputs.component }}
@@ -122,9 +146,14 @@ runs:
         push: true
         tags: ${{ inputs.reference }}
         labels: org.schoolorbit.input-hash=${{ inputs.input_hash }}
+        build-contexts: ${{ steps.select.outputs.stage == 'snapshot-builder' && format('cargo-snapshot-data=docker-image://{0}', inputs.cargo_snapshot) || '' }}
         cache-from: ${{ inputs.cache_from }}
         cache-to: ${{ inputs.cache_to }}
-        build-args: SCHOOL_COMPILER_CACHE=gha
+        build-args: |
+          SCHOOL_COMPILER_CACHE=gha
+          SCHOOL_CARGO_BUILD_STAGE=${{ steps.select.outputs.stage }}
+          SCHOOL_CARGO_CONFIG_HASH=${{ inputs.cargo_configuration_hash }}
+          SCHOOL_CARGO_SOURCE_MANIFEST_HASH=${{ inputs.cargo_source_manifest_hash }}
         secret-envs: |
           sccache_gha_url=ACTIONS_RESULTS_URL
           sccache_gha_token=ACTIONS_RUNTIME_TOKEN

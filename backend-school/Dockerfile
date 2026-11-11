@@ -88,13 +88,18 @@ RUN python3 /usr/local/lib/cargo_snapshot.py native-gate /app \
 FROM scratch AS cargo-native-gate
 COPY --from=snapshot-native-check /native-gate.json /native-gate.json
 
-FROM compiler-tools AS snapshot-builder
+FROM compiler-tools AS snapshot-materialized
 COPY scripts/cargo_snapshot.py /usr/local/lib/cargo_snapshot.py
 COPY --from=snapshot-restored /app/ /app/
 COPY --from=snapshot-restored /prevalidated.json /prevalidated.json
 ARG SCHOOL_CARGO_CONFIG_HASH
-RUN python3 /usr/local/lib/cargo_snapshot.py materialize /app --metadata /prevalidated.json \
-    --configuration-hash "$SCHOOL_CARGO_CONFIG_HASH"
+RUN python3 /usr/local/lib/cargo_snapshot.py materialize-gate /app --metadata /prevalidated.json \
+    --configuration-hash "$SCHOOL_CARGO_CONFIG_HASH" --destination /materialization-gate.json
+FROM scratch AS cargo-materialization-gate
+COPY --from=snapshot-materialized /materialization-gate.json /materialization-gate.json
+
+FROM snapshot-materialized AS snapshot-builder
+RUN python3 -c 'import json; assert json.load(open("/materialization-gate.json"))["compatible"] is True'
 ARG SCHOOL_COMPILER_CACHE=off
 RUN --mount=type=secret,id=sccache_gha_url,target=/run/secrets/sccache_gha_url \
     --mount=type=secret,id=sccache_gha_token,target=/run/secrets/sccache_gha_token \
