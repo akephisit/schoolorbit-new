@@ -1193,8 +1193,15 @@ the comparison. Results retain phase timings, layer sizes and total builder netw
 bytes are not cache-only or incremental-upload measurements. The existing cleanup removes only this
 run's scratch registry package/builders/images. Production policy stays unchanged until repeated
 complete-cost gains and preserved reuse justify a reviewed decision.
-This initial pilot may approach the 120-minute job budget because every fresh builder can recreate
-compiler tools. Inspect the bounded phase progress and completed-pair evidence. A production change
+Exporter runs use a 240-minute job bound with a 210-minute benchmark-step bound, followed by
+separate 15-minute evidence-upload and 10-minute cleanup bounds. This reserves five minutes for
+common setup and gives failed benchmark steps time to publish evidence and clean their scratch
+package. Other cache phases retain their effective 120-minute job bound. The larger exporter budget
+covers the compiler-fixture seed and all ten or fourteen strict samples; it does not reduce API,
+runtime or freshness checks, or change charged measurement costs. Inspect bounded phase progress
+and completed-pair evidence. A timed-out run with missing records cannot establish performance
+success; if cancellation prevents normal cleanup, use the existing trusted producer-run cleanup
+procedure for that exact run and attempt. A production change
 needs gains robust to seed/consumer variance; otherwise retain current policy or run a bounded
 counterbalanced producer repeat before deciding. An incomplete artifact or successful upload step
 does not override a failed benchmark job or establish completed comparison.

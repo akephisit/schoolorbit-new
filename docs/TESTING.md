@@ -159,6 +159,9 @@ For the separate exporter topology experiment run
 `node --test scripts/tests/pipeline-export-benchmark.test.mjs scripts/tests/pipeline-cache-benchmark.test.mjs`.
 These exercise isolated digest imports, charged dependency/runtime commands, complete counterbalanced
 producer/consumer sampling, runtime/API/compiler equivalence and build/evidence failure cleanup.
+Budget fixtures require a separate exporter execution limit and bounded always-on evidence/cleanup
+reserves, preserve the legacy phase bounds, and exercise both supported sample counts with all
+freshness, runtime-push and offline API checks retained.
 Dispatch the reviewed committed source with Operations `cache-benchmark`,
 `options={"phase":"exporters","samples":"2"}`. It requires CPU4 and pinned builders; it does not
 change production cache selection. Read declared common/diagnostic costs and seed/reuse limits in

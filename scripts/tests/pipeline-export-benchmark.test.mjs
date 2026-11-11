@@ -9,9 +9,67 @@ import {
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import test from "node:test";
 
 const repo = path.resolve(import.meta.dirname, "../..");
+const { parse: parseYaml } = createRequire(
+  path.join(repo, "frontend-school/package.json"),
+)("yaml");
+test("exporter timeout leaves bounded evidence and cleanup reserves without extending legacy phases", () => {
+  const job = parseYaml(
+    readFileSync(
+      path.join(repo, ".github/workflows/backend-cache-benchmark.yml"),
+      "utf8",
+    ),
+  ).jobs.benchmark;
+  const benchmark = job.steps.find(
+    (step) => step.run === "python3 -B scripts/benchmark_backend_export.py",
+  );
+  const upload = job.steps.find(
+    (step) => step.name === "Publish complete benchmark evidence",
+  );
+  const cleanup = job.steps.find(
+    (step) =>
+      step.name === "Remove only this run's disposable registry package",
+  );
+  const minutes = (value, phase) => {
+    if (Number.isInteger(value)) return value;
+    const expression = value.match(
+      /^\$\{\{ inputs\.phase == 'exporters' && (\d+) \|\| (\d+) \}\}$/,
+    );
+    assert.ok(
+      expression,
+      "timeouts may depend only on the bounded exporter phase",
+    );
+    return Number(expression[phase === "exporters" ? 1 : 2]);
+  };
+  assert.equal(benchmark.if, "inputs.phase == 'exporters'");
+  assert.equal(minutes(job["timeout-minutes"], "exporters"), 240);
+  assert.equal(benchmark["timeout-minutes"], 210);
+  assert.equal(minutes(upload["timeout-minutes"], "exporters"), 15);
+  assert.equal(minutes(cleanup["timeout-minutes"], "exporters"), 10);
+  assert.ok(
+    240 -
+      benchmark["timeout-minutes"] -
+      minutes(upload["timeout-minutes"], "exporters") -
+      minutes(cleanup["timeout-minutes"], "exporters") >=
+      5,
+  );
+  assert.match(upload.if, /^always\(\)/);
+  assert.match(cleanup.if, /^always\(\).*inputs\.phase == 'exporters'/);
+  assert.ok(job.steps.indexOf(benchmark) < job.steps.indexOf(upload));
+  assert.ok(job.steps.indexOf(upload) < job.steps.indexOf(cleanup));
+  assert.equal(benchmark["continue-on-error"], undefined);
+  assert.equal(upload["continue-on-error"], undefined);
+  assert.equal(cleanup["continue-on-error"], undefined);
+  for (const phase of ["compare", "producer", "consumer", "cleanup"]) {
+    const jobMinutes = minutes(job["timeout-minutes"], phase);
+    assert.equal(jobMinutes, 120);
+    assert.ok(minutes(upload["timeout-minutes"], phase) >= jobMinutes);
+    assert.ok(minutes(cleanup["timeout-minutes"], phase) >= jobMinutes);
+  }
+});
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), "export-benchmark-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -141,8 +199,14 @@ elif a[0]=='run':
  elif a[-1]=='/export_benchmark_openapi.sh': print('{"openapi":"3.1.0","paths":{}}')
  else: print('e'*64+'  /app/migrations/001.sql')
 `;
-for (const failure of ["", "dependencies", "runtime", "counter"])
-  test(`complete producer/consumer orchestration propagates failures and cleans owned builders (${failure || "success"})`, (t) => {
+for (const [failure, samples] of [
+  ["", 2],
+  ["", 3],
+  ["dependencies", 2],
+  ["runtime", 2],
+  ["counter", 2],
+])
+  test(`complete producer/consumer orchestration propagates failures and cleans owned builders (${failure || "success"}, samples=${samples})`, (t) => {
     const f = fixture(t),
       bin = path.join(f.root, "bin");
     mkdirSync(bin);
@@ -156,8 +220,13 @@ e.resource_checkpoint=lambda *args,**kwargs:None
 e.snapshot_resources.resource_checkpoint=e.resource_checkpoint
 e.main()
 records=json.loads((root/'output/results.json').read_text())
-assert len(records)==10
-assert [row['variant'] for row in records]==['runtime-max','dependencies-min','dependencies-min','runtime-max','runtime-max','dependencies-min','dependencies-min','runtime-max','runtime-max','dependencies-min']
+samples=int(os.environ['BENCH_SAMPLES'])
+assert len(records)==2+4*samples
+assert [row['variant'] for row in records[:2]]==['runtime-max','dependencies-min']
+for scenario in ['source','workspace']:
+ pairs=[[row for row in records if row['scenario']==scenario and row['sample']==sample] for sample in range(1,samples+1)]
+ assert all(len(pair)==2 and {row['variant'] for row in pair}==set(e.VARIANTS) for pair in pairs)
+ assert [row['variant'] for row in pairs[0]]==list(reversed([row['variant'] for row in pairs[1]]))
 for row in records[2:]:
  assert '@sha256:' in row['import'] and ':buildcache' not in row['import']
  assert row['transitionSeconds']==row['producerSeconds']+row['seconds']
@@ -172,7 +241,7 @@ assert json.loads((root/'output/complete.json').read_text())['complete'] is True
         GITHUB_RUN_ID: "123",
         GITHUB_RUN_ATTEMPT: "1",
         BENCH_BUILDKIT_IMAGE: "fixture@sha256:" + "a".repeat(64),
-        BENCH_SAMPLES: "2",
+        BENCH_SAMPLES: String(samples),
         ...(failure === "counter"
           ? { BAD_COUNTER: "1" }
           : { FAIL_PHASE: failure }),
@@ -194,5 +263,26 @@ assert json.loads((root/'output/complete.json').read_text())['complete'] is True
       JSON.stringify(calls),
       /schoolorbit-backend-school-cache|SCHOOL_CARGO_BUILD_STAGE=snapshot-builder|system.*prune/,
     );
-    if (!failure) assert.equal(created.length, 11);
+    if (!failure) {
+      const records = 2 + 4 * samples;
+      assert.equal(created.length, records + 1);
+      assert.equal(
+        calls.filter(
+          (call) =>
+            call[0] === "run" && call.at(-1) === "/export_benchmark_openapi.sh",
+        ).length,
+        records + 1,
+      );
+      assert.equal(
+        calls.filter((call) => call.includes("cargo-freshness-evidence"))
+          .length,
+        records,
+      );
+      assert.equal(
+        calls.filter(
+          (call) => call.includes("--push") && call.includes("runtime"),
+        ).length,
+        records,
+      );
+    }
   });
