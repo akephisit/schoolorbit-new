@@ -103,6 +103,7 @@ struct Fixture {
     pool: PgPool,
     state: AppState,
     tenant: TenantContext,
+    root_unit: Uuid,
     actor: Uuid,
     same_unit: Uuid,
     child_unit: Uuid,
@@ -172,11 +173,33 @@ impl Fixture {
             pool,
             state,
             tenant,
+            root_unit: root,
             actor: users[0],
             same_unit: users[1],
             child_unit: users[2],
             outside: users[3],
             student: users[4],
+        }
+    }
+    async fn grant_profile_scopes(&self) {
+        for code in [
+            codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT,
+            codes::STAFF_PROFILE_READ_ORGANIZATION_TREE,
+        ] {
+            let inserted = sqlx::query(
+                "INSERT INTO organization_permission_grants(organization_unit_id,permission_id,created_by,position_code) SELECT $1,id,$2,'member' FROM permissions WHERE code=$3 AND is_active=true",
+            )
+            .bind(self.root_unit)
+            .bind(self.actor)
+            .bind(code)
+            .execute(&self.pool)
+            .await
+            .unwrap();
+            assert_eq!(
+                inserted.rows_affected(),
+                1,
+                "active Root-unit grant: {code}"
+            );
         }
     }
     fn router(&self, permissions: &[&str]) -> Router {
@@ -249,6 +272,23 @@ impl Fixture {
 #[tokio::test]
 async fn career_reads_preserve_own_unit_tree_school_and_union_scope() {
     let f = Fixture::new("career_http_read_scope").await;
+    // Cached scope codes plus membership cannot replace an authoritative grant origin.
+    for (permission, target) in [
+        (codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT, f.same_unit),
+        (codes::STAFF_PROFILE_READ_ORGANIZATION_TREE, f.child_unit),
+    ] {
+        let (status, body) = f
+            .request(
+                &[permission],
+                "GET",
+                &format!("/api/staff/{target}/career-history"),
+                serde_json::json!({}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "ungranted {permission}");
+        assert_eq!(body["success"], false);
+    }
+    f.grant_profile_scopes().await;
     for (permissions, target, expected) in [
         (vec![codes::STAFF_PROFILE_READ_OWN], f.actor, StatusCode::OK),
         (
@@ -512,6 +552,7 @@ async fn career_routes_require_authentication_through_production_router() {
 #[tokio::test]
 async fn rank_milestone_overview_preserves_profile_scopes_status_and_missing_info() {
     let f = Fixture::new("rank_milestone_scopes").await;
+    f.grant_profile_scopes().await;
     for (permission, count) in [
         (codes::STAFF_PROFILE_READ_OWN, 1),
         (codes::STAFF_PROFILE_READ_ORGANIZATION_UNIT, 2),
