@@ -13,13 +13,13 @@ use tokio_tungstenite::{
 use uuid::Uuid;
 
 use crate::integration_tests::auth::session_http_tests::protected_router::ProtectedFixture;
-use school_academic_http::{
-    state::{AcademicHttpState, AcademicWebSocketState},
-    websockets::{timetable_websocket_handler, WebSocketManager},
-};
 use school_academic_timetable::{
     collaboration::TimetableMutationContext, models::timetable_block::*,
     services::timetable_block_service,
+};
+use school_academic_timetable_http::{
+    state::{AcademicTimetableHttpState, AcademicWebSocketState},
+    websockets::{timetable_websocket_handler, WebSocketManager},
 };
 
 use super::timetable_block_service_tests::{draft_version, migrated_pool};
@@ -104,18 +104,14 @@ impl Fixture {
         manager
             .clone()
             .spawn_authority_invalidation_task(auth.runtime.permission_events.subscribe());
-        let http = AcademicHttpState {
+        let http = AcademicTimetableHttpState {
             collaboration: manager.collaboration(),
             staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
-            placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
+
             auth_runtime: auth.runtime.clone(),
             websocket_manager: manager.clone(),
-            result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
-            assessment_publication:
-                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+
             publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
-            lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
-            retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
         };
         let ws = AcademicWebSocketState {
             collaboration: manager.collaboration(),
@@ -139,7 +135,7 @@ impl Fixture {
         let app = Router::new()
             .nest(
                 "/api/academic",
-                school_academic_http::routes::academic_routes().with_state(http),
+                school_academic_timetable_http::routes::academic_routes().with_state(http),
             )
             .nest(
                 "/api/facilities",

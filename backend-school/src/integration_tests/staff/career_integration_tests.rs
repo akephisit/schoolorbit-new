@@ -149,7 +149,9 @@ impl Fixture {
             pool_manager,
 
             auth_runtime,
-            websocket_manager: Arc::new(school_academic_http::websockets::WebSocketManager::new()),
+            websocket_manager: Arc::new(
+                school_academic_timetable_http::websockets::WebSocketManager::new(),
+            ),
             notification_channel: tokio::sync::broadcast::channel(8).0,
 
             work_event_channel: tokio::sync::broadcast::channel(8).0,

@@ -97,6 +97,25 @@ fn route_factory_source<'a>(source: &'a str, factory: &str) -> &'a str {
     &source[start..start + block.len()]
 }
 
+fn academic_transport_routes_source() -> String {
+    [
+        "core",
+        "delivery",
+        "assessment",
+        "timetable",
+        "results",
+        "lifecycle",
+    ]
+    .into_iter()
+    .map(|owner| {
+        read_source(
+            workspace_crate_dir(&format!("school-academic-{owner}-http")).join("src/routes.rs"),
+        )
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 fn application_route_source() -> String {
     let app = read_source(manifest_dir().join("src/app.rs"));
     let route_path = Regex::new(r#"(\.route\(\s*")(/[^"]*)(")"#).unwrap();
@@ -215,32 +234,130 @@ fn application_route_source() -> String {
             "school_certificates_http::",
         ),
         (
-            "school_academic_http::routes::public_routes",
-            "crates/school-academic-http/src/routes.rs",
-            "public_routes",
-            "/api",
-            "school_academic_http::",
-        ),
-        (
-            "school_academic_http::routes::personal_routes",
-            "crates/school-academic-http/src/routes.rs",
-            "personal_routes",
-            "/api",
-            "school_academic_http::",
-        ),
-        (
-            "school_academic_http::routes::academic_routes",
-            "crates/school-academic-http/src/routes.rs",
+            "school_academic_core_http::routes::academic_routes",
+            "crates/school-academic-core-http/src/routes.rs",
             "academic_routes",
             "/api/academic",
-            "school_academic_http::",
+            "school_academic_core_http::",
         ),
         (
-            "school_academic_http::routes::websocket_routes",
-            "crates/school-academic-http/src/routes.rs",
+            "school_academic_core_http::routes::academic_routes",
+            "crates/school-academic-core-http/src/core.rs",
+            "routes",
+            "/api/academic",
+            "school_academic_core_http::core::",
+        ),
+        (
+            "school_academic_core_http::routes::public_routes",
+            "crates/school-academic-core-http/src/routes.rs",
+            "public_routes",
+            "/api",
+            "school_academic_core_http::",
+        ),
+        (
+            "school_academic_core_http::routes::personal_routes",
+            "crates/school-academic-core-http/src/routes.rs",
+            "personal_routes",
+            "/api",
+            "school_academic_core_http::",
+        ),
+        (
+            "school_academic_delivery_http::routes::academic_routes",
+            "crates/school-academic-delivery-http/src/routes.rs",
+            "academic_routes",
+            "/api/academic",
+            "school_academic_delivery_http::",
+        ),
+        (
+            "school_academic_delivery_http::routes::academic_routes",
+            "crates/school-academic-delivery-http/src/delivery.rs",
+            "routes",
+            "/api/academic",
+            "school_academic_delivery_http::delivery::",
+        ),
+        (
+            "school_academic_delivery_http::routes::personal_routes",
+            "crates/school-academic-delivery-http/src/routes.rs",
+            "personal_routes",
+            "/api",
+            "school_academic_delivery_http::",
+        ),
+        (
+            "school_academic_assessment_http::routes::academic_routes",
+            "crates/school-academic-assessment-http/src/routes.rs",
+            "academic_routes",
+            "/api/academic",
+            "school_academic_assessment_http::",
+        ),
+        (
+            "school_academic_assessment_http::routes::academic_routes",
+            "crates/school-academic-assessment-http/src/gradebook.rs",
+            "routes",
+            "/api/academic",
+            "school_academic_assessment_http::gradebook::",
+        ),
+        (
+            "school_academic_assessment_http::routes::academic_routes",
+            "crates/school-academic-assessment-http/src/learner_evaluation.rs",
+            "routes",
+            "/api/academic",
+            "school_academic_assessment_http::learner_evaluation::",
+        ),
+        (
+            "school_academic_assessment_http::routes::personal_routes",
+            "crates/school-academic-assessment-http/src/routes.rs",
+            "personal_routes",
+            "/api",
+            "school_academic_assessment_http::",
+        ),
+        (
+            "school_academic_timetable_http::routes::academic_routes",
+            "crates/school-academic-timetable-http/src/routes.rs",
+            "academic_routes",
+            "/api/academic",
+            "school_academic_timetable_http::",
+        ),
+        (
+            "school_academic_timetable_http::routes::personal_routes",
+            "crates/school-academic-timetable-http/src/routes.rs",
+            "personal_routes",
+            "/api",
+            "school_academic_timetable_http::",
+        ),
+        (
+            "school_academic_timetable_http::routes::websocket_routes",
+            "crates/school-academic-timetable-http/src/routes.rs",
             "websocket_routes",
             "/ws",
-            "school_academic_http::",
+            "school_academic_timetable_http::",
+        ),
+        (
+            "school_academic_results_http::routes::academic_routes",
+            "crates/school-academic-results-http/src/routes.rs",
+            "academic_routes",
+            "/api/academic",
+            "school_academic_results_http::",
+        ),
+        (
+            "school_academic_results_http::routes::academic_routes",
+            "crates/school-academic-results-http/src/results.rs",
+            "routes",
+            "/api/academic",
+            "school_academic_results_http::results::",
+        ),
+        (
+            "school_academic_lifecycle_http::routes::academic_routes",
+            "crates/school-academic-lifecycle-http/src/routes.rs",
+            "academic_routes",
+            "/api/academic",
+            "school_academic_lifecycle_http::",
+        ),
+        (
+            "school_academic_lifecycle_http::routes::academic_routes",
+            "crates/school-academic-lifecycle-http/src/lifecycle.rs",
+            "routes",
+            "/api/academic",
+            "school_academic_lifecycle_http::lifecycle::",
         ),
         (
             "school_administration::settings::http::routes::public_routes",
@@ -411,7 +528,8 @@ fn school_dependencies_in_section(manifest: &str, section: &str) -> BTreeSet<Str
 #[test]
 fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_blocks.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable-http/src/handlers/timetable_blocks.rs"),
     ));
     let service = strip_comments(&read_source(
         workspace_crate_dir("school-academic-timetable")
@@ -734,18 +852,51 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-core",
                 "school-authorization",
                 "school-errors",
+                "school-permissions",
                 "school-database",
                 "school-tenancy",
             ],
         ),
         (
-            "school-academic-http",
+            "school-academic-core-http",
             &[
-                "school-academic-assessment",
+                "school-academic-core",
+                "school-academic-realtime",
+                "school-auth",
+                "school-auth-http",
+                "school-authorization",
+                "school-http",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-academic-delivery-http",
+            &[
                 "school-academic-core",
                 "school-academic-delivery",
-                "school-academic-lifecycle",
-                "school-academic-results",
+                "school-academic-realtime",
+                "school-auth",
+                "school-auth-http",
+                "school-authorization",
+                "school-http",
+            ],
+        ),
+        (
+            "school-academic-assessment-http",
+            &[
+                "school-academic-assessment",
+                "school-academic-realtime",
+                "school-auth",
+                "school-auth-http",
+                "school-http",
+                "school-permissions",
+            ],
+        ),
+        (
+            "school-academic-timetable-http",
+            &[
+                "school-academic-delivery",
+                "school-academic-realtime",
                 "school-academic-timetable",
                 "school-auth",
                 "school-auth-http",
@@ -753,10 +904,30 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-permissions",
-                "school-database",
                 "school-tenancy",
             ],
         ),
+        (
+            "school-academic-results-http",
+            &[
+                "school-academic-realtime",
+                "school-academic-results",
+                "school-auth",
+                "school-auth-http",
+                "school-http",
+            ],
+        ),
+        (
+            "school-academic-lifecycle-http",
+            &[
+                "school-academic-lifecycle",
+                "school-academic-realtime",
+                "school-auth",
+                "school-auth-http",
+                "school-http",
+            ],
+        ),
+        ("school-academic-realtime", &["school-errors"]),
         (
             "school-academic-lifecycle",
             &[
@@ -2345,17 +2516,18 @@ fn people_and_platform_handlers_use_typed_session_identity() {
 #[test]
 fn academic_group_a_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
-        "crates/school-academic-http/src/gradebook/handlers.rs",
-        "crates/school-academic-http/src/results/handlers.rs",
-        "crates/school-academic-http/src/core/handlers.rs",
-        "crates/school-academic-http/src/handlers/assessment.rs",
+        "crates/school-academic-assessment-http/src/gradebook/handlers.rs",
+        "crates/school-academic-results-http/src/results/handlers.rs",
+        "crates/school-academic-core-http/src/core/handlers.rs",
+        "crates/school-academic-assessment-http/src/handlers/assessment.rs",
     ]);
 }
 
 #[test]
 fn gradebook_handlers_keep_database_and_authorization_in_services() {
-    let handlers =
-        read_source(manifest_dir().join("crates/school-academic-http/src/gradebook/handlers.rs"));
+    let handlers = read_source(
+        manifest_dir().join("crates/school-academic-assessment-http/src/gradebook/handlers.rs"),
+    );
     for forbidden in ["sqlx::query", ".fetch_", ".execute(", ".begin(", "PgPool"] {
         assert!(
             !handlers.contains(forbidden),
@@ -2385,8 +2557,9 @@ fn gradebook_handlers_keep_database_and_authorization_in_services() {
 
 #[test]
 fn academic_result_handlers_keep_database_and_authorization_in_services() {
-    let handlers =
-        read_source(manifest_dir().join("crates/school-academic-http/src/results/handlers.rs"));
+    let handlers = read_source(
+        manifest_dir().join("crates/school-academic-results-http/src/results/handlers.rs"),
+    );
     for forbidden in ["sqlx::query", ".fetch_", ".execute(", ".begin(", "PgPool"] {
         assert!(
             !handlers.contains(forbidden),
@@ -2415,9 +2588,9 @@ fn academic_result_handlers_keep_database_and_authorization_in_services() {
 #[test]
 fn academic_group_b_handlers_use_typed_session_identity() {
     assert_typed_session_handlers(&[
-        "crates/school-academic-http/src/handlers/exam_schedule.rs",
-        "crates/school-academic-http/src/handlers/timetable_blocks.rs",
-        "crates/school-academic-http/src/handlers/timetable_templates.rs",
+        "crates/school-academic-assessment-http/src/handlers/exam_schedule.rs",
+        "crates/school-academic-timetable-http/src/handlers/timetable_blocks.rs",
+        "crates/school-academic-timetable-http/src/handlers/timetable_templates.rs",
     ]);
 }
 
@@ -2445,14 +2618,14 @@ fn only_auth_boundary_parses_browser_session_credentials() {
         "src/middleware/session.rs",
         "crates/school-auth-http/src/cookies.rs",
         "crates/school-auth-http/src/http/session_handlers.rs",
-        "crates/school-academic-http/src/websockets.rs",
+        "crates/school-academic-timetable-http/src/websockets.rs",
     ];
     let cookie_name_owners = [
         "src/middleware/session.rs",
         "crates/school-auth/src/config.rs",
         "crates/school-auth-http/src/cookies.rs",
         "crates/school-auth-http/src/http/session_handlers.rs",
-        "crates/school-academic-http/src/websockets.rs",
+        "crates/school-academic-timetable-http/src/websockets.rs",
     ];
 
     for file in backend_rs_files() {
@@ -2708,7 +2881,8 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
 #[test]
 fn personal_staff_timetable_stays_exact_own_scope_without_academic_list_permission() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_blocks.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable-http/src/handlers/timetable_blocks.rs"),
     ));
     let handler = extract_braced_block(&handlers, "pub async fn get_my_timetable", false);
 
@@ -3368,7 +3542,14 @@ fn module_rs_files() -> Vec<PathBuf> {
     [
         "src/system",
         "src/adapters",
-        "crates/school-academic-http/src",
+        "crates/school-academic-core-http/src",
+        "crates/school-academic-delivery-http/src",
+        "crates/school-academic-assessment-http/src",
+        "crates/school-academic-timetable-http/src",
+        "crates/school-academic-results-http/src",
+        "crates/school-academic-lifecycle-http/src",
+        "crates/school-academic-core/src/policies",
+        "crates/school-academic-delivery/src/policies",
         "crates/school-certificates-http/src",
         "crates/school-files-http/src",
         "crates/school-navigation/src",
@@ -4471,11 +4652,10 @@ fn staff_dashboard_endpoint_is_staff_scoped_and_aggregate_only() {
 
 #[test]
 fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
-    let routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/routes.rs"),
-    ));
+    let routes = strip_comments(&academic_transport_routes_source());
     let handler = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_blocks.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable-http/src/handlers/timetable_blocks.rs"),
     ));
     let service = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-timetable/src/services/daily_teaching.rs"),
@@ -4532,7 +4712,7 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
 #[test]
 fn academic_core_handlers_are_thin_authorized_and_signal_only_after_mutation() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/core/handlers.rs"),
+        manifest_dir().join("crates/school-academic-core-http/src/core/handlers.rs"),
     ));
     let context_service = strip_comments(&read_source(
         workspace_crate_dir("school-academic-core").join("src/services/context.rs"),
@@ -4596,7 +4776,7 @@ fn academic_core_handlers_are_thin_authorized_and_signal_only_after_mutation() {
 #[test]
 fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/core/handlers.rs"),
+        manifest_dir().join("crates/school-academic-core-http/src/core/handlers.rs"),
     ));
     let cases = [
         ("get_curriculum", "CurriculumAction::Read"),
@@ -4674,7 +4854,7 @@ fn academic_core_curriculum_handlers_enforce_resource_policy_contract() {
 #[test]
 fn academic_core_catalog_handlers_enforce_resource_policy_contract() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/core/handlers.rs"),
+        manifest_dir().join("crates/school-academic-core-http/src/core/handlers.rs"),
     ));
     let cases = [
         ("get_catalog_subject", "CatalogAction::Read"),
@@ -4764,11 +4944,9 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     }
 
     let academic_handler_root = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/handlers.rs"),
+        manifest_dir().join("crates/school-academic-assessment-http/src/handlers.rs"),
     ));
-    let academic_routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/routes.rs"),
-    ));
+    let academic_routes = strip_comments(&academic_transport_routes_source());
     let app_routes = strip_comments(&application_route_source());
     let parent_handlers = strip_comments(&read_source(
         manifest_dir().join("crates/school-students/src/parents/http/handlers.rs"),
@@ -4781,7 +4959,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
             "crates/school-academic-assessment/src/exam_schedule/services/published_views.rs",
         )));
     let exam_handler_path =
-        manifest_dir().join("crates/school-academic-http/src/handlers/exam_schedule.rs");
+        manifest_dir().join("crates/school-academic-assessment-http/src/handlers/exam_schedule.rs");
 
     assert!(
         academic_handler_root.contains("pub mod exam_schedule;"),
@@ -4789,7 +4967,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     );
     assert!(
         exam_handler_path.exists(),
-        "academic exam schedule handlers must live in crates/school-academic-http/src/handlers/exam_schedule.rs"
+        "academic exam schedule handlers must live in crates/school-academic-assessment-http/src/handlers/exam_schedule.rs"
     );
 
     let exam_handler = strip_comments(&read_source(exam_handler_path));
@@ -4939,7 +5117,7 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
 fn academic_curriculum_access_uses_school_permission_policy() {
     let curriculum_policy = strip_comments(&read_source(
         manifest_dir()
-            .join("crates/school-academic-http/src/policies/academic_curriculum_access_policy.rs"),
+            .join("crates/school-academic-core/src/policies/academic_curriculum_access_policy.rs"),
     ));
 
     assert!(curriculum_policy.contains("ACADEMIC_CURRICULUM_READ_SCHOOL"));
@@ -4954,17 +5132,17 @@ fn academic_curriculum_access_uses_school_permission_policy() {
 #[test]
 fn academic_curriculum_permission_decisions_live_in_policy_layer() {
     let policies_root =
-        read_source(workspace_crate_dir("school-academic-http").join("src/policies.rs"));
+        read_source(workspace_crate_dir("school-academic-core").join("src/policies.rs"));
     let catalog_policy = strip_comments(&read_source(
         manifest_dir()
-            .join("crates/school-academic-http/src/policies/academic_catalog_access_policy.rs"),
+            .join("crates/school-academic-core/src/policies/academic_catalog_access_policy.rs"),
     ));
     let curriculum_policy = strip_comments(&read_source(
         manifest_dir()
-            .join("crates/school-academic-http/src/policies/academic_curriculum_access_policy.rs"),
+            .join("crates/school-academic-core/src/policies/academic_curriculum_access_policy.rs"),
     ));
     let core_handler = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/core/handlers.rs"),
+        manifest_dir().join("crates/school-academic-core-http/src/core/handlers.rs"),
     ));
     let catalog_service = strip_comments(&read_source(
         workspace_crate_dir("school-academic-core").join("src/services/catalog.rs"),
@@ -4988,7 +5166,8 @@ fn academic_curriculum_permission_decisions_live_in_policy_layer() {
 #[test]
 fn academic_core_resource_policies_preserve_independent_scopes() {
     let policies_root =
-        read_source(workspace_crate_dir("school-academic-http").join("src/policies.rs"));
+        read_source(workspace_crate_dir("school-academic-core").join("src/policies.rs"))
+            + &read_source(workspace_crate_dir("school-academic-delivery").join("src/policies.rs"));
     let shared_policy = strip_comments(&read_source(
         workspace_crate_dir("school-authorization").join("src/academic_resource.rs"),
     ));
@@ -4997,16 +5176,16 @@ fn academic_core_resource_policies_preserve_independent_scopes() {
     ));
     let catalog_policy = strip_comments(&read_source(
         manifest_dir()
-            .join("crates/school-academic-http/src/policies/academic_catalog_access_policy.rs"),
+            .join("crates/school-academic-core/src/policies/academic_catalog_access_policy.rs"),
     ));
     let curriculum_policy = strip_comments(&read_source(
         manifest_dir()
-            .join("crates/school-academic-http/src/policies/academic_curriculum_access_policy.rs"),
+            .join("crates/school-academic-core/src/policies/academic_curriculum_access_policy.rs"),
     ));
-    let offering_policy = strip_comments(&read_source(
-        manifest_dir()
-            .join("crates/school-academic-http/src/policies/learning_offering_access_policy.rs"),
-    ));
+    let offering_policy =
+        strip_comments(&read_source(manifest_dir().join(
+            "crates/school-academic-delivery/src/policies/learning_offering_access_policy.rs",
+        )));
 
     for module in [
         "pub mod academic_catalog_access_policy;",
@@ -5150,7 +5329,7 @@ fn achievement_access_uses_resource_policy_and_no_plain_stderr_logging() {
 fn activity_offerings_use_the_shared_delivery_resource_policy() {
     let policies_root = read_source(manifest_dir().join("src/integration_tests/policies.rs"));
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery/handlers.rs"),
     ));
     let offerings = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-delivery/src/services/offerings.rs"),
@@ -5170,7 +5349,7 @@ fn activity_offerings_use_the_shared_delivery_resource_policy() {
 #[test]
 fn activity_delivery_routes_use_offerings_and_learning_groups() {
     let routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery.rs"),
     ));
 
     assert!(routes.contains("\"/offerings\""));
@@ -6684,7 +6863,8 @@ fn structured_logging_guard_allows_only_literal_cargo_build_directives() {
 
 #[test]
 fn timetable_websocket_handler_orders_session_auth_before_room_state() {
-    let source = read_source(manifest_dir().join("crates/school-academic-http/src/websockets.rs"));
+    let source =
+        read_source(manifest_dir().join("crates/school-academic-timetable-http/src/websockets.rs"));
     let params = extract_braced_block(&source, "pub struct WsParams", false);
 
     assert!(params.contains("pub academic_term_id: Uuid"));
@@ -6865,10 +7045,8 @@ fn timetable_websocket_authorization_authenticates_active_user_before_permission
 
     let app = read_source(manifest_dir().join("src/app.rs"));
     assert!(!app.contains("WebSocket Route (No standard middleware auth, uses Query Params)"));
-    assert!(
-        read_source(manifest_dir().join("crates/school-academic-http/src/routes.rs"))
-            .contains("get(crate::websockets::timetable_websocket_handler)")
-    );
+    assert!(academic_transport_routes_source()
+        .contains("get(crate::websockets::timetable_websocket_handler)"));
 }
 
 #[test]
@@ -7090,19 +7268,113 @@ fn public_and_protected_routes_are_explicitly_partitioned() {
 
 #[test]
 fn academic_router_codegen_stays_with_its_concrete_http_state() {
-    for (file, factory) in [
-        ("routes.rs", "academic_routes"),
-        ("routes.rs", "public_routes"),
-        ("routes.rs", "personal_routes"),
-        ("core.rs", "routes"),
-        ("delivery.rs", "routes"),
-        ("gradebook.rs", "routes"),
-        ("learner_evaluation.rs", "routes"),
-        ("lifecycle.rs", "routes"),
-        ("results.rs", "routes"),
+    for (owner, file, factory, state) in [
+        (
+            "core",
+            "routes.rs",
+            "academic_routes",
+            "AcademicCoreHttpState",
+        ),
+        ("core", "core.rs", "routes", "AcademicCoreHttpState"),
+        (
+            "core",
+            "routes.rs",
+            "public_routes",
+            "AcademicCoreHttpState",
+        ),
+        (
+            "core",
+            "routes.rs",
+            "personal_routes",
+            "AcademicCoreHttpState",
+        ),
+        (
+            "delivery",
+            "routes.rs",
+            "academic_routes",
+            "AcademicDeliveryHttpState",
+        ),
+        (
+            "delivery",
+            "delivery.rs",
+            "routes",
+            "AcademicDeliveryHttpState",
+        ),
+        (
+            "delivery",
+            "routes.rs",
+            "personal_routes",
+            "AcademicDeliveryHttpState",
+        ),
+        (
+            "assessment",
+            "routes.rs",
+            "academic_routes",
+            "AcademicAssessmentHttpState",
+        ),
+        (
+            "assessment",
+            "gradebook.rs",
+            "routes",
+            "AcademicAssessmentHttpState",
+        ),
+        (
+            "assessment",
+            "learner_evaluation.rs",
+            "routes",
+            "AcademicAssessmentHttpState",
+        ),
+        (
+            "assessment",
+            "routes.rs",
+            "personal_routes",
+            "AcademicAssessmentHttpState",
+        ),
+        (
+            "timetable",
+            "routes.rs",
+            "academic_routes",
+            "AcademicTimetableHttpState",
+        ),
+        (
+            "timetable",
+            "routes.rs",
+            "personal_routes",
+            "AcademicTimetableHttpState",
+        ),
+        (
+            "timetable",
+            "routes.rs",
+            "websocket_routes",
+            "AcademicWebSocketState",
+        ),
+        (
+            "results",
+            "routes.rs",
+            "academic_routes",
+            "AcademicResultsHttpState",
+        ),
+        (
+            "results",
+            "results.rs",
+            "routes",
+            "AcademicResultsHttpState",
+        ),
+        (
+            "lifecycle",
+            "routes.rs",
+            "academic_routes",
+            "AcademicLifecycleHttpState",
+        ),
+        (
+            "lifecycle",
+            "lifecycle.rs",
+            "routes",
+            "AcademicLifecycleHttpState",
+        ),
     ] {
         let source = read_source(
-            workspace_crate_dir("school-academic-http")
+            workspace_crate_dir(&format!("school-academic-{owner}-http"))
                 .join("src")
                 .join(file),
         );
@@ -7115,21 +7387,39 @@ fn academic_router_codegen_stays_with_its_concrete_http_state() {
             .next()
             .expect("factory signature");
         assert!(
-            signature.contains("AcademicHttpState"),
-            "{file}: use concrete narrow state"
+            signature.contains(state),
+            "{owner}/{file}: concrete owner state required"
         );
         assert!(
             source[..start].ends_with("#[inline(never)]\n"),
-            "{file}: keep the factory in its owning crate"
+            "{owner}/{file}: compile factory in owner"
         );
         assert!(!source.contains("AppState"));
     }
-
     let app = read_source(manifest_dir().join("src/app.rs"));
     let startup = extract_braced_block(&app, "pub fn build_app", false);
     let protected = extract_braced_block(&app, "fn protected_routes", false);
-    assert!(protected.contains("AcademicHttpState::from_ref(state)"));
-    assert!(protected.contains("school_academic_http::routes::personal_routes()"));
+    let public = extract_braced_block(&app, "fn public_routes", false);
+    for (owner, state) in [
+        ("core", "AcademicCoreHttpState"),
+        ("delivery", "AcademicDeliveryHttpState"),
+        ("assessment", "AcademicAssessmentHttpState"),
+        ("timetable", "AcademicTimetableHttpState"),
+        ("results", "AcademicResultsHttpState"),
+        ("lifecycle", "AcademicLifecycleHttpState"),
+    ] {
+        assert!(protected.contains(&format!(
+            "school_academic_{owner}_http::routes::academic_routes()"
+        )));
+        assert!(protected.contains(&format!(".with_state({state}::from_ref(state))")));
+    }
+    for owner in ["core", "delivery", "assessment", "timetable"] {
+        assert!(protected.contains(&format!(
+            "school_academic_{owner}_http::routes::personal_routes()"
+        )));
+    }
+    assert!(public.contains("school_academic_core_http::routes::public_routes()"));
+    assert!(public.contains("school_academic_timetable_http::routes::websocket_routes()"));
     assert!(
         startup
             .find("let protected = protected_routes(&state)")
@@ -7138,10 +7428,72 @@ fn academic_router_codegen_stays_with_its_concrete_http_state() {
                 .find("protected.route_layer(from_fn_with_state(runtime, session_middleware))")
                 .unwrap()
     );
-    let composition = app;
-    assert!(composition.contains("school_academic_http::routes::academic_routes()"));
-    assert!(composition.contains(".with_state(AcademicHttpState::from_ref(state))"));
-    assert!(composition.contains("school_question_bank::http::routes::question_bank_routes()"));
+    assert!(protected.contains("school_question_bank::http::routes::question_bank_routes()"));
+    assert!(protected.contains("\"/question-bank\""));
+}
+
+#[test]
+fn academic_transport_owners_remain_independent_and_realtime_stays_protocol_only() {
+    assert!(!workspace_crate_dir("school-academic-http").exists());
+    let app_manifest = read_source(manifest_dir().join("Cargo.toml"));
+    assert!(!app_manifest.contains("school-academic-http"));
+    let state_projections = read_source(manifest_dir().join("src/http_state.rs"));
+    assert!(!state_projections.contains("AcademicHttpState"));
+    for owner in [
+        "core",
+        "delivery",
+        "assessment",
+        "timetable",
+        "results",
+        "lifecycle",
+    ] {
+        let package = format!("school-academic-{owner}-http");
+        let manifest = read_source(workspace_crate_dir(&package).join("Cargo.toml"));
+        let dependencies = school_dependencies_in_section(&manifest, "dependencies");
+        assert!(dependencies.contains("school-academic-realtime"));
+        for dependency in dependencies {
+            assert!(
+                !dependency.starts_with("school-academic-") || !dependency.ends_with("-http"),
+                "{package} must use domain providers instead of sibling HTTP owners"
+            );
+        }
+        let state = read_source(workspace_crate_dir(&package).join("src/state.rs"));
+        assert!(!state.contains("AcademicHttpState"));
+        assert!(state.contains("#[derive(Clone)]"));
+        assert!(state.contains("Arc<dyn AcademicRealtimePort>"));
+        assert!(state_projections.contains(&format!(
+            "impl FromRef<AppState> for school_academic_{owner}_http::state::Academic"
+        )));
+    }
+    let realtime_manifest =
+        read_source(workspace_crate_dir("school-academic-realtime").join("Cargo.toml"));
+    let dependencies = realtime_manifest
+        .split("[dependencies]")
+        .nth(1)
+        .unwrap()
+        .split("\n[")
+        .next()
+        .unwrap();
+    let names: BTreeSet<_> = dependencies
+        .lines()
+        .filter_map(|line| line.split_once('=').map(|(name, _)| name.trim()))
+        .collect();
+    assert_eq!(names, BTreeSet::from(["school-errors", "serde", "uuid"]));
+    let protocol = strip_cfg_test_modules(&read_source(
+        workspace_crate_dir("school-academic-realtime").join("src/lib.rs"),
+    ));
+    for forbidden in [
+        "axum::",
+        "sqlx::",
+        "AuthRuntime",
+        "WebSocketManager",
+        "TimetableCollaborationRuntime",
+    ] {
+        assert!(
+            !protocol.contains(forbidden),
+            "protocol owner must not acquire runtime responsibility: {forbidden}"
+        );
+    }
 }
 
 #[test]
@@ -8123,9 +8475,11 @@ fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live()
 
 #[test]
 fn learning_group_teacher_endpoint_accepts_a_typed_put_body() {
-    let routes = read_source(manifest_dir().join("crates/school-academic-http/src/delivery.rs"));
-    let handlers =
-        read_source(manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"));
+    let routes =
+        read_source(manifest_dir().join("crates/school-academic-delivery-http/src/delivery.rs"));
+    let handlers = read_source(
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery/handlers.rs"),
+    );
     let models = read_source(manifest_dir().join("crates/school-academic-delivery/src/models.rs"));
 
     assert!(routes.contains("\"/learning-groups/{id}/teachers\""));
@@ -8138,7 +8492,7 @@ fn learning_group_teacher_endpoint_accepts_a_typed_put_body() {
 #[test]
 fn learning_delivery_handlers_enforce_policy_and_service_boundaries() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery/handlers.rs"),
     ));
 
     for handler_name in [
@@ -8519,7 +8873,7 @@ fn inactive_authorization_sources_are_filtered() {
 
 #[test]
 fn auto_scheduler_backend_and_schema_are_removed_without_deleting_timetable_entries() {
-    let router = read_source(manifest_dir().join("crates/school-academic-http/src/routes.rs"));
+    let router = academic_transport_routes_source();
     for removed in [
         "/scheduling/auto-schedule",
         "/scheduling/jobs",
@@ -9121,11 +9475,9 @@ fn academic_runtime_cannot_query_phase_b_legacy_schema() {
 #[test]
 fn academic_core_registers_only_clean_replacement_routes() {
     let core_routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/core.rs"),
+        manifest_dir().join("crates/school-academic-core-http/src/core.rs"),
     ));
-    let aggregate_routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/routes.rs"),
-    ));
+    let aggregate_routes = strip_comments(&academic_transport_routes_source());
 
     for required in [
         "/context/options",
@@ -9152,7 +9504,7 @@ fn academic_core_registers_only_clean_replacement_routes() {
     assert!(aggregate_routes
         .split_whitespace()
         .collect::<String>()
-        .contains("core::routes().merge("));
+        .contains("crate::core::routes()"));
     assert!(!core_routes.contains("/curriculum-versions/"));
     assert!(core_routes.contains("/curricula/{id}/levels"));
     assert!(core_routes.contains("/curriculum-levels/{id}/copy-program"));
@@ -9180,7 +9532,7 @@ fn academic_core_registers_only_clean_replacement_routes() {
 #[test]
 fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() {
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery/handlers.rs"),
     ));
 
     assert!(handlers
@@ -9284,11 +9636,9 @@ fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() 
 #[test]
 fn learning_delivery_registers_the_canonical_offering_group_and_roster_routes() {
     let routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery.rs"),
     ));
-    let aggregate_routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/routes.rs"),
-    ));
+    let aggregate_routes = strip_comments(&academic_transport_routes_source());
 
     for required in [
         "\"/offerings\"",
@@ -9308,16 +9658,16 @@ fn learning_delivery_registers_the_canonical_offering_group_and_roster_routes() 
             "missing delivery route: {required}"
         );
     }
-    assert!(aggregate_routes.contains("delivery::routes()"));
+    assert!(aggregate_routes.contains("crate::delivery::routes()"));
 }
 
 #[test]
 fn operational_academic_changes_register_authorized_contract_routes() {
     let routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery.rs"),
     ));
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery/handlers.rs"),
     ));
 
     for required in [
@@ -9339,7 +9689,8 @@ fn operational_academic_changes_register_authorized_contract_routes() {
 
     assert!(!routes.contains("/term-change-sets/{id}/cancel"));
     let version_handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery/version_handlers.rs"),
+        manifest_dir()
+            .join("crates/school-academic-delivery-http/src/delivery/version_handlers.rs"),
     ));
     let delete = extract_braced_block(&version_handlers, "pub async fn delete_version", false);
     assert!(delete.contains("OfferingAction::Manage"));
@@ -9393,7 +9744,7 @@ fn learning_delivery_contract_is_strictly_tagged_idempotent_and_pii_safe() {
         manifest_dir().join("crates/school-academic-delivery/src/models.rs"),
     ));
     let websockets = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/realtime.rs"),
+        manifest_dir().join("crates/school-academic-realtime/src/lib.rs"),
     ));
     let signal = extract_braced_block(&websockets, "LearningDeliveryChanged", false);
 
@@ -9455,11 +9806,18 @@ fn academic_runtime_contract_supports_delivery_idempotency_without_plaintext_pii
 fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
     let mut runtime_files = vec![
         manifest_dir().join("src/integration_tests/academic.rs"),
-        manifest_dir().join("crates/school-academic-http/src/routes.rs"),
-        manifest_dir().join("crates/school-academic-http/src/handlers/assessment.rs"),
-        manifest_dir().join("crates/school-academic-http/src/handlers/exam_schedule.rs"),
-        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_blocks.rs"),
-        manifest_dir().join("crates/school-academic-http/src/handlers/timetable_templates.rs"),
+        manifest_dir().join("crates/school-academic-core-http/src/routes.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/routes.rs"),
+        manifest_dir().join("crates/school-academic-assessment-http/src/routes.rs"),
+        manifest_dir().join("crates/school-academic-timetable-http/src/routes.rs"),
+        manifest_dir().join("crates/school-academic-results-http/src/routes.rs"),
+        manifest_dir().join("crates/school-academic-lifecycle-http/src/routes.rs"),
+        manifest_dir().join("crates/school-academic-assessment-http/src/handlers/assessment.rs"),
+        manifest_dir().join("crates/school-academic-assessment-http/src/handlers/exam_schedule.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable-http/src/handlers/timetable_blocks.rs"),
+        manifest_dir()
+            .join("crates/school-academic-timetable-http/src/handlers/timetable_templates.rs"),
         manifest_dir().join("crates/school-academic-assessment/src/assessment/models.rs"),
         manifest_dir().join("crates/school-academic-assessment/src/exam_schedule/models.rs"),
         manifest_dir().join("crates/school-academic-timetable/src/models/timetable.rs"),
@@ -9475,7 +9833,7 @@ fn converted_academic_consumers_cannot_reintroduce_legacy_runtime_identity() {
             .join("crates/school-academic-timetable/src/services/timetable_realtime_service.rs"),
         manifest_dir()
             .join("crates/school-academic-timetable/src/services/timetable_template_service.rs"),
-        manifest_dir().join("crates/school-academic-http/src/websockets.rs"),
+        manifest_dir().join("crates/school-academic-timetable-http/src/websockets.rs"),
     ];
     runtime_files.extend(list_files(
         manifest_dir().join("crates/school-academic-assessment/src/exam_schedule/services"),
@@ -9700,7 +10058,7 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
         manifest_dir().join("crates/school-academic-delivery/src/services/offerings.rs"),
     ));
     let delivery_handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-http/src/delivery/handlers.rs"),
+        manifest_dir().join("crates/school-academic-delivery-http/src/delivery/handlers.rs"),
     ));
     let timetable = strip_comments(&read_source(
         manifest_dir()
@@ -9964,7 +10322,7 @@ fn completed_personnel_migration_has_no_runtime_owner() {
 
 #[test]
 fn academic_routes_expose_staff_level_invigilator_actions() {
-    let source = include_str!("../crates/school-academic-http/src/routes.rs");
+    let source = include_str!("../crates/school-academic-assessment-http/src/routes.rs");
 
     assert!(
         source.contains("/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}")
@@ -9975,7 +10333,8 @@ fn academic_routes_expose_staff_level_invigilator_actions() {
 
 #[test]
 fn exam_schedule_handler_uses_staff_level_invigilator_services() {
-    let source = include_str!("../crates/school-academic-http/src/handlers/exam_schedule.rs");
+    let source =
+        include_str!("../crates/school-academic-assessment-http/src/handlers/exam_schedule.rs");
 
     assert!(source.contains("pub async fn assign_assignment_invigilator"));
     assert!(source.contains("pub async fn remove_assignment_invigilator"));

@@ -1,0 +1,25 @@
+[package]
+name = "school-academic-lifecycle-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-lifecycle/api-docs",
+    "school-auth/api-docs",
+    "school-http/api-docs",
+]
+
+[dependencies]
+axum = { workspace = true }
+school-academic-lifecycle = { workspace = true }
+school-academic-realtime = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-http = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

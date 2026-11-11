@@ -4,7 +4,6 @@ use crate::{
 };
 use async_trait::async_trait;
 use axum::extract::FromRef;
-use school_academic_http::state::AcademicHttpState;
 use school_certificates_http::state::{CertificateFileDeletionPort, CertificateHttpState};
 use school_errors::AppError;
 use school_file_platform::platform_service::FilePlatform;
@@ -15,18 +14,64 @@ pub(crate) static PLACEMENT_ROSTERS:
     school_academic_delivery::services::roster_tracking::RoomRosterTracking =
     school_academic_delivery::services::roster_tracking::RoomRosterTracking;
 
-impl FromRef<AppState> for AcademicHttpState {
+impl FromRef<AppState> for school_academic_core_http::state::AcademicCoreHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
-            collaboration: state.websocket_manager.collaboration(),
-            staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
             auth_runtime: state.auth_runtime.clone(),
             websocket_manager: state.websocket_manager.clone(),
-            result_locks: &RESULT_LOCKS,
+            placement_rosters: &PLACEMENT_ROSTERS,
+        }
+    }
+}
+
+impl FromRef<AppState> for school_academic_delivery_http::state::AcademicDeliveryHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            websocket_manager: state.websocket_manager.clone(),
             assessment_publication:
                 &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
             publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
-            placement_rosters: &PLACEMENT_ROSTERS,
+        }
+    }
+}
+
+impl FromRef<AppState> for school_academic_assessment_http::state::AcademicAssessmentHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            websocket_manager: state.websocket_manager.clone(),
+            result_locks: &RESULT_LOCKS,
+        }
+    }
+}
+
+impl FromRef<AppState> for school_academic_timetable_http::state::AcademicTimetableHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            websocket_manager: state.websocket_manager.clone(),
+            collaboration: state.websocket_manager.collaboration(),
+            staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
+            publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        }
+    }
+}
+
+impl FromRef<AppState> for school_academic_results_http::state::AcademicResultsHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            websocket_manager: state.websocket_manager.clone(),
+        }
+    }
+}
+
+impl FromRef<AppState> for school_academic_lifecycle_http::state::AcademicLifecycleHttpState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_runtime: state.auth_runtime.clone(),
+            websocket_manager: state.websocket_manager.clone(),
             lifecycle_providers: &LIFECYCLE_PROVIDERS,
             retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
         }
@@ -206,7 +251,7 @@ impl FromRef<AppState> for school_files_http::http::state::FileHttpState {
     }
 }
 
-impl FromRef<AppState> for school_academic_http::state::AcademicWebSocketState {
+impl FromRef<AppState> for school_academic_timetable_http::state::AcademicWebSocketState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             collaboration: state.websocket_manager.collaboration(),

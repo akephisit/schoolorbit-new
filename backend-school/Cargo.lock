@@ -802,12 +802,18 @@ dependencies = [
  "regex",
  "reqwest",
  "school-academic-assessment",
+ "school-academic-assessment-http",
  "school-academic-core",
+ "school-academic-core-http",
  "school-academic-delivery",
- "school-academic-http",
+ "school-academic-delivery-http",
  "school-academic-lifecycle",
+ "school-academic-lifecycle-http",
+ "school-academic-realtime",
  "school-academic-results",
+ "school-academic-results-http",
  "school-academic-timetable",
+ "school-academic-timetable-http",
  "school-administration",
  "school-admission",
  "school-attendance",
@@ -3952,6 +3958,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-academic-assessment-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "school-academic-assessment",
+ "school-academic-realtime",
+ "school-auth",
+ "school-auth-http",
+ "school-http",
+ "school-permissions",
+ "serde",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "school-academic-core"
 version = "0.1.0"
 dependencies = [
@@ -3977,6 +3999,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-academic-core-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chrono",
+ "chrono-tz",
+ "school-academic-core",
+ "school-academic-realtime",
+ "school-auth",
+ "school-auth-http",
+ "school-authorization",
+ "school-http",
+ "school-permissions",
+ "serde",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "school-academic-delivery"
 version = "0.1.0"
 dependencies = [
@@ -3989,6 +4030,7 @@ dependencies = [
  "school-authorization",
  "school-database",
  "school-errors",
+ "school-permissions",
  "school-tenancy",
  "school-test-db",
  "serde",
@@ -4002,35 +4044,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "school-academic-http"
+name = "school-academic-delivery-http"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "axum",
- "chrono",
- "chrono-tz",
- "dashmap",
- "futures",
- "school-academic-assessment",
  "school-academic-core",
  "school-academic-delivery",
- "school-academic-lifecycle",
- "school-academic-results",
- "school-academic-timetable",
+ "school-academic-realtime",
  "school-auth",
  "school-auth-http",
  "school-authorization",
- "school-database",
- "school-errors",
  "school-http",
- "school-permissions",
- "school-tenancy",
  "serde",
  "serde_json",
- "sqlx",
- "tokio",
  "tracing",
- "url",
  "utoipa",
  "uuid",
 ]
@@ -4063,6 +4090,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-academic-lifecycle-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "school-academic-lifecycle",
+ "school-academic-realtime",
+ "school-auth",
+ "school-auth-http",
+ "school-http",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-academic-realtime"
+version = "0.1.0"
+dependencies = [
+ "school-errors",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "school-academic-results"
 version = "0.1.0"
 dependencies = [
@@ -4088,6 +4139,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "school-academic-results-http"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "school-academic-realtime",
+ "school-academic-results",
+ "school-auth",
+ "school-auth-http",
+ "school-http",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
 name = "school-academic-timetable"
 version = "0.1.0"
 dependencies = [
@@ -4107,6 +4172,35 @@ dependencies = [
  "sha2 0.11.1",
  "sqlx",
  "tokio",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-academic-timetable-http"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "chrono",
+ "dashmap",
+ "futures",
+ "school-academic-delivery",
+ "school-academic-realtime",
+ "school-academic-timetable",
+ "school-auth",
+ "school-auth-http",
+ "school-authorization",
+ "school-errors",
+ "school-http",
+ "school-permissions",
+ "school-tenancy",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "url",
  "utoipa",
  "uuid",
 ]

@@ -1601,10 +1601,8 @@ pub(crate) mod protected_router {
             models::CreateAcademicTermChangeSetRequest,
             services::{change_sets, groups, versions},
         };
-        use school_academic_http::state::AcademicHttpState;
+        use school_academic_delivery_http::state::AcademicDeliveryHttpState;
 
-        static ROSTERS: school_academic_delivery::services::roster_tracking::RoomRosterTracking =
-            school_academic_delivery::services::roster_tracking::RoomRosterTracking;
         let fixture = ProtectedFixture::new("bulk_group_setup_http_success").await;
         let user_id = fixture
             .insert_user(&fixture.tenant_a_pool, "bulk-http-manager", "active")
@@ -1710,24 +1708,20 @@ pub(crate) mod protected_router {
                 .unwrap(),
         )
         .unwrap();
-        let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
-        let narrow = AcademicHttpState {
-            staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
+        let websocket_manager =
+            Arc::new(school_academic_timetable_http::websockets::WebSocketManager::new());
+        let narrow = AcademicDeliveryHttpState {
             auth_runtime: fixture.runtime.clone(),
             websocket_manager: websocket_manager.clone(),
-            collaboration: websocket_manager.collaboration(),
-            placement_rosters: &ROSTERS,
-            result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
+
             assessment_publication:
                 &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
             publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
-            lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
-            retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
         };
         let app = Router::new()
             .nest(
                 "/api/academic",
-                school_academic_http::routes::academic_routes().with_state(narrow),
+                school_academic_delivery_http::routes::academic_routes().with_state(narrow),
             )
             .route_layer(from_fn_with_state(
                 fixture.runtime.clone(),
@@ -1850,10 +1844,6 @@ pub(crate) mod protected_router {
 
     #[tokio::test]
     async fn concrete_academic_routes_preserve_session_tenant_csrf_and_permission_boundaries() {
-        use school_academic_http::state::AcademicHttpState;
-
-        static ROSTERS: school_academic_delivery::services::roster_tracking::RoomRosterTracking =
-            school_academic_delivery::services::roster_tracking::RoomRosterTracking;
         let fixture = ProtectedFixture::new("academic_router_boundary").await;
         let user_id = fixture
             .insert_user(&fixture.tenant_a_pool, "academic-router-user", "active")
@@ -1861,29 +1851,27 @@ pub(crate) mod protected_router {
         let (session_id, token) = fixture
             .insert_session(&fixture.tenant_a_pool, user_id, 74, false)
             .await;
-        let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
-        let narrow = AcademicHttpState {
-            staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
+        let state = crate::AppState {
+            admin_client: fixture.runtime.admin_client.clone(),
+            pool_manager: fixture.runtime.pool_manager.clone(),
             auth_runtime: fixture.runtime.clone(),
-            websocket_manager: websocket_manager.clone(),
-            collaboration: websocket_manager.collaboration(),
-            placement_rosters: &ROSTERS,
-            result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
-            assessment_publication:
-                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-            publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
-            lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
-            retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
+            websocket_manager: Arc::new(
+                school_academic_timetable_http::websockets::WebSocketManager::new(),
+            ),
+            notification_channel: broadcast::channel(8).0,
+            work_event_channel: broadcast::channel(8).0,
+            file_platform: Arc::new(
+                crate::integration_tests::staff::career_integration_tests::file_platform(),
+            ),
+            file_transfer: Arc::new(
+                school_staff::file_transfer::runtime::FileTransferRuntime::default(),
+            ),
+            certificate_verification_limiter: Arc::new(
+                school_certificates::verification_limiter::CertificateVerificationLimiter::new(),
+            ),
         };
-        let app = Router::new()
-            .nest(
-                "/api/academic",
-                school_academic_http::routes::academic_routes().with_state(narrow),
-            )
-            .route_layer(from_fn_with_state(
-                fixture.runtime.clone(),
-                session_middleware,
-            ));
+        // Exercise the actual production FromRef projections, public/protected mounts and middleware.
+        let app = crate::app::build_app(state);
         let origin = "https://tenant-a.schoolorbit.test";
 
         for path in [
@@ -1894,6 +1882,12 @@ pub(crate) mod protected_router {
             "/api/academic/lifecycle/promotion-runs",
             "/api/academic/results/effective",
             "/api/academic/exam-schedules",
+            "/api/me/academic-context/options",
+            "/api/me/activity-registrations",
+            "/api/me/exam-schedules",
+            "/api/staff/exam-schedules",
+            "/api/me/timetable",
+            "/api/academic/question-bank/options",
         ] {
             let response = app
                 .clone()
@@ -1901,6 +1895,70 @@ pub(crate) mod protected_router {
                 .await
                 .expect("protected academic route");
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        }
+
+        let public = app
+            .clone()
+            .oneshot(request(
+                Method::GET,
+                "/api/public/academic-context/options",
+                Some(origin),
+                None,
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(public.status(), StatusCode::OK);
+        let public_body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(public.into_body(), 1_048_576)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(public_body["success"], true);
+        for personal_path in [
+            "/api/me/academic-context/options",
+            "/api/me/activity-registrations",
+        ] {
+            for (request_origin, expected) in [
+                (origin, StatusCode::FORBIDDEN),
+                (
+                    "https://tenant-b.schoolorbit.test",
+                    StatusCode::UNAUTHORIZED,
+                ),
+            ] {
+                let response = app
+                    .clone()
+                    .oneshot(request(
+                        Method::GET,
+                        personal_path,
+                        Some(request_origin),
+                        Some(&token),
+                        None,
+                    ))
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    response.status(),
+                    expected,
+                    "{personal_path} {request_origin}"
+                );
+            }
+        }
+        let activity_path = format!("/api/me/activity-registrations/{}", Uuid::new_v4());
+        for csrf in [None, Some(fixture.csrf(session_id))] {
+            let response = app
+                .clone()
+                .oneshot(request(
+                    Method::POST,
+                    &activity_path,
+                    Some(origin),
+                    Some(&token),
+                    csrf.as_deref(),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
 
         let timetable_list =

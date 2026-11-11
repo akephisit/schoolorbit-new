@@ -1001,7 +1001,9 @@ async fn actual_app_catalog_routes_share_the_session_boundary_and_exact_prefix()
             session_events: tokio::sync::broadcast::channel(8).0,
             permission_events: permission_events.clone(),
         },
-        websocket_manager: Arc::new(school_academic_http::websockets::WebSocketManager::new()),
+        websocket_manager: Arc::new(
+            school_academic_timetable_http::websockets::WebSocketManager::new(),
+        ),
         notification_channel: tokio::sync::broadcast::channel(8).0,
 
         work_event_channel: tokio::sync::broadcast::channel(8).0,

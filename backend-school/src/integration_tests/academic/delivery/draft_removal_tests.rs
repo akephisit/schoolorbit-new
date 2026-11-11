@@ -1039,15 +1039,26 @@ pub(super) fn delivery_router(pool: &PgPool, actor: Uuid, permissions: &[&str]) 
         pool,
         actor,
         permissions,
-        school_academic_http::delivery::routes(),
+        school_academic_delivery_http::delivery::routes(),
+        |runtime, manager| school_academic_delivery_http::state::AcademicDeliveryHttpState {
+            auth_runtime: runtime,
+            websocket_manager: manager,
+            assessment_publication:
+                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
+            publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        },
     )
 }
 
-pub(crate) fn academic_router(
+pub(crate) fn academic_router<S: Clone + Send + Sync + 'static>(
     pool: &PgPool,
     actor: Uuid,
     permissions: &[&str],
-    routes: axum::Router<school_academic_http::state::AcademicHttpState>,
+    routes: axum::Router<S>,
+    select_state: impl FnOnce(
+        school_auth::runtime::AuthRuntime,
+        std::sync::Arc<school_academic_timetable_http::websockets::WebSocketManager>,
+    ) -> S,
 ) -> axum::Router {
     use school_auth::{
         config::SessionConfig, runtime::AuthRuntime, session_crypto::SessionHmacKey,
@@ -1090,19 +1101,9 @@ pub(crate) fn academic_router(
         actor,
         "staff",
     );
-    let websocket_manager = Arc::new(school_academic_http::websockets::WebSocketManager::new());
-    let state = school_academic_http::state::AcademicHttpState {
-        staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
-        placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
-        auth_runtime: runtime,
-        websocket_manager: websocket_manager.clone(),
-        collaboration: websocket_manager.collaboration(),
-        result_locks: &crate::adapters::academic_result_locks::RESULT_LOCKS,
-        assessment_publication: &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        lifecycle_providers: &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
-        retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
-    };
+    let websocket_manager =
+        Arc::new(school_academic_timetable_http::websockets::WebSocketManager::new());
+    let state = select_state(runtime, websocket_manager);
     axum::Router::new()
         .nest("/api/academic", routes)
         .layer(axum::Extension(session))
@@ -2862,19 +2863,27 @@ async fn timetable_placement_preview_http_authorizes_persisted_source_resources(
     ] {
         let routes = axum::Router::new().route(
             "/timetable-blocks/placement-preview",
-            post(school_academic_http::handlers::timetable_blocks::preview_placement),
+            post(school_academic_timetable_http::handlers::timetable_blocks::preview_placement),
         );
-        let response = academic_router(&pool, actor, &[permission], routes)
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/api/academic/timetable-blocks/placement-preview")
-                    .header("content-type", "application/json")
-                    .body(Body::from(serde_json::to_vec(&payload).unwrap()))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let response = academic_router(&pool, actor, &[permission], routes, |runtime, manager| {
+            school_academic_timetable_http::state::AcademicTimetableHttpState {
+                auth_runtime: runtime,
+                collaboration: manager.collaboration(),
+                websocket_manager: manager,
+                staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
+                publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+            }
+        })
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/academic/timetable-blocks/placement-preview")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
         let status = response.status();
         let body = axum::body::to_bytes(response.into_body(), 1_000_000)
             .await
@@ -2897,5 +2906,115 @@ async fn timetable_placement_preview_http_authorizes_persisted_source_resources(
             )
             .unwrap()
         );
+    }
+}
+
+#[tokio::test]
+async fn change_set_policy_provider_preserves_exact_ids_empty_missing_and_action_scope() {
+    use school_academic_delivery::policies::learning_offering_access_policy::{
+        require_term_change_set_access, OfferingAction,
+    };
+    use school_authorization::ActorContext;
+
+    let pool = prepare_delivery_runtime_fixture("change_set_policy_provider").await;
+    let context = operational_change_runtime_context(&pool).await;
+    let mut revision = create_runtime_change_set(
+        &pool,
+        context.teacher_id,
+        context.term_id,
+        12,
+        "change-set-policy-provider",
+    )
+    .await;
+    let actor = |permissions: &[&str]| ActorContext {
+        user_id: context.teacher_id,
+        permissions: permissions
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
+    };
+    let manager = actor(&[codes::LEARNING_OFFERING_MANAGE_SCHOOL]);
+    let reader = actor(&[codes::LEARNING_OFFERING_READ_SCHOOL]);
+    let denied = actor(&[]);
+    assert!(
+        require_term_change_set_access(&pool, &manager, revision.id, OfferingAction::Manage)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        require_term_change_set_access(&pool, &reader, revision.id, OfferingAction::Read)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(matches!(
+        require_term_change_set_access(&pool, &denied, revision.id, OfferingAction::Read).await,
+        Err(AppError::Forbidden(_))
+    ));
+    // Missing change-set identity is resolved before authorization, as at the old handler boundary.
+    assert!(matches!(
+        require_term_change_set_access(&pool, &denied, Uuid::new_v4(), OfferingAction::Manage)
+            .await,
+        Err(AppError::NotFound(_))
+    ));
+    let original = draft_version(&pool, revision.id)
+        .await
+        .snapshot
+        .offerings
+        .into_iter()
+        .find(|offering| offering.kind == LearningOfferingKind::Course)
+        .unwrap();
+    let added = open_activity_with_catalog_target(
+        &pool,
+        &context,
+        revision.target_delivery_version_id,
+        ActivitySchedulingMode::Synchronized,
+        true,
+    )
+    .await;
+    for (id, target) in [
+        (original.id, original.weekly_period_target + 1),
+        (added.id, 2),
+    ] {
+        revision = change_sets::get_change_set(&pool, revision.id)
+            .await
+            .unwrap();
+        revision = change_sets::upsert_change_item(
+            &pool,
+            context.teacher_id,
+            revision.id,
+            UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
+                change_set_row_version: revision.row_version,
+                item_row_version: None,
+                learning_offering_id: id,
+                weekly_period_target: target,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let mut expected = vec![original.id, added.id];
+    expected.sort_unstable();
+    for (principal, action) in [
+        (&manager, OfferingAction::Manage),
+        (&manager, OfferingAction::Read),
+        (&reader, OfferingAction::Read),
+    ] {
+        assert_eq!(
+            require_term_change_set_access(&pool, principal, revision.id, action)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    for (principal, action) in [
+        (&reader, OfferingAction::Manage),
+        (&denied, OfferingAction::Read),
+    ] {
+        assert!(matches!(
+            require_term_change_set_access(&pool, principal, revision.id, action).await,
+            Err(AppError::Forbidden(_))
+        ));
     }
 }

@@ -261,7 +261,8 @@ cargo test -p school-staff --features api-docs personnel_schema_enum_matches_ser
 ```
 
 HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
-`cargo test -p school-academic-http`, `cargo test -p school-certificates-http`,
+the six `school-academic-{core,delivery,assessment,timetable,results,lifecycle}-http` packages,
+`cargo test -p school-academic-realtime`, `cargo test -p school-certificates-http`,
 `cargo test -p school-navigation`, and `cargo test -p school-notifications`.
 The other domain owners expose their concrete routes under `http`; changed owners also run
 through the disposable database wrapper when their tests need PostgreSQL.
@@ -681,8 +682,10 @@ Use `options={"backend":"backend-school","samples":"2","variants":"default,api-d
 to compare default production compilation with documentation enabled on the same source and runner.
 Both cases measure application and Academic HTTP edits; feature/dependency priming is separate.
 The final diagnostic compilation records compiler pass times and monomorphization estimates.
-Academic HTTP routes use concrete `Router<AcademicHttpState>` factories in their owning crate.
-The application binds its existing narrow state before applying the shared session boundary;
+Academic HTTP routes use concrete `Router<AcademicCoreHttpState>`, `Router<AcademicDeliveryHttpState>`,
+`Router<AcademicAssessmentHttpState>`, `Router<AcademicTimetableHttpState>`, `Router<AcademicResultsHttpState>`
+and `Router<AcademicLifecycleHttpState>` factories in their six owning transport crates.
+The application binds each narrow state before merging routers and applying the shared session boundary;
 this prevents the executable from regenerating domain handler futures and HTTP encoding.
 Route ownership guards and protected-router tests cover this boundary. Compare source-changing
 application and Academic HTTP builds before changing the factory's compile scope.
@@ -748,15 +751,18 @@ relationships, and cross-domain file authorization remain in the application pac
 `school-certificates` owns certificate policy, layout, issuance, rendering, verification, rate
 limiting, and purge behavior. `school-certificates-http` owns its handlers and API declarations;
 the application composes OpenAPI and supplies the cross-domain file-deletion adapter.
-`school-academic-http` owns academic handlers and their request policies, while the six
-academic domain crates retain business logic and transactions. Both HTTP owners receive
-concrete narrow state through application-owned `FromRef` implementations.
+The six Academic HTTP crates own their domain's handlers and concrete route factories; Core and
+Delivery own catalog/curriculum/roster and offering/change-set access policies respectively.
+The academic domain crates retain business logic and transactions. `school-academic-realtime`
+contains only the shared event/port contract; Timetable HTTP owns the socket manager and uses
+one application-composed collaboration runtime for HTTP, sockets and facility invalidation.
+Every transport owner receives concrete narrow state through application-owned `FromRef` implementations.
 `school-auth-http` owns the shared session-derived request context, tenant-origin resolution,
 client-address checks, and cookie/CSRF helpers. It uses the existing `AuthRuntime` and shared
 permission/identity caches, with no application dependency. Navigation owns menu persistence,
 templates, route synchronization and feature toggles; Notifications owns persistence,
-tenant/user events, the publisher and Web Push. Startup, routing, middleware and realtime
-connection management remain in the application. Use at most eight test
+tenant/user events, the publisher and Web Push. Startup, routing and middleware remain in the application; Timetable HTTP owns Academic realtime
+connection management. Use at most eight test
 threads for the database-heavy font and certificate package suites so concurrent migration
 fixtures do not exhaust the disposable PostgreSQL instance.
 
@@ -774,7 +780,11 @@ Docker database runner:
 The projection fixture traverses the real application adapter and Staff query, covering active,
 date-effective, deduplicated affiliations, unknown users and an empty selection. The workspace
 fixture checks directory injection, bounded distinct user IDs, retained group data and propagation
-of provider failures. The protected-router fixture covers the same concrete Academic state.
+of provider failures. The protected-router fixture exercises the production application composition and all six concrete
+Academic states, including public/personal routes and the question-bank nesting. The existing
+public transport fixture verifies shared auth caches and pointer identity across all six realtime
+ports, socket manager and collaboration runtime. The Delivery change-set policy provider fixture
+checks exact ordered IDs, empty/missing sets and Read/Manage grants and denials.
 Lookup DTO ownership changes also require the canonical API export comparison and the existing
 Administration lookup and Certificate transport checks; wire schema names and serialization stay
 unchanged. Before-and-after compile comparisons must prime each graph separately, use the same
@@ -818,7 +828,7 @@ cargo test --manifest-path backend-school/Cargo.toml -p school-academic-timetabl
 ./scripts/test_backend_school.sh integration_tests::academic::services::timetable_collaboration_tests -- --nocapture --test-threads=2
 ./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --nocapture --test-threads=2
 cargo test --manifest-path backend-school/Cargo.toml -p school-auth-http context::tests -- --nocapture
-cargo test --manifest-path backend-school/Cargo.toml -p school-academic-http websockets::security_tests -- --nocapture
+./scripts/test_backend_school.sh --package school-academic-timetable-http websockets::security_tests -- --nocapture
 ```
 
 The dedicated transport fixture uses the original protected-router directory/session owner with
@@ -862,7 +872,7 @@ realtime, profile/File Platform, and cross-domain behavior:
 ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integration_tests::auth::session_http_tests -- --test-threads=4 --nocapture
 ./scripts/test_backend_school.sh integration_tests::auth::profile_integration_tests -- --nocapture
 ./scripts/test_backend_school.sh integration_tests::auth::staff_integration_tests -- --nocapture
-./scripts/test_backend_school.sh --package school-academic-http websockets::security_tests -- --nocapture
+./scripts/test_backend_school.sh --package school-academic-timetable-http websockets::security_tests -- --nocapture
 ```
 
 The session-auth HTTP target also exercises encrypted Student Care data. Generate a fresh
@@ -1856,7 +1866,7 @@ Session-cache and hidden-tab regressions can be exercised without a live tenant:
 ```bash
 ./scripts/test_backend_school.sh integration_tests::auth -- --nocapture --test-threads=1
 ./scripts/test_backend_school.sh --package school-notifications http::handlers::tests -- --nocapture --test-threads=1
-./scripts/test_backend_school.sh --package school-academic-http websockets::security_tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-academic-timetable-http websockets::security_tests -- --nocapture --test-threads=1
 cd frontend-school
 node --test tests/static/realtime-idle.test.mjs tests/static/notification-idle-runtime.test.mjs tests/static/auth-refresh-races.test.mjs tests/static/timetable-socket-runtime.test.mjs
 ```
@@ -2254,7 +2264,7 @@ disposable PostgreSQL, then the mocked browser workflow against the local fronte
 ```bash
 ./scripts/test_backend_school.sh --package school-academic-core learning_area -- --test-threads=4
 ./scripts/test_backend_school.sh --package school-staff organization_auto_codes -- --test-threads=1
-cargo test --manifest-path backend-school/Cargo.toml -p school-academic-http learning_area_registry --lib
+cargo test --manifest-path backend-school/Cargo.toml -p school-academic-core learning_area_registry --lib
 ./scripts/test_backend_school.sh organization_learning_area_cutover -- --test-threads=1
 ```
 

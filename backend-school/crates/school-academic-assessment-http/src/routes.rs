@@ -1,0 +1,111 @@
+use crate::state::AcademicAssessmentHttpState;
+use crate::{gradebook, handlers, learner_evaluation};
+use axum::routing::{delete, get, patch, post, put};
+use axum::Router;
+
+#[inline(never)]
+pub fn academic_routes() -> Router<AcademicAssessmentHttpState> {
+    gradebook::routes()
+        .merge(learner_evaluation::routes())
+        .merge(
+            Router::new()
+                // Assessment Plans (โครงสร้างคะแนนรายวิชา)
+                .route(
+                    "/assessments/plans",
+                    get(handlers::assessment::list_assessment_plans),
+                )
+                .route(
+                    "/assessments/phase-controls",
+                    get(handlers::assessment::list_assessment_phase_controls),
+                )
+                .route(
+                    "/assessments/phase-controls/{control_id}",
+                    put(handlers::assessment::update_assessment_phase_control),
+                )
+                .route(
+                    "/assessments/offerings/{offering_id}",
+                    get(handlers::assessment::get_assessment_plan)
+                        .put(handlers::assessment::save_assessment_plan),
+                )
+                // Exam Schedules
+                .route(
+                    "/exam-schedules",
+                    get(handlers::exam_schedule::list_rounds)
+                        .post(handlers::exam_schedule::create_round),
+                )
+                .route(
+                    "/exam-schedules/{round_id}",
+                    get(handlers::exam_schedule::get_workspace)
+                        .patch(handlers::exam_schedule::update_round)
+                        .delete(handlers::exam_schedule::delete_round),
+                )
+                .route(
+                    "/exam-schedules/{round_id}/source-preview",
+                    get(handlers::exam_schedule::preview_sources),
+                )
+                .route(
+                    "/exam-schedules/{round_id}/source-sync",
+                    post(handlers::exam_schedule::sync_sources),
+                )
+                .route(
+                    "/exam-schedules/{round_id}/days",
+                    post(handlers::exam_schedule::upsert_day),
+                )
+                .route(
+                    "/exam-schedules/days/{exam_day_id}",
+                    patch(handlers::exam_schedule::update_day)
+                        .delete(handlers::exam_schedule::delete_day),
+                )
+                .route(
+                    "/exam-schedules/days/{exam_day_id}/room-assignments",
+                    get(handlers::exam_schedule::list_day_room_assignments)
+                        .post(handlers::exam_schedule::upsert_day_room_assignment),
+                )
+                .route(
+                    "/exam-schedules/room-assignments/{assignment_id}/seats",
+                    post(handlers::exam_schedule::generate_seats),
+                )
+                .route(
+                    "/exam-schedules/sessions",
+                    post(handlers::exam_schedule::place_session),
+                )
+                .route(
+                    "/exam-schedules/sessions/{session_id}",
+                    delete(handlers::exam_schedule::delete_session),
+                )
+                .route(
+                    "/exam-schedules/{round_id}/invigilators",
+                    get(handlers::exam_schedule::get_invigilator_workspace),
+                )
+                .route(
+                    "/exam-schedules/{round_id}/invigilator-staff-options",
+                    get(handlers::exam_schedule::get_invigilator_staff_options),
+                )
+                .route(
+                    "/exam-schedules/room-assignments/{assignment_id}/invigilators/{staff_id}",
+                    put(handlers::exam_schedule::assign_assignment_invigilator)
+                        .delete(handlers::exam_schedule::remove_assignment_invigilator),
+                )
+                .route(
+                    "/exam-schedules/room-assignments/{assignment_id}/invigilators",
+                    put(handlers::exam_schedule::update_assignment_invigilators),
+                )
+                .route(
+                    "/exam-schedules/{round_id}/publish",
+                    post(handlers::exam_schedule::publish_round),
+                ),
+        )
+}
+
+#[inline(never)]
+pub fn personal_routes() -> Router<AcademicAssessmentHttpState> {
+    Router::new()
+        .route(
+            "/me/exam-schedules",
+            get(handlers::exam_schedule::list_my_exam_schedule),
+        )
+        .route(
+            "/staff/exam-schedules",
+            get(handlers::exam_schedule::list_staff_exam_schedule),
+        )
+}
