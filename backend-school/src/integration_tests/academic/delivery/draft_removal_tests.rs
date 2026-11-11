@@ -2915,6 +2915,7 @@ async fn change_set_policy_provider_preserves_exact_ids_empty_missing_and_action
         require_term_change_set_access, OfferingAction,
     };
     use school_authorization::ActorContext;
+    use school_permissions::registry::codes;
 
     let pool = prepare_delivery_runtime_fixture("change_set_policy_provider").await;
     let context = operational_change_runtime_context(&pool).await;

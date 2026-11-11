@@ -700,8 +700,9 @@ For a paired route-factory comparison against an exact baseline commit, select
 `options={"backend":"backend-school","samples":"2","variants":"default,http-routes","baseline":"<40-character SHA>"}`.
 This freezes the complete `src`/`crates`/Cargo graph from both Git inputs and measures application-only
 and Academic HTTP edits at the same `/app` source path and persistent target. Graph swaps normalize
-source mtimes without changing bytes. `scripts/validate_backend_benchmark_source.py` validates the
-bounded comparison inputs, unchanged release profiles and external lockfile package identities.
+source mtimes without changing bytes. `scripts/validate_backend_benchmark_source.py` resolves the
+Git revisions and compares manifest profile maps and external lockfile package identities.
+The `http-routes` branch in `backend-build-benchmark.yml` separately enforces its changed-file allowlist.
 Graph priming and pristine reset builds between owner families remain outside timed samples.
 Use `options={"backend":"backend-school","profile_only":true,"variants":"default"}`
 to collect only the compiler profile from the exact production builder. This mode skips warm
@@ -739,8 +740,11 @@ compares a selected baseline commit with the workflow's candidate commit. Its de
 Both use
 the production Docker builder, two CPU quota, the same release profile, and one persistent
 Cargo target at the same `/app` source path, replacing the complete frozen source/Cargo graph
-between cases and normalizing its source mtimes. The same input validator preserves release profiles
-and external dependency identities. It makes two source changes in each of the application, Academic HTTP,
+between cases and normalizing its source mtimes. The same input validator checks resolved revisions,
+manifest profile maps and external dependency identities. This full-snapshot comparator does not
+reject every unrelated Rust source change: review the complete commit diff and attribute measured
+differences to the entire compared snapshots while profiles and external dependencies remain fixed.
+It makes two source changes in each of the application, Academic HTTP,
 Certificates HTTP, Navigation, and Notifications owners. Initial dependency/graph priming,
 unchanged target reuse, compiled package names, binary sizes, Cargo timing reports, and
 exact OpenAPI equality are recorded separately. The source-changing comparison disables

@@ -1329,9 +1329,15 @@ accept its whole `AppState`.
 Use the manual [HTTP Boundary Benchmark](../.github/workflows/backend-http-boundary-experiment.yml)
 to compare a baseline before the selected HTTP ownership change and a candidate on one Docker runner.
 The default baseline is the last combined Academic HTTP graph. Both snapshots use the same `/app`
-path and preserve compiler profiles and external lock identities; only internal graph/source changes
-are compared. Owner probes resolve current split crates, the previous combined crate or historical
-application modules, and pristine reset builds between source families remain outside timed samples. Its two samples
+path and preserve compiler profiles and external lock identities. This standalone workflow compares
+full selected backend snapshots: its Python validator does not enforce a changed-file allowlist or
+establish that every other source input is unchanged. Inspect the selected source diff before
+attributing a timing difference to HTTP ownership alone. The separate Backend Build Benchmark's
+`http-routes` mode additionally enforces its bounded changed-file allowlist in the workflow; that
+path restriction does not come from the Python profile/lock validator.
+
+Owner probes resolve current split crates, the previous combined crate or historical application
+modules, and pristine reset builds between source families remain outside timed samples. Its two samples
 per source owner separate first-graph priming from warm compilation and record rebuilt
 packages, binary size, persistent-target reuse and exact OpenAPI equality. This comparison
 disables sccache to isolate Cargo invalidation; use production build statistics to assess

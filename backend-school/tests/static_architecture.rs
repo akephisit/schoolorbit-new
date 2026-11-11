@@ -789,7 +789,7 @@ fn school_auth_crypto_dependencies_follow_the_reviewed_policy() {
 #[test]
 fn workspace_crates_follow_the_approved_dependency_graph() {
     let root = read_source(manifest_dir().join("Cargo.toml"));
-    let approved_graph: [(&str, &[&str]); 37] = [
+    let approved_graph: &[(&str, &[&str])] = &[
         ("school-database", &[]),
         (
             "school-budget",
@@ -1272,7 +1272,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         .map(|(package, _)| package.to_string())
         .collect();
 
-    for (package, expected_dependencies) in approved_graph {
+    for &(package, expected_dependencies) in approved_graph {
         assert!(root.contains(&format!("\"crates/{package}\"")));
         assert!(root.contains(&format!("{package} = {{ path = \"crates/{package}\" }}")));
         let manifest = read_source(workspace_crate_dir(package).join("Cargo.toml"));
