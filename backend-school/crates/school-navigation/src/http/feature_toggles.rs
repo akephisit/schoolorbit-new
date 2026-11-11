@@ -16,6 +16,7 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
+use school_permissions::registry::codes;
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateFeatureRequest {
@@ -45,7 +46,7 @@ pub struct FeatureListResponse {
     operation_id = "listFeatures",
     tag = "system",
     responses(
-        (status = 200, description = "Feature toggles visible to the current user", body = FeatureListResponse),
+        (status = 200, description = "Feature toggles for authorized feature managers", body = FeatureListResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
 ))]
@@ -57,14 +58,8 @@ pub async fn list_features(
     let pool = context.tenant.pool;
     let actor = context.actor;
 
-    let all_features = feature_toggle_service::list_features(&pool).await?;
-    let features: Vec<FeatureToggle> = all_features
-        .into_iter()
-        .filter(|f| match f.module {
-            Some(ref module) => actor.has_module_permission(module),
-            None => true,
-        })
-        .collect();
+    actor.require_permission(codes::FEATURES_READ_ALL)?;
+    let features = feature_toggle_service::list_features(&pool).await?;
 
     Ok((
         StatusCode::OK,
@@ -84,7 +79,7 @@ pub async fn list_features(
     responses(
         (status = 200, description = "Feature toggle", body = FeatureToggleResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Feature module access denied", body = ApiErrorResponse),
+        (status = 403, description = "Feature management access denied", body = ApiErrorResponse),
         (status = 404, description = "Feature toggle not found", body = ApiErrorResponse)
     )
 ))]
@@ -96,16 +91,8 @@ pub async fn get_feature(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
+    actor.require_permission(codes::FEATURES_READ_ALL)?;
     let feature = feature_toggle_service::get_feature(&pool, id).await?;
-
-    if let Some(ref module) = feature.module {
-        if !actor.has_module_permission(module) {
-            return Err(AppError::Forbidden(format!(
-                "No permission for module '{}'",
-                module
-            )));
-        }
-    }
 
     Ok((
         StatusCode::OK,
@@ -126,16 +113,7 @@ pub async fn update_feature(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let existing = feature_toggle_service::get_feature(&pool, id).await?;
-
-    if let Some(ref module) = existing.module {
-        if !actor.has_module_permission(module) {
-            return Err(AppError::Forbidden(format!(
-                "No permission for module '{}'",
-                module
-            )));
-        }
-    }
+    actor.require_permission(codes::FEATURES_UPDATE_ALL)?;
 
     let feature = feature_toggle_service::update_feature(&pool, id, data.is_enabled).await?;
     Ok((
@@ -156,16 +134,7 @@ pub async fn toggle_feature(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    let existing = feature_toggle_service::get_feature(&pool, id).await?;
-
-    if let Some(ref module) = existing.module {
-        if !actor.has_module_permission(module) {
-            return Err(AppError::Forbidden(format!(
-                "No permission for module '{}'",
-                module
-            )));
-        }
-    }
+    actor.require_permission(codes::FEATURES_UPDATE_ALL)?;
 
     let feature = feature_toggle_service::toggle_feature(&pool, id).await?;
     let feature_code = feature.code.clone();

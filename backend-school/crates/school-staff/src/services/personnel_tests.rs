@@ -467,7 +467,7 @@ async fn personnel_patch_distinguishes_missing_null_value() {
     let user = insert_legacy_info(&pool, "ปริญญาตรี", "Science", "Fixture University").await;
     migrate_through(&pool, 115).await.unwrap();
     let no_change = serde_json::from_value(serde_json::json!({"staff_info":{}})).unwrap();
-    super::staff_service::update_staff(&pool, user, no_change, user)
+    super::staff_service::update_staff(&pool, user, no_change, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
         .await
         .unwrap();
     let degree: Option<String> =
@@ -481,7 +481,7 @@ async fn personnel_patch_distinguishes_missing_null_value() {
         serde_json::json!({"staff_info":{"education":{"expected_revision":0,"items":[]}}}),
     )
     .unwrap();
-    super::staff_service::update_staff(&pool, user, clear, user)
+    super::staff_service::update_staff(&pool, user, clear, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
         .await
         .unwrap();
     let cleared: i64 =
@@ -497,7 +497,7 @@ async fn personnel_patch_distinguishes_missing_null_value() {
         serde_json::json!({"academic_rank":"none","education_level":"master"}),
     )
     .await;
-    super::staff_service::update_staff(&pool, user, explicit, user)
+    super::staff_service::update_staff(&pool, user, explicit, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
         .await
         .unwrap();
     let values: (Option<String>, Option<String>) =
@@ -538,7 +538,7 @@ async fn personnel_patch_preserves_license_and_employment() {
             .await
             .unwrap();
     let request = current_patch(&pool, user, serde_json::json!({"job_position_id":teacher,"academic_rank":"proficient","education_level":"doctorate"})).await;
-    super::staff_service::update_staff(&pool, user, request, user)
+    super::staff_service::update_staff(&pool, user, request, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
         .await
         .unwrap();
     assert_eq!(before, preservation_snapshot(&pool).await);
@@ -563,7 +563,7 @@ async fn personnel_patch_creates_missing_info_row() {
         serde_json::json!({"academic_rank":"not_applicable","education_level":"bachelor"}),
     )
     .await;
-    super::staff_service::update_staff(&pool, user, request, user)
+    super::staff_service::update_staff(&pool, user, request, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
         .await
         .unwrap();
     let values: (Uuid, String, String) = sqlx::query_as(
@@ -596,7 +596,7 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
         serde_json::json!({"job_position_id":custom,"major":"  คณิตศาสตร์  ประยุกต์  "}),
     )
     .await;
-    super::staff_service::update_staff(&pool, user, keep, user)
+    super::staff_service::update_staff(&pool, user, keep, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
         .await
         .unwrap();
     let info = super::staff_info_service::read_staff_info(&pool, user)
@@ -614,7 +614,7 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
             current_patch(&pool, other, serde_json::json!({"job_position_id":id})).await;
         request.first_name = Some("Must rollback".into());
         assert!(matches!(
-            super::staff_service::update_staff(&pool, other, request, user).await,
+            super::staff_service::update_staff(&pool, other, request, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] }).await,
             Err(school_errors::AppError::BadRequest(_))
         ));
         let name: String = sqlx::query_scalar("SELECT first_name FROM users WHERE id=$1")
@@ -630,7 +630,7 @@ async fn personnel_patch_keeps_custom_position_but_rejects_new_assignment() {
             .await
             .unwrap();
     let replace = current_patch(&pool, user, serde_json::json!({"job_position_id":teacher})).await;
-    super::staff_service::update_staff(&pool, user, replace, user)
+    super::staff_service::update_staff(&pool, user, replace, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
         .await
         .unwrap();
     assert!(
@@ -667,7 +667,7 @@ async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_inval
         ),
     ] {
         let request = current_patch(&pool, user, patch).await;
-        super::staff_service::update_staff(&pool, user, request, user)
+        super::staff_service::update_staff(&pool, user, request, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
             .await
             .unwrap();
         let info = super::staff_info_service::read_staff_info(&pool, user)
@@ -686,7 +686,7 @@ async fn personnel_text_patch_preserves_omitted_clears_null_and_rolls_back_inval
         request.title = Some("นาย".into());
         request.first_name = Some("Must rollback".into());
         assert!(
-            super::staff_service::update_staff(&pool, user, request, user)
+            super::staff_service::update_staff(&pool, user, request, &school_authorization::ActorContext { user_id: user, permissions: vec!["*".into()] })
                 .await
                 .is_err()
         );
@@ -714,7 +714,7 @@ async fn personnel_create_persists_canonical_fields_and_license() {
         "staff_info":{"career":{"entries":[{"fact":{"kind":"job_position","value":teacher}},{"fact":{"kind":"academic_rank","value":"none"}}]},"educations":[{"education_level":"bachelor","major":"  คณิตศาสตร์  ประยุกต์  ","university":"สถาบันทดสอบ"}], "teaching_license_number":"synthetic-license", "teaching_license_expiry":"2030-01-01"}
     })).unwrap();
     let actor = canonical_person(&pool).await;
-    let user = super::staff_service::create_staff(&pool, request, actor)
+    let user = super::staff_service::create_staff(&pool, request, &school_authorization::ActorContext { user_id: actor, permissions: vec!["*".into()] })
         .await
         .unwrap();
     let info = super::staff_info_service::read_staff_info(&pool, user)

@@ -70,16 +70,15 @@
 		string
 	>();
 	const canRead = $derived(
-		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL)
+		$can.hasAny(
+			PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL,
+			PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL,
+			PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL
+		)
 	);
-	const canManage = $derived(
-		mode === 'time'
-			? $can.has(PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
-			: $can.hasAll(
-					PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL,
-					PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL
-				)
-	);
+	const canManageYears = $derived($can.has(PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL));
+	const canManageTerms = $derived($can.has(PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL));
 
 	const latest = new LatestRequest();
 	function applyWorkspace(workspace: AcademicSetupWorkspace) {
@@ -204,6 +203,7 @@
 	}
 
 	async function addYear(draft: Parameters<typeof createAcademicYear>[0]) {
+		if (!canManageYears) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.year = true;
 		try {
@@ -263,6 +263,7 @@
 	}
 
 	async function addTerm(draft: Parameters<typeof createAcademicTerm>[0]) {
+		if (!canManageTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.term = true;
 		try {
@@ -283,6 +284,7 @@
 		}
 	}
 	async function addTermCopy(draft: Parameters<typeof createAcademicTermCopySchoolSchedule>[0]) {
+		if (!canManageTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.term = true;
 		try {
@@ -323,6 +325,7 @@
 	}
 
 	async function editYear(id: string, draft: Parameters<typeof updateAcademicYear>[1]) {
+		if (!canManageYears) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.year = true;
 		try {
@@ -341,6 +344,7 @@
 	}
 
 	async function editTerm(id: string, draft: Parameters<typeof updateAcademicTerm>[1]) {
+		if (!canManageTerms) throw new Error('ไม่มีสิทธิ์จัดการข้อมูลนี้');
 		const identity = appIdentityKey();
 		busy.term = true;
 		try {
@@ -495,7 +499,8 @@
 					{years}
 					{termsByYear}
 					{bellSchedules}
-					{canManage}
+					{canManageYears}
+					{canManageTerms}
 					{contextSettings}
 					onUpdateContextSettings={saveContextSettings}
 					onReloadContextSettings={reloadContextSettings}
@@ -516,7 +521,7 @@
 					setupTermIds={bellScheduleSetupTermIds}
 					{schoolDaysEditableTermIds}
 					onCopySchoolSchedule={copyTermSchoolSchedule}
-					{canManage}
+					canManage={canManageTerms}
 					{busy}
 					onCreateBellSchedule={addBellSchedule}
 					onCloneBellSchedule={copyBellSchedule}

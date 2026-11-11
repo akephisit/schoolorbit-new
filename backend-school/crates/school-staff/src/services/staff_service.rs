@@ -8,6 +8,8 @@ use super::{
 };
 use crate::models::*;
 use chrono::NaiveDate;
+use school_authorization::ActorContext;
+use school_permissions::registry::codes;
 use school_crypto as field_encryption;
 use school_database::DbSession;
 use school_errors::AppError;
@@ -92,7 +94,7 @@ pub struct PublicStaffOrganizationUnit {
     pub position_title: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 struct UserRoleBulkRow {
     role_id: Uuid,
     is_primary: bool,
@@ -109,6 +111,65 @@ fn user_role_bulk_rows(role_ids: &[Uuid], primary_role_id: Option<Uuid>) -> Vec<
             is_primary: Some(role_id) == primary_role_id,
         })
         .collect()
+}
+
+fn require_role_changes(
+    actor: &ActorContext,
+    existing: &[UserRoleBulkRow],
+    requested: &[UserRoleBulkRow],
+) -> Result<(), AppError> {
+    if requested.iter().any(|row| !existing.contains(row)) {
+        actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
+    }
+    if existing.iter().any(|row| !requested.iter().any(|next| next.role_id == row.role_id)) {
+        actor.require_permission(codes::ROLES_REMOVE_ALL)?;
+    }
+    Ok(())
+}
+
+fn same_assignments<T: PartialEq>(existing: &[T], requested: &[T]) -> bool {
+    existing.len() == requested.len() && existing.iter().all(|row| requested.contains(row))
+}
+
+async fn authorize_staff_assignment_update(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    actor: &ActorContext,
+    staff_id: Uuid,
+    payload: &mut UpdateStaffRequest,
+) -> Result<(), AppError> {
+    if let Some(role_ids) = &payload.role_ids {
+        let existing = DbSession::new(&mut **tx)
+            .query_as::<UserRoleBulkRow>(
+                "staff.services.staff_service.authorize_staff_assignment_update",
+                "SELECT role_id, is_primary FROM user_roles WHERE user_id = $1 ORDER BY role_id FOR UPDATE",
+            )
+            .bind(staff_id)
+            .fetch_all()
+            .await?;
+        let requested = user_role_bulk_rows(role_ids, payload.primary_role_id);
+        require_role_changes(actor, &existing, &requested)?;
+        if same_assignments(&existing, &requested) {
+            payload.role_ids = None;
+        }
+    }
+    if let Some(assignments) = &payload.organization_assignments {
+        let existing = DbSession::new(&mut **tx)
+            .query_as::<OrganizationMembershipBulkRow>(
+                "staff.services.staff_service.authorize_staff_assignment_update",
+                "SELECT organization_unit_id, position_code, position_title, COALESCE(is_primary, false) AS is_primary, responsibilities FROM organization_members WHERE user_id = $1 AND (ended_at IS NULL OR ended_at > CURRENT_DATE) AND started_at < coalesce(ended_at, 'infinity'::date) ORDER BY id FOR UPDATE",
+            )
+            .bind(staff_id)
+            .fetch_all()
+            .await?;
+        let requested = organization_assignments_to_bulk_rows(assignments);
+        if same_assignments(&existing, &requested) {
+            payload.organization_assignments = None;
+        } else {
+            // All membership add/update/remove operations use this canonical capability.
+            actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
+        }
+    }
+    Ok(())
 }
 
 async fn insert_user_roles(
@@ -147,7 +208,7 @@ async fn insert_user_roles(
     Ok(())
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
 struct OrganizationMembershipBulkRow {
     organization_unit_id: Uuid,
     position_code: String,
@@ -971,8 +1032,12 @@ pub async fn get_staff_profile_on_connection(
 pub async fn create_staff(
     pool: &PgPool,
     mut payload: CreateStaffRequest,
-    actor_id: Uuid,
+    actor: &ActorContext,
 ) -> Result<Uuid, AppError> {
+    require_role_changes(actor, &[], &user_role_bulk_rows(&payload.role_ids, payload.primary_role_id))?;
+    if payload.organization_assignments.as_ref().is_some_and(|assignments| !assignments.is_empty()) {
+        actor.require_permission(codes::ROLES_ASSIGN_ALL)?;
+    }
     normalize_create_names(&mut payload)?;
     if payload.profile_image_file_id.is_some() {
         return Err(AppError::ValidationError(
@@ -1089,7 +1154,7 @@ pub async fn create_staff(
     })?;
 
     if let Some(staff_info) = &payload.staff_info {
-        staff_info_service::create_staff_info(&mut tx, user_id, staff_info, actor_id).await?;
+        staff_info_service::create_staff_info(&mut tx, user_id, staff_info, actor.user_id).await?;
     }
 
     let role_rows = user_role_bulk_rows(&payload.role_ids, payload.primary_role_id);
@@ -1117,7 +1182,7 @@ pub async fn update_staff(
     pool: &PgPool,
     staff_id: Uuid,
     mut payload: UpdateStaffRequest,
-    actor_id: Uuid,
+    actor: &ActorContext,
 ) -> Result<Option<Uuid>, AppError> {
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
@@ -1133,6 +1198,7 @@ pub async fn update_staff(
     })?;
 
     super::organization_member_service::lock_member_user(&mut tx, staff_id).await?;
+    authorize_staff_assignment_update(&mut tx, actor, staff_id, &mut payload).await?;
 
     if let Some(role_ids) = &payload.role_ids {
         validate_active_staff_roles(&mut tx, role_ids).await?;
@@ -1250,7 +1316,7 @@ SELECT true
     }
 
     if let Some(staff_info) = &payload.staff_info {
-        staff_info_service::patch_staff_info(&mut tx, staff_id, staff_info, actor_id).await?;
+        staff_info_service::patch_staff_info(&mut tx, staff_id, staff_info, actor.user_id).await?;
     }
 
     if let Some(role_ids) = &payload.role_ids {

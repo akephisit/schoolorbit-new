@@ -316,21 +316,20 @@ pub async fn setup_workspace_on_connection(
     actor: &ActorContext,
 ) -> Result<AcademicSetupWorkspace, AppError> {
     require_setup_workspace_access(actor)?;
-
+    let (can_read_years, can_read_terms) = setup_workspace_regions(actor);
+    // Term administration needs parent years as context, without granting year controls.
     let years = years_terms::list_years_on_connection(connection).await?;
     ensure_workspace_size(years.len(), MAX_SETUP_YEARS, "จำนวนปีการศึกษา")?;
-    let terms = years_terms::list_all_terms(connection).await?;
+    let terms = if can_read_terms { years_terms::list_all_terms(connection).await? } else { Vec::new() };
     ensure_workspace_size(terms.len(), MAX_SETUP_TERMS, "จำนวนภาคเรียน")?;
-    let bell_schedules = bell_schedules::list_all(connection).await?;
-    ensure_workspace_size(
-        bell_schedules.len(),
-        MAX_SETUP_BELL_SCHEDULES,
-        "จำนวนตารางคาบ",
-    )?;
+    let bell_schedules = if can_read_terms { bell_schedules::list_all(connection).await? } else { Vec::new() };
+    ensure_workspace_size(bell_schedules.len(), MAX_SETUP_BELL_SCHEDULES, "จำนวนตารางคาบ")?;
     Ok(AcademicSetupWorkspace {
-        bell_schedule_setup_year_ids: bell_schedules::setup_year_ids(connection).await?,
-        bell_schedule_setup_term_ids: bell_schedules::setup_term_ids(connection).await?,
-        school_days_editable_term_ids: super::school_days::editable_term_ids(connection).await?,
+        can_read_years,
+        can_read_terms,
+        bell_schedule_setup_year_ids: if can_read_terms { bell_schedules::setup_year_ids(connection).await? } else { Vec::new() },
+        bell_schedule_setup_term_ids: if can_read_terms { bell_schedules::setup_term_ids(connection).await? } else { Vec::new() },
+        school_days_editable_term_ids: if can_read_terms { super::school_days::editable_term_ids(connection).await? } else { Vec::new() },
         context_settings: super::context_settings::get_on_connection(connection).await?,
         years,
         terms,
@@ -338,16 +337,18 @@ pub async fn setup_workspace_on_connection(
     })
 }
 
+fn setup_workspace_regions(actor: &ActorContext) -> (bool, bool) {
+    (actor.has_any_permission(&[codes::ACADEMIC_YEAR_READ_SCHOOL, codes::ACADEMIC_YEAR_MANAGE_SCHOOL]),
+     actor.has_any_permission(&[codes::ACADEMIC_TERM_READ_SCHOOL, codes::ACADEMIC_TERM_MANAGE_SCHOOL]))
+}
+
 fn require_setup_workspace_access(actor: &ActorContext) -> Result<(), AppError> {
     actor.require_any_permission(&[
         codes::ACADEMIC_YEAR_READ_SCHOOL,
         codes::ACADEMIC_YEAR_MANAGE_SCHOOL,
-    ])?;
-    actor.require_any_permission(&[
         codes::ACADEMIC_TERM_READ_SCHOOL,
         codes::ACADEMIC_TERM_MANAGE_SCHOOL,
-    ])?;
-    Ok(())
+    ])
 }
 
 fn ensure_workspace_size(actual: usize, maximum: usize, label: &str) -> Result<(), AppError> {

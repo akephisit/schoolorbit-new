@@ -1309,6 +1309,8 @@ pub struct ReplaceCurriculumStructureRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicSetupWorkspace {
+    pub can_read_years: bool,
+    pub can_read_terms: bool,
     pub context_settings: AcademicContextSettings,
     pub years: Vec<AcademicYear>,
     pub terms: Vec<AcademicTerm>,

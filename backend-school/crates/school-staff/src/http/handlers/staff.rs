@@ -169,7 +169,7 @@ pub async fn create_staff(
     let actor = context.actor;
     actor.require_permission(codes::STAFF_CREATE_ALL)?;
 
-    let user_id = staff_service::create_staff(&pool, payload, actor.user_id).await?;
+    let user_id = staff_service::create_staff(&pool, payload, &actor).await?;
     state
         .auth_runtime
         .invalidate_permission_user(&context.tenant.subdomain, user_id);
@@ -222,7 +222,7 @@ pub async fn update_staff(
         crate::services::staff_license_service::require_manage(&actor, staff_id)?;
     }
     let replaced_file_id =
-        staff_service::update_staff(&pool, staff_id, payload, actor.user_id).await?;
+        staff_service::update_staff(&pool, staff_id, payload, &actor).await?;
     // Status/roles are already committed; invalidate identity before fallible cleanup.
     state
         .auth_runtime

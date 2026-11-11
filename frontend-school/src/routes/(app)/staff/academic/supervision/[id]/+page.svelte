@@ -144,6 +144,7 @@
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const canManageObservation = $derived(
+		observation?.canManage === true &&
 		$can.hasAny(
 			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_UNIT,
 			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_TREE,
@@ -153,7 +154,8 @@
 	const canApproveSchool = $derived($can.has(PERMISSIONS.SUPERVISION_APPROVE_SCHOOL));
 	const canViewReviewDetails = $derived(
 		Boolean(
-			observation && (actorCanRequestReview() || observationResultsReleased(observation.status))
+			observation?.canReview === true &&
+				$can.hasAny(...SUPERVISION_OBSERVATION_READ_PERMISSIONS)
 		)
 	);
 	const canCertifyResult = $derived(
@@ -312,6 +314,16 @@
 	});
 
 	$effect(() => {
+		if (!canViewReviewDetails) {
+			reviewOpen = false;
+			review = null;
+		}
+		if (!canEditLesson) editLessonOpen = false;
+		if (!canEditEvaluators) {
+			editEvaluatorsOpen = false;
+			availableEvaluators = [];
+		}
+		if (!canCancelObservation) cancelDialogOpen = false;
 		if (!reviewOpen) {
 			reviewRequest.abort();
 			loadingReview = false;
@@ -364,14 +376,6 @@
 		return '-';
 	}
 
-	function actorCanRequestReview(): boolean {
-		return $can.hasAny(
-			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.SUPERVISION_MANAGE_SCHOOL,
-			PERMISSIONS.SUPERVISION_APPROVE_SCHOOL
-		);
-	}
 
 	function reviewableStatus(status: SupervisionObservationStatus): boolean {
 		return [

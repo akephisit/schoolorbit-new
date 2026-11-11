@@ -896,6 +896,8 @@ async fn hydrate_observations(
             let observation_id = row.id;
             let manual_lesson = manual_lesson_from_row(&row);
             Ok(SupervisionObservation {
+                can_manage: false,
+                can_review: false,
                 id: observation_id,
                 cycle_id: row.cycle_id,
                 academic_year_id: row.academic_year_id,

@@ -152,6 +152,7 @@
 	let selectionRevision = 0;
 
 	let canManage = $derived(
+		offering?.canManage === true &&
 		$can.hasAny(
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL,
 			PERMISSIONS.LEARNING_OFFERING_MANAGE_ORGANIZATION_TREE,

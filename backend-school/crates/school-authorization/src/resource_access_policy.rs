@@ -118,6 +118,39 @@ pub fn resolve_user_resource_list_access(
     None
 }
 
+/// Resolve the same user-resource policy for a response batch with bounded queries.
+pub async fn authorized_user_resource_ids(
+    pool: &PgPool,
+    actor: &ActorContext,
+    permissions: ResourceAccessPermissions,
+    target_user_ids: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, AppError> {
+    use std::collections::HashSet;
+    if has_optional_permission(actor, permissions.school) {
+        return Ok(target_user_ids.iter().copied().collect());
+    }
+    let mut allowed = HashSet::new();
+    if target_user_ids.contains(&actor.user_id) && has_optional_permission(actor, permissions.own) {
+        allowed.insert(actor.user_id);
+    }
+    let access = if has_optional_permission(actor, permissions.organization_tree) {
+        Some(UserResourceListAccess::OrganizationTree(actor.user_id))
+    } else if has_optional_permission(actor, permissions.organization_unit) {
+        Some(UserResourceListAccess::OrganizationUnit(actor.user_id))
+    } else { None };
+    let Some(access) = access else { return Ok(allowed); };
+    if target_user_ids.is_empty() { return Ok(allowed); }
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "authorization.authorized_user_resource_ids").await?;
+    let units = accessible_organization_unit_ids_on_connection(&mut connection, access).await?.unwrap_or_default();
+    if units.is_empty() { return Ok(allowed); }
+    let users: Vec<Uuid> = school_database::DbSession::new(&mut *connection).scalar(
+        "authorization.authorized_user_resource_ids",
+        "SELECT DISTINCT om.user_id FROM organization_members om JOIN organization_units active_unit ON active_unit.id = om.organization_unit_id AND active_unit.is_active = true WHERE om.user_id = ANY($1) AND om.organization_unit_id = ANY($2) AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)",
+    ).bind(target_user_ids).bind(&units).fetch_all().await?;
+    allowed.extend(users);
+    Ok(allowed)
+}
+
 pub async fn require_user_resource_access(
     pool: &PgPool,
     actor: &ActorContext,

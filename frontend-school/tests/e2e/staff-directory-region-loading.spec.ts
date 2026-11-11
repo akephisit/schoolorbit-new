@@ -21,7 +21,7 @@ const profileEndpoint = `/api/staff/${firstStaff}`;
 const rolesEndpoint = `/api/users/${firstStaff}/roles`;
 const permissionsEndpoint = `/api/users/${firstStaff}/permissions`;
 async function fillCreate(page: Page) {
-	await page.getByRole('button', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
+	await page.getByRole('combobox', { name: 'คำนำหน้า (ไทย)', exact: true }).click();
 	await page.getByRole('option', { name: 'นาย', exact: true }).click();
 	await page.getByPlaceholder('ชื่อ', { exact: true }).fill('บุคลากรใหม่');
 	await page.getByPlaceholder('นามสกุล', { exact: true }).fill('ทดสอบ');

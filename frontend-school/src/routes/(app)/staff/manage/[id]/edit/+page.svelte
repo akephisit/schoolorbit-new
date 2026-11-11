@@ -104,6 +104,8 @@
 
 	const organizationRequest = new LatestRequest();
 	const canReadOptions = $derived($can.has(PERMISSIONS.ROLES_READ_ALL));
+	const canAssignOrganizations = $derived($can.has(PERMISSIONS.ROLES_ASSIGN_ALL));
+	const canEditOrganizations = $derived(canReadOptions && canAssignOrganizations);
 	const canMutateStaff = $derived($can.has(PERMISSIONS.STAFF_UPDATE_ALL));
 	const canManageLicense = $derived(
 		canMutateStaff &&
@@ -259,7 +261,7 @@
 
 	$effect.pre(() => {
 		const step = currentStep,
-			allowed = canReadOptions;
+			allowed = canEditOrganizations;
 		untrack(() => {
 			if (!allowed) {
 				organizationRequest.abort();
@@ -273,7 +275,7 @@
 		};
 	});
 	async function loadOrganizationOptions() {
-		if (!canReadOptions || currentStep !== 3) return;
+		if (!canEditOrganizations || currentStep !== 3) return;
 		const ticket = organizationRequest.begin();
 		loadingOrganizationUnits = true;
 		organizationError = '';
@@ -329,7 +331,6 @@
 	function validateOrganizations(): boolean {
 		errors = {};
 		if (
-			!formData.organization_assignments.length ||
 			formData.organization_assignments.some((item) => !item.organization_unit_id)
 		)
 			errors.organization_units = 'กรุณาเลือกหน่วยงานให้ครบทุกแถว';
@@ -410,6 +411,11 @@
 		const organizationsChanged =
 			JSON.stringify(formData.organization_assignments) !==
 			JSON.stringify(originalForm?.organization_assignments);
+		if (organizationsChanged && !canAssignOrganizations) {
+			errors.organization_units = 'ไม่มีสิทธิ์แก้ไขสังกัดหน่วยงาน';
+			await goto(sectionHref('organizations'), { reset: false });
+			return;
+		}
 		if (organizationsChanged && !validateOrganizations()) {
 			await goto(sectionHref('organizations'), { reset: false });
 			return;
@@ -954,9 +960,9 @@
 							<!-- Step 4: Organization Units -->
 							<h2 class="text-base font-semibold mb-4">สังกัดหน่วยงาน</h2>
 
-							{#if !canReadOptions}<PageState
+							{#if !canEditOrganizations}<PageState
 									variant="permission"
-									title="ไม่มีสิทธิ์อ่านตัวเลือกหน่วยงาน"
+									title="ไม่มีสิทธิ์แก้ไขสังกัดหน่วยงาน"
 								/>
 							{:else if loadingOrganizationUnits}<div
 									role="status"
@@ -985,7 +991,7 @@
 										<div class="p-4 border border-border rounded-lg">
 											<div class="flex items-start justify-between mb-4">
 												<h3 class="font-medium">หน่วยงานที่ {i + 1}</h3>
-												{#if formData.organization_assignments.length > 1}
+												{#if formData.organization_assignments.length > 0}
 													<Button
 														variant="ghost"
 														size="sm"

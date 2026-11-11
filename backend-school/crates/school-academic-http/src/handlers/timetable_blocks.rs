@@ -574,16 +574,9 @@ pub async fn daily_teaching_overview(
     Query(query): Query<daily_teaching_service::DailyTeachingQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    require_timetable_resources(
-        &context.tenant.pool,
-        &context.actor,
-        TimetableAction::Read,
-        &TimetableResourceSet {
-            requires_school_scope: true,
-            ..TimetableResourceSet::default()
-        },
-    )
-    .await?;
+    context.actor.require_permission(
+        school_permissions::registry::codes::ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+    )?;
     let overview =
         daily_teaching_service::get_daily_teaching_overview(&context.tenant.pool, query).await?;
     Ok(Json(ApiResponse::ok(overview)).into_response())

@@ -127,6 +127,7 @@
 	);
 
 	let canManageDelegations = $derived.by(() =>
+		department?.can_manage_delegations === true &&
 		$can.hasAny(
 			PERMISSIONS.ORGANIZATION_WORK_APPROVE_ORGANIZATION_UNIT,
 			PERMISSIONS.ROLES_ASSIGN_ALL,
@@ -355,7 +356,7 @@
 	}
 
 	async function handleRevoke(delegationId: string) {
-		if (!canManageDelegations || delegateSubmitting) return;
+		if (!canManageDelegations || !delegations.find((item) => item.id === delegationId)?.can_revoke || delegateSubmitting) return;
 		const epoch = ownerEpoch;
 		const current = () => !disposed && epoch === ownerEpoch;
 		delegationsRequest.abort();
@@ -854,7 +855,7 @@
 													</p>
 												{/if}
 											</div>
-											<Button
+											{#if delegation.can_revoke}<Button
 												variant="ghost"
 												size="sm"
 												onclick={() => handleRevoke(delegation.id)}
@@ -862,7 +863,7 @@
 												class="shrink-0 text-destructive hover:text-destructive"
 											>
 												<Trash2 class="h-4 w-4" />
-											</Button>
+											</Button>{/if}
 										</div>
 									{/each}
 								</div>

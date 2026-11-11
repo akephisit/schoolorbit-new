@@ -125,6 +125,9 @@ pub async fn list_manageable_workflow_windows(
         },
     )
     .await?;
+    let items = workflow_access_policy::filter_manageable_workflow_windows(
+        &context.tenant.pool, &context.actor, items,
+    ).await?;
     let now = Utc::now();
     let items = items
         .into_iter()
@@ -140,10 +143,12 @@ pub async fn create_workflow_window(
     Json(payload): Json<CreateWorkflowWindowRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    workflow_access_policy::require_workflow_window_manage_permission(
+    workflow_access_policy::require_workflow_window_management_access(
+        &context.tenant.pool,
         &context.actor,
         &payload.managed_by_permission,
-    )?;
+        payload.organization_unit_id,
+    ).await?;
 
     let window = services::create_workflow_window(
         &context.tenant.pool,
@@ -178,10 +183,12 @@ pub async fn update_workflow_window(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let existing = services::get_workflow_window(&context.tenant.pool, id).await?;
-    workflow_access_policy::require_workflow_window_manage_permission(
+    workflow_access_policy::require_workflow_window_management_access(
+        &context.tenant.pool,
         &context.actor,
         &existing.managed_by_permission,
-    )?;
+        existing.organization_unit_id,
+    ).await?;
 
     let window = match payload.status {
         WorkflowWindowStatus::Open => {

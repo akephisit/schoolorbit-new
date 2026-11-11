@@ -123,6 +123,16 @@ pub async fn resolve_observation_list_access(
     Ok(access)
 }
 
+pub async fn observation_management_user_ids(
+    pool: &PgPool,
+    actor: &ActorContext,
+    observed_user_ids: &[Uuid],
+) -> Result<std::collections::HashSet<Uuid>, AppError> {
+    school_authorization::resource_access_policy::authorized_user_resource_ids(
+        pool, actor, supervision_manage_permissions(), observed_user_ids,
+    ).await
+}
+
 pub async fn require_observation_management_access(
     pool: &PgPool,
     actor: &ActorContext,
