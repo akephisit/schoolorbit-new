@@ -2,7 +2,7 @@
 
 pub mod context_reconciliation;
 pub mod models;
+pub mod policies;
 pub mod ports;
 pub mod reconciliation;
 pub mod services;
-pub mod policies;
