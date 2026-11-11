@@ -1,7 +1,5 @@
 //! Canonical private document preview and server-authoritative evidence composition.
 //! Sarabun is bundled under the SIL OFL in assets; rustybuzz shapes Thai marks.
-use crate::{correspondence, process::invalid, process_models::*};
-use chrono::{Datelike, Timelike};
 use lopdf::{
     content::{Content, Operation},
     dictionary, Dictionary, Document, Object, ObjectId, Stream,
@@ -15,12 +13,20 @@ use school_file_platform::{
     platform_service::FilePlatform, repository::SqlFileRepository, ImageProcessor,
 };
 use school_permissions::registry::codes;
+use school_workflow::{
+    correspondence,
+    document_validation::{signing_label, DocumentValidationPort},
+    process_models::*,
+};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
 const FONT: &[u8] = include_bytes!("../assets/Sarabun-Regular.ttf");
+fn invalid(message: &str) -> AppError {
+    AppError::ValidationError(message.into())
+}
 fn pdf_error(_: impl std::fmt::Display) -> AppError {
     invalid("ไม่สามารถอ่านหรือจัดวางเอกสาร PDF ได้")
 }
@@ -1203,17 +1209,6 @@ mod tests {
     }
 }
 
-/// Required source-rendering port; HTTP composition binds the private File Platform implementation.
-#[async_trait::async_trait]
-pub trait DocumentValidationPort: Send + Sync {
-    async fn validate(
-        &self,
-        document: &CorrespondenceDocumentRevision,
-        annotations: &[DocumentAnnotation],
-        signature: Option<&SignatureInput>,
-        signer_label: &str,
-    ) -> Result<(), AppError>;
-}
 pub struct PlatformDocumentValidator<'a> {
     pub pool: &'a PgPool,
     pub platform: &'a FilePlatform,
@@ -1286,21 +1281,4 @@ fn signature_caption(
         .max(48.0)
         .min(geometry.height);
     text_box(operations, label, left, top, width, 48.0, "#333333", false)
-}
-pub(crate) fn signing_label(
-    name: &str,
-    role: Option<&str>,
-    signed_at: chrono::DateTime<chrono::Utc>,
-) -> String {
-    let local = signed_at + chrono::Duration::hours(7);
-    format!(
-        "{} {} {:02}/{:02}/{} {:02}:{:02} น. (UTC+07:00)",
-        name,
-        role.unwrap_or(""),
-        local.day(),
-        local.month(),
-        local.year() + 543,
-        local.hour(),
-        local.minute()
-    )
 }

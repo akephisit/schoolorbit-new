@@ -9,15 +9,15 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::http::state::WorkflowHttpState;
-use crate::work::{
-    self as services, CreateWorkItemInput, WorkItem, WorkItemAssigneeTargetInput, WorkItemFilter,
-    WorkItemMetadata, WorkItemState,
-};
-use crate::{policy as workflow_access_policy, workflow};
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
+use school_workflow::work::{
+    self as services, CreateWorkItemInput, WorkItem, WorkItemAssigneeTargetInput, WorkItemFilter,
+    WorkItemMetadata, WorkItemState,
+};
+use school_workflow::{policy as workflow_access_policy, workflow};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

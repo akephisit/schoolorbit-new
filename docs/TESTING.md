@@ -75,6 +75,11 @@ Run `node --test scripts/tests/pipeline*.test.mjs` for planner, artifact, proven
 maintenance failure cases, plus `node --test frontend-school/tests/static/school-release-deployment.test.mjs`
 for workflow ownership and gates. Production acceptance remains a separate deployed-proxy and
 browser verification after integration. Caches never replace a required test result.
+`node --test scripts/tests/pipeline-release-bundle.test.mjs` exercises exact committed archive
+bytes, deterministic reconstruction, strict archive/JSON rejection, immutable replay/tampering,
+symlinked ancestors and code/state separation. Existing maintenance/storage fixtures preserve
+their complete helper closure. Workflow guards require one upload, public-only identities and
+installation inside existing SSH invocations; run the deployment owner for the full affected gates.
 For a bounded change to the team merge controller, run `node --test scripts/tests/pipeline-github.test.mjs`
 and the documentation-policy suite. Its fake GitHub API verifies that the eligible PR is merged
 with `merge_method: merge` and the exact gated head, dispatches the main Pipeline, and rejects stale
@@ -150,6 +155,17 @@ and complete counterbalanced sampling. Dispatch the isolated remote comparison t
 `cache-benchmark` with `options={"samples":"2"}` on the reviewed experiment branch. Both variants
 must retain the runtime UID/command and canonical offline OpenAPI; inspect full build wall time,
 dependency-layer reuse, cache export and error counters before changing production cache policy.
+For the separate exporter topology experiment run
+`node --test scripts/tests/pipeline-export-benchmark.test.mjs scripts/tests/pipeline-cache-benchmark.test.mjs`.
+These exercise isolated digest imports, charged dependency/runtime commands, complete counterbalanced
+producer/consumer sampling, runtime/API/compiler equivalence and build/evidence failure cleanup.
+Budget fixtures require a separate exporter execution limit and bounded always-on evidence/cleanup
+reserves, preserve the legacy phase bounds, and exercise both supported sample counts with all
+freshness, runtime-push and offline API checks retained.
+Dispatch the reviewed committed source with Operations `cache-benchmark`,
+`options={"phase":"exporters","samples":"2"}`. It requires CPU4 and pinned builders; it does not
+change production cache selection. Read declared common/diagnostic costs and seed/reuse limits in
+[Operations](./OPERATIONS.md) before interpreting producer-plus-consumer timings.
 Scope fixtures in `scripts/tests/pipeline-policy.test.mjs` cover recipe/report separation,
 component deployment ownership and queued baseline reconciliation. The School release source guards
 exercise parallel branch failure joins, backend prerequisite refusal, pinned runner compatibility and
@@ -761,6 +777,10 @@ applicable, persistence, business rules, and focused tests. Root keeps HTTP/Open
 cross-domain deletion and side-effect orchestration, Calendar notification scheduling, and Parent
 aggregate views. Keep database-heavy package suites at no more than eight threads when they share
 a disposable PostgreSQL instance.
+`school-workflow-http` owns Workflow's concrete HTTP state/routes/handlers and PDF/file renderer.
+Workflow core retains document-validation/signing-label contracts and transactional business
+operations; its Budget/Staff Leave consumers do not depend on that concrete renderer. Include
+both Workflow owners when selecting their transport, PDF, permission or correspondence fixtures.
 
 `school-staff-leave` owns the Leave integration target and validation-before-checkout tests. Use
 `./scripts/test_backend_school.sh --package school-staff-leave -- --test-threads=4` from the repository
@@ -2385,7 +2405,8 @@ shared control-plane database for this fixture.
 
 ## Correspondence and reusable processes
 
-The Workflow owner contains pure validation/geometry tests and disposable database cases for
+Workflow core contains pure domain/settings/signature tests. Workflow HTTP owns real parser/PDF
+geometry tests and the correspondence integration target, including disposable database cases for
 registration sequences, scope union, frozen recipients, all/any progression, return/resend,
 concurrent/replayed decisions, image signature ownership and immutable file/document evidence.
 Use the same pinned toolchain and shared Cargo target as other School checks:
@@ -2393,7 +2414,7 @@ Use the same pinned toolchain and shared Cargo target as other School checks:
 ```bash
 ./scripts/test_backend_school.sh --package school-workflow -- --test-threads=2
 cd backend-school
-WORKFLOW_PDF_FIXTURE_DIR=/tmp/schoolorbit-workflow-renderer cargo test -p school-workflow --lib document_export::tests
+WORKFLOW_PDF_FIXTURE_DIR=/tmp/schoolorbit-workflow-renderer cargo test -p school-workflow-http --lib document_export::tests
 cargo test -p school-file-platform --lib private_original_consumer_checks_ready_visibility_and_purpose_byte_bound
 ```
 
@@ -2417,7 +2438,7 @@ backfill the earliest valid immutable Read and refuse missing-document or ambigu
 evidence without changing audit rows:
 
 ```bash
-./scripts/test_backend_school.sh --package school-workflow --test correspondence -- --test-threads=2
+./scripts/test_backend_school.sh --package school-workflow-http --test correspondence -- --test-threads=2
 ```
 
 Run the generated API generation/check/tests after changing the list or revision DTOs. Frontend

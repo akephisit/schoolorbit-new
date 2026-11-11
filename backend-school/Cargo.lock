@@ -848,6 +848,7 @@ dependencies = [
  "school-tenancy",
  "school-test-db",
  "school-workflow",
+ "school-workflow-http",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -5011,6 +5012,31 @@ name = "school-workflow"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
+ "school-authorization",
+ "school-database",
+ "school-errors",
+ "school-file-contracts",
+ "school-notifications",
+ "school-permissions",
+ "school-tenancy",
+ "school-test-db",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "url",
+ "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "school-workflow-http"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
  "axum",
  "chrono",
  "image",
@@ -5028,13 +5054,13 @@ dependencies = [
  "school-permissions",
  "school-tenancy",
  "school-test-db",
+ "school-workflow",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "sqlx",
  "tokio",
  "tracing",
- "url",
  "utoipa",
  "uuid",
 ]

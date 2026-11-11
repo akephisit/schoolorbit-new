@@ -2,6 +2,9 @@ name: Admin backend release implementation
 on:
   workflow_call:
     inputs:
+      release_bundle_digest:
+        type: string
+        required: true
       input_hash:
         type: string
         required: true
@@ -38,15 +41,6 @@ jobs:
             if .schemaVersion == 1 and .component == "backend-admin" and .sha == $sha and .inputHash == $hash and (.digest | test("^sha256:[0-9a-f]{64}$")) then .digest else error("Prepared image identity mismatch") end
           ' "$RUNNER_TEMP/prepared/backend-admin.json")
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
-      - name: Upload canonical runtime and proxy templates
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ inputs.target_origin_ip || secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          port: ${{ secrets.SERVER_PORT }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: podman-compose.yml,scripts/render_nginx_config.sh,scripts/prune_runtime_images.sh,scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh,scripts/lib/schoolorbit-installer/remote/deployment_timing.sh,nginx-configs/admin-api.conf.template,nginx-configs/school-api.conf.template,nginx-configs/school-api.maintenance.conf.template,scripts/lib/pipeline-remote
-          target: /opt/stack/deployment
       - name: Deploy selected commit to the target origin
         uses: appleboy/ssh-action@v1.2.5
         with:
@@ -54,13 +48,14 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: bash /opt/stack/deployment/scripts/lib/pipeline-remote/admin-deploy.sh
-          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,RELEASE_SHA,BACKEND_IMAGE_DIGEST,ADMIN_BOOTSTRAP_EMAIL,ADMIN_BOOTSTRAP_PASSWORD
+          script: bash "/opt/stack/deployment/release-bundles/$RELEASE_SHA/$RELEASE_BUNDLE_SHA256/scripts/lib/pipeline-remote/admin-deploy.sh"
+          envs: REGISTRY_TOKEN,REGISTRY_USER,BASE_DOMAIN,RELEASE_SHA,RELEASE_BUNDLE_SHA256,BACKEND_IMAGE_DIGEST,ADMIN_BOOTSTRAP_EMAIL,ADMIN_BOOTSTRAP_PASSWORD
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
           BASE_DOMAIN: ${{ vars.BASE_DOMAIN || 'schoolorbit.app' }}
           RELEASE_SHA: ${{ github.sha }}
+          RELEASE_BUNDLE_SHA256: ${{ inputs.release_bundle_digest }}
           BACKEND_IMAGE_DIGEST: ${{ steps.manifest.outputs.digest }}
           ADMIN_BOOTSTRAP_EMAIL: ${{ secrets.ADMIN_BOOTSTRAP_EMAIL }}
           ADMIN_BOOTSTRAP_PASSWORD: ${{ secrets.ADMIN_BOOTSTRAP_PASSWORD }}

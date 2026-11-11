@@ -112,7 +112,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           port: ${{ secrets.SERVER_PORT }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: scripts/lib/pipeline-runtime-observations.py
+          source: scripts/lib/pipeline-runtime-observations.py,scripts/clamd_runtime_matches.sh,scripts/lib/pipeline-remote/runtime-env.sh
           target: /opt/stack/deployment
       - name: Measure selected tenant reads through the public API
         if: github.ref == 'refs/heads/main' && inputs.run_tenant_probe

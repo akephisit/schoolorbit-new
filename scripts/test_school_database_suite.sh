@@ -70,7 +70,7 @@ ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh integrat
 ./scripts/test_backend_school.sh integration_tests::certificates -- --test-threads=4
 
 # Domain transport moves retain every affected provider and cross-domain boundary fixture.
-for package in school-test-db school-academic-core school-academic-delivery school-academic-timetable school-academic-assessment school-academic-results school-academic-lifecycle school-budget school-student-care school-certificates school-file-platform school-students school-staff school-staff-leave school-calendar school-supervision school-admission school-question-bank school-fonts school-workflow school-administration school-files-http; do
+for package in school-test-db school-academic-core school-academic-delivery school-academic-timetable school-academic-assessment school-academic-results school-academic-lifecycle school-budget school-student-care school-certificates school-file-platform school-students school-staff school-staff-leave school-calendar school-supervision school-admission school-question-bank school-fonts school-workflow school-workflow-http school-administration school-files-http; do
     if [[ "$package" == school-student-care ]]; then
         ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh --package "$package" -- --test-threads=4
     else

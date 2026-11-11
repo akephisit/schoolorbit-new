@@ -5,27 +5,18 @@ edition.workspace = true
 
 [features]
 default = []
-api-docs = ["school-file-contracts/api-docs", "dep:utoipa", "school-file-platform/api-docs", "school-http/api-docs"]
+api-docs = ["school-file-contracts/api-docs", "dep:utoipa"]
 
 [dependencies]
 school-file-contracts = { workspace = true }
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
-rustybuzz = { workspace = true }
 url = { workspace = true }
 utoipa = { workspace = true, optional = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-lopdf = { workspace = true }
-image = { workspace = true }
-school-file-platform = { workspace = true }
 async-trait = { workspace = true }
-tokio = { workspace = true }
 school-notifications = { workspace = true }
-school-http = { workspace = true }
-school-auth-http = { workspace = true }
-school-auth = { workspace = true }
-axum = { workspace = true }
 chrono = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }

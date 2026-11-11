@@ -80,9 +80,9 @@ pub(crate) fn coverage_router(f: &ProtectedFixture) -> Router {
             ),
         )
         .merge(
-            school_workflow::http::routes::workflow_routes()
-                .merge(school_workflow::http::routes::work_routes())
-                .with_state(school_workflow::http::state::WorkflowHttpState {
+            school_workflow_http::http::routes::workflow_routes()
+                .merge(school_workflow_http::http::routes::work_routes())
+                .with_state(school_workflow_http::http::state::WorkflowHttpState {
                     auth_runtime: f.runtime.clone(),
                     file_platform: platform,
                     work_event_channel: events,

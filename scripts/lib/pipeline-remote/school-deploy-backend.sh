@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -eu
+# shellcheck source=scripts/lib/pipeline-remote/release-paths.sh
+. "$(dirname "${BASH_SOURCE[0]}")/release-paths.sh"
+schoolorbit_release_paths "${BASH_SOURCE[0]}"
 REGISTRY_TOKEN=${REGISTRY_TOKEN:?REGISTRY_TOKEN is required}
 REGISTRY_USER=${REGISTRY_USER:?REGISTRY_USER is required}
 BASE_DOMAIN=${BASE_DOMAIN:?BASE_DOMAIN is required}
@@ -7,19 +10,20 @@ BACKEND_IMAGE_DIGEST=${BACKEND_IMAGE_DIGEST:?BACKEND_IMAGE_DIGEST is required}
 RELEASE_SHA=${RELEASE_SHA:?RELEASE_SHA is required}
 # Reject malformed/manual-only inputs before login, R2 writes or maintenance.
 # shellcheck source=scripts/lib/pipeline-remote/storage-namespace-input.sh
-. /opt/stack/deployment/scripts/lib/pipeline-remote/storage-namespace-input.sh
+. "$schoolorbit_code_root/scripts/lib/pipeline-remote/storage-namespace-input.sh"
 NAMESPACE_ATTESTATION_JSON=$(storage_namespace_input)
 export NAMESPACE_ATTESTATION_JSON
 echo "${REGISTRY_TOKEN}" | podman login ghcr.io -u "${REGISTRY_USER}" --password-stdin
 cd /opt/stack
 
 base_domain="${BASE_DOMAIN}"
-deployment_root=/opt/stack/deployment
+deployment_root=$schoolorbit_code_root
+state_root=$schoolorbit_state_root
 runtime_source="$deployment_root/podman-compose.yml"
 runtime_compose=/opt/stack/podman-compose.yml
 runtime_env=/opt/stack/.env
 renderer_source="$deployment_root/scripts/render_nginx_config.sh"
-renderer="$deployment_root/render-nginx"
+renderer="$state_root/render-nginx"
 network_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/ensure_container_network.sh"
 timing_helper_source="$deployment_root/scripts/lib/schoolorbit-installer/remote/deployment_timing.sh"
 image_cleanup="$deployment_root/scripts/prune_runtime_images.sh"
@@ -27,8 +31,8 @@ clamd_matcher="$deployment_root/scripts/clamd_runtime_matches.sh"
 r2_cors_helper_source="$deployment_root/scripts/reconcile_r2_cors.sh"
 proxy_template="$deployment_root/nginx-configs/school-api.conf.template"
 maintenance_proxy_template="$deployment_root/nginx-configs/school-api.maintenance.conf.template"
-proxy_source="$deployment_root/school-api.conf"
-maintenance_proxy_source="$deployment_root/school-api.maintenance.conf"
+proxy_source="$state_root/school-api.conf"
+maintenance_proxy_source="$state_root/school-api.maintenance.conf"
 proxy_target=/opt/stack/nginx/conf.d/school-api.conf
 legacy_proxy_target=/opt/stack/nginx/conf.d/school-api.${base_domain}.conf
 backend_image=ghcr.io/akephisit/schoolorbit-backend-school
@@ -146,7 +150,7 @@ bash "$deployment_root/scripts/lib/pipeline-remote/school-storage-rollout.sh" pr
 
 install -m 0755 "$renderer_source" "$renderer"
 export_school_compose_env
-cp "$runtime_source" "${runtime_compose}.next"
+install -m 0644 "$runtime_source" "${runtime_compose}.next"
 podman-compose -f "${runtime_compose}.next" --dry-run up -d backend-school >/dev/null 2>&1
 unset_school_compose_env
 mv "${runtime_compose}.next" "$runtime_compose"

@@ -1,10 +1,5 @@
 //! Authenticated transport only; all policy and transaction logic is domain-owned.
 use super::state::WorkflowHttpState;
-use crate::{
-    correspondence::{self, CorrespondenceListQuery, CorrespondenceOptionsQuery},
-    directed, process,
-    process_models::*,
-};
 use axum::{
     extract::{Extension, Path, Query, State},
     response::{IntoResponse, Response},
@@ -16,6 +11,11 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError};
+use school_workflow::{
+    correspondence::{self, CorrespondenceListQuery, CorrespondenceOptionsQuery},
+    directed, process,
+    process_models::*,
+};
 use uuid::Uuid;
 
 #[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/correspondence",tag="correspondence",params(CorrespondenceListQuery),responses((status=200, description = "Correspondence list returned",body=ApiResponse<CorrespondenceList>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]

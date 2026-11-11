@@ -10,16 +10,16 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::http::state::WorkflowHttpState;
-use crate::models::{WorkflowWindow, WorkflowWindowMetadata, WorkflowWindowStatus};
-use crate::policy as workflow_access_policy;
-use crate::workflow::{
-    self as services, CreateWorkflowWindowInput, WorkflowWindowFilter, WorkflowWindowSchedule,
-    WorkflowWindowTimeState,
-};
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
+use school_workflow::models::{WorkflowWindow, WorkflowWindowMetadata, WorkflowWindowStatus};
+use school_workflow::policy as workflow_access_policy;
+use school_workflow::workflow::{
+    self as services, CreateWorkflowWindowInput, WorkflowWindowFilter, WorkflowWindowSchedule,
+    WorkflowWindowTimeState,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -7,7 +7,7 @@ on:
         type: string
         default: "2"
       phase:
-        description: Existing comparison or cross-run snapshot producer, consumer, cleanup
+        description: Cache backend compare, exporters, or cross-run snapshot producer, consumer, cleanup
         type: string
         default: compare
       producer_run_id:
@@ -23,7 +23,7 @@ permissions:
 jobs:
   benchmark:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: ${{ inputs.phase == 'exporters' && 240 || 120 }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -35,7 +35,7 @@ jobs:
           PHASE: ${{ inputs.phase }}
         run: |
           [[ "$BENCH_SAMPLES" =~ ^[2-3]$ ]]
-          case "$PHASE" in compare|producer|consumer|cleanup) ;; *) exit 64 ;; esac
+          case "$PHASE" in compare|exporters|producer|consumer|cleanup) ;; *) exit 64 ;; esac
       - name: Verify previous run and resolve immutable trial state
         id: trial-origin
         if: inputs.phase == 'consumer' || inputs.phase == 'cleanup'
@@ -89,6 +89,13 @@ jobs:
           BENCH_SAMPLES: ${{ inputs.samples }}
           BENCH_OUTPUT: ${{ runner.temp }}/backend-cache-benchmark
         run: python3 -B scripts/benchmark_cargo_snapshot.py
+      - name: Compare full-cost isolated BuildKit exporters on CPU4
+        if: inputs.phase == 'exporters'
+        timeout-minutes: 210
+        env:
+          BENCH_SAMPLES: ${{ inputs.samples }}
+          BENCH_OUTPUT: ${{ runner.temp }}/backend-cache-benchmark
+        run: python3 -B scripts/benchmark_backend_export.py
       - name: Validate trial producer authority
         if: inputs.phase == 'producer'
         env:
@@ -106,6 +113,7 @@ jobs:
           if-no-files-found: error
       - name: Publish complete benchmark evidence
         if: always() && inputs.phase != 'cleanup'
+        timeout-minutes: ${{ inputs.phase == 'exporters' && 15 || 120 }}
         uses: actions/upload-artifact@v6
         with:
           name: backend-cache-benchmark
@@ -117,7 +125,8 @@ jobs:
           retention-days: 7
           if-no-files-found: error
       - name: Remove only this run's disposable registry package
-        if: always() && (inputs.phase == 'compare' || inputs.phase == 'producer' && (steps.trial-published.outcome != 'success' || failure() || cancelled()) || (inputs.phase == 'consumer' || inputs.phase == 'cleanup') && steps.trial-origin.outcome == 'success')
+        if: always() && (inputs.phase == 'compare' || inputs.phase == 'exporters' || inputs.phase == 'producer' && (steps.trial-published.outcome != 'success' || failure() || cancelled()) || (inputs.phase == 'consumer' || inputs.phase == 'cleanup') && steps.trial-origin.outcome == 'success')
+        timeout-minutes: ${{ inputs.phase == 'exporters' && 10 || 120 }}
         env:
           GH_TOKEN: ${{ github.token }}
           OWNER: ${{ github.repository_owner }}

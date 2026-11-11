@@ -1033,6 +1033,29 @@ The reconciliation job emits the public plan without deployment secrets. A separ
 preflight validates that transported plan, then checks Cloudflare ownership and operator inputs
 without forwarding identity outputs. Missing or malformed plan transport blocks maintenance;
 this separation prevents GitHub's secret-output filtering from dropping release hashes.
+
+Coordinated releases transfer one immutable implementation bundle rather than uploading shared
+scripts in each job. The [bundle producer](../scripts/lib/pipeline-release-bundle.mjs) reads the exact
+Git tree and the fixed allowlist owned by the [trusted bootstrap](../scripts/lib/pipeline-remote/install-release-bundle.sh).
+Public preflight emits its SHA256; private preflight reconstructs identical bytes and verifies that
+public digest before its one SCP. No extra Actions artifact or SSH connection is required.
+Installation runs inside the existing first-operator check when Admin backend is selected,
+otherwise inside the existing maintenance-enter invocation. The owned-cleanup interlock still
+precedes the first upload. The host's existing Python 3 is an explicit prerequisite, checked before
+installation; deployment does not install a new host dependency.
+
+Code is published at `/opt/stack/deployment/release-bundles/<release-sha>/<bundle-sha256>/` after
+digest, exact file/type/mode/size/hash and duplicate/path/link validation. A retry verifies the entire
+existing read-only bundle and never replaces it. Publication relies on the existing production lock;
+permissions and digest verification are not isolation from another trusted process with the same UID.
+Every release entrypoint and helper/template read uses that exact path. Keep `/opt/stack/.env`, the
+CA, active Compose/nginx files and `/opt/stack/deployment` pending/accepted markers, probe tokens and
+release/storage/cleanup/TLS/DNS journals in their existing locations. A missing/mismatched bundle
+identity fails closed. Legacy operations/provisioning still upload their own shared-tree closure;
+diagnostics explicitly upload their runtime-env and ClamAV helpers instead of assuming an earlier
+release installed them. Bundles contain no operational secrets. Retain immutable bundles alongside
+the release evidence they support; this change adds no automatic host pruning or journal deletion.
+
 Admin frontend and School execute concurrently after the selected Admin backend is ready. School
 still stages tenant Workers before backend replacement and promotes them only after backend readiness;
 global acceptance waits for both branches and leaves maintenance enabled on either failure.
@@ -1146,6 +1169,42 @@ history to add graph connections. If repository administration is unavailable, k
 PR in draft and report the exact settings that remain unverified or unapplied.
 
 ### Build, deployment timing, and image retention
+
+Operations `cache-benchmark` with `options={"phase":"exporters","samples":"2"}` runs the
+[exporter topology experiment](../scripts/benchmark_backend_export.py) from the exact reviewed
+commit on the existing CPU4 Ubuntu runner. It compares current runtime `mode=max` against a
+separate dependency-target `mode=min` export followed by runtime build without application cache
+export. Dependency `mode=max` would also retain the changing planner source intermediate. The
+`min` candidate may lose useful compiler-tool intermediates, so it remains an experiment.
+Neither variant reads or writes production cache packages or enables Cargo target snapshots.
+
+Fresh pinned builders share identical frozen local compiler-cache bytes. Two source-edit and two
+first-workspace-recipe-change pairs reverse variant order and import digest-pinned seed caches.
+There is one seed producer per variant, ordered runtime/max then dependency/min. Warm consumer pairs
+reverse order, but reuse those same two producer measurements; they are not independent producer
+replicates. Seed costs are separate and charged to each producer-plus-consumer transition; this seed has warm
+compiler artifacts and is not an empty-target cold baseline. Measurements include builder bootstrap,
+all variant-specific dependency/runtime solves, cache export, registry runtime-image push and
+digest/size lookup. Compiler seeding/priming, evidence extraction, unchanged-Cargo checks and fresh
+offline API verification are recorded separately; checkout/login/common setup is excluded.
+Runtime binary, migrations, configuration, UID and canonical offline OpenAPI must agree, with matching
+registry compiler profiles/features and no cache errors. Missing evidence or a failed build invalidates
+the comparison. Results retain phase timings, layer sizes and total builder network counters; those
+bytes are not cache-only or incremental-upload measurements. The existing cleanup removes only this
+run's scratch registry package/builders/images. Production policy stays unchanged until repeated
+complete-cost gains and preserved reuse justify a reviewed decision.
+Exporter runs use a 240-minute job bound with a 210-minute benchmark-step bound, followed by
+separate 15-minute evidence-upload and 10-minute cleanup bounds. This reserves five minutes for
+common setup and gives failed benchmark steps time to publish evidence and clean their scratch
+package. Other cache phases retain their effective 120-minute job bound. The larger exporter budget
+covers the compiler-fixture seed and all ten or fourteen strict samples; it does not reduce API,
+runtime or freshness checks, or change charged measurement costs. Inspect bounded phase progress
+and completed-pair evidence. A timed-out run with missing records cannot establish performance
+success; if cancellation prevents normal cleanup, use the existing trusted producer-run cleanup
+procedure for that exact run and attempt. A production change
+needs gains robust to seed/consumer variance; otherwise retain current policy or run a bounded
+counterbalanced producer repeat before deciding. An incomplete artifact or successful upload step
+does not override a failed benchmark job or establish completed comparison.
 
 Operations `cache-benchmark` compares School BuildKit `gha` and GHCR `registry` exporters
 with `mode=max`, fresh pinned builders and the same production release flags on one Ubuntu 24.04

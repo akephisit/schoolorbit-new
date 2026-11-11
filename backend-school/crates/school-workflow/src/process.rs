@@ -14,7 +14,7 @@ use uuid::Uuid;
 pub(crate) fn invalid(message: &str) -> AppError {
     AppError::ValidationError(message.into())
 }
-pub(crate) fn denied() -> AppError {
+pub fn denied() -> AppError {
     AppError::Forbidden("ไม่มีสิทธิ์ดำเนินการรายการนี้".into())
 }
 pub(crate) fn stale() -> AppError {

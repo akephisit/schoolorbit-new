@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import test from 'node:test';
 import { parse as parseYaml } from 'yaml';
 import { expandCompositeSteps, readWorkflowSource } from '../helpers/workflow-source.mjs';
+import { releaseBundleFiles } from '../../../scripts/lib/pipeline-release-bundle.mjs';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
@@ -164,7 +165,7 @@ test('backend-school deployment validates session runtime before compose activat
 	const validatorStart = workflow.indexOf('            runtime_env_value() {');
 	const exportDefinition = workflow.indexOf('            export_school_compose_env() {');
 	const composeActivation = workflow.indexOf(
-		'            cp "$runtime_source" "${runtime_compose}.next"'
+		'            install -m 0644 "$runtime_source" "${runtime_compose}.next"'
 	);
 
 	assert.ok(validatorStart >= 0, 'runtime environment decoder must exist');
@@ -288,7 +289,24 @@ test('backend-school deployment reuses only an exact ClamAV runtime and verifies
 
 	assert.ok(scannerStart >= 0 && scannerEnd > scannerStart);
 	const scannerDeployment = workflow.slice(scannerStart, scannerEnd);
-	assert.match(workflow, /source: [^\n]*scripts\/clamd_runtime_matches\.sh/);
+	assert.ok(
+		releaseBundleFiles(repoRoot).includes('scripts/clamd_runtime_matches.sh'),
+		'the trusted release bundle must carry the ClamAV runtime matcher'
+	);
+	const release = parseYaml(
+		await readFile(path.join(repoRoot, '.github/workflows/deploy-school-release.yml'), 'utf8')
+	);
+	const deploy = release.jobs['deploy-backend'].steps.find(
+		(step) => step.name === 'Deploy to Server via SSH'
+	);
+	assert.equal(
+		deploy.with.script,
+		'bash "/opt/stack/deployment/release-bundles/$RELEASE_SHA/$RELEASE_BUNDLE_SHA256/scripts/lib/pipeline-remote/school-deploy-backend.sh"'
+	);
+	assert.equal(deploy.env.RELEASE_BUNDLE_SHA256, '${{ inputs.release_bundle_digest }}');
+	assert.ok(deploy.with.envs.split(',').includes('RELEASE_BUNDLE_SHA256'));
+	const implementation = await readRepo('scripts/lib/pipeline-remote/school-deploy-backend.sh');
+	assert.match(implementation, /^deployment_root=\$schoolorbit_code_root$/m);
 	assert.match(workflow, /clamd_matcher="\$deployment_root\/scripts\/clamd_runtime_matches\.sh"/);
 	const orderedMarkers = [
 		'clamd_image=docker.io/clamav/clamav-debian:1.5.3',
