@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -63,7 +64,7 @@ function fixture(t) {
   git("commit", "-qm", "release implementation");
   const sha = git("rev-parse", "HEAD"),
     bundle = createReleaseBundle(source, sha);
-  function install(bytes = bundle.archive, extra = {}) {
+  function install(bytes = bundle.archive, extra = {}, transport = {}) {
     const digest = sha256(bytes);
     const incoming = path.join(
       stack,
@@ -72,8 +73,33 @@ function fixture(t) {
       digest,
       "123-1",
     );
-    mkdirSync(incoming, { recursive: true, mode: 0o700 });
-    writeFileSync(path.join(incoming, "release-bundle.tar"), bytes);
+    if (transport.umask) {
+      const created = spawnSync(
+        "bash",
+        [
+          "-euc",
+          'umask "$1"; mkdir -p -- "$2"',
+          "fixture",
+          transport.umask,
+          incoming,
+        ],
+        { encoding: "utf8" },
+      );
+      assert.equal(created.status, 0, created.stderr);
+    } else mkdirSync(incoming, { recursive: true, mode: 0o700 });
+    const directories = [
+      path.join(stack, "deployment/release-bundle-incoming"),
+      path.dirname(path.dirname(incoming)),
+      path.dirname(incoming),
+      incoming,
+    ];
+    const incomingModes = directories.map(
+      (directory) => statSync(directory).mode & 0o7777,
+    );
+    const archivePath = path.join(incoming, "release-bundle.tar");
+    writeFileSync(archivePath, bytes);
+    if (transport.umask) chmodSync(archivePath, 0o644);
+    transport.mutate?.({ directories, incoming, archivePath });
     const result = spawnSync("bash", [bootstrap], {
       encoding: "utf8",
       env: {
@@ -89,11 +115,208 @@ function fixture(t) {
     return {
       ...result,
       digest,
+      directories,
+      incomingModes,
       destination: path.join(stack, "deployment/release-bundles", sha, digest),
     };
   }
   return { root, source, stack, git, sha, bundle, install };
 }
+test("seals actual SCP directories under umask0002 before strict installation", (t) => {
+  const f = fixture(t),
+    deployment = path.join(f.stack, "deployment");
+  chmodSync(deployment, 0o750);
+  const sibling = path.join(deployment, "unrelated-runtime-journal");
+  mkdirSync(sibling);
+  chmodSync(sibling, 0o775);
+  writeFileSync(path.join(sibling, "marker"), "private-sentinel");
+  const result = f.install(f.bundle.archive, {}, { umask: "0002" });
+  assert.deepEqual(result.incomingModes, [0o775, 0o775, 0o775, 0o775]);
+  assert.equal(result.status, 0, result.stderr);
+  for (const directory of result.directories.slice(0, -1))
+    assert.equal(statSync(directory).mode & 0o7777, 0o700);
+  assert.equal(statSync(deployment).mode & 0o7777, 0o750);
+  assert.equal(statSync(sibling).mode & 0o7777, 0o775);
+  assert.equal(
+    readFileSync(path.join(sibling, "marker"), "utf8"),
+    "private-sentinel",
+  );
+  assert.equal(statSync(result.destination).mode & 0o7777, 0o555);
+  assert.doesNotMatch(result.stdout + result.stderr, /private-sentinel/);
+});
+for (const mask of ["0022", "0027", "0077"])
+  test(`seals explicitly safe incoming directory modes from umask${mask}`, (t) => {
+    const f = fixture(t),
+      result = f.install(f.bundle.archive, {}, { umask: mask });
+    assert.equal(result.status, 0, result.stderr);
+    for (const directory of result.directories.slice(0, -1))
+      assert.equal(statSync(directory).mode & 0o7777, 0o700);
+  });
+for (const mode of [0o777, 0o770, 0o2775, 0o1775])
+  test(`refuses unexplained incoming mode ${mode.toString(8)} without repairing it`, (t) => {
+    const f = fixture(t);
+    const result = f.install(
+      f.bundle.archive,
+      {},
+      {
+        umask: "0002",
+        mutate: ({ directories }) => chmodSync(directories[0], mode),
+      },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /code=transport_incoming_root_mode/);
+    assert.equal(statSync(result.directories[0]).mode & 0o7777, mode);
+    assert.equal(existsSync(result.destination), false);
+  });
+test("refuses an unsafe shared stack root without changing it or sealing incoming paths", (t) => {
+  const f = fixture(t);
+  const result = f.install(
+    f.bundle.archive,
+    {},
+    { umask: "0002", mutate: () => chmodSync(f.stack, 0o775) },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /code=transport_shared_stack/);
+  assert.equal(statSync(f.stack).mode & 0o7777, 0o775);
+  assert.equal(statSync(result.directories[0]).mode & 0o7777, 0o775);
+  assert.equal(existsSync(result.destination), false);
+});
+test("refuses an unsafe deployment root without changing it or sealing incoming paths", (t) => {
+  const f = fixture(t),
+    deployment = path.join(f.stack, "deployment");
+  const result = f.install(
+    f.bundle.archive,
+    {},
+    { umask: "0002", mutate: () => chmodSync(deployment, 0o775) },
+  );
+  assert.notEqual(result.status, 0);
+  assert.equal(statSync(deployment).mode & 0o7777, 0o775);
+  assert.equal(statSync(result.directories[0]).mode & 0o7777, 0o775);
+  assert.equal(existsSync(result.destination), false);
+});
+test("refuses a symlinked shared stack without changing its incoming namespace", (t) => {
+  const f = fixture(t),
+    actual = path.join(f.root, "actual-stack");
+  const result = f.install(
+    f.bundle.archive,
+    {},
+    {
+      umask: "0002",
+      mutate: () => {
+        renameSync(f.stack, actual);
+        symlinkSync(actual, f.stack);
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /code=transport_path_refused/);
+  assert.equal(
+    statSync(path.join(actual, "deployment/release-bundle-incoming")).mode &
+      0o7777,
+    0o775,
+  );
+  assert.equal(existsSync(result.destination), false);
+});
+for (const level of [0, 1, 2, 3])
+  test(`refuses symlink traversal at incoming level${level}`, (t) => {
+    const f = fixture(t),
+      outside = path.join(f.root, "outside");
+    mkdirSync(outside);
+    writeFileSync(path.join(outside, "marker"), "private-sentinel");
+    const result = f.install(
+      f.bundle.archive,
+      {},
+      {
+        umask: "0002",
+        mutate: ({ directories }) => {
+          rmSync(directories[level], { recursive: true });
+          symlinkSync(outside, directories[level]);
+        },
+      },
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stderr,
+      /code=transport_incoming_(root|sha|digest|run)_type/,
+    );
+    assert.equal(
+      readFileSync(path.join(outside, "marker"), "utf8"),
+      "private-sentinel",
+    );
+    assert.deepEqual(readdirSync(outside), ["marker"]);
+    assert.doesNotMatch(result.stdout + result.stderr, /private-sentinel/);
+  });
+test("refuses a non-directory incoming child without reading its contents", (t) => {
+  const f = fixture(t);
+  const result = f.install(
+    f.bundle.archive,
+    {},
+    {
+      umask: "0002",
+      mutate: ({ directories }) => {
+        rmSync(directories[1], { recursive: true });
+        writeFileSync(directories[1], "private-sentinel");
+      },
+    },
+  );
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /code=transport_incoming_sha_type/);
+  assert.doesNotMatch(result.stdout + result.stderr, /private-sentinel/);
+});
+test("invalid transport identity refuses before any incoming permission change", (t) => {
+  const f = fixture(t);
+  const result = f.install(
+    f.bundle.archive,
+    { BUNDLE_RUN_ID: "private-sentinel" },
+    { umask: "0002" },
+  );
+  assert.notEqual(result.status, 0);
+  for (const directory of result.directories)
+    assert.equal(statSync(directory).mode & 0o7777, 0o775);
+  assert.doesNotMatch(result.stdout + result.stderr, /private-sentinel/);
+});
+test("foreign owner metadata is refused before fchmod of an incoming directory", (t) => {
+  const f = fixture(t),
+    deployment = path.join(f.stack, "deployment");
+  const incoming = path.join(deployment, "release-bundle-incoming");
+  mkdirSync(incoming);
+  chmodSync(incoming, 0o775);
+  const result = spawnSync(
+    "python3",
+    [
+      "-B",
+      "-c",
+      `
+import ast,os,pathlib,stat,sys,types
+source=pathlib.Path(sys.argv[1]).read_text().split("<<'PY'\\n",1)[1].split('\\nPY',1)[0]
+nodes=[node for node in ast.parse(source).body if isinstance(node,ast.FunctionDef) and node.name in {'fail','seal_incoming_transport'}]
+namespace={'os':os,'stat':stat}
+exec(compile(ast.Module(body=nodes,type_ignores=[]),'<actual transport definitions>','exec'),namespace)
+original_stat,original_chmod=os.stat,os.fchmod
+calls=[]
+def foreign_owner(name,*args,**kwargs):
+ value=original_stat(name,*args,**kwargs)
+ if name=='release-bundle-incoming': return types.SimpleNamespace(st_mode=value.st_mode,st_uid=os.getuid()+1)
+ return value
+def chmod(fd,mode):
+ calls.append(mode)
+ return original_chmod(fd,mode)
+os.stat,os.fchmod=foreign_owner,chmod
+try:
+ try: namespace['seal_incoming_transport'](pathlib.Path(sys.argv[2]),[('release-bundle-incoming','incoming_root')])
+ except SystemExit as error: assert str(error).endswith('code=transport_incoming_root_owner')
+ else: raise AssertionError('foreign owner accepted')
+ assert not calls
+finally: os.stat,os.fchmod=original_stat,original_chmod
+`,
+      bootstrap,
+      deployment,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(statSync(incoming).mode & 0o7777, 0o775);
+});
 test("archive is deterministic and reads exact committed regular-file bytes", (t) => {
   const f = fixture(t);
   writeFileSync(

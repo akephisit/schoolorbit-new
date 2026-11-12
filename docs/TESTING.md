@@ -77,7 +77,9 @@ for workflow ownership and gates. Production acceptance remains a separate deplo
 browser verification after integration. Caches never replace a required test result.
 `node --test scripts/tests/pipeline-release-bundle.test.mjs` exercises exact committed archive
 bytes, deterministic reconstruction, strict archive/JSON rejection, immutable replay/tampering,
-symlinked ancestors and code/state separation. Existing maintenance/storage fixtures preserve
+symlinked ancestors and code/state separation. The bundle suite also executes actual SCP-style
+`mkdir -p` under umask `0002`, verifies narrowly owned incoming sealing, and refuses unsafe modes,
+shared-root drift, foreign ownership and links. Existing maintenance/storage fixtures preserve
 their complete helper closure. Workflow guards require one upload, public-only identities and
 installation inside existing SSH invocations; run the deployment owner for the full affected gates.
 For a bounded change to the team merge controller, run `node --test scripts/tests/pipeline-github.test.mjs`

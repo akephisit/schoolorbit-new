@@ -1044,6 +1044,12 @@ otherwise inside the existing maintenance-enter invocation. The owned-cleanup in
 precedes the first upload. The host's existing Python 3 is an explicit prerequisite, checked before
 installation; deployment does not install a new host dependency.
 
+SCP directory creation inherits the remote umask, including `0002`. In the same existing target-host
+SSH invocation, the trusted installer seals only verified current-UID incoming directories from
+ordinary `0700`, `0750`, `0755` or `0775` modes to `0700`, top-down through no-follow file descriptors.
+Shared stack/deployment roots must already be safe and remain unchanged; foreign, linked, world-writable
+or special-mode incoming paths are refused. Existing archive and published-bundle validation follows unchanged.
+
 Code is published at `/opt/stack/deployment/release-bundles/<release-sha>/<bundle-sha256>/` after
 digest, exact file/type/mode/size/hash and duplicate/path/link validation. A retry verifies the entire
 existing read-only bundle and never replaces it. Publication relies on the existing production lock;
