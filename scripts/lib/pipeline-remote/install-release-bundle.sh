@@ -42,8 +42,11 @@ if os.environ.get('BUNDLE_OPERATION') == 'describe':
 if os.environ.get('BUNDLE_OPERATION', 'install') != 'install':
     raise SystemExit('Unknown bundle operation')
 
-def fail():
-    raise SystemExit('Release bundle identity or contents invalid')
+def fail(code=None):
+    message = 'Release bundle identity or contents invalid'
+    if code is not None:
+        message += ' code=' + code
+    raise SystemExit(message)
 
 def object_pairs(pairs):
     result = {}
@@ -75,9 +78,57 @@ def published_directory(path):
     if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o555:
         fail()
 
+def seal_incoming_transport(root, components):
+    # SCP mkdir inherits the SSH umask. Only this owned transport namespace may
+    # transition ordinary known modes to private mode; shared/runtime roots never do.
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptors = []
+    try:
+        if not root.is_absolute() or '..' in root.parts:
+            fail('transport_root_path')
+        parent = os.open('/', flags)
+        descriptors.append(parent)
+        for index, part in enumerate(root.parts[1:]):
+            if index == len(root.parts) - 2:
+                shared_stack = os.fstat(parent)
+                if shared_stack.st_uid != os.getuid() or shared_stack.st_mode & 0o7022:
+                    fail('transport_shared_stack')
+            parent = os.open(part, flags, dir_fd=parent)
+            descriptors.append(parent)
+        shared = os.fstat(parent)
+        if shared.st_uid != os.getuid() or shared.st_mode & 0o022:
+            fail('transport_shared_root')
+        for name, role in components:
+            before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISDIR(before.st_mode):
+                fail('transport_' + role + '_type')
+            if before.st_uid != os.getuid():
+                fail('transport_' + role + '_owner')
+            if stat.S_IMODE(before.st_mode) not in (0o700, 0o750, 0o755, 0o775):
+                fail('transport_' + role + '_mode')
+            child = os.open(name, flags, dir_fd=parent)
+            descriptors.append(child)
+            opened = os.fstat(child)
+            identity = lambda info: (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode)
+            if identity(opened) != identity(before):
+                fail('transport_' + role + '_changed')
+            if stat.S_IMODE(opened.st_mode) != 0o700:
+                os.fchmod(child, 0o700)
+            sealed = os.fstat(child)
+            linked = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if (sealed.st_dev, sealed.st_ino, sealed.st_uid, sealed.st_gid) != (opened.st_dev, opened.st_ino, opened.st_uid, opened.st_gid) or not stat.S_ISDIR(sealed.st_mode) or stat.S_IMODE(sealed.st_mode) != 0o700 or identity(linked) != identity(sealed):
+                fail('transport_' + role + '_changed')
+            parent = child
+    except OSError:
+        fail('transport_path_refused')
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
 # Reject ancestor substitution before opening any archive or publishing code.
 directory(root)
 incoming = root / 'release-bundle-incoming' / sha / digest / (run + '-' + attempt)
+seal_incoming_transport(root, [('release-bundle-incoming', 'incoming_root'), (sha, 'incoming_sha'), (digest, 'incoming_digest'), (run + '-' + attempt, 'incoming_run')])
 for path in [incoming.parents[3], incoming.parents[2], incoming.parents[1], incoming.parent, incoming]:
     directory(path)
 archive = incoming / 'release-bundle.tar'
