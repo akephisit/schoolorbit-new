@@ -2848,16 +2848,56 @@ async fn attendance_parent_migration_repairs_missing_roles_and_preserves_role_hi
     let custom = Uuid::new_v4();
     sqlx::query("INSERT INTO roles(id,code,name,user_type) VALUES($1,'CUSTOM_PARENT','Custom parent','parent')").bind(custom).execute(&f.pool).await.unwrap();
     sqlx::query("INSERT INTO user_roles(user_id,role_id,started_at,ended_at) VALUES($1,$2,CURRENT_DATE-2,CURRENT_DATE-1)").bind(parents[1]).bind(custom).execute(&f.pool).await.unwrap();
+    async fn role_history(pool: &PgPool, parents: &[Uuid]) -> serde_json::Value {
+        sqlx::query_scalar(
+            "SELECT COALESCE(jsonb_agg(jsonb_build_object('id',id,'userId',user_id,
+                'roleId',role_id,'isPrimary',is_primary,'startedAt',started_at,
+                'endedAt',ended_at) ORDER BY id),'[]'::jsonb)
+             FROM user_roles WHERE user_id=ANY($1)",
+        )
+        .bind(parents)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+    let ended_history = role_history(&f.pool, &parents[1..2]).await;
     apply_migrations_through(&f.pool, 102).await.unwrap();
+    let default_role: Uuid = sqlx::query_scalar(
+        "SELECT id FROM roles WHERE code='PARENT' AND user_type='parent' AND is_active",
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    let granted = role_history(&f.pool, &parents[..1]).await;
+    assert_eq!(granted.as_array().unwrap().len(), 1);
+    assert_eq!(granted[0]["roleId"], serde_json::json!(default_role));
+    assert!(sqlx::query_scalar::<_,bool>("SELECT is_primary AND started_at<=CURRENT_DATE AND ended_at IS NULL FROM user_roles WHERE user_id=$1 AND role_id=$2")
+        .bind(parents[0]).bind(default_role).fetch_one(&f.pool).await.unwrap());
+    assert!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM role_permissions grant_row JOIN permissions permission ON permission.id=grant_row.permission_id WHERE grant_row.role_id=$1 AND permission.code='attendance.read.own')")
+        .bind(default_role).fetch_one(&f.pool).await.unwrap());
+    assert_eq!(role_history(&f.pool, &parents[1..2]).await, ended_history);
+    for parent in &parents[1..] {
+        assert!(!sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=$1 AND r.code='PARENT')").bind(parent).fetch_one(&f.pool).await.unwrap());
+    }
     apply_migrations_through(&f.pool, 108).await.unwrap();
+    let historical_assignments = role_history(&f.pool, &parents).await;
+    assert_eq!(role_history(&f.pool, &parents[1..2]).await, ended_history);
+    // Current reporting requires later schema; the canonical runner owns the 149 transition.
+    school_migrations::run_tenant_migrations(&f.pool)
+        .await
+        .expect("the canonical upgrade preserves the repaired parent-role history");
+    assert_eq!(
+        role_history(&f.pool, &parents).await,
+        historical_assignments
+    );
     let cache = school_authorization::PermissionCache::new();
     let actor = school_authorization::load_actor_context(parents[0], "fixture", &f.pool, &cache)
         .await
         .unwrap();
     assert!(actor.has_permission(codes::ATTENDANCE_READ_OWN));
-    assert!(report(&f.pool, &actor, report_query(Some(STUDENT), 1, 50))
+    report(&f.pool, &actor, report_query(Some(STUDENT), 1, 50))
         .await
-        .is_ok());
+        .expect("the repaired parent role can report its own child on the current schema");
     assert!(matches!(
         report(
             &f.pool,
@@ -2867,9 +2907,6 @@ async fn attendance_parent_migration_repairs_missing_roles_and_preserves_role_hi
         .await,
         Err(AppError::Forbidden(_))
     ));
-    for parent in &parents[1..] {
-        assert!(!sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=$1 AND r.code='PARENT')").bind(parent).fetch_one(&f.pool).await.unwrap());
-    }
 }
 
 #[tokio::test]
@@ -3471,7 +3508,8 @@ async fn attendance_first_scan_and_virtual_cancellation_create_no_placeholder_re
             .count(),
         1
     );
-    let mut cancelled_seed = seeds(&f.pool, TERM, NaiveDate::from_ymd_opt(2025, 10, 9).unwrap())
+    let lesson_date = NaiveDate::from_ymd_opt(2025, 10, 6).unwrap();
+    let mut cancelled_seed = seeds(&f.pool, TERM, lesson_date)
         .await
         .unwrap()
         .into_iter()
@@ -3479,7 +3517,11 @@ async fn attendance_first_scan_and_virtual_cancellation_create_no_placeholder_re
             seed.session.kind == AttendanceKind::Lesson
                 && seed.session.teacher_ids.contains(&TEACHER)
         })
-        .expect("fixture provides a real published Thursday lesson");
+        .expect("fixture provides a real published Monday lesson");
+    assert_eq!(cancelled_seed.session.academic_term_id, TERM);
+    assert_eq!(cancelled_seed.session.date, lesson_date);
+    assert!(cancelled_seed.session.learning_group_id.is_some());
+    assert!(cancelled_seed.session.offering_id.is_some());
     cancelled_seed.session.roster = cancelled_seed.students.clone();
     let preview = sessions::with_token(&f.pool, cancelled_seed.session.clone())
         .await
@@ -3500,6 +3542,7 @@ async fn attendance_first_scan_and_virtual_cancellation_create_no_placeholder_re
     .await
     .unwrap();
     assert!(cancelled.session.cancelled);
+    assert_eq!(cancelled.session.source_key, preview.source_key);
     let restored = sessions::cancel(
         &f.pool,
         &f.actor,
@@ -3515,6 +3558,7 @@ async fn attendance_first_scan_and_virtual_cancellation_create_no_placeholder_re
     .await
     .unwrap();
     assert!(!restored.session.cancelled);
+    assert_eq!(restored.session.source_key, preview.source_key);
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM attendance_records")
             .fetch_one(&f.pool)
