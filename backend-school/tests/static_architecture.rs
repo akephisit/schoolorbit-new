@@ -4845,9 +4845,20 @@ fn production_targets_use_the_workspace_migration_runner() {
     }
 
     assert_eq!(violations, Vec::<String>::new());
-    for binary in ["migrate_tenant_schema.rs", "seed_sandbox.rs"] {
+    for (binary, entrypoint) in [
+        (
+            "migrate_tenant_schema.rs",
+            "school_migrations::run_tenant_migrations_detailed(&pool)",
+        ),
+        (
+            "seed_sandbox.rs",
+            "school_migrations::run_fresh_tenant_migrations(&pool)",
+        ),
+    ] {
         let source = read_source(manifest_dir().join("src/bin").join(binary));
-        assert!(source.contains("school_migrations::run_tenant_migrations(&pool)"));
+        let production_main = extract_source_block(&source, "fn main(", false);
+        assert!(production_main.contains(entrypoint));
+        assert!(!production_main.contains("school_migrations::run_tenant_migrations(&pool)"));
         assert!(!source.contains("pub mod migration"));
         assert!(!source.contains("permission_sync"));
     }

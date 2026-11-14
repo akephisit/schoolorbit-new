@@ -1051,7 +1051,9 @@ mod tests {
         cutover_test_support::apply_phase_b_runtime_migrations(&pool)
             .await
             .expect("apply academic cutover migrations");
-        school_migrations::run_fresh_tenant_migrations(&pool)
+        // This deliberately populated historical fixture is an isolated copy,
+        // not production provisioning/adoption of an existing tenant.
+        school_migrations::run_tenant_migrations(&pool)
             .await
             .expect("apply remaining active migrations");
 

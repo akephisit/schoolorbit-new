@@ -584,6 +584,35 @@ removes retired operational graphs/audits and unplaced Exam import copies, and v
 eight zero-mismatch current-cutover checks. The release gate requires157 and that exact receipt;
 it cannot accept an older publication-readiness receipt as current evidence.
 
+The same migration target includes the preparation guard's missing/date/hash refusal and retry,
+fresh-versus-populated adoption, cancelled-session cleanup, and real-owner concurrent poolsize1
+cases. The root proof decoder tests validate the full inventory/candidate binding, affected subset,
+exact eight checks and private proof-file boundary:
+
+```bash
+./scripts/test_backend_school.sh operations::current_preparation::tests -- --test-threads=1
+node --test scripts/tests/pipeline-current-academic-preparation.test.mjs
+```
+
+The Node target belongs to the ordinary deployment suite and runs the controller's portable pure
+failure fixtures without containers or crypto tools. The separate actual-crypto fixture requires
+the checksum-pinned age and age-keygen v1.2.1 binaries provisioned on PATH, or their absolute paths
+in `AGE_BINARY` and `AGE_KEYGEN_BINARY`; it checks both versions and never skips absent tools:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/tests/current-academic-preparation.test.py CryptoTests
+```
+
+Pure controller and crypto tests do not establish PostgreSQL restore correctness. Release-owner
+acceptance must additionally exercise the actual encrypted custom dump, full decryption and
+isolated PostgreSQL18.6 restore with ownership/ACL/role-marker and exact source-byte fingerprint
+preservation, then the candidate's canonical `migrate_tenant_schema` executable and all eight
+zero-mismatch receipt/runtime-grant checks. Cover all-current and mixed inventories, canonical
+history holes/checksum drift, wrong date/selection hash, missing/wrong keys and corrupt archives,
+child failure/unknown exit, controller loss, exact owned cleanup, and retention without expiry
+before completion. Never substitute a fake controller result for this real restore acceptance,
+or point these fixtures at a shared or production database.
+
 The composed HTTP cases use real tenant sessions, CSRF, current permission generations and owning
 providers. They verify exact offering/group impact and digest binding, sibling/context preservation,
 frozen Result/correction and nested term/year aggregate cleanup, saved Supervision detachment,

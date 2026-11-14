@@ -142,10 +142,13 @@ def owner_connection(url, row):
         query = urllib.parse.parse_qs(parsed.query, strict_parsing=True)
         password = urllib.parse.unquote(parsed.password or '')
         owner = 'so_' + uuid.UUID(row['id']).hex + '_owner'
+        runtime = urllib.parse.urlsplit(row['url'])
+        same_host = parsed.hostname and runtime.hostname and parsed.hostname.lower() == runtime.hostname.lower()
+        same_port = (parsed.port or 5432) == (runtime.port or 5432)
     except (TypeError, ValueError):
         refuse('source_connection_invalid')
-    expected_db = urllib.parse.urlsplit(row['url']).path[1:]
-    if parsed.scheme not in ['postgres', 'postgresql'] or parsed.username != owner or parsed.path[1:] != expected_db or not parsed.hostname or parsed.fragment or not password or any(c in password for c in '\r\n\0') or query != {'sslmode': ['verify-full'], 'sslrootcert': ['/run/secrets/postgresql-ca.crt']}:
+    expected_db = runtime.path[1:]
+    if parsed.scheme not in ['postgres', 'postgresql'] or parsed.username != owner or parsed.path[1:] != expected_db or not same_host or not same_port or parsed.fragment or not password or any(c in password for c in '\r\n\0') or query != {'sslmode': ['verify-full'], 'sslrootcert': ['/run/secrets/postgresql-ca.crt']}:
         refuse('source_connection_invalid')
     return {'host': parsed.hostname, 'port': str(parsed.port or 5432), 'database': expected_db, 'user': owner, 'password': password}
 
@@ -209,8 +212,10 @@ class Controller:
         self.worker = 'schoolorbit-academic-migration-copy-' + self.release[:12]
         self.verify = 'schoolorbit-academic-archive-check-' + self.release[:12]
         self.volume = 'schoolorbit-academic-copy-data-' + self.release[:12]
-        self.ca = Path('/opt/stack/postgresql/ca.crt')
         self.secret = self.runtime_value('INTERNAL_API_SECRET')
+        self.ca = Path(self.runtime_value('POSTGRES_CA_FILE', default='/opt/stack/postgresql/ca.crt'))
+        if not self.ca.is_absolute():
+            self.ca = Path('/opt/stack') / self.ca
         self.rows = inventory(self.admin_get('/internal/schools'))
         self.inventory_hash = inventory_hash(self.rows)
         self.exits = 0
@@ -266,11 +271,14 @@ class Controller:
         if rows!=self.compiled[:len(rows)] or len(rows)>len(self.compiled): refuse('source_history_invalid')
         return rows[-1][0] if rows else 0
 
-    def runtime_value(self, name):
-        result = subprocess.run(['bash', '-c', '. "$1"; schoolorbit_runtime_env_value "$2" /opt/stack/.env', 'runtime', str(self.code / 'runtime-env.sh'), name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=False)
-        if result.returncode or not result.stdout or len(result.stdout) > 65536:
+    def runtime_value(self, name, default=None):
+        # Match configured(): an absent/empty optional CA uses the canonical
+        # default; a present malformed or duplicate value must still refuse.
+        script = '. "$1"; if [[ "$4" == optional && -f /opt/stack/.env && ! -L /opt/stack/.env && $(stat -c %a /opt/stack/.env) == 600 ]] && ! grep -q "^${2}=" /opt/stack/.env; then printf "%s" "$3"; else schoolorbit_runtime_env_value "$2" /opt/stack/.env; fi'
+        result = subprocess.run(['bash', '-c', script, 'runtime', str(self.code / 'runtime-env.sh'), name, default or '', 'optional' if default is not None else 'required'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15, check=False)
+        if result.returncode or (not result.stdout and default is None) or len(result.stdout) > 65536:
             refuse('runtime_configuration_unavailable')
-        return result.stdout.decode()
+        return result.stdout.decode() or default
 
     def admin_get(self, route):
         request = urllib.request.Request('http://127.0.0.1:8080' + route, headers={'X-Internal-Caller': 'backend-school', 'X-Internal-Secret': self.secret})

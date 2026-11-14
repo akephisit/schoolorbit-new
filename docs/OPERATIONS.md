@@ -2182,7 +2182,7 @@ The one-time cutover completed on all active tenants at version 84, with preserv
 
 Current releases call `/internal/migrate-all` through the centralized migration runner and verify `/internal/migration-status` against actual SQLx history for every active tenant. The release requires complete tenant coverage at the repository's latest version, no pending/failed/outdated tenants, and the remaining academic and gradebook domain audits. Maintenance stays enabled if verification fails. Readiness, authenticated smoke, menu synchronization and matched Worker promotion remain required before reopening the proxy.
 
-For any future data replacement, retain a protected provider snapshot for at least seven days and rehearse the centralized migration runner on disposable copies of all affected active tenants before promotion. If provider quotas prohibit another protected snapshot or branch, preserve the existing protected snapshot, retain an unmodified no-compute pre-cutover branch for at least seven days, and supplement it with encrypted custom-format dumps of every affected tenant. Store archives and the encryption key outside the repository with restrictive permissions; verify complete decryption and `pg_restore --file=/dev/null` before promotion. Record the quota limitation and recovery branch ID privately; an unprotected branch is not a protected snapshot. Archive recovery requires the retained key and an explicitly reviewed restore procedure. Emit only bounded counts, versions and check codes; keep connection credentials outside arguments and logs.
+For any future data replacement, retain a current protected recovery point for at least seven days and rehearse the centralized migration runner on disposable copies of all affected active tenants before promotion. Native PostgreSQL recovery uses the existing encrypted pgBackRest/WAL policy and private recovery key store; it does not require a retired provider snapshot or branch. The [current academic cutover](#current-academic-operational-cutover) additionally owns its automatic private encrypted tenant archives and actual restore gate. Archive recovery requires the retained key and an explicitly reviewed restore procedure accounting for later writes. Emit only bounded counts, versions and check codes; keep connection credentials outside arguments and logs.
 
 Migrations 083/084 retain their own locked-source checks, fingerprints, exact preservation evidence and canonical schema checks before replacing FKs or removing retired owners. New tenant provisioning still applies the full immutable migration chain through the central runner. After a tenant applies 084, older binaries expecting the generic catalog or education UUIDs are prohibited. Keep maintenance active on failure and repair forward through a new reviewed migration/application release. Restore a protected snapshot only through a reviewed procedure accounting for later writes. Never edit applied migrations, SQLx history, reconciliation checks or personnel rows to force acceptance.
 
@@ -2200,8 +2200,46 @@ Deploy the matching School backend, generated API contracts and frontend with
 [migration 156](../backend-school/migrations/156_scoped_offering_result_removal.sql)
 and [migration 157](../backend-school/migrations/157_current_academic_operations.sql)
 under the existing maintenance and all-tenant gates. The actual migration filenames and
-central runner remain authoritative. Rehearse protected active-tenant copies, retain the
-current recovery point for seven days, and keep maintenance active on refusal.
+central runner remain authoritative. The existing serialized release performs preparation
+automatically after maintenance is verified and the old School writer is stopped and removed.
+[The fixed release controller](../scripts/lib/pipeline-remote/current-academic-preparation.py)
+uses the existing private Admin owner transport and the candidate image's canonical
+`migrate_tenant_schema` executable. It rehearses every pending-157 tenant in the complete
+operational inventory, including retained inactive tenants. An already-converted tenant needs
+no new backup or rehearsal for ordinary later releases; mixed inventories still bind the full
+inventory while preparing only the pending subset. Keep maintenance active on any refusal.
+
+Preparation stores an age-encrypted custom-format dump and its private identity under the
+release owner's `$HOME/.local/share/schoolorbit-academic-recovery/<release-sha>-<image-digest>/`,
+outside the application, repository and container garbage collection. Directories are mode0700
+and files mode0600. The key never enters arguments, release output or CI artifacts. Prepared
+points have no expiry until the entire cutover completes; successful completion sets a retention
+deadline of at least seven further days and never shortens an existing deadline. There is no
+automatic archive/key deletion command. Preserve both together in this protected location.
+
+The isolated PostgreSQL18.6 restore has no network egress, host ports, application process or
+scheduler. It preserves source ownership, ACLs and role markers, uses fresh local passwords, and
+must reproduce the full source dump fingerprint before applying the same canonical migrations.
+Unknown roles, insufficient space, failed decryption, source drift, missing child exits or
+unproven controller/resource ownership stop the release. Only exact resources owned by a proven
+dead preparation controller may be cleaned up on retry. Actual receipts and runtime DML grants
+are checked after the rehearsal and again after production migration.
+
+Immediately before production migration, preparation rechecks the complete inventory, source
+fingerprints and actual Bangkok date. The production canonical runner installs a connection-local
+required-proof marker; migration157 compares its expected date and selection fingerprint against
+the actual source resolution under its existing locks, before changing the graph. Missing,
+stale or mismatched proof refuses atomically. It supplies no business-date override, skip flag,
+alternative SQL runner or runtime TEMP privilege. Bounded controller codes and canonical migration
+version/SQLSTATE/refusal codes are the only preparation diagnostics forwarded by
+[the release owner](../scripts/lib/pipeline-remote/school-storage-rollout.sh).
+
+These supplemental tenant logical recovery points leave the native pgBackRest full/differential
+and WAL policy unchanged. They do not attest its current health, replace the private Admin/global
+credential recovery store, or recover object bytes already deleted from storage. There is no
+automatic restore: reviewed recovery must account for writes and external effects after the
+point, including notifications and file deletion; compatible roll-forward repair remains the
+ordinary response to a failed release.
 
 The cutover selects the applicable Delivery and Timetable source using one explicit Bangkok
 operation date for every term, including closed terms. Unopened terms may use only the

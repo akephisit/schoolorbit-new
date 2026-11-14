@@ -66,7 +66,7 @@ class PreparationTests(unittest.TestCase):
         source=m.inventory({'schools':[row()],'total':1})[0]
         url='postgresql://so_'+ID.replace('-','')+'_owner:private@db.example:5432/tenant_'+ID.replace('-','')+'?sslmode=verify-full&sslrootcert=%2Frun%2Fsecrets%2Fpostgresql-ca.crt'
         self.assertEqual(m.owner_connection(url,source)['password'],'private')
-        for bad in [url.replace('verify-full','require'),url.replace('_owner:','_runtime:'),url.replace('/tenant_','/foreign_'),url+'&options=anything',url.replace(':private@',':bad%0Asecret@')]:
+        for bad in [url.replace('verify-full','require'),url.replace('_owner:','_runtime:'),url.replace('/tenant_','/foreign_'),url.replace('db.example','foreign.example'),url.replace(':5432/',':6432/'),url.replace(':5432/',':invalid/'),url+'&options=anything',url.replace(':private@',':bad%0Asecret@')]:
             with self.assertRaises(m.Refusal):m.owner_connection(bad,source)
 
     def test_eight_exact_receipt_checks_and_runtime_grants_are_required(self):

@@ -100,6 +100,33 @@ function fixture(t, options = {}) {
       path.join(repo, "scripts/lib/pipeline-remote", name),
       path.join(root, "scripts/lib/pipeline-remote", name),
     );
+  // Storage tests compose a controlled preparation owner. Actual encrypted
+  // PostgreSQL rehearsal belongs to the separate controller qualification.
+  writeFileSync(
+    path.join(
+      root,
+      "scripts/lib/pipeline-remote/current-academic-preparation.py",
+    ),
+    `import json, os, pathlib, sys
+root=pathlib.Path(os.environ['FIXTURE_ROOT']); phase=sys.argv[1]
+options=json.loads((root/'options.json').read_text())
+if phase not in ['prepare','check','complete'] or (root/'container.json').exists(): sys.exit(91)
+with (root/'commands').open('a') as output: output.write(json.dumps({'args':['preparation',phase],'envKeys':[]})+'\\n')
+if options.get('preparationFailure')==phase:
+ print(json.dumps({'schemaVersion':1,'error':'source_changed_before_migration'}),file=sys.stderr);sys.exit(1)
+marker=root/'preparation-fixture'
+if phase=='prepare':
+ marker.write_text('prepared')
+ if not options.get('fresh') and not options.get('allCurrent'):
+  point=pathlib.Path.home()/'.local/share/schoolorbit-academic-recovery'/(os.environ['RELEASE_SHA']+'-'+os.environ['BACKEND_IMAGE_DIGEST'][7:])
+  point.mkdir(parents=True,mode=0o700,exist_ok=True)
+  proof=point/'proof.json';proof.write_text('synthetic-private-preparation-proof');proof.chmod(0o600)
+elif not marker.exists(): sys.exit(92)
+if phase=='complete' and 'migrate-tenants' not in (root/'executed').read_text().splitlines(): sys.exit(93)
+print(json.dumps({'schemaVersion':1,'prepared':True}))
+`,
+    { mode: 0o644 },
+  );
   writeFileSync(path.join(stack, "postgresql/ca.crt"), "synthetic");
   if (options.customCa) {
     writeFileSync(path.join(stack, "postgresql/custom ca.crt"), "synthetic");
@@ -197,6 +224,7 @@ if(process.argv[3]?.includes('/stopped-'))process.exit(1);const r=require('node:
   }
   const env = {
     ...process.env,
+    HOME: path.join(stack, "home"),
     PATH: path.join(stack, "bin") + ":" + process.env.PATH,
     FIXTURE_ROOT: stack,
     SCHOOLORBIT_STACK_ROOT: stack,
@@ -314,6 +342,27 @@ test("regular release executes real headless stages before actual production sta
     migrate = calls.findIndex((x) => x.endsWith("migrate-tenants")),
     check = calls.findIndex((x) => x.endsWith("check-admin"));
   assert.ok(stop < remove && remove < migrate && migrate < check);
+  const prepare = calls.indexOf("preparation prepare"),
+    validatePreparation = calls.indexOf("preparation check"),
+    completePreparation = calls.indexOf("preparation complete");
+  assert.ok(
+    remove < prepare &&
+      prepare < validatePreparation &&
+      validatePreparation < migrate,
+  );
+  assert.ok(migrate < completePreparation && completePreparation < check);
+  const live = f.commands().find((x) => x.args.at(-1) === "migrate-tenants");
+  assert.ok(
+    live.args.some((x) =>
+      x.endsWith(":/run/academic-current-preparation/proof.json:ro"),
+    ),
+  );
+  for (const name of [
+    "CURRENT_ACADEMIC_PREPARATION_FILE",
+    "CURRENT_ACADEMIC_RELEASE_SHA",
+    "CURRENT_ACADEMIC_IMAGE_DIGEST",
+  ])
+    assert.ok(live.args.includes(name));
   assert.ok(
     calls.slice(stop + 1, remove).some((x) => x.includes(".State.Running")),
   );
@@ -332,6 +381,53 @@ test("regular release executes real headless stages before actual production sta
   assert.equal(
     statSync(path.join(f.journal, "old-context.json")).mode & 0o777,
     0o600,
+  );
+});
+for (const phase of ["prepare", "check", "complete"])
+  test(`preparation ${phase} refusal preserves maintenance and blocks the next production phase`, (t) => {
+    const f = fixture(t, { preparationFailure: phase });
+    assert.equal(f.run("preflight").status, 0);
+    f.maintenance();
+    const result = f.cutover();
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stdout + result.stderr,
+      /source_changed_before_migration/,
+    );
+    assert.ok(existsSync(path.join(f.root, "pending-release")));
+    assert.equal(existsSync(path.join(f.stack, "started")), false);
+    const migrated = f
+      .commands()
+      .some((x) => x.args.at(-1) === "migrate-tenants");
+    assert.equal(migrated, phase === "complete");
+    assert.equal(
+      existsSync(path.join(f.journal, "migration-attempted")),
+      phase === "complete",
+    );
+    assert.equal(
+      f.commands().some((x) => x.args.at(-1) === "check-admin"),
+      false,
+    );
+  });
+test("already-current preparation creates no recovery proof or proof mount for an ordinary release", (t) => {
+  const f = fixture(t, { allCurrent: true });
+  assert.equal(f.run("preflight").status, 0);
+  f.maintenance();
+  const result = f.cutover();
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(existsSync(path.join(f.stack, "started")));
+  const live = f.commands().find((x) => x.args.at(-1) === "migrate-tenants");
+  assert.equal(
+    live.args.some((x) =>
+      x.includes("academic-current-preparation/proof.json"),
+    ),
+    false,
+  );
+  assert.equal(
+    existsSync(
+      path.join(f.env.HOME, ".local/share/schoolorbit-academic-recovery"),
+    ),
+    false,
   );
 });
 test("explicit binding verifies old and target proof and writes a private durable manifest as mapped host user", (t) => {
