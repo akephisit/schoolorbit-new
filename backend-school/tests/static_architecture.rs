@@ -1141,7 +1141,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-files-http",
             &[
                 "school-administration",
-                "school-admission",
                 "school-attendance",
                 "school-auth",
                 "school-auth-http",
