@@ -39,7 +39,7 @@
 
 ปัจจุบัน Delivery และ Timetable มีกราฟฉบับ ร่าง การเผยแพร่ และการเลือกข้อมูลตามวันที่
 ตารางเรียนยังผูกแหล่งเปิดสอนและตรวจการปรับแหล่งนั้น ส่วนตารางสอบมีขั้นตอนเผยแพร่ของตนเอง
-รายละเอียดอ้างอิงจาก [Delivery](../../../backend-school/crates/school-academic-delivery/src/services/change_sets.rs), [Timetable](../../../backend-school/crates/school-academic-timetable/src/services/timetable_version_service.rs) และ [ตารางสอบ](../../../backend-school/crates/school-academic-assessment/src/exam_schedule/services/publishing.rs)
+รายละเอียดอ้างอิงจาก [Delivery](../../../backend-school/crates/school-academic-delivery/src/services/current.rs), [Timetable](../../../backend-school/crates/school-academic-timetable/src/services/timetable_service.rs) และ [ตารางสอบ](../../../backend-school/crates/school-academic-assessment/src/exam_schedule/services/publishing.rs)
 
 เป้าหมายการใช้งาน:
 
@@ -173,8 +173,9 @@ Transport ใช้เจ้าของ `school-academic-{core,delivery,assessm
 ## ลำดับดำเนินงาน
 
 1. บันทึกแบบที่อนุมัติและตรวจ audit migration/ผู้ใช้ข้อมูลให้ครบ โดยไม่เพิ่มคิวขออนุญาตสำหรับข้อตกลงที่สรุปแล้ว
-2. ตรวจ migration timeline ทั้งชุดและข้อมูลเดิม พร้อมตามผู้เขียน/ผู้อ่านจริงก่อนออกแบบการแปลง
-   ยังไม่เสนอชื่อคอลัมน์ ตาราง หรือ SQL migration แบบเจาะจงจากการอ่านบางส่วน
+2. ตรวจ timeline 001–155 และผู้เขียน/ผู้อ่านแล้ว ใช้ 156 สำหรับ scoped Results cleanup และ 157 สำหรับ normalized current cutover
+   เลือก publication ที่ถึงวัน cutover Bangkok เดียวกันในทุก term รวมที่ปิดแล้ว; preparation ใช้ชุดเดียวเฉพาะ planning/ready ที่ไม่เคย activate ตามแบบที่อนุมัติ
+   เก็บ revision ทางเทคนิคใน academic_delivery_state, weekly_period_target บน offering และ academic_timetables แบบ unique term โดยไม่มี snapshot
 3. ออกแบบบริการ API และพื้นที่เก็บข้อมูลปัจจุบันที่เป็นแหล่งจริงชุดเดียว พร้อมแก้ `.rules` ที่ขัดกันในงานเดียวกัน
    รักษารหัสและความสัมพันธ์ที่ยังมีความหมาย ไม่สร้างประวัติปลอมเพื่อผ่าน constraint เดิม
 4. วางการแปลงข้อมูลและ reconciliation ให้พิสูจน์สถานะที่เลือก รหัส จำนวน และความสัมพันธ์ของข้อมูลปัจจุบันที่ต้องเก็บ รวมกรณีแปลงไม่ได้

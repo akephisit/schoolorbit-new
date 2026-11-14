@@ -4697,9 +4697,12 @@ dependencies = [
  "dashmap",
  "school-database",
  "school-permissions",
+ "school-test-db",
+ "serde_json",
  "sqlx",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -4952,6 +4955,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "school-academic-core",
+ "school-academic-delivery",
  "school-academic-timetable",
  "school-auth",
  "school-auth-http",

@@ -176,6 +176,44 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         return "unclassified";
     };
     match (version, database.message()) {
+        (Some(157), "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS") => {
+            "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS"
+        }
+        (Some(157), "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS") => {
+            "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS"
+        }
+        (Some(157), "ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING") => {
+            "ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING"
+        }
+        (Some(157), "ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS") => {
+            "ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS"
+        }
+        (Some(157), "ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING") => {
+            "ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING"
+        }
+        (Some(157), "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE") => "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE",
+        (Some(157), "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH") => {
+            "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH"
+        }
+        (Some(157), "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_OFFERING_NOT_FOUND") => "ACADEMIC_CURRENT_OFFERING_NOT_FOUND",
+        (Some(157), "ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH") => {
+            "ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH"
+        }
+        (Some(157), "ACADEMIC_CURRENT_RECONCILIATION_FAILED") => {
+            "ACADEMIC_CURRENT_RECONCILIATION_FAILED"
+        }
         (Some(155), "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET") => {
             "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET"
         }
@@ -489,6 +527,7 @@ async fn grant_runtime_privileges(pool: &PgPool, runtime: &str) -> Result<(), sq
     let statement = format!(
         "REVOKE CREATE ON SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO \"{runtime}\";
          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{runtime}\";
+         REVOKE ALL ON academic_result_removal_scope FROM \"{runtime}\";
          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO \"{runtime}\";
          REVOKE INSERT, UPDATE, DELETE ON _sqlx_migrations FROM \"{runtime}\";
          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{runtime}\";
@@ -676,6 +715,31 @@ mod tests {
                 ),
                 "unclassified"
             );
+        }
+    }
+    #[test]
+    fn current_operations157_refusals_are_version_bound_and_sanitized() {
+        for code in [
+            "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS",
+            "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH",
+            "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE",
+            "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE",
+            "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS",
+            "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE",
+            "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE",
+            "ACADEMIC_CURRENT_RECONCILIATION_FAILED",
+        ] {
+            assert_eq!(refusal_code(Some(157), &native(code, "P0001")), code);
+            assert_eq!(
+                refusal_code(Some(156), &native(code, "P0001")),
+                "unclassified"
+            );
+            let error = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native(&format!("{code} private-sentinel"), "P0001"),
+                157,
+            ));
+            assert_eq!(error.diagnostic.code, "unclassified");
+            assert!(!format!("{error:?}").contains("private-sentinel"));
         }
     }
     use std::sync::{

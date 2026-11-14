@@ -101,13 +101,22 @@ Lifecycle ปัจจุบันใช้ direct closure/manual rollover โ�
 
 ## การเลือกและแปลงข้อมูลเดิม
 
-สำหรับ active contexts เลือก publication ที่ใช้งานจริง ณ cutover civil date ของ Bangkok
+ทุกภาคเรียนที่ระบุชัดเจน รวมภาคเรียนที่ปิดแล้ว เลือก publication ที่ใช้งานจริง ณ cutover civil date เดียวของ Bangkok ที่จับหลังล็อกต้นทาง
+เลือกเลข publication สูงสุดที่ effective_from ไม่เกินวันนั้น วงจรภาคเรียนกำหนดสิทธิ์แก้ไข ไม่ใช้สร้างวันที่ปิดย้อนหลัง
 การมีเลขฉบับสูงกว่า draft ล่าสุด หรือ future plan ไม่พิสูจน์ว่าใช้งานจริง
 UI ที่เลือก draft เป็นค่าเริ่มต้นไม่ใช่หลักฐานเลือก migration source
 ภาคเรียนอื่นต้องคงหนึ่งชุดต่อบริบท ไม่ทิ้งทั้งปีเก่าเพราะไม่ใช่ปี active
 
-กติกา executable ของ draft-only/unopened contexts และ exact mappings เป็นงาน audit-owned ที่ยังต้องจัดทำ
-ตรวจ migration timeline ครบก่อนกำหนด schema/column/SQL และหมายเลข migration โดย owner ที่ได้รับมอบหมาย
+ตรวจ timeline 001–155 แล้ว ใช้ migration 156 สำหรับการลบ Results แบบระบุขอบเขต และ 157 สำหรับแปลง authority ปัจจุบัน
+กรณีไม่มี publication ที่ถึงวัน cutover อนุญาต draft ที่บันทึกไว้เพียงชุดเดียว หรือ future plan เพียงชุดเดียว เฉพาะ planning/ready ที่ไม่เคย activate
+ภาคเรียนว่างจริงคงชุดว่าง หลายแผนที่กำกวมหรือ registry ที่ไม่มีแหล่งแปลงต้องปฏิเสธ ไม่เลือกฉบับใหม่สุดเอง
+ใช้ learning_offerings.weekly_period_target และ academic_delivery_state หนึ่งแถวต่อ term พร้อม row_version ไม่มี snapshot
+ใช้ academic_timetables ไม่เกินหนึ่งแถวต่อ term รักษา UUID ตารางที่เลือกและ UUID ลูก เปลี่ยน FK เป็น timetable_id
+บริบทที่ยังไม่มีตารางที่เลือกคงไม่มี parent จน POST สร้างชุดปัจจุบัน เพื่อไม่ล็อก bell setup ของภาคเรียนว่าง
+คาบ Attendance เดิมเปลี่ยน source_key เป็น placement UUID ได้เฉพาะการจับคู่ term/group/period/weekday ที่ตรงเพียงรายการเดียว โดยคง session UUID และ ledger อื่นเดิม
+ผลนิเทศที่ snapshot ว่างและต้องตัด FK เก่ารักษาข้อเท็จจริง source UUID กับ observedAt ที่พิสูจน์ได้ใน snapshot เดิม ไม่แต่งชื่อหรือเหตุผล manual
+teacher assignment ปัจจุบันคง UUID ที่เลือกและ unique(group,teacher); registration_open เป็นค่าปัจจุบันรายกลุ่ม
+การลบกลุ่มจาก archived Attendance ที่รวมไว้ระดับ offering และไม่มีหลักฐานแบ่งกลุ่ม หรือผลรวมรายวิชาที่ไม่มี resultId ระบุกลุ่ม ต้องปฏิเสธเฉพาะกรณีที่แปลงไม่ได้จริง
 ถ้าสถานะกำกวมหรือ Delivery/Timetable source graphs เข้ากันไม่ได้ ให้หยุดด้วย bounded finding counts ไม่เดาข้อมูลหรือเผยแถวส่วนตัว
 
 ย้าย offerings/groups/teachers/students/targets ที่เลือกลง normalized current structure ก่อน purge

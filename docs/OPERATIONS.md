@@ -2205,7 +2205,7 @@ episodes and downstream evidence while adding independent per-term publication n
 The old `deliveryTimetableCutover` 87/88 evidence remains unchanged. The separate
 `publicationRevisionsCutover` status must report version 151, `cutoverCompleted`, `passed: true`
 and the exact eight successful zero-mismatch checks owned by the
-[Delivery audit reader](../backend-school/crates/school-academic-delivery/src/services/publication.rs).
+[immutable publication audit](../backend-school/migrations/151_publication_revisions.sql).
 Owner and runtime startup/rollout verification both require this protected receipt.
 
 Migration refusal codes identify bounded source, assignment, preservation or reconciliation
