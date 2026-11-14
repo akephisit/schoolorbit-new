@@ -91,12 +91,9 @@ dotenvy = "0.15.7"
 futures = "0.3.34"
 hex = "0.4.3"
 hmac = { version = "0.13.0", default-features = false, features = ["zeroize"] }
-http = "1.5.0"
-http-body-util = "0.1.5"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "tiff", "rayon"] }
 ipnet = "2.12.2"
 lopdf = { version = "0.46.0", default-features = false }
-mime_guess = "2.0.5"
 rand = { version = "0.10.3", default-features = false, features = ["sys_rng"] }
 regex = "1.13.1"
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "native-tls", "charset", "http2", "system-proxy"] }
@@ -108,7 +105,6 @@ subtle = "2.6.1"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"] }
 tokio-cron-scheduler = "0.15.1"
-tokio-stream = "0.1.19"
 tower = "0.5.3"
 log = "0.4.34"
 tracing = "0.1.44"

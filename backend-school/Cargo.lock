@@ -4619,7 +4619,6 @@ dependencies = [
  "bytes",
  "chrono",
  "school-administration",
- "school-admission",
  "school-attendance",
  "school-auth",
  "school-auth-http",

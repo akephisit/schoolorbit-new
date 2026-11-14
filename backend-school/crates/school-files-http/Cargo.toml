@@ -10,7 +10,6 @@ api-docs = [
     "school-budget/api-docs",
     "school-administration/api-docs",
     "school-attendance/api-docs",
-    "school-admission/api-docs",
     "school-question-bank/api-docs",
     "school-students/api-docs",
     "school-staff/api-docs",
@@ -31,7 +30,6 @@ school-budget = { workspace = true }
 school-workflow = { workspace = true }
 school-administration = { workspace = true }
 school-attendance = { workspace = true }
-school-admission = { workspace = true }
 school-question-bank = { workspace = true }
 school-students = { workspace = true }
 school-staff = { workspace = true }
