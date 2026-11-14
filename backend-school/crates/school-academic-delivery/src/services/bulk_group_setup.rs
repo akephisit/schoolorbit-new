@@ -317,7 +317,7 @@ pub async fn apply(
     }
     DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "UPDATE learning_groups SET row_version=row_version+1,updated_at=now() WHERE id=ANY($1)")
         .bind(&changed_ids).execute().await?;
-    // One bounded audit record captures the explicit atomic scope in the same transaction.
+    // Initialize only missing current coordinators within the atomic save.
     assessments
         .fill_missing_coordinators(&mut tx, actor, &[offering_id])
         .await?;

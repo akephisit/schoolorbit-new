@@ -5,7 +5,7 @@ use crate::integration_tests::academic::{
     delivery,
     lifecycle::models::{ExecutePromotionRunInput, PromotionDecisionOutcome},
     results::{models as result_models, services as result_services},
-    services::timetable_version_service,
+    services::timetable_service,
 };
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
@@ -40,7 +40,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     )
     .await
     .unwrap();
-    let timetables = timetable_version_service::opening::published_for_term(
+    let timetables = timetable_service::opening::published_for_term(
         &mut tx,
         year.id,
         term.id,
@@ -166,7 +166,7 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     )
     .await
     .unwrap();
-    let timetables = timetable_version_service::opening::published_for_term(
+    let timetables = timetable_service::opening::published_for_term(
         &mut tx,
         year.id,
         term.id,
@@ -226,8 +226,8 @@ async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_pu
         super::super::models::UpdateOpeningPolicyInput {
             row_version: initial.policy.row_version,
             require_homeroom_placements: false,
-            require_published_offerings: true,
-            require_published_timetable: true,
+            require_offerings: true,
+            require_timetable: true,
         },
     )
     .await
@@ -336,8 +336,8 @@ async fn opening_readiness_counts_planned_students_without_an_eligible_homeroom(
         super::super::models::UpdateOpeningPolicyInput {
             row_version: initial.policy.row_version,
             require_homeroom_placements: true,
-            require_published_offerings: false,
-            require_published_timetable: false,
+            require_offerings: false,
+            require_timetable: false,
         },
     )
     .await

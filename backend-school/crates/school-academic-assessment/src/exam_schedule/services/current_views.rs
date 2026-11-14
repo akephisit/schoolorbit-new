@@ -1,14 +1,13 @@
 use school_database::DbSession;
 use std::collections::HashMap;
 
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use chrono::{NaiveDate, NaiveTime};
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::exam_schedule::models::{
-    PersonalExamScheduleRound, PersonalExamSessionView, StaffPublishedExamDay,
-    StaffPublishedExamInvigilator, StaffPublishedExamRoomAssignment,
-    StaffPublishedExamScheduleRound, StaffPublishedExamSession,
+    PersonalExamScheduleRound, PersonalExamSessionView, StaffExamDay, StaffExamInvigilator,
+    StaffExamRoomAssignment, StaffExamScheduleRound, StaffExamSession,
 };
 use school_errors::AppError;
 
@@ -19,7 +18,6 @@ struct PersonalExamSessionRow {
     round_id: Uuid,
     round_name: String,
     academic_term_id: Uuid,
-    published_at: Option<DateTime<Utc>>,
     exam_date: NaiveDate,
     starts_at: NaiveTime,
     ends_at: NaiveTime,
@@ -32,11 +30,10 @@ struct PersonalExamSessionRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct StaffPublishedExamAssignmentRow {
+struct StaffExamAssignmentRow {
     round_id: Uuid,
     round_name: String,
     academic_term_id: Uuid,
-    published_at: Option<DateTime<Utc>>,
     exam_day_id: Uuid,
     day_label: Option<String>,
     exam_date: NaiveDate,
@@ -51,7 +48,7 @@ struct StaffPublishedExamAssignmentRow {
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct StaffPublishedExamSessionRow {
+struct StaffExamSessionRow {
     round_id: Uuid,
     exam_day_id: Uuid,
     session_id: Uuid,
@@ -92,51 +89,62 @@ impl PersonalExamSessionRow {
     }
 }
 
-pub async fn list_my_published_exam_schedule(
+pub async fn list_my_exam_schedule(
     pool: &PgPool,
     user_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_assessment.exam_schedule.services.published_views.list_my_published_exam_schedule").await?;
-    list_my_published_exam_schedule_on_connection(&mut connection, user_id, academic_term_id).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.current_views.list_my_exam_schedule",
+    )
+    .await?;
+    list_my_exam_schedule_on_connection(&mut connection, user_id, academic_term_id).await
 }
 
-pub async fn list_my_published_exam_schedule_on_connection(
+pub async fn list_my_exam_schedule_on_connection(
     connection: &mut sqlx::PgConnection,
     user_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
     ensure_active_student_user(connection, user_id).await?;
-    list_published_exam_schedule_for_student(connection, user_id, academic_term_id).await
+    list_exam_schedule_for_student(connection, user_id, academic_term_id).await
 }
 
-pub async fn list_staff_published_exam_schedule(
+pub async fn list_staff_exam_schedule(
     pool: &PgPool,
     user_id: Uuid,
     academic_term_id: Uuid,
-) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_assessment.exam_schedule.services.published_views.list_staff_published_exam_schedule").await?;
-    list_staff_published_exam_schedule_on_connection(&mut connection, user_id, academic_term_id)
-        .await
+) -> Result<Vec<StaffExamScheduleRound>, AppError> {
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.current_views.list_staff_exam_schedule",
+    )
+    .await?;
+    list_staff_exam_schedule_on_connection(&mut connection, user_id, academic_term_id).await
 }
 
-pub async fn list_staff_published_exam_schedule_on_connection(
+pub async fn list_staff_exam_schedule_on_connection(
     connection: &mut sqlx::PgConnection,
     user_id: Uuid,
     academic_term_id: Uuid,
-) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
+) -> Result<Vec<StaffExamScheduleRound>, AppError> {
     ensure_active_staff_user_for_exam_schedule(connection, user_id).await?;
-    list_published_exam_schedule_for_staff(connection, academic_term_id).await
+    list_exam_schedule_for_staff(connection, academic_term_id).await
 }
 
-pub async fn list_child_published_exam_schedule(
+pub async fn list_child_exam_schedule(
     pool: &PgPool,
     parent_user_id: Uuid,
     student_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_assessment.exam_schedule.services.published_views.list_child_published_exam_schedule").await?;
-    list_child_published_exam_schedule_on_connection(
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "academic_assessment.exam_schedule.services.current_views.list_child_exam_schedule",
+    )
+    .await?;
+    list_child_exam_schedule_on_connection(
         &mut connection,
         parent_user_id,
         student_id,
@@ -145,7 +153,7 @@ pub async fn list_child_published_exam_schedule(
     .await
 }
 
-pub async fn list_child_published_exam_schedule_on_connection(
+pub async fn list_child_exam_schedule_on_connection(
     connection: &mut sqlx::PgConnection,
     parent_user_id: Uuid,
     student_id: Uuid,
@@ -153,7 +161,7 @@ pub async fn list_child_published_exam_schedule_on_connection(
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
     ensure_parent_user_for_exam_schedule(connection, parent_user_id).await?;
     ensure_parent_student_link_for_exam_schedule(connection, parent_user_id, student_id).await?;
-    list_published_exam_schedule_for_student(connection, student_id, academic_term_id).await
+    list_exam_schedule_for_student(connection, student_id, academic_term_id).await
 }
 
 async fn ensure_active_student_user(
@@ -162,7 +170,7 @@ async fn ensure_active_student_user(
 ) -> Result<(), AppError> {
     let user_row: Option<(String, String)> = DbSession::new(connection)
         .query_as(
-            "academic_assessment.exam_schedule.services.published_views.ensure_active_student_user",
+            "academic_assessment.exam_schedule.services.current_views.ensure_active_student_user",
             "SELECT user_type, status FROM users WHERE id = $1",
         )
         .bind(user_id)
@@ -186,7 +194,7 @@ async fn ensure_active_staff_user_for_exam_schedule(
     user_id: Uuid,
 ) -> Result<(), AppError> {
     let user_row: Option<(String, String)> =
-        DbSession::new(connection).query_as("academic_assessment.exam_schedule.services.published_views.ensure_active_staff_user_for_exam_schedule", "SELECT user_type, status FROM users WHERE id = $1")
+        DbSession::new(connection).query_as("academic_assessment.exam_schedule.services.current_views.ensure_active_staff_user_for_exam_schedule", "SELECT user_type, status FROM users WHERE id = $1")
             .bind(user_id)
             .fetch_optional()
             .await?;
@@ -197,7 +205,7 @@ async fn ensure_active_staff_user_for_exam_schedule(
     {
         Some(("staff", "active")) => Ok(()),
         Some(_) => Err(AppError::Forbidden(
-            "Only active staff can view published exam schedules".to_string(),
+            "Only active staff can view current exam schedules".to_string(),
         )),
         None => Err(AppError::AuthError("Please sign in".to_string())),
     }
@@ -207,7 +215,7 @@ async fn ensure_parent_user_for_exam_schedule(
     connection: &mut sqlx::PgConnection,
     parent_user_id: Uuid,
 ) -> Result<(), AppError> {
-    let user_type: Option<String> = DbSession::new(connection).scalar("academic_assessment.exam_schedule.services.published_views.ensure_parent_user_for_exam_schedule", "SELECT user_type FROM users WHERE id = $1")
+    let user_type: Option<String> = DbSession::new(connection).scalar("academic_assessment.exam_schedule.services.current_views.ensure_parent_user_for_exam_schedule", "SELECT user_type FROM users WHERE id = $1")
         .bind(parent_user_id)
         .fetch_optional()
         .await?;
@@ -224,7 +232,7 @@ async fn ensure_parent_student_link_for_exam_schedule(
     parent_user_id: Uuid,
     student_id: Uuid,
 ) -> Result<(), AppError> {
-    let is_linked: bool = DbSession::new(connection).scalar("academic_assessment.exam_schedule.services.published_views.ensure_parent_student_link_for_exam_schedule",
+    let is_linked: bool = DbSession::new(connection).scalar("academic_assessment.exam_schedule.services.current_views.ensure_parent_student_link_for_exam_schedule",
         r#"
         SELECT EXISTS(
             SELECT 1
@@ -251,17 +259,16 @@ async fn ensure_parent_student_link_for_exam_schedule(
     Ok(())
 }
 
-async fn list_published_exam_schedule_for_student(
+async fn list_exam_schedule_for_student(
     connection: &mut sqlx::PgConnection,
     student_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    let rows = DbSession::new(connection).query_as::<PersonalExamSessionRow>("academic_assessment.exam_schedule.services.published_views.list_published_exam_schedule_for_student",
+    let rows = DbSession::new(connection).query_as::<PersonalExamSessionRow>("academic_assessment.exam_schedule.services.current_views.list_exam_schedule_for_student",
         r#"
         SELECT round.id AS round_id,
                round.name AS round_name,
                round.academic_term_id,
-               round.published_at,
                day.exam_date,
                session.starts_at,
                session.ends_at,
@@ -308,10 +315,8 @@ async fn list_published_exam_schedule_for_student(
          AND seat.student_id = enrollment.student_id
         WHERE enrollment.student_id = $1
           AND enrollment.membership_status = 'active'
-          AND round.status = 'published'
           AND round.academic_term_id = $2
-        ORDER BY round.published_at DESC NULLS LAST,
-                 round.name,
+        ORDER BY round.name,
                  day.exam_date,
                  session.starts_at,
                  classroom.name,
@@ -333,16 +338,17 @@ async fn list_published_exam_schedule_for_student(
     Ok(group_personal_exam_schedule_rows(rows))
 }
 
-async fn list_published_exam_schedule_for_staff(
+async fn list_exam_schedule_for_staff(
     connection: &mut sqlx::PgConnection,
     academic_term_id: Uuid,
-) -> Result<Vec<StaffPublishedExamScheduleRound>, AppError> {
-    let assignment_rows = DbSession::new(connection).query_as::<StaffPublishedExamAssignmentRow>("academic_assessment.exam_schedule.services.published_views.list_published_exam_schedule_for_staff",
-        r#"
+) -> Result<Vec<StaffExamScheduleRound>, AppError> {
+    let assignment_rows = DbSession::new(connection)
+        .query_as::<StaffExamAssignmentRow>(
+            "academic_assessment.exam_schedule.services.current_views.list_exam_schedule_for_staff",
+            r#"
         SELECT round.id AS round_id,
                round.name AS round_name,
                round.academic_term_id,
-               round.published_at,
                day.id AS exam_day_id,
                day.label AS day_label,
                day.exam_date,
@@ -367,10 +373,8 @@ async fn list_published_exam_schedule_for_staff(
           ON invigilator.day_room_assignment_id = assignment.id
          AND invigilator.exam_day_id = day.id
         LEFT JOIN user_display_names user_account ON user_account.id = invigilator.staff_id
-        WHERE round.status = 'published'
-          AND round.academic_term_id = $1
-        ORDER BY round.published_at DESC NULLS LAST,
-                 round.name,
+        WHERE round.academic_term_id = $1
+        ORDER BY round.name,
                  round.id,
                  day.exam_date,
                  classroom.name,
@@ -379,13 +383,15 @@ async fn list_published_exam_schedule_for_staff(
                  user_account.last_name NULLS LAST,
                  invigilator.staff_id NULLS LAST
         "#,
-    )
-    .bind(academic_term_id)
-    .fetch_all()
-    .await?;
+        )
+        .bind(academic_term_id)
+        .fetch_all()
+        .await?;
 
-    let session_rows = DbSession::new(connection).query_as::<StaffPublishedExamSessionRow>("academic_assessment.exam_schedule.services.published_views.list_published_exam_schedule_for_staff",
-        r#"
+    let session_rows = DbSession::new(connection)
+        .query_as::<StaffExamSessionRow>(
+            "academic_assessment.exam_schedule.services.current_views.list_exam_schedule_for_staff",
+            r#"
         SELECT round.id AS round_id,
                day.id AS exam_day_id,
                session.id AS session_id,
@@ -439,10 +445,8 @@ async fn list_published_exam_schedule_for_staff(
          AND assignment.homeroom_id = item.homeroom_id
         JOIN rooms room ON room.id = assignment.room_id
         LEFT JOIN buildings building ON building.id = room.building_id
-        WHERE round.status = 'published'
-          AND round.academic_term_id = $1
-        ORDER BY round.published_at DESC NULLS LAST,
-                 round.name,
+        WHERE round.academic_term_id = $1
+        ORDER BY round.name,
                  round.id,
                  day.exam_date,
                  session.starts_at,
@@ -464,15 +468,12 @@ async fn list_published_exam_schedule_for_staff(
                  END,
                  session.id
         "#,
-    )
-    .bind(academic_term_id)
-    .fetch_all()
-    .await?;
+        )
+        .bind(academic_term_id)
+        .fetch_all()
+        .await?;
 
-    Ok(group_staff_published_exam_rows(
-        assignment_rows,
-        session_rows,
-    ))
+    Ok(group_staff_exam_rows(assignment_rows, session_rows))
 }
 
 fn group_personal_exam_schedule_rows(
@@ -491,7 +492,6 @@ fn group_personal_exam_schedule_rows(
                     round_id,
                     round_name: row.round_name.clone(),
                     academic_term_id: row.academic_term_id,
-                    published_at: row.published_at,
                     sessions: Vec::new(),
                 });
                 round_indexes.insert(round_id, index);
@@ -505,10 +505,10 @@ fn group_personal_exam_schedule_rows(
     rounds
 }
 
-fn group_staff_published_exam_rows(
-    assignment_rows: Vec<StaffPublishedExamAssignmentRow>,
-    session_rows: Vec<StaffPublishedExamSessionRow>,
-) -> Vec<StaffPublishedExamScheduleRound> {
+fn group_staff_exam_rows(
+    assignment_rows: Vec<StaffExamAssignmentRow>,
+    session_rows: Vec<StaffExamSessionRow>,
+) -> Vec<StaffExamScheduleRound> {
     let mut rounds = Vec::new();
     let mut round_indexes = HashMap::new();
     let mut day_indexes = HashMap::new();
@@ -519,11 +519,10 @@ fn group_staff_published_exam_rows(
             Some(index) => *index,
             None => {
                 let index = rounds.len();
-                rounds.push(StaffPublishedExamScheduleRound {
+                rounds.push(StaffExamScheduleRound {
                     round_id: row.round_id,
                     round_name: row.round_name.clone(),
                     academic_term_id: row.academic_term_id,
-                    published_at: row.published_at,
                     days: Vec::new(),
                 });
                 round_indexes.insert(row.round_id, index);
@@ -536,7 +535,7 @@ fn group_staff_published_exam_rows(
             Some(index) => *index,
             None => {
                 let index = rounds[round_index].days.len();
-                rounds[round_index].days.push(StaffPublishedExamDay {
+                rounds[round_index].days.push(StaffExamDay {
                     exam_day_id: row.exam_day_id,
                     label: row.day_label.clone(),
                     exam_date: row.exam_date,
@@ -553,7 +552,7 @@ fn group_staff_published_exam_rows(
             None => {
                 let index = rounds[round_index].days[day_index].room_assignments.len();
                 rounds[round_index].days[day_index].room_assignments.push(
-                    StaffPublishedExamRoomAssignment {
+                    StaffExamRoomAssignment {
                         assignment_id: row.assignment_id,
                         homeroom_id: row.homeroom_id,
                         homeroom_name: row.homeroom_name,
@@ -579,7 +578,7 @@ fn group_staff_published_exam_rows(
                 .iter()
                 .any(|invigilator| invigilator.staff_id == staff_id)
             {
-                invigilators.push(StaffPublishedExamInvigilator {
+                invigilators.push(StaffExamInvigilator {
                     staff_id,
                     display_name,
                 });
@@ -597,7 +596,7 @@ fn group_staff_published_exam_rows(
 
         rounds[round_index].days[day_index]
             .sessions
-            .push(StaffPublishedExamSession {
+            .push(StaffExamSession {
                 session_id: row.session_id,
                 starts_at: row.starts_at,
                 ends_at: row.ends_at,
@@ -645,7 +644,7 @@ fn group_staff_published_exam_rows(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{NaiveDate, NaiveTime, Utc};
+    use chrono::{NaiveDate, NaiveTime};
 
     fn t(value: &str) -> NaiveTime {
         NaiveTime::parse_from_str(value, "%H:%M").expect("test time must be valid")
@@ -661,8 +660,8 @@ mod tests {
         room_id: Uuid,
         starts_at: NaiveTime,
         ends_at: NaiveTime,
-    ) -> StaffPublishedExamSessionRow {
-        StaffPublishedExamSessionRow {
+    ) -> StaffExamSessionRow {
+        StaffExamSessionRow {
             round_id,
             exam_day_id: day_id,
             session_id,
@@ -695,14 +694,12 @@ mod tests {
         let assignment_id = Uuid::from_u128(3);
         let homeroom_id = Uuid::from_u128(4);
         let room_id = Uuid::from_u128(5);
-        let published_at = Utc::now();
 
         let assignment_rows = vec![
-            StaffPublishedExamAssignmentRow {
+            StaffExamAssignmentRow {
                 round_id,
                 round_name: "กลางภาค 1/2569".to_string(),
                 academic_term_id: Uuid::from_u128(6),
-                published_at: Some(published_at),
                 exam_day_id: day_id,
                 day_label: Some("วันแรก".to_string()),
                 exam_date: NaiveDate::from_ymd_opt(2026, 8, 3).expect("date must be valid"),
@@ -715,11 +712,10 @@ mod tests {
                 staff_id: Some(Uuid::from_u128(7)),
                 display_name: Some("ครู ก".to_string()),
             },
-            StaffPublishedExamAssignmentRow {
+            StaffExamAssignmentRow {
                 round_id,
                 round_name: "กลางภาค 1/2569".to_string(),
                 academic_term_id: Uuid::from_u128(6),
-                published_at: Some(published_at),
                 exam_day_id: day_id,
                 day_label: Some("วันแรก".to_string()),
                 exam_date: NaiveDate::from_ymd_opt(2026, 8, 3).expect("date must be valid"),
@@ -757,7 +753,7 @@ mod tests {
             ),
         ];
 
-        let rounds = group_staff_published_exam_rows(assignment_rows, session_rows);
+        let rounds = group_staff_exam_rows(assignment_rows, session_rows);
         let day = &rounds[0].days[0];
         let assignment = &day.room_assignments[0];
 

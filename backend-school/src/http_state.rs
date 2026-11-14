@@ -1,7 +1,4 @@
-use crate::{
-    adapters::{academic_lifecycle::LIFECYCLE_PROVIDERS, academic_result_locks::RESULT_LOCKS},
-    AppState,
-};
+use crate::{adapters::academic_result_locks::RESULT_LOCKS, AppState};
 use async_trait::async_trait;
 use axum::extract::FromRef;
 use school_certificates_http::state::{CertificateFileDeletionPort, CertificateHttpState};
@@ -29,9 +26,12 @@ impl FromRef<AppState> for school_academic_delivery_http::state::AcademicDeliver
         Self {
             auth_runtime: state.auth_runtime.clone(),
             websocket_manager: state.websocket_manager.clone(),
-            assessment_publication:
-                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-            publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+            assessment_current: &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
+            delivery_deletion: std::sync::Arc::new(
+                crate::adapters::delivery_deletion::ApplicationDeliveryDeletion {
+                    collaboration: state.websocket_manager.collaboration(),
+                },
+            ),
         }
     }
 }
@@ -53,7 +53,7 @@ impl FromRef<AppState> for school_academic_timetable_http::state::AcademicTimeta
             websocket_manager: state.websocket_manager.clone(),
             collaboration: state.websocket_manager.collaboration(),
             staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
-            publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+            lesson_source_detachment: &crate::adapters::lesson_sources::LESSON_SOURCE_DETACHMENT,
         }
     }
 }
@@ -72,7 +72,11 @@ impl FromRef<AppState> for school_academic_lifecycle_http::state::AcademicLifecy
         Self {
             auth_runtime: state.auth_runtime.clone(),
             websocket_manager: state.websocket_manager.clone(),
-            lifecycle_providers: &LIFECYCLE_PROVIDERS,
+            lifecycle_providers: std::sync::Arc::new(
+                crate::adapters::academic_lifecycle::ApplicationLifecycleProviders {
+                    collaboration: state.websocket_manager.collaboration(),
+                },
+            ),
             retention: &crate::adapters::academic_retention::ACADEMIC_RETENTION,
         }
     }

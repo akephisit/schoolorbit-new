@@ -7,7 +7,7 @@ use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-const COLUMNS: &str = "row_version,require_homeroom_placements,require_published_offerings,require_published_timetable";
+const COLUMNS: &str = "row_version,require_homeroom_placements,require_offerings,require_timetable";
 
 pub async fn get_opening_policy(
     pool: &PgPool,
@@ -59,8 +59,8 @@ pub async fn update_opening_policy(
     lifecycle_guard::lock_transition(&mut tx).await?;
     let before = read_in_transaction(&mut tx).await?;
     let result: OpeningPolicy = DbSession::new(&mut *tx).query_as("academic_lifecycle.services.opening_policy.update_opening_policy", sqlx::AssertSqlSafe(format!(
-        "UPDATE academic_opening_policy SET require_homeroom_placements=$1,require_published_offerings=$2,require_published_timetable=$3,row_version=row_version+1,updated_by=$4,updated_at=now() WHERE id=1 AND row_version=$5 RETURNING {COLUMNS}"
-    ))).bind(input.require_homeroom_placements).bind(input.require_published_offerings).bind(input.require_published_timetable)
+        "UPDATE academic_opening_policy SET require_homeroom_placements=$1,require_offerings=$2,require_timetable=$3,row_version=row_version+1,updated_by=$4,updated_at=now() WHERE id=1 AND row_version=$5 RETURNING {COLUMNS}"
+    ))).bind(input.require_homeroom_placements).bind(input.require_offerings).bind(input.require_timetable)
         .bind(actor.user_id).bind(input.row_version).fetch_optional().await?
         .ok_or_else(|| AppError::Conflict("เงื่อนไขเปิดภาคเรียนเปลี่ยนแล้ว กรุณาโหลดข้อมูลล่าสุด".into()))?;
     years_terms::append_audit(

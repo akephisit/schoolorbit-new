@@ -1,15 +1,14 @@
 use async_trait::async_trait;
-use school_academic_delivery::ports::AssessmentPublicationPort;
+use school_academic_delivery::ports::AssessmentCurrentPort;
 use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-pub(crate) struct ApplicationAssessmentPublication;
-pub(crate) static ASSESSMENT_PUBLICATION: ApplicationAssessmentPublication =
-    ApplicationAssessmentPublication;
+pub(crate) struct ApplicationAssessmentCurrent;
+pub(crate) static ASSESSMENT_CURRENT: ApplicationAssessmentCurrent = ApplicationAssessmentCurrent;
 
 #[async_trait]
-impl AssessmentPublicationPort for ApplicationAssessmentPublication {
+impl AssessmentCurrentPort for ApplicationAssessmentCurrent {
     async fn fill_missing_coordinators(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

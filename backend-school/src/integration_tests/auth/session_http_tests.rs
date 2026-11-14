@@ -1758,9 +1758,8 @@ pub(crate) mod protected_router {
             auth_runtime: fixture.runtime.clone(),
             websocket_manager: websocket_manager.clone(),
 
-            assessment_publication:
-                &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-            publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+            assessment_current: &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
+            delivery_deletion: Arc::new(crate::adapters::delivery_deletion::ApplicationDeliveryDeletion{collaboration:websocket_manager.collaboration()}),
         };
         let app = Router::new()
             .nest(

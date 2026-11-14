@@ -6,3 +6,5 @@ pub mod learner_evaluation;
 pub mod policy;
 pub mod ports;
 mod student_roster;
+
+pub mod deletion;

@@ -865,65 +865,45 @@ toolchain/host/release flags and at least two source-changing samples for both t
 Staff service. Record rebuilt packages as well as wall time; warm Cargo results do not measure
 complete build/push/deployment time.
 
-### Timetable draft collaboration
+### Current academic operations and Timetable collaboration
 
-For published-to-draft cloning under the runtime database role, run
-`./scripts/test_backend_school.sh --integration timetable_clone_runtime_permissions -- --test-threads=1`.
-The fixture owns a separate disposable database, denies runtime TEMP/schema creation, and checks
-the complete copied child graph, other-term isolation, resume/stale revisions, audit and rollback.
-
-Latest-opening draft regressions additionally exercise the existing `timetable_version_service_tests`,
-`timetable_block_service_tests` and real `timetable_collaboration_tests` filters. They must prove
-rowVersion-only source alignment, school Manager/Publisher scope without other editing grants,
-unchanged full child rows and published/origin pins, ExistingPermit resumption, no-op epoch
-stability, obsolete-source refusal before new writes/publication, source changes while queued,
-conflicting leases, revoked authority, cancellation, exact accepted replay and future-date/history
-guards. Read-only stale workspaces remain truthful and perform no alignment writes. Run API
-generation/check and the affected contract tests when changing these DTOs; generated files are
-never edited by hand.
-The coded-source rejection contract also uses `cargo test --manifest-path backend-school/Cargo.toml
--p school-errors -p school-http --locked`, default/`api-docs` workspace compilation, and the focused
-real HTTP alignment case. Assert optional typed409 data only for definitive server pre-write guards,
-separate local no-submission proof before child HTTP dispatch, retained intent and explicit review
-after alignment for both safe classes, and an unknown-outcome fence after dispatch. Cover ordinary
-conflicts without that data and successful commit plus failed
-cached revision/delta publication requesting reconciliation rather than a false rejected result.
-
-The cross-language native-frame regression requires the Node version pinned in the root
-`.node-version` on `PATH`. It imports the actual TypeScript decoder using built-in type stripping;
-no npm install is needed for this focused backend test.
-
-Run the domain memory authority tests and real PostgreSQL/session/HTTP/native WebSocket fixture
-from the repository root. Use the configured pinned Rust toolchain and the owned disposable runner:
+Use the owning disposable PostgreSQL runner and the pinned Rust/Node toolchains. Run
+current-source migration, Delivery, Exam, Lifecycle and composed cascade cases with the
+matching default and `api-docs` production compilation. Generate contracts from the accepted
+Rust source; never edit generated outputs. Serialize Cargo and generators with source writers
+and reuse the existing target directory.
 
 ```bash
-cargo test --manifest-path backend-school/Cargo.toml -p school-academic-timetable --features api-docs collaboration -- --nocapture
-./scripts/test_backend_school.sh integration_tests::academic::services::timetable_collaboration_tests -- --nocapture --test-threads=2
-./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --nocapture --test-threads=2
-cargo test --manifest-path backend-school/Cargo.toml -p school-auth-http context::tests -- --nocapture
-cargo test --manifest-path backend-school/Cargo.toml -p school-academic-timetable-http websockets::security_tests -- --nocapture
+./scripts/test_backend_school.sh --package school-migrations --test current_academic_operations -- --test-threads=1
+./scripts/test_backend_school.sh --package school-academic-delivery -- --test-threads=2
+./scripts/test_backend_school.sh --package school-academic-assessment -- --test-threads=2
+./scripts/test_backend_school.sh --package school-behavior --test database lesson_ -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::services::timetable_collaboration_tests -- --test-threads=2
+cargo check --manifest-path backend-school/Cargo.toml -p backend-school --features api-docs --locked
+node --test scripts/tests/migration-completion-gate.test.mjs
 ```
 
-The dedicated transport fixture uses the original protected-router directory/session owner with
-prepared academic databases, actual opaque cookies and CSRF, two native socket tabs, and exactly
-the runtime injected into HTTP. It covers proof bypass/cross-tab refusal, scoped claim denial,
-changed-block patches with database-trigger version revisions, publication preview without a
-workspace reload, hot interaction after closing PostgreSQL, queued authorization generation,
-pinned commit cancellation/disconnect/TTL, initial-sync watermark, no-member upstream invalidation,
-postcommit failure, deferred COMMIT timeout, cold version-row/cache-fill fencing, real Facility/Staff
-producer invalidation, and scoped lookup gain/loss matching fresh HTTP metadata and producer order. Domain cases separately
-cover cross-view footprints/swaps, private candidate ownership, filtered sequence watermarks,
-replay/expiry and bounded tiny deltas for a workspace larger than the journal limit's half size.
-Use only runner-owned disposable databases, never a live or customer tenant. A fixture's isolated test context does not substitute for
-shared-runtime HTTP/socket authority acceptance.
+Prove normalized one-current-set authority, explicit term isolation, stable retained identities,
+trigger-owned revisions, inactive teacher visibility versus active-account access, unchanged
+teacher no-op confirmation/score preservation and real teacher-change invalidation. Exam
+workspace reads must project current eligible sources without inserting rows; placement saves
+must revalidate current eligibility, duration, seats and conflicts. A round remains visible and
+editable without publication. Lifecycle preparation must retain current aggregate admission
+through its outer commit, including absent-target creation and pristine singleton reuse.
 
-The three `X-Timetable-Connection-Id`, `X-Timetable-Lease-Token` and `X-Timetable-Mutation-Id`
-headers form one optional HTTP ownership proof. Keep their CORS proxy checks and the direct and
-reverse-proxy WebSocket smoke recipes below when changing this boundary. Frontend decoding and
-standalone smoke use a 64 MiB UTF-8 budget per complete JSON event; server incoming interaction
-commands have a separate 64 KiB limit. This does not impose a note/schema cap or claim server
-outbound enforcement. Backend tests establish
-transport behavior locally; they do not replace deployed proxy acceptance or browser interaction.
+Current collaboration retains proof/session isolation, exact accepted replay, cancellation-safe
+commit, revoked authorization, no-op epoch stability, conflict leases and truthful current
+workspaces. Real session/HTTP/native WebSocket cases must use the injected runtime, opaque
+cookies and CSRF. Removing placements must physically remove owned children and detach only
+Supervision's exact source link while preserving saved context and evaluations. In-memory
+delete deltas are technical replay signals rather than stored business history.
+
+The app-composed deletion cases must exercise real providers, exact school scope, stale
+context/revision/digest, late rollback, other-group/context preservation, consumed notification
+receipt preservation, exclusive evidence identity and late-upload ownership, source-bound Behavior refusal and canonical
+cap redistribution. Include concurrent cleanup versus confirmed impact, queued save versus
+delete, and HTTP disconnect after admission; cancellation cannot release the gate before the
+actual commit. Separate fake-port unit tests do not establish cross-owner cascade acceptance.
 
 ### School session authentication
 
@@ -2792,46 +2772,22 @@ operational inputs/receipts separately from local verification results; Actions 
 local tests. Production execution still requires the fixed reviewed bundle, fresh approval under
 the shared lock and the actual 300-second observation described in Operations.
 
-### Selected Delivery room audience
+### Current Delivery and Assessment ownership
 
-Use the disposable PostgreSQL runner with serial tests and a small fixture batch:
+The current Delivery suite covers exact target/group scopes, direct registry saves, stable
+teacher assignment identity and preserved actual roster dates. Current teacher allocation is
+the shared source for Assessment, Gradebook, learner evaluations and Results access. The
+Assessment current initialization port fills only missing coordinators inside the accepted save;
+editing controls, existing plans, scores, confirmations and independent Results locks retain
+their own domain rules. Keep focused independent-control and access denial coverage alongside
+the current teacher no-op/change regression.
 
-```bash
-CARGO_INCREMENTAL=0 ./scripts/test_backend_school.sh delivery_room_scope -- --test-threads=1
-CARGO_INCREMENTAL=0 ./scripts/test_backend_school.sh delivery_draft_removal -- --test-threads=1
-cargo test --manifest-path backend-school/Cargo.toml -p school-academic-delivery --lib audiences::tests --locked
-```
-
-On constrained disks select two or three exact room-scope cases per invocation rather than
-retaining all fixture databases in one server. Coverage includes 143-to-144 unscoped-byte
-preservation, explicit empty versus absent intent, combined/split and central-group behavior,
-future added rooms, publication locks, scoped preview/apply replay and stale hashes, inheritance,
-actual HTTP permission/revision guards, and dated/pinned consumer eligibility. Published history,
-manual roster facts and grading evidence remain unchanged. The `delivery_draft_removal` filter
-also verifies actual hard deletion of exclusive unused course/activity registry rows, details,
-groups, owned child rows and the selected audience; snapshot refresh cannot restore them.
-Catalogs/curriculum and unrelated contexts remain unchanged. Independent audience, snapshot and
-journal owners or downstream assessment plans retain registry data with a truthful removal audit;
-shared empty audience parents, published history, stale/lifecycle and HTTP permission guards keep
-their existing coverage. Keep the API export/generation and consumer checks serialized with Rust
-source writers; use the existing target directory.
-
-### Assessment publication ownership and independent editing controls
-
-Run the owned PostgreSQL fixtures serially:
-
-```bash
-./scripts/test_backend_school.sh assessment_publication -- --test-threads=1
-./scripts/test_backend_school.sh assessment_independent_controls -- --test-threads=1
-./scripts/test_backend_school.sh assessment_control_ -- --test-threads=1
-./scripts/test_backend_school.sh publishing_an_added_course_preserves_the_separate_roster_publication -- --test-threads=1
-./scripts/test_backend_school.sh offering_group_and_roster_publish_are_revisioned_and_idempotent -- --test-threads=1
-```
-
-These cover the migration/runtime suggestion parity, accepted plan/phase preservation,
-partial control patches, all four score/exam editing combinations, publication rollback,
-retained offerings, and publication replay. Regenerate/check/test the API contracts and
-compile the affected Academic owners in default and `api-docs` modes.
+The current migration fixture must verify inactive placement removal, exact retained child IDs,
+Supervision detachment with saved evaluations, unchanged actual Attendance/membership facts,
+opening-policy boolean/revision preservation and deletion of Delivery-owned historical payloads.
+Unknown old Delivery event codes under its three exclusive entity types must also disappear;
+Catalog, Curriculum, Lifecycle and global Results history remain byte-identical. Ambiguous
+LINKED references to a removed placement must refuse without partial cutover.
 
 ### Staff direct file transfer
 

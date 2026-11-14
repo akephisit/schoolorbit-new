@@ -1196,7 +1196,7 @@ pub async fn preview_offering_deletion(
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     Ok(ok(school_academic_delivery::services::deletion::preview(
-        state.delivery_deletion,
+        state.delivery_deletion.as_ref(),
         &context.tenant.pool,
         &context.actor,
         id,
@@ -1216,23 +1216,13 @@ pub async fn delete_offering(
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let result = school_academic_delivery::services::deletion::delete(
-        state.delivery_deletion,
-        &context.tenant.pool,
-        &context.actor,
+        state.delivery_deletion.clone(),
+        crate::deletion_command::from_session(&state, &session, &context),
         id,
         None,
         request,
     )
     .await?;
-    signal_delivery_changed(
-        &state,
-        &session,
-        &context.actor,
-        result.academic_term_id,
-        id,
-        None,
-        result.delivery_row_version,
-    );
     Ok(ok(result))
 }
 
@@ -1247,7 +1237,7 @@ pub async fn preview_group_deletion(
     school_academic_delivery::services::deletion::require_school_management(&context.actor)?;
     let group = groups::get(&context.tenant.pool, id).await?;
     Ok(ok(school_academic_delivery::services::deletion::preview(
-        state.delivery_deletion,
+        state.delivery_deletion.as_ref(),
         &context.tenant.pool,
         &context.actor,
         group.learning_offering_id,
@@ -1269,22 +1259,12 @@ pub async fn delete_group(
     school_academic_delivery::services::deletion::require_school_management(&context.actor)?;
     let group = groups::get(&context.tenant.pool, id).await?;
     let result = school_academic_delivery::services::deletion::delete(
-        state.delivery_deletion,
-        &context.tenant.pool,
-        &context.actor,
+        state.delivery_deletion.clone(),
+        crate::deletion_command::from_session(&state, &session, &context),
         group.learning_offering_id,
         Some(id),
         request,
     )
     .await?;
-    signal_delivery_changed(
-        &state,
-        &session,
-        &context.actor,
-        result.academic_term_id,
-        result.learning_offering_id,
-        Some(id),
-        result.delivery_row_version,
-    );
     Ok(ok(result))
 }

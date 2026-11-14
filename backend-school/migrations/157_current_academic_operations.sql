@@ -1,7 +1,7 @@
 -- One normalized current Delivery and Timetable per explicit term.
 -- The matching release runs under universal maintenance. Recover forward.
 SET LOCAL lock_timeout='30s';
-LOCK TABLE academic_terms,learning_offerings,course_offering_details,activity_offering_details,
+LOCK TABLE academic_exam_rounds,academic_exam_schedule_items,academic_exam_sessions,academic_opening_policy,academic_terms,learning_offerings,course_offering_details,activity_offering_details,
     learning_groups,learning_group_teachers,learning_group_students,learning_group_homerooms,
     learning_offering_targets,learning_group_preferred_rooms,learning_group_roster_tracking,
     academic_delivery_versions,academic_timetable_versions,academic_term_change_sets,
@@ -15,6 +15,13 @@ LOCK TABLE academic_terms,learning_offerings,course_offering_details,activity_of
     attendance_notifications,notification_receipts,notification_presentations,attendance_score_changes,attendance_module_state,
     supervision_observations IN ACCESS EXCLUSIVE MODE;
 SET CONSTRAINTS ALL IMMEDIATE;
+
+CREATE TEMP TABLE academic157_opening_policy ON COMMIT DROP AS
+SELECT to_jsonb(policy)-'require_published_offerings'-'require_published_timetable'
+    ||jsonb_build_object('require_offerings',require_published_offerings,'require_timetable',require_published_timetable) value
+FROM academic_opening_policy policy;
+ALTER TABLE academic_opening_policy RENAME COLUMN require_published_offerings TO require_offerings;
+ALTER TABLE academic_opening_policy RENAME COLUMN require_published_timetable TO require_timetable;
 
 CREATE TEMP TABLE academic157_context ON COMMIT DROP AS
 SELECT (clock_timestamp() AT TIME ZONE 'Asia/Bangkok')::date cutover_date;
@@ -104,14 +111,14 @@ DO $$ BEGIN
         RAISE EXCEPTION 'ACADEMIC_CURRENT_GRAPH_UNMAPPABLE'; END IF;
     IF EXISTS(SELECT 1 FROM academic_timetable_blocks b JOIN academic157_sources s ON s.timetable_id=b.timetable_version_id
         LEFT JOIN academic157_offerings o ON o.id=b.learning_offering_id
-        WHERE b.learning_offering_id IS NOT NULL AND o.id IS NULL)
+        WHERE b.is_active AND b.learning_offering_id IS NOT NULL AND o.id IS NULL)
        OR EXISTS(SELECT 1 FROM academic_timetable_block_groups bg JOIN academic_timetable_blocks b ON b.id=bg.block_id
         JOIN academic157_sources s ON s.timetable_id=b.timetable_version_id LEFT JOIN academic157_groups g ON g.id=bg.learning_group_id
-        WHERE g.id IS NULL OR g.offering_id<>bg.learning_offering_id
-          OR NOT(ARRAY(SELECT value::uuid FROM jsonb_array_elements_text(g.graph->'homeroomIds')) @> bg.homeroom_ids))
+        WHERE b.is_active AND bg.is_active AND (g.id IS NULL OR g.offering_id<>bg.learning_offering_id
+          OR NOT(ARRAY(SELECT value::uuid FROM jsonb_array_elements_text(g.graph->'homeroomIds')) @> bg.homeroom_ids)))
        OR EXISTS(SELECT 1 FROM academic_timetable_block_group_instructors i JOIN academic_timetable_block_groups bg ON bg.id=i.block_group_id
         JOIN academic_timetable_blocks b ON b.id=bg.block_id JOIN academic157_sources s ON s.timetable_id=b.timetable_version_id
-        WHERE NOT EXISTS(SELECT 1 FROM academic157_teachers t WHERE t.group_id=bg.learning_group_id AND t.teacher_id=i.instructor_id AND t.role=i.role)) THEN
+        WHERE b.is_active AND bg.is_active AND NOT EXISTS(SELECT 1 FROM academic157_teachers t WHERE t.group_id=bg.learning_group_id AND t.teacher_id=i.instructor_id AND t.role=i.role)) THEN
         RAISE EXCEPTION 'ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH'; END IF;
 END $$;
 
@@ -238,6 +245,20 @@ WHERE NOT EXISTS(SELECT 1 FROM academic157_cancelled_receipts selected WHERE sel
 CREATE TEMP TABLE academic157_retained_sessions ON COMMIT DROP AS
 SELECT session.id FROM attendance_sessions session JOIN academic157_offerings offering ON offering.id=session.offering_id
 WHERE session.learning_group_id IS NULL OR EXISTS(SELECT 1 FROM academic157_groups kept WHERE kept.id=session.learning_group_id);
+CREATE TEMP TABLE academic157_discarded_blocks ON COMMIT DROP AS
+SELECT b.id FROM academic_timetable_blocks b
+WHERE NOT b.is_active OR NOT EXISTS(SELECT 1 FROM academic157_sources s WHERE s.timetable_id=b.timetable_version_id);
+CREATE TEMP TABLE academic157_discarded_groups ON COMMIT DROP AS
+SELECT bg.id FROM academic_timetable_block_groups bg
+WHERE NOT bg.is_active OR EXISTS(SELECT 1 FROM academic157_discarded_blocks b WHERE b.id=bg.block_id);
+DO $$ BEGIN
+    IF EXISTS(SELECT 1 FROM academic_timetable_block_group_sync sync
+        JOIN academic157_discarded_groups discarded ON discarded.id=sync.linked_block_group_id
+        WHERE NOT EXISTS(SELECT 1 FROM academic157_discarded_blocks b WHERE b.id=sync.block_id)
+          AND sync.status='LINKED') THEN
+        RAISE EXCEPTION 'ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE';
+    END IF;
+END $$;
 -- Capture only retained facts. The temporary JSON never survives this transaction.
 CREATE TEMP TABLE academic157_preserved ON COMMIT DROP AS
 SELECT 'memberships'::text resource,count(*) row_count,encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex') fingerprint
@@ -255,7 +276,31 @@ FROM attendance_records r JOIN academic157_retained_sessions kept ON kept.id=r.s
 UNION ALL SELECT 'supervision',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'updated_at'-'timetable_block_group_id'-'learning_group_id'-'lesson_snapshot' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
 FROM supervision_observations r
 UNION ALL SELECT 'blocks',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'timetable_version_id'-'timetable_id' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM academic_timetable_blocks r JOIN academic157_sources selected ON selected.timetable_id=r.timetable_version_id;
+FROM academic_timetable_blocks r JOIN academic157_sources selected ON selected.timetable_id=r.timetable_version_id WHERE r.is_active
+UNION ALL SELECT 'placed_groups',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_groups r JOIN academic_timetable_blocks b ON b.id=r.block_id
+JOIN academic157_sources selected ON selected.timetable_id=b.timetable_version_id WHERE b.is_active AND r.is_active
+UNION ALL SELECT 'structural_homerooms',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_homerooms r JOIN academic_timetable_blocks b ON b.id=r.block_id
+JOIN academic157_sources selected ON selected.timetable_id=b.timetable_version_id WHERE b.is_active AND r.is_active
+UNION ALL SELECT 'structural_teachers',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_teachers r JOIN academic_timetable_blocks b ON b.id=r.block_id
+JOIN academic157_sources selected ON selected.timetable_id=b.timetable_version_id WHERE b.is_active AND r.is_active
+UNION ALL SELECT 'placement_sync',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_group_sync r JOIN academic_timetable_blocks b ON b.id=r.block_id
+JOIN academic157_sources selected ON selected.timetable_id=b.timetable_version_id WHERE b.is_active AND EXISTS(SELECT 1 FROM academic157_groups kept WHERE kept.id=r.learning_group_id)
+UNION ALL SELECT 'placed_instructors',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_group_instructors r JOIN academic_timetable_block_groups bg ON bg.id=r.block_group_id
+JOIN academic_timetable_blocks b ON b.id=bg.block_id JOIN academic157_sources selected ON selected.timetable_id=b.timetable_version_id
+WHERE b.is_active AND bg.is_active
+UNION ALL SELECT 'placed_exam_items',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(i) ORDER BY i.id),'[]')::text,'UTF8')),'hex')
+FROM academic_exam_schedule_items i JOIN academic157_groups kept ON kept.id=i.learning_group_id
+WHERE EXISTS(SELECT 1 FROM academic_exam_sessions session WHERE session.exam_schedule_item_id=i.id)
+UNION ALL SELECT 'placed_exam_sessions',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(session) ORDER BY session.id),'[]')::text,'UTF8')),'hex')
+FROM academic_exam_sessions session JOIN academic_exam_schedule_items item ON item.id=session.exam_schedule_item_id
+JOIN academic157_groups kept ON kept.id=item.learning_group_id
+UNION ALL SELECT 'exam_rounds',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(round)-'status'-'published_at'-'published_by' ORDER BY round.id),'[]')::text,'UTF8')),'hex') FROM academic_exam_rounds round;
+
 CREATE TEMP TABLE academic157_original_coverage ON COMMIT DROP AS SELECT * FROM learning_group_homerooms;
 CREATE TEMP TABLE academic157_original_preferences ON COMMIT DROP AS SELECT * FROM learning_group_preferred_rooms;
 
@@ -300,12 +345,27 @@ UPDATE supervision_observations obs SET timetable_block_group_id=NULL,
         'source','removed_timetable','timetableBlockGroupId',obs.timetable_block_group_id,'observedAt',obs.observed_at)
         ELSE obs.lesson_snapshot END
 WHERE obs.timetable_block_group_id IN(SELECT bg.id FROM academic_timetable_block_groups bg
-    JOIN academic_timetable_blocks b ON b.id=bg.block_id WHERE NOT EXISTS(SELECT 1 FROM academic157_sources s WHERE s.timetable_id=b.timetable_version_id));
+    JOIN academic157_discarded_groups discarded ON discarded.id=bg.id);
 
--- Remove discarded placements first; current placements retain every child ID.
-DELETE FROM academic_timetable_block_group_sync sync USING academic_timetable_blocks b
-WHERE b.id=sync.block_id AND NOT EXISTS(SELECT 1 FROM academic157_sources s WHERE s.timetable_id=b.timetable_version_id);
-DELETE FROM academic_timetable_blocks b WHERE NOT EXISTS(SELECT 1 FROM academic157_sources s WHERE s.timetable_id=b.timetable_version_id);
+-- Removed operational placements have no restore stage. Actual Attendance is
+-- independent; only exact Supervision source references above are detached.
+DELETE FROM academic_timetable_block_group_sync sync
+WHERE EXISTS(SELECT 1 FROM academic157_discarded_blocks b WHERE b.id=sync.block_id)
+   OR NOT EXISTS(SELECT 1 FROM academic157_groups kept WHERE kept.id=sync.learning_group_id);
+DELETE FROM academic_timetable_block_groups bg USING academic157_discarded_groups discarded WHERE discarded.id=bg.id;
+DELETE FROM academic_timetable_block_homerooms WHERE NOT is_active;
+DELETE FROM academic_timetable_block_teachers WHERE NOT is_active;
+DELETE FROM academic_timetable_blocks b USING academic157_discarded_blocks discarded WHERE discarded.id=b.id;
+
+-- Unscheduled items are live projections. Only an actual saved placement owns
+-- a persisted item identity; retire import-stage copies without deleting facts.
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM pg_constraint WHERE contype='f' AND confrelid='academic_exam_schedule_items'::regclass
+   AND conrelid<>'academic_exam_sessions'::regclass) THEN
+  RAISE EXCEPTION 'ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE';
+ END IF;
+END $$;
+DELETE FROM academic_exam_schedule_items item WHERE NOT EXISTS(SELECT 1 FROM academic_exam_sessions session WHERE session.exam_schedule_item_id=item.id);
 
 CREATE TEMP TABLE academic157_registration ON COMMIT DROP AS
 SELECT g.id,(o.status='published' AND g.status='published' AND g.roster_status='draft' AND a.registration_type='self') registration_open
@@ -803,7 +863,9 @@ DROP FUNCTION assert_timetable_block_mutable(uuid);
 
 DELETE FROM academic_audit_events WHERE entity_type IN(
     'academic_delivery_version','academic_term_change_set','academic_term_change_item',
-    'academic_timetable_version','academic_teacher_handoff_run');
+    'academic_timetable_version','academic_teacher_handoff_run',
+    'learning_offering','learning_group','learning_group_student')
+ OR (entity_type='academic_timetable_block_group' AND event_code='academic_teacher_handoff.applied');
 
 CREATE TABLE academic_current_operations_migration_audit(
     migration_version bigint PRIMARY KEY CHECK(migration_version=157),
@@ -834,10 +896,39 @@ FROM attendance_records r JOIN academic157_retained_sessions kept ON kept.id=r.s
 UNION ALL SELECT 'supervision',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'updated_at'-'timetable_block_group_id'-'learning_group_id'-'lesson_snapshot' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
 FROM supervision_observations r
 UNION ALL SELECT 'blocks',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'timetable_version_id'-'timetable_id' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM academic_timetable_blocks r JOIN academic157_sources selected ON selected.timetable_id=r.timetable_id;
+FROM academic_timetable_blocks r JOIN academic157_sources selected ON selected.timetable_id=r.timetable_id WHERE r.is_active
+UNION ALL SELECT 'placed_groups',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_groups r JOIN academic_timetable_blocks b ON b.id=r.block_id
+JOIN academic157_sources selected ON selected.timetable_id=b.timetable_id WHERE b.is_active AND r.is_active
+UNION ALL SELECT 'structural_homerooms',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_homerooms r JOIN academic_timetable_blocks b ON b.id=r.block_id
+JOIN academic157_sources selected ON selected.timetable_id=b.timetable_id WHERE b.is_active AND r.is_active
+UNION ALL SELECT 'structural_teachers',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_teachers r JOIN academic_timetable_blocks b ON b.id=r.block_id
+JOIN academic157_sources selected ON selected.timetable_id=b.timetable_id WHERE b.is_active AND r.is_active
+UNION ALL SELECT 'placement_sync',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_group_sync r JOIN academic_timetable_blocks b ON b.id=r.block_id
+JOIN academic157_sources selected ON selected.timetable_id=b.timetable_id WHERE b.is_active AND EXISTS(SELECT 1 FROM academic157_groups kept WHERE kept.id=r.learning_group_id)
+UNION ALL SELECT 'placed_instructors',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
+FROM academic_timetable_block_group_instructors r JOIN academic_timetable_block_groups bg ON bg.id=r.block_group_id
+JOIN academic_timetable_blocks b ON b.id=bg.block_id JOIN academic157_sources selected ON selected.timetable_id=b.timetable_id
+WHERE b.is_active AND bg.is_active
+UNION ALL SELECT 'placed_exam_items',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(i) ORDER BY i.id),'[]')::text,'UTF8')),'hex')
+FROM academic_exam_schedule_items i JOIN academic157_groups kept ON kept.id=i.learning_group_id
+WHERE EXISTS(SELECT 1 FROM academic_exam_sessions session WHERE session.exam_schedule_item_id=i.id)
+UNION ALL SELECT 'placed_exam_sessions',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(session) ORDER BY session.id),'[]')::text,'UTF8')),'hex')
+FROM academic_exam_sessions session JOIN academic_exam_schedule_items item ON item.id=session.exam_schedule_item_id
+JOIN academic157_groups kept ON kept.id=item.learning_group_id
+UNION ALL SELECT 'exam_rounds',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(round)-'status'-'published_at'-'published_by' ORDER BY round.id),'[]')::text,'UTF8')),'hex') FROM academic_exam_rounds round;
+
 DO $$ BEGIN
-    IF EXISTS(SELECT 1 FROM academic157_preserved b FULL JOIN academic157_after a USING(resource)
+    IF EXISTS(SELECT 1 FROM academic157_opening_policy before FULL JOIN (SELECT to_jsonb(policy) value FROM academic_opening_policy policy) after USING(value) WHERE before.value IS NULL OR after.value IS NULL)
+    OR EXISTS(SELECT 1 FROM academic157_preserved b FULL JOIN academic157_after a USING(resource)
         WHERE b.row_count IS DISTINCT FROM a.row_count OR b.fingerprint IS DISTINCT FROM a.fingerprint)
+    OR EXISTS(SELECT 1 FROM academic_timetable_blocks WHERE NOT is_active)
+    OR EXISTS(SELECT 1 FROM academic_timetable_block_groups WHERE NOT is_active)
+    OR EXISTS(SELECT 1 FROM academic_timetable_block_homerooms WHERE NOT is_active)
+    OR EXISTS(SELECT 1 FROM academic_timetable_block_teachers WHERE NOT is_active)
     OR (SELECT count(*) FROM learning_offerings)<>(SELECT count(*) FROM academic157_offerings)
     OR (SELECT count(*) FROM learning_groups)<>(SELECT count(*) FROM academic157_groups)
     OR (SELECT count(*) FROM learning_group_teachers)<>(SELECT count(*) FROM academic157_teachers)

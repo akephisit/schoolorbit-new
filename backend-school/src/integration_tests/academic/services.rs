@@ -5,7 +5,7 @@ pub use school_academic_assessment::exam_schedule::services as exam_schedule_ser
 
 #[cfg(test)]
 pub use school_academic_timetable::services::{
-    timetable_block_service, timetable_template_service, timetable_version_service,
+    timetable_block_service, timetable_service, timetable_template_service,
 };
 
 #[cfg(test)]

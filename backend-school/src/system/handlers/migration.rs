@@ -55,10 +55,8 @@ struct SchoolMigrationStatus {
     academic_context_cutover: AcademicContextCutoverStatus,
     #[serde(rename = "gradebookResultsCutover")]
     gradebook_results_cutover: GradebookResultsCutoverStatus,
-    #[serde(rename = "deliveryTimetableCutover")]
-    delivery_timetable_cutover: DeliveryTimetableCutoverStatus,
-    #[serde(rename = "publicationRevisionsCutover")]
-    publication_revisions_cutover: DeliveryTimetableCutoverStatus,
+    #[serde(rename = "currentOperationsCutover")]
+    current_operations_cutover: CurrentOperationsCutoverStatus,
     #[serde(rename = "staffProfileCutover")]
     staff_profile_cutover: school_staff::profile_cutover::ProfileCutoverStatus,
 }
@@ -148,11 +146,11 @@ struct GradebookResultsCutoverStatus {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DeliveryTimetableCutoverStatus {
+struct CurrentOperationsCutoverStatus {
     status: String,
     migration_version: i64,
     passed: Option<bool>,
-    checks: Vec<school_academic_delivery::services::versions::DeliveryCutoverCheck>,
+    checks: Vec<crate::operations::current_academic::CurrentOperationsCheck>,
 }
 async fn staff_profile_cutover_status(
     pool: Option<&PgPool>,
@@ -171,84 +169,51 @@ async fn staff_profile_cutover_status(
     school_staff::profile_cutover::ProfileCutoverStatus::unavailable(version)
 }
 
-fn delivery_timetable_cutover_unavailable() -> DeliveryTimetableCutoverStatus {
-    DeliveryTimetableCutoverStatus {
-        status: "failed".into(),
-        migration_version: 88,
-        passed: Some(false),
-        checks: Vec::new(),
-    }
-}
-fn publication_revisions_cutover_unavailable(version: i32) -> DeliveryTimetableCutoverStatus {
-    DeliveryTimetableCutoverStatus {
-        status: if version < 151 {
+fn current_operations_cutover_unavailable(version: i32) -> CurrentOperationsCutoverStatus {
+    CurrentOperationsCutoverStatus {
+        status: if version < 157 {
             "pendingMigration"
         } else {
             "unavailable"
         }
         .into(),
-        migration_version: 151,
-        passed: if version < 151 { None } else { Some(false) },
-        checks: vec![],
+        migration_version: 157,
+        passed: if version < 157 { None } else { Some(false) },
+        checks: Vec::new(),
     }
 }
-async fn publication_revisions_cutover_status(
+async fn current_operations_cutover_status(
     pool: Option<&PgPool>,
     version: i32,
-) -> DeliveryTimetableCutoverStatus {
-    if version < 151 {
-        return publication_revisions_cutover_unavailable(version);
+) -> CurrentOperationsCutoverStatus {
+    if version < 157 {
+        return current_operations_cutover_unavailable(version);
     }
     let Some(pool) = pool else {
-        return publication_revisions_cutover_unavailable(version);
+        return current_operations_cutover_unavailable(version);
     };
-    match school_academic_delivery::services::publication::read_revisions_audit(pool).await {
-        Ok(audit) => DeliveryTimetableCutoverStatus {
+    let result = async {
+        let mut conn = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "school.current_operations.status",
+        )
+        .await?;
+        crate::operations::current_academic::read_on_connection(&mut conn).await
+    }
+    .await;
+    match result {
+        Ok(audit) => CurrentOperationsCutoverStatus {
             status: if audit.completed {
                 "cutoverCompleted"
             } else {
                 "failed"
             }
             .into(),
-            migration_version: 151,
+            migration_version: 157,
             passed: Some(audit.completed),
             checks: audit.checks,
         },
-        Err(_) => publication_revisions_cutover_unavailable(version),
-    }
-}
-
-async fn delivery_timetable_cutover_status(
-    pool: Option<&PgPool>,
-    version: i32,
-) -> DeliveryTimetableCutoverStatus {
-    if version < 88 {
-        return DeliveryTimetableCutoverStatus {
-            status: "cutoverPending".into(),
-            migration_version: 88,
-            passed: None,
-            checks: Vec::new(),
-        };
-    }
-    let Some(pool) = pool else {
-        return delivery_timetable_cutover_unavailable();
-    };
-    match school_academic_delivery::services::versions::read_cutover_audit(pool).await {
-        Ok(audit) => DeliveryTimetableCutoverStatus {
-            status: if audit.completed {
-                "cutoverCompleted"
-            } else {
-                "failed"
-            }
-            .into(),
-            migration_version: 88,
-            passed: Some(audit.completed),
-            checks: audit.checks,
-        },
-        Err(error) => {
-            tracing::warn!(reason="delivery_timetable_cutover_audit_query_failed",database_code=?error.database_code());
-            delivery_timetable_cutover_unavailable()
-        }
+        Err(_) => current_operations_cutover_unavailable(version),
     }
 }
 
@@ -507,8 +472,7 @@ pub async fn migration_status(
             academic_core_cutover,
             academic_context_cutover,
             gradebook_results_cutover,
-            delivery_timetable_cutover,
-            publication_revisions_cutover,
+            current_operations_cutover,
             staff_profile_cutover,
         ) = if let Some(database_url) = school
             .db_connection_string
@@ -530,8 +494,7 @@ pub async fn migration_status(
                         academic_core_cutover,
                         academic_context_cutover_status(Some(&pool), version).await,
                         gradebook_results_cutover,
-                        delivery_timetable_cutover_status(Some(&pool), version).await,
-                        publication_revisions_cutover_status(Some(&pool), version).await,
+                        current_operations_cutover_status(Some(&pool), version).await,
                         staff_profile_cutover_status(Some(&pool), version).await,
                     )
                 }
@@ -540,8 +503,7 @@ pub async fn migration_status(
                     academic_core_cutover_unavailable(reported_version),
                     academic_context_cutover_status(None, reported_version).await,
                     gradebook_results_cutover_unavailable(reported_version),
-                    delivery_timetable_cutover_unavailable(),
-                    publication_revisions_cutover_unavailable(reported_version),
+                    current_operations_cutover_unavailable(reported_version),
                     staff_profile_cutover_status(None, reported_version).await,
                 ),
             }
@@ -551,8 +513,7 @@ pub async fn migration_status(
                 academic_core_cutover_status(None, reported_version).await,
                 academic_context_cutover_status(None, reported_version).await,
                 gradebook_results_cutover_status(None, reported_version).await,
-                delivery_timetable_cutover_status(None, reported_version).await,
-                publication_revisions_cutover_status(None, reported_version).await,
+                current_operations_cutover_status(None, reported_version).await,
                 staff_profile_cutover_status(None, reported_version).await,
             )
         };
@@ -582,8 +543,7 @@ pub async fn migration_status(
             academic_core_cutover,
             academic_context_cutover,
             gradebook_results_cutover,
-            delivery_timetable_cutover,
-            publication_revisions_cutover,
+            current_operations_cutover,
             staff_profile_cutover,
         });
     }
@@ -903,30 +863,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn delivery_cutover_status_requires_both_actual_reconciliation_audits() {
-        let pending = delivery_timetable_cutover_status(None, 87).await;
-        assert_eq!(pending.status, "cutoverPending");
+    async fn current_operations_status_requires_the_real_sealed157_receipt() {
+        let pending = current_operations_cutover_status(None, 156).await;
+        assert_eq!(pending.status, "pendingMigration");
         assert_eq!(pending.passed, None);
         assert_eq!(
-            delivery_timetable_cutover_status(None, 88).await.status,
-            "failed"
+            current_operations_cutover_status(None, 157).await.status,
+            "unavailable"
         );
-        let pool = create_named_test_pool("migration_status_delivery_cutover").await;
+        let pool = create_named_test_pool("migration_status_current_operations").await;
         seed_release_two_predecessor(&pool).await.unwrap();
-        apply_migrations_through(&pool, 89).await.unwrap();
-        let complete = delivery_timetable_cutover_status(Some(&pool), 88).await;
+        apply_migrations_through(&pool, 156).await.unwrap();
+        assert_eq!(
+            current_operations_cutover_status(Some(&pool), 157)
+                .await
+                .status,
+            "unavailable"
+        );
+        apply_migrations_through(&pool, 157).await.unwrap();
+        let complete = current_operations_cutover_status(Some(&pool), 157).await;
         assert_eq!(complete.status, "cutoverCompleted");
         assert_eq!(complete.passed, Some(true));
-        assert_eq!(complete.checks.len(), 30);
-        sqlx::query(
-            "DELETE FROM academic_delivery_version_migration_audit WHERE migration_version=87",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        let incomplete = delivery_timetable_cutover_status(Some(&pool), 88).await;
-        assert_eq!(incomplete.status, "failed");
-        assert_eq!(incomplete.passed, Some(false));
+        assert_eq!(complete.checks.len(), 8);
+        assert!(complete
+            .checks
+            .iter()
+            .all(|check| check.passed && check.mismatch_count == 0));
+        assert!(sqlx::query("UPDATE academic_current_operations_migration_audit SET passed=false WHERE migration_version=157").execute(&pool).await.is_err());
+        assert_eq!(
+            current_operations_cutover_status(Some(&pool), 157)
+                .await
+                .passed,
+            Some(true)
+        );
     }
 
     async fn phase_a_pool(name: &str) -> PgPool {
@@ -1073,8 +1042,7 @@ mod tests {
                 passed: Some(true),
                 checks: Vec::new(),
             },
-            delivery_timetable_cutover: delivery_timetable_cutover_unavailable(),
-            publication_revisions_cutover: publication_revisions_cutover_unavailable(151),
+            current_operations_cutover: current_operations_cutover_unavailable(157),
             staff_profile_cutover: school_staff::profile_cutover::ProfileCutoverStatus::unavailable(
                 114,
             ),

@@ -2196,136 +2196,46 @@ Rank milestone reads use the canonical current history and existing profile scop
 
 After a tenant applies 085, binaries writing position/rank directly into `staff_info` are prohibited. Deploy migration, backend, generated API contracts and frontend as one coordinated full release under maintenance. Rehearse the central runner on every affected active-tenant copy, preserve a current recovery point using the seven-day procedure above, and require actual SQLx-version equality before opening the proxy. Keep maintenance active on failure and repair forward with reviewed artifacts. Never bypass the guards, modify an applied migration or SQLx history, or assume an old binary is a safe rollback. Recovery must account for writes after the retained point. This release records career facts; it does not calculate eligibility or a next submission date.
 
-### Publication revision chronology and recovery
+### Current academic operational cutover
 
-Deploy [migration 151](../backend-school/migrations/151_publication_revisions.sql) with matching
-School backend, generated API contracts and frontend under the existing maintenance and all-tenant
-readiness gates. It preserves original UUIDs, effective dates, timestamps, snapshots, receipts,
-episodes and downstream evidence while adding independent per-term publication numbers.
-The old `deliveryTimetableCutover` 87/88 evidence remains unchanged. The separate
-`publicationRevisionsCutover` status must report version 151, `cutoverCompleted`, `passed: true`
-and the exact eight successful zero-mismatch checks owned by the
-[immutable publication audit](../backend-school/migrations/151_publication_revisions.sql).
-Owner and runtime startup/rollout verification both require this protected receipt.
+Deploy the matching School backend, generated API contracts and frontend with
+[migration 156](../backend-school/migrations/156_scoped_offering_result_removal.sql)
+and [migration 157](../backend-school/migrations/157_current_academic_operations.sql)
+under the existing maintenance and all-tenant gates. The actual migration filenames and
+central runner remain authoritative. Rehearse protected active-tenant copies, retain the
+current recovery point for seven days, and keep maintenance active on refusal.
 
-Migration refusal codes identify bounded source, assignment, preservation or reconciliation
-failures. Keep maintenance active, preserve the recovery point and original migration checksums,
-inspect an owned protected copy and repair with reviewed forward evidence. Do not fabricate the
-audit, grant TEMP/DDL to runtime, edit applied SQL or infer intended dates from a screenshot.
-Initial-source refusal codes require inspecting exact draft cache/command identities and any
-uniquely matched preparation receipt. An unproven hidden teacher selection needs an evidenced
-source correction before retrying; dates, group names or partial teacher commands cannot supply
-that proof. Existing published/cancelled sources and original command/receipt bytes remain intact.
-Existing November 1–5 dates remain unchanged. Before consumption, an authorized new revision can
-explicitly choose November 1 while inheriting the latest graph; its higher number supersedes the
-old future plans without deleting or retargeting their records. An unchanged graph or timetable
-can use this strictly earlier activation without artificial content edits; the same or later date
-with unchanged content remains a no-op. Persisted lesson sessions or a
-current-generation finalized day at/after the selected date refuse that correction. Historical
-pinned timetable and grade/result facts remain accessible.
+The cutover selects the applicable Delivery and Timetable source using one explicit Bangkok
+operation date for every term, including closed terms. Unopened terms may use only the
+uniquely proven saved preparation permitted by the migration. Ambiguous or unmappable
+sources refuse atomically. It materializes normalized current rows, preserves retained UUIDs,
+actual membership dates, saved Attendance, scores and independent Results history, and
+removes retired operational versions and reconstructable Delivery edit payloads. Inactive
+placements are physically removed; saved Supervision keeps its context and evaluations while
+its exact removed-placement reference is detached. Catalog and Curriculum publications remain
+independent.
 
-After any new revision/effectivity semantics are accepted, recover with a compatible forward
-runtime. Older date-ranked writers cannot preserve these guarantees. Active timetable create,
-clone, resume, Edit and Publish workflows align drafts with the latest opening through the
-authorized lifecycle owner. Opening publication remains independent and never directly rewrites
-timetable pointers or children. Alignment preserves placed lessons, teachers and origin links;
-remaining mismatches need review. Published timetable source pins remain immutable, while dormant
-or read-only GETs retain stored draft pointers until an authorized active workflow aligns them.
+The owner and runtime readiness checks now require `currentOperationsCutover` at migration
+157, `cutoverCompleted`, `passed: true`, and all eight exact zero-mismatch reconciliation
+checks from the sealed migration receipt. The previous operational publication/version gates
+and cancelled-version cleanup command are retired. Other domain cutover gates remain required.
+Use [the deployment filter](../scripts/lib/pipeline-remote/school-deploy-backend.sh) and
+[server-free receipt reader](../backend-school/src/operations/current_academic.rs) as the
+executable contract.
 
-### Delivery and timetable version cutover
+A refusal is a bounded diagnostic, not authorization to alter source dates, fabricate receipts,
+disable guards or modify SQLx history. Inspect a protected copy and repair forward with reviewed
+artifacts. After 157, old binaries expecting operational version tables cannot safely run.
+Recovery must account for writes after the retained recovery point.
 
-The coordinated school release applies migrations
-[`086`](../backend-school/migrations/086_academic_delivery_versions_expand.sql),
-[`087`](../backend-school/migrations/087_academic_delivery_versions_backfill.sql), and
-[`088`](../backend-school/migrations/088_academic_delivery_timetable_cutover.sql) with the new backend,
-generated contract and matching frontend while school-api remains in maintenance.
-Rehearse the central runner on protected copies of every affected active tenant before consumer
-cutover, retain the current recovery point, and use the disposable fixture recipe in `TESTING.md`.
-
-086 only expands the schema. 087 locks and captures immutable opening graphs, maps exact source IDs,
-and records fifteen identity/relationship fingerprints. Consecutive equal opening graphs share a
-source; an A/B/A transition retains three dated opening versions. Pure placement drafts remain
-independent; mixed revisions retain their pending opening commands and the separately pinned
-placement draft. 088 requires fresh passing evidence before removing joint lifecycle columns,
-migrates persisted placement coverage, and independently reconciles the canonical result.
-Recorded direct inclusions without edit items become deterministic opening commands only when
-the journal and draft agree on the published source, retain every original target, and provide
-explicit added offering IDs and weekly targets. Early publication captures groups existing by
-the recorded Bangkok effective boundary. Later imports require exact active placement IDs and
-one dated assignment for every placed instructor, matching teacher ID, group ID and role at the
-effective date across all placements. All historical instructors are reconciled against captured
-episodes. Missing or overlapping episodes, changed targets without commands, missing journals,
-and conflicting sources still stop reconciliation.
-Missing, conflicting or ambiguous source evidence stops the migration without partial writes.
-Repair evidence through a reviewed operation on protected data; never infer relationships from
-names, discard a draft, weaken a guard, edit an applied migration, or change SQLx history.
-
-`/internal/migration-status` reports `deliveryTimetableCutover` using the delivery-owned aggregate
-audit reader. The full release keeps maintenance active until every tenant has the exact repository
-SQLx version, `migrationVersion: 88`, `status: cutoverCompleted`, `passed: true`, and all thirty
-checks from migrations 087/088 passing. It returns bounded codes/counts, without snapshot rows or
-teacher/student data. Once 087 captures reconciliation, legacy writes invalidate that evidence;
-keep traffic closed until 088 and coordinated backend/frontend acceptance complete. After 088,
-older binaries using the joint opening/table lifecycle are prohibited. Recover by rolling forward
-with a reviewed migration/application artifact; an old binary rollback is unsafe.
-
-Acceptance verifies existing table/block/resource IDs, pinned historical opening facts, independent
-opening publication, editing with the latest published source, review-marked retained placements,
-autosave errors, standalone table publication, and deletion limited to an unreferenced draft.
-Check read-only and scoped users through the deployed proxy and retain the feature branch and
-recovery artifacts until migration, authenticated smoke, menu registration and acceptance pass.
-
-### Selected opening room scope
-
-[Migration 144](../backend-school/migrations/144_delivery_revision_audiences.sql) adds explicit
-revision-owned audience parents and allowed rooms. An absent parent preserves legacy registry
-semantics; an empty parent intentionally omits the offering and denies new intake after its
-published effective date. Removal never deletes established roster memberships or scores.
-Retained combined groups keep their identities and settings while the selected graph narrows
-coverage. Next drafts inherit both nonempty and empty scope intent. No old removal is guessed
-or backfilled.
-
-Deploy the backend, generated contracts and matched frontend together under the ordinary
-maintenance/all-tenant migration procedure. Rehearse room removal, reviewed curriculum reopening,
-and inherited scope only on owned disposable fixtures or protected copies. Production acceptance
-uses the existing read-only schema/provider smoke gates; it does not delete or reopen live courses
-or groups. Published timetable attendance retains its exact pinned Delivery source. Active drafts
-align automatically at authorized workflow boundaries; changing the operational source requires
-an explicit new timetable publication under the existing date and history guards. No roster or
-timetable is automatically published. After any audience intent is written, old binaries
-are unsafe because they do not enforce it: keep maintenance active on failure and recover by
-rolling forward with 144-compatible providers. Do not erase scope parents, rewrite a published
-snapshot, or restore raw registry coverage as recovery.
-
-### Opening draft dates and permanent deletion
-
-[Migration 089](../backend-school/migrations/089_delivery_draft_publication_and_deletion.sql)
-separates a draft's internal reference date from its nullable publication date. Published graphs,
-identities and effective dates remain unchanged. The matched backend and frontend must deploy
-under the coordinated school release, with the centralized all-tenant runner and exact schema-head
-checks. Binaries expecting a non-null draft publication date are prohibited after 089. Rehearse on
-protected copies of every affected active tenant and retain the current recovery point for seven
-days; recover forward after cutover, accounting for subsequent writes.
-
-Ordinary DELETE operations require existing resource-management scopes, current revisions and
-confirmed child counts. Drafts and cancelled versions may be deleted together with exclusively owned,
-unreferenced children. Published versions and historical references are protected. A foreign-key
-conflict rolls back the whole operation; never detach references or disable immutability guards.
-
-The application-owned [cancelled-version cleanup CLI](../backend-school/src/bin/cleanup_cancelled_academic_versions/main.rs)
-is a separate, explicitly scoped operation after migration, authenticated smoke and browser acceptance.
-It resolves one school through backend-admin, verifies its stable tenant identity and term/year,
-requires an active staff actor with both school-wide management capabilities, and preflights every
-cancelled opening/table version before deleting anything. Active drafts are outside this operation.
-Set `ACADEMIC_CLEANUP_SUBDOMAIN`, `ACADEMIC_CLEANUP_TENANT_ID`,
-`ACADEMIC_CLEANUP_ACADEMIC_YEAR_ID`, `ACADEMIC_CLEANUP_ACADEMIC_TERM_ID` and
-`ACADEMIC_CLEANUP_ACTOR_ID` from the reviewed scope; supply `BACKEND_ADMIN_URL` and the existing
-caller secret through private environment configuration. Do not print connection URLs, secrets or
-staff records. Without `ACADEMIC_CLEANUP_PREVIEW_HASH` the CLI preflights and rolls back. Applying
-requires the exact returned hash; changed revisions/counts or any protected reference stop the
-entire batch. Audit entries and deletes commit together, and the report verifies that published
-fingerprints remain unchanged. Verify actual cancelled-row disappearance, active draft preservation,
-source selection and the deployed version lists afterward. Do not broaden a failed cleanup scope.
+Ordinary current offering/group deletion requires school-wide offering management, an explicit
+year/term, the current resource revision and a confirmed impact digest. The application retains
+accepted identity, dependency gates and tenant lease through the actual database commit and
+cache invalidation. The exact cascade removes only selected contributions through each owner's
+provider. Unattributable archived or purged Behavior effects refuse before source deletion;
+manual effects and unrelated saved Attendance facts remain. Remaining derived effects follow
+the existing daily cap calculation. Files enter the existing durable deletion lifecycle in the
+same transaction; physical provider cleanup remains bounded worker work after commit.
 
 ### Gradebook and results cutover
 

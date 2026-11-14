@@ -319,6 +319,7 @@ async fn direct_teacher_save_retains_identity_and_rolls_back_with_assessment_ini
     assert!(matches!(stale, Err(AppError::Conflict(_))));
 }
 
+#[derive(Clone)]
 struct DeletionDependencies {
     fail: bool,
 }
@@ -337,11 +338,41 @@ impl school_academic_delivery::ports::DeliveryDeletionPort for DeletionDependenc
             },
         )
     }
-    async fn delete(
+    async fn acquire(
         &self,
+        _context: &school_academic_delivery::ports::DeliveryDeletionCommandContext,
+        _target: school_academic_delivery::ports::DeliveryDeletionTarget,
+    ) -> Result<Box<dyn school_academic_delivery::ports::DeliveryDeletionAdmission>, AppError> {
+        Ok(Box::new(self.clone()))
+    }
+}
+#[async_trait::async_trait]
+impl school_academic_delivery::ports::DeliveryDeletionAdmission for DeletionDependencies {
+    async fn lock_dependencies_before_term(
+        &mut self,
+        _tx: &mut Transaction<'_, Postgres>,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+    async fn lock_dependencies_after_term(
+        &mut self,
+        _tx: &mut Transaction<'_, Postgres>,
+        _scope: &school_academic_delivery::models::current::DeliveryDeletionScope,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+    async fn commit(
+        self: Box<Self>,
+        tx: school_tenancy::ObservedTransaction,
+        _changed: bool,
+    ) -> Result<(), AppError> {
+        tx.commit().await?;
+        Ok(())
+    }
+    async fn delete_dependencies(
+        &mut self,
         tx: &mut Transaction<'_, Postgres>,
         scope: &school_academic_delivery::models::current::DeliveryDeletionScope,
-        _actor: Uuid,
     ) -> Result<(), AppError> {
         if self.fail {
             sqlx::query("UPDATE learning_groups SET name='Must roll back' WHERE id=ANY($1)")
@@ -351,6 +382,34 @@ impl school_academic_delivery::ports::DeliveryDeletionPort for DeletionDependenc
             return Err(AppError::Conflict("dependency refused deletion".into()));
         }
         Ok(())
+    }
+}
+
+struct TestAuthorization;
+#[async_trait::async_trait]
+impl school_academic_delivery::ports::DeliveryDeletionAuthorizationPort for TestAuthorization {
+    async fn validate_admission(
+        &self,
+        _actor: &school_authorization::ActorContext,
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+    fn committed(
+        &self,
+        _result: &school_academic_delivery::models::current::DeletedDeliveryResource,
+    ) {
+    }
+}
+fn command(
+    f: &Fixture,
+    actor: &school_authorization::ActorContext,
+) -> school_academic_delivery::ports::DeliveryDeletionCommandContext {
+    school_academic_delivery::ports::DeliveryDeletionCommandContext {
+        actor: actor.clone(),
+        tenant_id: Uuid::new_v4(),
+        session_id: Uuid::new_v4(),
+        pool_lease: f.pool.clone().into(),
+        authorization: std::sync::Arc::new(TestAuthorization),
     }
 }
 
@@ -409,9 +468,8 @@ async fn current_group_deletion_checks_school_authority_digest_and_atomic_scope(
         source_digest: preview.source_digest.clone(),
     };
     let failed = deletion::delete(
-        &DeletionDependencies { fail: true },
-        &f.pool,
-        &school,
+        std::sync::Arc::new(DeletionDependencies { fail: true }),
+        command(&f, &school),
         f.offering,
         Some(f.group),
         request(),
@@ -425,13 +483,19 @@ async fn current_group_deletion_checks_school_authority_digest_and_atomic_scope(
     let mut stale = request();
     stale.source_digest = "0".repeat(64);
     assert!(matches!(
-        deletion::delete(&port, &f.pool, &school, f.offering, Some(f.group), stale).await,
+        deletion::delete(
+            std::sync::Arc::new(port.clone()),
+            command(&f, &school),
+            f.offering,
+            Some(f.group),
+            stale
+        )
+        .await,
         Err(AppError::Conflict(_))
     ));
     let deleted = deletion::delete(
-        &port,
-        &f.pool,
-        &school,
+        std::sync::Arc::new(port.clone()),
+        command(&f, &school),
         f.offering,
         Some(f.group),
         request(),
@@ -457,4 +521,32 @@ async fn current_group_deletion_checks_school_authority_digest_and_atomic_scope(
     .await
     .unwrap();
     assert_eq!(teacher_count, 0);
+}
+
+#[test]
+fn destructive_school_scope_uses_canonical_wildcards() {
+    use school_academic_delivery::services::deletion::require_school_management;
+    for grant in ["*", "learning_offering.manage.school"] {
+        assert!(
+            require_school_management(&school_authorization::ActorContext {
+                user_id: Uuid::new_v4(),
+                permissions: vec![grant.into()]
+            })
+            .is_ok()
+        );
+    }
+    for grant in [
+        "*.manage.school",
+        "*.manage.assigned",
+        "learning_offering.manage.assigned",
+        "learning_offering.read.school",
+    ] {
+        assert!(matches!(
+            require_school_management(&school_authorization::ActorContext {
+                user_id: Uuid::new_v4(),
+                permissions: vec![grant.into()]
+            }),
+            Err(AppError::Forbidden(_))
+        ));
+    }
 }

@@ -44,7 +44,7 @@ pub struct AttendanceDeletionSources {
 pub async fn lock_before_term_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
 ) -> Result<(), AppError> {
-    super::lock_module_exclusive(tx).await
+    super::lock_module(tx).await
 }
 
 async fn require_bounded_scope_on_connection(
@@ -114,7 +114,7 @@ pub async fn deletion_sources_on_connection(
     }
     let archived_summary_rows:i64=DbSession::new(connection).scalar("attendance.deletion.archived_summary_count", "SELECT (SELECT count(*) FROM attendance_term_summaries WHERE academic_term_id=$1 AND category='lesson' AND scope_key=$2)+(SELECT count(*) FROM attendance_term_teacher_summaries WHERE academic_term_id=$1 AND category='lesson' AND scope_key=$2)").bind(scope.academic_term_id).bind(scope.learning_offering_id.to_string()).fetch_one().await?;
     let generation = super::sessions::module_generation_on_connection(connection).await?;
-    let evidence_file_ids = DbSession::new(connection).scalar("attendance.deletion.evidence", "SELECT DISTINCT scan.evidence_file_id FROM attendance_scan_events scan WHERE scan.session_id=ANY($1) AND NOT EXISTS(SELECT 1 FROM attendance_scan_events survivor WHERE survivor.evidence_file_id=scan.evidence_file_id AND NOT(survivor.session_id=ANY($1))) ORDER BY scan.evidence_file_id").bind(&session_ids).fetch_all().await?;
+    let evidence_file_ids = DbSession::new(connection).scalar("attendance.deletion.evidence", "SELECT DISTINCT scan.evidence_file_id FROM attendance_scan_events scan WHERE scan.session_id=ANY($1) ORDER BY scan.evidence_file_id").bind(&session_ids).fetch_all().await?;
     let mut affected_dates = rows.into_iter().map(|row| row.1).collect::<Vec<_>>();
     affected_dates.sort_unstable();
     affected_dates.dedup();
@@ -144,13 +144,12 @@ pub async fn deletion_impact_on_connection(
         UNION ALL SELECT 'record',r.session_id::text||':'||r.student_id::text,to_jsonb(r) FROM attendance_records r JOIN selected s ON s.id=r.session_id
         UNION ALL SELECT 'scan',e.id::text,to_jsonb(e) FROM attendance_scan_events e JOIN selected s ON s.id=e.session_id
         UNION ALL SELECT kind,value->>'student_id',value FROM summaries
-        UNION ALL SELECT 'file_scope',file.evidence_file_id::text,jsonb_build_object('fileId',file.evidence_file_id,'shared',EXISTS(SELECT 1 FROM attendance_scan_events survivor WHERE survivor.evidence_file_id=file.evidence_file_id AND survivor.session_id NOT IN(SELECT id FROM selected))) FROM (SELECT DISTINCT scan.evidence_file_id FROM attendance_scan_events scan JOIN selected session ON session.id=scan.session_id) file
         UNION ALL SELECT 'notice',n.id::text,to_jsonb(n) FROM attendance_notifications n WHERE n.academic_term_id=$1 AND split_part(n.dedup_key,':',1) IN('session','correction') AND split_part(n.dedup_key,':',2) IN(SELECT id::text FROM selected)
       )
       SELECT (SELECT count(*) FROM selected) sessions,
         (SELECT count(*) FROM attendance_records r JOIN selected s ON s.id=r.session_id) records,
         (SELECT count(*) FROM summaries) summaries,
-        (SELECT count(DISTINCT e.evidence_file_id) FROM attendance_scan_events e JOIN selected s ON s.id=e.session_id WHERE NOT EXISTS(SELECT 1 FROM attendance_scan_events survivor WHERE survivor.evidence_file_id=e.evidence_file_id AND survivor.session_id NOT IN(SELECT id FROM selected))) evidence_files,
+        (SELECT count(DISTINCT e.evidence_file_id) FROM attendance_scan_events e JOIN selected s ON s.id=e.session_id) evidence_files,
         encode(sha256(convert_to(COALESCE((SELECT jsonb_agg(value ORDER BY kind,identity,value::text) FROM evidence),'[]')::text,'UTF8')),'hex') source_digest
     "#).bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).fetch_one().await?;
     require_mappable_summaries(scope.delete_offering, impact.summaries)?;

@@ -6,7 +6,7 @@ use std::sync::Arc;
 pub struct AcademicLifecycleHttpState {
     pub auth_runtime: AuthRuntime,
     pub websocket_manager: Arc<dyn AcademicRealtimePort>,
-    pub lifecycle_providers: &'static dyn school_academic_lifecycle::ports::ExternalLifecyclePort,
+    pub lifecycle_providers: Arc<dyn school_academic_lifecycle::ports::ExternalLifecyclePort>,
     pub retention:
         &'static dyn school_academic_lifecycle::services::retention::AcademicRetentionPort,
 }

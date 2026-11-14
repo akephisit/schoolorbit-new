@@ -15,7 +15,7 @@ pub async fn pending_term_work(
          || COALESCE((SELECT jsonb_agg(to_jsonb(grade) ORDER BY grade.exam_day_id,grade.grade_level_id)::text FROM academic_exam_day_grade_levels grade JOIN academic_exam_days day ON day.id=grade.exam_day_id WHERE day.exam_round_id=round.id),'[]')
          || COALESCE((SELECT jsonb_agg(to_jsonb(seat) ORDER BY seat.id)::text FROM academic_exam_seat_assignments seat JOIN academic_exam_day_room_assignments assignment ON assignment.id=seat.day_room_assignment_id JOIN academic_exam_days day ON day.id=assignment.exam_day_id WHERE day.exam_round_id=round.id),'[]')) AS revision,
          false AS blocks_closure FROM academic_exam_rounds round WHERE academic_year_id=$1
-         AND academic_term_id=$2 AND status='draft' ORDER BY round.id",
+         AND academic_term_id=$2 ORDER BY round.id",
     ).bind(year).bind(term).fetch_all().await?)
 }
 
@@ -117,9 +117,9 @@ pub async fn list_rounds_on_connection(
                name,
                description,
                exam_kind,
-               status,
+
                row_version,
-               published_at,
+
                created_at,
                updated_at
         FROM academic_exam_rounds
@@ -175,9 +175,9 @@ pub async fn create_round(
                   name,
                   description,
                   exam_kind,
-                  status,
+
                   row_version,
-                  published_at,
+
                   created_at,
                   updated_at
         "#,
@@ -202,6 +202,12 @@ pub async fn update_round(
     request: UpdateExamRoundRequest,
     actor_user_id: Uuid,
 ) -> Result<ExamRound, AppError> {
+    let expected_revision = request.row_version;
+    if expected_revision <= 0 {
+        return Err(AppError::ValidationError(
+            "rowVersion must be positive".into(),
+        ));
+    }
     let normalized = normalize_update_round_request(request)?;
 
     let mut tx = school_tenancy::TenantPool::begin_observed(
@@ -210,7 +216,6 @@ pub async fn update_round(
     )
     .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
-    mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
 
     let row = DbSession::new(&mut *tx)
         .query_as::<ExamRound>(
@@ -221,17 +226,17 @@ pub async fn update_round(
             description = COALESCE($3, description),
             exam_kind = COALESCE($4, exam_kind),
             updated_by = $5,
-            updated_at = now()
-        WHERE id = $1
+            row_version=row_version+1, updated_at = now()
+        WHERE id = $1 AND row_version=$6
         RETURNING id,
                   academic_year_id,
                   academic_term_id,
                   name,
                   description,
                   exam_kind,
-                  status,
+
                   row_version,
-                  published_at,
+
                   created_at,
                   updated_at
         "#,
@@ -241,42 +246,22 @@ pub async fn update_round(
         .bind(normalized.description)
         .bind(normalized.exam_kind)
         .bind(actor_user_id)
+        .bind(expected_revision)
         .fetch_optional()
         .await?
-        .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
+        .ok_or_else(|| AppError::Conflict("Exam round changed; reload before saving".into()))?;
 
     tx.commit().await?;
     Ok(row)
 }
 
-pub async fn delete_round(
-    pool: &PgPool,
-    round_id: Uuid,
-    can_delete_published: bool,
-) -> Result<(), AppError> {
+pub async fn delete_round(pool: &PgPool, round_id: Uuid) -> Result<(), AppError> {
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_assessment.exam_schedule.services.rounds_and_days.delete_round",
     )
     .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
-    let status: String = DbSession::new(&mut *tx)
-        .scalar(
-            "academic_assessment.exam_schedule.services.rounds_and_days.delete_round",
-            r#"
-        SELECT status
-        FROM academic_exam_rounds
-        WHERE id = $1
-        FOR UPDATE
-        "#,
-        )
-        .bind(round_id)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
-
-    ensure_exam_round_can_be_deleted(&status, can_delete_published)?;
-
     DbSession::new(&mut *tx)
         .query(
             "academic_assessment.exam_schedule.services.rounds_and_days.delete_round",
@@ -351,7 +336,7 @@ pub async fn upsert_exam_day(
 
     replace_exam_day_configuration(&mut tx, day.id, &grade_level_ids, &blocked_windows).await?;
 
-    mark_round_draft_after_mutation(&mut tx, round_id, None).await?;
+    bump_round_revision(&mut tx, round_id, None).await?;
     tx.commit().await?;
 
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -412,7 +397,7 @@ pub async fn update_exam_day(
 
     replace_exam_day_configuration(&mut tx, day.id, &grade_level_ids, &blocked_windows).await?;
 
-    mark_round_draft_after_mutation(&mut tx, day.exam_round_id, None).await?;
+    bump_round_revision(&mut tx, day.exam_round_id, None).await?;
     tx.commit().await?;
 
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -514,56 +499,32 @@ pub async fn delete_exam_day(pool: &PgPool, exam_day_id: Uuid) -> Result<(), App
 
     let round_id = round_id.ok_or_else(|| AppError::NotFound("Exam day not found".to_string()))?;
 
-    mark_round_draft_after_mutation(&mut tx, round_id, None).await?;
+    bump_round_revision(&mut tx, round_id, None).await?;
     tx.commit().await?;
 
     Ok(())
 }
 
-pub(super) async fn mark_round_draft_after_mutation(
+pub(super) async fn bump_round_revision(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     round_id: Uuid,
     actor_user_id: Option<Uuid>,
 ) -> Result<(), AppError> {
-    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.rounds_and_days.mark_round_draft_after_mutation",
-        r#"
+    DbSession::new(&mut **tx)
+        .query(
+            "academic_assessment.exam_schedule.services.rounds_and_days.bump_round_revision",
+            r#"
         UPDATE academic_exam_rounds
-        SET status = 'draft',
-            published_at = NULL,
-            published_by = NULL,
-            row_version = row_version + 1,
+        SET row_version = row_version + 1,
             updated_by = COALESCE($2, updated_by),
             updated_at = now()
         WHERE id = $1
         "#,
-    )
-    .bind(round_id)
-    .bind(actor_user_id)
-    .execute()
-    .await?;
-    Ok(())
-}
-
-pub(super) fn ensure_exam_round_is_mutable(status: &str) -> Result<(), AppError> {
-    if status == "published" {
-        return Err(AppError::BadRequest(
-            "Published exam rounds cannot be changed".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
-pub(super) fn ensure_exam_round_can_be_deleted(
-    status: &str,
-    can_delete_published: bool,
-) -> Result<(), AppError> {
-    if status == "published" && !can_delete_published {
-        return Err(AppError::Forbidden(
-            "การลบรอบสอบที่เผยแพร่แล้วต้องใช้สิทธิ์เผยแพร่ตารางสอบ".to_string(),
-        ));
-    }
-
+        )
+        .bind(round_id)
+        .bind(actor_user_id)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -694,9 +655,9 @@ pub(super) async fn fetch_round(
                name,
                description,
                exam_kind,
-               status,
+
                row_version,
-               published_at,
+
                created_at,
                updated_at
         FROM academic_exam_rounds

@@ -1896,3 +1896,87 @@ async fn permission_coverage_supervision_embargo_uses_exact_grant_origin_for_eac
     assert_eq!(detail["data"]["canReview"], true);
     assert_eq!(detail["data"]["averageRating"], 4.0);
 }
+
+#[tokio::test]
+async fn physical_current_placement_removal_detaches_saved_supervision_and_preserves_evaluations() {
+    let pool = migrated_pool_with_connections("supervision_current_placement_detach", 3).await;
+    let fixture = insert_fixture(&pool).await;
+    let (placement,block_id,teacher,group,day):(Uuid,Uuid,Uuid,Uuid,String)=sqlx::query_as("SELECT placed.id,block.id,instructor.instructor_id,placed.learning_group_id,block.day_of_week FROM academic_timetable_blocks block JOIN academic_timetable_block_groups placed ON placed.block_id=block.id AND placed.is_active JOIN academic_timetable_block_group_instructors instructor ON instructor.block_group_id=placed.id JOIN learning_offerings offering ON offering.id=placed.learning_offering_id AND offering.kind='course' JOIN learning_group_teachers current_teacher ON current_teacher.learning_group_id=placed.learning_group_id AND current_teacher.teacher_id=instructor.instructor_id WHERE block.academic_term_id=$1 AND block.is_active ORDER BY block.id,instructor.instructor_id LIMIT 1").bind(fixture.academic_term_id).fetch_one(&pool).await.unwrap();
+    let observed_at = (1..=7)
+        .map(|offset| {
+            (Utc::now().date_naive() + Duration::days(offset))
+                .and_hms_opt(5, 0, 0)
+                .unwrap()
+                .and_utc()
+        })
+        .find(|at| school_supervision::services::test_day_of_week_matches_observed_at(&day, *at))
+        .unwrap();
+    let observation = services::request_observation(
+        &pool,
+        teacher,
+        RequestSupervisionObservationRequest {
+            cycle_id: fixture.cycle.id,
+            academic_term_id: fixture.academic_term_id,
+            timetable_block_group_id: Some(placement),
+            observed_at: Some(observed_at),
+            manual_lesson: None,
+        },
+    )
+    .await
+    .unwrap();
+    approve_with(&pool, &fixture, observation.id, vec![fixture.evaluator_id]).await;
+    services::submit_my_evaluation(
+        &pool,
+        fixture.evaluator_id,
+        observation.id,
+        evaluation_responses(&fixture.template, 4.0),
+    )
+    .await
+    .unwrap();
+    let before = services::get_observation(&pool, observation.id)
+        .await
+        .unwrap();
+    let block =
+        school_academic_timetable::services::timetable_block_service::get_block(&pool, block_id)
+            .await
+            .unwrap();
+    let mut context = school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
+        &pool,
+        fixture.actor_id,
+    );
+    context.lesson_source_detachment = &crate::adapters::lesson_sources::LESSON_SOURCE_DETACHMENT;
+    let removed = school_academic_timetable::services::timetable_block_service::deactivate_block(
+        &pool,
+        &context,
+        block.id,
+        block.timetable_id,
+        block.row_version,
+    )
+    .await
+    .unwrap();
+    assert!(!removed.is_active);
+    assert!(matches!(
+        school_academic_timetable::services::timetable_block_service::get_block(&pool, block.id)
+            .await,
+        Err(AppError::NotFound(_))
+    ));
+    let after = services::get_observation(&pool, observation.id)
+        .await
+        .unwrap();
+    assert_eq!(after.timetable_block_group_id, None);
+    assert_eq!(after.learning_group_id, Some(group));
+    assert!(after.manual_lesson.is_none());
+    assert_eq!(
+        serde_json::to_value(&after.lesson_snapshot).unwrap(),
+        serde_json::to_value(&before.lesson_snapshot).unwrap()
+    );
+    assert_eq!(after.status, before.status);
+    assert_eq!(
+        serde_json::to_value(&after.evaluators).unwrap(),
+        serde_json::to_value(&before.evaluators).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&after.actions).unwrap(),
+        serde_json::to_value(&before.actions).unwrap()
+    );
+}

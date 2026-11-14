@@ -13,7 +13,7 @@ use super::invigilation::{
     invigilators_for_assignment, lock_exam_invigilator_staff_conflict_scope,
     validate_invigilator_candidate_session_conflicts,
 };
-use super::rounds_and_days::mark_round_draft_after_mutation;
+use super::rounds_and_days::bump_round_revision;
 use super::shared::{
     exam_session_conflict_lock_keys, has_same_classroom_conflict, has_same_room_conflict,
     require_exam_write, validate_session_window, validation_error_to_app_error,
@@ -120,19 +120,6 @@ struct DayRoomAssignmentPlacementContext {
     id: Uuid,
     room_id: Uuid,
 }
-#[derive(Debug, sqlx::FromRow)]
-struct DurationChangePlacementContext {
-    session_id: Uuid,
-    exam_round_id: Uuid,
-    exam_day_id: Uuid,
-    starts_at: NaiveTime,
-    day_start_time: NaiveTime,
-    day_end_time: NaiveTime,
-    homeroom_id: Uuid,
-    grade_level_id: Uuid,
-    day_room_assignment_id: Uuid,
-    room_id: Uuid,
-}
 async fn lock_exam_session_conflict_scope(
     tx: &mut Transaction<'_, Postgres>,
     exam_day_id: Uuid,
@@ -158,26 +145,8 @@ pub async fn place_exam_session(
     )
     .await?;
 
-    // Parent IDs are immutable. Reject a foreign-round item before locking any
-    // of its rows while holding the selected day's academic boundary.
-    let same_round: bool = DbSession::new(&mut *tx)
-        .scalar(
-            "academic_assessment.exam_schedule.services.sessions_and_conflicts.place_exam_session",
-            "SELECT day.exam_round_id = item.exam_round_id \
-         FROM academic_exam_days day CROSS JOIN academic_exam_schedule_items item \
-         WHERE day.id=$1 AND item.id=$2",
-        )
-        .bind(request.exam_day_id)
-        .bind(request.exam_schedule_item_id)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| AppError::NotFound("Exam day or item not found".into()))?;
-    if !same_round {
-        return Err(AppError::BadRequest(
-            "Exam day belongs to a different exam round".into(),
-        ));
-    }
     require_exam_write(&mut tx, ExamWriteTarget::Day(request.exam_day_id)).await?;
+    materialize_current_item(&mut tx, request.exam_day_id, request.exam_schedule_item_id).await?;
 
     let item =
         fetch_schedule_item_placement_context(&mut tx, request.exam_schedule_item_id).await?;
@@ -287,7 +256,7 @@ pub async fn place_exam_session(
         .fetch_one()
         .await?;
 
-    mark_round_draft_after_mutation(&mut tx, item.exam_round_id, Some(actor_user_id)).await?;
+    bump_round_revision(&mut tx, item.exam_round_id, Some(actor_user_id)).await?;
     tx.commit().await?;
 
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -296,119 +265,6 @@ pub async fn place_exam_session(
     )
     .await?;
     fetch_exam_session_view(&mut connection, session_id).await
-}
-
-pub(super) async fn revalidate_session_duration_change_in_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    exam_schedule_item_id: Uuid,
-    duration_minutes: i32,
-) -> Result<(), AppError> {
-    let context: Option<DurationChangePlacementContext> = DbSession::new(&mut **tx).query_as("academic_assessment.exam_schedule.services.sessions_and_conflicts.revalidate_session_duration_change_in_tx",
-        r#"SELECT session.id AS session_id,
-                  session.exam_round_id,
-                  session.exam_day_id,
-                  session.starts_at,
-                  day.start_time AS day_start_time,
-                  day.end_time AS day_end_time,
-                  item.homeroom_id,
-                  item.grade_level_id,
-                  assignment.id AS day_room_assignment_id,
-                  assignment.room_id
-           FROM academic_exam_sessions session
-           JOIN academic_exam_schedule_items item
-             ON item.id = session.exam_schedule_item_id
-            AND item.exam_round_id = session.exam_round_id
-           JOIN academic_exam_days day
-             ON day.id = session.exam_day_id
-            AND day.exam_round_id = session.exam_round_id
-           JOIN academic_exam_day_room_assignments assignment
-             ON assignment.exam_day_id = session.exam_day_id
-            AND assignment.homeroom_id = item.homeroom_id
-           WHERE session.exam_schedule_item_id = $1
-           FOR UPDATE OF session, item, day, assignment"#,
-    )
-    .bind(exam_schedule_item_id)
-    .fetch_optional()
-    .await?;
-    let Some(context) = context else {
-        return Ok(());
-    };
-
-    validate_day_allows_grade_level(tx, context.exam_day_id, context.grade_level_id).await?;
-    let blocked_windows =
-        fetch_blocked_windows_for_day_for_placement(tx, context.exam_day_id).await?;
-    let ends_at = validate_session_window(
-        context.starts_at,
-        duration_minutes,
-        context.day_start_time,
-        context.day_end_time,
-        &blocked_windows,
-    )
-    .map_err(validation_error_to_app_error)?;
-
-    lock_exam_session_conflict_scope(
-        tx,
-        context.exam_day_id,
-        context.homeroom_id,
-        context.room_id,
-    )
-    .await?;
-    let candidate = CandidateSession {
-        session_id: Some(context.session_id),
-        homeroom_id: context.homeroom_id,
-        exam_day_id: context.exam_day_id,
-        starts_at: context.starts_at,
-        ends_at,
-    };
-    if has_same_classroom_conflict(
-        &candidate,
-        &fetch_candidate_sessions_for_day(tx, context.exam_day_id).await?,
-    ) {
-        return Err(AppError::Conflict(
-            "New exam duration overlaps another exam for the homeroom".to_string(),
-        ));
-    }
-    let room_candidate = CandidateRoomSession {
-        session_id: Some(context.session_id),
-        room_id: context.room_id,
-        exam_day_id: context.exam_day_id,
-        starts_at: context.starts_at,
-        ends_at,
-    };
-    if has_same_room_conflict(
-        &room_candidate,
-        &fetch_candidate_room_sessions_for_day(tx, context.exam_day_id).await?,
-    ) {
-        return Err(AppError::Conflict(
-            "New exam duration overlaps another exam in the room".to_string(),
-        ));
-    }
-
-    let invigilator_staff_ids =
-        fetch_invigilator_staff_ids_for_assignment(tx, context.day_room_assignment_id).await?;
-    lock_exam_invigilator_staff_conflict_scope(tx, context.exam_day_id, &invigilator_staff_ids)
-        .await?;
-    validate_invigilator_candidate_session_conflicts(
-        tx,
-        context.exam_round_id,
-        context.day_room_assignment_id,
-        context.exam_day_id,
-        context.starts_at,
-        ends_at,
-        &invigilator_staff_ids,
-    )
-    .await?;
-
-    DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.services.sessions_and_conflicts.revalidate_session_duration_change_in_tx",
-        r#"UPDATE academic_exam_sessions
-           SET ends_at = $2, updated_at = now()
-           WHERE id = $1"#,
-    )
-    .bind(context.session_id)
-    .bind(ends_at)
-    .execute()
-    .await?;
-    Ok(())
 }
 
 pub async fn delete_exam_session(
@@ -423,11 +279,11 @@ pub async fn delete_exam_session(
     .await?;
     require_exam_write(&mut tx, ExamWriteTarget::Session(session_id)).await?;
 
-    let round_id: Uuid = DbSession::new(&mut *tx)
-        .scalar(
+    let (round_id, item_id): (Uuid, Uuid) = DbSession::new(&mut *tx)
+        .query_as(
             "academic_assessment.exam_schedule.services.sessions_and_conflicts.delete_exam_session",
             r#"
-        SELECT exam_round_id
+        SELECT exam_round_id,exam_schedule_item_id
         FROM academic_exam_sessions
         WHERE id = $1
         FOR UPDATE
@@ -447,7 +303,8 @@ pub async fn delete_exam_session(
         .execute()
         .await?;
 
-    mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
+    DbSession::new(&mut *tx).query("academic_assessment.exam_schedule.delete_unplaced_item","DELETE FROM academic_exam_schedule_items WHERE id=$1 AND NOT EXISTS(SELECT 1 FROM academic_exam_sessions WHERE exam_schedule_item_id=$1)").bind(item_id).execute().await?;
+    bump_round_revision(&mut tx, round_id, Some(actor_user_id)).await?;
     tx.commit().await?;
 
     Ok(())
@@ -755,4 +612,32 @@ pub(super) fn grade_level_allowed_by_day_scope(
     scoped_grade_level_ids: &[Uuid],
 ) -> bool {
     scoped_grade_level_ids.is_empty() || scoped_grade_level_ids.contains(&grade_level_id)
+}
+
+/// A read projects eligible sources; only a placement persists its current identity.
+async fn materialize_current_item(
+    tx: &mut Transaction<'_, Postgres>,
+    day_id: Uuid,
+    item_id: Uuid,
+) -> Result<(), AppError> {
+    let affected = DbSession::new(&mut **tx).query("academic_assessment.exam_schedule.materialize_current_item", r#"
+      INSERT INTO academic_exam_schedule_items(id,exam_round_id,academic_term_id,academic_year_id,
+        assessment_phase_id,course_assessment_plan_id,learning_offering_id,learning_group_id,homeroom_id,subject_id,grade_level_id,duration_minutes)
+      SELECT COALESCE(saved.id,uuid_generate_v5(round.id,source.source_id::text)),round.id,
+        source.academic_term_id,source.academic_year_id,source.assessment_phase_id,source.course_assessment_plan_id,
+        source.learning_offering_id,source.learning_group_id,source.homeroom_id,source.subject_id,source.grade_level_id,source.duration_minutes
+      FROM academic_exam_days day JOIN academic_exam_rounds round ON round.id=day.exam_round_id
+      JOIN academic_exam_eligible_sources source ON source.academic_term_id=round.academic_term_id
+        AND source.academic_year_id=round.academic_year_id AND source.exam_kind=round.exam_kind
+      LEFT JOIN academic_exam_schedule_items saved ON saved.exam_round_id=round.id
+        AND saved.assessment_phase_id=source.assessment_phase_id AND saved.learning_group_id=source.learning_group_id AND saved.homeroom_id=source.homeroom_id
+      WHERE day.id=$1 AND COALESCE(saved.id,uuid_generate_v5(round.id,source.source_id::text))=$2
+      ON CONFLICT(id) DO UPDATE SET duration_minutes=EXCLUDED.duration_minutes
+    "#).bind(day_id).bind(item_id).execute().await?.rows_affected();
+    if affected != 1 {
+        return Err(AppError::Conflict(
+            "Exam source changed or belongs to another round; reload before placing".into(),
+        ));
+    }
+    Ok(())
 }

@@ -1,14 +1,16 @@
-use crate::{models::current::*, ports::DeliveryDeletionPort};
+use crate::{
+    models::current::*,
+    ports::{DeliveryDeletionCommandContext, DeliveryDeletionPort, DeliveryDeletionTarget},
+};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub fn require_school_management(actor: &ActorContext) -> Result<(), AppError> {
-    if actor.permissions.iter().any(|permission| {
-        permission == school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL
-    }) {
+    if actor.has_permission(school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL) {
         Ok(())
     } else {
         Err(AppError::Forbidden(
@@ -120,14 +122,13 @@ pub async fn preview(
 }
 
 pub async fn delete(
-    port: &dyn DeliveryDeletionPort,
-    pool: &PgPool,
-    actor: &ActorContext,
+    port: Arc<dyn DeliveryDeletionPort>,
+    context: DeliveryDeletionCommandContext,
     id: Uuid,
     group_id: Option<Uuid>,
     request: DeleteDeliveryResourceRequest,
 ) -> Result<DeletedDeliveryResource, AppError> {
-    require_school_management(actor)?;
+    require_school_management(&context.actor)?;
     super::validate_row_version(request.row_version)?;
     if request.source_digest.len() != 64
         || !request
@@ -137,9 +138,54 @@ pub async fn delete(
     {
         return Err(AppError::ValidationError("sourceDigest ไม่ถูกต้อง".into()));
     }
-    let mut tx =
-        school_tenancy::TenantPool::begin_observed(pool, "academic_delivery.deletion.delete")
+    // Dropping the HTTP future detaches this accepted task; it cannot release
+    // dependency gates during COMMIT or skip committed cache publication.
+    tokio::spawn(async move {
+        let target = DeliveryDeletionTarget {
+            academic_year_id: request.academic_year_id,
+            academic_term_id: request.academic_term_id,
+            learning_offering_id: id,
+            learning_group_id: group_id,
+        };
+        let mut admission = port.acquire(&context, target).await?;
+        context
+            .authorization
+            .validate_admission(&context.actor)
             .await?;
+        let result = delete_accepted(
+            port.as_ref(),
+            &context,
+            admission.as_mut(),
+            id,
+            group_id,
+            request,
+        )
+        .await?;
+        let (transaction, result) = result;
+        admission.commit(transaction, result.deleted).await?;
+        context.authorization.committed(&result);
+        Ok(result)
+    })
+    .await
+    .map_err(|error| {
+        AppError::InternalServerError(format!("Delivery deletion task failed: {error}"))
+    })?
+}
+
+async fn delete_accepted(
+    port: &dyn DeliveryDeletionPort,
+    context: &DeliveryDeletionCommandContext,
+    admission: &mut dyn crate::ports::DeliveryDeletionAdmission,
+    id: Uuid,
+    group_id: Option<Uuid>,
+    request: DeleteDeliveryResourceRequest,
+) -> Result<(school_tenancy::ObservedTransaction, DeletedDeliveryResource), AppError> {
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        &context.pool_lease,
+        "academic_delivery.deletion.delete",
+    )
+    .await?;
+    admission.lock_dependencies_before_term(&mut tx).await?;
     school_academic_core::services::lifecycle_guard::require_term_write_exclusive(
         &mut tx,
         request.academic_year_id,
@@ -161,15 +207,17 @@ pub async fn delete(
             request.academic_term_id,
         )
         .await?;
-        tx.commit().await?;
-        return Ok(DeletedDeliveryResource {
-            learning_group_id: group_id,
-            learning_offering_id: id,
-            academic_year_id: request.academic_year_id,
-            academic_term_id: request.academic_term_id,
-            deleted: false,
-            delivery_row_version: revision,
-        });
+        return Ok((
+            tx,
+            DeletedDeliveryResource {
+                learning_group_id: group_id,
+                learning_offering_id: id,
+                academic_year_id: request.academic_year_id,
+                academic_term_id: request.academic_term_id,
+                deleted: false,
+                delivery_row_version: revision,
+            },
+        ));
     };
     DbSession::new(&mut *tx)
         .query(
@@ -187,13 +235,16 @@ pub async fn delete(
         .bind(&scope.learning_group_ids)
         .execute()
         .await?;
+    admission
+        .lock_dependencies_after_term(&mut tx, &scope)
+        .await?;
     let accepted = preview_on_connection(port, &mut tx, &scope, revision).await?;
     if revision != request.row_version || accepted.source_digest != request.source_digest {
         return Err(AppError::Conflict(
             "ข้อมูลหรือผลกระทบการลบเปลี่ยนไป กรุณาตรวจสอบใหม่".into(),
         ));
     }
-    port.delete(&mut tx, &scope, actor.user_id).await?;
+    admission.delete_dependencies(&mut tx, &scope).await?;
     for table in [
         "learning_group_students",
         "learning_group_teachers",
@@ -252,13 +303,15 @@ pub async fn delete(
         scope.academic_term_id,
     )
     .await?;
-    tx.commit().await?;
-    Ok(DeletedDeliveryResource {
-        learning_group_id: group_id,
-        learning_offering_id: id,
-        academic_year_id: scope.academic_year_id,
-        academic_term_id: scope.academic_term_id,
-        deleted: true,
-        delivery_row_version: revision,
-    })
+    Ok((
+        tx,
+        DeletedDeliveryResource {
+            learning_group_id: group_id,
+            learning_offering_id: id,
+            academic_year_id: scope.academic_year_id,
+            academic_term_id: scope.academic_term_id,
+            deleted: true,
+            delivery_row_version: revision,
+        },
+    ))
 }

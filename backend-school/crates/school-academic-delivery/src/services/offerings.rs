@@ -475,11 +475,10 @@ pub struct TermPreparationDeliveryOutcome {
 
 /// Build Delivery exclusively from the curriculum applicable to the target
 /// term. The caller owns the transaction so lifecycle can keep all selected
-/// module drafts atomic.
+/// current module changes atomic.
 pub async fn preview_term_preparation(
     transaction: &mut Transaction<'_, Postgres>,
     target_term_id: Uuid,
-    starts_on: chrono::NaiveDate,
 ) -> Result<CurriculumOfferingPreview, AppError> {
     let program_ids: Vec<Uuid> = DbSession::new(&mut **transaction)
         .scalar(
@@ -504,6 +503,7 @@ pub async fn preview_term_preparation(
             "ภาคเรียนเป้าหมายต้องอยู่ในสถานะวางแผน".into(),
         ));
     }
+    let starts_on = term.operation_date;
     build_curriculum_preview_for_term(
         transaction,
         target_term_id,

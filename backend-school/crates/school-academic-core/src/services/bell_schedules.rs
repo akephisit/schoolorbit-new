@@ -647,7 +647,7 @@ const ASSIGNABLE_TERMS_SQL: &str = r#"SELECT term.id FROM academic_terms term
       AND year.status IN ('planning','ready','active') AND term.status IN ('planning','ready')
       AND NOT EXISTS(SELECT 1 FROM academic_term_transition_receipts receipt
           WHERE receipt.academic_term_id=term.id AND receipt.action='activate')
-      AND NOT EXISTS(SELECT 1 FROM academic_timetable_versions version WHERE version.academic_term_id=term.id)
+      AND NOT EXISTS(SELECT 1 FROM academic_timetables version WHERE version.academic_term_id=term.id)
       AND NOT EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.academic_term_id=term.id)
     ORDER BY year.year,term.sequence_no,term.id"#;
 
@@ -770,9 +770,9 @@ pub(super) async fn attach_editability(
                     AND term.status IN ('active','closing','closed')) OR EXISTS(
                         SELECT 1 FROM academic_term_transition_receipts receipt WHERE receipt.action='activate'
                           AND receipt.outcome->'context'->>'bellScheduleId'=schedule.id::text)) AS already_used,
-                EXISTS(SELECT 1 FROM academic_timetable_versions version
-                    WHERE version.bell_schedule_id=schedule.id AND (version.status='published' OR version.published_at IS NOT NULL)) AS pinned_timetable,
-                (EXISTS(SELECT 1 FROM academic_timetable_versions version WHERE version.bell_schedule_id=schedule.id)
+                EXISTS(SELECT 1 FROM academic_timetables version
+                    WHERE version.bell_schedule_id=schedule.id) AS pinned_timetable,
+                (EXISTS(SELECT 1 FROM academic_timetables version WHERE version.bell_schedule_id=schedule.id)
                  OR EXISTS(SELECT 1 FROM academic_timetable_blocks block WHERE block.bell_schedule_id=schedule.id)) AS timetable_references
                FROM bell_schedules schedule JOIN academic_years year ON year.id=schedule.academic_year_id
                WHERE schedule.id=ANY($1)"#,

@@ -42,7 +42,7 @@ const contextCodes = [
   "ACADEMIC_CONTEXT_RECEIPT_RECOVERY_EVIDENCE",
 ];
 
-function validReport(version = 151) {
+function validReport(version = 157) {
   const school = {
     migration_version: version,
     migration_status: "migrated",
@@ -65,17 +65,9 @@ function validReport(version = 151) {
       passed: true,
       checks: [{ passed: true }],
     },
-    deliveryTimetableCutover: {
-      migrationVersion: 88,
-      status: "cutoverCompleted",
-      passed: true,
-      checks: Array.from({ length: 30 }, () => ({ passed: true })),
-    },
-    publicationRevisionsCutover: {
-      migrationVersion: 151,
-      status: "cutoverCompleted",
-      passed: true,
-      checks: ["delivery_publications_preserved","timetable_publications_preserved","teacher_episodes_preserved","offering_registry_preserved","publication_receipts_preserved","downstream_sources_preserved","publication_numbers_reconciled","projection_integrity_reconciled"].map(code=>({code,count:0,passed:true})),
+    currentOperationsCutover: {
+      migrationVersion:157,status:"cutoverCompleted",passed:true,
+      checks: ["CURRENT_CATALOG_PINS_PRESERVED", "CURRENT_DELIVERY_GRAPH_RECONCILED", "CURRENT_FACTS_PRESERVED", "CURRENT_LEGACY_SCHEMA_REMOVED", "CURRENT_SCOPE_GUARDS_ENABLED", "CURRENT_SUPERVISION_PRESERVED", "CURRENT_TEACHERS_RECONCILED", "CURRENT_TIMETABLE_IDS_RECONCILED"].map(code=>({code,mismatchCount:0,passed:true})),
     },
     staffProfileCutover: {
       migrationVersion: 114,
@@ -98,7 +90,7 @@ function validReport(version = 151) {
 test("fully migrated tenants pass without a retired personnel report", async () => {
   assert.equal(await accepts(validReport()), true);
   assert.equal(
-    await accepts(validReport(152)),
+    await accepts(validReport(158)),
     true,
     "future SQL migrations use the same completion gate",
   );
@@ -152,9 +144,8 @@ test("retiring personnel hooks preserves the other domain audit gates", async ()
   for (const key of [
     "academicCoreCutover",
     "gradebookResultsCutover",
-    "deliveryTimetableCutover",
+    "currentOperationsCutover",
     "staffProfileCutover",
-    "publicationRevisionsCutover",
   ]) {
     for (const change of [
       (a) => {
@@ -177,28 +168,28 @@ test("retiring personnel hooks preserves the other domain audit gates", async ()
   }
 });
 
-test("delivery cutover requires both complete reconciliation audits before release", async () => {
+test("current operational cutover requires complete reconciliation evidence before release", async () => {
   for (const change of [
     (r) => {
-      delete r.schools[1].deliveryTimetableCutover;
+      delete r.schools[1].currentOperationsCutover;
     },
     (r) => {
-      r.schools[1].deliveryTimetableCutover = null;
+      r.schools[1].currentOperationsCutover = null;
     },
     (r) => {
-      r.schools[1].deliveryTimetableCutover.migrationVersion = 87;
+      r.schools[1].currentOperationsCutover.migrationVersion = 87;
     },
     (r) => {
-      r.schools[1].deliveryTimetableCutover.checks = [];
+      r.schools[1].currentOperationsCutover.checks = [];
     },
     (r) => {
-      r.schools[1].deliveryTimetableCutover.checks.pop();
+      r.schools[1].currentOperationsCutover.checks.pop();
     },
     (r) => {
-      r.schools[1].deliveryTimetableCutover.checks.push({ passed: true });
+      r.schools[1].currentOperationsCutover.checks.push({ passed: true });
     },
     (r) => {
-      delete r.schools[1].deliveryTimetableCutover.checks[0].passed;
+      delete r.schools[1].currentOperationsCutover.checks[0].passed;
     },
   ]) {
     const report = validReport();
@@ -301,7 +292,7 @@ test("context readiness cannot accept schema148 even when an empty inventory has
 });
 
 test("latest migration is a numeric integer rather than a jq type-order comparison", async () => {
-  for (const version of ["151", 151.5]) {
+  for (const version of ["157", 157.5]) {
     const report = validReport(version);
     assert.equal(await accepts(report), false);
   }
@@ -320,21 +311,21 @@ test("six exact context codes permit arbitrary provider order but require every 
   }
 });
 
-test("publication revisions require exact protected migration151 evidence", async () => {
+test("current operations require exact sealed migration157 evidence", async () => {
   for (const mutate of [
-    report => {delete report.schools[0].publicationRevisionsCutover;},
-    report => {report.schools[0].publicationRevisionsCutover.migrationVersion=150;},
-    report => {report.schools[0].publicationRevisionsCutover.checks.pop();},
-    report => {report.schools[0].publicationRevisionsCutover.checks[0].code="invented";},
-    report => {report.schools[0].publicationRevisionsCutover.checks[0].passed=false;},
-    report => {report.schools[0].publicationRevisionsCutover.checks[0].count=-1;},
-    report => {report.schools[0].publicationRevisionsCutover.checks[0].count=1;},
-    report => {report.schools[0].publicationRevisionsCutover.checks[0].count=0.5;},
-    report => {report.schools[0].publicationRevisionsCutover.status="unavailable";},
+    report => {delete report.schools[0].currentOperationsCutover;},
+    report => {report.schools[0].currentOperationsCutover.migrationVersion=156;},
+    report => {report.schools[0].currentOperationsCutover.checks.pop();},
+    report => {report.schools[0].currentOperationsCutover.checks[0].code="invented";},
+    report => {report.schools[0].currentOperationsCutover.checks[0].passed=false;},
+    report => {report.schools[0].currentOperationsCutover.checks[0].mismatchCount=-1;},
+    report => {report.schools[0].currentOperationsCutover.checks[0].mismatchCount=1;},
+    report => {report.schools[0].currentOperationsCutover.checks[0].mismatchCount=0.5;},
+    report => {report.schools[0].currentOperationsCutover.status="unavailable";},
   ]) {
     const report=validReport(); mutate(report); assert.equal(await accepts(report),false);
   }
-  const reordered=validReport();reordered.schools[0].publicationRevisionsCutover.checks.reverse();
+  const reordered=validReport();reordered.schools[0].currentOperationsCutover.checks.reverse();
   assert.equal(await accepts(reordered),true);
   for (const version of [149,150]) {
     const report=validReport(version);report.total_schools=0;report.migrated=0;report.schools=[];

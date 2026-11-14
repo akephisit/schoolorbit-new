@@ -92,6 +92,7 @@ transport ที่ผลลัพธ์ไม่แน่นอนต้อง 
 - Results ยังรักษาระบบ global revisions/policies/locks ของตน ไม่ยุบทั้งระบบตามฉบับตารางเรียน
 - Supervision ตัด operational references ที่หาย โดยรักษาผลประเมินจริงและให้ผู้อ่านรองรับแหล่งที่ถูกลบ
 - Behavior กลับเฉพาะ Attendance-derived contributions ของ lesson ที่ลบผ่าน provider เดิม ไม่เปลี่ยน manual Behavior
+- daily cap ใช้การคำนวณเดิมของ Behavior provider หลังลบ: เก็บข้อเท็จจริง Attendance อื่นและ manual Behavior เดิม แต่ผล derived ของคาบที่เหลืออาจจัดสรร cap ใหม่ได้ตามกติกาเดิม ไม่สร้างอัลกอริทึมลบคะแนนอีกชุด
 - Files จัดการ physical cleanup ตาม locator/reference ของตน หากมีไฟล์ภายนอกต้องมีขอบเขตหลัง commit ที่ชัดเจน
 
 ไม่แตะการมาโรงเรียนรายวันหรือ special attendance ที่ไม่ใช่ลูกของวิชา

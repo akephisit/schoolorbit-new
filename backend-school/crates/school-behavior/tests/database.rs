@@ -1356,3 +1356,194 @@ async fn summaries_retain_other_term_history_and_resets_require_explicit_inclusi
         "reset carries later facts into the new cycle and preserves older term history once"
     );
 }
+
+fn lesson_deletion_scope(
+    f: &Fixture,
+    generation: Uuid,
+    session: Uuid,
+) -> school_behavior::services::lesson_deletion::LessonDeletionScope {
+    school_behavior::services::lesson_deletion::LessonDeletionScope {
+        generation,
+        academic_term_id: f.term,
+        session_ids: vec![session],
+        affected_students: vec![
+            school_behavior::services::lesson_deletion::LessonDeletionStudent {
+                date: today(),
+                student_id: f.a,
+            },
+        ],
+        archived_student_ids: vec![],
+    }
+}
+async fn lesson_deletion_day(f: &Fixture, points: i32) -> (BehaviorAttendanceDay, Uuid) {
+    let settings = catalog::settings(&f.pool).await.unwrap();
+    catalog::save_settings(
+        &f.pool,
+        SaveBehaviorSettings {
+            settings: BehaviorSettings {
+                enabled: true,
+                daily_deduction_cap: Some(5),
+                ..settings
+            },
+        },
+    )
+    .await
+    .unwrap();
+    catalog::save_rule(
+        &f.pool,
+        f.admin.actor_id,
+        SaveBehaviorAttendanceRule {
+            kind: BehaviorSource::Lesson,
+            status: "absent".into(),
+            grade_level_id: None,
+            effective_from: today(),
+            action: if points == 0 {
+                BehaviorScoreAction::None
+            } else {
+                BehaviorScoreAction::Deduction
+            },
+            points,
+        },
+    )
+    .await
+    .unwrap();
+    let first = Uuid::from_u128(1);
+    let second = Uuid::from_u128(2);
+    let fact = |session: Uuid| BehaviorAttendanceFact {
+        source_key: session.to_string(),
+        source_session_id: Some(session),
+        kind: BehaviorSource::Lesson,
+        student_id: f.a,
+        status: "absent".into(),
+        counted: true,
+        grade_level_id: f.grade,
+        homeroom_id: Some(f.room_a),
+        overrides: None,
+    };
+    let day = BehaviorAttendanceDay {
+        generation: Uuid::new_v4(),
+        academic_term_id: f.term,
+        date: today(),
+        revision: 1,
+        facts: vec![fact(first), fact(second)],
+    };
+    let mut tx = f.pool.begin().await.unwrap();
+    integration::replace_attendance_day(&mut tx, day.clone())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    (day, first)
+}
+async fn clean_lesson_details(f: &Fixture, mode: BehaviorCleanupMode) {
+    let scope = BehaviorCleanupScope {
+        start: Some(today()),
+        end: Some(today()),
+        academic_year_id: None,
+        academic_term_id: Some(f.term),
+        sides: vec![BehaviorSide::Deduction],
+        sources: vec![BehaviorSource::Lesson],
+    };
+    let preview = cleanup::preview(
+        &f.pool,
+        f.admin.actor_id,
+        PreviewBehaviorCleanup {
+            scope: scope.clone(),
+            mode,
+        },
+    )
+    .await
+    .unwrap();
+    cleanup::execute(
+        &f.pool,
+        f.admin.actor_id,
+        ExecuteBehaviorCleanup {
+            request_id: Uuid::new_v4(),
+            token: preview.token,
+            revision: preview.revision,
+            scope,
+            mode,
+            reason: "Exact lesson fixture cleanup".into(),
+        },
+    )
+    .await
+    .unwrap();
+    cleanup::run_cleanup_jobs(&f.pool, 32).await.unwrap();
+}
+#[tokio::test]
+async fn current_lesson_deletion_redistributes_cap_and_preserves_manual_facts() {
+    let f = fixture("behavior_exact_lesson_cap").await;
+    let merit = item(&f, BehaviorSide::Merit, 7).await;
+    let request = payload(&f, f.admin, &merit, vec![f.a]).await;
+    manual::create_batch(&f.pool, f.admin, request)
+        .await
+        .unwrap();
+    let (mut day, selected) = lesson_deletion_day(&f, 4).await;
+    let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE t.source='manual'").fetch_one(&f.pool).await.unwrap();
+    let scope = lesson_deletion_scope(&f, day.generation, selected);
+    let mut tx = f.pool.begin().await.unwrap();
+    let impact =
+        school_behavior::services::lesson_deletion::require_removal_in_transaction(&mut tx, &scope)
+            .await
+            .unwrap();
+    assert_eq!(impact.entries, 1);
+    let survivor = day.facts[1].clone();
+    day.revision = 2;
+    day.facts
+        .retain(|fact| fact.source_session_id != Some(selected));
+    integration::replace_attendance_day(&mut tx, day.clone())
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(day.facts.len(),1);
+    let remaining=&day.facts[0];
+    assert_eq!((&remaining.source_key,remaining.source_session_id,remaining.kind,remaining.student_id,&remaining.status,remaining.counted,remaining.grade_level_id,remaining.homeroom_id),(&survivor.source_key,survivor.source_session_id,survivor.kind,survivor.student_id,&survivor.status,survivor.counted,survivor.grade_level_id,survivor.homeroom_id));
+    assert!(remaining.overrides.is_none());
+    assert_eq!(
+        summary(&f, f.a).await.current.deduction,
+        4,
+        "the remaining lesson regains its canonical daily cap allowance"
+    );
+    assert_eq!(summary(&f, f.a).await.current.merit, 7);
+    let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(e) ORDER BY e.id) FROM behavior_entries e JOIN behavior_daily_totals t ON t.id=e.total_id WHERE t.source='manual'").fetch_one(&f.pool).await.unwrap();
+    assert_eq!(before, after);
+}
+#[tokio::test]
+async fn current_lesson_deletion_refuses_purged_totals_with_live_roster() {
+    let f = fixture("behavior_exact_lesson_purged").await;
+    let (day, selected) = lesson_deletion_day(&f, 4).await;
+    clean_lesson_details(&f, BehaviorCleanupMode::DetailsOnly).await;
+    let mut conn = f.pool.acquire().await.unwrap();
+    assert!(
+        matches!(school_behavior::services::lesson_deletion::preview_on_connection(&mut conn,&lesson_deletion_scope(&f,day.generation,selected)).await,Err(AppError::Conflict(message)) if message=="BEHAVIOR_LESSON_DELETION_PROTECTED_OR_UNATTRIBUTABLE")
+    );
+    drop(conn);
+    assert_eq!(
+        summary(&f, f.a).await.current.deduction,
+        5,
+        "refusal preserves retained nonzero totals"
+    );
+}
+#[tokio::test]
+async fn current_lesson_deletion_digest_changes_after_safe_zero_effect_cleanup() {
+    let f = fixture("behavior_exact_lesson_digest").await;
+    let (day, selected) = lesson_deletion_day(&f, 0).await;
+    let scope = lesson_deletion_scope(&f, day.generation, selected);
+    let before = {
+        let mut conn = f.pool.acquire().await.unwrap();
+        school_behavior::services::lesson_deletion::preview_on_connection(&mut conn, &scope)
+            .await
+            .unwrap()
+    };
+    clean_lesson_details(&f, BehaviorCleanupMode::DeleteEffects).await;
+    let after = {
+        let mut conn = f.pool.acquire().await.unwrap();
+        school_behavior::services::lesson_deletion::preview_on_connection(&mut conn, &scope)
+            .await
+            .unwrap()
+    };
+    assert_eq!((before.entries, after.entries), (0, 0));
+    assert_ne!(
+        before.source_digest, after.source_digest,
+        "a still-safe zero-count cleanup must invalidate a prior confirmation"
+    );
+}

@@ -39,7 +39,7 @@
 
 ปัจจุบัน Delivery และ Timetable มีกราฟฉบับ ร่าง การเผยแพร่ และการเลือกข้อมูลตามวันที่
 ตารางเรียนยังผูกแหล่งเปิดสอนและตรวจการปรับแหล่งนั้น ส่วนตารางสอบมีขั้นตอนเผยแพร่ของตนเอง
-รายละเอียดอ้างอิงจาก [Delivery](../../../backend-school/crates/school-academic-delivery/src/services/current.rs), [Timetable](../../../backend-school/crates/school-academic-timetable/src/services/timetable_service.rs) และ [ตารางสอบ](../../../backend-school/crates/school-academic-assessment/src/exam_schedule/services/publishing.rs)
+รายละเอียดอ้างอิงจาก [Delivery](../../../backend-school/crates/school-academic-delivery/src/services/current.rs), [Timetable](../../../backend-school/crates/school-academic-timetable/src/services/timetable_service.rs) และ [ตารางสอบ](../../../backend-school/crates/school-academic-assessment/src/exam_schedule/services/current_views.rs)
 
 เป้าหมายการใช้งาน:
 

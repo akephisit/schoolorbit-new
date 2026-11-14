@@ -1,6 +1,6 @@
 use crate::integration_tests::academic::{
     core,
-    services::{exam_schedule_service, timetable_version_service},
+    services::{exam_schedule_service, timetable_service},
 };
 use async_trait::async_trait;
 use school_academic_core::ports::{
@@ -20,6 +20,16 @@ pub(super) struct StubExternalLifecyclePort {
 
 #[async_trait]
 impl ExternalLifecyclePort for StubExternalLifecyclePort {
+    async fn admit_preparation(
+        &self,
+        _context: &school_academic_lifecycle::ports::PreparationCommandContext,
+        _year: Uuid,
+        _term: Uuid,
+        _include_timetable: bool,
+    ) -> Result<Box<dyn school_academic_lifecycle::ports::PreparationAdmission>, AppError> {
+        Err(AppError::Conflict("unused preparation provider".into()))
+    }
+
     async fn require_reopen_allowed(
         &self,
         _transaction: &mut Transaction<'_, Postgres>,
@@ -266,13 +276,11 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
             .iter()
             .any(|row| row.id == exam && !row.blocks_closure)
     );
-    assert!(
-        timetable_version_service::pending_term_work(&mut tx, year, term)
-            .await
-            .unwrap()
-            .iter()
-            .any(|row| row.id == timetable && !row.blocks_closure)
-    );
+    assert!(timetable_service::pending_term_work(&mut tx, year, term)
+        .await
+        .unwrap()
+        .iter()
+        .any(|row| row.id == timetable && !row.blocks_closure));
     assert!(
         school_academic_delivery::services::pending_term_work(&mut tx, Uuid::new_v4(), term)
             .await
@@ -286,7 +294,7 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
             .is_empty()
     );
     assert!(
-        timetable_version_service::pending_term_work(&mut tx, Uuid::new_v4(), term)
+        timetable_service::pending_term_work(&mut tx, Uuid::new_v4(), term)
             .await
             .unwrap()
             .is_empty()

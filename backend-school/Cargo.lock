@@ -4052,6 +4052,7 @@ dependencies = [
 name = "school-academic-delivery-http"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "school-academic-core",
  "school-academic-delivery",
@@ -4059,6 +4060,7 @@ dependencies = [
  "school-auth",
  "school-auth-http",
  "school-authorization",
+ "school-errors",
  "school-http",
  "serde",
  "serde_json",
@@ -4098,11 +4100,14 @@ dependencies = [
 name = "school-academic-lifecycle-http"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "school-academic-lifecycle",
  "school-academic-realtime",
  "school-auth",
  "school-auth-http",
+ "school-authorization",
+ "school-errors",
  "school-http",
  "utoipa",
  "uuid",
