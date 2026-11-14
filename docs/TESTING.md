@@ -45,6 +45,19 @@ owning application's locked npm dependencies. Deployment/static checks need Shel
 Bats, envsubst and jq. Local test profiles use no debug information or Cargo incremental data;
 production release optimization is unchanged. Keep incomplete or failing work in a draft PR.
 
+The root [`rust-toolchain.toml`](../rust-toolchain.toml) selects the exact stable Rust release
+for local Cargo commands, with the minimal profile plus rustfmt and Clippy. Use rustup from this
+checkout without a competing directory override; `rustup show active-toolchain` identifies the
+selected toolchain. Keep both backend Docker builder versions aligned with this pin and their
+published immutable image digest. Pipeline verification classifies pin changes for deployment,
+contracts and both backends. Backend artifact identities hash the pin's committed blob at the
+planned revision; frontend identities do not include Rust. Verify pin/hash isolation and Docker
+alignment with:
+
+```bash
+node --test scripts/tests/pipeline-policy.test.mjs frontend-school/tests/static/deployment-installer.test.mjs
+```
+
 School performs workspace checking, architecture/unit checks, generated OpenAPI and clean-environment
 export, then database consumers with one Docker PostgreSQL server and a fresh owned database per
 invocation. Admin applies migrations only to its disposable Docker fixture before SQLx all-target
@@ -2734,8 +2747,8 @@ application-owned CLI implementation. Obtain it from the exact approved checkout
 lockfile using the existing selected target/cache:
 
 ```bash
-cargo +1.98.1 build --manifest-path backend-school/Cargo.toml --locked --release --bin file_storage_namespace
-namespace_target_dir="$(cargo +1.98.1 metadata --manifest-path backend-school/Cargo.toml --locked --format-version 1 --no-deps | jq -er '.target_directory')"
+cargo build --manifest-path backend-school/Cargo.toml --locked --release --bin file_storage_namespace
+namespace_target_dir="$(cargo metadata --manifest-path backend-school/Cargo.toml --locked --format-version 1 --no-deps | jq -er '.target_directory')"
 namespace_tool="$namespace_target_dir/release/file_storage_namespace"
 git rev-parse HEAD
 sha256sum backend-school/Cargo.lock "$namespace_tool"

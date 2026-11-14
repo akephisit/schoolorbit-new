@@ -72,6 +72,19 @@ test("the exact Node toolchain pin selects its frontend artifacts and Node verif
   assert.deepEqual(selected.unknown, []);
 });
 
+test("the exact Rust toolchain pin selects only backend artifacts and its verification consumers explicitly", () => {
+  const selected = classify(["rust-toolchain.toml"]);
+  assert.deepEqual(selected.verify, [
+    "documentation",
+    "deployment",
+    "contracts",
+    "backend-admin",
+    "backend-school",
+  ]);
+  assert.deepEqual(selected.deploy, ["backend-admin", "backend-school"]);
+  assert.deepEqual(selected.unknown, []);
+});
+
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), "pipeline-policy-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -124,6 +137,40 @@ test("canonical Node pin content invalidates only frontend artifacts, including 
       "frontend-admin",
       "frontend-school",
     ]);
+    previous = head;
+  }
+});
+
+test("committed Rust pin content invalidates only backend artifacts and ignores the working tree toolchain", (t) => {
+  const f = fixture(t);
+  const pin = path.join(f.root, "rust-toolchain.toml");
+  let previous = f.base;
+  for (const version of ["1.100.0", "1.101.0"]) {
+    writeFileSync(pin, `[toolchain]\nchannel = "${version}"\n`);
+    const head = f.commit();
+    const committedHashes = Object.fromEntries(
+      components.map((part) => [part, inputHash(f.root, head, part)]),
+    );
+    // Planning an exact revision must never read another checkout's local pin.
+    writeFileSync(pin, '[toolchain]\nchannel = "nightly"\n');
+    for (const part of components) {
+      assert.equal(inputHash(f.root, head, part), committedHashes[part], part);
+      assert.equal(
+        inputHash(f.root, head, part) !== inputHash(f.root, previous, part),
+        part.startsWith("backend-"),
+        part,
+      );
+    }
+    const plan = makePlan({ ...f, head });
+    assert.deepEqual(plan.build, ["backend-admin", "backend-school"]);
+    assert.deepEqual(plan.unknown, []);
+    for (const part of components) {
+      f.state.components[part] = {
+        sha: head,
+        inputHash: inputHash(f.root, head, part),
+      };
+    }
+    assert.deepEqual(makePlan({ ...f, base: head, head }).build, []);
     previous = head;
   }
 });

@@ -12,6 +12,9 @@ import { releaseBundleFiles } from '../../../scripts/lib/pipeline-release-bundle
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, '../../..');
 const readRepo = (file) => readWorkflowSource(repoRoot, file);
+const rustToolchain = await readFile(path.join(repoRoot, 'rust-toolchain.toml'), 'utf8');
+const rustVersion = rustToolchain.match(/^channel\s*=\s*"(\d+\.\d+\.\d+)"\s*$/m)?.[1];
+assert.ok(rustVersion, 'the repository must pin an exact stable Rust toolchain');
 const releaseId = '0123456789abcdef0123456789abcdef01234567';
 const loadComposeConfig = async (file, extraArguments = []) => {
 	const { stdout } = await execFileAsync(
@@ -70,7 +73,7 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 					rustSetupIndexes.push(stepIndex);
 					assert.equal(
 						step.uses,
-						'dtolnay/rust-toolchain@1.98.1',
+						`dtolnay/rust-toolchain@${rustVersion}`,
 						`${file}:${jobName} Rust version`
 					);
 				}
@@ -92,7 +95,7 @@ test('Node and Rust workflow jobs select the supported toolchains', async () => 
 			if (firstRustCommand >= 0) {
 				assert.ok(
 					rustSetupIndexes.some((stepIndex) => stepIndex < firstRustCommand),
-					`${file}:${jobName} must set up Rust 1.98.1 before executing Rust commands`
+					`${file}:${jobName} must set up Rust ${rustVersion} before executing Rust commands`
 				);
 			}
 		}
@@ -877,6 +880,10 @@ test('backend runtime images use deterministic builders without ownership copy-u
 		['backend-admin', 'backend-admin'],
 		['backend-school', 'backend-school']
 	]);
+	assert.match(rustToolchain, /^\[toolchain\]$/m);
+	assert.match(rustToolchain, /^profile\s*=\s*"minimal"\s*$/m);
+	assert.match(rustToolchain, /^components\s*=\s*\["rustfmt", "clippy"\]\s*$/m);
+	const rustBuilder = `FROM docker.io/library/rust:${rustVersion}-slim-bookworm@sha256:7c7d4eb4d05b7781187a327809466cfddf29753f6defdc3d19a0e291951b7a37 AS base`;
 
 	for (const [directory, binary] of images) {
 		const dockerfile = await readRepo(`${directory}/Dockerfile`);
@@ -889,17 +896,13 @@ test('backend runtime images use deterministic builders without ownership copy-u
 		);
 
 		assert.match(dockerfile, /^# syntax=docker\/dockerfile:1\.10$/m);
+		assert.ok(dockerfile.split('\n').includes(rustBuilder), `${directory} matches the Rust pin`);
 		if (binary === 'backend-school') {
-			assert.match(
-				dockerfile,
-				/^FROM docker\.io\/library\/rust:1\.98\.1-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d1601d30db1c1f62757e730 AS base$/m
-			);
 			assert.match(
 				runtimeStage[0],
 				/^FROM docker\.io\/library\/debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime$/
 			);
 		} else {
-			assert.match(dockerfile, /FROM rust:1\.98\.1-slim-bookworm AS base/);
 			assert.equal(runtimeStage[0], 'FROM debian:bookworm-slim AS runtime');
 		}
 		assert.match(dockerfile, /cargo install cargo-chef --version 0\.1\.78 --locked/);

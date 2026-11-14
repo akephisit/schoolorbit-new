@@ -56,6 +56,13 @@ export function classify(files) {
   for (const file of files) {
     if (!file || file.startsWith('/') || file.split('/').includes('..'))
       throw new Error('Invalid change path');
+    if (file === 'rust-toolchain.toml') {
+      ['deployment', 'contracts', 'backend-admin', 'backend-school'].forEach(
+        (suite) => verify.add(suite)
+      );
+      ['backend-admin', 'backend-school'].forEach((part) => deploy.add(part));
+      continue;
+    }
     if (file === '.node-version') {
       ['deployment', 'contracts', 'frontend-admin', 'frontend-school'].forEach(
         (suite) => verify.add(suite)
@@ -207,7 +214,7 @@ export function inputHash(root, head, component, publicConfig = {}) {
     recipe,
     ...(component.startsWith('frontend-')
       ? ['scripts/prepare_frontend_worker.mjs', '.node-version']
-      : [])
+      : ['rust-toolchain.toml'])
   )
     .split('\n')
     .filter(Boolean)
@@ -220,7 +227,6 @@ export function inputHash(root, head, component, publicConfig = {}) {
         publicConfig,
         platform: 'linux/amd64',
         node: component.startsWith('frontend-') ? process.versions.node : null,
-        rust: '1.98.1',
         profile: 'release'
       })
     )
