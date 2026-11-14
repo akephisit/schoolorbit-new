@@ -1,3 +1,4 @@
+pub mod deletion;
 use super::models::*;
 use bigdecimal::BigDecimal;
 use school_academic_core::services::lifecycle_guard::{self, AcademicWriteState};

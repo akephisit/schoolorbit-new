@@ -1,13 +1,7 @@
 import type { PageLoad } from './$types';
-import { selectPreferredBoardVersion } from '#lib/academic/timetable/version-selection.js';
-import {
-	getTimetableBlockWorkspace,
-	listTimetableVersions,
-	type TimetableBlockWorkspace
-} from '#lib/api/timetable.js';
-import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
+import { getTimetable, getTimetableBlockWorkspace } from '#lib/api/timetable.js';
+import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
-
 export const _meta = {
 	academicContext: 'term_required' as const,
 	menu: {
@@ -20,58 +14,22 @@ export const _meta = {
 		user_type: 'staff'
 	}
 };
-
 export const load: PageLoad = ({ fetch, url }) => {
 	const academicYearId = url.searchParams.get('academicYearId')?.trim() || null;
 	const academicTermId = url.searchParams.get('academicTermId')?.trim() || null;
-	const requestedVersionId = url.searchParams.get('timetableVersionId')?.trim() || null;
-	if (!academicYearId || !academicTermId) {
-		return {
-			title: _meta.menu.title,
-			academicYearId,
-			academicTermId,
-			requestedVersionId,
-			versions: null,
-			workspace: null
-		};
-	}
-	const versions = captureRouteLoad(
-		listTimetableVersions(academicTermId, { requestFetch: fetch }),
-		'โหลดรุ่นตารางสอนไม่สำเร็จ'
-	);
-	const loadWorkspace = (
-		versionId: string
-	): Promise<RouteLoadResult<TimetableBlockWorkspace | null>> =>
-		captureRouteLoad(
-			getTimetableBlockWorkspace(
-				{ academicYearId, academicTermId, timetableVersionId: versionId },
-				{ requestFetch: fetch }
-			),
-			'โหลดตารางสอนไม่สำเร็จ'
-		);
-	const workspace = requestedVersionId
-		? loadWorkspace(requestedVersionId).then(async (result) => {
-				if (result.ok) return result;
-				const listed = await versions;
-				if (!listed.ok || listed.data.some((version) => version.id === requestedVersionId))
-					return result;
-				const preferred = selectPreferredBoardVersion(listed.data, null);
-				return preferred
-					? loadWorkspace(preferred.id)
-					: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>);
-			})
-		: versions.then((result) => {
-				const preferred = result.ok ? selectPreferredBoardVersion(result.data, null) : null;
-				return preferred
-					? loadWorkspace(preferred.id)
-					: ({ ok: true, data: null, error: null } satisfies RouteLoadResult<null>);
-			});
-	return {
-		title: _meta.menu.title,
-		academicYearId,
-		academicTermId,
-		requestedVersionId,
-		versions,
-		workspace
-	};
+	const workspace =
+		academicYearId && academicTermId
+			? captureRouteLoad(
+					getTimetable(academicTermId, { requestFetch: fetch }).then((timetable) =>
+						timetable
+							? getTimetableBlockWorkspace(
+									{ academicYearId, academicTermId, timetableId: timetable.id },
+									{ requestFetch: fetch }
+								)
+							: null
+					),
+					'โหลดตารางสอนไม่สำเร็จ'
+				)
+			: null;
+	return { title: _meta.menu.title, academicYearId, academicTermId, workspace };
 };

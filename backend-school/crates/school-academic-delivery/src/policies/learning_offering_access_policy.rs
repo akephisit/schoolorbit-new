@@ -39,19 +39,6 @@ pub enum OfferingAction {
     Manage,
 }
 
-/// Authorize every offering touched by the selected operational change set.
-pub async fn require_term_change_set_access(
-    pool: &PgPool,
-    actor: &ActorContext,
-    change_set_id: Uuid,
-    action: OfferingAction,
-) -> Result<Vec<Uuid>, AppError> {
-    let offering_ids =
-        crate::services::offerings::operational_change_offering_ids(pool, change_set_id).await?;
-    require_learning_offering_batch_access(pool, actor, &offering_ids, action).await?;
-    Ok(offering_ids)
-}
-
 pub async fn learning_offering_list_access(
     pool: &PgPool,
     actor: &ActorContext,
@@ -87,10 +74,12 @@ pub async fn populate_offering_management_capabilities(
     let ids: Vec<_> = offerings.iter().map(|offering| offering.id).collect();
     let assigned: Vec<Uuid> = if filter.assigned_actor_id.is_some() && !ids.is_empty() {
         let mut connection = school_tenancy::TenantPool::observed_checkout_pool(pool, "academic_http.policies.learning_offering_access_policy.populate_offering_management_capabilities").await?;
-        DbSession::new(&mut *connection).scalar(
-            "academic_http.policies.learning_offering_access_policy.populate_offering_management_capabilities",
-            "SELECT DISTINCT learning_group.learning_offering_id FROM learning_groups learning_group JOIN learning_group_teachers teacher ON teacher.learning_group_id=learning_group.id WHERE learning_group.learning_offering_id=ANY($1) AND teacher.teacher_id=$2",
-        ).bind(&ids).bind(actor.user_id).fetch_all().await?
+        crate::services::current::assigned_offering_ids_on_connection(
+            &mut connection,
+            &ids,
+            actor.user_id,
+        )
+        .await?
     } else {
         Vec::new()
     };
@@ -124,23 +113,10 @@ pub async fn learning_offering_access_on_connection(
     offering_id: Uuid,
     action: OfferingAction,
 ) -> Result<AcademicResourceAccess, AppError> {
-    let target: Option<(Option<Uuid>, bool)> = DbSession::new(connection).query_as("academic_http.policies.learning_offering_access_policy.learning_offering_access_on_connection",
-        r#"
-        SELECT offering.owning_organization_unit_id,
-               EXISTS (
-                   SELECT 1
-                   FROM learning_groups learning_group
-                   JOIN learning_group_teachers teacher
-                     ON teacher.learning_group_id = learning_group.id
-                   WHERE learning_group.learning_offering_id = offering.id
-                     AND teacher.teacher_id = $2
-               ) AS actor_is_assigned
-        FROM learning_offerings offering
-        WHERE offering.id = $1
-        "#,
+    let target: Option<(Option<Uuid>,)> = DbSession::new(connection).query_as("academic_http.policies.learning_offering_access_policy.learning_offering_access_on_connection",
+        "SELECT owning_organization_unit_id FROM learning_offerings WHERE id=$1",
     )
     .bind(offering_id)
-    .bind(actor.user_id)
     .fetch_optional()
     .await
     .map_err(|error| {
@@ -151,11 +127,23 @@ pub async fn learning_offering_access_on_connection(
         AppError::InternalServerError("ไม่สามารถตรวจสอบสิทธิ์การเปิดสอนได้".to_string())
     })?;
 
-    let Some((owning_organization_unit_id, actor_is_assigned)) = target else {
+    let Some((owning_organization_unit_id,)) = target else {
         return Err(AppError::NotFound("ไม่พบการเปิดสอน".to_string()));
     };
 
     let filter = learning_offering_list_access_on_connection(connection, actor, action).await?;
+    let actor_is_assigned = if filter.assigned_actor_id.is_some() {
+        !crate::services::current::assigned_offering_ids_on_connection(
+            connection,
+            &[offering_id],
+            actor.user_id,
+        )
+        .await?
+        .is_empty()
+    } else {
+        false
+    };
+
     Ok(resource_access_policy::academic_resource_access_for(
         &filter,
         owning_organization_unit_id,
@@ -273,22 +261,10 @@ async fn require_batch_with_filter(
     if unique_ids.is_empty() {
         return Ok(());
     }
-    let targets: Vec<(Uuid, Option<Uuid>, bool)> = DbSession::new(connection).query_as("academic_http.policies.learning_offering_access_policy.require_learning_offering_batch_access_on_connection",
-        r#"SELECT offering.id, offering.owning_organization_unit_id,
-                  EXISTS (
-                      SELECT 1
-                      FROM learning_groups learning_group
-                      JOIN learning_group_teachers teacher
-                        ON teacher.learning_group_id = learning_group.id
-                      WHERE learning_group.learning_offering_id = offering.id
-                        AND teacher.teacher_id = $2
-                  ) AS actor_is_assigned
-           FROM learning_offerings offering
-           WHERE offering.id = ANY($1)
-           ORDER BY offering.id"#,
+    let targets: Vec<(Uuid, Option<Uuid>)> = DbSession::new(connection).query_as("academic_http.policies.learning_offering_access_policy.require_learning_offering_batch_access_on_connection",
+        "SELECT id,owning_organization_unit_id FROM learning_offerings WHERE id=ANY($1) ORDER BY id",
     )
     .bind(&unique_ids)
-    .bind(actor.user_id)
     .fetch_all()
     .await?;
     if targets.len() != unique_ids.len() {
@@ -296,9 +272,22 @@ async fn require_batch_with_filter(
             "ไม่พบรายการเปิดสอนบางรายการในชุดการเปลี่ยนแปลง".to_string(),
         ));
     }
-    if targets.iter().any(|(_, owner_id, actor_is_assigned)| {
-        resource_access_policy::academic_resource_access_for(&filter, *owner_id, *actor_is_assigned)
-            == AcademicResourceAccess::None
+    let assigned = if filter.assigned_actor_id.is_some() {
+        crate::services::current::assigned_offering_ids_on_connection(
+            connection,
+            &unique_ids,
+            actor.user_id,
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
+    if targets.iter().any(|(id, owner_id)| {
+        resource_access_policy::academic_resource_access_for(
+            &filter,
+            *owner_id,
+            assigned.contains(id),
+        ) == AcademicResourceAccess::None
     }) {
         return Err(AppError::Forbidden(
             "ไม่มีสิทธิ์เข้าถึงรายการเปิดสอนบางรายการในชุดการเปลี่ยนแปลง".to_string(),

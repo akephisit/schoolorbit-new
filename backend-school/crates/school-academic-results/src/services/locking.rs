@@ -1,7 +1,7 @@
 use super::*;
 use crate::policy::results as access_policy;
 use chrono::{DateTime, Utc};
-use school_academic_delivery::services::versions::{
+use school_academic_delivery::services::current::{
     assigned_group_ids_on_connection, group_teacher_assignments_on_connection,
 };
 use school_authorization::ActorContext;
@@ -213,7 +213,7 @@ pub async fn lock_course_subject(
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id=learning_group.learning_offering_id
            WHERE learning_group.learning_offering_id=ANY($1)
-             AND learning_group.status<>'closed'
+
            ORDER BY learning_group.id LIMIT $3
            FOR UPDATE OF learning_group"#,
         )
@@ -593,7 +593,7 @@ pub(super) async fn lock_activity_group_at(
            WHERE learning_group.id=$1
              AND learning_group.academic_term_id=$2
              AND learning_group.academic_year_id=$3
-             AND learning_group.status<>'closed'
+
            FOR UPDATE OF offering"#,
         )
         .bind(group_id)

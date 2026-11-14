@@ -5,7 +5,7 @@ use crate::integration_tests::academic::{
     delivery,
     lifecycle::models::{ExecutePromotionRunInput, PromotionDecisionOutcome},
     results::{models as result_models, services as result_services},
-    services::timetable_version_service,
+    services::timetable_service,
 };
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
@@ -20,8 +20,8 @@ fn lifecycle_actor(user_id: Uuid) -> ActorContext {
 }
 
 #[tokio::test]
-async fn opening_publication_evidence_tracks_only_usable_target_term_publications() {
-    let (pool, actor) = empty_school("opening_publication_evidence").await;
+async fn opening_current_evidence_tracks_exact_term_and_current_revision() {
+    let (pool, actor) = empty_school("opening_current_evidence").await;
     let (year, term) = ready_year(
         &pool,
         actor,
@@ -30,180 +30,55 @@ async fn opening_publication_evidence_tracks_only_usable_target_term_publication
     )
     .await;
     let mut tx = pool.begin().await.unwrap();
-    let offerings = delivery::services::opening::published_for_term(
+    let empty = delivery::services::opening::current_for_term(&mut tx, year.id, term.id)
+        .await
+        .unwrap();
+    let absent = timetable_service::opening::current_for_term(
         &mut tx,
         year.id,
         term.id,
-        chrono::Utc::now()
-            .with_timezone(&chrono_tz::Asia::Bangkok)
-            .date_naive(),
-    )
-    .await
-    .unwrap();
-    let timetables = timetable_version_service::opening::published_for_term(
-        &mut tx,
-        year.id,
-        term.id,
-        chrono::Utc::now()
-            .with_timezone(&chrono_tz::Asia::Bangkok)
-            .date_naive(),
         term.bell_schedule_id,
     )
     .await
     .unwrap();
-    assert_eq!(offerings.count(), 0);
-    assert_eq!(timetables.count(), 0);
-    let empty_offering_hash = offerings.source_checksum.clone();
-    let empty_timetable_hash = timetables.source_checksum.clone();
+    assert_eq!((empty.count(), absent.count()), (0, 0));
+    let offering:Uuid=sqlx::query_scalar("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,owning_organization_unit_id,weekly_period_target) SELECT uuidv7(),$1,$2,'activity','CURRENT','Current presence',id,1 FROM organization_units WHERE is_active ORDER BY id LIMIT 1 RETURNING id").bind(term.id).bind(year.id).fetch_one(&mut *tx).await.unwrap();
+    sqlx::query("INSERT INTO academic_timetables(academic_term_id,academic_year_id,bell_schedule_id) VALUES($1,$2,$3)").bind(term.id).bind(year.id).bind(term.bell_schedule_id).execute(&mut *tx).await.unwrap();
+    let current = delivery::services::opening::current_for_term(&mut tx, year.id, term.id)
+        .await
+        .unwrap();
+    let table = timetable_service::opening::current_for_term(
+        &mut tx,
+        year.id,
+        term.id,
+        term.bell_schedule_id,
+    )
+    .await
+    .unwrap();
+    assert_eq!((current.count(), table.count()), (1, 1));
+    assert_ne!(empty.source_checksum, current.source_checksum);
+    assert_ne!(absent.source_checksum, table.source_checksum);
+    sqlx::query("UPDATE learning_offerings SET weekly_period_target=2,row_version=row_version+1 WHERE id=$1").bind(offering).execute(&mut *tx).await.unwrap();
+    assert_ne!(
+        current.source_checksum,
+        delivery::services::opening::current_for_term(&mut tx, year.id, term.id)
+            .await
+            .unwrap()
+            .source_checksum
+    );
+    assert_eq!(
+        timetable_service::opening::current_for_term(&mut tx, year.id, term.id, Uuid::new_v4())
+            .await
+            .unwrap()
+            .count(),
+        0
+    );
     tx.rollback().await.unwrap();
-
-    let offering = Uuid::new_v4();
-    let owner: Uuid = sqlx::query_scalar(
-        "SELECT id FROM organization_units WHERE is_active IS TRUE ORDER BY id LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let activity = Uuid::new_v4();
-    let activity_version = Uuid::new_v4();
-    let mut setup = pool.begin().await.unwrap();
-    sqlx::query(
-        "INSERT INTO activities(id,code,identity_key,activity_type,owning_organization_unit_id)
-         VALUES($1,'E2E-OPEN','e2e-opening','other',$2)",
-    )
-    .bind(activity)
-    .bind(owner)
-    .execute(&mut *setup)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO activity_versions(id,activity_id,version_no,name,activity_type,periods_per_week,hours_per_week,scheduling_mode,is_active,grade_level_ids,effective_from,status,published_at)
-         VALUES($1,$2,1,'E2E-LIFECYCLE-opening','other',1,1,'synchronized',true,'[]'::jsonb,$3,'published',now())",
-    )
-    .bind(activity_version)
-    .bind(activity)
-    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
-    .execute(&mut *setup)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,starts_on,owning_organization_unit_id)
-         VALUES($1,$2,$3,'activity','E2E-OPEN','E2E-LIFECYCLE-opening','draft',$4,$5)",
-    )
-    .bind(offering)
-    .bind(term.id)
-    .bind(year.id)
-    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
-    .bind(owner)
-    .execute(&mut *setup)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours)
-         VALUES($1,$2,$3,$4,$5,'assigned','synchronized',20)",
-    )
-    .bind(offering)
-    .bind(term.id)
-    .bind(year.id)
-    .bind(activity_version)
-    .bind(activity)
-    .execute(&mut *setup)
-    .await
-    .unwrap();
-    sqlx::query(
-        "UPDATE learning_offerings SET status='published',published_at=now(),row_version=row_version+1 WHERE id=$1",
-    )
-    .bind(offering)
-    .execute(&mut *setup)
-    .await
-    .unwrap();
-    let version = Uuid::new_v4();
-    let delivery_version = Uuid::new_v4();
-    // Synthetic reader evidence obeys the migration 151 publication sequence and
-    // records the selected offering through Delivery's authoritative graph capture.
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash,publication_no)
-        VALUES($1,$2,$3,$4,'published',academic_capture_delivery_snapshot($2,$4,jsonb_build_array(jsonb_build_object('id',$6::uuid,'weekly_period_target',1))),$5,now(),uuid_generate_v4(),repeat('0',64),1)")
-        .bind(delivery_version).bind(term.id).bind(year.id).bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive()).bind(actor).bind(offering)
-        .execute(&mut *setup).await.unwrap();
-    sqlx::query(
-        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id,publication_no)
-         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7,1)",
-    )
-    .bind(version)
-    .bind(term.id)
-    .bind(year.id)
-    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive())
-    .bind(term.bell_schedule_id)
-    .bind(actor)
-    .bind(delivery_version)
-    .execute(&mut *setup)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO academic_timetable_versions(id,academic_term_id,academic_year_id,effective_from,status,bell_schedule_id,published_by,published_at,delivery_version_id,publication_no)
-         VALUES($1,$2,$3,$4,'published',$5,$6,now(),$7,2)",
-    )
-    .bind(Uuid::new_v4())
-    .bind(term.id)
-    .bind(year.id)
-    .bind(chrono::Utc::now().with_timezone(&chrono_tz::Asia::Bangkok).date_naive().succ_opt().unwrap())
-    .bind(term.bell_schedule_id)
-    .bind(actor)
-    .bind(delivery_version)
-    .execute(&mut *setup)
-    .await
-    .unwrap();
-    setup.commit().await.unwrap();
-
-    let mut tx = pool.begin().await.unwrap();
-    let offerings = delivery::services::opening::published_for_term(
-        &mut tx,
-        year.id,
-        term.id,
-        chrono::Utc::now()
-            .with_timezone(&chrono_tz::Asia::Bangkok)
-            .date_naive(),
-    )
-    .await
-    .unwrap();
-    let timetables = timetable_version_service::opening::published_for_term(
-        &mut tx,
-        year.id,
-        term.id,
-        chrono::Utc::now()
-            .with_timezone(&chrono_tz::Asia::Bangkok)
-            .date_naive(),
-        term.bell_schedule_id,
-    )
-    .await
-    .unwrap();
-    assert_eq!(offerings.count(), 1);
-    assert_eq!(timetables.count(), 1);
-    assert_ne!(offerings.source_checksum, empty_offering_hash);
-    assert_ne!(timetables.source_checksum, empty_timetable_hash);
-
-    sqlx::query(
-        "UPDATE learning_offerings SET status='cancelled',row_version=row_version+1 WHERE id=$1",
-    )
-    .bind(offering)
-    .execute(&mut *tx)
-    .await
-    .unwrap();
-    let cancelled = delivery::services::opening::published_for_term(
-        &mut tx,
-        year.id,
-        term.id,
-        chrono::Utc::now()
-            .with_timezone(&chrono_tz::Asia::Bangkok)
-            .date_naive(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(cancelled.count(), 0);
 }
 
 #[tokio::test]
-async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_publication_gates() {
+async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_current_presence_gates()
+ {
     let (pool, actor_id) = empty_school("opening_optional_gates").await;
     let (year, term) = ready_year(
         &pool,
@@ -226,8 +101,8 @@ async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_pu
         super::super::models::UpdateOpeningPolicyInput {
             row_version: initial.policy.row_version,
             require_homeroom_placements: false,
-            require_published_offerings: true,
-            require_published_timetable: true,
+            require_offerings: true,
+            require_timetable: true,
         },
     )
     .await
@@ -244,10 +119,7 @@ async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_pu
             .iter()
             .map(|finding| finding.code.as_str())
             .collect::<Vec<_>>(),
-        vec![
-            "opening.published_offering_missing",
-            "opening.published_timetable_missing"
-        ]
+        vec!["opening.offering_missing", "opening.timetable_missing"]
     );
 
     let read_only_actor = ActorContext {
@@ -258,10 +130,12 @@ async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_pu
         .await
         .unwrap();
     assert_eq!(read_only.source_checksum, gated.source_checksum);
-    assert!(read_only
-        .findings
-        .iter()
-        .all(|finding| finding.resolution_url.is_none()));
+    assert!(
+        read_only
+            .findings
+            .iter()
+            .all(|finding| finding.resolution_url.is_none())
+    );
 }
 
 #[tokio::test]
@@ -336,8 +210,8 @@ async fn opening_readiness_counts_planned_students_without_an_eligible_homeroom(
         super::super::models::UpdateOpeningPolicyInput {
             row_version: initial.policy.row_version,
             require_homeroom_placements: true,
-            require_published_offerings: false,
-            require_published_timetable: false,
+            require_offerings: false,
+            require_timetable: false,
         },
     )
     .await
@@ -543,10 +417,11 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
         super::get_activation_workspace(&pool, &reader, calculation.run.target_year_id, term.id)
             .await
             .unwrap();
-    assert!(before
-        .findings
-        .iter()
-        .any(|finding| finding.code == "opening.promotion_decision_missing" && finding.count == 1));
+    assert!(
+        before.findings.iter().any(
+            |finding| finding.code == "opening.promotion_decision_missing" && finding.count == 1
+        )
+    );
 
     super::execute_run(
         &pool,
@@ -564,9 +439,11 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
         super::get_activation_workspace(&pool, &reader, calculation.run.target_year_id, term.id)
             .await
             .unwrap();
-    assert!(!covered
-        .findings
-        .iter()
-        .any(|finding| finding.code == "opening.promotion_decision_missing"));
+    assert!(
+        !covered
+            .findings
+            .iter()
+            .any(|finding| finding.code == "opening.promotion_decision_missing")
+    );
     assert_ne!(covered.source_checksum, before.source_checksum);
 }

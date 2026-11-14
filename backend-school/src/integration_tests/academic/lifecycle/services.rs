@@ -18,7 +18,49 @@ use school_errors::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS;
+pub(crate) fn providers(
+) -> std::sync::Arc<crate::adapters::academic_lifecycle::ApplicationLifecycleProviders> {
+    static RUNTIME: std::sync::LazyLock<
+        std::sync::Arc<school_academic_timetable::collaboration::TimetableCollaborationRuntime>,
+    > = std::sync::LazyLock::new(|| {
+        std::sync::Arc::new(
+            school_academic_timetable::collaboration::TimetableCollaborationRuntime::new(),
+        )
+    });
+    std::sync::Arc::new(
+        crate::adapters::academic_lifecycle::ApplicationLifecycleProviders {
+            collaboration: RUNTIME.clone(),
+        },
+    )
+}
+struct DomainPreparationAuthorization;
+#[async_trait::async_trait]
+impl school_academic_lifecycle::ports::PreparationAuthorizationPort
+    for DomainPreparationAuthorization
+{
+    async fn validate_admission(&self, _actor: &ActorContext) -> Result<(), AppError> {
+        Ok(())
+    }
+    fn committed(&self, _outcome: &TermPreparationOutcome) {}
+}
+fn preparation_command(
+    pool: &PgPool,
+    actor: &ActorContext,
+) -> Result<school_academic_lifecycle::ports::PreparationCommandContext, AppError> {
+    let options = pool.connect_options();
+    let database = options.get_database().ok_or_else(|| {
+        AppError::Conflict("Domain fixture requires a named tenant database".into())
+    })?;
+    Ok(
+        school_academic_lifecycle::ports::PreparationCommandContext {
+            actor: actor.clone(),
+            tenant_id: Uuid::new_v5(&Uuid::NAMESPACE_URL, database.as_bytes()),
+            session_id: Uuid::new_v4(),
+            pool_lease: pool.clone().into(),
+            authorization: std::sync::Arc::new(DomainPreparationAuthorization),
+        },
+    )
+}
 
 #[cfg(test)]
 pub(crate) use school_academic_core::services::lifecycle_guard;
@@ -31,14 +73,7 @@ pub async fn get_workspace(
     year: Uuid,
     term: Uuid,
 ) -> Result<TermLifecycleWorkspace, AppError> {
-    school_academic_lifecycle::services::get_workspace(
-        &LIFECYCLE_PROVIDERS,
-        pool,
-        actor,
-        year,
-        term,
-    )
-    .await
+    school_academic_lifecycle::services::get_workspace(&*providers(), pool, actor, year, term).await
 }
 
 pub mod term_transitions {
@@ -51,7 +86,7 @@ pub mod term_transitions {
         request: TermTransitionRequest,
     ) -> Result<TermTransitionOutcome, AppError> {
         school_academic_lifecycle::services::term_transitions::transition_term(
-            &LIFECYCLE_PROVIDERS,
+            &*providers(),
             pool,
             actor,
             term,
@@ -69,7 +104,7 @@ pub(crate) async fn workspace_in_transaction(
     term: Uuid,
 ) -> Result<TermLifecycleWorkspace, AppError> {
     school_academic_lifecycle::services::readiness::workspace_in_transaction(
-        &LIFECYCLE_PROVIDERS,
+        &*providers(),
         transaction,
         actor,
         year,
@@ -138,9 +173,8 @@ pub(crate) mod term_preparation {
         input: ApplyTermPreparationInput,
     ) -> Result<TermPreparationOutcome, AppError> {
         school_academic_lifecycle::services::term_preparation::apply(
-            &LIFECYCLE_PROVIDERS,
-            pool,
-            actor,
+            providers(),
+            preparation_command(pool, actor)?,
             input,
         )
         .await
@@ -196,7 +230,7 @@ pub mod year_reopening_command {
     ) -> Result<school_academic_lifecycle::models::YearReopeningOutcome, school_errors::AppError>
     {
         school_academic_lifecycle::services::year_reopening_command::reopen_year(
-            &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
+            &*crate::integration_tests::academic::lifecycle::services::providers(),
             pool,
             actor,
             year,

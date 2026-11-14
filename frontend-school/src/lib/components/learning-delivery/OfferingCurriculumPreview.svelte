@@ -1,4 +1,10 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+	});
 	import {
 		applyLearningOfferingsFromCurriculum,
 		previewLearningOfferingsFromCurriculum,
@@ -20,7 +26,6 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Command from '#lib/components/ui/command/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -39,19 +44,16 @@
 		academicTermId,
 		options,
 		onApplied,
-		preparationTarget = null,
-		deliveryVersionId = null
+		preparationTarget = null
 	}: {
 		academicTermId: string;
 		options: DeliveryManagementOptions;
 		onApplied: () => Promise<void> | void;
 		preparationTarget?: CurriculumPreparationTarget | null;
-		deliveryVersionId?: string | null;
 	} = $props();
 
 	let displayOrder = $derived(curriculumPreparationOrder(options));
 
-	let startsOn = $state('');
 	let programPickerOpen = $state(false);
 	let programSearch = $state('');
 	let selectedStudyProgramIds = $state<string[]>([]);
@@ -84,13 +86,7 @@
 		visibleCurriculumPreparationProposals(preview?.proposals ?? [], preparationTarget)
 	);
 	let applyBlocked = $derived.by(() => {
-		if (
-			!startsOn ||
-			!preview ||
-			preview.startsOn !== startsOn ||
-			choices.length !== preview.proposals.length
-		)
-			return true;
+		if (!preview || choices.length !== preview.proposals.length) return true;
 		if (preparationTarget) {
 			if (displayedProposals.length !== 1) return true;
 			const focusedChoice = choices.find(
@@ -220,16 +216,18 @@
 	}
 
 	async function buildPreview() {
-		if (!startsOn || studyProgramIds.length === 0) return;
+		if (studyProgramIds.length === 0 || busy) return;
+		const owner = academicTermId,
+			epoch = authStore.sessionEpoch;
+		const current = () => !disposed && academicTermId === owner && authStore.sessionEpoch === epoch;
 		busy = true;
 		errorMessage = '';
 		try {
 			const result = await previewLearningOfferingsFromCurriculum({
 				academicTermId,
-				startsOn,
-				studyProgramIds,
-				deliveryVersionId
+				studyProgramIds
 			});
+			if (!current()) return;
 			const focusedProposals = visibleCurriculumPreparationProposals(
 				result.proposals,
 				preparationTarget
@@ -243,22 +241,24 @@
 			preview = result;
 			choices = buildFocusedCurriculumPreparationChoices(result.proposals, preparationTarget);
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'สร้างตัวอย่างจากหลักสูตรไม่สำเร็จ';
+			if (current())
+				errorMessage = error instanceof Error ? error.message : 'สร้างตัวอย่างจากหลักสูตรไม่สำเร็จ';
 		} finally {
-			busy = false;
+			if (current()) busy = false;
 		}
 	}
 
 	async function applyPreview() {
-		if (!preview || applyBlocked) return;
+		if (!preview || applyBlocked || busy) return;
+		const owner = academicTermId,
+			epoch = authStore.sessionEpoch;
+		const current = () => !disposed && academicTermId === owner && authStore.sessionEpoch === epoch;
 		busy = true;
 		errorMessage = '';
 		try {
 			const input = JSON.stringify({
 				academicTermId,
-				startsOn,
 				studyProgramIds,
-				deliveryVersionId,
 				sourceHash: preview.sourceHash,
 				choices
 			});
@@ -268,34 +268,26 @@
 			}
 			await applyLearningOfferingsFromCurriculum({
 				academicTermId,
-				startsOn,
 				studyProgramIds,
-				deliveryVersionId,
 				sourceHash: preview.sourceHash,
 				idempotencyKey: applicationKey,
 				choices
 			});
+			if (!current()) return;
 			await onApplied();
+			if (!current()) return;
 			preview = null;
 			choices = [];
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'นำรายการจากหลักสูตรมาใช้ไม่สำเร็จ';
+			if (current())
+				errorMessage = error instanceof Error ? error.message : 'นำรายการจากหลักสูตรมาใช้ไม่สำเร็จ';
 		} finally {
-			busy = false;
+			if (current()) busy = false;
 		}
 	}
 </script>
 
 <div class="space-y-4">
-	<div class="space-y-2">
-		<Label for="curriculum-offerings-start">วันที่เริ่มเปิดสอนจริง</Label><DatePicker
-			id="curriculum-offerings-start"
-			bind:value={startsOn}
-			ariaLabel="วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร"
-			required
-			disabled={busy}
-		/>
-	</div>
 	<div class="rounded-xl border border-primary/20 bg-primary/[0.035] p-4">
 		<div class="flex items-start gap-3">
 			<div class="rounded-lg bg-primary/10 p-2 text-primary"><WandSparkles class="size-4" /></div>
@@ -309,7 +301,7 @@
 					{preparationTarget
 						? preparationTarget.schedulingMode === 'synchronized'
 							? `ระบบจะรวมข้อกำหนดของ ${preparationTarget.homeroomCount} ห้องเป็นรายการเปิดสอนกลางเพียงรายการเดียว`
-							: `ตรวจข้อกำหนดและกลุ่มเรียนของ ${preparationTarget.homeroomCount} ห้องก่อนบันทึกในแบบร่าง`
+							: `ตรวจข้อกำหนดและกลุ่มเรียนของ ${preparationTarget.homeroomCount} ห้องก่อนบันทึก`
 						: 'กิจกรรมพร้อมกันเริ่มจากเปิดแบบกลาง และเลือกเปิดพร้อมจัดกลุ่มได้ รายวิชาบังคับเสนอหนึ่งกลุ่มต่อห้อง'}
 				</p>
 			</div>
@@ -317,8 +309,7 @@
 	</div>
 
 	{#if preparationTarget}<p class="text-sm text-muted-foreground">
-			รายการใหม่ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ
-			ให้ตรวจการตั้งค่าก่อนบันทึกในแบบร่าง
+			รายการใหม่ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ ให้ตรวจการตั้งค่าก่อนบันทึก
 		</p>{/if}
 	<div class="grid gap-4 sm:grid-cols-2">
 		<div class="space-y-2">
@@ -393,17 +384,10 @@
 			variant="outline"
 			loading={busy}
 			loadingLabel="กำลังตรวจ"
-			disabled={!startsOn || studyProgramIds.length === 0}
+			disabled={studyProgramIds.length === 0}
 			onclick={buildPreview}><Eye class="size-4" /> ตรวจและจัดกลุ่มก่อน</LoadingButton
 		>
 	</div>
-
-	{#if preview && preview.startsOn !== startsOn}<p
-			role="alert"
-			class="text-sm text-amber-700 dark:text-amber-400"
-		>
-			วันที่เริ่มเปิดสอนเปลี่ยน กรุณาตรวจตัวอย่างใหม่ก่อนนำไปใช้
-		</p>{/if}
 
 	{#if preview}
 		<div class="rounded-xl border bg-muted p-3 text-sm">
@@ -411,9 +395,7 @@
 			{#each preview.curriculumSources as source (source.publicationId)}<p>
 					{source.editionName} · เผยแพร่ครั้งที่ {source.publicationNo}
 				</p>{/each}
-			<p class="mt-1 text-muted-foreground">
-				เลือกนำรายการไปใช้ในร่างเปิดสอน แล้วเผยแพร่ที่หน้าจัดการการเปิดสอนก่อนนำไปจัดตาราง
-			</p>
+			<p class="mt-1 text-muted-foreground">ตรวจรายการและกลุ่มก่อนบันทึก แล้วนำไปจัดตารางสอน</p>
 		</div>
 		<div class="overflow-hidden rounded-xl border">
 			<div class="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-3">

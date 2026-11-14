@@ -431,7 +431,7 @@ if ! curl \
 fi
 migration_completion_filter="
     .latest_version as \$latest
-    | (\$latest | type == \"number\" and . >= 151 and floor == .)
+    | (\$latest | type == \"number\" and . >= 157 and floor == .)
     and .total_schools >= 0
     and (.schools | length) == .total_schools
     and .migrated == .total_schools
@@ -462,26 +462,21 @@ migration_completion_filter="
       and .gradebookResultsCutover.status == \"cutoverCompleted\"
       and .gradebookResultsCutover.passed == true
       and all(.gradebookResultsCutover.checks[]; .passed == true)
-      and .deliveryTimetableCutover.migrationVersion == 88
-      and .deliveryTimetableCutover.status == \"cutoverCompleted\"
-      and .deliveryTimetableCutover.passed == true
-      and (.deliveryTimetableCutover.checks | length) == 30
-      and all(.deliveryTimetableCutover.checks[]; .passed == true)
-      and .publicationRevisionsCutover.migrationVersion == 151
-      and .publicationRevisionsCutover.status == \"cutoverCompleted\"
-      and .publicationRevisionsCutover.passed == true
-      and (.publicationRevisionsCutover.checks | type == \"array\" and length == 8)
-      and ([.publicationRevisionsCutover.checks[].code] | sort) == [
-        \"delivery_publications_preserved\",
-        \"downstream_sources_preserved\",
-        \"offering_registry_preserved\",
-        \"projection_integrity_reconciled\",
-        \"publication_numbers_reconciled\",
-        \"publication_receipts_preserved\",
-        \"teacher_episodes_preserved\",
-        \"timetable_publications_preserved\"
+      and .currentOperationsCutover.migrationVersion == 157
+      and .currentOperationsCutover.status == \"cutoverCompleted\"
+      and .currentOperationsCutover.passed == true
+      and (.currentOperationsCutover.checks | type == \"array\" and length == 8)
+      and ([.currentOperationsCutover.checks[].code] | sort) == [
+        \"CURRENT_CATALOG_PINS_PRESERVED\",
+        \"CURRENT_DELIVERY_GRAPH_RECONCILED\",
+        \"CURRENT_FACTS_PRESERVED\",
+        \"CURRENT_LEGACY_SCHEMA_REMOVED\",
+        \"CURRENT_SCOPE_GUARDS_ENABLED\",
+        \"CURRENT_SUPERVISION_PRESERVED\",
+        \"CURRENT_TEACHERS_RECONCILED\",
+        \"CURRENT_TIMETABLE_IDS_RECONCILED\"
       ]
-      and all(.publicationRevisionsCutover.checks[]; .passed == true and .count == 0)
+      and all(.currentOperationsCutover.checks[]; .passed == true and .mismatchCount == 0)
       and .staffProfileCutover.migrationVersion == 114
       and .staffProfileCutover.status == \"cutoverCompleted\"
       and .staffProfileCutover.passed == true

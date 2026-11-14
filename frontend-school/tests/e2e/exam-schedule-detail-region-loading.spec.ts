@@ -1,3 +1,4 @@
+import type { ExamScheduleWorkspace, UpdateExamRoundInput } from '../../src/lib/api/examSchedule';
 import { sessionState } from './fixtures/session-state';
 import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -19,7 +20,7 @@ async function fulfill(route: Route, data: unknown) {
 	});
 }
 
-function workspace(roundId = firstRoundId, name = 'รอบแรก') {
+function workspace(roundId = firstRoundId, name = 'รอบแรก'): ExamScheduleWorkspace {
 	return {
 		round: {
 			id: roundId,
@@ -28,9 +29,7 @@ function workspace(roundId = firstRoundId, name = 'รอบแรก') {
 			name,
 			description: null,
 			examKind: 'midterm',
-			status: 'draft',
 			rowVersion: 1,
-			publishedAt: null,
 			createdAt: '2026-05-01T00:00:00Z',
 			updatedAt: '2026-05-01T00:00:00Z'
 		},
@@ -38,21 +37,11 @@ function workspace(roundId = firstRoundId, name = 'รอบแรก') {
 		unscheduledItems: [],
 		scheduledSessions: [],
 		paperReceiptItems: [],
-		readiness: { canPublish: false, findings: [{ code: 'missing_exam_day', count: 1 }] },
-		sourcePreview: {
-			changes: [],
-			newCount: 0,
-			durationChangedCount: 0,
-			noLongerEligibleCount: 0,
-			previewToken: 'empty',
-			roundId,
-			roundRowVersion: 1,
-			roundStatus: 'draft'
-		}
+		readiness: { complete: false, findings: [{ code: 'missing_exam_day', count: 1 }] }
 	};
 }
 
-function workspaceWithDay() {
+function workspaceWithDay(): ExamScheduleWorkspace {
 	return {
 		...workspace(),
 		days: [
@@ -149,7 +138,9 @@ test('workspace paints while grade options wait and room options stay lazy', asy
 	await expect(page.locator('main [data-slot="skeleton"]').first()).toBeVisible();
 	await fulfill(pendingWorkspace[0], workspace());
 	await expect.poll(() => pendingGrades.length).toBe(1);
-	await expect(page.getByText('รายการสอบตรงกับโครงสร้างคะแนนแล้ว')).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'มีรายการที่ควรตรวจ 1', exact: true })
+	).toBeVisible();
 	expect(roomReads).toEqual([]);
 	await fulfill(pendingGrades[0], []);
 	await page.getByRole('tab', { name: 'ห้องสอบ' }).click();
@@ -197,7 +188,9 @@ test('round navigation clears old workspace before the next result and keeps sco
 	await page.goto(detailUrl());
 	await expect.poll(() => pending.length).toBe(1);
 	await fulfill(pending[0], workspace());
-	await expect(page.getByText('รายการสอบตรงกับโครงสร้างคะแนนแล้ว')).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'มีรายการที่ควรตรวจ 1', exact: true })
+	).toBeVisible();
 	await page.evaluate((destination) => {
 		const link = document.createElement('a');
 		link.href = destination;
@@ -242,7 +235,9 @@ test('grade and room option failures have separate retries without replacing the
 		contentType: 'application/json',
 		body: JSON.stringify({ success: false, error: 'ระดับชั้นชั่วคราวไม่พร้อม' })
 	});
-	await expect(page.getByText('รายการสอบตรงกับโครงสร้างคะแนนแล้ว')).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'มีรายการที่ควรตรวจ 1', exact: true })
+	).toBeVisible();
 	await expect(page.getByText('ระดับชั้นชั่วคราวไม่พร้อม')).toBeVisible();
 	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 	await expect.poll(() => grades.length).toBe(2);
@@ -260,7 +255,9 @@ test('grade and room option failures have separate retries without replacing the
 		body: JSON.stringify({ success: false, error: 'ห้องสอบชั่วคราวไม่พร้อม' })
 	});
 	await expect(page.getByText('ห้องสอบชั่วคราวไม่พร้อม')).toBeVisible();
-	await expect(page.getByText('รายการสอบตรงกับโครงสร้างคะแนนแล้ว')).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'มีรายการที่ควรตรวจ 1', exact: true })
+	).toBeVisible();
 	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 	await expect.poll(() => homerooms.length).toBe(2);
 	await expect.poll(() => rooms.length).toBe(2);
@@ -284,7 +281,9 @@ test('manual workspace refresh retains the current round and reports its own fai
 	await revalidatePage(page);
 	await expect.poll(() => requests.length).toBe(2);
 	await expect(ready).toHaveAttribute('aria-busy', 'true');
-	await expect(page.getByText('รายการสอบตรงกับโครงสร้างคะแนนแล้ว')).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'มีรายการที่ควรตรวจ 1', exact: true })
+	).toBeVisible();
 	await requests[1].fulfill({
 		status: 503,
 		contentType: 'application/json',
@@ -299,62 +298,83 @@ test('manual workspace refresh retains the current round and reports its own fai
 	await expect(refreshError).toHaveCount(0);
 });
 
-test('a late publish result cannot replace a different round after navigation', async ({
+test('a late direct round-kind save cannot replace a different round after navigation', async ({
 	page
 }) => {
 	await installShell(page);
-	const published: Route[] = [];
+	const pending: Route[] = [];
 	await page.route(`**/api/academic/exam-schedules/${firstRoundId}`, (route) => {
-		return fulfill(route, { ...workspace(), readiness: { canPublish: true, findings: [] } });
+		if (route.request().method() === 'PATCH') {
+			pending.push(route);
+			return;
+		}
+		return fulfill(route, workspace());
 	});
-	await page.route(`**/api/academic/exam-schedules/${secondRoundId}`, (route) => {
-		return fulfill(route, workspace(secondRoundId, 'รอบที่สอง'));
-	});
-	await page.route(`**/api/academic/exam-schedules/${firstRoundId}/publish`, (route) => {
-		published.push(route);
-	});
+	await page.route(`**/api/academic/exam-schedules/${secondRoundId}`, (route) =>
+		fulfill(route, workspace(secondRoundId, 'รอบที่สอง'))
+	);
 	await page.goto(detailUrl());
 	await expect(page.getByTestId('exam-detail-ready')).toBeVisible();
-	await page.getByRole('button', { name: 'เผยแพร่', exact: true }).click();
-	await expect.poll(() => published.length).toBe(1);
+	await page
+		.getByRole('combobox')
+		.filter({ hasText: /กลางภาค/ })
+		.click();
+	await page.getByRole('option', { name: 'ปลายภาค', exact: true }).click();
+	await expect.poll(() => pending.length).toBe(1);
+	expect(pending[0].request().postDataJSON()).toEqual({ rowVersion: 1, examKind: 'final' });
 	await page.evaluate((destination) => {
 		const link = document.createElement('a');
 		link.href = destination;
-		link.id = 'test-exam-publish-navigation';
+		link.id = 'test-exam-kind-navigation';
 		link.textContent = 'เปิดรอบที่สอง';
+		link.dataset.sveltekitPreloadData = 'off';
 		link.style.cssText = 'position:fixed;top:160px;left:500px;z-index:9999;background:white';
 		document.body.append(link);
 	}, detailUrl(secondRoundId));
-	await page.locator('#test-exam-publish-navigation').click();
-	await expect(page.getByText('รอบที่สอง', { exact: true }).first()).toBeVisible();
-	await fulfill(published[0], { ...workspace().round, status: 'published' });
-	await expect(page.getByText('รอบที่สอง', { exact: true }).first()).toBeVisible();
+	await page.locator('#test-exam-kind-navigation').click();
+	await expect(page.getByRole('heading', { name: 'รอบที่สอง', exact: true })).toBeVisible();
+	await fulfill(pending[0], { ...workspace().round, rowVersion: 2, examKind: 'final' });
+	await expect(page.getByRole('heading', { name: 'รอบที่สอง', exact: true })).toBeVisible();
+	await expect(page.getByRole('combobox').filter({ hasText: /กลางภาค/ })).toBeVisible();
 	await expect(page.getByText('รอบแรก', { exact: true })).toHaveCount(0);
 });
 
-test('publishing patches the returned round without reloading the full workspace', async ({
+test('a direct kind save sends its accepted revision and retains the accepted round while current sources refresh', async ({
 	page
 }) => {
 	await installShell(page);
-	const workspaceReads: Route[] = [];
+	const reads: Route[] = [],
+		writes: UpdateExamRoundInput[] = [];
 	await page.route(`**/api/academic/exam-schedules/${firstRoundId}`, (route) => {
-		workspaceReads.push(route);
+		if (route.request().method() === 'PATCH') {
+			writes.push(route.request().postDataJSON());
+			return fulfill(route, { ...workspace().round, rowVersion: 2, examKind: 'final' });
+		}
+		reads.push(route);
 	});
-	await page.route(`**/api/academic/exam-schedules/${firstRoundId}/publish`, (route) =>
-		fulfill(route, { ...workspace().round, status: 'published' })
-	);
 	await page.goto(detailUrl());
-	await expect.poll(() => workspaceReads.length).toBe(1);
-	await fulfill(workspaceReads[0], {
-		...workspace(),
-		readiness: { canPublish: true, findings: [] }
-	});
+	await expect.poll(() => reads.length).toBe(1);
+	await fulfill(reads[0], workspace());
 	const ready = page.getByTestId('exam-detail-ready');
 	await expect(ready).toBeVisible();
-	await page.getByRole('button', { name: 'เผยแพร่', exact: true }).click();
-	await expect(page.getByText('เผยแพร่แล้ว').first()).toBeVisible();
+	await page
+		.getByRole('combobox')
+		.filter({ hasText: /กลางภาค/ })
+		.click();
+	await page.getByRole('option', { name: 'ปลายภาค', exact: true }).click();
+	await expect.poll(() => reads.length).toBe(2);
+	await expect(ready).toBeVisible();
+	await expect(ready).toHaveAttribute('aria-busy', 'true');
+	await expect(
+		page.locator('[data-slot="badge"]').filter({ hasText: 'ปลายภาค' }).first()
+	).toBeVisible();
+	expect(writes).toEqual([{ rowVersion: 1, examKind: 'final' }]);
+	const fresh = workspace();
+	fresh.round = { ...fresh.round, rowVersion: 2, examKind: 'final' };
+	await fulfill(reads[1], fresh);
 	await expect(ready).toHaveAttribute('aria-busy', 'false');
-	expect(workspaceReads).toHaveLength(1);
+	await expect(page.getByRole('combobox').filter({ hasText: /ปลายภาค/ })).toBeEnabled();
+	expect(reads).toHaveLength(2);
 });
 
 test('invigilator staff options stay tab-lazy and recover from a failed read', async ({ page }) => {
@@ -458,13 +478,14 @@ test('read-only rooms tab does not request management options', async ({ page })
 	expect(managementReads).toEqual([]);
 });
 
-test('published rooms tab does not request edit-only management options', async ({ page }) => {
+test('current room editing requests its management options only when the room tab opens', async ({
+	page
+}) => {
 	await installShell(page);
 	const managementReads: string[] = [];
-	const publishedWorkspace = workspace();
-	publishedWorkspace.round.status = 'published';
+	const currentWorkspace = workspaceWithDay();
 	await page.route(`**/api/academic/exam-schedules/${firstRoundId}`, (route) =>
-		fulfill(route, publishedWorkspace)
+		fulfill(route, currentWorkspace)
 	);
 	await page.route('**/api/lookup/homerooms?**', (route) => {
 		managementReads.push('homerooms');
@@ -476,9 +497,11 @@ test('published rooms tab does not request edit-only management options', async 
 	});
 	await page.goto(detailUrl());
 	await expect(page.getByTestId('exam-detail-ready')).toBeVisible();
+	expect(managementReads).toEqual([]);
 	await page.getByRole('tab', { name: 'ห้องสอบ' }).click();
 	await expect(page.getByText('ห้องสอบและที่นั่ง')).toBeVisible();
-	expect(managementReads).toEqual([]);
+	await expect.poll(() => managementReads.length).toBe(2);
+	expect(managementReads.sort()).toEqual(['homerooms', 'rooms']);
 });
 
 test('export-only data waits until the user clicks export', async ({ page }) => {

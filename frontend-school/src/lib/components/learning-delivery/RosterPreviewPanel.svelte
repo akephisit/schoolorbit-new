@@ -2,7 +2,7 @@
 	import type { LearningGroup, RosterPreview } from '#lib/api/learning-delivery.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { AlertTriangle, CheckCircle2, RefreshCw, Send, UserRound } from '@lucide/svelte';
+	import { AlertTriangle, CheckCircle2, RefreshCw, UserRound } from '@lucide/svelte';
 
 	let {
 		group,
@@ -11,8 +11,7 @@
 		stale = false,
 		canManage = false,
 		onRefresh,
-		onApply,
-		onPublish
+		onApply
 	}: {
 		group: LearningGroup;
 		preview: RosterPreview | null;
@@ -21,7 +20,6 @@
 		canManage?: boolean;
 		onRefresh: () => Promise<void>;
 		onApply: (sourceHash: string) => Promise<void>;
-		onPublish: () => Promise<void>;
 	} = $props();
 
 	let errorMessage = $state('');
@@ -126,7 +124,7 @@
 
 		<footer class="flex flex-wrap items-center justify-between gap-3 border-t p-4">
 			<p class="text-xs text-muted-foreground">
-				ยืนยันเป็นฉบับร่างก่อน แล้วจึงเผยแพร่ให้ระบบปลายทางใช้
+				บันทึกรายชื่อที่ตรวจแล้วให้ใช้กับการเรียนของกลุ่มนี้
 			</p>
 			<div class="flex flex-wrap gap-2">
 				<Button
@@ -134,13 +132,7 @@
 					disabled={!canManage || loading || stale || preview.conflicts > 0}
 					onclick={() => perform(() => onApply(preview.sourceHash))}
 				>
-					<CheckCircle2 class="size-4" /> ยืนยันเป็นฉบับร่าง
-				</Button>
-				<Button
-					disabled={!canManage || loading || stale || group.rosterStatus !== 'draft'}
-					onclick={() => perform(onPublish)}
-				>
-					<Send class="size-4" /> เผยแพร่รายชื่อ
+					<CheckCircle2 class="size-4" /> บันทึกรายชื่อ
 				</Button>
 			</div>
 		</footer>

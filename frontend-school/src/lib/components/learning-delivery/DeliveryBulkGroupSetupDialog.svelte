@@ -1,17 +1,19 @@
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		applyBulkGroupSetup,
 		type BulkGroupSetupRequest,
 		type BulkGroupSetupResponse,
 		type DeliveryManagementOptions,
-		type DeliveryVersion,
+		getDeliveryWorkspace,
 		type LearningGroup,
 		type LearningOffering
 	} from '#lib/api/learning-delivery.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
-	import { deliveryChangePage } from '#lib/academic/learning-delivery-change-list.js';
+	import { deliveryChangePage } from '#lib/academic/delivery-pagination.js';
 	import { defaultRosterTrackingDate } from '#lib/academic/learning-delivery-page.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -25,7 +27,6 @@
 
 	let {
 		offering,
-		version,
 		groups,
 		trackingStartsOn = null,
 		canManage,
@@ -34,13 +35,12 @@
 		onReload
 	}: {
 		offering: LearningOffering;
-		version: DeliveryVersion;
 		groups: LearningGroup[];
 		trackingStartsOn?: string | null;
 		canManage: boolean;
 		onRequestManagementOptions: () => Promise<DeliveryManagementOptions | null>;
 		onApplied: (response: BulkGroupSetupResponse) => void;
-		onReload: (signal?: AbortSignal) => Promise<void>;
+		onReload: (signal?: AbortSignal) => Promise<RouteLoadResult<LearningGroup[]> | null>;
 	} = $props();
 
 	let open = $state(false);
@@ -65,10 +65,12 @@
 	let needsReload = $state(false);
 	let errorMessage = $state('');
 	let session = 0;
+	let dialogEpoch: number | null = null;
+	let observedContext = '';
 	let disposed = false;
 	const preparationRequest = new LatestRequest();
 	const busy = $derived(saving || reloading);
-	const context = $derived(`${offering.id}:${version.id}`);
+	const context = $derived(`${offering.academicYearId}:${offering.academicTermId}:${offering.id}`);
 	const filteredGroups = $derived(
 		targets.filter((group) =>
 			`${group.name} ${group.code}`
@@ -79,8 +81,7 @@
 	const visibleGroups = $derived(deliveryChangePage(filteredGroups, groupPage));
 	const eligibleGroups = $derived(targets.filter(eligible));
 	const request = $derived.by((): BulkGroupSetupRequest => ({
-		deliveryVersionId: version.id,
-		deliveryVersionRowVersion: versionRowVersion,
+		deliveryRowVersion: versionRowVersion,
 		groups: targets
 			.filter((group) => selectedIds.includes(group.id))
 			.map((group) => ({ learningGroupId: group.id, rowVersion: group.rowVersion })),
@@ -100,11 +101,18 @@
 			(!teacherEnabled || Boolean(teacherId)) &&
 			(!rosterEnabled || mode === 'manual' || Boolean(effectiveFrom))
 	);
-	function eligible(group: LearningGroup): boolean {
-		return group.status === 'draft' && group.rosterStatus === 'draft' && !group.teachersLocked;
+	function eligible(_group: LearningGroup): boolean {
+		return true;
 	}
 	function current(token: number, owner: string): boolean {
-		return !disposed && open && canManage && session === token && context === owner;
+		return (
+			!disposed &&
+			open &&
+			canManage &&
+			session === token &&
+			context === owner &&
+			dialogEpoch === authStore.sessionEpoch
+		);
 	}
 	function changeOpen(value: boolean) {
 		if (busy) return;
@@ -118,6 +126,7 @@
 	async function show() {
 		if (!canManage || busy || preparing) return;
 		const token = ++session;
+		dialogEpoch = authStore.sessionEpoch;
 		const owner = context;
 		targets = [];
 		versionRowVersion = 0;
@@ -141,11 +150,18 @@
 		preparing = true;
 		preparationError = '';
 		try {
-			await onReload(ticket.signal);
-			await tick();
+			const result = await onReload(ticket.signal);
 			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
-			targets = [...groups];
-			versionRowVersion = version.rowVersion;
+			if (!result) throw new Error('ข้อมูลกลุ่มเปลี่ยนระหว่างเตรียม กรุณาลองเตรียมใหม่');
+			if (!result.ok) throw new Error(result.error);
+			targets = [...result.data];
+			const currentWorkspace = await getDeliveryWorkspace(
+				offering.academicYearId,
+				offering.academicTermId,
+				{ signal: ticket.signal }
+			);
+			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
+			versionRowVersion = currentWorkspace.rowVersion;
 			void loadOptions(token, owner);
 		} catch (error) {
 			if (!isAbortError(error) && current(token, owner))
@@ -175,11 +191,7 @@
 			: selectedIds.filter((selected) => selected !== id);
 	}
 	function initialTrackingDate(): string {
-		const startsOn =
-			trackingStartsOn && (!offering.startsOn || trackingStartsOn > offering.startsOn)
-				? trackingStartsOn
-				: offering.startsOn;
-		return defaultRosterTrackingDate(offering.status, startsOn);
+		return trackingStartsOn ?? defaultRosterTrackingDate();
 	}
 	function changeRosterMode(value: string) {
 		mode = value === 'homeroom' ? 'homeroom' : 'manual';
@@ -202,26 +214,36 @@
 			const result = await applyBulkGroupSetup(offering.id, submitted);
 			if (!current(token, owner)) return;
 			onApplied(result);
+			if (!current(token, owner)) return;
+			saving = false;
 			open = false;
 			session += 1;
 		} catch (error) {
 			if (current(token, owner)) fail(error, 'บันทึกการตั้งค่าหลายกลุ่มไม่สำเร็จ');
 		} finally {
-			if (!disposed && context === owner) saving = false;
+			if (current(token, owner)) saving = false;
 		}
 	}
 	async function reload() {
 		if (busy || !canManage) return;
 		const token = session,
-			owner = context;
+			owner = context,
+			ticket = preparationRequest.begin();
 		reloading = true;
 		errorMessage = '';
 		try {
-			await onReload();
-			await tick();
-			if (!current(token, owner)) return;
-			targets = [...groups];
-			versionRowVersion = version.rowVersion;
+			const result = await onReload(ticket.signal);
+			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
+			if (!result) throw new Error('ข้อมูลกลุ่มเปลี่ยนระหว่างเตรียม กรุณาลองเตรียมใหม่');
+			if (!result.ok) throw new Error(result.error);
+			targets = [...result.data];
+			const currentWorkspace = await getDeliveryWorkspace(
+				offering.academicYearId,
+				offering.academicTermId,
+				{ signal: ticket.signal }
+			);
+			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
+			versionRowVersion = currentWorkspace.rowVersion;
 			selectedIds = selectedIds.filter((id) =>
 				targets.some((group) => group.id === id && eligible(group))
 			);
@@ -233,12 +255,28 @@
 		}
 	}
 	$effect.pre(() => {
-		if (!canManage) {
+		void $authStore;
+		const epoch = authStore.sessionEpoch,
+			owner = context,
+			allowed = canManage;
+		if (dialogEpoch !== null && (!allowed || dialogEpoch !== epoch || observedContext !== owner)) {
 			open = false;
-			session += 1;
+			session++;
 			preparationRequest.abort();
+			preparing = false;
+			saving = false;
+			reloading = false;
+			optionsLoading = false;
+			targets = [];
+			options = null;
+			selectedIds = [];
+			errorMessage = '';
+			preparationError = '';
+			dialogEpoch = null;
 		}
+		observedContext = owner;
 	});
+
 	onDestroy(() => {
 		disposed = true;
 		session += 1;
@@ -261,13 +299,14 @@
 		interactOutsideBehavior={busy ? 'ignore' : 'close'}
 		onCloseAutoFocus={(event) => {
 			event.preventDefault();
-			if (!disposed && trigger?.isConnected) trigger.focus();
+			if (!disposed && dialogEpoch === authStore.sessionEpoch && trigger?.isConnected)
+				trigger.focus();
 		}}
 	>
 		<Dialog.Header>
 			<Dialog.Title>ตั้งค่าหลายกลุ่ม · {offering.nameSnapshot}</Dialog.Title>
 			<Dialog.Description
-				>เลือกกลุ่มในร่างนี้ กำหนดครูหลักหรือวิธีจัดรายชื่อพร้อมกัน แล้วบันทึกให้กลุ่มที่เลือก
+				>เลือกกลุ่มปัจจุบัน กำหนดครูหลักหรือวิธีจัดรายชื่อพร้อมกัน แล้วบันทึกให้กลุ่มที่เลือก
 				แก้ข้อยกเว้นในแต่ละกลุ่มได้ภายหลัง</Dialog.Description
 			>
 		</Dialog.Header>
@@ -438,7 +477,7 @@
 						</p>
 						{#if mode === 'homeroom'}<p class="text-xs text-muted-foreground">
 								สมาชิกใหม่เริ่มนับจากวันที่นี้ หรือวันที่เข้าห้องต้นทางหากเข้าภายหลัง
-								โดยเก็บประวัติและคะแนนเดิมไว้ กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง
+								โดยเก็บประวัติและคะแนนเดิมไว้
 								ระบบตรวจว่าวันที่อยู่ในช่วงเปิดสอนของทุกกลุ่มที่เลือกก่อนบันทึก
 							</p>{/if}
 					{/if}

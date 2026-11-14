@@ -31,7 +31,7 @@ function block(overrides = {}) {
 		structuralKind: null,
 		syncStates: [],
 		teachers: [],
-		timetableVersionId: 'version-1',
+		timetableId: 'version-1',
 		title: null,
 		updatedAt: '2026-09-02T00:00:00Z',
 		...overrides

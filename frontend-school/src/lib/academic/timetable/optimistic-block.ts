@@ -158,10 +158,10 @@ export function createOptimisticTimetableBlock(
 	const room = workspace.rooms.find((item) => item.id === dragSource.candidate.roomId);
 	const base = {
 		id,
-		timetableVersionId: workspace.version.id,
-		academicTermId: workspace.version.academicTermId,
-		academicYearId: workspace.version.academicYearId,
-		bellScheduleId: workspace.version.bellScheduleId,
+		timetableId: workspace.timetable.id,
+		academicTermId: workspace.timetable.academicTermId,
+		academicYearId: workspace.timetable.academicYearId,
+		bellScheduleId: workspace.timetable.bellScheduleId,
 		bellSchedulePeriodId,
 		blockKind: dragSource.candidate.blockKind,
 		learningOfferingId: dragSource.candidate.learningOfferingId,

@@ -29,8 +29,8 @@
 	let needsRefresh = $state(false);
 	let policy = $state.raw<OpeningPolicy | null>(null);
 	let requireHomeroomPlacements = $state(false);
-	let requirePublishedOfferings = $state(false);
-	let requirePublishedTimetable = $state(false);
+	let requireOfferings = $state(false);
+	let requireTimetable = $state(false);
 	const canManage = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_LIFECYCLE_READ_SCHOOL) &&
 			$can.has(PERMISSIONS.ACADEMIC_LIFECYCLE_MANAGE_SCHOOL)
@@ -38,15 +38,15 @@
 	const changed = $derived(
 		!!policy &&
 			(policy.requireHomeroomPlacements !== requireHomeroomPlacements ||
-				policy.requirePublishedOfferings !== requirePublishedOfferings ||
-				policy.requirePublishedTimetable !== requirePublishedTimetable)
+				policy.requireOfferings !== requireOfferings ||
+				policy.requireTimetable !== requireTimetable)
 	);
 
 	function applyPolicy(next: OpeningPolicy) {
 		policy = next;
 		requireHomeroomPlacements = next.requireHomeroomPlacements;
-		requirePublishedOfferings = next.requirePublishedOfferings;
-		requirePublishedTimetable = next.requirePublishedTimetable;
+		requireOfferings = next.requireOfferings;
+		requireTimetable = next.requireTimetable;
 	}
 
 	async function load() {
@@ -90,8 +90,8 @@
 			const saved = await updateAcademicOpeningPolicy({
 				rowVersion: policy.rowVersion,
 				requireHomeroomPlacements,
-				requirePublishedOfferings,
-				requirePublishedTimetable
+				requireOfferings,
+				requireTimetable
 			});
 			if (!alive) return;
 			applyPolicy(saved);
@@ -173,29 +173,21 @@
 				</div>
 				<div class="flex items-start justify-between gap-4 p-4">
 					<div>
-						<Label for="opening-require-offering">ต้องมีรายการเปิดสอนที่เผยแพร่</Label>
+						<Label for="opening-require-offering">ต้องมีรายการเปิดสอนปัจจุบัน</Label>
 						<p class="mt-1 text-xs text-muted-foreground">
 							ตรวจว่ามีอย่างน้อยหนึ่งรายการ ไม่ได้ยืนยันว่าครบทั้งหลักสูตร
 						</p>
 					</div>
-					<Switch
-						id="opening-require-offering"
-						bind:checked={requirePublishedOfferings}
-						disabled={busy}
-					/>
+					<Switch id="opening-require-offering" bind:checked={requireOfferings} disabled={busy} />
 				</div>
 				<div class="flex items-start justify-between gap-4 p-4">
 					<div>
-						<Label for="opening-require-timetable">ต้องมีตารางสอนที่เผยแพร่</Label>
+						<Label for="opening-require-timetable">ต้องมีตารางสอนปัจจุบัน</Label>
 						<p class="mt-1 text-xs text-muted-foreground">
 							ตารางต้องมีผลในวันเปิดภาคและใช้ตารางคาบของภาคนี้
 						</p>
 					</div>
-					<Switch
-						id="opening-require-timetable"
-						bind:checked={requirePublishedTimetable}
-						disabled={busy}
-					/>
+					<Switch id="opening-require-timetable" bind:checked={requireTimetable} disabled={busy} />
 				</div>
 			</div>
 		{/if}

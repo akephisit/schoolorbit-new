@@ -1,4 +1,35 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
+
+#[derive(Clone)]
+pub struct PreparationCommandContext {
+    pub actor: school_authorization::ActorContext,
+    pub tenant_id: Uuid,
+    pub session_id: Uuid,
+    pub pool_lease: school_tenancy::TenantPool,
+    pub authorization: Arc<dyn PreparationAuthorizationPort>,
+}
+#[async_trait]
+pub trait PreparationAuthorizationPort: Send + Sync {
+    async fn validate_admission(
+        &self,
+        actor: &school_authorization::ActorContext,
+    ) -> Result<(), AppError>;
+    fn committed(&self, outcome: &crate::models::TermPreparationOutcome);
+}
+#[async_trait]
+pub trait PreparationAdmission: Send + Sync {
+    async fn apply_timetable(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        context: &TermPreparationContext,
+        mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
+    ) -> Result<TermPreparationModuleOutcome, AppError>;
+    async fn commit(
+        self: Box<Self>,
+        tx: school_tenancy::ObservedTransaction,
+        changed: bool,
+    ) -> Result<(), AppError>;
+}
 
 use async_trait::async_trait;
 use chrono::NaiveDate;
@@ -18,6 +49,14 @@ pub enum RegistrationOutcome {
 
 #[async_trait]
 pub trait ExternalLifecyclePort: Send + Sync {
+    async fn admit_preparation(
+        &self,
+        context: &PreparationCommandContext,
+        year: Uuid,
+        term: Uuid,
+        include_timetable: bool,
+    ) -> Result<Box<dyn PreparationAdmission>, AppError>;
+
     async fn require_reopen_allowed(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

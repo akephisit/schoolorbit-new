@@ -4,8 +4,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-#[cfg(feature = "api-docs")]
-use school_academic_timetable::models::timetable_source::TimetableDraftSourceConflict;
 use uuid::Uuid;
 
 use crate::state::AcademicTimetableHttpState;
@@ -21,7 +19,7 @@ use school_auth_http::origin::extract_subdomain_from_request;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]
-use school_http::{ApiErrorResponse, ApiErrorResponseWithOptionalData, EmptyData};
+use school_http::{ApiErrorResponse, EmptyData};
 use school_permissions::registry::codes;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -206,7 +204,7 @@ pub async fn from_current(
         (status = 400, description = "Template cannot be applied", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable template manage permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Timetable conflict", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Timetable conflict", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -222,7 +220,7 @@ pub async fn apply_template(
         .actor
         .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let academic_term_id = payload.academic_term_id;
-    let timetable_version_id = payload.timetable_version_id;
+    let timetable_id = payload.timetable_id;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let result = timetable_template_service::apply_template(
         &context.tenant.pool,
@@ -236,7 +234,7 @@ pub async fn apply_template(
         &headers,
         context.actor.user_id,
         academic_term_id,
-        timetable_version_id,
+        timetable_id,
         result.entry_ids.first().copied(),
         result.applied as i64,
     );
@@ -254,7 +252,7 @@ pub async fn apply_template(
         (status = 400, description = "Invalid clear request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Timetable manage permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Timetable conflict or obsolete opening source", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Timetable conflict or obsolete opening source", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -269,7 +267,7 @@ pub async fn clear_timetable(
         .actor
         .require_permission(codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     let academic_term_id = payload.academic_term_id;
-    let timetable_version_id = payload.timetable_version_id;
+    let timetable_id = payload.timetable_id;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let entries =
         timetable_template_service::clear_timetable(&context.tenant.pool, &mutation, payload)
@@ -284,7 +282,7 @@ pub async fn clear_timetable(
         &headers,
         context.actor.user_id,
         academic_term_id,
-        timetable_version_id,
+        timetable_id,
         None,
         revision,
     );
@@ -296,7 +294,7 @@ fn broadcast_reload(
     headers: &HeaderMap,
     user_id: Uuid,
     academic_term_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     block_id: Option<Uuid>,
     revision: i64,
 ) {
@@ -308,7 +306,7 @@ fn broadcast_reload(
         TimetableEvent::TimetableChanged {
             user_id,
             academic_term_id,
-            timetable_version_id,
+            timetable_id,
             block_id,
             revision,
         },

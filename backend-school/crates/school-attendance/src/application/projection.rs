@@ -141,51 +141,55 @@ async fn project(
     .collect()
     };
     // No ordinary virtual round exists without an explicitly counted calendar day.
-    let (placements, rooms, spans) = if overrides.values().any(|counted| *counted) {
+    let (placements, rooms, blocks) = if overrides.values().any(|counted| *counted) {
         let placements = if let Some((student, _)) = history_scope {
             core::placement_spans_for_student(connection, term, start, end, student).await?
         } else {
             core::placement_spans(connection, term, start, end).await?
         };
         let rooms = core::rooms_on_connection(connection, term).await?;
-        let spans = school_academic_timetable::services::attendance::published_spans(
-            connection, term, start, end,
-        )
-        .await?;
-        (placements, rooms, spans)
+        let blocks = if start <= now.date_naive() && end >= now.date_naive() {
+            school_academic_timetable::services::attendance::current_pattern_on_connection(
+                connection, term,
+            )
+            .await?
+        } else {
+            Vec::new()
+        };
+        (placements, rooms, blocks)
     } else {
         (Vec::new(), Vec::new(), Vec::new())
     };
-    let mut source_groups = BTreeMap::<Uuid, HashSet<Uuid>>::new();
-    for span in &spans {
-        let groups = source_groups.entry(span.delivery_version_id).or_default();
-        groups.extend(
-            span.blocks
-                .iter()
-                .flat_map(|block| block.groups.iter())
-                .filter(|group| group.is_active)
-                .map(|group| group.learning_group_id),
-        );
+    let group_ids = blocks
+        .iter()
+        .flat_map(|block| &block.groups)
+        .filter(|group| group.is_active)
+        .map(|group| group.learning_group_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let memberships = if let Some((student, _)) = history_scope {
+        school_academic_delivery::services::attendance_roster::membership_spans_for_student(
+            connection, &group_ids, start, end, student,
+        )
+        .await?
+    } else {
+        school_academic_delivery::services::attendance_roster::membership_spans(
+            connection, &group_ids, start, end,
+        )
+        .await?
+    };
+    let mut groups = HashMap::<Uuid, Vec<_>>::new();
+    for membership in memberships {
+        groups
+            .entry(membership.learning_group_id)
+            .or_default()
+            .push(membership);
     }
-    let mut groups = HashMap::<(Uuid, Uuid), Vec<_>>::new();
-    for (version, group_ids) in source_groups {
-        let group_ids = group_ids.into_iter().collect::<Vec<_>>();
-        let memberships =
-            school_academic_delivery::services::attendance_roster::pinned_membership_spans(
-                connection,
-                version,
-                &group_ids,
-                start,
-                end,
-                history_scope.map(|(student, _)| student),
-            )
-            .await?;
-        for membership in memberships {
-            groups
-                .entry((version, membership.learning_group_id))
-                .or_default()
-                .push(membership);
-        }
+    let saved_sources = lesson_source_facts_on_connection(connection, term, start, end).await?;
+    let mut sources_by_date = HashMap::<NaiveDate, Vec<LessonSourceFact>>::new();
+    for fact in saved_sources {
+        sources_by_date.entry(fact.date).or_default().push(fact);
     }
     let mut rows = BTreeMap::new();
     let mut history = Vec::new();
@@ -236,23 +240,29 @@ async fn project(
                     }
                 }
             }
-            if let Some(span) = spans
-                .iter()
-                .find(|v| v.effective_from <= date && date <= v.effective_until)
-            {
+            if date == now.date_naive() {
+                let sources = lesson_sources_for_date(
+                    &blocks,
+                    sources_by_date.get(&date).map_or(&[], Vec::as_slice),
+                    date,
+                );
                 let day =
                     school_academic_timetable::services::daily_teaching::day_code_from_date(date);
-                for block in span.blocks.iter().filter(|b| {
+                for block in blocks.iter().filter(|b| {
                     b.day_of_week == day
                         && b.block_kind != TimetableBlockKind::Structural
-                        && (date < now.date_naive() || b.start_time <= now.time())
+                        && b.start_time <= now.time()
                 }) {
                     for group in block.groups.iter().filter(|g| g.is_active) {
-                        let source = format!(
-                            "{}:{}",
-                            group.learning_group_id, block.bell_schedule_period_id
+                        let Some(source) = sources.get(&group.id) else {
+                            continue;
+                        };
+                        let id = lesson_occurrence_id(
+                            term,
+                            date,
+                            source,
+                            sources_by_date.get(&date).map_or(&[], Vec::as_slice),
                         );
-                        let id = Uuid::new_v5(&term, format!("{date}:lesson:{source}").as_bytes());
                         if existing.contains(&id) {
                             continue;
                         }
@@ -271,9 +281,7 @@ async fn project(
                             .learning_offering_id
                             .map(|id| id.to_string())
                             .unwrap_or_default();
-                        if let Some(members) =
-                            groups.get(&(span.delivery_version_id, group.learning_group_id))
-                        {
+                        if let Some(members) = groups.get(&group.learning_group_id) {
                             for member in members.iter().filter(|m| {
                                 m.joined_at <= date && m.left_at.is_none_or(|d| d >= date)
                             }) {

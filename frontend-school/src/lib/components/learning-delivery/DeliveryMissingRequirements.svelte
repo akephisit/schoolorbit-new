@@ -6,7 +6,7 @@
 		type DeliveryAlignmentFacts
 	} from '#lib/academic/homeroom-delivery.js';
 	import type { CurriculumPreparationFocus } from '#lib/academic/synchronized-activity-delivery.js';
-	import { deliveryChangePage } from '#lib/academic/learning-delivery-change-list.js';
+	import { deliveryChangePage } from '#lib/academic/delivery-pagination.js';
 	import type { DeliveryOverviewState } from '#lib/navigation/learning-delivery.js';
 	import { PageSkeleton } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -64,7 +64,7 @@
 	<div class="space-y-2 border-b bg-muted/20 p-4">
 		<h2 class="font-semibold">ตามหลักสูตรที่ยังไม่เปิดสอน</h2>
 		<p class="text-sm text-muted-foreground">
-			ข้อกำหนดที่ยังขาดของทุกห้องในรุ่นที่เลือก · รวมทุกกลุ่มสาระ
+			ข้อกำหนดที่ยังขาดของทุกห้องในภาคเรียนที่เลือก · รวมทุกกลุ่มสาระ
 			ตัวกรองกลุ่มสาระไม่ใช้กับรายการส่วนนี้ ใช้ประเภทและคำค้นเดียวกับรายการเปิดสอน
 		</p>
 		{#if showFilters}<div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -142,7 +142,7 @@
 									</p></Table.Cell
 								>
 								<Table.Cell>
-									{#if canManage && workspace.deliveryVersionId && !error}<Button
+									{#if canManage && !error}<Button
 											type="button"
 											size="sm"
 											variant="outline"
@@ -150,9 +150,7 @@
 											onclick={() => onPrepare(item)}
 											><Plus class="size-3.5" />เพิ่มการจัดการเรียนการสอน</Button
 										>
-									{:else if canManage && !workspace.deliveryVersionId}<span
-											class="text-xs text-muted-foreground">สร้างรุ่นเปิดสอนก่อนเพิ่มรายการ</span
-										>{/if}
+									{/if}
 								</Table.Cell>
 							</Table.Row>{/each}</Table.Body
 					>
@@ -185,6 +183,6 @@
 						: 'ไม่พบข้อกำหนดที่ยังขาดในข้อมูลที่ตรวจได้'}
 			</p>{/if}
 	{:else if !loading && !error}<p class="p-4 text-sm text-muted-foreground">
-			ยังไม่มีข้อมูลข้อกำหนดที่ตรงกับปี ภาคเรียน และรุ่นที่เลือก
+			ยังไม่มีข้อมูลข้อกำหนดที่ตรงกับปีและภาคเรียนที่เลือก
 		</p>{/if}
 </section>

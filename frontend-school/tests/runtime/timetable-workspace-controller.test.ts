@@ -109,12 +109,28 @@ test('same-workspace snapshot transfers only selection values to a new interacti
 	assert.equal(denied.selectedOwnerId, null);
 });
 
-test('a new workspace version resets remembered choices and never uses an owner from another view', () => {
+test('a distinct current term resets remembered choices and never uses an owner from another view', () => {
 	const controller = createTimetableWorkspaceController(workspace());
 	controller.setView('teacher');
 	controller.selectOwner(timetableIds.teacherB);
 	const next = workspace();
-	next.version = { ...next.version, id: timetableIds.publishedVersion };
+	next.timetable = {
+		...next.timetable,
+		id: '51000000-0000-4000-8000-000000000999',
+		academicTermId: '21000000-0000-4000-8000-000000000999'
+	};
+	next.learningGroups = next.learningGroups.map((group, index) => ({
+		...group,
+		id: `71000000-0000-4000-8000-${String(index + 901).padStart(12, '0')}`,
+		learningOfferingId: `61000000-0000-4000-8000-${String(index + 901).padStart(12, '0')}`
+	}));
+	next.ordinaryDemands = next.ordinaryDemands.map((demand, index) => ({
+		...demand,
+		learningGroupId: next.learningGroups[index].id,
+		learningOfferingId: next.learningGroups[index].learningOfferingId
+	}));
+	assert.notEqual(next.timetable.id, controller.workspace.timetable.id);
+	assert.notEqual(next.timetable.academicTermId, controller.workspace.timetable.academicTermId);
 	controller.setWorkspace(next);
 	assert.equal(controller.selectedOwnerId, timetableIds.teacherA);
 	controller.setView('homeroom');

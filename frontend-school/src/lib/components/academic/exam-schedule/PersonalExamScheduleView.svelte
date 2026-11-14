@@ -83,7 +83,7 @@
 </script>
 
 {#if rounds.length === 0}
-	<PageState title="ยังไม่มีตารางสอบ" description="ไม่มีตารางสอบที่เผยแพร่ในขณะนี้" />
+	<PageState title="ยังไม่มีตารางสอบ" description="ไม่มีตารางสอบปัจจุบันในภาคเรียนนี้" />
 {:else}
 	<div class="space-y-4">
 		{#each rounds as round (round.roundId)}
@@ -94,10 +94,7 @@
 				</div>
 
 				{#if round.sessions.length === 0}
-					<PageState
-						title="ยังไม่มีรายการสอบ"
-						description="ไม่มีตารางสอบที่เผยแพร่สำหรับรอบสอบนี้"
-					/>
+					<PageState title="ยังไม่มีรายการสอบ" description="ไม่มีคาบสอบปัจจุบันสำหรับรอบนี้" />
 				{:else}
 					<div class="space-y-3">
 						{#each groupSessionsByDate(round.sessions) as dateGroup (dateGroup.examDate)}

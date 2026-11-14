@@ -21,12 +21,12 @@ use school_http::{ApiResponse, HttpError};
     post, path="/api/academic/offerings/{id}/groups/bulk-setup/preview", operation_id="previewBulkLearningGroupSetup", tag="academic",
     params(("id"=Uuid,Path,description="Learning offering ID")), request_body=BulkGroupSetupRequest,
     responses(
-        (status=200,description="Read-only preview of the explicitly selected draft groups",body=ApiResponse<BulkGroupSetupPreview>),
+        (status=200,description="Read-only preview of the explicitly selected current groups",body=ApiResponse<BulkGroupSetupPreview>),
         (status=400,description="Invalid target scope or configuration",body=ApiErrorResponse),
         (status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Offering management denied",body=ApiErrorResponse),
-        (status=404,description="Offering, version or group missing",body=ApiErrorResponse),
-        (status=409,description="Stale draft or closed academic context",body=ApiErrorResponse)
+        (status=404,description="Offering or group missing",body=ApiErrorResponse),
+        (status=409,description="Stale revision or closed academic context",body=ApiErrorResponse)
     )
 ))]
 pub async fn preview_bulk_group_setup(
@@ -55,8 +55,8 @@ pub async fn preview_bulk_group_setup(
         (status=400,description="Invalid target scope or configuration",body=ApiErrorResponse),
         (status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Offering management denied",body=ApiErrorResponse),
-        (status=404,description="Offering, version or group missing",body=ApiErrorResponse),
-        (status=409,description="Stale draft, blocked target or no changes; no group saved",body=ApiErrorResponse)
+        (status=404,description="Offering or group missing",body=ApiErrorResponse),
+        (status=409,description="Stale revision, blocked target or no changes; no group saved",body=ApiErrorResponse)
     )
 ))]
 pub async fn apply_bulk_group_setup(
@@ -73,8 +73,14 @@ pub async fn apply_bulk_group_setup(
         OfferingAction::Manage,
     )
     .await?;
-    let outcome =
-        bulk_group_setup::apply(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    let outcome = bulk_group_setup::apply(
+        state.assessment_current,
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
     state.websocket_manager.broadcast_learning_delivery_changed(
         session.tenant.subdomain.clone(),
         context.actor.user_id,

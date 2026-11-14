@@ -13,6 +13,7 @@ api-docs = [
 ]
 
 [dependencies]
+async-trait = { workspace = true }
 axum = { workspace = true }
 school-academic-core = { workspace = true }
 school-academic-delivery = { workspace = true }
@@ -21,6 +22,7 @@ school-auth = { workspace = true }
 school-auth-http = { workspace = true }
 school-authorization = { workspace = true }
 school-http = { workspace = true }
+school-errors = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

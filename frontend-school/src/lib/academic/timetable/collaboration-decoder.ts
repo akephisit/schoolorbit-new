@@ -1,4 +1,4 @@
-import type { DraftEventEnvelope } from '../../api/timetable.js';
+import type { TimetableEventEnvelope } from '../../api/timetable.js';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const dayPattern = /^(MON|TUE|WED|THU|FRI|SAT|SUN)$/u;
@@ -242,7 +242,7 @@ function block(value: unknown) {
 				'academicYearId',
 				'bellScheduleId',
 				'bellSchedulePeriodId',
-				'timetableVersionId'
+				'timetableId'
 			],
 			['periodName', 'startTime', 'endTime'],
 			['rowVersion']
@@ -295,24 +295,25 @@ function block(value: unknown) {
 		)
 	);
 }
-function version(value: unknown) {
+function timetable(value: unknown) {
 	return (
 		fields(
 			value,
-			['id', 'academicTermId', 'academicYearId', 'bellScheduleId', 'deliveryVersionId'],
+			['id', 'academicTermId', 'academicYearId', 'bellScheduleId'],
 			[],
 			['rowVersion']
 		) &&
-		['draft', 'published', 'cancelled'].includes(String(value.status)) &&
-		(value.createdBy === null || uuid(value.createdBy)) &&
-		optional(value.sourceVersionId, uuid) &&
-		optional(value.publishedBy, uuid) &&
+		keys(value, [
+			'id',
+			'academicTermId',
+			'academicYearId',
+			'bellScheduleId',
+			'rowVersion',
+			'createdAt',
+			'updatedAt'
+		]) &&
 		instant(value.createdAt) &&
-		instant(value.updatedAt) &&
-		optional(value.effectiveFrom, text) &&
-		optional(value.effectiveUntil, text) &&
-		optional(value.publishedAt, instant) &&
-		array(value.targets, (entry) => object(entry))
+		instant(value.updatedAt)
 	);
 }
 function uniqueIds(value: unknown): boolean {
@@ -384,10 +385,10 @@ function lookupChanges(value: unknown) {
 function workspace(value: unknown) {
 	return (
 		object(value) &&
-		version(value.version) &&
-		uuid(value.latestDeliveryVersionId) &&
+		timetable(value.timetable) &&
+		integer(value.deliveryRowVersion) &&
 		summary(value.summary) &&
-		optional(value.totalDraftBlockCount, integer) &&
+		optional(value.totalBlockCount, integer) &&
 		array(value.blocks, block) &&
 		array(value.ordinaryDemands, ordinaryDemand) &&
 		array(value.synchronizedDemands, synchronizedDemand) &&
@@ -402,8 +403,9 @@ function workspace(value: unknown) {
 				fields(
 					group,
 					['id', 'learningOfferingId'],
-					['code', 'name', 'status', 'rosterStatus', 'offeringKind', 'offeringName']
+					['code', 'name', 'offeringKind', 'offeringName']
 				) &&
+				typeof group.registrationOpen === 'boolean' &&
 				optional(group.offeringCode, text) &&
 				array(group.homeroomIds, uuid) &&
 				array(group.preferredRoomIds, uuid) &&
@@ -412,24 +414,24 @@ function workspace(value: unknown) {
 		uniqueRows(value.offeringSubjectGroups, offeringSubjectGroup, 'learningOfferingId')
 	);
 }
-function envelope(value: unknown): value is DraftEventEnvelope {
+function envelope(value: unknown): value is TimetableEventEnvelope {
 	if (!fields(value, ['epoch'], ['type'], ['seq']) || !object(value.payload)) return false;
 	const payload = value.payload;
 	switch (value.type) {
-		case 'DraftStateSync':
+		case 'TimetableStateSync':
 			return (
 				uuid(payload.connectionId) &&
 				workspace(payload.workspace) &&
 				array(payload.users, participant, 10_000) &&
 				array(payload.reservations, reservation, 10_000)
 			);
-		case 'DraftPresenceChanged':
+		case 'TimetablePresenceChanged':
 			return participant(payload);
-		case 'DraftPresenceLeft':
+		case 'TimetablePresenceLeft':
 			return uuid(payload.connectionId);
-		case 'DraftReservationsChanged':
+		case 'TimetableReservationsChanged':
 			return array(payload.reservations, reservation, 10_000);
-		case 'DraftAvailability':
+		case 'TimetableAvailability':
 			return (
 				source(payload.source) &&
 				optional(payload.context, context) &&
@@ -450,7 +452,7 @@ function envelope(value: unknown): value is DraftEventEnvelope {
 					100_000
 				)
 			);
-		case 'DraftCommandResult':
+		case 'TimetableCommandResult':
 			return (
 				uuid(payload.requestId) &&
 				['claim', 'target', 'renew', 'release'].includes(String(payload.command)) &&
@@ -462,9 +464,9 @@ function envelope(value: unknown): value is DraftEventEnvelope {
 				optional(payload.leaseToken, uuid) &&
 				optional(payload.expiresAt, instant)
 			);
-		case 'DraftPatched':
+		case 'TimetablePatched':
 			return (
-				uuid(payload.timetableVersionId) &&
+				uuid(payload.timetableId) &&
 				uuid(payload.mutationId) &&
 				optional(payload.originConnectionId, uuid) &&
 				array(payload.upsertedBlocks, block) &&
@@ -473,11 +475,11 @@ function envelope(value: unknown): value is DraftEventEnvelope {
 				array(payload.synchronizedDemands, synchronizedDemand) &&
 				summary(payload.summary) &&
 				array(payload.sourceIssues, sourceIssue) &&
-				optional(payload.totalDraftBlockCount, integer) &&
-				optional(payload.version, version) &&
+				optional(payload.totalBlockCount, integer) &&
+				optional(payload.timetable, timetable) &&
 				optional(payload.lookupChanges, lookupChanges)
 			);
-		case 'DraftReconcileRequired':
+		case 'TimetableReconcileRequired':
 			return typeof payload.reason === 'string' && payload.reason.length > 0;
 		default:
 			return false;
@@ -485,7 +487,7 @@ function envelope(value: unknown): value is DraftEventEnvelope {
 }
 
 /** Decode into the generated contract after checking all identities used by DOM and mutations. */
-export function decodeDraftEvent(data: unknown): DraftEventEnvelope | null {
+export function decodeDraftEvent(data: unknown): TimetableEventEnvelope | null {
 	if (typeof data !== 'string' || !withinEventBudget(data)) return null;
 	try {
 		const parsed: unknown = JSON.parse(data);

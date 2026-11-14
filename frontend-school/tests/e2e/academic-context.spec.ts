@@ -1,4 +1,5 @@
 import { mockYearManagement, openRoster, id as yearManagementId } from './fixtures/year-management';
+import type { HomeroomDeliveryWorkspace } from '../../src/lib/api/learning-delivery';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
@@ -144,10 +145,6 @@ async function mockAcademicContextApis(
 				return;
 			}
 
-			if (url.pathname === '/api/academic/delivery-versions') {
-				await fulfillJson(route, []);
-				return;
-			}
 			if (
 				[
 					'/api/supervision/cycles',
@@ -161,19 +158,12 @@ async function mockAcademicContextApis(
 
 			if (url.pathname === '/api/academic/delivery/homerooms') {
 				await fulfillJson(route, {
-					academicYearId: url.searchParams.get('academicYearId'),
-					academicTermId: url.searchParams.get('academicTermId'),
-					timetableVersionId: null,
-					timetableVersionStatus: null,
-					timetableVersionEffectiveFrom: null,
+					academicYearId: url.searchParams.get('academicYearId')!,
+					academicTermId: url.searchParams.get('academicTermId')!,
+					rowVersion: 1,
 					homerooms: [],
 					unlinked: []
-				});
-				return;
-			}
-
-			if (url.pathname === '/api/academic/term-change-sets') {
-				await fulfillJson(route, []);
+				} satisfies HomeroomDeliveryWorkspace);
 				return;
 			}
 

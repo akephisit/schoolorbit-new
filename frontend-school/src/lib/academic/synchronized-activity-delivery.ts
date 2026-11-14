@@ -2,8 +2,7 @@ import type {
 	CurriculumPreparationChoice,
 	CurriculumPreparationProposal,
 	HomeroomDeliveryItem,
-	HomeroomDeliveryWorkspace,
-	DeliveryVersionSummary
+	HomeroomDeliveryWorkspace
 } from '#lib/api/learning-delivery.js';
 
 export type CurriculumPreparationFocus = Pick<
@@ -87,23 +86,4 @@ export function visibleCurriculumPreparationProposals(
 	focus: CurriculumPreparationFocus | null
 ): CurriculumPreparationProposal[] {
 	return focus ? proposals.filter((proposal) => matchesFocus(proposal, focus)) : proposals;
-}
-
-/** Only drafts based on the latest published source can receive this intent. */
-export function deliveryPreparationDraftCandidates(versions: DeliveryVersionSummary[]) {
-	const published = versions
-		.filter((version) => version.status === 'published')
-		.sort(
-			(left, right) =>
-				(right.effectiveFrom ?? '').localeCompare(left.effectiveFrom ?? '') ||
-				right.id.localeCompare(left.id)
-		)[0];
-	return {
-		source: published ?? null,
-		drafts: published
-			? versions.filter(
-					(version) => version.status === 'draft' && version.sourceVersionId === published.id
-				)
-			: []
-	};
 }

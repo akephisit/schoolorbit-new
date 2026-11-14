@@ -4,15 +4,12 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::models::{
-    AddDatedRosterMembershipRequest, DatedRosterMembership, LearningOfferingStatus,
-    MembershipStatus, RemoveDatedRosterMembershipRequest, RosterStatus,
+    AddDatedRosterMembershipRequest, DatedRosterMembership, MembershipStatus,
+    RemoveDatedRosterMembershipRequest,
 };
 use school_errors::AppError;
 
-use super::{
-    append_audit, invalidate_group_academic_confirmations, require_writable_term,
-    validate_row_version,
-};
+use super::{invalidate_group_academic_confirmations, require_writable_term, validate_row_version};
 
 #[derive(Debug, FromRow)]
 struct MembershipRow {
@@ -33,13 +30,9 @@ struct MembershipRow {
 #[derive(Debug, FromRow)]
 struct GroupContext {
     id: Uuid,
-    learning_offering_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
-    status: LearningOfferingStatus,
-    roster_status: RosterStatus,
     row_version: i64,
-    offering_status: LearningOfferingStatus,
 }
 
 const MEMBERSHIP_SELECT: &str = r#"
@@ -119,7 +112,7 @@ pub async fn list_memberships_on_connection(
 
 pub async fn add_membership(
     pool: &PgPool,
-    actor_user_id: Uuid,
+    _actor_user_id: Uuid,
     group_id: Uuid,
     request: AddDatedRosterMembershipRequest,
 ) -> Result<DatedRosterMembership, AppError> {
@@ -132,7 +125,7 @@ pub async fn add_membership(
     let academic_term_id = find_group_term(&mut transaction, group_id).await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
     let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
-    require_published_roster(&group, request.group_row_version)?;
+    require_current_roster(&group, request.group_row_version)?;
     super::roster_tracking::require_manual(&mut transaction, group_id).await?;
 
     let (student_id, student_year_status): (Uuid, String) = DbSession::new(&mut *transaction)
@@ -155,24 +148,6 @@ pub async fn add_membership(
             "สถานะนักเรียนในปีการศึกษานี้ไม่พร้อมเข้ากลุ่มเรียน".to_string(),
         ));
     }
-    validate_membership_date(&mut transaction, &group, request.joined_at).await?;
-    let constraint = super::audiences::dated_constraint_on_connection(
-        &mut transaction,
-        group.learning_offering_id,
-        request.joined_at,
-    )
-    .await?;
-    // Managers may deliberately add outside the pupil's own room, but only to
-    // a group retained by the published source effective on the joining date.
-    if constraint
-        .as_ref()
-        .is_some_and(|scope| !scope.allows_group(group_id))
-    {
-        return Err(AppError::Forbidden(
-            "กลุ่มเรียนไม่ได้เปิดรับนักเรียนในวันที่เลือก".into(),
-        ));
-    }
-
     let overlaps: bool = DbSession::new(&mut *transaction)
         .scalar(
             "academic_delivery.services.roster_memberships.add_membership",
@@ -226,28 +201,12 @@ pub async fn add_membership(
         "academic_delivery.services.roster_memberships.add_membership.completion",
     )
     .await?;
-    append_audit(
-        &mut completion,
-        "learning_group.membership_added",
-        "learning_group_student",
-        membership_id,
-        group.academic_year_id,
-        group.academic_term_id,
-        actor_user_id,
-        serde_json::json!({
-            "learningGroupId": group.id,
-            "learningOfferingId": group.learning_offering_id,
-            "joinedAt": request.joined_at,
-            "groupRowVersion": request.group_row_version,
-        }),
-    )
-    .await?;
     get_membership(&mut completion, membership_id).await
 }
 
 pub async fn remove_membership(
     pool: &PgPool,
-    actor_user_id: Uuid,
+    _actor_user_id: Uuid,
     group_id: Uuid,
     membership_id: Uuid,
     request: RemoveDatedRosterMembershipRequest,
@@ -262,9 +221,8 @@ pub async fn remove_membership(
     let academic_term_id = find_group_term(&mut transaction, group_id).await?;
     require_writable_term(&mut transaction, academic_term_id, true).await?;
     let group = lock_group_context(&mut transaction, group_id, academic_term_id).await?;
-    require_published_roster(&group, request.group_row_version)?;
+    require_current_roster(&group, request.group_row_version)?;
     super::roster_tracking::require_manual(&mut transaction, group_id).await?;
-    validate_membership_date(&mut transaction, &group, request.left_at).await?;
 
     let (status, joined_at, row_version): (MembershipStatus, NaiveDate, i64) =
         DbSession::new(&mut *transaction)
@@ -317,23 +275,6 @@ pub async fn remove_membership(
         "academic_delivery.services.roster_memberships.remove_membership.completion",
     )
     .await?;
-    append_audit(
-        &mut completion,
-        "learning_group.membership_ended",
-        "learning_group_student",
-        membership_id,
-        group.academic_year_id,
-        group.academic_term_id,
-        actor_user_id,
-        serde_json::json!({
-            "learningGroupId": group.id,
-            "learningOfferingId": group.learning_offering_id,
-            "leftAtInclusive": request.left_at,
-            "groupRowVersion": request.group_row_version,
-            "membershipRowVersion": request.membership_row_version,
-        }),
-    )
-    .await?;
     get_membership(&mut completion, membership_id).await
 }
 
@@ -379,8 +320,7 @@ async fn lock_group_context(
             "academic_delivery.services.roster_memberships.lock_group_context",
             r#"SELECT learning_group.id, learning_group.learning_offering_id,
                   learning_group.academic_term_id, learning_group.academic_year_id,
-                  learning_group.status, learning_group.roster_status,
-                  learning_group.row_version, offering.status AS offering_status
+                  learning_group.row_version
            FROM learning_groups learning_group
            JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
            JOIN academic_years year ON year.id = learning_group.academic_year_id
@@ -396,39 +336,9 @@ async fn lock_group_context(
         .ok_or_else(|| AppError::NotFound("ไม่พบกลุ่มเรียน".to_string()))
 }
 
-fn require_published_roster(group: &GroupContext, row_version: i64) -> Result<(), AppError> {
+fn require_current_roster(group: &GroupContext, row_version: i64) -> Result<(), AppError> {
     if group.row_version != row_version {
         return Err(AppError::Conflict("กลุ่มเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
-    }
-    if group.status != LearningOfferingStatus::Published
-        || group.offering_status != LearningOfferingStatus::Published
-        || group.roster_status != RosterStatus::Published
-    {
-        return Err(AppError::Conflict(
-            "การเพิ่มหรือสิ้นสุดตามวันที่ใช้ได้หลังเผยแพร่รายการ กลุ่ม และ roster แล้วเท่านั้น".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-async fn validate_membership_date(
-    tx: &mut Transaction<'_, Postgres>,
-    group: &GroupContext,
-    date: NaiveDate,
-) -> Result<(), AppError> {
-    let available: bool = DbSession::new(&mut **tx)
-        .scalar(
-            "academic_delivery.services.roster_memberships.validate_membership_date",
-            "SELECT academic_delivery_offering_available($1,$2)",
-        )
-        .bind(group.learning_offering_id)
-        .bind(date)
-        .fetch_one()
-        .await?;
-    if !available {
-        return Err(AppError::ValidationError(
-            "วันที่เปลี่ยนรายชื่อต้องอยู่ในช่วงที่แผนเปิดสอนมีผล".into(),
-        ));
     }
     Ok(())
 }

@@ -1,7 +1,7 @@
 use school_academic_assessment::assessment::services;
 use school_test_db::cutover_test_support::{
-    apply_migrations_through, record_passing_phase_a_reconciliation_marker,
-    seed_academic_cutover_fixture, CutoverFixture,
+    CutoverFixture, apply_migrations_through, record_passing_phase_a_reconciliation_marker,
+    seed_academic_cutover_fixture,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -85,10 +85,15 @@ async fn offering(
             (start, start + chrono::Duration::days(20))
         }
     };
-    sqlx::query(
+    if matches!(schema, FixtureSchema::Current) {
+        sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,owning_organization_unit_id,weekly_period_target) SELECT $1,$2,academic_year_id,'course','COORD-'||$3::text,'Coordinator fixture',owning_organization_unit_id,1 FROM learning_offerings WHERE id=$4")
+            .bind(id).bind(term).bind(number).bind(source).execute(&mut *tx).await.unwrap();
+    } else {
+        sqlx::query(
         "INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,published_at,owning_organization_unit_id,starts_on)
          SELECT $1,$2,academic_year_id,'course','COORD-'||$3::text,'Coordinator fixture','draft',NULL,owning_organization_unit_id,$4 FROM learning_offerings WHERE id=$5",
     ).bind(id).bind(term).bind(number).bind(start).bind(source).execute(&mut *tx).await.unwrap();
+    }
     sqlx::query(
         "INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score)
          SELECT $1,$2,academic_year_id,subject_version_id,subject_id,credit,hours,assessment_total_score FROM course_offering_details WHERE learning_offering_id=$3",
@@ -96,16 +101,24 @@ async fn offering(
     let mut groups = Vec::new();
     for index in 0..2 {
         let group = Uuid::now_v7();
-        sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status)
+        if matches!(schema, FixtureSchema::Current) {
+            sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,registration_open) SELECT $1,id,academic_term_id,academic_year_id,$2,$2,false FROM learning_offerings WHERE id=$3").bind(group).bind(format!("COORD-{number}-{index}")).bind(id).execute(&mut *tx).await.unwrap();
+        } else {
+            sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status)
             SELECT $1,id,academic_term_id,academic_year_id,$2,$2,'draft','draft' FROM learning_offerings WHERE id=$3")
             .bind(group).bind(format!("COORD-{number}-{index}")).bind(id).execute(&mut *tx).await.unwrap();
+        }
         groups.push(group);
     }
-    sqlx::query("UPDATE learning_offerings SET status='published',published_at=now() WHERE id=$1")
+    if !matches!(schema, FixtureSchema::Current) {
+        sqlx::query(
+            "UPDATE learning_offerings SET status='published',published_at=now() WHERE id=$1",
+        )
         .bind(id)
         .execute(&mut *tx)
         .await
         .unwrap();
+    }
     tx.commit().await.unwrap();
     (id, groups, start, end)
 }
@@ -117,26 +130,14 @@ async fn teacher(
     start: chrono::NaiveDate,
     end: Option<chrono::NaiveDate>,
 ) {
+    let historic:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='learning_group_teachers' AND column_name='starts_on')").fetch_one(pool).await.unwrap();
     for group in groups {
-        sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,ends_on)
-            SELECT uuidv7(),id,academic_term_id,academic_year_id,$2,'primary',$3,$4 FROM learning_groups WHERE id=$1")
-            .bind(group).bind(user).bind(start).bind(end).execute(pool).await.unwrap();
+        if historic {
+            sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,ends_on) SELECT uuidv7(),id,academic_term_id,academic_year_id,$2,'primary',$3,$4 FROM learning_groups WHERE id=$1").bind(group).bind(user).bind(start).bind(end).execute(pool).await.unwrap();
+        } else {
+            sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role) SELECT uuidv7(),id,academic_term_id,academic_year_id,$2,'primary' FROM learning_groups WHERE id=$1").bind(group).bind(user).execute(pool).await.unwrap();
+        }
     }
-}
-
-async fn publish_allocation(pool: &PgPool, offering: Uuid, date: chrono::NaiveDate) {
-    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id AND status='published'),uuidv7(),academic_term_id,academic_year_id,$2,'published',academic_capture_delivery_snapshot(academic_term_id,$2,jsonb_build_array(jsonb_build_object('id',id,'weekly_period_target',1))),$3,now(),uuidv7(),repeat('a',64) FROM learning_offerings WHERE id=$1")
-        .bind(offering).bind(date).bind(PRIMARY).execute(pool).await.unwrap();
-}
-
-async fn publish_snapshot(
-    pool: &PgPool,
-    offering: Uuid,
-    date: chrono::NaiveDate,
-    graph: &serde_json::Value,
-) {
-    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id AND status='published'),uuidv7(),academic_term_id,academic_year_id,$2,'published',$3,$4,now(),uuidv7(),repeat('c',64) FROM learning_offerings WHERE id=$1")
-        .bind(offering).bind(date).bind(graph).bind(PRIMARY).execute(pool).await.unwrap();
 }
 
 async fn existing_plan(pool: &PgPool, offering: Uuid, coordinator: Option<Uuid>) -> Uuid {
@@ -208,9 +209,13 @@ async fn coordinator_cases(
             teacher(pool, &groups, OTHER, start, None).await;
         }
         if scenario == "closed_group_ignored" {
-            sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status)
+            if matches!(schema, FixtureSchema::Current) {
+                sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,registration_open) SELECT uuidv7(),id,academic_term_id,academic_year_id,'EMPTY-COORD','Current empty group',false FROM learning_offerings WHERE id=$1").bind(id).execute(pool).await.unwrap();
+            } else {
+                sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status)
                 SELECT uuidv7(),id,academic_term_id,academic_year_id,'CLOSED-COORD','Ignored closed group','closed','closed' FROM learning_offerings WHERE id=$1")
                 .bind(id).execute(pool).await.unwrap();
+            }
         }
         let preserved_owner = if scenario == "existing_invalid_owner" {
             Some(OTHER)
@@ -220,14 +225,15 @@ async fn coordinator_cases(
         if matches!(scenario, "existing_null" | "existing_invalid_owner") {
             existing_plan(pool, id, preserved_owner).await;
         }
-        if matches!(schema, FixtureSchema::Current) {
-            let allocation_date = match scenario {
-                "term_start_clamp" => start,
-                "term_end_clamp" => end,
-                _ => start + chrono::Duration::days(10),
-            };
-            publish_allocation(pool, id, allocation_date).await;
-        }
+        let expected = if matches!(schema, FixtureSchema::Current) {
+            match scenario {
+                "expired" => Some(PRIMARY),
+                "closed_group_ignored" => None,
+                _ => expected,
+            }
+        } else {
+            expected
+        };
         cases.push((id, scenario, expected, preserved_owner));
     }
     cases
@@ -256,32 +262,28 @@ async fn assessment_publication_146_migration_preserves_initialized_owners_and_e
     apply_migrations_through(&pool, 146).await.unwrap();
     apply_migrations_through(&pool, 146).await.unwrap();
     let initialized = assessment_facts(&pool).await;
-    school_test_db::run_test_migrations(&pool).await;
-    assert_eq!(assessment_facts(&pool).await,initialized,"context147/148 preserves the applied146 owner initialization, newly created plans/phases and independent control flags exactly");
-    school_test_db::run_test_migrations(&pool).await;
-    assert_eq!(assessment_facts(&pool).await, initialized);
+    apply_migrations_through(&pool, 149).await.unwrap();
+    assert_eq!(
+        assessment_facts(&pool).await,
+        initialized,
+        "147..149 preserve146 initialized owners/phase facts and controls"
+    );
+    apply_migrations_through(&pool, 149).await.unwrap();
     for (id, scenario, expected, preserved) in &cases {
-        let detail = services::get_plan_detail(&pool, *id).await.unwrap();
-        assert_eq!(
-            detail.assessment_coordinator_id,
-            preserved.or(*expected),
-            "migration: {scenario}"
-        );
+        let row:Option<(Option<Uuid>,i64)>=sqlx::query_as("SELECT assessment_coordinator_id,row_version FROM course_assessment_plans WHERE learning_offering_id=$1").bind(id).fetch_optional(&pool).await.unwrap();
+        if expected.is_none() && preserved.is_none() {
+            assert!(row.is_none(), "{scenario}");
+            continue;
+        }
+        let (owner, revision) = row.unwrap();
+        assert_eq!(owner, preserved.or(*expected), "migration:{scenario}");
         if matches!(*scenario, "existing_null" | "existing_invalid_owner") {
-            assert_eq!(
-                detail.row_version,
-                Some(if preserved.is_some() { 7 } else { 8 })
-            );
-            assert!(detail
-                .phases
-                .iter()
-                .all(|phase| phase.row_version == Some(9)));
-        } else if expected.is_some() {
-            assert_eq!(detail.row_version, Some(1));
-            assert_eq!(detail.phases.len(), 4);
-            assert!(detail.phases.iter().all(|phase|phase.max_score=="0" && phase.exam_arrangement==school_academic_assessment::assessment::models::AssessmentExamArrangement::None && phase.exam_duration_minutes.is_none()));
+            assert_eq!(revision, if preserved.is_some() { 7 } else { 8 });
+            assert_eq!(sqlx::query_scalar::<_,bool>("SELECT bool_and(row_version=9) FROM course_assessment_phases WHERE plan_id=(SELECT id FROM course_assessment_plans WHERE learning_offering_id=$1)").bind(id).fetch_one(&pool).await.unwrap(),true);
         } else {
-            assert!(detail.id.is_none());
+            assert_eq!(revision, 1);
+            let defaults:(i64,bool)=sqlx::query_as("SELECT count(*),bool_and(max_score=0 AND exam_arrangement='none' AND exam_duration_minutes IS NULL) FROM course_assessment_phases WHERE plan_id=(SELECT id FROM course_assessment_plans WHERE learning_offering_id=$1)").bind(id).fetch_one(&pool).await.unwrap();
+            assert_eq!(defaults, (4, true));
         }
     }
     let old_phases_after: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(phase) ORDER BY id) FROM course_assessment_phases phase WHERE id IN (SELECT (value->>'id')::uuid FROM jsonb_array_elements($1::jsonb))").bind(&phases_before).fetch_one(&pool).await.unwrap();
@@ -314,18 +316,26 @@ async fn assessment_publication_skips_closed_contexts_draft_offerings_and_locked
         };
         let (id, groups, start, _) = offering(&pool, 1, -10, schema).await;
         teacher(&pool, &groups, PRIMARY, start, None).await;
-        if current {
-            publish_allocation(&pool, id, start).await;
-        }
+
         let (year,term,subject): (Uuid,Uuid,Uuid) = sqlx::query_as("SELECT academic_year_id,academic_term_id,subject_id FROM course_offering_details WHERE learning_offering_id=$1").bind(id).fetch_one(&pool).await.unwrap();
-        for (year_status, term_status, offering_status) in [
-            ("closed", "planning", "published"),
-            ("archived", "planning", "published"),
-            ("active", "closed", "published"),
-            ("active", "cancelled", "published"),
-            ("active", "planning", "draft"),
-            ("active", "planning", "closed"),
-        ] {
+        let scenarios = if current {
+            vec![
+                ("closed", "planning", "current"),
+                ("archived", "planning", "current"),
+                ("active", "closed", "current"),
+                ("active", "cancelled", "current"),
+            ]
+        } else {
+            vec![
+                ("closed", "planning", "published"),
+                ("archived", "planning", "published"),
+                ("active", "closed", "published"),
+                ("active", "cancelled", "published"),
+                ("active", "planning", "draft"),
+                ("active", "planning", "closed"),
+            ]
+        };
+        for (year_status, term_status, offering_status) in scenarios {
             let mut tx = pool.begin().await.unwrap();
             sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
                 .bind(year)
@@ -343,12 +353,14 @@ async fn assessment_publication_skips_closed_contexts_draft_offerings_and_locked
             } else {
                 sqlx::query("UPDATE academic_terms SET status=$2,closed_on=CASE WHEN $2='closed' THEN planned_end_date ELSE NULL END WHERE id=$1").bind(term).bind(term_status).execute(&mut *tx).await.unwrap();
             }
-            sqlx::query("UPDATE learning_offerings SET status=$2 WHERE id=$1")
-                .bind(id)
-                .bind(offering_status)
-                .execute(&mut *tx)
-                .await
-                .unwrap();
+            if !current {
+                sqlx::query("UPDATE learning_offerings SET status=$2 WHERE id=$1")
+                    .bind(id)
+                    .bind(offering_status)
+                    .execute(&mut *tx)
+                    .await
+                    .unwrap();
+            }
             if current {
                 fill(&mut tx, &[id]).await;
             }
@@ -393,19 +405,17 @@ async fn assessment_publication_skips_closed_contexts_draft_offerings_and_locked
             tx.commit().await.unwrap();
         } else {
             apply_migrations_through(&pool, 146).await.unwrap();
-            school_test_db::run_test_migrations(&pool).await;
         }
-        assert!(services::get_plan_detail(&pool, id)
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM course_assessment_plans WHERE learning_offering_id=$1"
+            )
+            .bind(id)
+            .fetch_one(&pool)
             .await
-            .unwrap()
-            .id
-            .is_none());
-        school_test_db::run_test_migrations(&pool).await;
-        assert!(services::get_plan_detail(&pool, id)
-            .await
-            .unwrap()
-            .id
-            .is_none());
+            .unwrap(),
+            0
+        );
     }
 }
 
@@ -414,11 +424,11 @@ async fn assessment_publication_accepts_large_mixed_targets_and_preserves_owned_
     let pool = current_pool("assessment_publication_large_mixed_targets").await;
     let (missing, groups, start, _) = offering(&pool, 1, -10, FixtureSchema::Current).await;
     teacher(&pool, &groups, PRIMARY, start, None).await;
-    publish_allocation(&pool, missing, start).await;
+
     let (owned, owned_groups, owned_start, _) =
         offering(&pool, 2, -10, FixtureSchema::Current).await;
     teacher(&pool, &owned_groups, PRIMARY, owned_start, None).await;
-    publish_allocation(&pool, owned, owned_start).await;
+
     existing_plan(&pool, owned, Some(OTHER)).await;
 
     // Delivery includes retained activities and courses with accepted owners in its targets.
@@ -426,17 +436,17 @@ async fn assessment_publication_accepts_large_mixed_targets_and_preserves_owned_
     let activity_ids = (0..499).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
     let mut tx = pool.begin().await.unwrap();
     let activity_source: Uuid = sqlx::query_scalar(
-        "SELECT learning_offering_id FROM activity_offering_details ORDER BY learning_offering_id LIMIT 1",
+        "SELECT id FROM activity_versions WHERE status='published' ORDER BY id LIMIT 1",
     )
     .fetch_one(&mut *tx)
     .await
     .unwrap();
     let inserted = sqlx::query(
-        "INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on)
-         SELECT batch.id,target.academic_term_id,target.academic_year_id,'activity','COORD-ACT-'||batch.number::text,'Coordinator activity fixture','draft',source.owning_organization_unit_id,target.starts_on
+        "INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,owning_organization_unit_id,weekly_period_target)
+         SELECT batch.id,target.academic_term_id,target.academic_year_id,'activity','COORD-ACT-'||batch.number::text,'Coordinator activity fixture',source.owning_organization_unit_id,1
          FROM unnest($1::uuid[]) WITH ORDINALITY batch(id,number)
          JOIN learning_offerings target ON target.id=$2
-         JOIN learning_offerings source ON source.id=$3",
+         JOIN activity_versions version ON version.id=$3 JOIN activities source ON source.id=version.activity_id",
     )
     .bind(&activity_ids)
     .bind(missing)
@@ -446,23 +456,17 @@ async fn assessment_publication_accepts_large_mixed_targets_and_preserves_owned_
     .unwrap();
     assert_eq!(inserted.rows_affected(), 499);
     sqlx::query(
-        "INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours,capacity,attendance_requirement,pass_criteria)
-         SELECT offering.id,offering.academic_term_id,offering.academic_year_id,source.activity_version_id,source.activity_id,source.registration_type,source.scheduling_mode,source.hours,source.capacity,source.attendance_requirement,source.pass_criteria
-         FROM learning_offerings offering JOIN activity_offering_details source ON source.learning_offering_id=$2
-         WHERE offering.id=ANY($1)",
+        r#"INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours,capacity,attendance_requirement,pass_criteria)
+         SELECT offering.id,offering.academic_term_id,offering.academic_year_id,source.id,source.activity_id,'assigned',source.scheduling_mode,source.hours_per_week,NULL,'{"minimumPercent":null,"requiredSessions":null}'::jsonb,'{"requireAttendance":false,"requireTeacherConfirmation":true,"outcomes":["pass","fail"]}'::jsonb
+         FROM learning_offerings offering JOIN activity_versions source ON source.id=$2
+         WHERE offering.id=ANY($1)"#,
     )
     .bind(&activity_ids)
     .bind(activity_source)
     .execute(&mut *tx)
     .await
     .unwrap();
-    sqlx::query(
-        "UPDATE learning_offerings SET status='published',published_at=now() WHERE id=ANY($1)",
-    )
-    .bind(&activity_ids)
-    .execute(&mut *tx)
-    .await
-    .unwrap();
+
     tx.commit().await.unwrap();
 
     let mut target_ids = activity_ids.clone();
@@ -530,7 +534,7 @@ async fn assessment_publication_accepts_large_mixed_targets_and_preserves_owned_
 }
 
 #[tokio::test]
-async fn assessment_publication_suggestions_use_the_latest_published_allocation() {
+async fn assessment_suggestions_use_current_normalized_teachers() {
     let pool = current_pool("assessment_publication_actual_day").await;
     let cases = coordinator_cases(&pool, FixtureSchema::Current).await;
     let before: serde_json::Value = sqlx::query_scalar(
@@ -574,15 +578,15 @@ async fn assessment_publication_146_and_context_cutover_apply_all_pending_togeth
     let (id, groups, start, _) = offering(&pool, 1, -10, FixtureSchema::Before146).await;
     teacher(&pool, &groups, PRIMARY, start, None).await;
     sqlx::query("UPDATE academic_assessment_phase_controls SET plan_editing_enabled=phase_code IN('before_midterm','midterm')").execute(&pool).await.unwrap();
-    school_test_db::run_test_migrations(&pool).await;
-    let detail = services::get_plan_detail(&pool, id).await.unwrap();
-    assert_eq!(detail.assessment_coordinator_id, Some(PRIMARY));
-    assert_eq!(detail.phases.len(), 4);
+    apply_migrations_through(&pool, 149).await.unwrap();
+    let owner:Option<Uuid>=sqlx::query_scalar("SELECT assessment_coordinator_id FROM course_assessment_plans WHERE learning_offering_id=$1").bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(owner, Some(PRIMARY));
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM course_assessment_phases WHERE plan_id=(SELECT id FROM course_assessment_plans WHERE learning_offering_id=$1)").bind(id).fetch_one(&pool).await.unwrap(),4);
     let consistent:bool=sqlx::query_scalar("SELECT bool_and(exam_arrangement_editing_enabled=(phase_code IN('midterm','final') AND plan_editing_enabled)) FROM academic_assessment_phase_controls").fetch_one(&pool).await.unwrap();
     assert!(consistent);
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND ((table_name='academic_years' AND column_name IN('start_date','end_date')) OR(table_name='academic_terms' AND column_name IN('start_date','planned_end_date','closed_on')))").fetch_one(&pool).await.unwrap(),0);
     let before = assessment_facts(&pool).await;
-    school_test_db::run_test_migrations(&pool).await;
+    apply_migrations_through(&pool, 149).await.unwrap();
     assert_eq!(assessment_facts(&pool).await, before);
 }
 
@@ -666,64 +670,43 @@ fn saved_payload(
 }
 
 #[tokio::test]
-async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agreement() {
-    let pool = current_pool("assessment_latest_allocation_parity").await;
+async fn assessment_current_teacher_replacement_keeps_read_save_and_exam_eligibility_in_agreement()
+{
+    use school_academic_delivery::{models as dm, services::groups as current_groups};
+    let pool = current_pool("assessment_current_parity").await;
     let (id, groups, start, _) = offering(&pool, 1, -10, FixtureSchema::Current).await;
-    teacher(
-        &pool,
-        &groups,
-        PRIMARY,
-        start,
-        Some(start + chrono::Duration::days(5)),
-    )
-    .await;
-    teacher(
-        &pool,
-        &groups,
-        OTHER,
-        start + chrono::Duration::days(30),
-        None,
-    )
-    .await;
-    let live_only = Uuid::now_v7();
-    sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,'allocation-live-only','fixture-not-a-login','Live','Only','staff','active')")
-        .bind(live_only).execute(&pool).await.unwrap();
-    teacher(
-        &pool,
-        &groups,
-        live_only,
-        start + chrono::Duration::days(10),
-        Some(start + chrono::Duration::days(20)),
-    )
-    .await;
-    sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source) SELECT uuidv7(),learning_group.id,learning_group.academic_term_id,learning_group.academic_year_id,(SELECT id FROM homerooms WHERE academic_year_id=learning_group.academic_year_id AND is_active ORDER BY id LIMIT 1),'manual' FROM learning_groups learning_group WHERE learning_group.id=ANY($1)")
-        .bind(&groups).execute(&pool).await.unwrap();
-    sqlx::query("UPDATE learning_groups SET status='published' WHERE id=ANY($1)")
-        .bind(&groups)
-        .execute(&pool)
-        .await
-        .unwrap();
+    teacher(&pool, &groups, PRIMARY, start, None).await;
+    sqlx::query("INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source) SELECT uuidv7(),g.id,g.academic_term_id,g.academic_year_id,(SELECT id FROM homerooms WHERE academic_year_id=g.academic_year_id AND is_active ORDER BY id LIMIT 1),'manual' FROM learning_groups g WHERE g.id=ANY($1)").bind(&groups).execute(&pool).await.unwrap();
     let plan = existing_plan(&pool, id, Some(PRIMARY)).await;
-    let episodes_before: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(episode) ORDER BY id) FROM learning_group_teachers episode WHERE learning_group_id=ANY($1)")
-        .bind(&groups).fetch_one(&pool).await.unwrap();
-
-    // An actual published offering and saved owner do not fabricate an allocation.
-    assert_coordinator_membership(&pool, id, vec![], false, false).await;
-    publish_allocation(&pool, id, start + chrono::Duration::days(2)).await;
-    let retained = assert_coordinator_membership(&pool, id, vec![PRIMARY], true, true).await;
-    assert_eq!(retained.suggested_coordinator_id, Some(PRIMARY));
+    let original = assert_coordinator_membership(&pool, id, vec![PRIMARY], true, true).await;
     crate::integration_tests::academic::assessment_adapter::save_plan(
         &pool,
         id,
         PRIMARY,
         true,
-        saved_payload(&retained),
+        saved_payload(&original),
     )
     .await
     .unwrap();
-
-    // The future-effective published allocation wins immediately; today's teacher does not.
-    publish_allocation(&pool, id, start + chrono::Duration::days(31)).await;
+    let phases:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM course_assessment_phases p WHERE plan_id=$1").bind(plan).fetch_one(&pool).await.unwrap();
+    for group in &groups {
+        let row = current_groups::get(&pool, *group).await.unwrap();
+        current_groups::replace_teachers(
+            &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
+            &pool,
+            PRIMARY,
+            *group,
+            dm::ReplaceLearningGroupTeachersRequest {
+                row_version: row.row_version,
+                teachers: vec![dm::TeacherAssignmentInput {
+                    teacher_id: OTHER,
+                    role: dm::LearningTeacherRole::Primary,
+                }],
+            },
+        )
+        .await
+        .unwrap();
+    }
     let replaced = assert_coordinator_membership(&pool, id, vec![OTHER], false, true).await;
     assert_eq!(replaced.assessment_coordinator_id, Some(PRIMARY));
     assert!(matches!(
@@ -737,6 +720,7 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
         .await,
         Err(school_errors::AppError::ValidationError(_))
     ));
+    assert_eq!(phases,sqlx::query_scalar::<_,serde_json::Value>("SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM course_assessment_phases p WHERE plan_id=$1").bind(plan).fetch_one(&pool).await.unwrap());
     let mut replacement = saved_payload(&replaced);
     replacement.assessment_coordinator_id = Some(OTHER);
     crate::integration_tests::academic::assessment_adapter::save_plan(
@@ -749,57 +733,12 @@ async fn assessment_latest_allocation_keeps_read_save_and_exam_membership_in_agr
     .await
     .unwrap();
     assert_coordinator_membership(&pool, id, vec![OTHER], true, true).await;
-
-    sqlx::query("INSERT INTO academic_delivery_versions(id,academic_term_id,academic_year_id,reference_date,snapshot,created_by) SELECT uuidv7(),academic_term_id,academic_year_id,$2,snapshot,$3 FROM academic_delivery_versions WHERE academic_term_id=(SELECT academic_term_id FROM learning_offerings WHERE id=$1) AND status='published' ORDER BY effective_from LIMIT 1")
-        .bind(id).bind(start + chrono::Duration::days(50)).bind(PRIMARY).execute(&pool).await.unwrap();
-    assert_coordinator_membership(&pool, id, vec![OTHER], true, true).await;
-
     sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
         .bind(OTHER)
         .execute(&pool)
         .await
         .unwrap();
     assert_coordinator_membership(&pool, id, vec![], false, true).await;
-    sqlx::query("UPDATE users SET status='active' WHERE id=$1")
-        .bind(OTHER)
-        .execute(&pool)
-        .await
-        .unwrap();
-    // A registry group missing from the selected graph still prevents partial auto-selection.
-    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT uuidv7(),id,academic_term_id,academic_year_id,'UNALLOCATED','Unallocated','draft','draft' FROM learning_offerings WHERE id=$1")
-        .bind(id).execute(&pool).await.unwrap();
-    let partial = assert_coordinator_membership(&pool, id, vec![OTHER], true, true).await;
-    assert_eq!(partial.learning_group_ids.len(), 3);
-    assert_eq!(partial.suggested_coordinator_id, None);
-
-    sqlx::query("UPDATE learning_groups SET status='closed' WHERE id=ANY($1)")
-        .bind(&groups)
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert_coordinator_membership(&pool, id, vec![], false, true).await;
-    sqlx::query("UPDATE learning_groups SET status='published' WHERE id=ANY($1)")
-        .bind(&groups)
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert_coordinator_membership(&pool, id, vec![OTHER], true, true).await;
-    sqlx::query("INSERT INTO academic_delivery_versions(publication_no,id,academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash) SELECT (SELECT COALESCE(max(publication_no),0)+1 FROM academic_delivery_versions WHERE academic_term_id=learning_offerings.academic_term_id AND status='published'),uuidv7(),academic_term_id,academic_year_id,$2,'published','{\"offerings\":[]}'::jsonb,$3,now(),uuidv7(),repeat('b',64) FROM learning_offerings WHERE id=$1")
-        .bind(id).bind(start + chrono::Duration::days(60)).bind(PRIMARY).execute(&pool).await.unwrap();
-    assert_coordinator_membership(&pool, id, vec![], false, false).await;
-    assert_eq!(
-        sqlx::query_scalar::<_, Option<Uuid>>(
-            "SELECT assessment_coordinator_id FROM course_assessment_plans WHERE id=$1"
-        )
-        .bind(plan)
-        .fetch_one(&pool)
-        .await
-        .unwrap(),
-        Some(OTHER)
-    );
-    let episodes_after: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(episode) ORDER BY id) FROM learning_group_teachers episode WHERE learning_group_id=ANY($1)")
-        .bind(&groups).fetch_one(&pool).await.unwrap();
-    assert_eq!(episodes_after, episodes_before);
 }
 
 #[tokio::test]
@@ -914,142 +853,70 @@ async fn assessment_migration_150_preserves_populated_data_and_exam_source_ident
 }
 
 #[tokio::test]
-async fn assessment_allocation_projection_preserves_snapshot_identity_and_exact_context() {
-    let pool = current_pool("assessment_allocation_identity").await;
+async fn assessment_current_projection_preserves_stable_assignment_identity_and_exact_context() {
+    let pool = current_pool("assessment_current_identity").await;
     let (id, groups, start, _) = offering(&pool, 1, -10, FixtureSchema::Current).await;
-    teacher(
-        &pool,
-        &groups,
-        PRIMARY,
-        start,
-        Some(start + chrono::Duration::days(5)),
+    teacher(&pool, &groups, PRIMARY, start, None).await;
+    let expected: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM learning_group_teachers WHERE learning_group_id=ANY($1) ORDER BY id",
     )
-    .await;
-    teacher(
-        &pool,
-        &groups,
-        PRIMARY,
-        start + chrono::Duration::days(10),
-        None,
-    )
-    .await;
-    publish_allocation(&pool, id, start).await;
-    let graph: serde_json::Value = sqlx::query_scalar("SELECT snapshot FROM academic_delivery_versions WHERE academic_term_id=(SELECT academic_term_id FROM learning_offerings WHERE id=$1) AND status='published' ORDER BY publication_no DESC LIMIT 1")
-        .bind(id).fetch_one(&pool).await.unwrap();
-    let mut duplicated = graph.clone();
-    let original_teacher = duplicated["offerings"][0]["groups"][0]["teachers"][0].clone();
-    duplicated["offerings"][0]["groups"][0]["teachers"]
-        .as_array_mut()
-        .unwrap()
-        .push(original_teacher.clone());
-    publish_snapshot(&pool, id, start + chrono::Duration::days(1), &duplicated).await;
-    let duplicate_detail = services::get_plan_detail(&pool, id).await.unwrap();
-    assert_eq!(duplicate_detail.suggested_coordinator_id, Some(PRIMARY));
-    assert_eq!(
-        duplicate_detail.coordinator_candidates[0].learning_group_count,
-        2
-    );
-    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM academic_delivery_latest_published_teacher_allocations WHERE learning_offering_id=$1").bind(id).fetch_one(&pool).await.unwrap(),2);
-
-    let first_group: Uuid = original_teacher["assignmentId"]
-        .as_str()
-        .unwrap()
-        .parse()
-        .unwrap();
-    let other_episode: Uuid = sqlx::query_scalar("SELECT other.id FROM learning_group_teachers original JOIN learning_group_teachers other ON other.learning_group_id=original.learning_group_id AND other.teacher_id=original.teacher_id WHERE original.id=$1 AND other.id<>original.id")
-        .bind(first_group).fetch_one(&pool).await.unwrap();
-    let mut distinct = graph.clone();
-    let mut later_episode = original_teacher.clone();
-    later_episode["assignmentId"] = serde_json::json!(other_episode);
-    distinct["offerings"][0]["groups"][0]["teachers"]
-        .as_array_mut()
-        .unwrap()
-        .push(later_episode);
-    publish_snapshot(&pool, id, start + chrono::Duration::days(2), &distinct).await;
-    let distinct_detail = services::get_plan_detail(&pool, id).await.unwrap();
-    assert_eq!(
-        distinct_detail.coordinator_candidates[0].primary_learning_group_count,
-        2
-    );
-    assert_eq!(
-        distinct_detail.suggested_coordinator_id, None,
-        "three distinct primary assignment IDs cannot be reduced to two group rows"
-    );
-
-    let mut wrong_teacher = graph.clone();
-    wrong_teacher["offerings"][0]["groups"][0]["teachers"][0]["teacherId"] =
-        serde_json::json!(OTHER);
-    publish_snapshot(&pool, id, start + chrono::Duration::days(3), &wrong_teacher).await;
-    let mismatch = services::get_plan_detail(&pool, id).await.unwrap();
-    assert_eq!(mismatch.coordinator_candidates.len(), 1);
-    assert_eq!(mismatch.coordinator_candidates[0].teacher_id, PRIMARY);
-    assert_eq!(mismatch.coordinator_candidates[0].learning_group_count, 1);
-    assert_eq!(mismatch.suggested_coordinator_id, None);
-
-    let mut wrong_group = graph.clone();
-    wrong_group["offerings"][0]["groups"][0]["teachers"][0]["assignmentId"] =
-        graph["offerings"][0]["groups"][1]["teachers"][0]["assignmentId"].clone();
-    publish_snapshot(&pool, id, start + chrono::Duration::days(4), &wrong_group).await;
-    assert_eq!(
-        services::get_plan_detail(&pool, id)
-            .await
-            .unwrap()
-            .coordinator_candidates[0]
-            .learning_group_count,
-        1
-    );
-
-    // Snapshot role remains authoritative even though the actual episode still says primary.
-    let mut secondary_graph = graph.clone();
-    for group in secondary_graph["offerings"][0]["groups"]
-        .as_array_mut()
-        .unwrap()
-    {
-        group["teachers"][0]["role"] = serde_json::json!("secondary");
-    }
-    publish_snapshot(
-        &pool,
-        id,
-        start + chrono::Duration::days(6),
-        &secondary_graph,
-    )
-    .await;
-    let secondary = services::get_plan_detail(&pool, id).await.unwrap();
-    assert_eq!(
-        secondary.coordinator_candidates[0].primary_learning_group_count,
-        0
-    );
-    assert_eq!(secondary.suggested_coordinator_id, None);
-
-    let (other, _, other_start, _) = offering(&pool, 2, -10, FixtureSchema::Current).await;
-    publish_snapshot(&pool, other, other_start, &graph).await;
-    assert!(
-        services::get_plan_detail(&pool, other)
-            .await
-            .unwrap()
-            .coordinator_candidates
-            .is_empty(),
-        "another term's version cannot contribute the original offering's graph"
-    );
-    let mut connection = pool.acquire().await.unwrap();
+    .bind(&groups)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
     let allocations =
-        school_academic_delivery::services::versions::teacher_allocations_on_connection(
-            &mut connection,
-            &[id, other],
+        school_academic_delivery::services::current::teacher_allocations_on_connection(
+            &mut conn,
+            &[id],
         )
         .await
         .unwrap();
-    assert_eq!(allocations.len(), 2);
-    assert!(allocations
-        .iter()
-        .all(|allocation| allocation.learning_offering_id == id));
+    let mut actual: Vec<_> = allocations.iter().map(|a| a.assignment_id).collect();
+    actual.sort();
+    assert_eq!(actual, expected);
+    assert!(allocations.iter().all(|a| a.learning_offering_id == id
+        && groups.contains(&a.learning_group_id)
+        && a.teacher_id == PRIMARY));
     assert!(
-        school_academic_delivery::services::versions::teacher_allocations_on_connection(
-            &mut connection,
+        school_academic_delivery::services::current::teacher_allocations_on_connection(
+            &mut conn,
             &[]
         )
         .await
         .unwrap()
         .is_empty()
+    );
+    drop(conn);
+    let duplicate=sqlx::query("INSERT INTO learning_group_teachers SELECT (jsonb_populate_record(NULL::learning_group_teachers,to_jsonb(t)||jsonb_build_object('id',uuidv7()))).* FROM learning_group_teachers t WHERE id=$1").bind(expected[0]).execute(&pool).await.unwrap_err();
+    assert_eq!(
+        duplicate.as_database_error().unwrap().code().as_deref(),
+        Some("23505")
+    );
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(PRIMARY)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(
+        school_academic_delivery::services::current::teacher_allocations_on_connection(
+            &mut conn,
+            &[id]
+        )
+        .await
+        .unwrap()
+        .is_empty()
+    );
+    drop(conn);
+    assert_eq!(
+        expected,
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM learning_group_teachers WHERE learning_group_id=ANY($1) ORDER BY id"
+        )
+        .bind(&groups)
+        .fetch_all(&pool)
+        .await
+        .unwrap()
     );
 }

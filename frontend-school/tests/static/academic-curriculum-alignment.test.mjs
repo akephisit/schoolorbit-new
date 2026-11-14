@@ -14,7 +14,6 @@ test('delivery links the exact edition, level, program and delivery context', as
 		'ตรงกับหลักสูตร',
 		'หลักสูตรกำหนดไว้แต่ยังไม่เปิดสอน',
 		'เปิดสอนเพิ่มเติมนอกหลักสูตร',
-		'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
 		'คาบจริงต่างจากค่ามาตรฐานในหลักสูตร'
 	])
 		assert.ok(`${workspace}\n${presentation}`.includes(text), text);
@@ -22,7 +21,6 @@ test('delivery links the exact edition, level, program and delivery context', as
 		'room.studyProgram.editionId',
 		'room.curriculumLevelId',
 		'room.extraOfferings',
-		'workspace.deliveryVersionId',
 		'academicYearId',
 		'academicTermId',
 		'studyProgramId'
@@ -48,7 +46,7 @@ test('level alignment is an independent read-only region', async () => {
 	assert.match(page, /retryAlignment/);
 	assert.match(panel, /room\.studyProgram\.curriculumLevelId === curriculumLevelId/);
 	assert.match(panel, /กลับไปจัดการการเปิดสอน/);
-	assert.match(panel, /workspace\.deliveryVersionId/);
+	assert.match(panel, /new SvelteURLSearchParams\(\{ academicYearId, academicTermId \}\)/);
 	assert.doesNotMatch(
 		panel,
 		/getLearningOffering|getLearningGroup|listLearningGroups|copyStudyProgram/

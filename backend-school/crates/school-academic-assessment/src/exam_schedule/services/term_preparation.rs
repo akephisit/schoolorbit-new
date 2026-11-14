@@ -133,9 +133,9 @@ pub async fn apply(
             .query(
                 "academic_assessment.exam_schedule.services.term_preparation.apply",
                 r#"INSERT INTO academic_exam_rounds(
-                   id,academic_year_id,academic_term_id,name,description,exam_kind,status,
-                   published_at,published_by,created_by,updated_by,row_version
-               ) VALUES($1,$2,$3,$4,$5,$6,'draft',NULL,NULL,$7,$7,1)"#,
+                   id,academic_year_id,academic_term_id,name,description,exam_kind,
+                   created_by,updated_by,row_version
+               ) VALUES($1,$2,$3,$4,$5,$6,$7,$7,1)"#,
             )
             .bind(id)
             .bind(context.target_year_id)

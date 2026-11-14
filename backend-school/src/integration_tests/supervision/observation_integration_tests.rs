@@ -7,8 +7,7 @@ mod tests {
         apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
         CutoverFixture,
     };
-    use school_academic_timetable::models::timetable_version::CloneTimetableVersionRequest;
-    use school_academic_timetable::services::timetable_version_service;
+    use school_academic_timetable::services::timetable_service;
     use school_errors::AppError;
     use school_supervision::services::{
         load_timetable_block_group_context_for_teacher_for_test, resolve_lesson_input_for_test,
@@ -17,7 +16,7 @@ mod tests {
     use school_test_db::create_named_test_pool;
 
     #[test]
-    fn timetable_version_date_uses_bangkok_across_local_midnight() {
+    fn lesson_observation_date_uses_bangkok_across_local_midnight() {
         let observed_at = DateTime::parse_from_rfc3339("2026-08-31T18:30:00Z")
             .unwrap()
             .with_timezone(&Utc);
@@ -38,25 +37,14 @@ mod tests {
         apply_phase_b_runtime_migrations(&pool).await.unwrap();
         apply_migrations_through(&pool, 58).await.unwrap();
         school_test_db::run_test_migrations(&pool).await;
-        let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-        let (source_id, source_row_version, version_starts_on): (Uuid, i64, NaiveDate) =
-            sqlx::query_as(
-                r#"SELECT version.id, version.row_version, version.effective_from
-                   FROM academic_timetable_versions version
-                   JOIN academic_terms term ON term.id = version.academic_term_id
-                   WHERE version.status = 'published' AND term.status = 'active'
-                   ORDER BY version.effective_from, version.id
-                   LIMIT 1"#,
-            )
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let source_id:Uuid=sqlx::query_scalar("SELECT timetable.id FROM academic_timetables timetable JOIN academic_terms term ON term.id=timetable.academic_term_id WHERE term.status='active' ORDER BY timetable.id LIMIT 1").fetch_one(&pool).await.unwrap();
+        let version_starts_on = timetable_service::bangkok_today();
         let (source_group, source_teacher, source_year, source_term, source_day): (Uuid, Uuid, Uuid, Uuid, String) = sqlx::query_as(
             "SELECT block_group.id, instructor.instructor_id, block.academic_year_id, block.academic_term_id, block.day_of_week
              FROM academic_timetable_blocks block
              JOIN academic_timetable_block_groups block_group ON block_group.block_id=block.id
              JOIN academic_timetable_block_group_instructors instructor ON instructor.block_group_id=block_group.id
-             WHERE block.timetable_version_id=$1 AND block.is_active AND block_group.is_active
+             WHERE block.timetable_id=$1 AND block.is_active AND block_group.is_active
              ORDER BY block_group.id,instructor.instructor_id LIMIT 1",
         ).bind(source_id).fetch_one(&pool).await.unwrap();
         let observed_at = (0..7)
@@ -98,20 +86,6 @@ mod tests {
         assert_eq!(lesson.timetable_block_group_id, Some(source_group));
         assert_eq!(lesson.source.as_deref(), Some("timetable"));
         transaction.rollback().await.unwrap();
-        let draft = timetable_version_service::clone_draft(
-            &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-                &pool, actor_id,
-            ),
-            source_id,
-            CloneTimetableVersionRequest {
-                resume_draft_id: None,
-                draft_row_version: None,
-                source_row_version,
-            },
-        )
-        .await
-        .unwrap();
         let (block_group_id, teacher_id, academic_year_id, academic_term_id): (
             Uuid,
             Uuid,
@@ -125,12 +99,12 @@ mod tests {
                  ON block_group.block_id = block.id
                JOIN academic_timetable_block_group_instructors instructor
                  ON instructor.block_group_id = block_group.id
-               WHERE block.timetable_version_id = $1
+               WHERE block.timetable_id = $1
                  AND block.is_active AND block_group.is_active
                ORDER BY block_group.id, instructor.instructor_id
                LIMIT 1"#,
         )
-        .bind(draft.id)
+        .bind(source_id)
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -138,7 +112,7 @@ mod tests {
         load_timetable_block_group_context_for_teacher_for_test(
             &pool,
             block_group_id,
-            draft.id,
+            source_id,
             teacher_id,
             academic_year_id,
             academic_term_id,
@@ -153,7 +127,7 @@ mod tests {
         let inactive = load_timetable_block_group_context_for_teacher_for_test(
             &pool,
             block_group_id,
-            draft.id,
+            source_id,
             teacher_id,
             academic_year_id,
             academic_term_id,

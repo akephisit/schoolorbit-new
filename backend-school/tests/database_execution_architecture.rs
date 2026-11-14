@@ -83,7 +83,7 @@ fn native_exception(file: &Path, function: &str) -> bool {
     (file.ends_with("crates/school-migrations/src/lib.rs")
         && matches!(
             function,
-            "run_tenant_migrations_detailed" | "verify_tenant_schema" | "grant_runtime_privileges"
+            "run_canonical" | "verify_tenant_schema" | "grant_runtime_privileges"
         ))
         || (file.ends_with("crates/school-migrations/src/academic149.rs")
             && function == "run_transition")
@@ -168,7 +168,7 @@ fn native_pool_boundary_exception(file: &Path, function: &str) -> bool {
     (path.ends_with("crates/school-migrations/src/lib.rs")
         && matches!(
             function,
-            "sync_permissions" | "grant_runtime_privileges" | "run_tenant_migrations_detailed"
+            "sync_permissions" | "grant_runtime_privileges" | "run_canonical"
         ))
         || (path.ends_with("crates/school-tenancy/src/tenant_pool.rs")
             && matches!(function, "observed_checkout_pool" | "begin_observed"))
@@ -216,17 +216,8 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
             "school-notifications/src/devices.rs",
             &["cleanup", "register_with_key"],
         ),
-        // Draft removal owns observed locks/mutation/audit/commit, then a fresh response read.
-        (
-            "school-academic-delivery/src/services/change_sets/draft_removal.rs",
-            &["remove_resource"],
-        ),
         // Mutation contexts admit pool+permit work without a held connection. These
         // exact private owners begin their observed transaction and commit via the permit.
-        (
-            "school-academic-timetable/src/services/teacher_handoff.rs",
-            &["apply_in_permit"],
-        ),
         (
             "school-academic-timetable/src/services/timetable_block_service.rs",
             &[
@@ -241,16 +232,8 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
             ],
         ),
         (
-            "school-academic-timetable/src/services/timetable_lifecycle.rs",
-            &["publish_in_permit", "update_source_in_permit"],
-        ),
-        (
             "school-academic-timetable/src/services/timetable_template_service.rs",
             &["apply_template_in_permit", "clear_timetable_in_permit"],
-        ),
-        (
-            "school-academic-timetable/src/services/timetable_version_service.rs",
-            &["create_initial_draft_in_permit"],
         ),
         // Observation status owns locks+mutation+commit, then a fresh response read.
         (
@@ -857,16 +840,16 @@ fn inspect_snippet_at(file: &str, source: &str) -> BTreeSet<String> {
 #[test]
 fn guard_migration_runner_native_execution_requires_exact_owner_and_function() {
     let owner = "crates/school-migrations/src/lib.rs";
-    let entry = "pub async fn run_tenant_migrations_detailed(pool: &PgPool) { sqlx::query_scalar(SQL).fetch_one(pool).await; }";
+    let entry =
+        "async fn run_canonical(pool: &PgPool) { sqlx::query_scalar(SQL).fetch_one(pool).await; }";
     assert!(inspect_snippet_at(owner, entry).is_empty());
 
-    let legacy = entry.replace("run_tenant_migrations_detailed", "run_tenant_migrations");
-    let similar = entry.replace(
-        "run_tenant_migrations_detailed",
-        "run_tenant_migrations_detailed_helper",
-    );
+    let legacy = entry.replace("run_canonical", "run_tenant_migrations");
+    let ordinary = entry.replace("run_canonical", "run_tenant_migrations_detailed");
+    let similar = entry.replace("run_canonical", "run_canonical_helper");
     for (file, source) in [
         (owner, legacy.as_str()),
+        (owner, ordinary.as_str()),
         (owner, similar.as_str()),
         ("crates/school-migrations/src/other.rs", entry),
         ("crates/school-tenancy/src/lib.rs", entry),
@@ -902,24 +885,27 @@ fn guard_migration_runner_native_execution_requires_exact_owner_and_function() {
             .iter()
             .any(|problem| problem.contains("native execution accepts an executor")));
     }
-    let admission="pub async fn run_tenant_migrations_detailed(pool: &PgPool) { let connection=pool.acquire().await; }";
+    let admission =
+        "async fn run_canonical(pool: &PgPool) { let connection=pool.acquire().await; }";
     assert!(inspect_snippet_at(owner, admission).is_empty());
-    assert!(inspect_snippet_at(
-        owner,
-        &admission.replace("run_tenant_migrations_detailed", "run_tenant_migrations")
-    )
-    .iter()
-    .any(|problem| problem.contains("native pool admission bypasses observed work boundary")));
+    for wrapper in ["run_tenant_migrations", "run_tenant_migrations_detailed"] {
+        assert!(
+            inspect_snippet_at(owner, &admission.replace("run_canonical", wrapper))
+                .iter()
+                .any(|problem| problem
+                    .contains("native pool admission bypasses observed work boundary"))
+        );
+    }
 }
 
 #[test]
 fn guard_private_work_entries_require_exact_owner_and_function() {
-    let owner = "crates/school-academic-delivery/src/services/change_sets/draft_removal.rs";
-    let entry = "async fn remove_resource(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; tx.commit().await?; get_change_set(pool, id).await?; }";
+    let owner = "crates/school-academic-results/src/services/readiness.rs";
+    let entry = "async fn readiness_at(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; tx.commit().await?;  }";
     assert!(inspect_snippet_at(owner, entry).is_empty());
 
-    let helper = entry.replace("fn remove_resource(", "fn hydrate_removed_resources(");
-    let other_owner = "crates/school-academic-delivery/src/services/change_sets/unregistered.rs";
+    let helper = entry.replace("fn readiness_at(", "fn hydrate_removed_resources(");
+    let other_owner = "crates/school-academic-results/src/services/unregistered.rs";
     for (file, source) in [(owner, helper.as_str()), (other_owner, entry)] {
         let problems = inspect_snippet_at(file, source);
         assert!(
@@ -933,14 +919,14 @@ fn guard_private_work_entries_require_exact_owner_and_function() {
 
 #[test]
 fn guard_private_work_entries_keep_native_and_nested_pool_guards() {
-    let owner = "crates/school-academic-delivery/src/services/change_sets/draft_removal.rs";
+    let owner = "crates/school-academic-results/src/services/readiness.rs";
     for (source, expected) in [
         (
-            "async fn remove_resource(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; sqlx::query(SQL).execute(&mut *tx).await?; tx.commit().await?; }",
+            "async fn readiness_at(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; sqlx::query(SQL).execute(&mut *tx).await?; tx.commit().await?; }",
             "native execution accepts an executor",
         ),
         (
-            "async fn remove_resource(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; let connection = TenantPool::observed_checkout_pool(pool, OP).await?; tx.commit().await?; }",
+            "async fn readiness_at(pool: &PgPool) { let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; let connection = TenantPool::observed_checkout_pool(pool, OP).await?; tx.commit().await?; }",
             "pool helper observed_checkout_pool called while a connection or transaction is held",
         ),
     ] {
@@ -1012,18 +998,11 @@ fn guard_term_school_schedule_copy_keeps_native_and_nested_pool_guards() {
 
 #[test]
 fn guard_timetable_transaction_entries_require_exact_owner_and_function() {
-    for (owner, function, permit_type) in [
-        (
-            "crates/school-academic-timetable/src/services/timetable_block_service.rs",
-            "create_ordinary_block_in_permit",
-            "CommitPermit",
-        ),
-        (
-            "crates/school-academic-timetable/src/services/timetable_version_service.rs",
-            "create_initial_draft_in_permit",
-            "CreationPermit",
-        ),
-    ] {
+    for (owner, function, permit_type) in [(
+        "crates/school-academic-timetable/src/services/timetable_block_service.rs",
+        "create_ordinary_block_in_permit",
+        "CommitPermit",
+    )] {
         let entry = format!("async fn {function}(pool: &PgPool, permit: Arc<{permit_type}>) {{ let mut tx = TenantPool::begin_observed(pool, OP).await?; DbSession::new(&mut *tx).query(OP, SQL).execute().await?; permit.commit(tx).await?; }}");
         assert!(inspect_snippet_at(owner, &entry).is_empty());
 
@@ -1044,6 +1023,40 @@ fn guard_timetable_transaction_entries_require_exact_owner_and_function() {
                 "unregistered Timetable pool helper accepted at {file}: {source}"
             );
         }
+    }
+}
+
+#[test]
+fn retired_operational_owners_cannot_regain_pool_helper_exemptions() {
+    for (owner, function) in [
+        (
+            "crates/school-academic-delivery/src/services/change_sets/draft_removal.rs",
+            "remove_resource",
+        ),
+        (
+            "crates/school-academic-timetable/src/services/teacher_handoff.rs",
+            "apply_in_permit",
+        ),
+        (
+            "crates/school-academic-timetable/src/services/timetable_lifecycle.rs",
+            "publish_in_permit",
+        ),
+        (
+            "crates/school-academic-timetable/src/services/timetable_lifecycle.rs",
+            "update_source_in_permit",
+        ),
+        (
+            "crates/school-academic-timetable/src/services/timetable_version_service.rs",
+            "create_initial_draft_in_permit",
+        ),
+    ] {
+        let entry = format!("async fn {function}(pool: &PgPool) {{ let mut tx=TenantPool::begin_observed(pool,OP).await?; DbSession::new(&mut *tx).query(OP,SQL).execute().await?; tx.commit().await?; }}");
+        assert!(
+            inspect_snippet_at(owner, &entry)
+                .iter()
+                .any(|problem| problem.contains("private query helper retains a pool capability")),
+            "retired owner unexpectedly admitted: {owner}::{function}"
+        );
     }
 }
 

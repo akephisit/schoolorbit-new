@@ -9,6 +9,8 @@ use uuid::Uuid;
 pub const DELIVERY_BATCH_SIZE: i64 = 32;
 pub const ALERT_FRESHNESS_SECONDS: i64 = 900;
 const MAX_ACCEPTANCE_BATCH: usize = 10_000;
+/// Producer cancellation batches share the exact receipt-lock bound.
+pub const PENDING_CANCELLATION_BATCH_SIZE: usize = MAX_ACCEPTANCE_BATCH;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NotificationSource {
@@ -420,6 +422,86 @@ pub async fn progress_on_connection(
     }
     Ok(rows)
 }
+/// Exact producer-owned identity for cancelling a pending presentation without
+/// releasing its durable receipt, inbox or business deduplication identity.
+#[derive(Clone, Copy, Debug)]
+pub struct PendingCancellationIdentity {
+    pub receipt_id: Uuid,
+    pub notification_id: Uuid,
+    pub recipient_id: Uuid,
+    pub source: NotificationSource,
+}
+#[derive(serde::Serialize)]
+struct CancellationInput {
+    receipt_id: Uuid,
+    notification_id: Uuid,
+    recipient_id: Uuid,
+    source_kind: &'static str,
+    source_id: Option<Uuid>,
+}
+fn cancellation_input(
+    items: &[PendingCancellationIdentity],
+) -> Result<Vec<CancellationInput>, AppError> {
+    if items.len() > MAX_ACCEPTANCE_BATCH {
+        return Err(AppError::BadRequest("notification_batch_too_large".into()));
+    }
+    let mut ids = HashSet::new();
+    items
+        .iter()
+        .map(|item| {
+            if item.receipt_id.is_nil()
+                || item.notification_id.is_nil()
+                || item.recipient_id.is_nil()
+                || !ids.insert(item.receipt_id)
+            {
+                return Err(integrity("notification_cancellation_identity_conflict"));
+            }
+            let (source_kind, source_id) = item.source.parts();
+            Ok(CancellationInput {
+                receipt_id: item.receipt_id,
+                notification_id: item.notification_id,
+                recipient_id: item.recipient_id,
+                source_kind,
+                source_id,
+            })
+        })
+        .collect()
+}
+
+/// Caller locks its producing source before the receipt, matching consume's
+/// source-before-receipt order. A prefetched worker must re-lock the now terminal
+/// receipt and cannot present it. Already consumed fields and every inbox stay.
+pub async fn cancel_pending_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    items: &[PendingCancellationIdentity],
+) -> Result<u64, AppError> {
+    let input = cancellation_input(items)?;
+    if input.is_empty() {
+        return Ok(0);
+    }
+    let locked: Vec<Uuid> = school_database::DbSession::new(&mut **tx).scalar("notifications.cancel_pending.exact_lock", r#"
+        SELECT receipt.id FROM notification_receipts receipt
+        JOIN jsonb_to_recordset($1) requested(receipt_id uuid,notification_id uuid,recipient_id uuid,source_kind text,source_id uuid)
+          ON requested.receipt_id=receipt.id
+         AND requested.notification_id=receipt.notification_id AND requested.recipient_id=receipt.recipient_id
+         AND requested.source_kind=receipt.source_kind AND requested.source_id IS NOT DISTINCT FROM receipt.source_id
+        ORDER BY receipt.id FOR UPDATE OF receipt
+    "#).bind(Json(&input)).fetch_all().await?;
+    if locked.len() != input.len() {
+        return Err(integrity("notification_cancellation_identity_conflict"));
+    }
+    let changed = school_database::DbSession::new(&mut **tx).query("notifications.cancel_pending.consume", "UPDATE notification_receipts SET presentation_consumed_at=clock_timestamp(),presentation_outcome='skipped' WHERE id=ANY($1) AND presentation_consumed_at IS NULL").bind(&locked).execute().await?.rows_affected();
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "notifications.cancel_pending.remove_presentations",
+            "DELETE FROM notification_presentations WHERE receipt_id=ANY($1)",
+        )
+        .bind(&locked)
+        .execute()
+        .await?;
+    Ok(changed)
+}
+
 pub async fn cancel_identified_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
     source: NotificationSourceKind,
@@ -482,3 +564,7 @@ mod tests {
         assert!(NotificationSource::decode("future", None).is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "dispatch_cancellation_tests.rs"]
+mod cancellation_tests;

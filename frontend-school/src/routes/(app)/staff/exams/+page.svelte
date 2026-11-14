@@ -1,10 +1,7 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
 	import { onDestroy, untrack } from 'svelte';
-	import {
-		listStaffExamSchedules,
-		type StaffPublishedExamScheduleRound
-	} from '#lib/api/examSchedule.js';
+	import { listStaffExamSchedules, type StaffExamScheduleRound } from '#lib/api/examSchedule.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
@@ -17,7 +14,7 @@
 	let loading = $state(true);
 	let roundsLoaded = $state(false);
 	let error = $state('');
-	let rounds = $state<StaffPublishedExamScheduleRound[]>([]);
+	let rounds = $state<StaffExamScheduleRound[]>([]);
 	let currentStaffId = $derived($authStore.user?.id ?? '');
 	const request = new LatestRequest();
 	let activeContextKey = '';
@@ -80,7 +77,7 @@
 	});
 </script>
 
-<PageShell title={data.title} description="ภาพรวมตารางสอบและการคุมสอบที่ประกาศแล้ว">
+<PageShell title={data.title} description="ภาพรวมตารางสอบและการคุมสอบปัจจุบัน">
 	{#if !academicTermId}
 		<PageState
 			title="เลือกภาคเรียนก่อน"

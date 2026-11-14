@@ -56,6 +56,7 @@ export async function mockStudentSchedules(
 	} = {}
 ) {
 	const base = await mockSelfProfile(page);
+	let removedSources = false;
 	const reads: URL[] = [],
 		writes: string[] = [],
 		counts = new Map<string, number>();
@@ -118,7 +119,7 @@ export async function mockStudentSchedules(
 					schedulingMode: null,
 					seriesId: null,
 					structuralKind: null,
-					timetableVersionId: id(413),
+					timetableId: id(413),
 					title: null,
 					note: null
 				}
@@ -128,7 +129,6 @@ export async function mockStudentSchedules(
 					roundId: id(414),
 					roundName: `รอบ${label}`,
 					academicTermId: selected,
-					publishedAt: '2026-10-01T00:00:00Z',
 					sessions: [
 						{
 							examDate: '2026-10-01',
@@ -210,9 +210,13 @@ export async function mockStudentSchedules(
 			return reply(
 				route,
 				resource === 'timetable'
-					? blocks
+					? removedSources
+						? []
+						: blocks
 					: resource === 'exams'
-						? rounds
+						? removedSources
+							? []
+							: rounds
 						: resource === 'calendar'
 							? events
 							: offerings
@@ -221,6 +225,9 @@ export async function mockStudentSchedules(
 	);
 	return {
 		...base,
+		removeSources: () => {
+			removedSources = true;
+		},
 		reads,
 		writes,
 		release,

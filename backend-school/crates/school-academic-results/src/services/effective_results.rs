@@ -2,7 +2,7 @@ use super::{decimal_wire, validate_context};
 use crate::policy::results as academic_result_access_policy;
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
-use school_academic_delivery::services::versions::assigned_group_ids_on_connection;
+use school_academic_delivery::services::current::assigned_group_ids_on_connection;
 use school_authorization::{AcademicResourceListFilter, ActorContext};
 use school_database::DbSession;
 use school_errors::AppError;

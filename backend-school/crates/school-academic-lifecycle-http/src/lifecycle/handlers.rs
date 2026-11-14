@@ -114,7 +114,7 @@ pub async fn get_workspace(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     Ok(Json(ApiResponse::ok(
         services::get_workspace(
-            state.lifecycle_providers,
+            state.lifecycle_providers.as_ref(),
             &context.tenant.pool,
             &context.actor,
             query.academic_year_id,
@@ -156,7 +156,7 @@ pub async fn transition_term(
 ) -> Result<Json<ApiResponse<TermTransitionOutcome>>, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let outcome = term_transitions::transition_term(
-        state.lifecycle_providers,
+        state.lifecycle_providers.as_ref(),
         &context.tenant.pool,
         &context.actor,
         term,
@@ -197,21 +197,11 @@ pub async fn apply_term_preparation(
     Json(input): Json<ApplyTermPreparationInput>,
 ) -> Result<Json<ApiResponse<TermPreparationOutcome>>, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let target_term_id = input.target_term_id;
     let outcome = services::apply_term_preparation(
-        state.lifecycle_providers,
-        &context.tenant.pool,
-        &context.actor,
+        state.lifecycle_providers.clone(),
+        crate::preparation_command::from_session(&state, &session, &context),
         input,
     )
     .await?;
-    state.websocket_manager.broadcast_academic_core_changed(
-        session.tenant.subdomain.clone(),
-        session.user_id,
-        "academic_term_preparation",
-        Some(outcome.run_id),
-        None,
-        Some(target_term_id),
-    );
     Ok(Json(ApiResponse::ok(outcome)))
 }

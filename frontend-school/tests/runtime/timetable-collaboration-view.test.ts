@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { collaborationContextsMatch } from '../../src/lib/academic/timetable/collaboration-view.ts';
-import type { DraftContext } from '../../src/lib/api/timetable.js';
+import type { TimetableContext } from '../../src/lib/api/timetable.js';
 import { timetableIds } from '../e2e/timetable-test-harness.ts';
 
 for (const viewMode of ['homeroom', 'teacher', 'learning_group'] as const) {
 	test(`${viewMode} pointers require the same non-null selected owner and matching view mode`, () => {
-		const local: DraftContext = { viewMode, viewId: timetableIds.teacherA };
+		const local: TimetableContext = { viewMode, viewId: timetableIds.teacherA };
 		assert.equal(collaborationContextsMatch(local, { ...local }), true);
 		assert.equal(
 			collaborationContextsMatch(local, { ...local, viewId: timetableIds.teacherB }),
@@ -27,7 +27,7 @@ for (const viewMode of ['homeroom', 'teacher', 'learning_group'] as const) {
 }
 
 test('whole-school cursors use the remote row and selected day independently of the local hovered row', () => {
-	const local: DraftContext = {
+	const local: TimetableContext = {
 		viewMode: 'wholeSchool',
 		viewId: timetableIds.teacherA,
 		dayOfWeek: 'MON'
@@ -53,8 +53,8 @@ test('whole-school cursors use the remote row and selected day independently of 
 });
 
 test('the homeroom and whole-school bridge requires the corresponding row and an explicit overview day', () => {
-	const homeroom: DraftContext = { viewMode: 'homeroom', viewId: timetableIds.homeroom };
-	const overview: DraftContext = {
+	const homeroom: TimetableContext = { viewMode: 'homeroom', viewId: timetableIds.homeroom };
+	const overview: TimetableContext = {
 		viewMode: 'wholeSchool',
 		viewId: timetableIds.homeroom,
 		dayOfWeek: 'TUE'

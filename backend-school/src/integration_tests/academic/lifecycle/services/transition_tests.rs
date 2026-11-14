@@ -398,8 +398,8 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
         super::super::models::UpdateOpeningPolicyInput {
             row_version: policy.row_version,
             require_homeroom_placements: !policy.require_homeroom_placements,
-            require_published_offerings: policy.require_published_offerings,
-            require_published_timetable: policy.require_published_timetable,
+            require_offerings: policy.require_offerings,
+            require_timetable: policy.require_timetable,
         },
     )
     .await
@@ -572,8 +572,8 @@ async fn activation_opens_promoted_enrollment_and_placement_atomically_and_repla
         super::super::models::UpdateOpeningPolicyInput {
             row_version: policy.row_version,
             require_homeroom_placements: !policy.require_homeroom_placements,
-            require_published_offerings: policy.require_published_offerings,
-            require_published_timetable: policy.require_published_timetable,
+            require_offerings: policy.require_offerings,
+            require_timetable: policy.require_timetable,
         },
     )
     .await

@@ -41,15 +41,15 @@ impl Slot {
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct Footprint {
-    whole_draft: bool,
+    whole_timetable: bool,
     identities: BTreeSet<Identity>,
     slots: Vec<Slot>,
 }
 
 impl Footprint {
     fn conflicts(&self, other: &Self) -> bool {
-        self.whole_draft
-            || other.whole_draft
+        self.whole_timetable
+            || other.whole_timetable
             || !self.identities.is_disjoint(&other.identities)
             || self.slots.iter().any(|left| {
                 other.slots.iter().any(|right| {
@@ -59,7 +59,7 @@ impl Footprint {
             })
     }
     fn extend(&mut self, other: Self) {
-        self.whole_draft |= other.whole_draft;
+        self.whole_timetable |= other.whole_timetable;
         self.identities.extend(other.identities);
         self.slots.extend(other.slots);
     }
@@ -75,24 +75,25 @@ pub enum MutationScope {
     },
     Swap(SwapTimetableBlocksRequest),
     Series(Uuid),
-    WholeDraft,
+    WholeTimetable,
     Blocks(Vec<Uuid>),
     Placement {
         source: TimetableBlockPlacementSource,
         candidate: TimetableBlockPlacementCandidate,
-        targets: Vec<DraftTarget>,
+        targets: Vec<TimetableTarget>,
     },
 }
 
 /// Pinned exclusion owned by the accepted write, independent of connection and lease expiry.
 pub struct CommitPermit {
-    room: Arc<DraftRoom>,
+    room: Arc<TimetableRoom>,
     id: Uuid,
     pub actor_id: Uuid,
+    lesson_source_detachment: &'static dyn crate::ports::LessonSourceDetachmentPort,
     phase: AtomicU8,
     capture_content_revision: AtomicBool,
     settled: AtomicBool,
-    committed_version: std::sync::Mutex<Option<crate::models::timetable_version::TimetableVersion>>,
+    committed_timetable: std::sync::Mutex<Option<crate::models::timetable::Timetable>>,
 }
 
 pub(super) struct CommitRecord {
@@ -100,12 +101,24 @@ pub(super) struct CommitRecord {
     pub lease_token: Option<Uuid>,
     pub reservation_id: Uuid,
     pub owner_connection_id: Uuid,
-    pub purpose: DraftReservationPurpose,
+    pub purpose: TimetableReservationPurpose,
 }
 
 impl CommitPermit {
-    pub fn require_version(&self, version_id: Uuid) -> Result<(), AppError> {
-        if self.room.key.timetable_version_id == version_id {
+    pub async fn detach_timetable_sources(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        block_group_ids: &[Uuid],
+    ) -> Result<(), AppError> {
+        if block_group_ids.is_empty() {
+            return Ok(());
+        }
+        self.lesson_source_detachment
+            .detach_timetable_sources_in_transaction(tx, block_group_ids)
+            .await
+    }
+    pub fn require_timetable(&self, version_id: Uuid) -> Result<(), AppError> {
+        if self.room.key.timetable_id == version_id {
             Ok(())
         } else {
             Err(forbidden())
@@ -121,24 +134,28 @@ impl CommitPermit {
         self.capture_content_revision
             .store(false, Ordering::Release);
     }
-    pub fn version_snapshot(
+    pub fn timetable_snapshot(
         &self,
-    ) -> Result<Option<crate::models::timetable_version::TimetableVersion>, AppError> {
-        Ok(self.committed_version.lock().map_err(|_| stale())?.clone())
+    ) -> Result<Option<crate::models::timetable::Timetable>, AppError> {
+        Ok(self
+            .committed_timetable
+            .lock()
+            .map_err(|_| stale())?
+            .clone())
     }
     pub async fn commit(
         &self,
         mut transaction: school_tenancy::ObservedTransaction,
     ) -> Result<(), AppError> {
         if self.capture_content_revision.load(Ordering::Acquire) {
-            let cached = self.room.lock()?.workspace.version.clone();
+            let cached = self.room.lock()?.workspace.timetable.clone();
             let version =
-                crate::services::timetable_version_service::refresh_content_revision_on_connection(
+                crate::services::timetable_service::refresh_content_revision_on_connection(
                     &mut transaction,
                     cached,
                 )
                 .await?;
-            *self.committed_version.lock().map_err(|_| stale())? = Some(version);
+            *self.committed_timetable.lock().map_err(|_| stale())? = Some(version);
         }
         self.phase.store(1, Ordering::Release);
         transaction.commit().await?;
@@ -160,16 +177,17 @@ impl Drop for CommitPermit {
                 }
             }
         }
-        let _ = self.room.signals.send(DraftSignal::Reservations);
+        let _ = self.room.signals.send(TimetableSignal::Reservations);
     }
 }
 
-impl DraftRoom {
+impl TimetableRoom {
     pub fn begin_commit(
         self: &Arc<Self>,
         actor_id: Uuid,
         session_id: Uuid,
-        identity: Option<&DraftMutationIdentity>,
+        identity: Option<&TimetableMutationIdentity>,
+        lesson_source_detachment: &'static dyn crate::ports::LessonSourceDetachmentPort,
         scope: MutationScope,
     ) -> Result<CommitPermit, AppError> {
         self.expire(Instant::now());
@@ -177,25 +195,19 @@ impl DraftRoom {
         if !state.valid {
             return Err(stale());
         }
-        if !matches!(&scope, MutationScope::WholeDraft)
-            && state.workspace.version.delivery_version_id
-                != state.workspace.latest_delivery_version_id
-        {
-            return Err(crate::services::timetable_source::outdated_draft_source());
-        }
         let expected_purpose = match &scope {
             MutationScope::Blocks(_) | MutationScope::Series(_) => {
-                Some(DraftReservationPurpose::Edit)
+                Some(TimetableReservationPurpose::Edit)
             }
             MutationScope::Update { request, .. }
                 if request.day_of_week.is_none() && request.bell_schedule_period_id.is_none() =>
             {
-                Some(DraftReservationPurpose::Edit)
+                Some(TimetableReservationPurpose::Edit)
             }
             MutationScope::Update { .. }
             | MutationScope::Ordinary(_)
             | MutationScope::Synchronized(_)
-            | MutationScope::Swap(_) => Some(DraftReservationPurpose::Drag),
+            | MutationScope::Swap(_) => Some(TimetableReservationPurpose::Drag),
             _ => None,
         };
         let scope = match resolve_scope(&state.workspace, scope)? {
@@ -229,7 +241,7 @@ impl DraftRoom {
                 return Err(forbidden());
             }
             let covers_operation = match &scope {
-                MutationScope::WholeDraft | MutationScope::Structural(_) => false,
+                MutationScope::WholeTimetable | MutationScope::Structural(_) => false,
                 MutationScope::Blocks(ids) => match &lease.public.source {
                     TimetableBlockPlacementSource::ExistingBlock { block_id, .. } => {
                         ids.contains(block_id)
@@ -254,7 +266,7 @@ impl DraftRoom {
                         && lease.candidate.as_ref() == Some(candidate)
                         && targets.len() == 1
                         && (lease.public.target.as_ref() == targets.first()
-                            || (lease.public.purpose == DraftReservationPurpose::Edit
+                            || (lease.public.purpose == TimetableReservationPurpose::Edit
                                 && matches!(source, TimetableBlockPlacementSource::ExistingBlock { block_id, .. }
                                     if state.workspace.blocks.iter().any(|block| block.id == *block_id
                                         && targets[0].day_of_week == block.day_of_week
@@ -274,8 +286,8 @@ impl DraftRoom {
         };
         let footprint = match scope {
             MutationScope::Structural(request) => structural_footprint(&state.workspace, &request)?,
-            MutationScope::WholeDraft => Footprint {
-                whole_draft: true,
+            MutationScope::WholeTimetable => Footprint {
+                whole_timetable: true,
                 ..Default::default()
             },
             MutationScope::Blocks(ids) => {
@@ -345,19 +357,20 @@ impl DraftRoom {
                 purpose: public
                     .as_ref()
                     .map(|lease| lease.purpose)
-                    .unwrap_or(DraftReservationPurpose::Edit),
+                    .unwrap_or(TimetableReservationPurpose::Edit),
             },
         );
         drop(state);
-        let _ = self.signals.send(DraftSignal::Reservations);
+        let _ = self.signals.send(TimetableSignal::Reservations);
         Ok(CommitPermit {
             room: self.clone(),
             id,
             actor_id,
+            lesson_source_detachment,
             phase: AtomicU8::new(0),
             capture_content_revision: AtomicBool::new(true),
             settled: AtomicBool::new(false),
-            committed_version: std::sync::Mutex::new(None),
+            committed_timetable: std::sync::Mutex::new(None),
         })
     }
 }
@@ -366,7 +379,7 @@ fn resolve_scope(
     workspace: &TimetableBlockWorkspace,
     scope: MutationScope,
 ) -> Result<MutationScope, AppError> {
-    let target = |day: &str, period| DraftTarget {
+    let target = |day: &str, period| TimetableTarget {
         day_of_week: day.trim().to_ascii_uppercase(),
         bell_schedule_period_id: period,
         block_id: None,
@@ -477,7 +490,7 @@ fn resolve_scope(
                     row_version: request.block_a_row_version,
                 },
                 candidate: candidate_from_block(block),
-                targets: vec![DraftTarget {
+                targets: vec![TimetableTarget {
                     day_of_week: other.day_of_week.clone(),
                     bell_schedule_period_id: other.bell_schedule_period_id,
                     block_id: Some(other.id),
@@ -782,7 +795,7 @@ fn target_footprint(
     workspace: &TimetableBlockWorkspace,
     source: &TimetableBlockPlacementSource,
     candidate: &TimetableBlockPlacementCandidate,
-    target: &DraftTarget,
+    target: &TimetableTarget,
 ) -> Result<Footprint, AppError> {
     if !valid_day(&target.day_of_week) {
         return Err(stale());
@@ -909,13 +922,13 @@ fn conflict(state: &RoomState, footprint: &Footprint, own_token: Option<Uuid>) -
 
 fn require_candidate_access(
     state: &RoomState,
-    member: &DraftMember,
+    member: &TimetableMember,
     source: &TimetableBlockPlacementSource,
     candidate: &TimetableBlockPlacementCandidate,
 ) -> Result<(), AppError> {
     let filter = member.manage_access.as_ref().ok_or_else(forbidden)?;
     let mut resources = crate::policy::TimetableResourceSet {
-        timetable_version_ids: vec![state.workspace.version.id],
+        timetable_ids: vec![state.workspace.timetable.id],
         room_ids: candidate.room_id.into_iter().collect(),
         teacher_ids: candidate
             .teacher_ids
@@ -951,10 +964,10 @@ fn require_candidate_access(
 }
 
 pub(super) fn lease_command(
-    room: &DraftRoom,
+    room: &TimetableRoom,
     connection_id: Uuid,
-    command: DraftClientMessage,
-) -> Result<Vec<DraftEventEnvelope>, AppError> {
+    command: TimetableClientMessage,
+) -> Result<Vec<TimetableEventEnvelope>, AppError> {
     let mut state = room.lock()?;
     if !state.valid {
         return Err(stale());
@@ -966,13 +979,21 @@ pub(super) fn lease_command(
         .and_then(|indices| indices.manage.as_ref())
         .ok_or_else(forbidden)?;
     let (request_id, kind) = match &command {
-        DraftClientMessage::ClientClaim(value) => (value.request_id, DraftCommandKind::Claim),
-        DraftClientMessage::ClientTarget(value) => (value.request_id, DraftCommandKind::Target),
-        DraftClientMessage::ClientRenew(value) => (value.request_id, DraftCommandKind::Renew),
-        DraftClientMessage::ClientRelease(value) => (value.request_id, DraftCommandKind::Release),
+        TimetableClientMessage::ClientClaim(value) => {
+            (value.request_id, TimetableCommandKind::Claim)
+        }
+        TimetableClientMessage::ClientTarget(value) => {
+            (value.request_id, TimetableCommandKind::Target)
+        }
+        TimetableClientMessage::ClientRenew(value) => {
+            (value.request_id, TimetableCommandKind::Renew)
+        }
+        TimetableClientMessage::ClientRelease(value) => {
+            (value.request_id, TimetableCommandKind::Release)
+        }
         _ => return Err(stale()),
     };
-    let mut result = DraftCommandResult {
+    let mut result = TimetableCommandResult {
         request_id,
         command: kind,
         accepted: false,
@@ -983,18 +1004,8 @@ pub(super) fn lease_command(
         lease_token: None,
         expires_at: None,
     };
-    if !matches!(&command, DraftClientMessage::ClientRelease(_))
-        && state.workspace.version.delivery_version_id != state.workspace.latest_delivery_version_id
-    {
-        result.code = Some("delivery_source_outdated".into());
-        return Ok(vec![DraftEventEnvelope {
-            epoch: state.epoch,
-            seq: state.seq,
-            event: DraftServerMessage::DraftCommandResult(result),
-        }]);
-    }
     match command {
-        DraftClientMessage::ClientClaim(claim) => {
+        TimetableClientMessage::ClientClaim(claim) => {
             result.source = Some(claim.source.clone());
             if !source_visible(&projected, &claim.source) {
                 return Err(forbidden());
@@ -1015,7 +1026,7 @@ pub(super) fn lease_command(
                 result.code = Some("reserved".into());
             } else {
                 let token = Uuid::new_v4();
-                let public = DraftReservation {
+                let public = TimetableReservation {
                     reservation_id: Uuid::new_v4(),
                     owner_connection_id: connection_id,
                     purpose: claim.purpose,
@@ -1041,7 +1052,7 @@ pub(super) fn lease_command(
                 );
             }
         }
-        DraftClientMessage::ClientTarget(update) => {
+        TimetableClientMessage::ClientTarget(update) => {
             let lease = state
                 .leases
                 .get(&update.lease_token)
@@ -1086,7 +1097,7 @@ pub(super) fn lease_command(
                 grant_result(&mut result, lease);
             }
         }
-        DraftClientMessage::ClientRenew(command) => {
+        TimetableClientMessage::ClientRenew(command) => {
             let lease = state
                 .leases
                 .get_mut(&command.lease_token)
@@ -1096,7 +1107,7 @@ pub(super) fn lease_command(
             lease.deadline = Instant::now() + LEASE_TTL;
             grant_result(&mut result, lease);
         }
-        DraftClientMessage::ClientRelease(command) => {
+        TimetableClientMessage::ClientRelease(command) => {
             let lease = state
                 .leases
                 .get(&command.lease_token)
@@ -1118,18 +1129,18 @@ pub(super) fn lease_command(
         }
         _ => return Err(stale()),
     }
-    let event = DraftEventEnvelope {
+    let event = TimetableEventEnvelope {
         epoch: state.epoch,
         seq: state.seq,
-        event: DraftServerMessage::DraftCommandResult(result),
+        event: TimetableServerMessage::TimetableCommandResult(result),
     };
     drop(state);
-    let _ = room.signals.send(DraftSignal::Reservations);
-    let _ = room.signals.send(DraftSignal::Presence(connection_id));
+    let _ = room.signals.send(TimetableSignal::Reservations);
+    let _ = room.signals.send(TimetableSignal::Presence(connection_id));
     Ok(vec![event])
 }
 
-fn grant_result(result: &mut DraftCommandResult, lease: &Lease) {
+fn grant_result(result: &mut TimetableCommandResult, lease: &Lease) {
     result.accepted = true;
     result.source = Some(lease.public.source.clone());
     result.target = lease.public.target.clone();
@@ -1138,8 +1149,12 @@ fn grant_result(result: &mut DraftCommandResult, lease: &Lease) {
     result.expires_at = Some(lease.public.expires_at);
 }
 
-fn room_options(state: &RoomState, member: &DraftMember, own: &Lease) -> Option<DraftRoomOptions> {
-    if own.public.purpose != DraftReservationPurpose::Edit {
+fn room_options(
+    state: &RoomState,
+    member: &TimetableMember,
+    own: &Lease,
+) -> Option<TimetableRoomOptions> {
+    if own.public.purpose != TimetableReservationPurpose::Edit {
         return None;
     }
     let TimetableBlockPlacementSource::ExistingBlock {
@@ -1178,7 +1193,7 @@ fn room_options(state: &RoomState, member: &DraftMember, own: &Lease) -> Option<
     {
         collect(&block_footprint(other));
     }
-    let mut whole_draft = false;
+    let mut whole_timetable = false;
     for footprint in state
         .leases
         .values()
@@ -1192,7 +1207,7 @@ fn room_options(state: &RoomState, member: &DraftMember, own: &Lease) -> Option<
                 .map(|record| &record.footprint),
         )
     {
-        whole_draft |= footprint.whole_draft;
+        whole_timetable |= footprint.whole_timetable;
         collect(footprint);
     }
     let available_room_ids = state
@@ -1203,7 +1218,7 @@ fn room_options(state: &RoomState, member: &DraftMember, own: &Lease) -> Option<
             // Existing edits may retain their original inactive room, as normalize_candidate does.
             (room.status == "ACTIVE" || original_room == Some(room.id))
                 && visible.contains(&room.id)
-                && !whole_draft
+                && !whole_timetable
                 && !occupied.contains(&room.id)
                 && member
                     .resource_access
@@ -1218,13 +1233,16 @@ fn room_options(state: &RoomState, member: &DraftMember, own: &Lease) -> Option<
         })
         .map(|room| room.id)
         .collect();
-    Some(DraftRoomOptions {
+    Some(TimetableRoomOptions {
         reservation_id: own.public.reservation_id,
         available_room_ids,
     })
 }
 
-pub(super) fn availability(state: &RoomState, member: &DraftMember) -> Option<DraftAvailability> {
+pub(super) fn availability(
+    state: &RoomState,
+    member: &TimetableMember,
+) -> Option<TimetableAvailability> {
     let own = state
         .leases
         .get(state.active_leases.get(&member.connection_id)?)?;
@@ -1232,7 +1250,7 @@ pub(super) fn availability(state: &RoomState, member: &DraftMember) -> Option<Dr
     let mut blocked_cells = Vec::new();
     for day in ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] {
         for period in &state.workspace.bell_periods {
-            let target = DraftTarget {
+            let target = TimetableTarget {
                 day_of_week: day.into(),
                 bell_schedule_period_id: period.id,
                 block_id: None,
@@ -1244,7 +1262,7 @@ pub(super) fn availability(state: &RoomState, member: &DraftMember) -> Option<Dr
                 .values()
                 .filter(|record| footprint.conflicts(&record.footprint))
             {
-                blocked_cells.push(DraftBlockedCell {
+                blocked_cells.push(TimetableBlockedCell {
                     day_of_week: day.into(),
                     bell_schedule_period_id: period.id,
                     reservation_id: record.reservation_id,
@@ -1257,7 +1275,7 @@ pub(super) fn availability(state: &RoomState, member: &DraftMember) -> Option<Dr
                 .values()
                 .filter(|lease| lease.token != own.token && footprint.conflicts(&lease.footprint))
             {
-                blocked_cells.push(DraftBlockedCell {
+                blocked_cells.push(TimetableBlockedCell {
                     day_of_week: day.into(),
                     bell_schedule_period_id: period.id,
                     reservation_id: other.public.reservation_id,
@@ -1267,7 +1285,7 @@ pub(super) fn availability(state: &RoomState, member: &DraftMember) -> Option<Dr
             }
         }
     }
-    Some(DraftAvailability {
+    Some(TimetableAvailability {
         source: own.public.source.clone(),
         context: member.context.clone(),
         blocked_cells,
@@ -1306,7 +1324,7 @@ mod tests {
         };
         assert!(source.conflicts(&source));
         assert!(source.conflicts(&Footprint {
-            whole_draft: true,
+            whole_timetable: true,
             ..Default::default()
         }));
         assert!(!source.conflicts(&Footprint::default()));

@@ -100,6 +100,33 @@ function fixture(t, options = {}) {
       path.join(repo, "scripts/lib/pipeline-remote", name),
       path.join(root, "scripts/lib/pipeline-remote", name),
     );
+  // Storage tests compose a controlled preparation owner. Actual encrypted
+  // PostgreSQL rehearsal belongs to the separate controller qualification.
+  writeFileSync(
+    path.join(
+      root,
+      "scripts/lib/pipeline-remote/current-academic-preparation.py",
+    ),
+    `import json, os, pathlib, sys
+root=pathlib.Path(os.environ['FIXTURE_ROOT']); phase=sys.argv[1]
+options=json.loads((root/'options.json').read_text())
+if phase not in ['prepare','check','complete'] or (root/'container.json').exists(): sys.exit(91)
+with (root/'commands').open('a') as output: output.write(json.dumps({'args':['preparation',phase],'envKeys':[]})+'\\n')
+if options.get('preparationFailure')==phase:
+ print(json.dumps({'schemaVersion':1,'error':'source_changed_before_migration'}),file=sys.stderr);sys.exit(1)
+marker=root/'preparation-fixture'
+if phase=='prepare':
+ marker.write_text('prepared')
+ if not options.get('fresh') and not options.get('allCurrent'):
+  point=pathlib.Path.home()/'.local/share/schoolorbit-academic-recovery'/(os.environ['RELEASE_SHA']+'-'+os.environ['BACKEND_IMAGE_DIGEST'][7:])
+  point.mkdir(parents=True,mode=0o700,exist_ok=True)
+  proof=point/'proof.json';proof.write_text('synthetic-private-preparation-proof');proof.chmod(0o600)
+elif not marker.exists(): sys.exit(92)
+if phase=='complete' and 'migrate-tenants' not in (root/'executed').read_text().splitlines(): sys.exit(93)
+print(json.dumps({'schemaVersion':1,'prepared':True}))
+`,
+    { mode: 0o644 },
+  );
   writeFileSync(path.join(stack, "postgresql/ca.crt"), "synthetic");
   if (options.customCa) {
     writeFileSync(path.join(stack, "postgresql/custom ca.crt"), "synthetic");
@@ -197,6 +224,7 @@ if(process.argv[3]?.includes('/stopped-'))process.exit(1);const r=require('node:
   }
   const env = {
     ...process.env,
+    HOME: path.join(stack, "home"),
     PATH: path.join(stack, "bin") + ":" + process.env.PATH,
     FIXTURE_ROOT: stack,
     SCHOOLORBIT_STACK_ROOT: stack,
@@ -314,6 +342,27 @@ test("regular release executes real headless stages before actual production sta
     migrate = calls.findIndex((x) => x.endsWith("migrate-tenants")),
     check = calls.findIndex((x) => x.endsWith("check-admin"));
   assert.ok(stop < remove && remove < migrate && migrate < check);
+  const prepare = calls.indexOf("preparation prepare"),
+    validatePreparation = calls.indexOf("preparation check"),
+    completePreparation = calls.indexOf("preparation complete");
+  assert.ok(
+    remove < prepare &&
+      prepare < validatePreparation &&
+      validatePreparation < migrate,
+  );
+  assert.ok(migrate < completePreparation && completePreparation < check);
+  const live = f.commands().find((x) => x.args.at(-1) === "migrate-tenants");
+  assert.ok(
+    live.args.some((x) =>
+      x.endsWith(":/run/academic-current-preparation/proof.json:ro"),
+    ),
+  );
+  for (const name of [
+    "CURRENT_ACADEMIC_PREPARATION_FILE",
+    "CURRENT_ACADEMIC_RELEASE_SHA",
+    "CURRENT_ACADEMIC_IMAGE_DIGEST",
+  ])
+    assert.ok(live.args.includes(name));
   assert.ok(
     calls.slice(stop + 1, remove).some((x) => x.includes(".State.Running")),
   );
@@ -332,6 +381,53 @@ test("regular release executes real headless stages before actual production sta
   assert.equal(
     statSync(path.join(f.journal, "old-context.json")).mode & 0o777,
     0o600,
+  );
+});
+for (const phase of ["prepare", "check", "complete"])
+  test(`preparation ${phase} refusal preserves maintenance and blocks the next production phase`, (t) => {
+    const f = fixture(t, { preparationFailure: phase });
+    assert.equal(f.run("preflight").status, 0);
+    f.maintenance();
+    const result = f.cutover();
+    assert.notEqual(result.status, 0);
+    assert.match(
+      result.stdout + result.stderr,
+      /source_changed_before_migration/,
+    );
+    assert.ok(existsSync(path.join(f.root, "pending-release")));
+    assert.equal(existsSync(path.join(f.stack, "started")), false);
+    const migrated = f
+      .commands()
+      .some((x) => x.args.at(-1) === "migrate-tenants");
+    assert.equal(migrated, phase === "complete");
+    assert.equal(
+      existsSync(path.join(f.journal, "migration-attempted")),
+      phase === "complete",
+    );
+    assert.equal(
+      f.commands().some((x) => x.args.at(-1) === "check-admin"),
+      false,
+    );
+  });
+test("already-current preparation creates no recovery proof or proof mount for an ordinary release", (t) => {
+  const f = fixture(t, { allCurrent: true });
+  assert.equal(f.run("preflight").status, 0);
+  f.maintenance();
+  const result = f.cutover();
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(existsSync(path.join(f.stack, "started")));
+  const live = f.commands().find((x) => x.args.at(-1) === "migrate-tenants");
+  assert.equal(
+    live.args.some((x) =>
+      x.includes("academic-current-preparation/proof.json"),
+    ),
+    false,
+  );
+  assert.equal(
+    existsSync(
+      path.join(f.env.HOME, ".local/share/schoolorbit-academic-recovery"),
+    ),
+    false,
   );
 });
 test("explicit binding verifies old and target proof and writes a private durable manifest as mapped host user", (t) => {
@@ -632,6 +728,33 @@ test("migration histogram accepts every exact version-bound refusal and no tenan
       "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE",
       "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
     ],
+    155: [
+      "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET",
+      "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED",
+      "ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED",
+      "ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID",
+    ],
+    157: [
+      "ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE",
+      "ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED",
+      "ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE",
+      "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS",
+      "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS",
+      "ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING",
+      "ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS",
+      "ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING",
+      "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE",
+      "ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE",
+      "ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE",
+      "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH",
+      "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE",
+      "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE",
+      "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE",
+      "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE",
+      "ACADEMIC_CURRENT_OFFERING_NOT_FOUND",
+      "ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH",
+      "ACADEMIC_CURRENT_RECONCILIATION_FAILED",
+    ],
   };
   const buckets = Object.entries(codes).flatMap(([version, messages]) =>
     messages
@@ -639,6 +762,28 @@ test("migration histogram accepts every exact version-bound refusal and no tenan
       .map((code) => migrationBucket({ version: Number(version), code })),
   );
   const report = migrationReport(buckets);
+  report.latest_version = 157;
+  const { f, result } = migrationCutover(t, {
+    migrationOutput: report,
+    migrationExitCode: 1,
+  });
+  assertMigrationBlocked(f, result);
+  assert.deepEqual(JSON.parse(result.stdout), report);
+});
+test("current operations owner and runtime stages preserve bounded failure metadata", (t) => {
+  const report = migrationReport([
+    migrationBucket({
+      stage: "owner_current_operations_cutover",
+      version: null,
+      code: "unclassified",
+    }),
+    migrationBucket({
+      stage: "runtime_current_operations_cutover",
+      version: null,
+      code: "unclassified",
+    }),
+  ]);
+  report.latest_version = 157;
   const { f, result } = migrationCutover(t, {
     migrationOutput: report,
     migrationExitCode: 1,
@@ -709,6 +854,36 @@ const invalidMigrationReports = {
   ]),
   "148 refusal under version149": migrationReport([
     migrationBucket({ code: "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE" }),
+  ]),
+  "157 refusal under version155": migrationReport([
+    migrationBucket({
+      version: 155,
+      code: "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE",
+    }),
+  ]),
+  "155 refusal under version157": migrationReport([
+    migrationBucket({
+      version: 157,
+      code: "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED",
+    }),
+  ]),
+  "unknown157 refusal": migrationReport([
+    migrationBucket({
+      version: 157,
+      code: "ACADEMIC_CURRENT_private-sentinel",
+    }),
+  ]),
+  "retired delivery stage": migrationReport([
+    migrationBucket({
+      stage: "owner_delivery_timetable_cutover",
+      code: "unclassified",
+    }),
+  ]),
+  "retired publication stage": migrationReport([
+    migrationBucket({
+      stage: "runtime_publication_revisions_cutover",
+      code: "unclassified",
+    }),
   ]),
   "wrong refusal stage": migrationReport([
     migrationBucket({ stage: "permission_sync" }),

@@ -14,8 +14,7 @@ import {
 const origin = 'https://schoolorbit.invalid';
 const context = {
 	academicYearId: 'year-2',
-	academicTermId: 'term-2',
-	deliveryVersionId: 'version-2'
+	academicTermId: 'term-2'
 };
 const overview = new URL(
 	`${deliveryOverviewHref(context)}&view=offerings&kind=course&offeringSearch=ค21&subjectGroupId=math&homeroomSearch=1%2F2&readiness=attention&expandedRooms=room-2,room-1`,
@@ -28,7 +27,7 @@ test('offering links carry the exact academic context and restore the originatin
 	assert.equal(link.pathname, '/staff/academic/delivery/offering');
 	assert.equal(link.searchParams.get('academicYearId'), 'year-2');
 	assert.equal(link.searchParams.get('academicTermId'), 'term-2');
-	assert.equal(link.searchParams.get('deliveryVersionId'), 'version-2');
+	assert.equal(link.searchParams.get('deliveryVersionId'), null);
 	assert.equal(deliveryReturnHref(link, context), returnTo);
 	assert.deepEqual(readDeliveryOverviewState(overview), {
 		view: 'offerings',
@@ -55,17 +54,17 @@ test('presentation updates preserve independent filters and explicit collapsed r
 		null
 	);
 	assert.equal(next.searchParams.get('subjectGroupId'), 'math');
-	assert.equal(next.searchParams.get('deliveryVersionId'), 'version-2');
+	assert.equal(next.searchParams.get('deliveryVersionId'), null);
 	const reset = new URL(deliveryOverviewStateHref(next, { expandedRooms: null }), origin);
 	assert.equal(reset.searchParams.has('expandedRooms'), false);
 });
 
-test('overview return serialization uses the actual selected version and drops unrelated query fields', () => {
+test('overview return serialization uses the explicit selected term and drops unrelated query fields', () => {
 	const url = new URL(overview);
 	url.searchParams.set('deliveryVersionId', 'old-version');
 	url.searchParams.set('returnTo', '//outside.invalid');
 	const result = new URL(deliveryOverviewReturnHref(url, context), origin);
-	assert.equal(result.searchParams.get('deliveryVersionId'), 'version-2');
+	assert.equal(result.searchParams.get('deliveryVersionId'), null);
 	assert.equal(result.searchParams.get('returnTo'), null);
 	assert.equal(result.searchParams.get('offeringSearch'), 'ค21');
 });
@@ -87,14 +86,14 @@ test('unsafe, unknown, duplicated or foreign-context returns fall back to the ac
 	}
 });
 
-test('legacy or stale context repair preserves only a verified version and a matching return', () => {
-	const legacy = new URL('/staff/academic/delivery/offering?deliveryVersionId=version-2', origin);
+test('legacy or stale context repair retains only the verified term and a matching return', () => {
+	const legacy = new URL('/staff/academic/delivery/offering', origin);
 	const repaired = new URL(repairedDeliveryOfferingHref(legacy, context)!, origin);
 	assert.equal(repaired.searchParams.get('academicYearId'), 'year-2');
 	assert.equal(repaired.searchParams.get('academicTermId'), 'term-2');
-	assert.equal(repaired.searchParams.get('deliveryVersionId'), 'version-2');
+	assert.equal(repaired.searchParams.get('deliveryVersionId'), null);
 	const stale = new URL(
-		'/staff/academic/delivery/offering?academicYearId=year-1&academicTermId=term-1&deliveryVersionId=foreign',
+		'/staff/academic/delivery/offering?academicYearId=year-1&academicTermId=term-1',
 		origin
 	);
 	stale.searchParams.set(
@@ -102,7 +101,7 @@ test('legacy or stale context repair preserves only a verified version and a mat
 		'/staff/academic/delivery?academicYearId=year-1&academicTermId=term-1'
 	);
 	const corrected = new URL(
-		repairedDeliveryOfferingHref(stale, { ...context, deliveryVersionId: null })!,
+		repairedDeliveryOfferingHref(stale, context)!,
 		origin
 	);
 	assert.equal(corrected.searchParams.get('deliveryVersionId'), null);
@@ -110,7 +109,7 @@ test('legacy or stale context repair preserves only a verified version and a mat
 	assert.equal(repairedDeliveryOfferingHref(corrected, context), null);
 });
 
-test('readiness offering links add academic and origin context while retaining the finding target version', () => {
+test('readiness offering links add academic and origin context while discarding retired operational pins', () => {
 	const returnTo = overview.pathname + overview.search;
 	const target = new URL(
 		deliveryFindingHref(
@@ -123,7 +122,7 @@ test('readiness offering links add academic and origin context while retaining t
 	);
 	assert.equal(target.searchParams.get('academicYearId'), context.academicYearId);
 	assert.equal(target.searchParams.get('academicTermId'), context.academicTermId);
-	assert.equal(target.searchParams.get('deliveryVersionId'), 'target-version');
+	assert.equal(target.searchParams.get('deliveryVersionId'), null);
 	assert.equal(target.searchParams.get('groupId'), 'group');
 	assert.equal(target.searchParams.get('returnTo'), returnTo);
 	for (const route of [

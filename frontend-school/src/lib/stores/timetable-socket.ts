@@ -9,8 +9,8 @@ import {
 	type OwnedDraftLease
 } from '#lib/academic/timetable/collaboration-session.js';
 import type {
-	DraftEventEnvelope,
-	DraftReservationPurpose,
+	TimetableEventEnvelope,
+	TimetableReservationPurpose,
 	TimetableBlockPlacementCandidate,
 	TimetableBlockPlacementSource
 } from '#lib/api/timetable.js';
@@ -68,7 +68,7 @@ type TimetableChangedEvent = {
 	payload: {
 		user_id: string;
 		academic_term_id: string;
-		timetable_version_id: string;
+		timetable_id: string;
 		block_id?: string | null;
 		revision: number;
 	};
@@ -94,7 +94,7 @@ export const remoteCursors: Writable<
 export const refreshTrigger: Writable<number> = writable(0);
 export const isConnected: Writable<boolean> = writable(false);
 export const draftSessionState = writable<DraftSessionState>({
-	versionId: null,
+	timetableId: null,
 	connectionId: null,
 	epoch: null,
 	seq: 0,
@@ -105,11 +105,11 @@ export const draftSessionState = writable<DraftSessionState>({
 	leaseRevision: 0
 });
 export const draftReconcileSignal = writable<{
-	versionId: string;
+	timetableId: string;
 	reason: string;
 	revision: number;
 } | null>(null);
-const draftEventListeners = new Set<(event: DraftEventEnvelope) => void>();
+const draftEventListeners = new Set<(event: TimetableEventEnvelope) => void>();
 const draftLeaseLostListeners = new Set<(lease: OwnedDraftLease, error: Error) => void>();
 let currentSocketParams: TimetableSocketParams | null = null;
 let invalidDraftMessages = 0;
@@ -121,7 +121,7 @@ const draftSession = createDraftCollaborationSession({
 	clearTimer: (timer) => clearTimeout(timer),
 	onState: (state) => draftSessionState.set(state),
 	onEvent: (event) => {
-		if (event.type === 'DraftStateSync') {
+		if (event.type === 'TimetableStateSync') {
 			needsResumeReconcile = false;
 			timetableSocketRuntime.confirmStateSync();
 		}
@@ -129,12 +129,12 @@ const draftSession = createDraftCollaborationSession({
 	},
 	onReconcile: (reason) => {
 		const params = currentSocketParams;
-		if (!params?.timetableVersionId) return;
-		draftSession.reset(params.timetableVersionId);
+		if (!params?.timetableId) return;
+		draftSession.reset(params.timetableId);
 		timetableSocketRuntime.disconnect();
 		timetableSocketRuntime.connect(params);
 		draftReconcileSignal.update((previous) => ({
-			versionId: params.timetableVersionId!,
+			timetableId: params.timetableId!,
 			reason,
 			revision: (previous?.revision ?? 0) + 1
 		}));
@@ -145,15 +145,15 @@ const draftSession = createDraftCollaborationSession({
 });
 
 export async function claimDraftLease(
-	versionId: string,
+	timetableId: string,
 	source: TimetableBlockPlacementSource,
 	candidate: TimetableBlockPlacementCandidate,
-	purpose: DraftReservationPurpose,
+	purpose: TimetableReservationPurpose,
 	signal?: AbortSignal
 ): Promise<OwnedDraftLease> {
-	if (draftSession.state.versionId && draftSession.state.versionId !== versionId)
-		throw new Error('รุ่นตารางสอนเปลี่ยนไป กรุณาเลือกคาบใหม่');
-	if (!draftSession.state.ready || draftSession.state.versionId !== versionId) {
+	if (draftSession.state.timetableId && draftSession.state.timetableId !== timetableId)
+		throw new Error('ตารางสอนเปลี่ยนไป กรุณาเลือกคาบใหม่');
+	if (!draftSession.state.ready || draftSession.state.timetableId !== timetableId) {
 		await new Promise<void>((resolve, reject) => {
 			let finished = false;
 			let unsubscribe = () => {};
@@ -176,8 +176,8 @@ export async function claimDraftLease(
 			}
 			signal?.addEventListener('abort', abort, { once: true });
 			unsubscribe = draftSessionState.subscribe((state) => {
-				if (state.versionId === versionId && state.ready) finish(true);
-				else if (state.versionId && state.versionId !== versionId) finish(false);
+				if (state.timetableId === timetableId && state.ready) finish(true);
+				else if (state.timetableId && state.timetableId !== timetableId) finish(false);
 			});
 		});
 	}
@@ -190,7 +190,7 @@ export const draftMutationIdentity = draftSession.mutation;
 export const sendDraftPresence = draftSession.presence;
 export type { OwnedDraftLease };
 
-export function subscribeDraftEvents(listener: (event: DraftEventEnvelope) => void) {
+export function subscribeDraftEvents(listener: (event: TimetableEventEnvelope) => void) {
 	draftEventListeners.add(listener);
 	return () => {
 		draftEventListeners.delete(listener);
@@ -205,8 +205,8 @@ export function subscribeDraftLeaseLost(listener: (lease: OwnedDraftLease, error
 
 export function requestDraftSnapshot(): boolean {
 	const params = currentSocketParams;
-	if (!params?.timetableVersionId) return false;
-	draftSession.reset(params.timetableVersionId);
+	if (!params?.timetableId) return false;
+	draftSession.reset(params.timetableId);
 	timetableSocketRuntime.disconnect();
 	timetableSocketRuntime.connect(params);
 	return true;
@@ -225,7 +225,7 @@ function clearRealtimeState() {
 	isConnected.set(false);
 	activeUsers.set([]);
 	remoteCursors.set({});
-	draftSession.reset(currentSocketParams?.timetableVersionId ?? null);
+	draftSession.reset(currentSocketParams?.timetableId ?? null);
 }
 
 function triggerReconcile(currentSeq?: number) {
@@ -323,7 +323,7 @@ function handleStateSync(event: StateSyncEvent) {
 	needsResumeReconcile = false;
 }
 
-function handleMessage(event: SequencedTimetableEvent | DraftEventEnvelope) {
+function handleMessage(event: SequencedTimetableEvent | TimetableEventEnvelope) {
 	if ('epoch' in event) {
 		draftSession.apply(event);
 		return;
@@ -418,8 +418,8 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 		currentAcademicTermId = params.academicTermId;
 		const url = new URL('/ws/timetable', BACKEND_WS_URL);
 		url.searchParams.set('academicTermId', String(params.academicTermId));
-		if (params.timetableVersionId) {
-			url.searchParams.set('timetableVersionId', params.timetableVersionId);
+		if (params.timetableId) {
+			url.searchParams.set('timetableId', params.timetableId);
 		}
 		const schoolSubdomain = getSchoolSubdomainHint();
 		if (schoolSubdomain) url.searchParams.set('school_subdomain', schoolSubdomain);
@@ -446,7 +446,7 @@ const timetableSocketRuntime = createTimetableSocketRuntime({
 	},
 	onOpen: () => isConnected.set(true),
 	onMessage: (data) => {
-		if (currentSocketParams?.timetableVersionId) {
+		if (currentSocketParams?.timetableId) {
 			const event = decodeDraftEvent(data);
 			if (event) {
 				draftSession.apply(event);
@@ -476,7 +476,7 @@ export function connectTimetableSocket(params: TimetableSocketParams) {
 	if (
 		currentAcademicTermId !== params.academicTermId ||
 		currentUserId !== params.currentUserId ||
-		currentSocketParams?.timetableVersionId !== params.timetableVersionId
+		currentSocketParams?.timetableId !== params.timetableId
 	) {
 		lastSeq = 0;
 		invalidDraftMessages = 0;

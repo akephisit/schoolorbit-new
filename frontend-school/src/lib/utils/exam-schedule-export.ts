@@ -417,7 +417,7 @@ function assignmentByDayHomeroom(invigilatorWorkspace: ExamInvigilatorWorkspace 
 }
 
 function readinessStatus(readiness: ExamScheduleReadiness): string {
-	return readiness.canPublish ? 'พร้อมเผยแพร่' : 'ยังไม่พร้อมเผยแพร่';
+	return readiness.complete ? 'ข้อมูลครบ' : 'มีรายการที่ควรตรวจ';
 }
 
 function printableTimeLabel(value: string | null | undefined): string {
@@ -1289,7 +1289,7 @@ function readinessRows(workspace: ExamScheduleWorkspace): WorksheetObjectRow[] {
 		{
 			ประเภท: 'สถานะ',
 			รายการ: 'สถานะรอบสอบ',
-			'สถานะ/รายละเอียด': workspace.round.status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง'
+			'สถานะ/รายละเอียด': 'ตารางปัจจุบัน'
 		},
 		{
 			ประเภท: 'สรุป',

@@ -155,8 +155,25 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
         .await
         .unwrap();
 
+    let access = AcademicResourceListFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let original_plans = assessment_service::list_assessment_plans(
+        &pool,
+        &list_query(term_id),
+        &access,
+        current_actor_id,
+    )
+    .await
+    .unwrap();
+    assert!(!original_plans.is_empty());
+    assert!(original_plans
+        .iter()
+        .all(|plan| plan.assessment_coordinator_id == Some(other_coordinator_id)));
+
     let preferred_offering_id = Uuid::new_v4();
-    let starts_on_preserved = sqlx::query_scalar::<_, bool>(
+    let weekly_target_preserved = sqlx::query_scalar::<_, bool>(
         r#"WITH source AS (
                SELECT term.id AS academic_term_id,
                       term.academic_year_id,
@@ -168,7 +185,7 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
                       version.hours_per_semester,
                       subject.owning_organization_unit_id,
                       existing_detail.assessment_total_score,
-                      source_offering.starts_on
+                      source_offering.weekly_period_target
                FROM academic_terms term
                JOIN subject_versions version ON version.code = 'SCI-CORE'
                JOIN subjects subject ON subject.id = version.subject_id
@@ -182,14 +199,14 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
            ), inserted_offering AS (
                INSERT INTO learning_offerings (
                    id, academic_term_id, academic_year_id, kind, code_snapshot,
-                   name_snapshot, status, owning_organization_unit_id,
-                   migration_provenance, starts_on
+                   name_snapshot, owning_organization_unit_id,
+                   migration_provenance, weekly_period_target
                )
                SELECT $1, academic_term_id, academic_year_id, 'course', code,
-                      name_th, 'draft', owning_organization_unit_id, '{}'::jsonb,
-                      starts_on
+                      name_th, owning_organization_unit_id, '{}'::jsonb,
+                      weekly_period_target
                FROM source
-               RETURNING id, starts_on
+               RETURNING id, weekly_period_target
            ), inserted_detail AS (
                INSERT INTO course_offering_details (
                    learning_offering_id, academic_term_id, academic_year_id,
@@ -213,8 +230,8 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
                   source.subject_version_id, inserted_detail.learning_offering_id,
                   source.academic_year_id, $3, 1, '{}'::jsonb, now(), now()
            FROM source CROSS JOIN inserted_detail
-           RETURNING (SELECT starts_on FROM inserted_offering)
-                     = (SELECT starts_on FROM source)"#,
+           RETURNING (SELECT weekly_period_target FROM inserted_offering)
+                     = (SELECT weekly_period_target FROM source)"#,
     )
     .bind(preferred_offering_id)
     .bind(term_id)
@@ -223,44 +240,12 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
     .await
     .unwrap();
     assert!(
-        starts_on_preserved,
-        "cloned offering must retain its source date"
+        weekly_target_preserved,
+        "the current offering retains its actual weekly target"
     );
 
-    let access = AcademicResourceListFilter {
-        includes_school_owned: true,
-        ..Default::default()
-    };
-    let before_publication = assessment_service::list_assessment_plans(
-        &pool,
-        &list_query(term_id),
-        &access,
-        current_actor_id,
-    )
-    .await
-    .unwrap();
-    assert!(before_publication
-        .iter()
-        .all(|plan| plan.offering_id != preferred_offering_id));
-    sqlx::query(
-        "INSERT INTO academic_delivery_versions(
-             id,academic_term_id,academic_year_id,publication_no,effective_from,status,snapshot,
-             published_by,published_at,publication_idempotency_key,publication_request_hash
-         ) SELECT uuidv7(),term.id,term.academic_year_id,
-                  (SELECT coalesce(max(publication_no),0)+1 FROM academic_delivery_versions
-                   WHERE academic_term_id=term.id),current_date,'published',
-                  academic_capture_delivery_snapshot(term.id,current_date,
-                      (SELECT jsonb_agg(jsonb_build_object('id',id,'weekly_period_target',1))
-                       FROM learning_offerings WHERE academic_term_id=term.id AND kind='course')),
-                  $2,now(),uuidv7(),repeat('a',64)
-           FROM academic_terms term WHERE term.id=$1",
-    )
-    .bind(term_id)
-    .bind(current_actor_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
+    // The normalized current offering is visible immediately; no publication
+    // stage mediates assessment access or coordinator ordering.
     let plans = assessment_service::list_assessment_plans(
         &pool,
         &list_query(term_id),
@@ -271,6 +256,10 @@ async fn school_wide_assessment_list_prioritizes_the_current_coordinator() {
     .unwrap();
 
     assert!(plans.len() >= 2);
+    assert_eq!(plans.len(), original_plans.len() + 1);
+    assert!(original_plans
+        .iter()
+        .all(|original| plans.iter().any(|plan| plan.plan_id == original.plan_id)));
     assert_eq!(plans[0].offering_id, preferred_offering_id);
     assert_eq!(plans[0].assessment_coordinator_id, Some(current_actor_id));
 }
@@ -315,19 +304,18 @@ async fn one_offering_plan_is_shared_by_every_learning_group() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    let original_group_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM learning_groups WHERE learning_offering_id = $1 AND status <> 'closed'",
-    )
-    .bind(offering_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let original_group_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM learning_groups WHERE learning_offering_id = $1")
+            .bind(offering_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let second_group_id = Uuid::new_v4();
     sqlx::query(
         r#"INSERT INTO learning_groups (
                id, learning_offering_id, academic_term_id, academic_year_id,
-               code, name, status, roster_status
-           ) VALUES ($1, $2, $3, $4, 'SECOND-GROUP', 'กลุ่มเรียนที่สอง', 'draft', 'draft')"#,
+               code, name
+           ) VALUES ($1, $2, $3, $4, 'SECOND-GROUP', 'กลุ่มเรียนที่สอง')"#,
     )
     .bind(second_group_id)
     .bind(offering_id)

@@ -2,6 +2,7 @@
 	import type {
 		DeliveryManagementOptions,
 		LearningGroup,
+		LearningOffering,
 		ReplaceLearningGroupHomeroomsRequest,
 		ReplaceLearningGroupTeachersRequest,
 		TeacherAssignment,
@@ -10,32 +11,36 @@
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Plus, X } from '@lucide/svelte';
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	let {
+		offering,
 		group,
 		managementOptions,
 		canManage = false,
-		coverageEditingBlocked = false,
-		selectedHomeroomIds = null,
 		onSaveGroup,
 		onReplaceTeachers,
-		onReplaceHomerooms
+		onReplaceHomerooms,
+		onReload,
+		onBusyChange = () => {}
 	}: {
+		offering: LearningOffering;
 		group: LearningGroup;
 		managementOptions: DeliveryManagementOptions;
 		canManage?: boolean;
-		coverageEditingBlocked?: boolean;
-		selectedHomeroomIds?: string[] | null;
-		onSaveGroup: (request: UpdateLearningGroupRequest) => Promise<void>;
-		onReplaceTeachers: (request: ReplaceLearningGroupTeachersRequest) => Promise<void>;
-		onReplaceHomerooms: (request: ReplaceLearningGroupHomeroomsRequest) => Promise<void>;
+		onReload: () => Promise<LearningGroup>;
+		onBusyChange?: (busy: boolean) => void;
+		onSaveGroup: (request: UpdateLearningGroupRequest) => Promise<LearningGroup>;
+		onReplaceTeachers: (request: ReplaceLearningGroupTeachersRequest) => Promise<LearningGroup>;
+		onReplaceHomerooms: (request: ReplaceLearningGroupHomeroomsRequest) => Promise<LearningGroup>;
 	} = $props();
 
 	let details = $state(
@@ -43,7 +48,8 @@
 			name: group.name,
 			description: group.description ?? '',
 			capacity: group.capacity ?? null,
-			preferredRoomIds: [...group.preferredRoomIds]
+			preferredRoomIds: [...group.preferredRoomIds],
+			registrationOpen: group.registrationOpen
 		}))
 	);
 	let teachers = $state<TeacherAssignment[]>(
@@ -56,6 +62,33 @@
 	let selectedHomeroomId = $state('');
 	let busySection = $state<'details' | 'teachers' | 'homerooms' | null>(null);
 	let errorMessage = $state('');
+	let acceptedRowVersion = $state(untrack(() => group.rowVersion));
+	let needsReload = $state(false);
+	let reloading = $state(false);
+	let disposed = false;
+	const canOpenRegistration = $derived(
+		offering.kind === 'activity' &&
+			offering.snapshot.kind === 'activity' &&
+			offering.snapshot.registrationType === 'self'
+	);
+	function ownership() {
+		const offeringId = offering.id,
+			groupId = group.id,
+			epoch = authStore.sessionEpoch;
+		return () =>
+			!disposed &&
+			offering.id === offeringId &&
+			group.id === groupId &&
+			authStore.sessionEpoch === epoch;
+	}
+	function admission() {
+		const owned = ownership();
+		return () => owned() && canManage;
+	}
+
+	onDestroy(() => {
+		disposed = true;
+	});
 
 	const roomOptions = $derived(
 		managementOptions.rooms.map((room) => ({
@@ -127,21 +160,32 @@
 
 	async function perform(
 		section: 'details' | 'teachers' | 'homerooms',
-		action: () => Promise<void>,
+		action: () => Promise<LearningGroup>,
 		fallback: string
 	) {
-		if (section === 'homerooms' && coverageEditingBlocked) {
-			errorMessage = 'ห้องในรุ่นที่เลือกต่างจากกลุ่มเดิม กรุณาจัดการจากมุมมองรายห้อง';
-			return;
-		}
+		if (!canManage || busySection || reloading || needsReload) return;
+		const owned = ownership(),
+			current = admission(),
+			busy = onBusyChange;
 		busySection = section;
+		busy(true);
 		errorMessage = '';
 		try {
-			await action();
+			const accepted = await action();
+			if (current()) acceptedRowVersion = accepted.rowVersion;
+			else if (owned()) {
+				needsReload = true;
+				errorMessage = 'สิทธิ์แก้ไขเปลี่ยนระหว่างบันทึก โหลดข้อมูลล่าสุดก่อนลองอีกครั้ง';
+			}
 		} catch (error) {
+			if (!current()) return;
 			errorMessage = error instanceof Error ? error.message : fallback;
+			needsReload = true;
 		} finally {
-			busySection = null;
+			if (owned()) {
+				busySection = null;
+				busy(false);
+			}
 		}
 	}
 
@@ -155,10 +199,46 @@
 					description: details.description.trim() || null,
 					capacity: details.capacity,
 					preferredRoomIds: details.preferredRoomIds,
-					rowVersion: group.rowVersion
+					rowVersion: acceptedRowVersion,
+					registrationOpen: canOpenRegistration && details.registrationOpen
 				}),
 			'บันทึกรายละเอียดกลุ่มไม่สำเร็จ'
 		);
+	}
+	async function reloadBaseline() {
+		if (busySection || reloading || !canManage) return;
+		const owned = ownership(),
+			current = admission(),
+			busy = onBusyChange;
+		reloading = true;
+		busy(true);
+		try {
+			const latest = await onReload();
+			if (!current()) {
+				if (owned()) needsReload = true;
+				return;
+			}
+			details = {
+				name: latest.name,
+				description: latest.description ?? '',
+				capacity: latest.capacity ?? null,
+				preferredRoomIds: [...latest.preferredRoomIds],
+				registrationOpen: latest.registrationOpen
+			};
+			teachers = latest.teacherAssignments.map(({ teacherId, role }) => ({ teacherId, role }));
+			homeroomIds = [...latest.homeroomIds];
+			acceptedRowVersion = latest.rowVersion;
+			needsReload = false;
+			errorMessage = '';
+		} catch (error) {
+			if (current())
+				errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลกลุ่มล่าสุดไม่สำเร็จ';
+		} finally {
+			if (owned()) {
+				reloading = false;
+				busy(false);
+			}
+		}
 	}
 </script>
 
@@ -170,8 +250,21 @@
 		</p>
 	</header>
 
+	{#if needsReload}<div role="alert" class="space-y-2 border-b p-4 text-sm">
+			<p>ข้อมูลที่คุณแก้ไขยังอยู่ โหลดข้อมูลกลุ่มล่าสุดก่อนลองบันทึกอีกครั้ง</p>
+			<Button variant="outline" disabled={reloading || !canManage} onclick={reloadBaseline}
+				>ใช้ข้อมูลกลุ่มล่าสุด</Button
+			>
+		</div>{/if}
 	<div class="grid gap-6 p-4 xl:grid-cols-3">
 		<form class="space-y-4" onsubmit={saveDetails}>
+			{#if canOpenRegistration}<div class="flex items-center gap-2">
+					<Checkbox
+						id="group-editor-registration-open"
+						bind:checked={details.registrationOpen}
+						disabled={!canManage || busySection !== null || reloading || needsReload}
+					/><Label for="group-editor-registration-open">เปิดรับสมัครนักเรียน</Label>
+				</div>{/if}
 			<div>
 				<h3 class="font-medium">ข้อมูลกลุ่มและห้องเรียน</h3>
 				<p class="text-xs text-muted-foreground">ชื่อที่ครูเห็นและห้องที่เหมาะกับการจัดตาราง</p>
@@ -251,7 +344,8 @@
 					variant="outline"
 					loading={busySection === 'details'}
 					loadingLabel="กำลังบันทึก"
-					disabled={!details.name.trim()}>บันทึกข้อมูลกลุ่ม</LoadingButton
+					disabled={busySection !== null || reloading || needsReload || !details.name.trim()}
+					>บันทึกข้อมูลกลุ่ม</LoadingButton
 				>
 			{/if}
 		</form>
@@ -260,15 +354,10 @@
 			<div>
 				<div class="flex flex-wrap items-center gap-2">
 					<h3 class="font-medium">ครูผู้สอน</h3>
-					{#if group.teachersLocked}<Badge variant="outline">ล็อกแล้ว</Badge>{/if}
 				</div>
-				<p class="text-xs text-muted-foreground">
-					{group.teachersLocked
-						? 'เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้'
-						: 'เลือกครูจากบัญชีบุคลากรและกำหนดบทบาท'}
-				</p>
+				<p class="text-xs text-muted-foreground">เลือกครูจากบัญชีบุคลากรและกำหนดบทบาท</p>
 			</div>
-			{#if canManage && !group.teachersLocked}
+			{#if canManage}
 				<div class="space-y-2">
 					<DeliveryOptionCombobox
 						bind:value={selectedTeacherId}
@@ -305,7 +394,7 @@
 							<p class="truncate text-sm font-medium">{teacherName(assignment.teacherId)}</p>
 							<p class="text-xs text-muted-foreground">{roleName(assignment.role)}</p>
 						</div>
-						{#if canManage && !group.teachersLocked}
+						{#if canManage}
 							<Button
 								type="button"
 								size="icon"
@@ -326,15 +415,16 @@
 					</div>
 				{/each}
 			</div>
-			{#if canManage && !group.teachersLocked}
+			{#if canManage}
 				<LoadingButton
 					variant="outline"
 					loading={busySection === 'teachers'}
 					loadingLabel="กำลังบันทึก"
+					disabled={busySection !== null || reloading || needsReload}
 					onclick={() =>
 						perform(
 							'teachers',
-							() => onReplaceTeachers({ teachers, rowVersion: group.rowVersion }),
+							() => onReplaceTeachers({ teachers, rowVersion: acceptedRowVersion }),
 							'บันทึกครูผู้สอนไม่สำเร็จ'
 						)}>บันทึกครูผู้สอน</LoadingButton
 				>
@@ -343,17 +433,11 @@
 
 		<div class="space-y-4 xl:border-s xl:ps-6">
 			<div>
-				<h3 class="font-medium">
-					{coverageEditingBlocked ? 'ห้องต้นทางของกลุ่มเดิม' : 'ห้องต้นทางของนักเรียน'}
-				</h3>
+				<h3 class="font-medium">ห้องต้นทางของนักเรียน</h3>
 				<p class="text-xs text-muted-foreground">ใช้สร้างตัวอย่างรายชื่อ ไม่ใช่ห้องที่ใช้เรียน</p>
 			</div>
-			{#if coverageEditingBlocked}<p class="text-sm text-muted-foreground">
-					รุ่นที่เลือกครอบคลุม {selectedHomeroomIds?.map(homeroomName).join(', ') || 'ไม่มีห้อง'}
-					ห้องด้านล่างเป็นข้อมูลของกลุ่มเดิม จึงแก้ห้องต้นทางตรงนี้ไม่ได้ ใช้ “นำออกจากห้องนี้” ในมุมมองรายห้องเพื่อปรับเฉพาะรุ่น
-					โดยข้อมูลเดิมและคะแนนยังอยู่
-				</p>{/if}
-			{#if canManage && !coverageEditingBlocked}
+
+			{#if canManage}
 				<div class="flex gap-2">
 					<div class="min-w-0 flex-1">
 						<DeliveryOptionCombobox
@@ -379,7 +463,7 @@
 				{#each homeroomIds as homeroomId (homeroomId)}
 					<Badge variant="secondary" class="gap-1 py-1">
 						{homeroomName(homeroomId)}
-						{#if canManage && !coverageEditingBlocked}
+						{#if canManage}
 							<button
 								type="button"
 								class="rounded-sm hover:text-destructive"
@@ -392,15 +476,16 @@
 					<p class="text-sm text-muted-foreground">ยังไม่ได้เลือกห้องต้นทาง</p>
 				{/each}
 			</div>
-			{#if canManage && !coverageEditingBlocked}
+			{#if canManage}
 				<LoadingButton
 					variant="outline"
 					loading={busySection === 'homerooms'}
 					loadingLabel="กำลังบันทึก"
+					disabled={busySection !== null || reloading || needsReload}
 					onclick={() =>
 						perform(
 							'homerooms',
-							() => onReplaceHomerooms({ homeroomIds, rowVersion: group.rowVersion }),
+							() => onReplaceHomerooms({ homeroomIds, rowVersion: acceptedRowVersion }),
 							'บันทึกห้องต้นทางไม่สำเร็จ'
 						)}>บันทึกห้องต้นทาง</LoadingButton
 				>

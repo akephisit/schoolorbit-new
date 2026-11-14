@@ -124,7 +124,7 @@ async fn manual_year_rollover_all_outcomes_prepare_identity_history_and_exact_co
             .await
             .unwrap();
     let command = confirm_input(&pool, &actor, input.clone()).await;
-    let providers = &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS;
+    let providers = &*crate::integration_tests::academic::lifecycle::services::providers();
     let (first, second) = tokio::join!(
         confirm_year_rollover(providers, &pool, &actor, command.clone()),
         confirm_year_rollover(providers, &pool, &actor, command.clone())
@@ -242,7 +242,7 @@ async fn manual_year_rollover_stale_capacity_closed_source_and_other_successor_r
         .unwrap();
     assert!(matches!(
         confirm_year_rollover(
-            &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
+            &*crate::integration_tests::academic::lifecycle::services::providers(),
             &pool,
             &actor,
             command
@@ -296,7 +296,7 @@ async fn manual_year_rollover_stale_capacity_closed_source_and_other_successor_r
         .unwrap();
     let command = confirm_input(&pool, &actor, input.clone()).await;
     confirm_year_rollover(
-        &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
+        &*crate::integration_tests::academic::lifecycle::services::providers(),
         &pool,
         &actor,
         command,
@@ -319,7 +319,7 @@ async fn manual_year_rollover_later_hold_resolution_uses_latest_receipt_and_pres
 {
     let (pool, actor, input) = fixture("manual_rollover_hold_resolution").await;
     let command = confirm_input(&pool, &actor, input.clone()).await;
-    let providers = &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS;
+    let providers = &*crate::integration_tests::academic::lifecycle::services::providers();
     let first = confirm_year_rollover(providers, &pool, &actor, command)
         .await
         .unwrap();
@@ -403,7 +403,7 @@ async fn manual_year_rollover_receipts_activate_the_prepared_year_without_annual
         .bind(promoted.student_academic_year_id).execute(&pool).await.unwrap();
     let command = confirm_input(&pool, &actor, input.clone()).await;
     confirm_year_rollover(
-        &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
+        &*crate::integration_tests::academic::lifecycle::services::providers(),
         &pool,
         &actor,
         command,
@@ -590,7 +590,7 @@ async fn manual_year_rollover_reaffirms_legacy_conditional_target_while_resolvin
         .collect();
     let command = confirm_input(&pool, &actor, input).await;
     let result = confirm_year_rollover(
-        &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS,
+        &*crate::integration_tests::academic::lifecycle::services::providers(),
         &pool,
         &actor,
         command,
@@ -618,7 +618,7 @@ async fn manual_year_rollover_uses_current_core_room_and_program_after_prepared_
         services::{homeroom_roster, student_years},
     };
     let (pool, actor, input) = fixture("manual_rollover_current_target").await;
-    let providers = &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS;
+    let providers = &*crate::integration_tests::academic::lifecycle::services::providers();
     let first = confirm_year_rollover(
         providers,
         &pool,
@@ -918,7 +918,7 @@ async fn manual_year_rollover_uses_current_core_room_and_program_after_prepared_
 async fn manual_year_rollover_reaffirms_audited_withdrawal_without_reactivating_student_or_blocking_others(
 ) {
     let (pool, actor, input) = fixture("manual_rollover_withdrawn_target").await;
-    let providers = &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS;
+    let providers = &*crate::integration_tests::academic::lifecycle::services::providers();
     let first = confirm_year_rollover(
         providers,
         &pool,
@@ -1129,7 +1129,7 @@ async fn manual_year_rollover_501_cross_batch_failure_rolls_back_every_owner_the
         .unwrap();
     sqlx::query("CREATE TRIGGER manual_rollover_batch_failure BEFORE INSERT ON student_academic_years FOR EACH ROW EXECUTE FUNCTION manual_rollover_fail_second_batch()")
         .execute(&pool).await.unwrap();
-    let providers = &crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS;
+    let providers = &*crate::integration_tests::academic::lifecycle::services::providers();
     assert!(
         confirm_year_rollover(providers, &pool, &actor, command.clone())
             .await

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type {
 		ExamDayDetail,
-		ExamRoundStatus,
 		ExamScheduleItem,
 		ExamScheduleReadiness,
 		ExamSession
@@ -13,7 +12,6 @@
 	import { AlertTriangle, CheckCircle2 } from '@lucide/svelte';
 
 	let {
-		status = 'draft',
 		readiness,
 		days = [],
 		unscheduledItems = [],
@@ -21,7 +19,6 @@
 		invigilatorAssignedCount,
 		invigilatorAssignmentCount
 	}: {
-		status?: ExamRoundStatus;
 		readiness: ExamScheduleReadiness;
 		days?: ExamDayDetail[];
 		unscheduledItems?: ExamScheduleItem[];
@@ -30,8 +27,6 @@
 		invigilatorAssignmentCount?: number;
 	} = $props();
 
-	const statusLabel = $derived(status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง');
-	const statusVariant = $derived(status === 'published' ? 'default' : 'secondary');
 	const totalItems = $derived(unscheduledItems.length + scheduledSessions.length);
 	const invigilatorAssignmentFallback = $derived(
 		days.reduce((total, day) => total + day.roomAssignments.length, 0)
@@ -59,25 +54,25 @@
 			<Button
 				variant="outline"
 				size="sm"
-				class={readiness.canPublish
+				class={readiness.complete
 					? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300 dark:hover:bg-emerald-900'
 					: 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300 dark:hover:bg-amber-900'}
 				title="ดูความพร้อม"
 				{...props}
 			>
-				{#if readiness.canPublish}
+				{#if readiness.complete}
 					<CheckCircle2 class="h-4 w-4" />
 					พร้อม
 				{:else}
 					<AlertTriangle class="h-4 w-4" />
-					ยังไม่พร้อม {readiness.findings.length}
+					มีรายการที่ควรตรวจ {readiness.findings.length}
 				{/if}
 			</Button>
 		{/snippet}
 	</Sheet.Trigger>
 	<Sheet.Content side="right" class="overflow-hidden sm:max-w-lg">
 		<Sheet.Header>
-			<Sheet.Title>ความพร้อมก่อนเผยแพร่</Sheet.Title>
+			<Sheet.Title>ความครบถ้วนของตารางสอบ</Sheet.Title>
 			<Sheet.Description>รายการตรวจสอบของรอบตารางสอบนี้</Sheet.Description>
 		</Sheet.Header>
 
@@ -85,7 +80,7 @@
 			<div class="grid grid-cols-2 gap-2 text-sm">
 				<div class="rounded-md border bg-background p-3">
 					<p class="text-xs text-muted-foreground">สถานะรอบ</p>
-					<Badge class="mt-2" variant={statusVariant}>{statusLabel}</Badge>
+					<Badge class="mt-2" variant="secondary">ตารางปัจจุบัน</Badge>
 				</div>
 				<div class="rounded-md border bg-background p-3">
 					<p class="text-xs text-muted-foreground">รายการสอบ</p>
@@ -111,7 +106,7 @@
 					<div class="space-y-1">
 						<p class="font-medium">ไม่มีรายการติดขัด</p>
 						<p class="text-emerald-800 dark:text-emerald-300">
-							รอบตารางสอบนี้ผ่านรายการตรวจสอบก่อนเผยแพร่แล้ว
+							รอบตารางสอบนี้ผ่านรายการตรวจสอบของตารางปัจจุบันแล้ว
 						</p>
 					</div>
 				</div>

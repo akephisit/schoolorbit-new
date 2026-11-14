@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArrowRight, RotateCcw, Search, SlidersHorizontal } from '@lucide/svelte';
-	import type { StaffPublishedExamScheduleRound } from '#lib/api/examSchedule.js';
+	import type { StaffExamScheduleRound } from '#lib/api/examSchedule.js';
 	import { PageState } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -26,7 +26,7 @@
 	import StaffExamScheduleTable from './StaffExamScheduleTable.svelte';
 
 	interface Props {
-		rounds: StaffPublishedExamScheduleRound[];
+		rounds: StaffExamScheduleRound[];
 		currentStaffId: string;
 	}
 
@@ -193,8 +193,8 @@
 
 {#if !selectedRound}
 	<PageState
-		title="ยังไม่มีตารางสอบที่เผยแพร่"
-		description="เมื่อฝ่ายวิชาการเผยแพร่ตารางสอบ รายการจะแสดงที่หน้านี้"
+		title="ยังไม่มีตารางสอบ"
+		description="เมื่อฝ่ายวิชาการจัดตารางสอบ รายการจะแสดงที่หน้านี้"
 	/>
 {:else}
 	<div class="min-w-0 space-y-3">
@@ -219,7 +219,7 @@
 						>{/each}
 				</Select.Content>
 			</Select.Root>
-			<Badge variant="secondary" class="hidden sm:inline-flex">เผยแพร่แล้ว</Badge>
+			<Badge variant="secondary" class="hidden sm:inline-flex">ตารางปัจจุบัน</Badge>
 		</div>
 
 		<Tabs.Root bind:value={activeTab} class="min-w-0 gap-3">

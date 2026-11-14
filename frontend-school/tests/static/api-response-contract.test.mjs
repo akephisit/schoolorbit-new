@@ -1140,27 +1140,14 @@ test('new academic workspace mutations use typed returned resources', async () =
 	assert.match(corePage, /years = \[created, \.\.\.years\]/);
 	assert.match(deliveryCreateDialog, /const offering = await createLearningOffering\(/);
 	assert.match(deliveryCreateDialog, /onCreated\(\{\s*offering,/);
-	assert.match(deliveryPage, /function addCreated\(_item: LearningOfferingOverviewItem\)/);
-	assert.match(deliveryPage, /function addCreated[\s\S]*?refreshDeliveryRegions\(\)/);
-	assert.match(deliveryDetailPage, /const created = await createLearningGroup\(/);
-	assert.match(
-		deliveryDetailPage,
-		/const existing = groups\.find\(\(group\) => group\.id === created\.id\)/
-	);
-	assert.match(
-		deliveryDetailPage,
-		/const accepted = existing && existing\.rowVersion > created\.rowVersion \? existing : created/
-	);
-	assert.match(
-		deliveryDetailPage,
-		/groups = existing\s*\? groups\.map\(\(group\) => \(group\.id === created\.id \? accepted : group\)\)\s*:\s*\[\.\.\.groups, accepted\]/
-	);
-	assert.match(
-		deliveryDetailPage,
-		/pendingCreatedGroup = \{ group: accepted, versionId \};\s*await reconcileCreatedGroup\(\)/
-	);
-	assert.match(deliveryDetailPage, /const updated = await updateLearningGroup\(/);
-	assert.match(deliveryDetailPage, /updateGroupState\(updated\)/);
+	assert.match(deliveryPage,/onCreated=\{\(\) => void refresh\(\)\}/);
+	assert.match(deliveryDetailPage,/const created = await createLearningGroup\(/);
+	assert.match(deliveryDetailPage,/acceptGroup\(created\)/);
+	assert.match(deliveryDetailPage,/await selectGroup\(created\)/);
+	assert.match(deliveryDetailPage,/const value = await updateLearningGroup\(/);
+	assert.match(deliveryDetailPage,/acceptGroup\(value\)/);
+	assert.match(deliveryDetailPage,/g\.id === value\.id && g\.rowVersion <= value\.rowVersion/);
+
 });
 
 test('admission exam-room mutations return typed data and patch local state', async () => {
@@ -1301,8 +1288,8 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.match(timetableApi, /response\.status === 409/);
 	assert.match(timetableApi, /requireApiData\(response, fallback\)/);
 	assert.match(timetableApi, /academicTermId:\s*requiredTerm\(filters\.academicTermId\)/);
-	assert.match(timetableApi, /apiClient\.post<TimetableBlock, TimetableDraftSourceConflict>/);
-	assert.match(timetableApi, /apiClient\.put<TimetableBlock, TimetableDraftSourceConflict>/);
+	assert.match(timetableApi, /apiClient\.post<TimetableBlock>/);
+	assert.match(timetableApi, /apiClient\.put<TimetableBlock>/);
 	assert.match(timetableApi, /periodsFromTimetableBlocks/);
 	assert.match(
 		extractGeneratedSchemaBlock(generated, 'TimetableBlock'),
@@ -1311,7 +1298,7 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 	assert.match(timetableApi, /apiClient\.post<TimetableBlockPlacementPreview>/);
 	assert.match(
 		timetableApi,
-		/apiClient\.post<SwapTimetableBlocksResponse, TimetableDraftSourceConflict>/
+		/apiClient\.post<SwapTimetableBlocksResponse>/
 	);
 	assert.doesNotMatch(timetableApi, /return response as T/);
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);

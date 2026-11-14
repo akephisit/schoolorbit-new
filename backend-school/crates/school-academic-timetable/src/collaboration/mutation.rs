@@ -9,16 +9,10 @@ use school_tenancy::TenantPool;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::{CommitPermit, DraftRoom, MutationScope, TimetableCollaborationRuntime};
-use crate::models::collaboration::DraftMutationIdentity;
+use super::{CommitPermit, MutationScope, TimetableCollaborationRuntime, TimetableRoom};
+use crate::models::collaboration::TimetableMutationIdentity;
 use crate::models::timetable_block::TimetableBlock;
 use crate::ports::StaffDirectoryPort;
-
-/// A lifecycle owner may retain the room only after proving no persisted change.
-pub(crate) enum LifecycleOutcome<T> {
-    Changed(T),
-    Unchanged(T),
-}
 
 struct OperationOutcome<T> {
     value: T,
@@ -29,9 +23,9 @@ struct OperationOutcome<T> {
 /// Cache publication is after the business COMMIT. Its failure can only request
 /// reconciliation; it must never turn an accepted result into a rejected write.
 pub(super) fn publish_committed_blocks(
-    room: &DraftRoom,
+    room: &TimetableRoom,
     blocks: Vec<TimetableBlock>,
-    version: Result<Option<crate::models::timetable_version::TimetableVersion>, AppError>,
+    version: Result<Option<crate::models::timetable::Timetable>, AppError>,
     connection_id: Option<Uuid>,
     mutation_id: Uuid,
 ) {
@@ -49,7 +43,7 @@ pub trait MutationAuthorizationPort: Send + Sync {
     async fn validate_admission(&self, accepted_actor: &ActorContext) -> Result<(), AppError>;
 }
 
-/// A creation operation cannot authorize any mutation of an already-existing draft.
+/// A creation operation cannot authorize any mutation of an already-existing current timetable.
 pub struct CreationPermit {
     actor_id: Uuid,
     phase: AtomicU8,
@@ -68,41 +62,13 @@ impl CreationPermit {
         self.phase.store(2, Ordering::Release);
         Ok(())
     }
-
-    /// The lifecycle provider creates a fresh destination in its already-atomic multi-module
-    /// transaction. Recheck the canonical term boundary and absence of an active destination.
-    pub async fn term_preparation(
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        actor_id: Uuid,
-        context: &school_academic_core::ports::TermPreparationContext,
-    ) -> Result<Self, AppError> {
-        school_academic_core::services::lifecycle_guard::require_term_write_exclusive(
-            tx,
-            context.target_year_id,
-            context.target_term_id,
-        )
-        .await?;
-        let occupied: bool = school_database::DbSession::new(&mut **tx).scalar(
-            "academic_timetable.collaboration.term_preparation_creation_permit",
-            "SELECT EXISTS(SELECT 1 FROM academic_timetable_versions WHERE academic_term_id=$1 AND status<>'cancelled')",
-        ).bind(context.target_term_id).fetch_one().await?;
-        if occupied {
-            return Err(AppError::Conflict(
-                "Target term already has a timetable; creation cannot replace it".into(),
-            ));
-        }
-        Ok(Self {
-            actor_id,
-            phase: AtomicU8::new(0),
-        })
-    }
 }
 
-pub enum VersionMutationPermit {
+pub enum TimetableMutationPermit {
     Existing(Arc<CommitPermit>),
     Creation(Arc<CreationPermit>),
 }
-impl VersionMutationPermit {
+impl TimetableMutationPermit {
     pub fn actor_id(&self) -> Uuid {
         match self {
             Self::Existing(permit) => permit.actor_id,
@@ -111,7 +77,7 @@ impl VersionMutationPermit {
     }
     pub fn require_existing(&self, id: Uuid) -> Result<(), AppError> {
         match self {
-            Self::Existing(permit) => permit.require_version(id),
+            Self::Existing(permit) => permit.require_timetable(id),
             Self::Creation(_) => Err(AppError::Conflict(
                 "A draft appeared concurrently; reload before resuming it".into(),
             )),
@@ -134,8 +100,9 @@ pub struct TimetableMutationContext {
     pub actor: ActorContext,
     pub tenant_id: Uuid,
     pub session_id: Uuid,
-    pub identity: Option<DraftMutationIdentity>,
+    pub identity: Option<TimetableMutationIdentity>,
     pub staff_directory: &'static dyn StaffDirectoryPort,
+    pub lesson_source_detachment: &'static dyn crate::ports::LessonSourceDetachmentPort,
     pub authorization: Arc<dyn MutationAuthorizationPort>,
     /// Retained by the accepted task across every checkout, commit and publication.
     pub pool_lease: TenantPool,
@@ -154,6 +121,7 @@ impl TimetableMutationContext {
             session_id: Uuid::new_v4(),
             identity: None,
             staff_directory: &TEST_DIRECTORY,
+            lesson_source_detachment: &crate::ports::NOOP_LESSON_SOURCE_DETACHMENT,
             authorization: Arc::new(TestAuthorization),
             pool_lease: pool.clone().into(),
         }
@@ -162,6 +130,7 @@ impl TimetableMutationContext {
     pub async fn execute_creation<T, F, Fut>(
         &self,
         pool: &PgPool,
+        academic_term_id: Uuid,
         operation: F,
     ) -> Result<T, AppError>
     where
@@ -171,7 +140,7 @@ impl TimetableMutationContext {
     {
         if self.identity.is_some() {
             return Err(AppError::Conflict(
-                "A source lease cannot authorize creation of another draft".into(),
+                "A source lease cannot authorize creation of another current timetable".into(),
             ));
         }
         let context = self.clone();
@@ -180,6 +149,10 @@ impl TimetableMutationContext {
         tokio::spawn(async move {
             let _admission = admission;
             let _tenant_pool_lease = context.pool_lease;
+            let _identity_gate = context
+                .runtime
+                .identity_gate(context.tenant_id, academic_term_id)
+                .await?;
             context
                 .authorization
                 .validate_admission(&context.actor)
@@ -234,7 +207,6 @@ impl TimetableMutationContext {
             version_id,
             scope,
             false,
-            |_| async { Ok(None) },
             move |pool, permit| async move {
                 let (value, blocks) = operation(pool, permit).await?;
                 Ok(OperationOutcome {
@@ -258,70 +230,15 @@ impl TimetableMutationContext {
         F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<T, AppError>> + Send + 'static,
     {
-        self.execute_lifecycle_outcome(pool, version_id, move |pool, permit| async move {
-            Ok(LifecycleOutcome::Changed(operation(pool, permit).await?))
-        })
-        .await
-    }
-
-    pub(crate) async fn execute_lifecycle_outcome<T, F, Fut>(
-        &self,
-        pool: &PgPool,
-        version_id: Uuid,
-        operation: F,
-    ) -> Result<T, AppError>
-    where
-        T: Send + 'static,
-        F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<LifecycleOutcome<T>, AppError>> + Send + 'static,
-    {
         self.execute_inner(
             pool,
             version_id,
-            MutationScope::WholeDraft,
+            MutationScope::WholeTimetable,
             true,
-            |_| async { Ok(None) },
             move |pool, permit| async move {
-                let (value, lifecycle_changed) = match operation(pool, permit).await? {
-                    LifecycleOutcome::Changed(value) => (value, true),
-                    LifecycleOutcome::Unchanged(value) => (value, false),
-                };
+                let value = operation(pool, permit).await?;
                 Ok(OperationOutcome {
                     value,
-                    blocks: Vec::new(),
-                    lifecycle_changed,
-                })
-            },
-        )
-        .await
-    }
-
-    /// Publication alone has an immutable receipt read at the draft gate. A known
-    /// accepted result needs no new mutation permit; all new writes retain the full
-    /// reservation, authority, cancellation and commit path below.
-    pub async fn execute_publication<T, R, ReceiptFuture, F, Fut>(
-        &self,
-        pool: &PgPool,
-        version_id: Uuid,
-        receipt: R,
-        operation: F,
-    ) -> Result<T, AppError>
-    where
-        T: Send + 'static,
-        R: FnOnce(PgPool) -> ReceiptFuture + Send + 'static,
-        ReceiptFuture: Future<Output = Result<Option<T>, AppError>> + Send + 'static,
-        F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
-        Fut: Future<Output = Result<T, AppError>> + Send + 'static,
-    {
-        self.execute_inner(
-            pool,
-            version_id,
-            MutationScope::WholeDraft,
-            true,
-            receipt,
-            move |pool, permit| async move {
-                Ok(OperationOutcome {
-                    value: operation(pool, permit).await?,
                     blocks: Vec::new(),
                     lifecycle_changed: true,
                 })
@@ -330,19 +247,16 @@ impl TimetableMutationContext {
         .await
     }
 
-    async fn execute_inner<T, F, Fut, R, ReceiptFuture>(
+    async fn execute_inner<T, F, Fut>(
         &self,
         pool: &PgPool,
         version_id: Uuid,
         scope: MutationScope,
         invalidate: bool,
-        receipt: R,
         operation: F,
     ) -> Result<T, AppError>
     where
         T: Send + 'static,
-        R: FnOnce(PgPool) -> ReceiptFuture + Send + 'static,
-        ReceiptFuture: Future<Output = Result<Option<T>, AppError>> + Send + 'static,
         F: FnOnce(PgPool, Arc<CommitPermit>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<OperationOutcome<T>, AppError>> + Send + 'static,
     {
@@ -350,7 +264,7 @@ impl TimetableMutationContext {
         let pool = pool.clone();
         let admission = context.runtime.admit_write()?;
         // Once accepted, caller cancellation only drops the JoinHandle. This bounded task retains
-        // admission, the tenant lease, per-draft gate and pinned permit through commit/publication.
+        // admission, the tenant lease, per-timetable gate and pinned permit through commit/publication.
         tokio::spawn(async move {
             let _admission = admission;
             let _tenant_pool_lease = context.pool_lease;
@@ -368,22 +282,11 @@ impl TimetableMutationContext {
                 .authorization
                 .validate_admission(&context.actor)
                 .await?;
-            let accepted =
-                tokio::time::timeout(std::time::Duration::from_secs(60), receipt(pool.clone()))
-                    .await
-                    .map_err(|_| {
-                        AppError::ServiceUnavailable(
-                            "Timetable publication receipt lookup exceeded its admission deadline"
-                                .into(),
-                        )
-                    })??;
-            if let Some(value) = accepted {
-                return Ok(value);
-            }
             let permit = Arc::new(room.begin_commit(
                 context.actor.user_id,
                 context.session_id,
                 context.identity.as_ref(),
+                context.lesson_source_detachment,
                 scope,
             )?);
             if invalidate {
@@ -430,7 +333,7 @@ impl TimetableMutationContext {
                 publish_committed_blocks(
                     &room,
                     blocks,
-                    permit.version_snapshot(),
+                    permit.timetable_snapshot(),
                     connection_id,
                     mutation_id,
                 );
@@ -477,5 +380,216 @@ impl StaffDirectoryPort for TestDirectory {
         _ids: &[Uuid],
     ) -> Result<Vec<crate::ports::StaffSubjectGroupAssignment>, AppError> {
         Ok(Vec::new())
+    }
+}
+
+/// Owned admission for a current Delivery cascade. The accepted command task must
+/// retain this guard from before its transaction until this guard performs COMMIT.
+/// School-wide Delivery management authorizes only the exact captured cascade.
+pub struct TimetableDeletionGuard {
+    context: TimetableMutationContext,
+    year: Uuid,
+    term: Uuid,
+    expected_timetable: Option<Uuid>,
+    expected_row_version: Option<i64>,
+    permit: Option<Arc<CommitPermit>>,
+    _room_gate: Option<tokio::sync::OwnedMutexGuard<()>>,
+    _identity_gate: tokio::sync::OwnedMutexGuard<()>,
+    _admission: tokio::sync::OwnedSemaphorePermit,
+}
+impl TimetableMutationContext {
+    pub async fn admit_delivery_deletion(
+        &self,
+        pool: &PgPool,
+        year: Uuid,
+        term: Uuid,
+    ) -> Result<TimetableDeletionGuard, AppError> {
+        school_academic_delivery::services::deletion::require_school_management(&self.actor)?;
+        if self.identity.is_some() {
+            return Err(AppError::Conflict(
+                "A placement lease cannot authorize a Delivery cascade".into(),
+            ));
+        }
+        self.admit_current_aggregate(pool, year, term).await
+    }
+    async fn admit_current_aggregate(
+        &self,
+        pool: &PgPool,
+        year: Uuid,
+        term: Uuid,
+    ) -> Result<TimetableDeletionGuard, AppError> {
+        let admission = self.runtime.admit_write()?;
+        let identity_gate = self.runtime.identity_gate(self.tenant_id, term).await?;
+        self.authorization.validate_admission(&self.actor).await?;
+        let current = crate::services::timetable_service::get_for_term(pool, term).await?;
+        let expected_timetable = current.as_ref().map(|current| current.id);
+        let expected_row_version = current.as_ref().map(|current| current.row_version);
+        let (permit, room_gate) = if let Some(current) = current {
+            if current.academic_year_id != year {
+                return Err(AppError::Conflict("Timetable context changed".into()));
+            }
+            let room = self
+                .runtime
+                .load_room(self.tenant_id, pool, current.id, self.staff_directory)
+                .await?;
+            let gate = room.mutation_gate().await;
+            self.authorization.validate_admission(&self.actor).await?;
+            let permit = Arc::new(room.begin_commit(
+                self.actor.user_id,
+                self.session_id,
+                None,
+                self.lesson_source_detachment,
+                MutationScope::WholeTimetable,
+            )?);
+            (Some(permit), Some(gate))
+        } else {
+            (None, None)
+        };
+        Ok(TimetableDeletionGuard {
+            context: self.clone(),
+            year,
+            term,
+            expected_timetable,
+            expected_row_version,
+            permit,
+            _room_gate: room_gate,
+            _identity_gate: identity_gate,
+            _admission: admission,
+        })
+    }
+}
+impl TimetableDeletionGuard {
+    pub async fn validate_current_on_connection(
+        &self,
+        connection: &mut sqlx::PgConnection,
+        scope: &school_academic_delivery::models::current::DeliveryDeletionScope,
+    ) -> Result<(), AppError> {
+        if scope.academic_year_id != self.year || scope.academic_term_id != self.term {
+            return Err(AppError::Conflict(
+                "Deletion scope differs from accepted timetable admission".into(),
+            ));
+        }
+        let current =
+            crate::services::timetable_service::get_for_term_on_connection(connection, self.term)
+                .await?;
+        if current.as_ref().map(|current| current.id) != self.expected_timetable
+            || current
+                .as_ref()
+                .is_some_and(|current| current.academic_year_id != self.year)
+        {
+            return Err(AppError::Conflict(
+                "Current timetable appeared or changed; refresh deletion impact before retrying"
+                    .into(),
+            ));
+        }
+        Ok(())
+    }
+    pub async fn delete_in_transaction(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        scope: &school_academic_delivery::models::current::DeliveryDeletionScope,
+    ) -> Result<(), AppError> {
+        self.validate_current_on_connection(&mut **tx, scope)
+            .await?;
+        crate::services::deletion::delete_in_transaction(tx, scope, self.permit.as_deref()).await
+    }
+    pub async fn commit(
+        &self,
+        transaction: school_tenancy::ObservedTransaction,
+        changed: bool,
+    ) -> Result<(), AppError> {
+        let result = if let Some(permit) = &self.permit {
+            permit.commit(transaction).await
+        } else {
+            transaction.commit().await.map_err(AppError::from)
+        };
+        if changed || result.is_err() {
+            self.context
+                .runtime
+                .invalidate_term(self.context.tenant_id, Some(self.term));
+        }
+        if result.is_ok() {
+            if let Some(permit) = &self.permit {
+                permit.settle();
+            }
+        }
+        result
+    }
+}
+
+/// Lifecycle owns authorization and its entire accepted multi-owner command;
+/// preparation shares current timetable identity/room exclusion until outer COMMIT.
+pub struct TimetablePreparationGuard {
+    admission: TimetableDeletionGuard,
+}
+impl TimetableMutationContext {
+    pub async fn admit_term_preparation(
+        &self,
+        pool: &PgPool,
+        year: Uuid,
+        term: Uuid,
+    ) -> Result<TimetablePreparationGuard, AppError> {
+        self.actor.require_permission(
+            school_permissions::registry::codes::ACADEMIC_LIFECYCLE_MANAGE_SCHOOL,
+        )?;
+        if self.identity.is_some() {
+            return Err(AppError::Conflict(
+                "A placement lease cannot authorize term preparation".into(),
+            ));
+        }
+        Ok(TimetablePreparationGuard {
+            admission: self.admit_current_aggregate(pool, year, term).await?,
+        })
+    }
+}
+impl TimetablePreparationGuard {
+    pub async fn apply_in_transaction(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        context: &school_academic_core::ports::TermPreparationContext,
+        mappings: &std::collections::HashMap<
+            (
+                school_academic_core::ports::TermPreparationMappingKind,
+                Uuid,
+            ),
+            Uuid,
+        >,
+    ) -> Result<school_academic_core::ports::TermPreparationModuleOutcome, AppError> {
+        if context.target_year_id != self.admission.year
+            || context.target_term_id != self.admission.term
+        {
+            return Err(AppError::Conflict(
+                "Preparation differs from accepted timetable context".into(),
+            ));
+        }
+        let current = crate::services::timetable_service::get_for_term_on_connection(
+            &mut **tx,
+            context.target_term_id,
+        )
+        .await?;
+        if current.as_ref().map(|current| current.id) != self.admission.expected_timetable
+            || current.as_ref().map(|current| current.row_version)
+                != self.admission.expected_row_version
+        {
+            return Err(AppError::Conflict(
+                "Target timetable changed; refresh preparation preview".into(),
+            ));
+        }
+        let permit = match &self.admission.permit {
+            Some(permit) => TimetableMutationPermit::Existing(permit.clone()),
+            None => TimetableMutationPermit::Creation(Arc::new(CreationPermit {
+                actor_id: self.admission.context.actor.user_id,
+                phase: AtomicU8::new(0),
+            })),
+        };
+        crate::services::timetable_service::apply_term_preparation(tx, &permit, context, mappings)
+            .await
+    }
+    pub async fn commit(
+        &self,
+        transaction: school_tenancy::ObservedTransaction,
+        changed: bool,
+    ) -> Result<(), AppError> {
+        self.admission.commit(transaction, changed).await
     }
 }

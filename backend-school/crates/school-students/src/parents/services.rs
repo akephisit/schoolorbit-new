@@ -8,7 +8,7 @@ use school_academic_assessment::exam_schedule::services as exam_schedule_service
 use school_academic_core::models::AcademicContextOptions;
 use school_academic_core::services::context as academic_context_service;
 use school_academic_timetable::models::timetable_block::TimetableBlock;
-use school_academic_timetable::services::{timetable_block_service, timetable_version_service};
+use school_academic_timetable::services::{timetable_block_service, timetable_service};
 use school_calendar::models::{CalendarEventQuery, CalendarViewerEvent};
 use school_crypto as field_encryption;
 use school_errors::AppError;
@@ -143,7 +143,9 @@ pub async fn get_child_timetable(
     ensure_parent_user(pool, parent_id).await?;
     ensure_parent_student_link(pool, parent_id, student_id).await?;
 
-    let version = timetable_version_service::resolve_for_date(pool, academic_term_id, date).await?;
+    let Some(version) = timetable_service::get_for_term(pool, academic_term_id).await? else {
+        return Ok(Vec::new());
+    };
     timetable_block_service::list_student_blocks(
         pool,
         version.id,
@@ -178,13 +180,8 @@ pub async fn get_child_exam_schedule(
     student_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Vec<PersonalExamScheduleRound>, AppError> {
-    exam_schedule_service::list_child_published_exam_schedule(
-        pool,
-        parent_id,
-        student_id,
-        academic_term_id,
-    )
-    .await
+    exam_schedule_service::list_child_exam_schedule(pool, parent_id, student_id, academic_term_id)
+        .await
 }
 
 pub async fn get_child_calendar_events(

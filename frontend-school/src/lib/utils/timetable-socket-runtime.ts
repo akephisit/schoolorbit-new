@@ -10,7 +10,7 @@ export type TimetableSocketParams = {
 	academicTermId: string;
 	currentUserId: string;
 	/** Absent for observers such as the delivery workspace. */
-	timetableVersionId?: string;
+	timetableId?: string;
 };
 
 type TimetableSocketLike = {
@@ -58,7 +58,7 @@ function sameParams(left: TimetableSocketParams | null, right: TimetableSocketPa
 		left !== null &&
 		String(left.academicTermId) === String(right.academicTermId) &&
 		String(left.currentUserId) === String(right.currentUserId) &&
-		left.timetableVersionId === right.timetableVersionId
+		left.timetableId === right.timetableId
 	);
 }
 

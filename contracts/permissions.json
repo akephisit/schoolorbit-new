@@ -598,13 +598,6 @@
       "description": "สร้าง แก้ไข และนำรายการออกจากตารางสอนทั้งโรงเรียน"
     },
     {
-      "module": "academic_timetable",
-      "action": "publish",
-      "scope": "school",
-      "name": "เผยแพร่ตารางสอน",
-      "description": "ตรวจความพร้อมและเผยแพร่รุ่นตารางสอนของโรงเรียน"
-    },
-    {
       "module": "academic_timetable_today",
       "action": "read",
       "scope": "school",
@@ -834,13 +827,6 @@
       "scope": "school",
       "name": "จัดการตารางสอบวิชาการ",
       "description": "Create and manage academic exam schedules for the school"
-    },
-    {
-      "module": "academic_exam_schedule",
-      "action": "publish",
-      "scope": "school",
-      "name": "ประกาศตารางสอบวิชาการ",
-      "description": "Publish academic exam schedules for the school"
     },
     {
       "module": "calendar",

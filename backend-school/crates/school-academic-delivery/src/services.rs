@@ -9,43 +9,23 @@ use school_academic_core::services::lifecycle_guard;
 use school_errors::AppError;
 
 pub mod activities;
-pub mod audiences;
 pub mod bulk_group_setup;
-pub mod change_sets;
-mod construction;
-pub mod effective_teachers;
+pub mod current;
+pub mod deletion;
 pub mod groups;
 pub mod offerings;
 pub mod opening;
-pub mod publication;
 pub mod roster_memberships;
 pub mod roster_tracking;
-pub mod version_changes;
-pub mod versions;
 pub mod workspaces;
-
-pub(super) fn bangkok_today() -> chrono::NaiveDate {
-    bangkok_date_at(chrono::Utc::now())
-}
-
-pub(super) fn bangkok_date_at(now: chrono::DateTime<chrono::Utc>) -> chrono::NaiveDate {
-    (now + chrono::Duration::hours(7)).date_naive()
-}
 
 pub async fn pending_term_work(
     tx: &mut Transaction<'_, Postgres>,
     year: Uuid,
     term: Uuid,
 ) -> Result<Vec<school_academic_core::ports::PendingTermWork>, AppError> {
-    Ok(DbSession::new(&mut **tx).query_as("academic_delivery.services.pending_term_work",
-        "SELECT change.id,
-         md5(to_jsonb(change)::text || COALESCE((SELECT jsonb_agg(to_jsonb(item) ORDER BY item.id)::text
-             FROM academic_term_change_items item WHERE item.change_set_id=change.id),'[]')) AS revision,
-         EXISTS(SELECT 1 FROM academic_term_change_items item WHERE item.change_set_id=change.id
-             AND item.action_kind IN ('add_offering','stop_offering')) AS blocks_closure
-         FROM academic_term_change_sets change WHERE change.academic_year_id=$1
-         AND change.academic_term_id=$2 AND change.status='draft' ORDER BY change.id",
-    ).bind(year).bind(term).fetch_all().await?)
+    let _ = (tx, year, term);
+    Ok(Vec::new())
 }
 
 /// Validate that a delivery write may mutate the selected term.
@@ -201,36 +181,6 @@ pub(super) async fn invalidate_group_academic_confirmations(
             .execute()
             .await?;
     }
-    Ok(())
-}
-
-pub(super) async fn append_audit<T: Serialize>(
-    connection: &mut sqlx::PgConnection,
-    event_code: &str,
-    entity_type: &str,
-    entity_id: Uuid,
-    academic_year_id: Uuid,
-    academic_term_id: Uuid,
-    actor_user_id: Uuid,
-    payload: T,
-) -> Result<(), AppError> {
-    DbSession::new(connection)
-        .query(
-            "academic_delivery.services.append_audit",
-            r#"INSERT INTO academic_audit_events (
-               event_code, entity_type, entity_id, academic_year_id,
-               academic_term_id, actor_user_id, payload
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
-        )
-        .bind(event_code)
-        .bind(entity_type)
-        .bind(entity_id)
-        .bind(academic_year_id)
-        .bind(academic_term_id)
-        .bind(actor_user_id)
-        .bind(sqlx::types::Json(payload))
-        .execute()
-        .await?;
     Ok(())
 }
 

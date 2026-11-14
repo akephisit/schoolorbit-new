@@ -5,7 +5,7 @@ use axum::http::HeaderMap;
 use school_academic_timetable::collaboration::{
     MutationAuthorizationPort, TimetableMutationContext,
 };
-use school_academic_timetable::models::collaboration::DraftMutationIdentity;
+use school_academic_timetable::models::collaboration::TimetableMutationIdentity;
 use school_auth::runtime::AuthRuntime;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
@@ -74,6 +74,7 @@ pub(crate) fn from_session(
         session_id: session.session_id,
         identity,
         staff_directory: state.staff_directory,
+        lesson_source_detachment: state.lesson_source_detachment,
         authorization: Arc::new(SessionMutationAuthorization {
             runtime: state.auth_runtime.clone(),
             session: session.clone(),
@@ -94,13 +95,15 @@ pub struct TimetableMutationHeaders {
     /// Private confirmed lease token. Never broadcast this value to peers.
     #[cfg_attr(feature = "api-docs", param(rename = "X-Timetable-Lease-Token"))]
     pub lease_token: Option<Uuid>,
-    /// Client mutation identity, echoed in the committed draft delta.
+    /// Client mutation identity, echoed in the committed timetable delta.
     #[cfg_attr(feature = "api-docs", param(rename = "X-Timetable-Mutation-Id"))]
     pub mutation_id: Option<Uuid>,
 }
 
 impl TimetableMutationHeaders {
-    fn parse(headers: &HeaderMap) -> Result<Option<DraftMutationIdentity>, school_http::HttpError> {
+    fn parse(
+        headers: &HeaderMap,
+    ) -> Result<Option<TimetableMutationIdentity>, school_http::HttpError> {
         let parse = |name: &str| -> Result<Option<Uuid>, school_http::HttpError> {
             if headers.get_all(name).iter().count() > 1 {
                 return Err(school_http::HttpError::BadRequest(
@@ -130,7 +133,7 @@ impl TimetableMutationHeaders {
         match (proof.connection_id, proof.lease_token, proof.mutation_id) {
             (None, None, None) => Ok(None),
             (Some(connection_id), Some(lease_token), Some(mutation_id)) => {
-                Ok(Some(DraftMutationIdentity {
+                Ok(Some(TimetableMutationIdentity {
                     connection_id,
                     lease_token,
                     mutation_id,

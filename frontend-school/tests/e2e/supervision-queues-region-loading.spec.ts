@@ -111,7 +111,7 @@ test('evaluation rubric is lazy and a typed submit patches only the observation'
 }) => {
 	const api = await mock(page, {
 		permissions: assigned,
-		observationStatus: 'scheduled',
+		observationStatus: 'planned',
 		fail: 'detail'
 	});
 	await page.goto(path('evaluate'));

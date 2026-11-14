@@ -15,7 +15,7 @@ use school_academic_core::{
     },
 };
 use school_academic_delivery::services::opening as delivery_opening;
-use school_academic_timetable::services::timetable_version_service;
+use school_academic_timetable::services::timetable_service;
 use school_permissions::registry::codes;
 
 pub async fn get_activation_workspace(
@@ -78,18 +78,12 @@ pub(crate) async fn activation_evidence_in_transaction(
     let state =
         activation_context::read_activation_state(tx, academic_year_id, academic_term_id).await?;
     let policy = super::opening_policy::read_in_transaction(tx).await?;
-    let offerings = delivery_opening::published_for_term(
+    let offerings =
+        delivery_opening::current_for_term(tx, academic_year_id, academic_term_id).await?;
+    let timetables = timetable_service::opening::current_for_term(
         tx,
         academic_year_id,
         academic_term_id,
-        state.context.operation_date,
-    )
-    .await?;
-    let timetables = timetable_version_service::opening::published_for_term(
-        tx,
-        academic_year_id,
-        academic_term_id,
-        state.context.operation_date,
         state.context.bell_schedule_id,
     )
     .await?;
@@ -182,12 +176,12 @@ pub(crate) async fn activation_evidence_in_transaction(
             ),
         });
     }
-    if policy.require_published_offerings && offerings.count() == 0 {
+    if policy.require_offerings && offerings.count() == 0 {
         findings.push(LifecycleFinding {
-            code: "opening.published_offering_missing".into(),
+            code: "opening.offering_missing".into(),
             severity: LifecycleSeverity::Blocking,
             count: 1,
-            message: "ยังไม่มีรายการเปิดสอนที่เผยแพร่และมีผลในวันเปิดภาคเรียน".into(),
+            message: "ยังไม่มีรายการเปิดสอนในภาคเรียนนี้".into(),
             resolution_url: actor
                 .has_permission(codes::LEARNING_OFFERING_READ_SCHOOL)
                 .then(|| {
@@ -199,12 +193,12 @@ pub(crate) async fn activation_evidence_in_transaction(
                 }),
         });
     }
-    if policy.require_published_timetable && timetables.count() == 0 {
+    if policy.require_timetable && timetables.count() == 0 {
         findings.push(LifecycleFinding {
-            code: "opening.published_timetable_missing".into(),
+            code: "opening.timetable_missing".into(),
             severity: LifecycleSeverity::Blocking,
             count: 1,
-            message: "ยังไม่มีรุ่นตารางสอนที่เผยแพร่และใช้ตารางคาบของภาคเรียนนี้".into(),
+            message: "ยังไม่มีตารางสอนที่ใช้ตารางคาบของภาคเรียนนี้".into(),
             resolution_url: actor
                 .has_permission(codes::ACADEMIC_TIMETABLE_READ_SCHOOL)
                 .then(|| {

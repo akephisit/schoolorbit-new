@@ -23,12 +23,12 @@ export function mountApiCalls(svelteSource) {
 					if (!binding.isTypeOnly) apiNames.add(binding.name.text);
 		}
 		if (
-			module === '#lib/academic/delivery-draft-reconcile.js' &&
+			module === '#lib/academic/delivery-reconcile.js' &&
 			bindings &&
 			ts.isNamedImports(bindings)
 		)
 			for (const binding of bindings.elements)
-				if ((binding.propertyName ?? binding.name).text === 'registerDeliveryDraftReconcile')
+				if ((binding.propertyName ?? binding.name).text === 'registerDeliveryReconcile')
 					eventRegistrationNames.add(binding.name.text);
 		if (module === 'svelte' && bindings && ts.isNamedImports(bindings))
 			for (const binding of bindings.elements)
@@ -61,7 +61,7 @@ export function mountApiCalls(svelteSource) {
 			if (ts.isIdentifier(node.expression) && eventRegistrationNames.has(node.expression.text)) {
 				for (const [index, argument] of node.arguments.entries()) {
 					if (
-						index < 2 &&
+						index === 0 &&
 						(ts.isArrowFunction(argument) ||
 							ts.isFunctionExpression(argument) ||
 							ts.isIdentifier(argument))

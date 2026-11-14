@@ -82,7 +82,7 @@ test('startup inspection follows aliases and local helpers without banning inter
 });
 
 test('reviewed delivery reconciliation callbacks are event reads while evaluated mount arguments remain primary', () => {
-	const imports = `<script lang="ts">import {onMount as mounted} from 'svelte'; import {list as read} from '#lib/api/feature'; import {registerDeliveryDraftReconcile as register} from '#lib/academic/delivery-draft-reconcile.js';`;
+	const imports = `<script lang="ts">import {onMount as mounted} from 'svelte'; import {list as read} from '#lib/api/feature'; import {registerDeliveryReconcile as register} from '#lib/academic/delivery-reconcile.js';`;
 	assert.deepEqual(
 		mountApiCalls(
 			`${imports} function reconcile(){return read()} mounted(()=>register(reconcile,()=>true));</script>`
@@ -99,7 +99,7 @@ test('reviewed delivery reconciliation callbacks are event reads while evaluated
 });
 
 test('evaluating a reconciliation callback factory still counts as a primary mount read', () => {
-	const imports = `<script lang="ts">import {onMount} from 'svelte'; import {list as read} from '#lib/api/feature'; import {registerDeliveryDraftReconcile as register} from '#lib/academic/delivery-draft-reconcile.js';`;
+	const imports = `<script lang="ts">import {onMount} from 'svelte'; import {list as read} from '#lib/api/feature'; import {registerDeliveryReconcile as register} from '#lib/academic/delivery-reconcile.js';`;
 	assert.deepEqual(mountApiCalls(`${imports} onMount(()=>register(read(),()=>true));</script>`), [
 		'read'
 	]);

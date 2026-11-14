@@ -30,3 +30,30 @@ pub trait StaffDirectoryPort: Send + Sync {
         user_ids: &[Uuid],
     ) -> Result<Vec<StaffSubjectGroupAssignment>, AppError>;
 }
+
+/// The application binds Supervision's exact saved-source detachment without
+/// introducing a Timetable -> Supervision dependency cycle.
+#[async_trait]
+pub trait LessonSourceDetachmentPort: Send + Sync {
+    async fn detach_timetable_sources_in_transaction(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        block_group_ids: &[Uuid],
+    ) -> Result<(), AppError>;
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub struct NoopLessonSourceDetachment;
+#[cfg(any(test, feature = "test-support"))]
+pub static NOOP_LESSON_SOURCE_DETACHMENT: NoopLessonSourceDetachment = NoopLessonSourceDetachment;
+#[cfg(any(test, feature = "test-support"))]
+#[async_trait]
+impl LessonSourceDetachmentPort for NoopLessonSourceDetachment {
+    async fn detach_timetable_sources_in_transaction(
+        &self,
+        _transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _block_group_ids: &[Uuid],
+    ) -> Result<(), AppError> {
+        Ok(())
+    }
+}

@@ -18,8 +18,7 @@ use super::room_assignments::{
     build_default_seat_assignments, validate_seat_generation_capacity, SeatStudent,
 };
 use super::rounds_and_days::{
-    ensure_exam_round_can_be_deleted, ensure_exam_round_is_mutable, normalize_blocked_windows,
-    normalize_exam_kind, normalize_update_round_request,
+    normalize_blocked_windows, normalize_exam_kind, normalize_update_round_request,
 };
 use super::sessions_and_conflicts::grade_level_allowed_by_day_scope;
 use super::shared::{
@@ -28,7 +27,7 @@ use super::shared::{
     validate_session_window, CandidateSession, InvigilatorSessionWindow, SessionValidationError,
 };
 use super::workspace::{
-    build_readiness, build_readiness_with_source_changes, WorkspaceCounts, WORKSPACE_COUNTS_SQL,
+    build_readiness, build_readiness_with_current_sources, WorkspaceCounts, WORKSPACE_COUNTS_SQL,
 };
 
 fn t(value: &str) -> NaiveTime {
@@ -289,7 +288,6 @@ fn assign_invigilator_to_assignment_uses_day_level_move_semantics() {
     assert!(lock_position < validate_position);
     assert!(validate_position < delete_position);
     assert!(delete_position < insert_position);
-    assert!(body.contains("ensure_exam_round_is_mutable"));
     assert!(body.contains("get_invigilator_workspace(pool, round_id)"));
 }
 
@@ -307,21 +305,23 @@ fn remove_invigilator_from_assignment_only_deletes_target_assignment() {
 
     assert!(body.contains("delete_staff_invigilator_from_assignment_in_tx"));
     assert!(!body.contains("delete_staff_invigilator_from_other_day_assignments_in_tx"));
-    assert!(body.contains("ensure_exam_round_is_mutable"));
     assert!(body.contains("get_invigilator_workspace(pool, round_id)"));
 }
 
 #[test]
-fn exam_round_mutation_guard_rejects_published_rounds() {
-    assert!(ensure_exam_round_is_mutable("draft").is_ok());
-    assert!(ensure_exam_round_is_mutable("published").is_err());
-}
-
-#[test]
-fn published_exam_round_deletion_requires_publish_permission() {
-    assert!(ensure_exam_round_can_be_deleted("draft", false).is_ok());
-    assert!(ensure_exam_round_can_be_deleted("published", false).is_err());
-    assert!(ensure_exam_round_can_be_deleted("published", true).is_ok());
+fn current_round_update_requires_revision_and_rejects_retired_publication_fields() {
+    assert!(
+        serde_json::from_value::<UpdateExamRoundRequest>(serde_json::json!({"name":"Final"}))
+            .is_err()
+    );
+    assert!(serde_json::from_value::<UpdateExamRoundRequest>(
+        serde_json::json!({"name":"Final","rowVersion":1,"status":"draft"})
+    )
+    .is_err());
+    let request: UpdateExamRoundRequest =
+        serde_json::from_value(serde_json::json!({"name":" Final ","rowVersion":2})).unwrap();
+    assert_eq!(request.row_version,2);
+    assert!(normalize_update_round_request(request).is_ok());
 }
 
 #[test]
@@ -335,7 +335,7 @@ fn exam_day_update_preserves_day_identity_and_child_assignments() {
     assert!(update_body.contains("UPDATE academic_exam_days"));
     assert!(update_body.contains("WHERE id = $1"));
     assert!(update_body.contains("replace_exam_day_configuration"));
-    assert!(update_body.contains("mark_round_draft_after_mutation"));
+    assert!(update_body.contains("bump_round_revision"));
     assert!(!update_body.contains("DELETE FROM academic_exam_days"));
     assert!(!update_body.contains("academic_exam_sessions"));
     assert!(!update_body.contains("academic_exam_day_room_assignments"));
@@ -462,39 +462,12 @@ fn get_invigilator_workspace_checks_round_before_assignment_queries() {
 }
 
 #[test]
-fn source_preview_uses_the_canonical_eligible_source_view() {
+fn live_workspace_reads_current_sources_without_materializing_or_requiring_source_sync() {
     let source = include_str!("workspace.rs");
     assert!(source.contains("academic_exam_eligible_sources"));
-    assert!(source.contains("source.exam_kind = round.exam_kind"));
-    assert!(source.contains("duration_changed"));
-    assert!(source.contains("no_longer_eligible"));
-}
-
-#[test]
-fn source_sync_requires_an_unchanged_preview_and_mutable_round() {
-    let source = include_str!("workspace.rs");
-    let sync_start = source.find("pub async fn sync_exam_sources").unwrap();
-    let sync_body = &source[sync_start..];
-    assert!(sync_body.contains("FOR UPDATE"));
-    assert!(sync_body.contains("ensure_exam_round_is_mutable"));
-    assert!(sync_body.contains("round_row_version"));
-    assert!(sync_body.contains("preview.preview_token != request.preview_token"));
-    assert!(sync_body.contains("revalidate_session_duration_change_in_tx"));
-}
-
-#[test]
-fn publish_round_locks_round_before_readiness_check() {
-    let source = include_str!("publishing.rs");
-    let publish_start = source.find("pub async fn publish_round").unwrap();
-    let publish_body = &source[publish_start..];
-    let tx_position = publish_body.find("TenantPool::begin_observed").unwrap();
-    let lock_position = publish_body.find("FOR UPDATE").unwrap();
-    let readiness_position = publish_body.find("fetch_workspace_counts_in_tx").unwrap();
-    let update_position = publish_body.find("UPDATE academic_exam_rounds").unwrap();
-
-    assert!(tx_position < lock_position);
-    assert!(lock_position < readiness_position);
-    assert!(readiness_position < update_position);
+    assert!(source.contains("uuid_generate_v5(round.id,source.source_id::text)"));
+    assert!(!source.contains("INSERT INTO academic_exam_schedule_items"));
+    assert!(!source.contains("sync_exam_sources"));
 }
 
 #[test]
@@ -671,7 +644,7 @@ fn readiness_requires_days_items_rooms_and_sessions() {
         missing_seat_student_count: 2,
         invigilator_conflict_count: 0,
     });
-    assert!(!readiness.can_publish);
+    assert!(!readiness.complete);
     assert!(readiness
         .findings
         .iter()
@@ -682,8 +655,8 @@ fn readiness_requires_days_items_rooms_and_sessions() {
 }
 
 #[test]
-fn readiness_blocks_publish_until_assessment_source_changes_are_synced() {
-    let readiness = build_readiness_with_source_changes(
+fn readiness_reports_invalid_current_sources_without_publication() {
+    let readiness = build_readiness_with_current_sources(
         WorkspaceCounts {
             day_count: 1,
             item_count: 4,
@@ -696,15 +669,15 @@ fn readiness_blocks_publish_until_assessment_source_changes_are_synced() {
         2,
     );
 
-    assert!(!readiness.can_publish);
+    assert!(!readiness.complete);
     assert!(readiness.findings.iter().any(|finding| {
-        finding.code == ExamScheduleReadinessCode::PendingSourceChanges && finding.count == 2
+        finding.code == ExamScheduleReadinessCode::InvalidCurrentSources && finding.count == 2
     }));
 }
 
 #[test]
 fn readiness_exposes_typed_findings_without_requiring_invigilator_assignments() {
-    let readiness = build_readiness_with_source_changes(
+    let readiness = build_readiness_with_current_sources(
         WorkspaceCounts {
             day_count: 1,
             item_count: 4,
@@ -729,12 +702,12 @@ fn readiness_exposes_typed_findings_without_requiring_invigilator_assignments() 
                 count: 1,
             },
             ExamScheduleReadinessFinding {
-                code: ExamScheduleReadinessCode::PendingSourceChanges,
+                code: ExamScheduleReadinessCode::InvalidCurrentSources,
                 count: 3,
             },
         ]
     );
-    assert!(!readiness.can_publish);
+    assert!(!readiness.complete);
 }
 
 #[test]
@@ -749,7 +722,7 @@ fn readiness_reports_missing_active_student_seats() {
         invigilator_conflict_count: 0,
     });
 
-    assert!(!readiness.can_publish);
+    assert!(!readiness.complete);
     assert!(readiness.findings.iter().any(|finding| {
         finding.code == ExamScheduleReadinessCode::MissingSeatAssignments && finding.count == 3
     }));
@@ -767,7 +740,7 @@ fn readiness_reports_invalid_scheduled_sessions() {
         invigilator_conflict_count: 0,
     });
 
-    assert!(!readiness.can_publish);
+    assert!(!readiness.complete);
     assert!(readiness.findings.iter().any(|finding| {
         finding.code == ExamScheduleReadinessCode::InvalidExamSessions && finding.count == 2
     }));
@@ -785,7 +758,7 @@ fn readiness_reports_invigilator_live_range_conflicts() {
         invigilator_conflict_count: 2,
     });
 
-    assert!(!readiness.can_publish);
+    assert!(!readiness.complete);
     assert!(readiness.findings.iter().any(|finding| {
         finding.code == ExamScheduleReadinessCode::InvigilatorConflicts && finding.count == 2
     }));
@@ -794,6 +767,7 @@ fn readiness_reports_invigilator_live_range_conflicts() {
 #[test]
 fn rejects_round_update_without_supplied_fields() {
     let result = normalize_update_round_request(UpdateExamRoundRequest {
+        row_version: 1,
         name: None,
         description: None,
         exam_kind: None,

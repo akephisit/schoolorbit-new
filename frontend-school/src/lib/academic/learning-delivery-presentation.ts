@@ -1,8 +1,8 @@
-import type { DeliveryVersion, LearningGroup } from '#lib/api/learning-delivery.js';
+import type { DeliveryWorkspace } from '#lib/api/learning-delivery.js';
 import type { DeliveryOverviewState } from '#lib/navigation/learning-delivery.js';
 
 const naturalOrder = new Intl.Collator('th-TH', { numeric: true });
-type Offering = DeliveryVersion['snapshot']['offerings'][number];
+type Offering = DeliveryWorkspace['offerings'][number];
 
 export function deliveryOfferingLabel(item: Pick<Offering, 'kind' | 'code' | 'name'>): string {
 	return item.kind === 'activity' ? item.name : `${item.code} · ${item.name}`;
@@ -21,15 +21,15 @@ export function compareDeliveryOfferings(
 }
 
 export function deliverySubjectGroupOptions(
-	version: DeliveryVersion
+	workspace: DeliveryWorkspace
 ): { id: string; name: string }[] {
 	const pinnedIds = new Set(
-		version.snapshot.offerings.flatMap((item) =>
+		workspace.offerings.flatMap((item) =>
 			item.catalog.kind === 'course' ? [item.catalog.subjectVersionId] : []
 		)
 	);
 	const groups = new Map<string, string>();
-	for (const metadata of version.courseMetadata) {
+	for (const metadata of workspace.courseMetadata) {
 		if (pinnedIds.has(metadata.subjectVersionId))
 			groups.set(metadata.subjectGroupId, metadata.subjectGroupName);
 	}
@@ -42,14 +42,14 @@ export function deliverySubjectGroupOptions(
 }
 
 export function filterDeliveryOfferings(
-	version: DeliveryVersion,
+	workspace: DeliveryWorkspace,
 	filters: Pick<DeliveryOverviewState, 'kind' | 'offeringSearch' | 'subjectGroupId'>
 ): Offering[] {
 	const groups = new Map(
-		version.courseMetadata.map((item) => [item.subjectVersionId, item.subjectGroupId])
+		workspace.courseMetadata.map((item) => [item.subjectVersionId, item.subjectGroupId])
 	);
 	const search = filters.offeringSearch.trim().toLocaleLowerCase('th-TH');
-	return version.snapshot.offerings
+	return workspace.offerings
 		.filter((item) => {
 			if (filters.kind !== 'all' && item.kind !== filters.kind) return false;
 			if (
@@ -61,26 +61,4 @@ export function filterDeliveryOfferings(
 			return !search || deliveryOfferingLabel(item).toLocaleLowerCase('th-TH').includes(search);
 		})
 		.sort(compareDeliveryOfferings);
-}
-
-export type DeliveryGroupCoverage = Pick<
-	DeliveryVersion['snapshot']['offerings'][number]['groups'][number],
-	'id' | 'homeroomIds'
->;
-
-/** A selected version supplies presentation coverage, never a replacement registry mutation payload. */
-export function deliveryGroupCoverage(
-	group: Pick<LearningGroup, 'id' | 'homeroomIds'>,
-	selectedGroups: readonly DeliveryGroupCoverage[] | null
-) {
-	const selected = selectedGroups?.find((item) => item.id === group.id);
-	const homeroomIds = selectedGroups === null ? group.homeroomIds : (selected?.homeroomIds ?? []);
-	const registryIds = new Set(group.homeroomIds);
-	const selectedIds = new Set(homeroomIds);
-	return {
-		homeroomIds: [...homeroomIds],
-		differsFromRegistry:
-			selectedGroups !== null &&
-			(selectedIds.size !== registryIds.size || [...selectedIds].some((id) => !registryIds.has(id)))
-	};
 }

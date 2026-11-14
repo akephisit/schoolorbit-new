@@ -32,8 +32,7 @@ function group(): TimetableBlockWorkspace['learningGroups'][number] {
 		learningOfferingId: timetableIds.offeringA,
 		code: 'M1-1-MATH',
 		name: 'ม.1/1 คณิตศาสตร์',
-		status: 'published',
-		rosterStatus: 'published',
+		registrationOpen: false,
 		offeringKind: 'course',
 		subjectType: 'BASIC',
 		offeringCode: 'ค21101',
@@ -81,7 +80,7 @@ for (const theme of ['light', 'dark'] as const)
 				]
 			});
 			await page.goto(
-				`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${timetableIds.draftVersion}&view=homeroom&ownerId=${timetableIds.homeroom}`
+				`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=homeroom&ownerId=${timetableIds.homeroom}`
 			);
 			await setTimetableTheme(page, theme);
 			const existingCard = page.locator(

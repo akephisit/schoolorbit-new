@@ -12,27 +12,27 @@ pub struct TimetableSocketAccess {
     pub can_manage: bool,
 }
 
-pub struct TimetableDraftSocketAccess {
+pub struct TimetableCollaborationSocketAccess {
     pub user_id: Uuid,
     pub display_name: String,
     pub read_access: crate::policy::TimetableAccessFilter,
     pub manage_access: Option<crate::policy::TimetableAccessFilter>,
 }
 
-pub async fn authorize_draft_socket(
+pub async fn authorize_collaboration_socket(
     pool: &PgPool,
     actor: &ActorContext,
     academic_term_id: Uuid,
     version_id: Uuid,
-) -> Result<TimetableDraftSocketAccess, AppError> {
+) -> Result<TimetableCollaborationSocketAccess, AppError> {
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
-        "academic_timetable.services.timetable_realtime_service.authorize_draft_socket",
+        "academic_timetable.services.timetable_realtime_service.authorize_collaboration_socket",
     )
     .await?;
     let user = DbSession::new(&mut connection)
         .query_as::<RealtimeUser>(
-            "academic_timetable.services.timetable_realtime_service.authorize_draft_socket.user",
+            "academic_timetable.services.timetable_realtime_service.authorize_collaboration_socket.user",
             "SELECT display_name FROM user_display_names WHERE id=$1 AND status='active'",
         )
         .bind(actor.user_id)
@@ -45,12 +45,8 @@ pub async fn authorize_draft_socket(
         crate::policy::TimetableAction::Read,
     )
     .await?;
-    let version = super::timetable_version_service::get_version_on_connection(
-        &mut connection,
-        version_id,
-        chrono::Utc::now().date_naive(),
-    )
-    .await?;
+    let version =
+        super::timetable_service::get_by_id_on_connection(&mut connection, version_id).await?;
     if version.academic_term_id != academic_term_id {
         return Err(AppError::NotFound(
             "Draft not found in selected term".into(),
@@ -63,15 +59,11 @@ pub async fn authorize_draft_socket(
     )
     .await
     {
-        Ok(access)
-            if version.status == school_academic_core::models::TimetableVersionStatus::Draft =>
-        {
-            Some(access)
-        }
-        Ok(_) | Err(AppError::Forbidden(_)) => None,
+        Ok(access) => Some(access),
+        Err(AppError::Forbidden(_)) => None,
         Err(error) => return Err(error),
     };
-    Ok(TimetableDraftSocketAccess {
+    Ok(TimetableCollaborationSocketAccess {
         user_id: actor.user_id,
         display_name: user.display_name,
         read_access,

@@ -4,7 +4,7 @@ use super::term_transitions;
 use crate::ports::ExternalLifecyclePort;
 use school_academic_core::ports::PendingTermWork;
 use school_academic_delivery::services as delivery_services;
-use school_academic_timetable::services::timetable_version_service;
+use school_academic_timetable::services::timetable_service;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use school_permissions::registry::codes;
@@ -21,7 +21,7 @@ pub async fn workspace_in_transaction(
 ) -> Result<TermLifecycleWorkspace, AppError> {
     let context = term_transitions::read_context(tx, year, term).await?;
     let delivery = delivery_services::pending_term_work(tx, year, term).await?;
-    let timetable = timetable_version_service::pending_term_work(tx, year, term).await?;
+    let timetable = timetable_service::pending_term_work(tx, year, term).await?;
     let exams = external.pending_exam_work(tx, year, term).await?;
     let supervision = external.pending_supervision_work(tx, year, term).await?;
     let link = |permission: &str, path: &str| {

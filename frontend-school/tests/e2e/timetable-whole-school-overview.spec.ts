@@ -9,13 +9,13 @@ import {
 } from './timetable-test-harness';
 
 test.use({ serviceWorkers: 'block' });
-test.describe.configure({ mode: 'serial' });
+test.describe.configure({ mode: 'default' });
 
 function wholeSchoolUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}&view=wholeSchool`
+		`&timetableId=${timetableIds.timetable}&view=wholeSchool`
 	);
 }
 
@@ -41,7 +41,7 @@ test('derives the read-only school matrix from the same bounded block workspace'
 	await expect(card.getByText('ห้องคณิตศาสตร์', { exact: true })).toBeVisible();
 	await expect(card).not.toContainText('MATH-1');
 	await expect(card.getByRole('button', { name: /ออกจากตาราง/ })).toHaveCount(0);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 	expect(mock.createRequestCount()).toBe(0);
 	expect(mock.updateRequestCount()).toBe(0);
 	expect(mock.swapRequestCount()).toBe(0);

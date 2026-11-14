@@ -71,12 +71,9 @@
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
 	);
-	const canPublishExamSchedules = $derived(
-		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL)
-	);
 
-	function canDeleteExamRound(round: ExamRound): boolean {
-		return canManageExamSchedules && (round.status === 'draft' || canPublishExamSchedules);
+	function canDeleteExamRound(_round: ExamRound): boolean {
+		return canManageExamSchedules;
 	}
 
 	function requestDeleteRound(round: ExamRound) {
@@ -151,14 +148,6 @@
 		} finally {
 			creatingRound = false;
 		}
-	}
-
-	function statusLabel(status: string): string {
-		return status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง';
-	}
-
-	function statusVariant(status: string): 'default' | 'secondary' | 'outline' {
-		return status === 'published' ? 'default' : 'secondary';
 	}
 
 	function examRoundKindLabel(kind: ExamRoundKind): string {
@@ -289,7 +278,7 @@
 									<TableHead class="w-32">ชนิดรอบ</TableHead>
 									<TableHead class="w-36">สถานะ</TableHead>
 									<TableHead>ภาคเรียน</TableHead>
-									<TableHead class="w-36">เผยแพร่</TableHead>
+									<TableHead class="w-36">แก้ไขล่าสุด</TableHead>
 									<TableHead class="w-40 text-right">จัดการ</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -321,15 +310,13 @@
 											<Badge variant="outline">{examRoundKindLabel(round.examKind)}</Badge>
 										</TableCell>
 										<TableCell>
-											<Badge variant={statusVariant(round.status)}
-												>{statusLabel(round.status)}</Badge
-											>
+											<Badge variant="secondary">ตารางปัจจุบัน</Badge>
 										</TableCell>
 										<TableCell class="text-sm text-muted-foreground">
 											{selectedTermLabel}
 										</TableCell>
 										<TableCell class="text-sm text-muted-foreground">
-											{formatDate(round.publishedAt)}
+											{formatDate(round.updatedAt)}
 										</TableCell>
 										<TableCell>
 											<div class="flex items-center justify-end gap-1">
@@ -386,11 +373,6 @@
 				<AlertDialog.Description>
 					การดำเนินการนี้ย้อนกลับไม่ได้ และจะลบวันสอบ รายการสอบ เวลา ห้องสอบ ที่นั่ง
 					และกรรมการทั้งหมดในรอบนี้ โดยไม่ลบโครงสร้างคะแนนต้นทาง
-					{#if deleteTarget?.status === 'published'}
-						<span class="mt-2 block font-medium text-destructive">
-							รอบนี้เผยแพร่แล้ว เมื่อลบ ครูและนักเรียนจะไม่เห็นตารางสอบรอบนี้อีก
-						</span>
-					{/if}
 				</AlertDialog.Description>
 			</AlertDialog.Header>
 			<AlertDialog.Footer>

@@ -49,12 +49,11 @@ function workspace() {
 		teachers: []
 	};
 	return {
-		version: {
-			id: 'selected-draft',
+		timetable: {
+			id: 'current-table',
 			academicYearId: 'year',
 			academicTermId: 'term',
-			status: 'draft',
-			effectiveFrom: null
+			bellScheduleId:'bell',rowVersion:1,createdAt:'2026-05-01T00:00:00Z',updatedAt:'2026-05-01T00:00:00Z'
 		},
 		blocks: [
 			course,
@@ -141,7 +140,7 @@ test('homeroom PDF keeps course, synchronized and special periods with only that
 	assert.equal(pages[0].roomNames['classroom-a'], 'ห้องคณิตศาสตร์');
 	assert.deepEqual(pages[0].homeroomNames, { 'room-a': 'ม.1/1', 'room-b': 'ม.1/2' });
 	assert.equal(pages[0].subTitle, 'ภาคเรียนที่ 1 2569');
-	assert.equal(fileName, 'ตารางเรียน ม.1-1 ภาคเรียนที่ 1 2569 1ต่อหน้า แบบร่าง');
+	assert.equal(fileName, 'ตารางเรียน ม.1-1 ภาคเรียนที่ 1 2569 1ต่อหน้า ตารางปัจจุบัน');
 	assert.deepEqual(input, original);
 });
 
@@ -169,10 +168,8 @@ test('group and teacher exports include only their selected responsibilities', (
 	);
 });
 
-test('whole school exports one full week per homeroom from the chosen published snapshot', () => {
+test('whole school exports one full week per homeroom from the explicit current term', () => {
 	const input = workspace();
-	input.version.status = 'published';
-	input.version.effectiveFrom = '2026-05-18';
 	const { pages, fileName } = buildAcademicTimetablePdfDownload(
 		input,
 		'wholeSchool',
@@ -229,7 +226,7 @@ test('multi-owner exports validate IDs and keep workspace order without repeatin
 	);
 });
 
-test('PDF filenames distinguish teachers, selected batches, versions and page layouts', () => {
+test('PDF filenames distinguish teachers, selected batches, current table identities and page layouts', () => {
 	const input = workspace();
 	input.staff[0].displayName = 'นายพิสิษฐ หนึ่ง';
 	input.staff[1].displayName = 'นายพิสิษฐ สอง';
@@ -242,7 +239,7 @@ test('PDF filenames distinguish teachers, selected batches, versions and page la
 	assert.equal(batch, build(['teacher-b', 'teacher-a', 'teacher-a']).fileName);
 	input.staff.push({ ...input.staff[1], id: 'teacher-c' });
 	assert.notEqual(batch, build(['teacher-a', 'teacher-c']).fileName);
-	input.version.id = 'other-version';
+	input.timetable.id = 'other-current-term-table';
 	assert.notEqual(batch, build(['teacher-a', 'teacher-b']).fileName);
 });
 

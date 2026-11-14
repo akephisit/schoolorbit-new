@@ -171,8 +171,8 @@ test('repeated desired params within the debounce still replace a different acti
 
 test('switching a draft within the same term replaces its socket and observer mode remains distinct', () => {
 	const { environment, runtime } = createHarness();
-	const first = { ...termA, timetableVersionId: 'draft-a' };
-	const second = { ...termA, timetableVersionId: 'draft-b' };
+	const first = { ...termA, timetableId: 'draft-a' };
+	const second = { ...termA, timetableId: 'draft-b' };
 	runtime.connect(first);
 	environment.advanceBy(50);
 	environment.sockets[0].open();
@@ -446,7 +446,7 @@ test('authenticated policy recovery rejoins only after refresh on the still-curr
 			finish = resolve;
 		});
 	});
-	runtime.connect({ ...termA, timetableVersionId: 'draft-a' });
+	runtime.connect({ ...termA, timetableId: 'draft-a' });
 	environment.advanceBy(50);
 	environment.sockets[0].open();
 	environment.sockets[0].closeFromServer(1008);
@@ -459,7 +459,7 @@ test('authenticated policy recovery rejoins only after refresh on the still-curr
 	assert.equal(environment.nextDelay(), 50);
 	environment.advanceBy(50);
 	assert.equal(environment.sockets.length, 2);
-	assert.deepEqual(environment.sockets[1].params, { ...termA, timetableVersionId: 'draft-a' });
+	assert.deepEqual(environment.sockets[1].params, { ...termA, timetableId: 'draft-a' });
 });
 
 test('unavailable policy auth uses the existing increasing backoff to retry auth before opening a socket', async () => {
@@ -512,7 +512,7 @@ for (const change of ['disconnect', 'term', 'draft', 'user', 'session replacemen
 				finish = resolve;
 			});
 		});
-		runtime.connect({ ...termA, timetableVersionId: 'draft-a' });
+		runtime.connect({ ...termA, timetableId: 'draft-a' });
 		environment.advanceBy(50);
 		environment.sockets[0].closeFromServer(1008);
 		if (change === 'disconnect' || change === 'session replacement') runtime.disconnect();
@@ -520,10 +520,10 @@ for (const change of ['disconnect', 'term', 'draft', 'user', 'session replacemen
 			change === 'term'
 				? termB
 				: change === 'draft'
-					? { ...termA, timetableVersionId: 'draft-b' }
+					? { ...termA, timetableId: 'draft-b' }
 					: change === 'user'
 						? { ...termA, currentUserId: 'user-2' }
-						: { ...termA, timetableVersionId: 'draft-a' };
+						: { ...termA, timetableId: 'draft-a' };
 		if (change !== 'disconnect') runtime.connect(next);
 		assert.equal(oldIsCurrent(), false);
 		environment.advanceBy(50);
@@ -731,7 +731,7 @@ test('an explicit new owner context starts a clean policy episode and backoff be
 	environment.advanceBy(50);
 	environment.sockets.at(-1).open();
 	environment.sockets.at(-1).closeFromServer(1006);
-	const next = { ...termB, timetableVersionId: 'draft-b' };
+	const next = { ...termB, timetableId: 'draft-b' };
 	runtime.connect(next);
 	environment.advanceBy(50);
 	assert.deepEqual(environment.sockets.at(-1).params, next);

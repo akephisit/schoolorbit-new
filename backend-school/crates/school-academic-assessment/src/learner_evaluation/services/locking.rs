@@ -49,7 +49,7 @@ pub async fn read_lock_readiness(
     let date = current_obligation_date(&mut tx, ctx).await?;
     let candidates: Vec<Uuid> = DbSession::new(&mut *tx).scalar(
         "academic_assessment.learner_evaluation.services.locking.read_lock_readiness",
-        "SELECT g.id FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='course' JOIN course_offering_details d ON d.learning_offering_id=o.id WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed' ORDER BY g.id LIMIT $3",
+        "SELECT g.id FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.kind='course' JOIN course_offering_details d ON d.learning_offering_id=o.id WHERE g.academic_term_id=$1 AND g.academic_year_id=$2  ORDER BY g.id LIMIT $3",
     ).bind(ctx.academic_term_id).bind(ctx.academic_year_id)
         .bind((crate::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT+1) as i64).fetch_all().await?;
     if candidates.len() > crate::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT {
@@ -67,7 +67,7 @@ pub async fn read_lock_readiness(
         )
         .await?;
     let assignments =
-        school_academic_delivery::services::versions::group_teacher_assignments_on_connection(
+        school_academic_delivery::services::current::group_teacher_assignments_on_connection(
             &mut tx,
             ctx.academic_year_id,
             ctx.academic_term_id,
@@ -89,7 +89,7 @@ pub async fn read_lock_readiness(
                JOIN course_offering_details detail
                  ON detail.learning_offering_id=offering.id
                WHERE group_row.academic_term_id=$1 AND group_row.academic_year_id=$2
-                 AND group_row.status<>'closed' AND group_row.id=ANY($3)
+                  AND group_row.id=ANY($3)
            )
            SELECT subject_groups.subject_id,subject_groups.code,subject_groups.name,
                   domains.domain,subject_groups.learning_group_id,subject_groups.group_name,
@@ -151,7 +151,7 @@ pub async fn read_lock_readiness(
                         ON earlier_group.id=earlier_member.learning_group_id
                        AND earlier_group.academic_term_id=$1
                        AND earlier_group.academic_year_id=$2
-                       AND earlier_group.status<>'closed' AND earlier_group.id=ANY($3)
+                       AND earlier_group.id=ANY($3)
                       JOIN course_offering_details earlier_detail
                         ON earlier_detail.learning_offering_id=earlier_group.learning_offering_id
                        AND earlier_detail.subject_id=subject_groups.subject_id

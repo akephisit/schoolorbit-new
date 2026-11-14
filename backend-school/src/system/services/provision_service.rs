@@ -49,7 +49,7 @@ pub async fn provision_tenant(payload: ProvisionRequest) -> Result<ProvisionOutc
         .await
         .map_err(|_| AppError::ServiceUnavailable("privileged_database_budget".into()))?;
 
-    school_migrations::run_tenant_migrations(&pool)
+    school_migrations::run_fresh_tenant_migrations(&pool)
         .await
         .map_err(|error| {
             tracing::error!("Tenant migration failed: {}", error);

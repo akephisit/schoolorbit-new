@@ -1,6 +1,6 @@
 use super::*;
 use crate::policy::results as access_policy;
-use school_academic_delivery::services::versions::{
+use school_academic_delivery::services::current::{
     assigned_group_ids_on_connection, group_teacher_assignments_on_connection,
 };
 use school_authorization::ActorContext;
@@ -91,7 +91,7 @@ pub(super) async fn readiness_at(
             "academic_results.services.readiness.readiness_at",
             r#"
         SELECT g.id FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id
-        WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed'
+        WHERE g.academic_term_id=$1 AND g.academic_year_id=$2
           AND ($3 OR o.owning_organization_unit_id=ANY($4) OR ($5 AND g.id=ANY($6)))
         ORDER BY g.id LIMIT $7
     "#,
@@ -210,7 +210,7 @@ pub(super) async fn readiness_at(
            LEFT JOIN academic_course_result_locks lock ON lock.subject_id=d.subject_id
              AND lock.academic_term_id=g.academic_term_id
              AND lock.academic_year_id=g.academic_year_id
-           WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed' AND g.id=ANY($8)
+           WHERE g.academic_term_id=$1 AND g.academic_year_id=$2  AND g.id=ANY($8)
              AND ($3 OR o.owning_organization_unit_id=ANY($4)
                   OR ($5::uuid IS NOT NULL AND $5=ANY(assignment.teacher_ids)))
            ORDER BY d.subject_id,g.id LIMIT 5001"#,
@@ -264,7 +264,7 @@ pub(super) async fn readiness_at(
            LEFT JOIN teacher_assignments assignment ON assignment.learning_group_id=g.id
            LEFT JOIN academic_activity_result_confirmations confirmation ON confirmation.learning_group_id=g.id
            LEFT JOIN academic_activity_result_locks lock ON lock.learning_group_id=g.id
-           WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed' AND g.id=ANY($8)
+           WHERE g.academic_term_id=$1 AND g.academic_year_id=$2  AND g.id=ANY($8)
              AND ($3 OR o.owning_organization_unit_id=ANY($4)
                   OR ($5::uuid IS NOT NULL AND $5=ANY(assignment.teacher_ids)))
            ORDER BY o.code_snapshot,g.id LIMIT 5001"#,

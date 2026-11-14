@@ -22,8 +22,7 @@ impl PlacementRosterPort for RoomRosterTracking {
 }
 
 const TRACKING_COLUMNS: &str = r#"COALESCE(config.mode,'manual') AS mode, config.effective_from,
-    g.row_version AS group_row_version, o.starts_on AS starts_on,
-    o.ends_on AS ends_on"#;
+    g.row_version AS group_row_version"#;
 const TRACKING_FROM: &str = r#"FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
     JOIN learning_offerings o ON o.id=g.learning_offering_id
     JOIN academic_years y ON y.id=g.academic_year_id
@@ -138,31 +137,12 @@ pub(super) async fn configuration_conflicts(
         )
         .fetch_one()
         .await?;
-    let available: bool = match effective_from {
-        Some(date) => {
-            DbSession::new(connection)
-                .scalar(
-                    "academic_delivery.services.roster_tracking.date_availability",
-                    "SELECT CASE WHEN status='draft' THEN starts_on<=$2 AND (ends_on IS NULL OR ends_on>=$2) ELSE academic_delivery_offering_available(id,$2) END FROM learning_offerings WHERE id=$1",
-                )
-                .bind(offering)
-                .bind(date)
-                .fetch_one()
-                .await?
-        }
-        None => true,
-    };
     let mut conflicts = HashMap::new();
     for id in contexts.keys() {
         if let Err(AppError::ValidationError(reason)) =
             validate(mode, effective_from, today, None, today)
         {
             conflicts.insert(*id, AppError::ValidationError(reason));
-        } else if mode == RosterTrackingMode::Homeroom && !available {
-            conflicts.insert(
-                *id,
-                AppError::ValidationError("วันที่เริ่มติดตามอยู่นอกแผนเปิดสอนที่มีผล".into()),
-            );
         }
     }
     if mode == RosterTrackingMode::Homeroom {
@@ -179,8 +159,7 @@ pub(super) async fn configuration_conflicts(
                         JOIN users u ON u.id=sy.student_id AND u.status='active'
                         WHERE p.student_academic_year_id=m.student_academic_year_id
                             AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready')))
-                            AND p.end_date IS NULL AND ((o.status='draft' AND (o.ends_on IS NULL OR p.start_date IS NULL OR o.ends_on>=p.start_date))
-                                OR EXISTS(SELECT 1 FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id AND (span.ends_on IS NULL OR p.start_date IS NULL OR span.ends_on>=p.start_date))))) AS extra_members
+                            AND p.end_date IS NULL)) AS extra_members
             FROM learning_groups g JOIN academic_terms t ON t.id=g.academic_term_id
             JOIN academic_years ay ON ay.id=g.academic_year_id JOIN learning_offerings o ON o.id=g.learning_offering_id
             WHERE g.id=ANY($1) AND o.id=$2
@@ -242,25 +221,22 @@ pub async fn update(
         .bind(offering)
         .execute()
         .await?;
-    let (version, status, roster): (i64, String, String) = DbSession::new(&mut *tx)
-        .query_as(
+    let version: i64 = DbSession::new(&mut *tx)
+        .scalar(
             "academic_delivery.services.roster_tracking.update",
-            "SELECT row_version,status,roster_status FROM learning_groups WHERE id=$1 FOR UPDATE",
+            "SELECT row_version FROM learning_groups WHERE id=$1 FOR UPDATE",
         )
         .bind(id)
         .fetch_one()
         .await?;
-    if version != request.row_version
-        || ["closed", "cancelled"].contains(&status.as_str())
-        || roster == "closed"
-    {
+    if version != request.row_version {
         return Err(AppError::Conflict(
             "กลุ่มเรียนเปลี่ยนแล้วหรือปิดใช้งาน กรุณาโหลดใหม่".into(),
         ));
     }
     validate_configuration(&mut tx, id, offering, request.mode, request.effective_from).await?;
     save_configurations(&mut tx, &[id], request.mode, request.effective_from).await?;
-    if request.mode == RosterTrackingMode::Homeroom && roster == "published" {
+    if request.mode == RosterTrackingMode::Homeroom {
         sync_group(&mut tx, actor, id, None).await?;
     }
     DbSession::new(&mut *tx)
@@ -271,17 +247,6 @@ pub async fn update(
         .bind(id)
         .execute()
         .await?;
-    super::append_audit(
-        &mut *tx,
-        "learning_group.roster_tracking_changed",
-        "learning_group",
-        id,
-        year,
-        term,
-        actor,
-        serde_json::json!({"mode":request.mode,"effectiveFrom":request.effective_from}),
-    )
-    .await?;
     tx.commit().await?;
     get(pool, id).await
 }
@@ -309,7 +274,7 @@ pub async fn sync_students(
         JOIN learning_group_roster_tracking config ON config.learning_group_id=g.id AND config.mode='homeroom'
         JOIN academic_terms t ON t.id=g.academic_term_id JOIN academic_years y ON y.id=g.academic_year_id
         JOIN learning_offerings o ON o.id=g.learning_offering_id
-        WHERE g.roster_status='published' AND g.status NOT IN ('closed','cancelled') AND o.status='published'
+        WHERE true
         AND t.status NOT IN ('closed','cancelled') AND y.status NOT IN ('closed','archived')
         AND (EXISTS(SELECT 1 FROM homeroom_placements p JOIN learning_group_homerooms c ON c.homeroom_id=p.homeroom_id AND c.learning_group_id=g.id WHERE p.student_academic_year_id=ANY($1))
             OR EXISTS(SELECT 1 FROM learning_group_students m WHERE m.learning_group_id=g.id AND m.student_academic_year_id=ANY($1)))
@@ -322,7 +287,7 @@ pub async fn sync_students(
 
 pub async fn sync_group(
     tx: &mut Transaction<'_, Postgres>,
-    actor: Uuid,
+    _actor: Uuid,
     id: Uuid,
     ids: Option<&[Uuid]>,
 ) -> Result<(), AppError> {
@@ -330,25 +295,19 @@ pub async fn sync_group(
     if !enabled {
         return Ok(());
     }
-    let rows: Vec<(Uuid,Uuid,NaiveDate,Uuid)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT sy.id,sy.student_id,MAX(GREATEST(p.start_date,config.effective_from,availability.starts_on)) AS joined,p.homeroom_id
+    let rows: Vec<(Uuid,Uuid,NaiveDate,Uuid)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT sy.id,sy.student_id,MAX(GREATEST(p.start_date,config.effective_from)) AS joined,p.homeroom_id
         FROM learning_groups g JOIN learning_group_roster_tracking config ON config.learning_group_id=g.id
         JOIN academic_terms t ON t.id=g.academic_term_id JOIN learning_offerings o ON o.id=g.learning_offering_id
         JOIN academic_years y ON y.id=g.academic_year_id
         JOIN learning_group_homerooms c ON c.learning_group_id=g.id JOIN homeroom_placements p ON p.homeroom_id=c.homeroom_id
         JOIN student_academic_years sy ON sy.id=p.student_academic_year_id AND sy.academic_year_id=g.academic_year_id
         JOIN users u ON u.id=sy.student_id AND u.status='active'
-        JOIN LATERAL(SELECT candidate.starts_on FROM (
-            SELECT span.starts_on FROM academic_delivery_effective_offering_spans span WHERE span.learning_offering_id=o.id AND o.status<>'draft'
-                AND (span.ends_on IS NULL OR span.ends_on>=GREATEST(p.start_date,config.effective_from))
-            UNION ALL SELECT o.starts_on WHERE o.status='draft'
-                AND (o.ends_on IS NULL OR o.ends_on>=GREATEST(p.start_date,config.effective_from))
-        ) candidate ORDER BY candidate.starts_on LIMIT 1) availability ON true
         WHERE g.id=$1 AND (p.status='current' OR (p.status='planned' AND y.status IN ('planning','ready'))) AND p.end_date IS NULL AND sy.status IN ('active','planned')
             AND ($2::uuid[] IS NULL OR sy.id=ANY($2))
         GROUP BY sy.id,sy.student_id,p.homeroom_id"#).bind(id).bind(ids).fetch_all().await?;
     let desired: Vec<_> = rows.iter().map(|row| row.0).collect();
     let old: Vec<(Uuid,Uuid,NaiveDate,NaiveDate)>=DbSession::new(&mut **tx).query_as("academic_delivery.services.roster_tracking.sync_group", r#"SELECT m.id,m.student_academic_year_id,m.joined_at,
-        COALESCE(availability.left_on,m.joined_at-1)
+        placement.ends_on
         FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id
         JOIN student_academic_years sy ON sy.id=m.student_academic_year_id
         JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id
@@ -358,13 +317,6 @@ pub async fn sync_group(
             WHERE p.student_academic_year_id=m.student_academic_year_id AND p.status='ended'
                 AND p.end_date>=m.joined_at AND sy.status IN ('active','planned') ORDER BY p.end_date DESC,p.id LIMIT 1),
             (now() AT TIME ZONE 'Asia/Bangkok')::date) AS ends_on) placement
-        LEFT JOIN LATERAL(SELECT LEAST(COALESCE(span.ends_on,placement.ends_on),placement.ends_on) AS left_on
-            FROM (
-                SELECT starts_on,ends_on FROM academic_delivery_effective_offering_spans
-                    WHERE learning_offering_id=o.id AND o.status<>'draft'
-                UNION ALL SELECT o.starts_on,o.ends_on WHERE o.status='draft'
-            ) span WHERE span.starts_on<=placement.ends_on AND (span.ends_on IS NULL OR span.ends_on>=m.joined_at)
-            ORDER BY left_on DESC,span.starts_on DESC LIMIT 1) availability ON true
         WHERE m.learning_group_id=$1 AND m.membership_status='active'
             AND ($2::uuid[] IS NULL OR m.student_academic_year_id=ANY($2)) AND NOT(m.student_academic_year_id=ANY($3)) FOR UPDATE OF m"#).bind(id).bind(ids).bind(&desired).fetch_all().await?;
     let old_ids: Vec<_> = old.iter().map(|row| row.0).collect();
@@ -382,36 +334,6 @@ pub async fn sync_group(
         .execute()
         .await?
         .rows_affected();
-    // Keep raw desired candidates above: a denied new intake is not a departure.
-    let today: NaiveDate = DbSession::new(&mut **tx)
-        .scalar(
-            "academic_delivery.services.roster_tracking.sync_group",
-            "SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date",
-        )
-        .fetch_one()
-        .await?;
-    let dates: Vec<_> = rows
-        .iter()
-        .map(|row| row.2.max(today))
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    let constraints_by_date =
-        super::audiences::dated_group_constraints_for_dates_on_connection(&mut **tx, &[id], &dates)
-            .await?;
-    let mut eligible = Vec::with_capacity(rows.len());
-    for row in rows {
-        let scopes = constraints_by_date.get(&row.2.max(today)).ok_or_else(|| {
-            AppError::InternalServerError("ไม่พบขอบเขตเปิดสอนสำหรับวันที่ตรวจสอบ".into())
-        })?;
-        if scopes
-            .constraint_for_group(id)
-            .is_none_or(|scope| scope.allows_homeroom(id, Some(row.3)))
-        {
-            eligible.push(row);
-        }
-    }
-    let rows = eligible;
     let student_years: Vec<_> = rows.iter().map(|row| row.0).collect();
     let students: Vec<_> = rows.iter().map(|row| row.1).collect();
     let joined_dates: Vec<_> = rows.iter().map(|row| row.2).collect();
@@ -430,7 +352,7 @@ pub async fn sync_group(
     }
     let inserted = DbSession::new(&mut **tx).query("academic_delivery.services.roster_tracking.sync_group", r#"INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at,published_at)
         SELECT gen_random_uuid(),g.id,g.academic_term_id,g.academic_year_id,candidate.student_year,candidate.student_id,
-            'active','homeroom_tracking',candidate.joined_at,CASE WHEN g.roster_status='published' THEN now() END
+            'active','homeroom_tracking',candidate.joined_at,now()
         FROM learning_groups g CROSS JOIN unnest($2::uuid[],$3::uuid[],$4::date[]) candidate(student_year,student_id,joined_at)
         WHERE g.id=$1 AND NOT EXISTS(SELECT 1 FROM learning_group_students m
             WHERE m.learning_group_id=g.id AND m.student_id=candidate.student_id AND m.membership_status='active')"#)
@@ -452,25 +374,6 @@ pub async fn sync_group(
             .execute()
             .await?;
         invalidate_group_academic_confirmations(tx, &[id]).await?;
-        let (year, term): (Uuid, Uuid) = DbSession::new(&mut **tx)
-            .query_as(
-                "academic_delivery.services.roster_tracking.sync_group",
-                "SELECT academic_year_id,academic_term_id FROM learning_groups WHERE id=$1",
-            )
-            .bind(id)
-            .fetch_one()
-            .await?;
-        super::append_audit(
-            &mut **tx,
-            "learning_group.homeroom_roster_tracked",
-            "learning_group",
-            id,
-            year,
-            term,
-            actor,
-            serde_json::json!({"changedMemberships":changed}),
-        )
-        .await?;
     }
     Ok(())
 }

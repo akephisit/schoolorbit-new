@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use chrono::NaiveDate;
@@ -11,13 +11,86 @@ use school_errors::AppError;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-pub(crate) struct ApplicationLifecycleProviders;
-
-pub(crate) static LIFECYCLE_PROVIDERS: ApplicationLifecycleProviders =
-    ApplicationLifecycleProviders;
+pub(crate) struct ApplicationLifecycleProviders {
+    pub collaboration: Arc<school_academic_timetable::collaboration::TimetableCollaborationRuntime>,
+}
+struct PreparationAuthorization(
+    Arc<dyn school_academic_lifecycle::ports::PreparationAuthorizationPort>,
+);
+#[async_trait]
+impl school_academic_timetable::collaboration::MutationAuthorizationPort
+    for PreparationAuthorization
+{
+    async fn validate_admission(
+        &self,
+        actor: &school_authorization::ActorContext,
+    ) -> Result<(), AppError> {
+        self.0.validate_admission(actor).await
+    }
+}
+struct ApplicationPreparationAdmission {
+    guard: Option<school_academic_timetable::collaboration::TimetablePreparationGuard>,
+}
+#[async_trait]
+impl school_academic_lifecycle::ports::PreparationAdmission for ApplicationPreparationAdmission {
+    async fn apply_timetable(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        context: &TermPreparationContext,
+        mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
+    ) -> Result<TermPreparationModuleOutcome, AppError> {
+        self.guard
+            .as_ref()
+            .ok_or_else(|| AppError::Conflict("Timetable preparation was not admitted".into()))?
+            .apply_in_transaction(tx, context, mappings)
+            .await
+    }
+    async fn commit(
+        self: Box<Self>,
+        tx: school_tenancy::ObservedTransaction,
+        changed: bool,
+    ) -> Result<(), AppError> {
+        if let Some(guard) = &self.guard {
+            guard.commit(tx, changed).await
+        } else {
+            tx.commit().await?;
+            Ok(())
+        }
+    }
+}
 
 #[async_trait]
 impl ExternalLifecyclePort for ApplicationLifecycleProviders {
+    async fn admit_preparation(
+        &self,
+        context: &school_academic_lifecycle::ports::PreparationCommandContext,
+        year: Uuid,
+        term: Uuid,
+        include_timetable: bool,
+    ) -> Result<Box<dyn school_academic_lifecycle::ports::PreparationAdmission>, AppError> {
+        let guard = if include_timetable {
+            let mutation = school_academic_timetable::collaboration::TimetableMutationContext {
+                runtime: self.collaboration.clone(),
+                actor: context.actor.clone(),
+                tenant_id: context.tenant_id,
+                session_id: context.session_id,
+                identity: None,
+                staff_directory: &super::staff_directory::STAFF_DIRECTORY,
+                lesson_source_detachment: &super::lesson_sources::LESSON_SOURCE_DETACHMENT,
+                authorization: Arc::new(PreparationAuthorization(context.authorization.clone())),
+                pool_lease: context.pool_lease.clone(),
+            };
+            Some(
+                mutation
+                    .admit_term_preparation(&context.pool_lease, year, term)
+                    .await?,
+            )
+        } else {
+            None
+        };
+        Ok(Box::new(ApplicationPreparationAdmission { guard }))
+    }
+
     async fn require_reopen_allowed(
         &self,
         transaction: &mut Transaction<'_, Postgres>,

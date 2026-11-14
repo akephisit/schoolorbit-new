@@ -6,15 +6,14 @@ use axum::{
     Json,
 };
 use school_academic_assessment::exam_schedule::models::{
-    CreateExamRoundRequest, GenerateSeatsRequest, PlaceExamSessionRequest, SyncExamSourcesRequest,
+    CreateExamRoundRequest, GenerateSeatsRequest, PlaceExamSessionRequest,
     UpdateExamInvigilatorsRequest, UpdateExamRoundRequest, UpsertDayRoomAssignmentRequest,
     UpsertExamDayRequest,
 };
 #[cfg(feature = "api-docs")]
 use school_academic_assessment::exam_schedule::models::{
     DayRoomAssignmentView, ExamDayDetail, ExamInvigilatorStaffOption, ExamInvigilatorWorkspace,
-    ExamRound, ExamScheduleWorkspace, ExamSessionView, ExamSourcePreview, SeatAssignmentView,
-    SyncExamSourcesResult,
+    ExamRound, ExamScheduleWorkspace, ExamSessionView, SeatAssignmentView,
 };
 use school_academic_assessment::exam_schedule::services as exam_schedule_service;
 use school_auth::session_service::AuthenticatedSession;
@@ -169,9 +168,8 @@ pub async fn delete_round(
     let pool = context.tenant.pool;
     let actor = context.actor;
     actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
-    let can_delete_published = actor.has_permission(codes::ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL);
 
-    exam_schedule_service::delete_round(&pool, round_id, can_delete_published).await?;
+    exam_schedule_service::delete_round(&pool, round_id).await?;
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
@@ -201,65 +199,6 @@ pub async fn get_workspace(
 
     let workspace = exam_schedule_service::get_workspace(&pool, round_id).await?;
     Ok(Json(ApiResponse::ok(workspace)).into_response())
-}
-
-/// GET /api/academic/exam-schedules/{round_id}/source-preview
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    get,
-    path = "/api/academic/exam-schedules/{round_id}/source-preview",
-    operation_id = "previewExamSources",
-    tag = "academic",
-    params(("round_id" = Uuid, Path, description = "Exam round ID")),
-    responses(
-        (status = 200, description = "Assessment source change preview", body = ApiResponse<ExamSourcePreview>),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse)
-    )
-))]
-pub async fn preview_sources(
-    State(state): State<AcademicAssessmentHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(round_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL)?;
-
-    let preview = exam_schedule_service::preview_exam_sources(&pool, round_id).await?;
-    Ok(Json(ApiResponse::ok(preview)).into_response())
-}
-
-/// POST /api/academic/exam-schedules/{round_id}/source-sync
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    post,
-    path = "/api/academic/exam-schedules/{round_id}/source-sync",
-    operation_id = "syncExamSources",
-    tag = "academic",
-    params(("round_id" = Uuid, Path, description = "Exam round ID")),
-    request_body = SyncExamSourcesRequest,
-    responses(
-        (status = 200, description = "Selected assessment source changes synchronized", body = ApiResponse<SyncExamSourcesResult>),
-        (status = 400, description = "Source synchronization rejected", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Source preview is stale or conflicts with placement", body = ApiErrorResponse)
-    )
-))]
-pub async fn sync_sources(
-    State(state): State<AcademicAssessmentHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(round_id): Path<Uuid>,
-    Json(payload): Json<SyncExamSourcesRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)?;
-
-    let result =
-        exam_schedule_service::sync_exam_sources(&pool, round_id, actor.user_id, payload).await?;
-    Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
 /// POST /api/academic/exam-schedules/{round_id}/days
@@ -689,36 +628,6 @@ pub async fn delete_session(
     Ok(Json(ApiResponse::empty()).into_response())
 }
 
-/// POST /api/academic/exam-schedules/{round_id}/publish
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    post,
-    path = "/api/academic/exam-schedules/{round_id}/publish",
-    operation_id = "publishExamRound",
-    tag = "academic",
-    params(("round_id" = Uuid, Path, description = "Exam round ID")),
-    responses(
-        (status = 409, description = "Academic year or term is closed, or the resource changed", body = ApiErrorResponse),
-        (status = 200, description = "Exam round published", body = ApiResponse<ExamRound>),
-        (status = 400, description = "Exam round is not ready", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Exam round not found", body = ApiErrorResponse)
-    )
-))]
-pub async fn publish_round(
-    State(state): State<AcademicAssessmentHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(round_id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let pool = context.tenant.pool;
-    let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL)?;
-
-    let round = exam_schedule_service::publish_round(&pool, round_id, actor.user_id).await?;
-    Ok(Json(ApiResponse::ok(round)).into_response())
-}
-
 /// GET /api/me/exam-schedules
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get,
@@ -727,7 +636,7 @@ pub async fn publish_round(
     tag = "academic",
     params(PersonalExamScheduleQuery),
     responses(
-        (status = 200, description = "Current student's published exam schedules", body = ApiResponse<Vec<school_academic_assessment::exam_schedule::models::PersonalExamScheduleRound>>),
+        (status = 200, description = "Current student's current exam schedules", body = ApiResponse<Vec<school_academic_assessment::exam_schedule::models::PersonalExamScheduleRound>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Active student account required", body = ApiErrorResponse)
     )
@@ -737,7 +646,7 @@ pub async fn list_my_exam_schedule(
     Query(query): Query<PersonalExamScheduleQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = current_user_tenant_context_from_session(&session);
-    let schedule = exam_schedule_service::list_my_published_exam_schedule(
+    let schedule = exam_schedule_service::list_my_exam_schedule(
         &context.tenant.pool,
         context.user_id,
         query.academic_term_id,
@@ -755,7 +664,7 @@ pub async fn list_my_exam_schedule(
     tag = "academic",
     params(PersonalExamScheduleQuery),
     responses(
-        (status = 200, description = "Published school exam schedules for staff", body = ApiResponse<Vec<school_academic_assessment::exam_schedule::models::StaffPublishedExamScheduleRound>>),
+        (status = 200, description = "Published school exam schedules for staff", body = ApiResponse<Vec<school_academic_assessment::exam_schedule::models::StaffExamScheduleRound>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Active staff account required", body = ApiErrorResponse)
     )
@@ -765,7 +674,7 @@ pub async fn list_staff_exam_schedule(
     Query(query): Query<PersonalExamScheduleQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = current_user_tenant_context_from_session(&session);
-    let schedule = exam_schedule_service::list_staff_published_exam_schedule(
+    let schedule = exam_schedule_service::list_staff_exam_schedule(
         &context.tenant.pool,
         context.user_id,
         query.academic_term_id,

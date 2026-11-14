@@ -14,7 +14,7 @@ use school_behavior::{
 use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
 
-fn behavior_fact(
+pub(super) fn behavior_fact(
     fact: score_changes::AttendanceScoreFact,
 ) -> Result<BehaviorAttendanceFact, AppError> {
     let source_session_id =

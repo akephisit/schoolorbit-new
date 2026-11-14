@@ -1,4 +1,3 @@
-pub mod teacher_handoff;
+pub mod timetable;
 pub mod timetable_blocks;
 pub mod timetable_templates;
-pub mod timetable_versions;

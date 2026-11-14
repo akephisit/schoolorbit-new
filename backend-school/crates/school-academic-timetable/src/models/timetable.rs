@@ -4,6 +4,34 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct Timetable {
+    pub id: Uuid,
+    pub academic_term_id: Uuid,
+    pub academic_year_id: Uuid,
+    pub bell_schedule_id: Uuid,
+    pub row_version: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TimetableQuery {
+    pub academic_term_id: Uuid,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateTimetableRequest {
+    pub academic_term_id: Uuid,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(IntoParams))]
 #[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
@@ -77,7 +105,7 @@ pub struct UpdateTemplateRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FromCurrentRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub academic_term_id: Uuid,
     pub name: String,
     pub description: Option<String>,
@@ -88,7 +116,7 @@ pub struct FromCurrentRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyTemplateRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub academic_term_id: Uuid,
 }
 
@@ -96,7 +124,7 @@ pub struct ApplyTemplateRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ClearTimetableRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub academic_term_id: Uuid,
     pub entry_types: Option<Vec<String>>,
 }

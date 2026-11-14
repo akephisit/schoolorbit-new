@@ -12,6 +12,9 @@ api-docs = [
 ]
 
 [dependencies]
+async-trait = { workspace = true }
+school-authorization = { workspace = true }
+school-errors = { workspace = true }
 axum = { workspace = true }
 school-academic-lifecycle = { workspace = true }
 school-academic-realtime = { workspace = true }

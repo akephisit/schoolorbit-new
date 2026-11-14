@@ -262,7 +262,9 @@
 			"notes": "Loader starts term-scoped plan summaries and phase controls concurrently; each region renders and retries independently. Offering detail is lazy in the editor; save patches its summary. Tap preload avoids false-positive traffic for the bounded 500-offering plan read.",
 			"browserMount": {
 				"reason": "Dirty-draft registration and timer cleanup only; route promises own plans and phase controls.",
-				"tests": ["tests/static/academic-assessment-structure.test.mjs"],
+				"tests": [
+					"tests/static/academic-assessment-structure.test.mjs"
+				],
 				"eventReads": []
 			}
 		},
@@ -354,19 +356,17 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-delivery",
-			"notes": "Route loads opening versions and its delivery journal independently; selected immutable opening identity precedes homeroom graph hydration. Offering graph stays tab-lazy; explicit refresh updates only visible regions and their version/journal references. Published activity actions refresh eligible drafts only on demand, then reuse the selected draft route promises; management options remain lazy and term-scoped.",
+			"notes": "Route starts the current homeroom workspace; current offering graph is lazy until the offerings view is selected. Explicit term/year context owns both regions. Management options load only for a user action.",
 			"browserMount": {
-				"reason": "Realtime changes reconcile the selected unpublished opening only; initial route reads stay in the loader. Visibility and focus reconcile missed deletion events, with a visible-only interval for readers outside school-wide timetable socket scope.",
+				"reason": "Register visible focus and visibility reconciliation without an initial read or polling. Native scoped mutation signals refresh the current visible term; a preexisting refresh counter becomes the route baseline.",
 				"tests": [
 					"tests/e2e/homeroom-delivery-workspace.spec.ts",
-					"tests/static/learning-delivery-workspace.test.mjs"
+					"tests/static/learning-delivery-workspace.test.mjs",
+					"tests/e2e/delivery-current-seed-realtime.spec.ts"
 				],
 				"eventReads": [
-					"subscribe:getAcademicTermChangeSet",
-					"subscribe:getDeliveryVersion",
-					"subscribe:getHomeroomDeliveryWorkspace",
-					"subscribe:listAcademicTermChangeSets",
-					"subscribe:listDeliveryVersions"
+					"subscribe:getDeliveryWorkspace",
+					"subscribe:getHomeroomDeliveryWorkspace"
 				]
 			}
 		},
@@ -378,14 +378,18 @@
 			"context": "term_required",
 			"status": "complete",
 			"backendOwner": "school-academic-delivery",
-			"notes": "Route starts offering identity, group list and explicit group independently. Opening summaries and the selected immutable graph follow offering identity; published snapshots expose separate dated roster history, while management options remain action-lazy.",
+			"notes": "Route independently starts current offering identity, group list and explicitly selected group. Dated memberships and roster tracking follow the exact accepted selected group; management options remain action-lazy.",
 			"browserMount": {
-				"reason": "Register focus, visibility and visible-only polling for automatic room rosters. Registration performs no initial read; reconciliation refreshes only a changed selected group and retains unsaved policy drafts.",
+				"reason": "Register visible focus and visibility reconciliation without initial reads or polling. Refresh current offering/group metadata; retain local edits and bind initial tracking/membership seeds to exact group, offering and canonical identity.",
 				"tests": [
 					"tests/e2e/delivery-offering-route-loading.spec.ts",
-					"tests/static/delivery-offering-route-loading.test.mjs"
+					"tests/static/delivery-offering-route-loading.test.mjs",
+					"tests/e2e/delivery-current-seed-realtime.spec.ts"
 				],
-				"eventReads": ["subscribe:getLearningGroup"]
+				"eventReads": [
+					"subscribe:getLearningOffering",
+					"subscribe:listLearningGroups"
+				]
 			}
 		},
 		{
@@ -527,7 +531,9 @@
 			"notes": "Term roster and policy reads start independently after layout-owned current-user permissions settle. Explicit selected revision history starts separately; preview starts immediately for an explicit policy or after the policy list for a default policy. URL selection, per-region skeleton/error/retry, stale-policy fallback, and focused lock/policy mutation patches are verified. Unbounded year/term roster uses tap preload.",
 			"browserMount": {
 				"reason": "Dirty lock/policy registration only; roster, policies, preview and history are independent route regions.",
-				"tests": ["tests/static/academic-aggregate-region-loading.test.mjs"],
+				"tests": [
+					"tests/static/academic-aggregate-region-loading.test.mjs"
+				],
 				"eventReads": []
 			}
 		},
@@ -542,7 +548,9 @@
 			"notes": "Year roster starts after layout-owned current-user permissions settle; explicit selected annual preview and history start independently without waiting for roster. URL selection, per-region skeleton/error/retry, retained refresh, and typed lock patch are verified. Unbounded year roster uses tap preload.",
 			"browserMount": {
 				"reason": "Dirty lock registration only; roster, preview and history are route-owned.",
-				"tests": ["tests/static/academic-aggregate-region-loading.test.mjs"],
+				"tests": [
+					"tests/static/academic-aggregate-region-loading.test.mjs"
+				],
 				"eventReads": []
 			}
 		},
@@ -662,7 +670,10 @@
 					"tests/static/timetable-idle-reconcile.test.mjs",
 					"tests/e2e/timetable-teacher-board.spec.ts"
 				],
-				"eventReads": ["subscribe:getTimetableBlockWorkspace", "subscribe:listTimetableVersions"]
+				"eventReads": [
+					"subscribe:getTimetable",
+					"subscribe:getTimetableBlockWorkspace"
+				]
 			}
 		},
 		{
@@ -676,7 +687,9 @@
 			"notes": "Route-owned independent template and version lists with focused retry; no data preload until the global template list is bounded. Selected template detail and mutations remain interaction-lazy.",
 			"browserMount": {
 				"reason": "Dirty template registration only; templates and versions start independently in the loader.",
-				"tests": ["tests/static/timetable-board-templates-route-loading.test.mjs"],
+				"tests": [
+					"tests/static/timetable-board-templates-route-loading.test.mjs"
+				],
 				"eventReads": []
 			}
 		},
@@ -701,7 +714,9 @@
 			"notes": "Independent permission-gated year summary, setup snapshot and bounded history reads start in route. Roster options, preview, direct period checks and retention eligibility stay action-lazy; drafts survive source closure refresh.",
 			"browserMount": {
 				"reason": "Dirty dialog registration and disposal only; readiness promises come from the loader.",
-				"tests": ["tests/static/academic-lifecycle-region-loading.test.mjs"],
+				"tests": [
+					"tests/static/academic-lifecycle-region-loading.test.mjs"
+				],
 				"eventReads": []
 			}
 		},

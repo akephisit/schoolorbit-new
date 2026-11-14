@@ -52,9 +52,23 @@ async fn main() -> MigrationResult<()> {
         .await
         .map_err(database_failure)?;
 
-    school_migrations::run_tenant_migrations(&pool).await?;
+    if let Err(failure) = school_migrations::run_tenant_migrations_detailed(&pool).await {
+        let diagnostic = failure.diagnostic;
+        eprintln!(
+            "{}",
+            serde_json::json!({"schemaVersion":1,"operation":"migrate_tenant_schema","status":"refused","version":diagnostic.version,"sqlstate":diagnostic.sqlstate,"code":diagnostic.code})
+        );
+        pool.close().await;
+        std::process::exit(1);
+    }
+    let version = school_migrations::verify_tenant_schema(&pool)
+        .await
+        .map_err(|_| "Canonical checksum readback failed")?;
     pool.close().await;
-
+    println!(
+        "{}",
+        serde_json::json!({"schemaVersion":1,"operation":"migrate_tenant_schema","status":"migrated","version":version,"checksumsVerified":true})
+    );
     Ok(())
 }
 

@@ -2178,9 +2178,9 @@ async fn attendance_history_student_scope_timing_and_rows() {
 }
 
 #[tokio::test]
-async fn attendance_lesson_choices_use_published_rooms_and_respect_assigned_scope() {
+async fn attendance_lesson_choices_use_current_rooms_and_respect_assigned_scope() {
     let f = fixture("attendance_lesson_choices").await;
-    let (term, start): (Uuid, NaiveDate) = sqlx::query_as("SELECT v.academic_term_id,v.effective_from FROM academic_timetable_versions v JOIN academic_terms t ON t.id=v.academic_term_id WHERE v.status='published' AND t.status='active' AND EXISTS(SELECT 1 FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id AND g.is_active WHERE b.timetable_version_id=v.id AND b.is_active AND b.block_kind<>'structural') ORDER BY v.effective_from DESC,v.id LIMIT 1")
+    let (term, start): (Uuid, NaiveDate) = sqlx::query_as("SELECT v.academic_term_id,(clock_timestamp() AT TIME ZONE 'Asia/Bangkok')::date FROM academic_timetables v JOIN academic_terms t ON t.id=v.academic_term_id WHERE t.status='active' AND EXISTS(SELECT 1 FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id AND g.is_active WHERE b.timetable_id=v.id AND b.is_active AND b.block_kind<>'structural') ORDER BY v.id LIMIT 1")
         .fetch_one(&f.pool).await.unwrap();
     let school = ActorContext {
         user_id: TEACHER,
@@ -2204,7 +2204,7 @@ async fn attendance_lesson_choices_use_published_rooms_and_respect_assigned_scop
             break;
         }
     }
-    let w = found.expect("published fixture must contain a teaching day");
+    let w = found.expect("current fixture must contain a teaching day");
     let rooms = core::rooms(&f.pool, term).await.unwrap();
     assert!(w.lesson_choices.iter().any(|c| !c.homerooms.is_empty()));
     for choice in &w.lesson_choices {
@@ -4717,7 +4717,7 @@ async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cl
         .execute(&f.pool)
         .await
         .unwrap();
-    let provider = crate::adapters::academic_lifecycle::ApplicationLifecycleProviders;
+    let provider = crate::integration_tests::academic::lifecycle::services::providers();
     let mut tx = f.pool.begin().await.unwrap();
     assert!(matches!(
         provider
@@ -5116,7 +5116,7 @@ async fn attendance_history_snapshot_allows_parallel_readers_and_first_save_with
     let mut blocker = f.pool.begin().await.unwrap();
     // Arrival saves do not use the timetable provider. Pause history after it has
     // read the existing rounds, so a first save can commit between its queries.
-    sqlx::query("LOCK TABLE academic_timetable_versions IN ACCESS EXCLUSIVE MODE")
+    sqlx::query("LOCK TABLE academic_timetables IN ACCESS EXCLUSIVE MODE")
         .execute(&mut *blocker)
         .await
         .unwrap();
@@ -6149,7 +6149,7 @@ async fn attendance_closure_complete(pool: &PgPool, date: NaiveDate) -> Result<(
     use school_academic_lifecycle::ports::ExternalLifecyclePort;
     let mut tx = pool.begin().await.unwrap();
     school_attendance::services::lock_term(&mut tx, TERM, true, true).await?;
-    let result = crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS
+    let result = crate::integration_tests::academic::lifecycle::services::providers()
         .require_attendance_delivery_complete(&mut tx, TERM, date)
         .await;
     tx.rollback().await.unwrap();

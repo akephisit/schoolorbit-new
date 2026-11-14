@@ -726,6 +726,22 @@
 	function observationPeriodLabel(item: SupervisionObservation): string {
 		return item.lessonSnapshot.periodLabel ?? item.manualLesson?.periodLabel ?? '-';
 	}
+	function hasDetachedTimetableSource(item: SupervisionObservation): boolean {
+		return (
+			!item.timetableBlockGroupId &&
+			!item.manualLesson &&
+			(item.lessonSnapshot.source === 'timetable' ||
+				item.lessonSnapshot.source === 'removed_timetable' ||
+				Boolean(item.lessonSnapshot.timetableBlockGroupId))
+		);
+	}
+	function lessonSourceLabel(item: SupervisionObservation): string {
+		if (item.manualLesson || item.lessonSnapshot.source === 'manual') return 'กำหนดเอง';
+		if (item.timetableBlockGroupId) return 'ตารางสอน';
+		return hasDetachedTimetableSource(item)
+			? 'ตารางสอนเดิม (ข้อมูลคาบที่บันทึกไว้)'
+			: 'ข้อมูลคาบที่บันทึกไว้';
+	}
 
 	function lessonDetails(item: SupervisionObservation): DetailItem[] {
 		return [
@@ -734,7 +750,7 @@
 			{ label: 'ชั้น/ห้อง', value: observationClassroomLabel(item) },
 			{ label: 'ห้องเรียน', value: observationRoomLabel(item) },
 			{ label: 'วันที่/เวลา', value: formatDateTime(item.observedAt) },
-			{ label: 'ที่มา', value: item.timetableBlockGroupId ? 'ตารางสอน' : 'กำหนดเอง' }
+			{ label: 'ที่มา', value: lessonSourceLabel(item) }
 		];
 	}
 
@@ -922,13 +938,16 @@
 		selectedEditTimetableDate = formatDateInput(observation.observedAt);
 		editWeekStartDate = toLocalDateInputValue(startOfWeek(new Date(observation.observedAt)));
 		lessonForm = {
-			subjectName: observationSubjectLabel(observation),
-			classroomLabel: observationClassroomLabel(observation),
-			roomLabel: observationRoomLabel(observation) === '-' ? '' : observationRoomLabel(observation),
-			periodLabel: observationPeriodLabel(observation),
+			subjectName:
+				observation.lessonSnapshot.subjectName ?? observation.manualLesson?.subjectName ?? '',
+			classroomLabel:
+				observation.lessonSnapshot.classroomLabel ?? observation.manualLesson?.classroomLabel ?? '',
+			roomLabel: observation.lessonSnapshot.roomLabel ?? observation.manualLesson?.roomLabel ?? '',
+			periodLabel:
+				observation.lessonSnapshot.periodLabel ?? observation.manualLesson?.periodLabel ?? '',
 			observedDate: formatDateInput(observation.observedAt),
 			observedTime: formatTimeInput(observation.observedAt),
-			reason: observation.manualLesson?.reason ?? 'แก้ไขรายการนิเทศจากหน้ารายละเอียด'
+			reason: observation.manualLesson?.reason ?? ''
 		};
 		lessonWorkflowRevision += 1;
 		editLessonOpen = true;
@@ -943,12 +962,14 @@
 		}
 		if (
 			!selectedEditTimetableBlockGroup &&
-			(!lessonForm.subjectName ||
-				!lessonForm.classroomLabel ||
-				!lessonForm.periodLabel ||
-				!lessonForm.observedDate)
+			(!lessonForm.subjectName.trim() ||
+				!lessonForm.classroomLabel.trim() ||
+				!lessonForm.periodLabel.trim() ||
+				!lessonForm.observedDate ||
+				!lessonForm.observedTime ||
+				!lessonForm.reason.trim())
 		) {
-			toast.error('กรอกวิชา ชั้น/ห้อง คาบ และวันที่ให้ครบ');
+			toast.error('กรอกวิชา ชั้น/ห้อง คาบ วันที่ เวลา และเหตุผลการกำหนดคาบเองให้ครบ');
 			return;
 		}
 		const payload =
@@ -968,7 +989,7 @@
 							roomLabel: lessonForm.roomLabel || null,
 							periodLabel: lessonForm.periodLabel,
 							observedAt: toIsoDateTime(lessonForm.observedDate, lessonForm.observedTime),
-							reason: lessonForm.reason || 'แก้ไขรายการนิเทศ'
+							reason: lessonForm.reason.trim()
 						} satisfies ManualLesson
 					};
 
@@ -1138,6 +1159,11 @@
 									<Card.Description>
 										{observationPeriodLabel(observation)} · {observationClassroomLabel(observation)}
 									</Card.Description>
+									{#if hasDetachedTimetableSource(observation)}<p
+											class="text-sm text-muted-foreground"
+										>
+											คาบเดิมถูกนำออกจากตารางปัจจุบัน ข้อมูลคาบและผลการนิเทศที่บันทึกไว้ยังคงอยู่
+										</p>{/if}
 								</div>
 								<div class="flex flex-wrap gap-2">
 									{#if canEditLesson}
@@ -1714,20 +1740,20 @@
 					</p>
 				</div>
 				<div class="space-y-2">
-					<Label>วิชา</Label>
-					<Input bind:value={lessonForm.subjectName} />
+					<Label for="supervision-manual-subject">วิชา</Label>
+					<Input id="supervision-manual-subject" bind:value={lessonForm.subjectName} />
 				</div>
 				<div class="space-y-2">
-					<Label>คาบ</Label>
-					<Input bind:value={lessonForm.periodLabel} />
+					<Label for="supervision-manual-period">คาบ</Label>
+					<Input id="supervision-manual-period" bind:value={lessonForm.periodLabel} />
 				</div>
 				<div class="space-y-2">
-					<Label>ชั้น/ห้อง</Label>
-					<Input bind:value={lessonForm.classroomLabel} />
+					<Label for="supervision-manual-classroom">ชั้น/ห้อง</Label>
+					<Input id="supervision-manual-classroom" bind:value={lessonForm.classroomLabel} />
 				</div>
 				<div class="space-y-2">
-					<Label>ห้องเรียน</Label>
-					<Input bind:value={lessonForm.roomLabel} />
+					<Label for="supervision-manual-room">ห้องเรียน</Label>
+					<Input id="supervision-manual-room" bind:value={lessonForm.roomLabel} />
 				</div>
 				<div class="space-y-2">
 					<Label for="supervision-observed-date">วันที่</Label>
@@ -1743,8 +1769,9 @@
 					/>
 				</div>
 				<div class="space-y-2">
-					<Label>เวลา</Label>
+					<Label for="supervision-manual-time">เวลา</Label>
 					<Input
+						id="supervision-manual-time"
 						type="time"
 						bind:value={lessonForm.observedTime}
 						oninput={() => {
@@ -1754,8 +1781,9 @@
 					/>
 				</div>
 				<div class="space-y-2 sm:col-span-2">
-					<Label>เหตุผล/หมายเหตุ</Label>
+					<Label for="supervision-manual-reason">เหตุผล/หมายเหตุ</Label>
 					<Textarea
+						id="supervision-manual-reason"
 						bind:value={lessonForm.reason}
 						rows={3}
 						oninput={() => {
@@ -1770,6 +1798,13 @@
 			<Button variant="outline" onclick={() => (editLessonOpen = false)}>ยกเลิก</Button>
 			<LoadingButton
 				onclick={saveLessonEdit}
+				disabled={!selectedEditTimetableBlockGroup &&
+					(!lessonForm.subjectName.trim() ||
+						!lessonForm.classroomLabel.trim() ||
+						!lessonForm.periodLabel.trim() ||
+						!lessonForm.observedDate ||
+						!lessonForm.observedTime ||
+						!lessonForm.reason.trim())}
 				loading={savingAction === 'lesson'}
 				loadingLabel="กำลังบันทึก..."
 			>

@@ -1,5 +1,5 @@
-//! Sanitized 150 -> 151 rehearsals using the canonical tenant migration runner.
-use school_academic_delivery::services::publication;
+//! Sanitized 150 -> 151 rehearsals through the bounded SQLx fixture migrator.
+//! Current canonical release/cutover behavior is verified separately at 157.
 use school_test_db::cutover_test_support::{
     apply_migrations_through, seed_release_two_predecessor,
 };
@@ -49,30 +49,30 @@ async fn predecessor(name: &str) -> PgPool {
     pool
 }
 
-async fn canonical(pool: &PgPool) {
-    if let Err(failure) = school_migrations::run_tenant_migrations_detailed(pool).await {
-        panic!(
-            "canonical tenant runner must accept the reconciled predecessor: {}",
-            failure_details(pool, &failure).await
-        );
-    }
+async fn historical151(pool: &PgPool) {
+    apply_migrations_through(pool, 151)
+        .await
+        .expect("historical migration151 accepts the reconciled predecessor");
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT max(version) FROM _sqlx_migrations WHERE success")
+            .fetch_one(pool)
+            .await
+            .unwrap(),
+        151
+    );
 }
 
-async fn failure_details(pool: &PgPool, failure: &school_migrations::MigrationFailure) -> String {
-    // The production runner deliberately erases native SQL details. Only after
-    // its failure, replay the actual migration input in a rollback-only owner
-    // transaction to expose a useful database cause for this sanitized fixture.
-    // Success and refusal assertions always use the canonical tenant runner.
-    let mut diagnostic = pool.begin().await.unwrap();
-    let native = sqlx::raw_sql(include_str!("../migrations/151_publication_revisions.sql"))
-        .execute(&mut *diagnostic)
-        .await;
-    let detail = match native {
-        Err(error) => format!("native migration151 replay: {error:#?}"),
-        Ok(_) => "rollback-only native migration151 replay succeeded".to_string(),
+fn assert_refusal(error: &(dyn std::error::Error + 'static), expected: &str) {
+    let migration = error
+        .downcast_ref::<sqlx::migrate::MigrateError>()
+        .expect("bounded fixture migration preserves its native migration error");
+    let sqlx::migrate::MigrateError::ExecuteMigration(database, version) = migration else {
+        panic!("expected migration151 database refusal: {migration:?}")
     };
-    diagnostic.rollback().await.unwrap();
-    format!("canonical: {failure:#?}; {detail}")
+    assert_eq!(*version, 151);
+    let database = database.as_database_error().unwrap();
+    assert_eq!(database.code().as_deref(), Some("23514"));
+    assert_eq!(database.message(), expected);
 }
 
 async fn facts(pool: &PgPool) -> BTreeMap<String, Value> {
@@ -173,9 +173,6 @@ async fn assert_reconciled(pool: &PgPool) {
         assert_eq!(check["passed"], true);
         assert_eq!(check["count"], 0);
     }
-    let decoded = publication::read_revisions_audit(pool).await.unwrap();
-    assert!(decoded.completed);
-    assert_eq!(decoded.checks.len(), 8);
     let ledgers: (i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM academic_delivery_teacher_cutoffs),\
          (SELECT count(*) FROM academic_delivery_offering_effectivity)",
@@ -348,10 +345,10 @@ async fn seed_history(pool: &PgPool) {
 #[tokio::test]
 async fn fresh_publication_migration_has_exact_evidence_and_is_replay_stable() {
     let pool = school_test_db::create_named_test_pool("publication151_fresh").await;
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_reconciled(&pool).await;
     let before = (facts(&pool).await, audit(&pool).await, history(&pool).await);
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_eq!(
         (facts(&pool).await, audit(&pool).await, history(&pool).await),
         before
@@ -488,7 +485,7 @@ async fn populated_publication_migration_preserves_exact_history_pins_and_date_w
         );
     }
     let winners = date_winners(&pool, false).await;
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_eq!(
         facts(&pool).await,
         before,
@@ -521,7 +518,7 @@ async fn populated_publication_migration_preserves_exact_history_pins_and_date_w
     ).fetch_one(&pool).await.unwrap();
     assert_eq!(numbering_errors, 0);
     let receipt = audit(&pool).await;
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_eq!(facts(&pool).await, before);
     assert_eq!(audit(&pool).await, receipt);
 }
@@ -537,9 +534,9 @@ enum Malformed {
 }
 
 #[tokio::test]
-async fn dated_timetable_owner_returns_only_the_winner_and_keeps_schedule_context_strict() {
+async fn historical_dated_timetable_winner_and_schedule_context_remain_strict_at_151() {
     let pool = predecessor("publication151_dated_timetable_owner").await;
-    let (a,term,year,actor,delivery,schedule,date):(Uuid,Uuid,Uuid,Uuid,Uuid,Uuid,chrono::NaiveDate)=sqlx::query_as(
+    let (a,term,_year,actor,delivery,schedule,date):(Uuid,Uuid,Uuid,Uuid,Uuid,Uuid,chrono::NaiveDate)=sqlx::query_as(
         "SELECT id,academic_term_id,academic_year_id,published_by,delivery_version_id,bell_schedule_id,effective_from \
          FROM academic_timetable_versions WHERE status='published' AND academic_term_id='11000000-0000-0000-0000-000000000251' ORDER BY effective_from,id LIMIT 1",
     ).fetch_one(&pool).await.unwrap();
@@ -556,34 +553,38 @@ async fn dated_timetable_owner_returns_only_the_winner_and_keeps_schedule_contex
     )
     .await;
     let original = facts(&pool).await;
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_eq!(facts(&pool).await, original);
-    let mut transaction = pool.begin().await.unwrap();
-    let before = school_academic_timetable::services::timetable_version_service::opening::published_for_term(
-        &mut transaction,year,term,next-chrono::Duration::days(1),schedule,
-    ).await.unwrap();
-    let after = school_academic_timetable::services::timetable_version_service::opening::published_for_term(
-        &mut transaction,year,term,next+chrono::Duration::days(1),schedule,
-    ).await.unwrap();
-    assert_eq!(before.count(), 1);
-    assert_eq!(
-        after.count(),
-        1,
-        "dated source evidence must contain the selected winner, not all accepted history"
-    );
-    assert_ne!(before.source_checksum, after.source_checksum);
+    for (date, expected) in [
+        (next - chrono::Duration::days(1), a),
+        (next, b),
+        (next + chrono::Duration::days(1), b),
+    ] {
+        let winner: Option<Uuid> =
+            sqlx::query_scalar("SELECT academic_timetable_applicable_publication($1,$2)")
+                .bind(term)
+                .bind(date)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(winner, Some(expected));
+    }
     let other_schedule: Uuid =
         sqlx::query_scalar("SELECT id FROM bell_schedules WHERE id<>$1 ORDER BY id LIMIT 1")
             .bind(schedule)
-            .fetch_one(&mut *transaction)
+            .fetch_one(&pool)
             .await
             .unwrap();
-    let wrong = school_academic_timetable::services::timetable_version_service::opening::published_for_term(
-        &mut transaction,year,term,next+chrono::Duration::days(1),other_schedule,
-    ).await.unwrap();
-    assert_eq!(wrong.count(), 0);
-    transaction.rollback().await.unwrap();
-    assert_eq!(school_academic_timetable::services::timetable_version_service::resolve_version_id_for_date(&pool,term,next).await.unwrap(),b);
+    let rejected=sqlx::query("INSERT INTO academic_timetable_versions SELECT (jsonb_populate_record(NULL::academic_timetable_versions,to_jsonb(v)||jsonb_build_object('id',$2::uuid,'status','draft','effective_from',NULL,'published_by',NULL,'published_at',NULL,'publication_no',NULL,'publication_idempotency_key',NULL,'publication_request_hash',NULL,'bell_schedule_id',$3::uuid))).* FROM academic_timetable_versions v WHERE id=$1").bind(a).bind(Uuid::new_v4()).bind(other_schedule).execute(&pool).await.unwrap_err();
+    assert_eq!(
+        rejected.as_database_error().unwrap().code().as_deref(),
+        Some("23503")
+    );
+    assert_eq!(
+        rejected.as_database_error().unwrap().constraint(),
+        Some("academic_timetable_versions_term_schedule_fkey")
+    );
+    assert_eq!(facts(&pool).await, original);
     let stored:i64=sqlx::query_scalar("SELECT count(*) FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published'")
         .bind(term).fetch_one(&pool).await.unwrap();
     assert_eq!(stored, 2, "archived accepted versions remain intact");
@@ -691,7 +692,7 @@ async fn initial_construction_backfill_preserves_cached_bytes_and_commands_and_r
     sqlx::query("INSERT INTO academic_term_change_items(id,change_set_id,academic_term_id,academic_year_id,action_kind,learning_group_id,learning_group_teacher_id,teacher_id,teacher_role,created_by) SELECT $1,id,academic_term_id,academic_year_id,'adjust_group_teacher_role',$3,$4,$5,'assistant',$6 FROM academic_term_change_sets WHERE id=$2")
         .bind(command).bind(change).bind(group).bind(assignment).bind(teacher).bind(actor).execute(&pool).await.unwrap();
     let original = facts(&pool).await;
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_eq!(
         facts(&pool).await,
         original,
@@ -761,20 +762,11 @@ async fn unprovable_initial_stop_refuses_atomically_and_retry_uses_the_corrected
     let before = facts(&pool).await;
     let original_schema = schema(&pool).await;
     let original_history = history(&pool).await;
-    let failure = school_migrations::run_tenant_migrations_detailed(&pool)
-        .await
-        .unwrap_err();
-    let details = if failure.diagnostic.code != "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE" {
-        failure_details(&pool, &failure).await
-    } else {
-        format!("{failure:#?}")
-    };
-    assert_eq!(failure.diagnostic.version, Some(151));
-    assert_eq!(
-        failure.diagnostic.code, "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
-        "{details}"
+    let failure = apply_migrations_through(&pool, 151).await.unwrap_err();
+    assert_refusal(
+        failure.as_ref(),
+        "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
     );
-    assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("23514"));
     assert_eq!(facts(&pool).await, before);
     assert_eq!(schema(&pool).await, original_schema);
     assert_eq!(history(&pool).await, original_history);
@@ -795,7 +787,7 @@ async fn unprovable_initial_stop_refuses_atomically_and_retry_uses_the_corrected
         .unwrap();
     repair.commit().await.unwrap();
     let corrected = facts(&pool).await;
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_eq!(facts(&pool).await, corrected);
     assert_reconciled(&pool).await;
 }
@@ -877,7 +869,7 @@ async fn preparation_receipt_recovers_explicit_future_initial_output_without_rew
             .fetch_one(&pool)
             .await
             .unwrap();
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_eq!(facts(&pool).await, before);
     let initial: Vec<Uuid> = sqlx::query_scalar(
         "SELECT initial_offering_ids FROM academic_term_change_sets WHERE id=$1",
@@ -912,20 +904,11 @@ async fn ambiguous_preparation_outputs_refuse_atomically_and_exact_evidence_corr
     let before = facts(&pool).await;
     let original_schema = schema(&pool).await;
     let original_history = history(&pool).await;
-    let failure = school_migrations::run_tenant_migrations_detailed(&pool)
-        .await
-        .unwrap_err();
-    let details = if failure.diagnostic.code != "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE" {
-        failure_details(&pool, &failure).await
-    } else {
-        format!("{failure:#?}")
-    };
-    assert_eq!(failure.diagnostic.version, Some(151));
-    assert_eq!(
-        failure.diagnostic.code, "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE",
-        "{details}"
+    let failure = apply_migrations_through(&pool, 151).await.unwrap_err();
+    assert_refusal(
+        failure.as_ref(),
+        "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE",
     );
-    assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("23514"));
     assert_eq!(facts(&pool).await, before);
     assert_eq!(schema(&pool).await, original_schema);
     assert_eq!(history(&pool).await, original_history);
@@ -955,7 +938,7 @@ async fn ambiguous_preparation_outputs_refuse_atomically_and_exact_evidence_corr
     correction.commit().await.unwrap();
     assert_eq!(schema(&pool).await, original_schema);
     let corrected = facts(&pool).await;
-    canonical(&pool).await;
+    historical151(&pool).await;
     assert_eq!(facts(&pool).await, corrected);
     let initial: Vec<Uuid> = sqlx::query_scalar(
         "SELECT initial_offering_ids FROM academic_term_change_sets WHERE id=$1",
@@ -1043,15 +1026,8 @@ async fn malformed_published_assignments_refuse_atomically_and_corrected_evidenc
         let before = facts(&pool).await;
         let original_schema = schema(&pool).await;
         let original_history = history(&pool).await;
-        let error = school_migrations::run_tenant_migrations_detailed(&pool)
-            .await
-            .unwrap_err();
-        assert_eq!(error.diagnostic.version, Some(151), "{malformed:?}");
-        assert_eq!(
-            error.diagnostic.code, "PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID",
-            "{malformed:?}: {error:?}"
-        );
-        assert_eq!(error.diagnostic.sqlstate.as_deref(), Some("23514"));
+        let error = apply_migrations_through(&pool, 151).await.unwrap_err();
+        assert_refusal(error.as_ref(), "PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID");
         assert_eq!(
             facts(&pool).await,
             before,
@@ -1094,7 +1070,7 @@ async fn malformed_published_assignments_refuse_atomically_and_corrected_evidenc
         correction.commit().await.unwrap();
         assert_eq!(schema(&pool).await, original_schema);
         let repaired = facts(&pool).await;
-        canonical(&pool).await;
+        historical151(&pool).await;
         assert_eq!(facts(&pool).await, repaired);
         assert_reconciled(&pool).await;
     }
@@ -1142,7 +1118,7 @@ async fn actual_runtime_role_reads_audit_but_cannot_write_or_commit_unpublished_
     )
     .await;
     let change = revision(&owner, draft, source, actor, "draft").await;
-    canonical(&owner).await;
+    historical151(&owner).await;
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         r#"CREATE ROLE "{role}" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
            REVOKE ALL ON DATABASE "{database}" FROM PUBLIC;
@@ -1179,21 +1155,23 @@ async fn actual_runtime_role_reads_audit_but_cannot_write_or_commit_unpublished_
     assert!(!is_owner && !superuser && !temporary && !create_schema);
     let receipt = audit(&runtime).await;
     assert_eq!(receipt, audit(&owner).await);
-    assert!(
-        publication::read_revisions_audit(&runtime)
-            .await
-            .unwrap()
-            .completed
-    );
+    assert_reconciled(&runtime).await;
     for statement in [
         "INSERT INTO academic_publication_revisions_audit(migration_version,passed,checks) VALUES(151,true,'[]')",
         "UPDATE academic_publication_revisions_audit SET passed=false WHERE migration_version=151",
         "DELETE FROM academic_publication_revisions_audit WHERE migration_version=151",
     ] {
-        let denied=sqlx::query(statement).execute(&runtime).await.unwrap_err();
-        assert_eq!(denied.as_database_error().unwrap().code().as_deref(),Some("23514"));
-        assert!(denied.to_string().contains("PUBLICATION_151_AUDIT_IMMUTABLE"));
-        assert_eq!(audit(&owner).await,receipt);
+        let denied = sqlx::query(statement).execute(&runtime).await.unwrap_err();
+        assert_eq!(
+            denied.as_database_error().unwrap().code().as_deref(),
+            Some("23514")
+        );
+        assert!(
+            denied
+                .to_string()
+                .contains("PUBLICATION_151_AUDIT_IMMUTABLE")
+        );
+        assert_eq!(audit(&owner).await, receipt);
     }
     let before = facts(&owner).await;
     let mut transaction = runtime.begin().await.unwrap();

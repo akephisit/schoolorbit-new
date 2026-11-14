@@ -10,7 +10,7 @@ function boardUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}` +
+		`&timetableId=${timetableIds.timetable}` +
 		`&view=homeroom&ownerId=${timetableIds.homeroom}`
 	);
 }
@@ -19,7 +19,7 @@ function wholeSchoolUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}&view=wholeSchool`
+		`&timetableId=${timetableIds.timetable}&view=wholeSchool`
 	);
 }
 
@@ -27,7 +27,7 @@ function teacherBoardUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}` +
+		`&timetableId=${timetableIds.timetable}` +
 		`&view=teacher&ownerId=${timetableIds.teacherA}`
 	);
 }
@@ -467,8 +467,7 @@ test('bounds a long tray to the board and scrolls all remaining demands', async 
 			learningOfferingId: demand.learningOfferingId,
 			code: demand.offeringCode,
 			name: demand.offeringName,
-			status: 'published',
-			rosterStatus: 'published',
+			registrationOpen: false,
 			offeringKind: 'course',
 			subjectType: 'BASIC',
 			offeringCode: demand.offeringCode,

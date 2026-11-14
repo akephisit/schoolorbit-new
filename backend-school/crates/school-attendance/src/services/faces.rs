@@ -280,7 +280,7 @@ async fn scan_context(
         ));
     }
     if session.kind != AttendanceKind::Arrival {
-        policy::require_session(actor, &session, true)?;
+        policy::require_session_on_connection(&mut connection, actor, &session, true).await?;
     }
     // Reconcile committed events before fresh-capture or enrollment validation.
     let accepted: Option<(Uuid, Uuid, Uuid, Uuid, chrono::DateTime<Utc>, AttendanceResult, String)> =

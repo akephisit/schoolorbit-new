@@ -6,7 +6,7 @@ use crate::{
 use chrono::{DateTime, NaiveDate, Utc};
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{types::Json, PgConnection, PgPool, Postgres, QueryBuilder};
+use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Transaction, types::Json};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -164,6 +164,7 @@ pub async fn preview(
     p.scope = normalize_scope(p.scope)?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "behavior.cleanup.preview").await?;
+    lock_scope_references(&mut tx, &p.scope).await?;
     lock(&mut tx).await?;
     DbSession::new(&mut *tx)
         .query(
@@ -175,6 +176,45 @@ pub async fn preview(
     let result = make_preview(&mut tx, actor, p, false).await?;
     tx.commit().await?;
     Ok(result)
+}
+
+/// Cleanup remains available for closed contexts. These are reference locks,
+/// ordered before the Behavior mutex so suppression FKs cannot wait backwards
+/// on a current Delivery deletion or a Lifecycle transition.
+async fn lock_scope_references(
+    tx: &mut Transaction<'_, Postgres>,
+    scope: &BehaviorCleanupScope,
+) -> Result<(), AppError> {
+    if let Some(term) = scope.academic_term_id {
+        let year: Uuid = DbSession::new(&mut **tx)
+            .scalar(
+                "behavior.cleanup.scope_year",
+                "SELECT academic_year_id FROM academic_terms WHERE id=$1",
+            )
+            .bind(term)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนที่เลือกล้างคะแนน".into()))?;
+        if scope
+            .academic_year_id
+            .is_some_and(|selected| selected != year)
+        {
+            return Err(invalid("ภาคเรียนไม่อยู่ในปีการศึกษาที่เลือก"));
+        }
+        school_academic_core::services::lifecycle_guard::lock_context(tx, year, term).await?;
+    } else if let Some(year) = scope.academic_year_id {
+        school_academic_core::services::lifecycle_guard::lock_transition_shared(tx).await?;
+        DbSession::new(&mut **tx)
+            .scalar::<Uuid>(
+                "behavior.cleanup.scope_year_reference",
+                "SELECT id FROM academic_years WHERE id=$1 FOR SHARE",
+            )
+            .bind(year)
+            .fetch_optional()
+            .await?
+            .ok_or_else(|| AppError::NotFound("ไม่พบปีการศึกษาที่เลือกล้างคะแนน".into()))?;
+    }
+    Ok(())
 }
 pub(super) async fn validate_preview(
     connection: &mut PgConnection,
@@ -408,11 +448,23 @@ pub async fn run_cleanup_jobs(pool: &PgPool, limit: u32) -> Result<bool, AppErro
         let mut tx =
             school_tenancy::TenantPool::begin_observed(&pool, "behavior.cleanup.run_cleanup_jobs")
                 .await?;
-        super::shared::raw_lock(&mut tx).await?;
-        let job:Option<CleanupJob>=DbSession::new(&mut *tx).query_as("behavior.services.cleanup.run_cleanup_jobs", "SELECT id,actor_id,scope,mode,reset,reason,students,entries_expected,entries_deleted,merit,deduction FROM behavior_cleanup_jobs WHERE status='pending' ORDER BY created_at,id LIMIT 1 FOR UPDATE").fetch_optional().await?;
-        let Some(job) = job else {
+        let candidate: Option<(Uuid, Json<BehaviorCleanupScope>)> = DbSession::new(&mut *tx)
+            .query_as(
+                "behavior.cleanup.next_job_scope",
+                "SELECT id,scope FROM behavior_cleanup_jobs WHERE status='pending' ORDER BY created_at,id LIMIT 1",
+            )
+            .fetch_optional()
+            .await?;
+        let Some((candidate_id, scope)) = candidate else {
             tx.commit().await?;
             return Ok(false);
+        };
+        lock_scope_references(&mut tx, &scope.0).await?;
+        super::shared::raw_lock(&mut tx).await?;
+        let job:Option<CleanupJob>=DbSession::new(&mut *tx).query_as("behavior.services.cleanup.run_cleanup_jobs", "SELECT id,actor_id,scope,mode,reset,reason,students,entries_expected,entries_deleted,merit,deduction FROM behavior_cleanup_jobs WHERE id=$1 AND status='pending' FOR UPDATE").bind(candidate_id).fetch_optional().await?;
+        let Some(job) = job else {
+            tx.commit().await?;
+            continue;
         };
         let prefix = "DELETE FROM behavior_entries WHERE id IN(SELECT e.id FROM behavior_entries e WHERE e.total_id IN(SELECT t.id";
         let deleted = DbSession::new(&mut *tx)
@@ -558,6 +610,7 @@ pub async fn execute(
     p.reason = p.reason.trim().into();
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "behavior.cleanup.execute").await?;
+    lock_scope_references(&mut tx, &p.scope).await?;
     super::shared::raw_lock(&mut tx).await?;
     if let Some(result) = receipt(&mut tx, actor, p.request_id, "cleanup", &p).await? {
         tx.commit().await?;
@@ -680,14 +733,16 @@ mod tests {
     #[test]
     fn reason_and_scope_validation() {
         assert!(validate_reason("").is_err());
-        assert!(normalize_scope(BehaviorCleanupScope {
-            start: None,
-            end: None,
-            academic_year_id: None,
-            academic_term_id: None,
-            sides: vec![],
-            sources: vec![BehaviorSource::Manual]
-        })
-        .is_err());
+        assert!(
+            normalize_scope(BehaviorCleanupScope {
+                start: None,
+                end: None,
+                academic_year_id: None,
+                academic_term_id: None,
+                sides: vec![],
+                sources: vec![BehaviorSource::Manual]
+            })
+            .is_err()
+        );
     }
 }

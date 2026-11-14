@@ -2,8 +2,8 @@ use super::*;
 use crate::policy::results as access_policy;
 use school_academic_assessment::gradebook::models::{GradebookStudent, ScoreCell, ScoreItem};
 use school_academic_delivery::{
-    models::versions::PublishedTeacherAssignments,
-    services::versions::group_teacher_assignments_on_connection,
+    models::current::CurrentTeacherAssignments,
+    services::current::group_teacher_assignments_on_connection,
 };
 use school_authorization::ActorContext;
 use school_database::DbSession;
@@ -132,7 +132,7 @@ async fn load_scope_with_assignments(
     actor: &ActorContext,
     group: Uuid,
     context: &ResultContext,
-    assignments: &PublishedTeacherAssignments,
+    assignments: &CurrentTeacherAssignments,
 ) -> Result<CourseScope, AppError> {
     DbSession::new(&mut **tx).query_as("academic_results.services.course_preparation.load_scope",
         r#"SELECT y.status AS year_status,t.status AS term_status,g.id AS group_id,g.learning_offering_id AS offering_id,d.subject_id,
@@ -152,7 +152,7 @@ async fn load_scope_with_assignments(
            LEFT JOIN academic_course_result_locks lock ON lock.subject_id=d.subject_id
              AND lock.academic_term_id=g.academic_term_id
              AND lock.academic_year_id=g.academic_year_id
-           WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 AND g.status<>'closed'"#,
+           WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 "#,
     )
     .bind(group)
     .bind(context.academic_term_id)
@@ -613,7 +613,7 @@ pub(super) async fn workspace_for_lock(
     actor: &ActorContext,
     context: &ResultContext,
     group: Uuid,
-    assignments: &PublishedTeacherAssignments,
+    assignments: &CurrentTeacherAssignments,
 ) -> Result<CoursePreparationWorkspace, AppError> {
     let scope = load_scope_with_assignments(tx, actor, group, context, assignments).await?;
     let (workspace, _) = load_workspace(tx, actor, &scope).await?;

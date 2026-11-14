@@ -15,6 +15,7 @@
 	import { academicStatusLabel } from '#lib/academic/lifecycle/year-management.js';
 	import AcademicSetupRegion from '#lib/components/academic-core/AcademicSetupRegion.svelte';
 	import YearRolloverDialog from '#lib/components/academic/lifecycle/YearRolloverDialog.svelte';
+	import TermPreparationDialog from '#lib/components/academic/lifecycle/TermPreparationDialog.svelte';
 	import PeriodActionDialog from '#lib/components/academic/lifecycle/PeriodActionDialog.svelte';
 	import AcademicRetentionSettings from '#lib/components/academic/lifecycle/AcademicRetentionSettings.svelte';
 	import YearReopeningDialog from '#lib/components/academic/lifecycle/YearReopeningDialog.svelte';
@@ -309,6 +310,11 @@
 												label="ปิดภาคเรียน"
 												disabled={loading}
 												oncompleted={changedPeriod}
+											/>{:else if term.status === 'closed'}<TermPreparationDialog
+												sourceYear={workspace.context}
+												sourceTerm={term}
+												disabled={loading}
+												onapplied={reloadYear}
 											/>{/if}</Table.Cell
 									></Table.Row
 								>{/each}</Table.Body

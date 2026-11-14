@@ -1,11 +1,12 @@
 pub mod academic_lifecycle;
 pub mod academic_result_locks;
-pub mod assessment_publication;
+pub mod assessment_current;
+pub mod delivery_deletion;
+pub mod lesson_sources;
 pub mod auth_profile;
 pub mod behavior;
 pub mod facility_changes;
 pub mod notification_delivery;
-pub mod publication_history;
 pub mod staff_directory;
 
 pub mod budget;

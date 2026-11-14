@@ -47,6 +47,95 @@ pub fn require_session(
         Err(AppError::Forbidden("ไม่มีสิทธิ์เช็คชื่อกลุ่มนี้".into()))
     }
 }
+pub struct SessionAccess {
+    assigned_groups: std::collections::HashSet<uuid::Uuid>,
+}
+impl SessionAccess {
+    pub(crate) fn assigned_group_ids(&self) -> Vec<uuid::Uuid> {
+        self.assigned_groups.iter().copied().collect()
+    }
+    pub fn require_session(
+        &self,
+        actor: &ActorContext,
+        session: &AttendanceSession,
+        write: bool,
+    ) -> Result<(), AppError> {
+        if session.kind != crate::models::AttendanceKind::Lesson {
+            return require_session(actor, session, write);
+        }
+        let assigned = session
+            .learning_group_id
+            .is_some_and(|group| self.assigned_groups.contains(&group));
+        let allowed = if write {
+            write_school(actor)
+                || (actor.has_permission(codes::ATTENDANCE_UPDATE_ASSIGNED) && assigned)
+        } else {
+            read_school(actor)
+                || (actor.has_any_permission(&[
+                    codes::ATTENDANCE_READ_ASSIGNED,
+                    codes::ATTENDANCE_UPDATE_ASSIGNED,
+                ]) && assigned)
+        };
+        if allowed {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden("ไม่มีสิทธิ์เช็คชื่อกลุ่มนี้".into()))
+        }
+    }
+}
+pub async fn session_access_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    term: uuid::Uuid,
+) -> Result<SessionAccess, AppError> {
+    if read_school(actor) && write_school(actor) {
+        return Ok(SessionAccess {
+            assigned_groups: Default::default(),
+        });
+    }
+    let year: uuid::Uuid = school_database::DbSession::new(connection)
+        .scalar(
+            "attendance.policy.current_context",
+            "SELECT academic_year_id FROM academic_terms WHERE id=$1",
+        )
+        .bind(term)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียน".into()))?;
+    let groups = school_academic_delivery::services::current::assigned_group_ids_on_connection(
+        connection,
+        year,
+        term,
+        actor.user_id,
+    )
+    .await?;
+    Ok(SessionAccess {
+        assigned_groups: groups.learning_group_ids.into_iter().collect(),
+    })
+}
+pub async fn require_session_on_connection(
+    connection: &mut sqlx::PgConnection,
+    actor: &ActorContext,
+    session: &AttendanceSession,
+    write: bool,
+) -> Result<(), AppError> {
+    if write && session.kind == crate::models::AttendanceKind::Lesson {
+        if let Some(group) = session.learning_group_id {
+            school_database::DbSession::new(connection)
+                .query(
+                    "attendance.policy.lock_current_group",
+                    "SELECT id FROM learning_groups WHERE id=$1 AND academic_term_id=$2 FOR SHARE",
+                )
+                .bind(group)
+                .bind(session.academic_term_id)
+                .execute()
+                .await?;
+        }
+    }
+    session_access_on_connection(connection, actor, session.academic_term_id)
+        .await?
+        .require_session(actor, session, write)
+}
 pub fn require_reset(actor: &ActorContext) -> Result<(), AppError> {
     actor.require_permission(codes::ATTENDANCE_MANAGE_SCHOOL)?;
     actor.require_permission(codes::ATTENDANCE_DELETE_SCHOOL)

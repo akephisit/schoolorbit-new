@@ -125,9 +125,24 @@ pub async fn current_on_connection(
     connection: &mut PgConnection,
     prefetched: &AttendanceScoreChange,
 ) -> Result<Option<AttendanceScoreChange>, AppError> {
-    let current: Option<AttendanceScoreChange> = DbSession::new(&mut *connection).query_as("attendance.services.score_changes.current_on_connection", "SELECT generation,academic_term_id,date,row_version,queued_at,reset FROM attendance_score_changes WHERE generation=$1 AND academic_term_id=$2 AND date=$3")
-        .bind(prefetched.generation).bind(prefetched.academic_term_id).bind(prefetched.date)
-        .fetch_optional().await?;
+    current_day_on_connection(
+        connection,
+        prefetched.generation,
+        prefetched.academic_term_id,
+        prefetched.date,
+    )
+    .await
+}
+
+/// Exact owner-owned dirty-day identity for same-transaction reconciliation.
+/// Reuses current revision/reset/generation checks; never pages unrelated work.
+pub async fn current_day_on_connection(
+    connection: &mut PgConnection,
+    generation: Uuid,
+    term: Uuid,
+    date: NaiveDate,
+) -> Result<Option<AttendanceScoreChange>, AppError> {
+    let current:Option<AttendanceScoreChange>=DbSession::new(connection).query_as("attendance.services.score_changes.current_day_on_connection", "SELECT generation,academic_term_id,date,row_version,queued_at,reset FROM attendance_score_changes WHERE generation=$1 AND academic_term_id=$2 AND date=$3").bind(generation).bind(term).bind(date).fetch_optional().await?;
     let Some(current) = current else {
         return Ok(None);
     };

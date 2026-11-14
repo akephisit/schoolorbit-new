@@ -29,6 +29,21 @@ fail() {
     printf 'storage_rollout_error code=%s\n' "$1" >&2
     exit 1
 }
+report_preparation_refusal() {
+    jq -ces '
+        def code: IN("admin_redirect_refused","admin_response_invalid","admin_unavailable","archive_changed","child_failed","child_outcome_unknown","compiled_history_unavailable","completion_binding_changed","completion_cutover_unverified","completion_inventory_changed","controller_evidence_invalid","controller_still_running","converted_source_receipt_changed","copy_audit_unavailable","copy_cutover_not_reconciled","copy_migration_refused","copy_postgres_unavailable","copy_resource_unresolved","copy_runner_evidence_invalid","current_prefix_changed","cutover_date_changed","database_identifier_invalid","fingerprint_failed","fingerprint_outcome_unknown","fixed_operation_required","foreign_preparation_resource","foreign_preparation_volume","insufficient_recovery_space","inventory_changed","inventory_invalid","inventory_too_large","preparation_binding_changed","preparation_coverage_changed","preparation_unavailable","prepared_source_changed","previous_controller_resources_unresolved","private_evidence_invalid","private_evidence_too_large","private_path_invalid","private_path_unavailable","private_runtime_unavailable","recovery_key_invalid","release_context_invalid","resource_state_unknown","restored_source_mismatch","runtime_configuration_unavailable","school_writers_not_drained","source_changed_before_migration","source_changed_during_copy","source_connection_invalid","source_history_invalid","source_identity_invalid","source_identity_unavailable","source_namespace_changed","source_roles_changed","stream_failed","stream_outcome_unknown","unresolved_archive");
+        def migration:
+            type=="object" and keys==["code","operation","schemaVersion","sqlstate","status","version"]
+            and .schemaVersion==1 and .operation=="migrate_tenant_schema" and .status=="refused"
+            and (.version==null or (.version|type=="number" and floor==. and .>=1 and .<=10000))
+            and (.sqlstate==null or (.sqlstate|type=="string" and test("^[0-9A-Z]{5}$")))
+            and (.code=="unclassified" or (.version==147 and (.code|IN("ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH","ACADEMIC_CONTEXT_DEFAULT_MUST_BE_VISIBLE"))) or (.version==148 and (.code|IN("ACADEMIC_CONTEXT_148_CALENDAR_MATERIALIZATION_TOO_LARGE","ACADEMIC_CONTEXT_148_CALENDAR_ROOM_YEAR_MISMATCH","ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE","ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE","ACADEMIC_CONTEXT_148_POST_CLEANUP_RECONCILIATION_FAILED","ACADEMIC_CONTEXT_148_PREPARATION_CREATED_INTENT_UNMAPPABLE","ACADEMIC_CONTEXT_148_PREPARATION_REQUEST_UNMAPPABLE","ACADEMIC_CONTEXT_148_PROMOTION_ITEM_INTENT_UNMAPPABLE","ACADEMIC_CONTEXT_148_PROMOTION_ITEM_SNAPSHOT_UNMAPPABLE","ACADEMIC_CONTEXT_148_PROMOTION_RUN_SNAPSHOT_UNMAPPABLE","ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED","ACADEMIC_CONTEXT_148_TERM_RECEIPT_SOURCE_UNMAPPABLE","ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY","ACADEMIC_CONTEXT_148_YEAR_ACTIVATION_RECEIPT_UNMAPPABLE","PROMOTION_RUN_HISTORY_RETAINED","PROMOTION_RUN_IDENTITY_IMMUTABLE"))) or (.version==149 and (.code|IN("ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID","ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED","ACADEMIC_CONTEXT_149_UNKNOWN_RECEIPT_DEPENDENCY","ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE"))) or (.version==151 and (.code|IN("PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID","PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE","PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE","PUBLICATION_151_PRESERVATION_FAILED","PUBLICATION_151_RECONCILIATION_FAILED","PUBLICATION_151_SOURCE_LINEAGE_INVALID"))) or (.version==152 and (.code|IN("MANUAL_ROLLOVER152_PRESERVATION_FAILED","MANUAL_ROLLOVER_LEGACY_EXECUTION_UNRESOLVED"))) or (.version==155 and (.code|IN("ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET","ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED","ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED","ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID"))) or (.version==157 and (.code|IN("ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE","ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE","ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS","ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE","ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED","ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH","ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS","ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING","ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE","ACADEMIC_CURRENT_GRAPH_UNMAPPABLE","ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE","ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE","ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE","ACADEMIC_CURRENT_OFFERING_NOT_FOUND","ACADEMIC_CURRENT_PREPARATION_MISMATCH","ACADEMIC_CURRENT_PREPARATION_REQUIRED","ACADEMIC_CURRENT_RECONCILIATION_FAILED","ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE","ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH","ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS","ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING"))));
+        if length==1 and (.[0] | type=="object" and .schemaVersion==1 and (.error|code)
+            and ((keys==["error","schemaVersion"]) or (keys==["error","migrationRefusal","schemaVersion"] and (.migrationRefusal|migration))))
+        then .[0] | {schemaVersion,error} + (if has("migrationRefusal") then {migrationRefusal:(.migrationRefusal|{version,sqlstate,code})} else {} end)
+        else error("invalid") end
+    ' "$1" 2>/dev/null || true
+}
 private_file() {
     [[ -f $1 && ! -L $1 && $(stat -c %a "$1") == 600 && $(stat -c %u "$1") == "$(id -u)" ]]
 }
@@ -72,9 +87,9 @@ report_aggregate() {
             def stage: IN("migration_url","owner_connection","owner_identity","migration_identity",
                 "migration_execution","permission_sync","runtime_grants","owner_schema",
                 "owner_academic_core_cutover","owner_gradebook_results_cutover",
-                "owner_delivery_timetable_cutover","owner_publication_revisions_cutover","owner_staff_profile_cutover","runtime_connection",
+                "owner_current_operations_cutover","owner_staff_profile_cutover","runtime_connection",
                 "runtime_identity","runtime_schema","runtime_academic_core_cutover",
-                "runtime_gradebook_results_cutover","runtime_delivery_timetable_cutover","runtime_publication_revisions_cutover",
+                "runtime_gradebook_results_cutover","runtime_current_operations_cutover",
                 "runtime_staff_profile_cutover","admin_status");
             def error_class: IN("database","row_not_found","pool_timeout","pool_closed","connection",
                 "decode","encode","protocol","configuration","other","source","version_missing",
@@ -105,6 +120,29 @@ report_aggregate() {
                 "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE","PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
                 "PUBLICATION_151_PRESERVATION_FAILED","PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID",
                 "PUBLICATION_151_RECONCILIATION_FAILED");
+            def refusal155: IN("ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET",
+                "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED",
+                "ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED",
+                "ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID");
+            def refusal157: IN("ACADEMIC_CURRENT_PREPARATION_REQUIRED","ACADEMIC_CURRENT_PREPARATION_MISMATCH","ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE",
+                "ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED",
+                "ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE",
+                "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS",
+                "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS",
+                "ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING",
+                "ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS",
+                "ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING",
+                "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE",
+                "ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE",
+                "ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE",
+                "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH",
+                "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE",
+                "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE",
+                "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE",
+                "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE",
+                "ACADEMIC_CURRENT_OFFERING_NOT_FOUND",
+                "ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH",
+                "ACADEMIC_CURRENT_RECONCILIATION_FAILED");
             def tuple: [.stage,.version,.error_class,.sqlstate,.code];
             def bucket:
                 type == "object" and keys == ["code","count","error_class","sqlstate","stage","version"] and
@@ -117,7 +155,9 @@ report_aggregate() {
                         ((.version == 147 and (.code | refusal147)) or
                          (.version == 148 and (.code | refusal148)) or
                          (.version == 149 and (.code | refusal149)) or
-                         (.version == 151 and (.code | refusal151)))));
+                         (.version == 151 and (.code | refusal151)) or
+                         (.version == 155 and (.code | refusal155)) or
+                         (.version == 157 and (.code | refusal157)))));
             if length != 1 then error("invalid") else .[0] end |
             if type == "object" and
                 keys == ["failed","failures","latest_version","migrated","overflow_count","schema_version","tenants"] and
@@ -199,6 +239,17 @@ run_image() {
         sync_path "$journal/manifests"
         options+=(--env FILE_STORAGE_NAMESPACE_ATTESTATION_JSON --env FILE_STORAGE_NAMESPACE_MANIFEST_DIRECTORY
             --volume "$journal/manifests:/run/storage-namespace-manifests:rw")
+    fi
+    if [[ $operation == migrate-tenants ]]; then
+        local preparation_point="$HOME/.local/share/schoolorbit-academic-recovery/$RELEASE_SHA-${BACKEND_IMAGE_DIGEST#sha256:}"
+        if [[ -f $preparation_point/proof.json ]]; then
+            private_file "$preparation_point/proof.json" || fail current_preparation_invalid
+            export CURRENT_ACADEMIC_PREPARATION_FILE=/run/academic-current-preparation/proof.json
+            export CURRENT_ACADEMIC_RELEASE_SHA="$RELEASE_SHA"
+            export CURRENT_ACADEMIC_IMAGE_DIGEST="$BACKEND_IMAGE_DIGEST"
+            options+=(--env CURRENT_ACADEMIC_PREPARATION_FILE --env CURRENT_ACADEMIC_RELEASE_SHA --env CURRENT_ACADEMIC_IMAGE_DIGEST
+                --volume "$preparation_point/proof.json:/run/academic-current-preparation/proof.json:ro")
+        fi
     fi
     if ! podman run "${options[@]}" "$image" /app/backend-school "$@" >"$output" 2>"$scratch/command-error"; then
         report_aggregate "$output" "$operation" || true
@@ -362,8 +413,23 @@ elif [[ $mode == cutover ]]; then
             fail old_writer_disappeared
         fi
     fi
+    # Fixed actual-data preparation runs only after the previous writers stop.
+    # The child retains encrypted recovery points outside application mounts/GC.
+    export RELEASE_SHA BACKEND_IMAGE_DIGEST
+    if ! python3 "$code_root/scripts/lib/pipeline-remote/current-academic-preparation.py" prepare >"$scratch/preparation" 2>"$scratch/preparation-error"; then
+        report_preparation_refusal "$scratch/preparation-error"
+        fail current_preparation_failed
+    fi
+    if ! python3 "$code_root/scripts/lib/pipeline-remote/current-academic-preparation.py" check >"$scratch/preparation-check" 2>"$scratch/preparation-check-error"; then
+        report_preparation_refusal "$scratch/preparation-check-error"
+        fail current_preparation_changed
+    fi
     write_marker migration-attempted "$RELEASE_SHA"
     configured "$scratch/migration" schoolorbit-web migrate-tenants
+    if ! python3 "$code_root/scripts/lib/pipeline-remote/current-academic-preparation.py" complete >"$scratch/preparation-completion" 2>"$scratch/preparation-completion-error"; then
+        report_preparation_refusal "$scratch/preparation-completion-error"
+        fail current_preparation_completion_unverified
+    fi
     echo 'storage_rollout stage=canonical_migrations_complete'
     if [[ -n $attestation ]]; then
         configured "$scratch/context" schoolorbit-web storage-namespace context-admin

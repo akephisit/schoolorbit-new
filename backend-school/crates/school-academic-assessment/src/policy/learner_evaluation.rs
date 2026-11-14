@@ -153,7 +153,7 @@ async fn require_student_summary_with_access(
         return Ok(());
     }
     let assigned_group_ids = if access.assigned_actor_id.is_some() {
-        school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+        school_academic_delivery::services::current::assigned_group_ids_on_connection(
             connection,
             year,
             term,

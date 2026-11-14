@@ -26,7 +26,7 @@ test('captureRouteLoad returns the concrete error message or fallback', async ()
 	);
 });
 
-test('delivery route context requires year and term and preserves optional selections', () => {
+test('delivery route context requires year and term and ignores retired operational selections', () => {
 	assert.equal(
 		readLearningDeliveryRouteContext(new URL('https://school.test/staff/academic/delivery')),
 		null
@@ -39,9 +39,7 @@ test('delivery route context requires year and term and preserves optional selec
 		),
 		{
 			academicYearId: 'year-1',
-			academicTermId: 'term-1',
-			deliveryVersionId: undefined,
-			changeSetId: undefined
+			academicTermId: 'term-1'
 		}
 	);
 	assert.deepEqual(
@@ -52,9 +50,7 @@ test('delivery route context requires year and term and preserves optional selec
 		),
 		{
 			academicYearId: 'year-1',
-			academicTermId: 'term-1',
-			deliveryVersionId: 'version-1',
-			changeSetId: 'change-set-1'
+			academicTermId: 'term-1'
 		}
 	);
 });

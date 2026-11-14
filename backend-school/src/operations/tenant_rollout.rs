@@ -29,16 +29,14 @@ enum FailureStage {
     OwnerSchema,
     OwnerAcademicCoreCutover,
     OwnerGradebookResultsCutover,
-    OwnerDeliveryTimetableCutover,
-    OwnerPublicationRevisionsCutover,
+    OwnerCurrentOperationsCutover,
     OwnerStaffProfileCutover,
     RuntimeConnection,
     RuntimeIdentity,
     RuntimeSchema,
     RuntimeAcademicCoreCutover,
     RuntimeGradebookResultsCutover,
-    RuntimeDeliveryTimetableCutover,
-    RuntimePublicationRevisionsCutover,
+    RuntimeCurrentOperationsCutover,
     RuntimeStaffProfileCutover,
     AdminStatus,
 }
@@ -55,16 +53,14 @@ impl FailureStage {
             Self::OwnerSchema => "owner_schema",
             Self::OwnerAcademicCoreCutover => "owner_academic_core_cutover",
             Self::OwnerGradebookResultsCutover => "owner_gradebook_results_cutover",
-            Self::OwnerDeliveryTimetableCutover => "owner_delivery_timetable_cutover",
-            Self::OwnerPublicationRevisionsCutover => "owner_publication_revisions_cutover",
+            Self::OwnerCurrentOperationsCutover => "owner_current_operations_cutover",
             Self::OwnerStaffProfileCutover => "owner_staff_profile_cutover",
             Self::RuntimeConnection => "runtime_connection",
             Self::RuntimeIdentity => "runtime_identity",
             Self::RuntimeSchema => "runtime_schema",
             Self::RuntimeAcademicCoreCutover => "runtime_academic_core_cutover",
             Self::RuntimeGradebookResultsCutover => "runtime_gradebook_results_cutover",
-            Self::RuntimeDeliveryTimetableCutover => "runtime_delivery_timetable_cutover",
-            Self::RuntimePublicationRevisionsCutover => "runtime_publication_revisions_cutover",
+            Self::RuntimeCurrentOperationsCutover => "runtime_current_operations_cutover",
             Self::RuntimeStaffProfileCutover => "runtime_staff_profile_cutover",
             Self::AdminStatus => "admin_status",
         }
@@ -219,7 +215,7 @@ fn hash_valid(value: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
-fn inventory_digest(tenants: &[OperationalTenant]) -> Result<String, BindingError> {
+pub(super) fn inventory_digest(tenants: &[OperationalTenant]) -> Result<String, BindingError> {
     let mut hash = Sha256::new();
     for tenant in tenants {
         let route =
@@ -310,30 +306,14 @@ async fn cutovers_detailed(
         return Err(RolloutFailure::plain(stage, BindingError::Database));
     }
     let stage = if owner {
-        FailureStage::OwnerDeliveryTimetableCutover
+        FailureStage::OwnerCurrentOperationsCutover
     } else {
-        FailureStage::RuntimeDeliveryTimetableCutover
+        FailureStage::RuntimeCurrentOperationsCutover
     };
-    if !school_academic_delivery::services::versions::read_cutover_audit_on_connection(
-        &mut *connection,
-    )
-    .await
-    .map_err(|error| RolloutFailure::audit(stage, &error))?
-    .completed
-    {
-        return Err(RolloutFailure::plain(stage, BindingError::Database));
-    }
-    let stage = if owner {
-        FailureStage::OwnerPublicationRevisionsCutover
-    } else {
-        FailureStage::RuntimePublicationRevisionsCutover
-    };
-    if !school_academic_delivery::services::publication::read_revisions_audit_on_connection(
-        &mut *connection,
-    )
-    .await
-    .map_err(|error| RolloutFailure::audit(stage, &error))?
-    .completed
+    if !crate::operations::current_academic::read_on_connection(&mut *connection)
+        .await
+        .map_err(|error| RolloutFailure::audit(stage, &error))?
+        .completed
     {
         return Err(RolloutFailure::plain(stage, BindingError::Database));
     }
@@ -487,9 +467,21 @@ pub async fn startup_check(admin: &AdminClient) -> Result<(), BindingError> {
     }
 }
 
+/// Shared library/main entry for authenticated internal migration operations.
+/// Proof parsing stays private; callers cannot supply a date or skip policy.
+pub async fn migrate_operational_school(
+    pool: &PgPool,
+    admin: &AdminClient,
+    subdomain: &str,
+) -> Result<(), String> {
+    super::current_preparation::run_for_school(pool, admin, subdomain).await
+}
+
 pub async fn migrate_tenants() -> Result<bool, BindingError> {
     let admin = admin_client()?;
     let tenants = snapshot(&admin).await?;
+    let preparation = super::current_preparation::ValidatedPreparation::load(&tenants)
+        .map_err(|_| BindingError::Configuration)?;
     let mut migrated = 0;
     let mut failures = FailureHistogram::default();
     for tenant in &tenants {
@@ -508,8 +500,19 @@ pub async fn migrate_tenants() -> Result<bool, BindingError> {
                 })?;
             let migration = async {
                 verify_pool_detailed(pool.as_ref(), tenant.id, true, false).await?;
-                let migrated =
-                    school_migrations::run_tenant_migrations_detailed(pool.as_ref()).await;
+                let expected = preparation
+                    .expectation(tenant.id, &tenant.subdomain)
+                    .map_err(|_| {
+                        RolloutFailure::plain(
+                            FailureStage::MigrationIdentity,
+                            BindingError::Configuration,
+                        )
+                    })?;
+                let migrated = school_migrations::run_operational_tenant_migrations(
+                    pool.as_ref(),
+                    expected.as_ref(),
+                )
+                .await;
                 // A grant or later audit can fail after the migration transaction committed.
                 // Record only a canonical checksum-verified version, never a fabricated zero.
                 if let Ok(mut connection) = school_tenancy::TenantPool::observed_checkout_pool(

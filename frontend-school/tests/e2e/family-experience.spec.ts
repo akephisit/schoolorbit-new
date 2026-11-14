@@ -110,7 +110,7 @@ function blocks(): TimetableBlock[] {
 		schedulingMode: index === 2 ? 'synchronized' : index === 3 ? 'independent' : null,
 		seriesId: null,
 		structuralKind: index === 1 ? 'flag_ceremony' : null,
-		timetableVersionId: id(824),
+		timetableId: id(824),
 		title: index === 1 ? 'กิจกรรมพิเศษทดสอบ' : null,
 		note: null
 	}));

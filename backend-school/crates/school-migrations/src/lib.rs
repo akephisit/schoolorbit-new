@@ -60,6 +60,8 @@ mod permission_sync {
 
 pub use permission_sync::sync_permissions;
 mod academic149;
+mod current_preparation;
+pub use current_preparation::CurrentPreparationExpectation;
 
 use dashmap::DashMap;
 use sqlx::migrate::Migrator;
@@ -176,6 +178,65 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         return "unclassified";
     };
     match (version, database.message()) {
+        (Some(157), "ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED") => {
+            "ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED"
+        }
+        (Some(157), "ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS") => {
+            "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS"
+        }
+        (Some(157), "ACADEMIC_CURRENT_PREPARATION_REQUIRED") => {
+            "ACADEMIC_CURRENT_PREPARATION_REQUIRED"
+        }
+        (Some(157), "ACADEMIC_CURRENT_PREPARATION_MISMATCH") => {
+            "ACADEMIC_CURRENT_PREPARATION_MISMATCH"
+        }
+        (Some(157), "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS") => {
+            "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS"
+        }
+        (Some(157), "ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING") => {
+            "ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING"
+        }
+        (Some(157), "ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS") => {
+            "ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS"
+        }
+        (Some(157), "ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING") => {
+            "ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING"
+        }
+        (Some(157), "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE") => "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE",
+        (Some(157), "ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH") => {
+            "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH"
+        }
+        (Some(157), "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_OFFERING_NOT_FOUND") => "ACADEMIC_CURRENT_OFFERING_NOT_FOUND",
+        (Some(157), "ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH") => {
+            "ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH"
+        }
+        (Some(157), "ACADEMIC_CURRENT_RECONCILIATION_FAILED") => {
+            "ACADEMIC_CURRENT_RECONCILIATION_FAILED"
+        }
         (Some(155), "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET") => {
             "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET"
         }
@@ -369,6 +430,34 @@ pub async fn run_tenant_migrations(pool: &PgPool) -> Result<(), String> {
 
 /// The canonical runner with bounded diagnostics for release orchestration.
 pub async fn run_tenant_migrations_detailed(pool: &PgPool) -> Result<(), MigrationFailure> {
+    run_canonical(pool, current_preparation::PreparationPolicy::Ordinary).await
+}
+
+/// Production operational entry: migration157 requires a validated preparation.
+/// Already-converted databases keep normal canonical reconciliation on retry.
+pub async fn run_operational_tenant_migrations(
+    pool: &PgPool,
+    expected: Option<&CurrentPreparationExpectation>,
+) -> Result<(), MigrationFailure> {
+    run_canonical(
+        pool,
+        current_preparation::PreparationPolicy::Operational(expected),
+    )
+    .await
+}
+
+/// Provisioning/fixture seeding may initialize an empty database, but may not
+/// adopt populated pre-cutover data through an unprepared migration call.
+pub async fn run_fresh_tenant_migrations(pool: &PgPool) -> Result<(), String> {
+    run_canonical(pool, current_preparation::PreparationPolicy::FreshOrCurrent)
+        .await
+        .map_err(MigrationFailure::into_legacy_message)
+}
+
+async fn run_canonical(
+    pool: &PgPool,
+    policy: current_preparation::PreparationPolicy<'_>,
+) -> Result<(), MigrationFailure> {
     let started = std::time::Instant::now();
     let owner: String = sqlx::query_scalar("SELECT current_user::text")
         .fetch_one(pool)
@@ -398,11 +487,45 @@ pub async fn run_tenant_migrations_detailed(pool: &PgPool) -> Result<(), Migrati
             .acquire()
             .await
             .map_err(|error| migration_failure(sqlx::migrate::MigrateError::Execute(error)))?;
-        academic149::run_transition(&mut connection, &all_migrations_without_db_lock())
+        // A cancelled future must close its physical session rather than return
+        // temporary admission state to the pool. Never wait for the gate while
+        // holding this lease: permission/grant work can use a pool of size one.
+        let guarded = !matches!(&policy, current_preparation::PreparationPolicy::Ordinary);
+        if guarded {
+            connection.close_on_drop();
+        }
+        let actual_owner: String = school_database::DbSession::new(&mut *connection)
+            .scalar(
+                "migrations.preparation.owner_identity",
+                "SELECT current_user::text",
+            )
+            .fetch_one()
+            .await
+            .map_err(|error| migration_failure(sqlx::migrate::MigrateError::Execute(error)))?;
+        if actual_owner != owner {
+            return Err(MigrationFailure::identity(
+                "Migration identity changed".into(),
+            ));
+        }
+        let migrations = all_migrations_without_db_lock();
+        let installed = current_preparation::install(&mut connection, policy, &migrations)
             .await
             .map_err(migration_failure)?;
-        // End the owned lease before pool-based permission/grant work (including pool size one).
-        drop(connection);
+        let migrated = academic149::run_transition(&mut connection, &migrations).await;
+        if installed && migrated.is_ok() {
+            current_preparation::remove(&mut connection)
+                .await
+                .map_err(|error| migration_failure(sqlx::migrate::MigrateError::Execute(error)))?;
+        }
+        if guarded {
+            connection
+                .close()
+                .await
+                .map_err(|error| migration_failure(sqlx::migrate::MigrateError::Execute(error)))?;
+        } else {
+            drop(connection);
+        }
+        migrated.map_err(migration_failure)?;
     }
 
     sync_permissions(pool).await.map_err(|error| {
@@ -489,6 +612,7 @@ async fn grant_runtime_privileges(pool: &PgPool, runtime: &str) -> Result<(), sq
     let statement = format!(
         "REVOKE CREATE ON SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO \"{runtime}\";
          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{runtime}\";
+         REVOKE ALL ON academic_result_removal_scope FROM \"{runtime}\";
          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO \"{runtime}\";
          REVOKE INSERT, UPDATE, DELETE ON _sqlx_migrations FROM \"{runtime}\";
          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{runtime}\";
@@ -676,6 +800,51 @@ mod tests {
                 ),
                 "unclassified"
             );
+        }
+    }
+    #[test]
+    fn preparation157_diagnostics_preserve_exact_required_and_mismatch_codes() {
+        for code in [
+            "ACADEMIC_CURRENT_PREPARATION_REQUIRED",
+            "ACADEMIC_CURRENT_PREPARATION_MISMATCH",
+        ] {
+            let failure = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native(code, "23514"),
+                157,
+            ));
+            assert_eq!(failure.diagnostic.code, code);
+            assert_eq!(failure.diagnostic.version, Some(157));
+            assert_eq!(failure.diagnostic.sqlstate.as_deref(), Some("23514"));
+            assert_eq!(
+                refusal_code(Some(156), &native(code, "23514")),
+                "unclassified"
+            );
+        }
+    }
+
+    #[test]
+    fn current_operations157_refusals_are_version_bound_and_sanitized() {
+        for code in [
+            "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS",
+            "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH",
+            "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE",
+            "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE",
+            "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS",
+            "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE",
+            "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE",
+            "ACADEMIC_CURRENT_RECONCILIATION_FAILED",
+        ] {
+            assert_eq!(refusal_code(Some(157), &native(code, "P0001")), code);
+            assert_eq!(
+                refusal_code(Some(156), &native(code, "P0001")),
+                "unclassified"
+            );
+            let error = migration_failure(sqlx::migrate::MigrateError::ExecuteMigration(
+                native(&format!("{code} private-sentinel"), "P0001"),
+                157,
+            ));
+            assert_eq!(error.diagnostic.code, "unclassified");
+            assert!(!format!("{error:?}").contains("private-sentinel"));
         }
     }
     use std::sync::{

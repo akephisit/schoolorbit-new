@@ -4052,6 +4052,7 @@ dependencies = [
 name = "school-academic-delivery-http"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "school-academic-core",
  "school-academic-delivery",
@@ -4059,6 +4060,7 @@ dependencies = [
  "school-auth",
  "school-auth-http",
  "school-authorization",
+ "school-errors",
  "school-http",
  "serde",
  "serde_json",
@@ -4098,11 +4100,14 @@ dependencies = [
 name = "school-academic-lifecycle-http"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "axum",
  "school-academic-lifecycle",
  "school-academic-realtime",
  "school-auth",
  "school-auth-http",
+ "school-authorization",
+ "school-errors",
  "school-http",
  "utoipa",
  "uuid",
@@ -4694,12 +4699,17 @@ dependencies = [
 name = "school-migrations"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dashmap",
+ "school-behavior",
  "school-database",
  "school-permissions",
+ "school-test-db",
+ "serde_json",
  "sqlx",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -4952,6 +4962,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "school-academic-core",
+ "school-academic-delivery",
  "school-academic-timetable",
  "school-auth",
  "school-auth-http",

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
 	import type { DeliveryOfferingAddKind } from '#lib/academic/learning-delivery-page.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
@@ -14,7 +15,7 @@
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { BookCopy, Plus, Sparkles } from '@lucide/svelte';
@@ -25,14 +26,12 @@
 		academicTermId,
 		onCreated,
 		onApplied,
-		defaultDeliveryVersionId = null,
 		returnTo = '',
 		showTrigger = true
 	}: {
 		academicTermId: string;
 		onCreated: (item: LearningOfferingOverviewItem) => void;
 		onApplied: () => Promise<void>;
-		defaultDeliveryVersionId?: string | null;
 		returnTo?: string;
 		showTrigger?: boolean;
 	} = $props();
@@ -42,14 +41,17 @@
 	let mode = $state<'curriculum' | 'manual'>('curriculum');
 	let addKind = $state<DeliveryOfferingAddKind | null>(null);
 	const optionsRequest = new LatestRequest();
-	onDestroy(() => optionsRequest.abort());
+	let disposed = false;
+	onDestroy(() => {
+		disposed = true;
+		optionsRequest.abort();
+	});
 	let preparationTarget = $state.raw<CurriculumPreparationTarget | null>(null);
-	let deliveryVersionId = $state<string | null>(null);
 	let preparationRevision = $state(0);
 	let options = $state.raw<DeliveryManagementOptions | null>(null);
 	let optionsLoading = $state(false);
 	let saving = $state(false);
-	let startsOn = $state('');
+	let weeklyPeriodTarget = $state(1);
 	let activityOpeningMode = $state<'central' | 'groups'>('central');
 	let errorMessage = $state('');
 	let draft = $state({
@@ -88,18 +90,15 @@
 
 	async function showDialog(
 		target: CurriculumPreparationTarget | null,
-		targetDeliveryVersionId: string | null = defaultDeliveryVersionId,
 		requestedKind: DeliveryOfferingAddKind | null = null
 	) {
 		if (!open && document.activeElement instanceof HTMLElement)
 			returnFocus = document.activeElement;
 		preparationTarget = target;
-		deliveryVersionId = targetDeliveryVersionId;
 		preparationRevision += 1;
 		addKind = requestedKind;
 		mode = requestedKind ? 'manual' : 'curriculum';
 		if (requestedKind) {
-			startsOn = '';
 			draft = {
 				...draft,
 				kind: requestedKind === 'activity' ? 'activity' : 'course',
@@ -125,15 +124,12 @@
 		}
 	}
 
-	export function openCurriculumPreparation(
-		target: CurriculumPreparationTarget,
-		targetDeliveryVersionId: string | null = defaultDeliveryVersionId
-	) {
-		return showDialog(target, targetDeliveryVersionId);
+	export function openCurriculumPreparation(target: CurriculumPreparationTarget) {
+		return showDialog(target);
 	}
 
 	export function openManual(kind: DeliveryOfferingAddKind) {
-		return showDialog(null, defaultDeliveryVersionId, kind);
+		return showDialog(null, kind);
 	}
 
 	function selectMode(nextMode: 'curriculum' | 'manual') {
@@ -145,12 +141,22 @@
 		event.preventDefault();
 		if (
 			!options ||
-			!startsOn ||
+			saving ||
+			!Number.isInteger(weeklyPeriodTarget) ||
+			weeklyPeriodTarget < 0 ||
 			!draft.catalogVersionId ||
 			!draft.gradeLevelId ||
 			!draft.studyProgramId
 		)
 			return;
+		const owner = academicTermId,
+			epoch = authStore.sessionEpoch,
+			revision = preparationRevision;
+		const current = () =>
+			!disposed &&
+			academicTermId === owner &&
+			authStore.sessionEpoch === epoch &&
+			preparationRevision === revision;
 		saving = true;
 		errorMessage = '';
 		try {
@@ -172,7 +178,7 @@
 					? {
 							kind: 'course',
 							academicTermId,
-							startsOn,
+							weeklyPeriodTarget,
 							subjectVersionId: draft.catalogVersionId,
 							curriculumCourseRequirementId: null,
 							assessmentTotalScore: '100.00',
@@ -181,7 +187,7 @@
 					: {
 							kind: 'activity',
 							academicTermId,
-							startsOn,
+							weeklyPeriodTarget,
 							activityVersionId: draft.catalogVersionId,
 							curriculumActivityRequirementId: null,
 							registrationType: 'assigned',
@@ -195,9 +201,9 @@
 								outcomes: ['pass', 'fail']
 							},
 							targets
-						},
-				deliveryVersionId
+						}
 			);
+			if (!current()) return;
 			onCreated({
 				offering,
 				gradeLevels: options.gradeLevels.filter((grade) => grade.id === draft.gradeLevelId),
@@ -206,17 +212,17 @@
 				),
 				groupCount: 0,
 				teacherAssignmentCount: 0,
-				groupsWithoutPrimaryTeacher: 0,
-				publishedRosterCount: 0
+				groupsWithoutPrimaryTeacher: 0
 			});
 			draft = { ...draft, catalogVersionId: '' };
 			open = false;
 			if (draft.kind === 'activity' && activityOpeningMode === 'groups')
-				await goto(deliveryOfferingHref(offering.id, { ...offering, deliveryVersionId }, returnTo));
+				await goto(deliveryOfferingHref(offering.id, offering, returnTo));
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'สร้างรายการเปิดสอนไม่สำเร็จ';
+			if (current())
+				errorMessage = error instanceof Error ? error.message : 'สร้างรายการเปิดสอนไม่สำเร็จ';
 		} finally {
-			saving = false;
+			if (current()) saving = false;
 		}
 	}
 
@@ -314,7 +320,6 @@
 						{academicTermId}
 						{options}
 						{preparationTarget}
-						{deliveryVersionId}
 						onApplied={applied}
 					/>
 				{/key}
@@ -322,10 +327,12 @@
 				<form class="space-y-4" onsubmit={createManual}>
 					<fieldset disabled={saving} class="space-y-4">
 						<div class="space-y-2">
-							<Label for="offering-actual-start">วันที่เริ่มเปิดสอนจริง</Label><DatePicker
-								id="offering-actual-start"
-								bind:value={startsOn}
-								ariaLabel="วันที่เริ่มเปิดสอนจริง"
+							<Label for="offering-weekly-periods">คาบที่จัดจริงต่อสัปดาห์</Label><Input
+								id="offering-weekly-periods"
+								type="number"
+								min="0"
+								step="1"
+								bind:value={weeklyPeriodTarget}
 								required
 							/>
 						</div>
@@ -402,7 +409,7 @@
 								>
 								<p class="text-xs text-muted-foreground">
 									เปิดแบบกลางจัดคาบร่วมกันได้ทันที เปิดพร้อมจัดกลุ่มสร้างหนึ่งกลุ่มต่อห้องเป้าหมาย
-									แล้วมอบหมายครูก่อนเผยแพร่
+									แล้วมอบหมายครู
 								</p>
 							</div>
 						{/if}
@@ -414,9 +421,9 @@
 						<p
 							class="rounded-lg bg-muted/45 px-3 py-2 text-xs leading-relaxed text-muted-foreground"
 						>
-							ระบบจะใช้กลุ่มสาระหรือกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ และสร้างเป็นฉบับร่าง
-							กิจกรรมกลางจัดกลุ่มและกำหนดครูภายหลังได้
-							ส่วนรายวิชาและกลุ่มที่สร้างแล้วต้องตรวจกลุ่มและครูก่อนเผยแพร่
+							ระบบจะใช้กลุ่มสาระหรือกิจกรรมพัฒนาผู้เรียนจากทะเบียนโดยอัตโนมัติ
+							และสร้างเป็นข้อมูลปัจจุบัน กิจกรรมกลางจัดกลุ่มและกำหนดครูภายหลังได้
+							ตรวจกลุ่มและครูของรายการที่สร้างแล้วก่อนจัดตาราง
 						</p>
 						{#if errorMessage}<p role="alert" class="text-sm text-destructive">
 								{errorMessage}
@@ -432,10 +439,11 @@
 							type="submit"
 							loading={saving}
 							loadingLabel="กำลังสร้าง"
-							disabled={!startsOn ||
+							disabled={!Number.isInteger(weeklyPeriodTarget) ||
+								weeklyPeriodTarget < 0 ||
 								!draft.catalogVersionId ||
 								!draft.gradeLevelId ||
-								!draft.studyProgramId}>สร้างฉบับร่าง</LoadingButton
+								!draft.studyProgramId}>สร้างข้อมูลปัจจุบัน</LoadingButton
 						></Dialog.Footer
 					>
 				</form>
@@ -446,8 +454,7 @@
 				<Button
 					type="button"
 					variant="outline"
-					onclick={() => showDialog(preparationTarget, deliveryVersionId, addKind)}
-					>ลองโหลดอีกครั้ง</Button
+					onclick={() => showDialog(preparationTarget, addKind)}>ลองโหลดอีกครั้ง</Button
 				>
 			</div>
 		{/if}

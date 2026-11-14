@@ -114,7 +114,6 @@ const operations = [
 	['/api/academic/offerings/apply-from-curriculum', 'post', 'applyLearningOfferingsFromCurriculum'],
 	['/api/academic/offerings/{id}', 'get', 'getLearningOffering'],
 	['/api/academic/offerings/{id}', 'patch', 'updateLearningOffering'],
-	['/api/academic/offerings/{id}/publish', 'post', 'publishLearningOffering'],
 	['/api/academic/offerings/{id}/groups', 'get', 'listLearningGroups'],
 	['/api/academic/offerings/{id}/groups', 'post', 'createLearningGroup'],
 	['/api/academic/learning-groups', 'get', 'listLearningGroupsForTerm'],
@@ -126,7 +125,12 @@ const operations = [
 	['/api/academic/learning-groups/{id}/teachers', 'put', 'replaceLearningGroupTeachers'],
 	['/api/academic/learning-groups/{id}/roster', 'get', 'previewLearningGroupRoster'],
 	['/api/academic/learning-groups/{id}/roster', 'put', 'applyLearningGroupRoster'],
-	['/api/academic/learning-groups/{id}/roster/publish', 'post', 'publishLearningGroupRoster']
+	['/api/academic/delivery/workspace','get','getDeliveryWorkspace'],
+	['/api/academic/offerings/{id}/weekly-period-target','patch','updateLearningOfferingWeeklyPeriodTarget'],
+	['/api/academic/offerings/{id}/deletion-preview','get','previewLearningOfferingDeletion'],
+	['/api/academic/offerings/{id}','delete','deleteLearningOffering'],
+	['/api/academic/learning-groups/{id}/deletion-preview','get','previewLearningGroupDeletion'],
+	['/api/academic/learning-groups/{id}','delete','deleteLearningGroup']
 ];
 
 test('generated contract owns every academic core and learning delivery operation', async () => {
@@ -207,7 +211,6 @@ test('academic exact values and offering variants keep their wire semantics', as
 		['CatalogCurriculumMetrics', 'credit'],
 		['CatalogCurriculumMetrics', 'totalHours'],
 		['ActivityAttendanceRequirement', 'minimumPercent'],
-		['CreateCourseOfferingRequest', 'assessmentTotalScore'],
 		['CourseOfferingSnapshot', 'credit'],
 		['CourseOfferingSnapshot', 'hours'],
 		['CourseOfferingSnapshot', 'assessmentTotalScore'],
@@ -250,8 +253,10 @@ test('academic exact values and offering variants keep their wire semantics', as
 	assert.equal(courseSnapshot.properties.weeklyPeriodTarget, undefined);
 
 	const updateOffering = schemas.UpdateLearningOfferingRequest;
-	assert.equal(updateOffering.properties.weeklyPeriodTarget, undefined);
+	assert.equal(updateOffering.properties.weeklyPeriodTarget.type, 'integer');
 	assert.equal(updateOffering.properties.assessmentTotalScore, undefined);
+	for(const name of ['CreateCourseOfferingRequest','CreateActivityOfferingRequest'])assert.ok(schemas[name].required.includes('weeklyPeriodTarget'));
+	assert.deepEqual(schemas.UpdateWeeklyPeriodTargetRequest.required.toSorted(),['rowVersion','weeklyPeriodTarget']);
 	assert.equal(schemas.CourseGradingPolicy, undefined);
 	assert.equal(schemas.ActivityResult, undefined);
 

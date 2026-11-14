@@ -8,7 +8,7 @@
 	}: { onAdd: (kind: DeliveryOfferingAddKind) => void; disabled?: boolean } = $props();
 </script>
 
-<div class="flex flex-wrap gap-2" aria-label="เพิ่มรายการในรุ่นแบบร่าง">
+<div class="flex flex-wrap gap-2" aria-label="เพิ่มรายการเปิดสอน">
 	<Button size="sm" variant="outline" {disabled} onclick={() => onAdd('basic')}
 		><Plus class="size-4" />เพิ่มวิชาพื้นฐาน</Button
 	>

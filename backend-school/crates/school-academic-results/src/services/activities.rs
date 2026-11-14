@@ -1,6 +1,6 @@
 use super::*;
 use crate::policy::results as access_policy;
-use school_academic_delivery::services::versions::group_teacher_assignments_on_connection;
+use school_academic_delivery::services::current::group_teacher_assignments_on_connection;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use serde::Serialize;
@@ -90,7 +90,7 @@ async fn load_scope(
            JOIN academic_terms t ON t.id=g.academic_term_id
            JOIN academic_years y ON y.id=g.academic_year_id
            LEFT JOIN academic_activity_result_locks lock ON lock.learning_group_id=g.id
-           WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 AND g.status<>'closed'"#,
+           WHERE g.id=$1 AND g.academic_term_id=$2 AND g.academic_year_id=$3 "#,
     )
     .bind(group)
     .bind(context.academic_term_id)
