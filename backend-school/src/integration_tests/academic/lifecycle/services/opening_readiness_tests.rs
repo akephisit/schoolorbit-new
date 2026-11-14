@@ -42,7 +42,7 @@ async fn opening_current_evidence_tracks_exact_term_and_current_revision() {
     .await
     .unwrap();
     assert_eq!((empty.count(), absent.count()), (0, 0));
-    let offering:Uuid=sqlx::query_scalar("INSERT INTO learning_offerings(academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,owning_organization_unit_id,weekly_period_target) SELECT $1,$2,'activity','CURRENT','Current presence',id,1 FROM organization_units WHERE is_active ORDER BY id LIMIT 1 RETURNING id").bind(term.id).bind(year.id).fetch_one(&mut *tx).await.unwrap();
+    let offering:Uuid=sqlx::query_scalar("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,owning_organization_unit_id,weekly_period_target) SELECT uuidv7(),$1,$2,'activity','CURRENT','Current presence',id,1 FROM organization_units WHERE is_active ORDER BY id LIMIT 1 RETURNING id").bind(term.id).bind(year.id).fetch_one(&mut *tx).await.unwrap();
     sqlx::query("INSERT INTO academic_timetables(academic_term_id,academic_year_id,bell_schedule_id) VALUES($1,$2,$3)").bind(term.id).bind(year.id).bind(term.bell_schedule_id).execute(&mut *tx).await.unwrap();
     let current = delivery::services::opening::current_for_term(&mut tx, year.id, term.id)
         .await

@@ -2,9 +2,7 @@
 use crate::models::{
     LearningOfferingQuery, LearningOfferingSnapshot, LearningTeacherRole, current::*,
 };
-use school_authorization::{
-    AcademicResourceAccess, AcademicResourceListFilter, academic_resource_access_for,
-};
+use school_authorization::AcademicResourceListFilter;
 use school_database::DbSession;
 use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
@@ -32,37 +30,51 @@ pub async fn workspace(
     Ok(result)
 }
 
+const MAX_COMPLETE_OFFERINGS: usize = 20_000;
+const MAX_COMPLETE_GROUPS: usize = 20_000;
+const MAX_TARGET_RELATIONS: usize = 250_000;
+
+#[derive(Clone, Copy)]
+pub(super) enum WorkspacePurpose {
+    Public,
+    Complete,
+}
+impl WorkspacePurpose {
+    pub(super) fn offering_limit(self) -> usize {
+        match self {
+            Self::Public => super::offerings::MAX_TERM_OFFERINGS,
+            Self::Complete => MAX_COMPLETE_OFFERINGS,
+        }
+    }
+    pub(super) fn group_limit(self) -> usize {
+        match self {
+            Self::Public => super::groups::MAX_TERM_GROUPS,
+            Self::Complete => MAX_COMPLETE_GROUPS,
+        }
+    }
+    pub(super) fn overflow(self, public_message: &'static str) -> AppError {
+        match self {
+            Self::Public => AppError::ValidationError(public_message.into()),
+            Self::Complete => complete_projection_overflow(),
+        }
+    }
+}
+
+fn complete_projection_overflow() -> AppError {
+    AppError::ConflictWithCode {
+        code: "DELIVERY_CURRENT_GRAPH_TOO_LARGE",
+        message: "ข้อมูลเปิดสอนปัจจุบันเกินขอบเขตที่ระบบรองรับ กรุณาตรวจสอบข้อมูลภาคเรียน".into(),
+    }
+}
+
 pub async fn visible_workspace_on_connection(
     connection: &mut PgConnection,
     year: Uuid,
     term: Uuid,
     access: &AcademicResourceListFilter,
 ) -> Result<DeliveryWorkspace, AppError> {
-    let mut result = workspace_on_connection(connection, year, term).await?;
-    result.offerings.retain(|offering| {
-        let assigned = access.assigned_actor_id.is_some_and(|actor| {
-            offering.groups.iter().any(|group| {
-                group
-                    .teachers
-                    .iter()
-                    .any(|teacher| teacher.teacher_id == actor)
-            })
-        });
-        academic_resource_access_for(access, Some(offering.owning_organization_unit_id), assigned)
-            != AcademicResourceAccess::None
-    });
-    let visible_subjects: BTreeSet<_> = result
-        .offerings
-        .iter()
-        .filter_map(|offering| match &offering.catalog {
-            LearningOfferingSnapshot::Course(course) => Some(course.subject_version_id),
-            LearningOfferingSnapshot::Activity(_) => None,
-        })
-        .collect();
-    result
-        .course_metadata
-        .retain(|metadata| visible_subjects.contains(&metadata.subject_version_id));
-    Ok(result)
+    workspace_projection_on_connection(connection, year, term, access, WorkspacePurpose::Public)
+        .await
 }
 
 pub async fn workspace_on_connection(
@@ -70,23 +82,63 @@ pub async fn workspace_on_connection(
     year: Uuid,
     term: Uuid,
 ) -> Result<DeliveryWorkspace, AppError> {
-    let row_version: i64 = DbSession::new(connection).scalar("academic_delivery.current.workspace_context", "SELECT COALESCE(state.row_version,1) FROM academic_terms term LEFT JOIN academic_delivery_state state ON state.academic_term_id=term.id AND state.academic_year_id=term.academic_year_id WHERE term.id=$1 AND term.academic_year_id=$2").bind(term).bind(year).fetch_optional().await?.ok_or_else(|| AppError::NotFound("ไม่พบปีและภาคเรียนที่เลือก".into()))?;
-    let all = AcademicResourceListFilter {
+    workspace_projection_on_connection(
+        connection,
+        year,
+        term,
+        &all_access(),
+        WorkspacePurpose::Public,
+    )
+    .await
+}
+
+/// Complete private authority projection for domain composition and canonical caches.
+/// This does not apply a viewer's public caps or authorize an HTTP response. The
+/// caller must project authorized data before exposing it and retain its public
+/// budgets. Overflow refuses the whole projection; it never returns a partial graph.
+/// Technical bounds are 20,000 offerings, 20,000 groups and 250,000 resolved target relations.
+pub async fn complete_workspace_on_connection(
+    connection: &mut PgConnection,
+    year: Uuid,
+    term: Uuid,
+) -> Result<DeliveryWorkspace, AppError> {
+    workspace_projection_on_connection(
+        connection,
+        year,
+        term,
+        &all_access(),
+        WorkspacePurpose::Complete,
+    )
+    .await
+}
+
+fn all_access() -> AcademicResourceListFilter {
+    AcademicResourceListFilter {
         includes_school_owned: true,
-        organization_unit_ids: vec![],
-        organization_tree_unit_ids: vec![],
-        assigned_actor_id: None,
-    };
-    let rows = super::offerings::list_on_connection(
+        ..Default::default()
+    }
+}
+
+async fn workspace_projection_on_connection(
+    connection: &mut PgConnection,
+    year: Uuid,
+    term: Uuid,
+    access: &AcademicResourceListFilter,
+    purpose: WorkspacePurpose,
+) -> Result<DeliveryWorkspace, AppError> {
+    let row_version: i64 = DbSession::new(connection).scalar("academic_delivery.current.workspace_context", "SELECT COALESCE(state.row_version,1) FROM academic_terms term LEFT JOIN academic_delivery_state state ON state.academic_term_id=term.id AND state.academic_year_id=term.academic_year_id WHERE term.id=$1 AND term.academic_year_id=$2").bind(term).bind(year).fetch_optional().await?.ok_or_else(|| AppError::NotFound("ไม่พบปีและภาคเรียนที่เลือก".into()))?;
+    let rows = super::offerings::list_for_projection_on_connection(
         connection,
         LearningOfferingQuery {
             academic_term_id: term,
         },
-        &all,
+        access,
+        purpose,
     )
     .await?;
-    let groups = super::groups::list_for_term_on_connection(connection, term, &all).await?;
-    let targets: HashMap<Uuid,i32> = DbSession::new(connection).query_as("academic_delivery.current.weekly_targets", "SELECT id,weekly_period_target FROM learning_offerings WHERE academic_term_id=$1 AND academic_year_id=$2 ORDER BY id").bind(term).bind(year).fetch_all().await?.into_iter().collect();
+    let offering_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let groups =
+        super::groups::list_for_projection_on_connection(connection, term, access, purpose).await?;
     let mut by_offering: HashMap<Uuid, Vec<DeliveryGroup>> = HashMap::new();
     for group in groups {
         by_offering
@@ -116,14 +168,12 @@ pub async fn workspace_on_connection(
                     .collect(),
             });
     }
-    let sources: Vec<(Uuid,Uuid)> = DbSession::new(connection).query_as("academic_delivery.current.curriculum_source_ids", "SELECT source.learning_offering_id,source.publication_id FROM learning_offering_curriculum_sources source JOIN learning_offerings offering ON offering.id=source.learning_offering_id WHERE offering.academic_term_id=$1 AND offering.academic_year_id=$2 ORDER BY source.learning_offering_id,source.publication_id").bind(term).bind(year).fetch_all().await?;
+    let sources: Vec<(Uuid,Uuid)> = DbSession::new(connection).query_as("academic_delivery.current.curriculum_source_ids", "SELECT source.learning_offering_id,source.publication_id FROM learning_offering_curriculum_sources source JOIN learning_offerings offering ON offering.id=source.learning_offering_id WHERE offering.academic_term_id=$1 AND offering.academic_year_id=$2 AND offering.id=ANY($3) ORDER BY source.learning_offering_id,source.publication_id").bind(term).bind(year).bind(&offering_ids).fetch_all().await?;
     let source_ids = sources.iter().map(|(_, id)| *id).collect::<Vec<_>>();
     let publications: Vec<crate::models::CurriculumPublicationSource> = DbSession::new(connection).query_as("academic_delivery.current.curriculum_sources", "SELECT publication.edition_id,publication.id AS publication_id,publication.publication_no,publication.revision_year,publication.name AS edition_name FROM curriculum_publications publication WHERE publication.id=ANY($1) ORDER BY publication.edition_id,publication.id").bind(source_ids).fetch_all().await?;
-    let target_rooms:Vec<(Uuid,Uuid)>=DbSession::new(connection).query_as("academic_delivery.current.target_homerooms", "SELECT DISTINCT target.learning_offering_id,room.id FROM learning_offering_targets target JOIN homerooms room ON room.academic_year_id=target.academic_year_id AND room.is_active AND ((target.target_kind='homeroom' AND target.homeroom_id=room.id) OR (target.target_kind='grade_program' AND target.grade_level_id=room.grade_level_id AND target.study_program_id=room.study_program_id)) WHERE target.academic_year_id=$1 AND target.academic_term_id=$2 ORDER BY target.learning_offering_id,room.id LIMIT 250001").bind(year).bind(term).fetch_all().await?;
-    if target_rooms.len() > 250000 {
-        return Err(AppError::ValidationError(
-            "Current Delivery target coverage exceeds supported size".into(),
-        ));
+    let target_rooms:Vec<(Uuid,Uuid)>=DbSession::new(connection).query_as("academic_delivery.current.target_homerooms", "SELECT DISTINCT target.learning_offering_id,room.id FROM learning_offering_targets target JOIN homerooms room ON room.academic_year_id=target.academic_year_id AND room.is_active AND ((target.target_kind='homeroom' AND target.homeroom_id=room.id) OR (target.target_kind='grade_program' AND target.grade_level_id=room.grade_level_id AND target.study_program_id=room.study_program_id)) WHERE target.academic_year_id=$1 AND target.academic_term_id=$2 AND target.learning_offering_id=ANY($3) ORDER BY target.learning_offering_id,room.id LIMIT $4").bind(year).bind(term).bind(&offering_ids).bind((MAX_TARGET_RELATIONS+1) as i64).fetch_all().await?;
+    if target_rooms.len() > MAX_TARGET_RELATIONS {
+        return Err(complete_projection_overflow());
     }
     let mut target_rooms_by_offering: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
     for (offering, room) in target_rooms {
@@ -151,9 +201,7 @@ pub async fn workspace_on_connection(
             owning_organization_unit_id: row.owning_organization_unit_id,
             source_requirement_kind: row.source_requirement_kind,
             source_requirement_id: row.source_requirement_id,
-            weekly_period_target: *targets.get(&row.id).ok_or_else(|| {
-                AppError::InternalServerError("Current weekly target is missing".into())
-            })?,
+            weekly_period_target: row.weekly_period_target,
             catalog: row.snapshot,
             targets: row.targets,
             homeroom_ids,
@@ -196,7 +244,61 @@ pub async fn teacher_allocations_on_connection(
     if offering_ids.is_empty() {
         return Ok(vec![]);
     }
-    Ok(DbSession::new(connection).query_as("academic_delivery.current.teacher_allocations", "SELECT offering.academic_year_id,offering.academic_term_id,offering.id AS learning_offering_id,group_row.id AS learning_group_id,teacher.id AS assignment_id,teacher.teacher_id,teacher.role FROM learning_offerings offering JOIN learning_groups group_row ON group_row.learning_offering_id=offering.id JOIN learning_group_teachers teacher ON teacher.learning_group_id=group_row.id JOIN users account ON account.id=teacher.teacher_id AND account.status='active' AND account.user_type='staff' WHERE offering.id=ANY($1) ORDER BY offering.id,group_row.id,teacher.teacher_id,teacher.id").bind(offering_ids).fetch_all().await?)
+    allocations_on_connection(connection, AllocationScope::Offerings(offering_ids), None).await
+}
+
+enum AllocationScope<'a> {
+    Term(Uuid),
+    Offerings(&'a [Uuid]),
+}
+
+async fn allocations_on_connection(
+    connection: &mut PgConnection,
+    scope: AllocationScope<'_>,
+    actor: Option<Uuid>,
+) -> Result<Vec<DeliveryTeacherAllocation>, AppError> {
+    let (term, offerings) = match scope {
+        AllocationScope::Term(term) => (Some(term), &[][..]),
+        AllocationScope::Offerings(ids) => (None, ids),
+    };
+    Ok(DbSession::new(connection).query_as("academic_delivery.current.teacher_allocations", "SELECT offering.academic_year_id,offering.academic_term_id,offering.id AS learning_offering_id,group_row.id AS learning_group_id,teacher.id AS assignment_id,teacher.teacher_id,teacher.role FROM learning_offerings offering JOIN learning_groups group_row ON group_row.learning_offering_id=offering.id AND group_row.academic_term_id=offering.academic_term_id AND group_row.academic_year_id=offering.academic_year_id JOIN learning_group_teachers teacher ON teacher.learning_group_id=group_row.id AND teacher.academic_term_id=group_row.academic_term_id AND teacher.academic_year_id=group_row.academic_year_id JOIN users account ON account.id=teacher.teacher_id AND account.status='active' AND account.user_type='staff' WHERE (offering.academic_term_id=$1 OR offering.id=ANY($2)) AND ($3::uuid IS NULL OR teacher.teacher_id=$3) ORDER BY offering.id,group_row.id,teacher.teacher_id,teacher.id").bind(term).bind(offerings).bind(actor).fetch_all().await?)
+}
+
+pub(crate) async fn assigned_offering_ids_for_term_on_connection(
+    connection: &mut PgConnection,
+    term: Uuid,
+    actor: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    Ok(
+        allocations_on_connection(connection, AllocationScope::Term(term), Some(actor))
+            .await?
+            .into_iter()
+            .map(|row| row.learning_offering_id)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+    )
+}
+
+pub(crate) async fn assigned_offering_ids_on_connection(
+    connection: &mut PgConnection,
+    offerings: &[Uuid],
+    actor: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    if offerings.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(allocations_on_connection(
+        connection,
+        AllocationScope::Offerings(offerings),
+        Some(actor),
+    )
+    .await?
+    .into_iter()
+    .map(|row| row.learning_offering_id)
+    .collect::<BTreeSet<_>>()
+    .into_iter()
+    .collect())
 }
 
 pub async fn group_teacher_assignments_on_connection(
@@ -234,7 +336,15 @@ pub async fn assigned_group_ids_on_connection(
     term: Uuid,
     actor: Uuid,
 ) -> Result<CurrentTeacherGroupIds, AppError> {
-    let learning_group_ids = DbSession::new(connection).scalar("academic_delivery.current.assigned_groups", "SELECT DISTINCT group_row.id FROM learning_groups group_row JOIN learning_offerings offering ON offering.id=group_row.learning_offering_id JOIN learning_group_teachers teacher ON teacher.learning_group_id=group_row.id JOIN users account ON account.id=teacher.teacher_id AND account.status='active' AND account.user_type='staff' WHERE offering.academic_year_id=$1 AND offering.academic_term_id=$2 AND group_row.academic_year_id=$1 AND group_row.academic_term_id=$2 AND teacher.teacher_id=$3 ORDER BY group_row.id").bind(year).bind(term).bind(actor).fetch_all().await?;
+    let learning_group_ids =
+        allocations_on_connection(connection, AllocationScope::Term(term), Some(actor))
+            .await?
+            .into_iter()
+            .filter(|row| row.academic_year_id == year)
+            .map(|row| row.learning_group_id)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
     Ok(CurrentTeacherGroupIds { learning_group_ids })
 }
 

@@ -217,7 +217,7 @@ pub(crate) async fn get_canonical_workspace(
         .fetch_all()
         .await?;
 
-    let source = school_academic_delivery::services::current::workspace_on_connection(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         connection,
         version.academic_year_id,
         version.academic_term_id,

@@ -1629,20 +1629,20 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         applied.created_offering_count > 0,
         "the first receipt must bind a newly created offering date"
     );
-    let changed_date = offerings::apply_from_curriculum(
+    let changed_request = offerings::apply_from_curriculum(
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
 
-            source_hash: preview.source_hash.clone(),
+            source_hash: "changed-current-source".into(),
             idempotency_key,
             choices: default_preparation_choices(&preview),
         },
     )
     .await;
-    assert!(matches!(changed_date, Err(AppError::Conflict(_))));
+    assert!(matches!(changed_request, Err(AppError::Conflict(_))));
 
     assert!(!applied.group_ids.is_empty());
     let course_totals: Vec<String> = sqlx::query_scalar(
@@ -2241,12 +2241,37 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
     let query = StudentActivityRegistrationQuery {
         academic_term_id: context.term_id,
     };
+    let closed = activities::list_registration_options(&pool, student_id, query.clone())
+        .await
+        .unwrap();
     assert!(
-        activities::list_registration_options(&pool, student_id, query.clone())
-            .await
-            .unwrap()
-            .is_empty()
+        closed
+            .iter()
+            .filter(|item| item.id == offering.id)
+            .flat_map(|item| &item.groups)
+            .all(|group| !group.registration_open)
     );
+    assert!(matches!(
+        activities::enroll(&pool, student_id, first_group.id, query.clone()).await,
+        Err(AppError::Conflict(_))
+    ));
+    for group in [&first_group, &second_group] {
+        groups::update(
+            &pool,
+            context.teacher_id,
+            group.id,
+            UpdateLearningGroupRequest {
+                row_version: group.row_version,
+                name: group.name.clone(),
+                description: group.description.clone(),
+                capacity: group.capacity,
+                preferred_room_ids: group.preferred_room_ids.clone(),
+                registration_open: true,
+            },
+        )
+        .await
+        .unwrap();
+    }
 
     let available = activities::list_registration_options(&pool, student_id, query.clone())
         .await
@@ -2298,28 +2323,52 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert_eq!(
-        audit_events,
-        vec![
-            "activity.self_registered".to_string(),
-            "activity.self_unregistered".to_string()
-        ]
+    assert!(
+        audit_events.is_empty(),
+        "current operational saves do not retain business edit history"
     );
 }
 
 #[tokio::test]
 async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_batch_list").await;
-    let academic_term_id: Uuid = sqlx::query_scalar(
-        r#"SELECT academic_term_id
-           FROM learning_offerings
-           GROUP BY academic_term_id
-           ORDER BY COUNT(*) DESC, academic_term_id
-           LIMIT 1"#,
+    let context = planning_runtime_context(&pool).await;
+    let course = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let (activity_version_id,scheduling_mode):(Uuid,ActivitySchedulingMode)=sqlx::query_as("SELECT id,scheduling_mode FROM activity_versions WHERE status='published' AND effective_from<=$1 ORDER BY id LIMIT 1").bind(runtime_operation_date()).fetch_one(&pool).await.unwrap();
+    let activity = offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            academic_term_id: context.term_id,
+            weekly_period_target: 1,
+            create_homeroom_groups: false,
+            activity_version_id,
+            curriculum_activity_requirement_id: None,
+            targets: vec![OfferingTargetInput {
+                target_kind: OfferingTargetKind::Homeroom,
+                homeroom_id: Some(context.homeroom_id),
+                grade_level_id: context.grade_level_id,
+                study_program_id: context.study_program_id,
+            }],
+            registration_type: ActivityRegistrationType::Assigned,
+            scheduling_mode,
+            capacity: None,
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: None,
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: false,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".into(), "fail".into()],
+            },
+        }),
     )
-    .fetch_one(&pool)
     .await
     .unwrap();
+    let academic_term_id = context.term_id;
 
     let values = offerings::list(
         &pool,
@@ -2333,6 +2382,8 @@ async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
     .unwrap();
 
     assert!(values.len() >= 2);
+    assert!(values.iter().any(|offering| offering.id == course.id));
+    assert!(values.iter().any(|offering| offering.id == activity.id));
     assert!(values.iter().all(|offering| !offering.targets.is_empty()));
     assert!(
         values
@@ -3456,12 +3507,12 @@ async fn list_groups_for_term_rejects_unbounded_workspace() {
     sqlx::query(
         r#"INSERT INTO learning_groups (
                id, learning_offering_id, academic_term_id, academic_year_id,
-               code, name, status, roster_status
+               code, name, registration_open
            )
            SELECT gen_random_uuid(), $1, $2, $3,
                   'LIMIT-' || to_char(sequence, 'FM00000'),
                   'กลุ่มทดสอบขีดจำกัด ' || sequence::text,
-                  'draft', 'draft'
+                  false
            FROM generate_series(1, 2001) AS sequence"#,
     )
     .bind(offering_id)
@@ -3882,3 +3933,160 @@ async fn current_workspace(
 
 #[path = "composed_deletion_tests.rs"]
 mod composed_deletion_tests;
+
+#[tokio::test]
+async fn current_assigned_discovery_requires_active_staff_and_keeps_saved_management_facts() {
+    use school_academic_delivery::policies::learning_offering_access_policy as access;
+    use school_authorization::{AcademicResourceAccess, ActorContext};
+    use school_permissions::registry::codes;
+    let pool = prepare_delivery_runtime_fixture("delivery_active_assignment_discovery").await;
+    let context = planning_runtime_context(&pool).await;
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            registration_open: false,
+            name: "Current assignment".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let assignment = group.teacher_assignments[0].id;
+    let actor = ActorContext {
+        user_id: context.teacher_id,
+        permissions: vec![codes::LEARNING_OFFERING_MANAGE_ASSIGNED.into()],
+    };
+    let assigned = AcademicResourceListFilter {
+        assigned_actor_id: Some(actor.user_id),
+        ..Default::default()
+    };
+    assert!(
+        offerings::list(
+            &pool,
+            LearningOfferingQuery {
+                academic_term_id: context.term_id
+            },
+            &assigned
+        )
+        .await
+        .unwrap()
+        .iter()
+        .any(|row| row.id == offering.id)
+    );
+    assert_ne!(
+        access::learning_offering_access(
+            &pool,
+            &actor,
+            offering.id,
+            access::OfferingAction::Manage
+        )
+        .await
+        .unwrap(),
+        AcademicResourceAccess::None
+    );
+    for (kind, status) in [
+        ("staff", "inactive"),
+        ("student", "active"),
+        ("parent", "active"),
+    ] {
+        sqlx::query("UPDATE users SET user_type=$2,status=$3 WHERE id=$1")
+            .bind(actor.user_id)
+            .bind(kind)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            offerings::list(
+                &pool,
+                LearningOfferingQuery {
+                    academic_term_id: context.term_id
+                },
+                &assigned
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        assert!(
+            groups::list_for_term(&pool, context.term_id, &assigned)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            current::workspace(&pool, context.year_id, context.term_id, &assigned)
+                .await
+                .unwrap()
+                .offerings
+                .is_empty()
+        );
+        assert_eq!(
+            access::learning_offering_access(
+                &pool,
+                &actor,
+                offering.id,
+                access::OfferingAction::Manage
+            )
+            .await
+            .unwrap(),
+            AcademicResourceAccess::None
+        );
+        assert!(matches!(
+            access::require_learning_offering_batch_access(
+                &pool,
+                &actor,
+                &[offering.id],
+                access::OfferingAction::Manage
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+        let mut detail = offerings::get(&pool, offering.id).await.unwrap();
+        access::populate_offering_management_capabilities(&pool, &actor, &mut [&mut detail])
+            .await
+            .unwrap();
+        assert!(!detail.can_manage);
+        let school = AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        };
+        let management = current::workspace(&pool, context.year_id, context.term_id, &school)
+            .await
+            .unwrap();
+        let saved = management
+            .offerings
+            .iter()
+            .find(|row| row.id == offering.id)
+            .unwrap()
+            .groups
+            .iter()
+            .find(|row| row.id == group.id)
+            .unwrap();
+        assert_eq!(saved.teachers.len(), 1);
+        assert_eq!(saved.teachers[0].assignment_id, assignment);
+        assert_eq!(saved.teachers[0].teacher_id, actor.user_id);
+        assert!(!saved.teachers[0].is_active);
+    }
+}

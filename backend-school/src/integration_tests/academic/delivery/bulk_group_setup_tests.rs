@@ -89,7 +89,7 @@ async fn facts(f: &BulkFixture) -> String {
 }
 
 #[tokio::test]
-async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_rosters() {
+async fn bulk_group_setup_preserves_exceptions_and_applies_only_explicit_current_roster_tracking() {
     let f = fixture("bulk_setup_preserve").await;
     let secondary = teacher(&f.pool, "ร่วมสอน").await;
     let assistant = teacher(&f.pool, "ผู้ช่วย").await;
@@ -127,13 +127,14 @@ async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_
         .collect();
     let untouched =
         serde_json::to_value(groups::get(&f.pool, f.group_ids[2]).await.unwrap()).unwrap();
-    let memberships: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM learning_group_students WHERE learning_group_id=ANY($1)",
-    )
-    .bind(&f.group_ids)
-    .fetch_one(&f.pool)
-    .await
-    .unwrap();
+    let roster =
+        school_academic_core::services::homeroom_roster::get_roster(&f.pool, f.context.homeroom_id)
+            .await
+            .unwrap();
+    assert!(
+        !roster.students.is_empty(),
+        "explicit tracking must materialize a real roster"
+    );
     let mut input = request(&f, selected_teacher).await;
     let today = sqlx::query_scalar("SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date")
         .fetch_one(&f.pool)
@@ -191,15 +192,14 @@ async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_
     let result = result.response;
     assert!(result.delivery_row_version > input.delivery_row_version);
     for group in &result.groups {
-        assert_eq!(
-            group.row_version,
-            input
-                .groups
-                .iter()
-                .find(|t| t.learning_group_id == group.id)
-                .unwrap()
-                .row_version
-                + 1
+        assert!(
+            group.row_version
+                > input
+                    .groups
+                    .iter()
+                    .find(|t| t.learning_group_id == group.id)
+                    .unwrap()
+                    .row_version
         );
         for assignment in group
             .teacher_assignments
@@ -241,16 +241,27 @@ async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_
         serde_json::to_value(groups::get(&f.pool, f.group_ids[2]).await.unwrap()).unwrap(),
         untouched
     );
+    let actual: Vec<(Uuid,Uuid,Uuid,NaiveDate,Option<NaiveDate>,String,String)> = sqlx::query_as("SELECT learning_group_id,student_academic_year_id,student_id,joined_at,left_at,membership_status,roster_source FROM learning_group_students WHERE learning_group_id=ANY($1) ORDER BY learning_group_id,student_academic_year_id").bind(&f.group_ids).fetch_all(&f.pool).await.unwrap();
+    let mut expected = Vec::new();
+    for group in &f.group_ids[..2] {
+        for student in &roster.students {
+            expected.push((
+                *group,
+                student.student_academic_year_id,
+                student.student_id,
+                student.start_date.unwrap_or(today).max(today),
+                None,
+                "active".into(),
+                "homeroom_tracking".into(),
+            ));
+        }
+    }
+    expected.sort_by_key(|row| (row.0, row.1));
     assert_eq!(
-        sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM learning_group_students WHERE learning_group_id=ANY($1)"
-        )
-        .bind(&f.group_ids)
-        .fetch_one(&f.pool)
-        .await
-        .unwrap(),
-        memberships
+        actual, expected,
+        "only explicitly selected groups receive exact current dated memberships"
     );
+    let membership_facts: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM learning_group_students m WHERE learning_group_id=ANY($1)").bind(&f.group_ids).fetch_one(&f.pool).await.unwrap();
     assert!(
         result
             .roster_tracking
@@ -281,6 +292,7 @@ async fn bulk_group_setup_preserves_exceptions_and_other_roles_and_never_builds_
             .filter(|assignment| assignment.teacher_id == selected_teacher)
             .all(|assignment| assignment.id.get_version_num() == 7)
     );
+    assert_eq!(membership_facts, sqlx::query_scalar::<_,serde_json::Value>("SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM learning_group_students m WHERE learning_group_id=ANY($1)").bind(&f.group_ids).fetch_one(&f.pool).await.unwrap(), "teacher-only replacement preserves every saved membership identity, span and status");
     let first_after = replacement
         .response
         .groups
@@ -556,7 +568,7 @@ async fn bulk_group_setup_saved_lists_use_grade_and_natural_room_before_limits()
         ordered_ids
     );
     // Enough alphabetically early unanchored rows to expose sorting after LIMIT.
-    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) SELECT gen_random_uuid(),$1,$2,$3,'LIMIT-'||n,'000 filler '||n,'draft','draft' FROM generate_series(1,505) n")
+    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,registration_open) SELECT gen_random_uuid(),$1,$2,$3,'LIMIT-'||n,'000 filler '||n,false FROM generate_series(1,505) n")
         .bind(f.offering_id).bind(f.context.term_id).bind(f.context.year_id).execute(&f.pool).await.unwrap();
     let limited = groups::list(&f.pool, f.offering_id).await.unwrap();
     assert_eq!(limited.len(), 500);

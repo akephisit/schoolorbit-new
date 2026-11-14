@@ -22,7 +22,7 @@ const maxMessageBytes = 64 * 1024 * 1024;
 const nginxImage = 'public.ecr.aws/docker/library/nginx:stable-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94';
 const workspace = () => ({
  timetable: { id: current, academicYearId: year, academicTermId: term, bellScheduleId: epoch, rowVersion: 1 },
- deliveryRowVersion: 1, totalTimetableBlockCount: 0, summary: {},
+ deliveryRowVersion: 1, totalBlockCount: 0, summary: {},
  ...Object.fromEntries(['sourceIssues', 'bellPeriods', 'blocks', 'ordinaryDemands', 'synchronizedDemands', 'learningGroups', 'homerooms', 'rooms', 'staff', 'offeringSubjectGroups'].map(key => [key, []]))
 });
 const sync = () => ({ epoch, seq: 0, type: 'TimetableStateSync', payload: {
@@ -105,7 +105,7 @@ async function fixtureServer(t, { mode = 'current', tls, requiredProbe = '', fra
   if (mode === 'masked-server') { socket.write(Buffer.from([0x81, 0x80])); return; }
   if (mode === 'large-thai') {
    state.payload.workspace.blocks = [{ id: epoch, note: 'ก'.repeat(6 * 1024 * 1024) }];
-   state.payload.workspace.totalTimetableBlockCount = 1;
+   state.payload.workspace.totalBlockCount = 1;
   }
   const body = Buffer.from(JSON.stringify(state));
   if (mode === 'large-thai') assert.ok(body.length > 16 * 1024 * 1024 && body.length < maxMessageBytes);
@@ -249,6 +249,13 @@ test('standalone smoke fails closed for invalid upgrades, scope, frames, private
  assert.equal(unauthorized.status, 1); assert.equal(observations.commands.length, 0);
  const invalidHttp = await runProbe(directory, `http://localhost:${port}`, { httpWorkspace: { ...workspace(), timetable: { ...workspace().timetable, academicTermId: epoch } } });
  assert.equal(invalidHttp.status, 1); assert.equal(observations.requests.length, 1, 'invalid authoritative HTTP scope must prevent upgrade');
+ const legacyCount = workspace();
+ legacyCount.totalTimetableBlockCount = legacyCount.totalBlockCount;
+ delete legacyCount.totalBlockCount;
+ const wrongContract = await runProbe(directory, `http://localhost:${port}`, { httpWorkspace: legacyCount });
+ assert.equal(wrongContract.status, 1);
+ assert.match(wrongContract.stdout, /^FAIL fixture input/);
+ assert.equal(observations.requests.length, 1, 'a fabricated legacy count field cannot reach the real socket');
 });
 
 function certificate(directory) {

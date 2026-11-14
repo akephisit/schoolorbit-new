@@ -77,7 +77,7 @@
 	});
 </script>
 
-<PageShell title={data.title} description="ภาพรวมตารางสอบและการคุมสอบที่ประกาศแล้ว">
+<PageShell title={data.title} description="ภาพรวมตารางสอบและการคุมสอบปัจจุบัน">
 	{#if !academicTermId}
 		<PageState
 			title="เลือกภาคเรียนก่อน"

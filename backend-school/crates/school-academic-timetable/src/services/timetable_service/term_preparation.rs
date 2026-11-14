@@ -116,18 +116,20 @@ pub async fn apply(
             target_ids: Vec::new(),
         });
     };
-    let target_delivery = school_academic_delivery::services::current::workspace_on_connection(
-        tx,
-        context.target_year_id,
-        context.target_term_id,
-    )
-    .await?;
-    let source_delivery = school_academic_delivery::services::current::workspace_on_connection(
-        tx,
-        context.source_year_id,
-        context.source_term_id,
-    )
-    .await?;
+    let target_delivery =
+        school_academic_delivery::services::current::complete_workspace_on_connection(
+            tx,
+            context.target_year_id,
+            context.target_term_id,
+        )
+        .await?;
+    let source_delivery =
+        school_academic_delivery::services::current::complete_workspace_on_connection(
+            tx,
+            context.source_year_id,
+            context.source_term_id,
+        )
+        .await?;
     for offering in &source_delivery.offerings {
         let mapped_id = mapped(
             mappings,

@@ -1,4 +1,3 @@
-import { offeringStartsOn, selectOfferingStartDate } from './fixtures/offering-start-date';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import {
@@ -9,7 +8,8 @@ import {
 } from './helpers/curriculum-fixtures';
 
 test.use({ serviceWorkers: 'block' });
-test.describe.configure({ mode: 'serial' });
+// Every case owns its page and mock graph; a failure must not suppress independent coverage.
+test.describe.configure({ mode: 'default' });
 
 function fulfill(route: Route, data: unknown, status = 200) {
 	return route.fulfill({
@@ -31,9 +31,7 @@ function homeroomWorkspace() {
 	return {
 		academicYearId: ids.year,
 		academicTermId: ids.term,
-		deliveryVersionId: ids.deliveryVersion,
-		deliveryVersionStatus: 'published',
-		deliveryVersionEffectiveFrom: '2026-08-15',
+		rowVersion: 1,
 		homerooms: [
 			{
 				homeroom: { id: ids.homeroom, name: 'ม.1/1', gradeLevelId: ids.grade, gradeLevel: 'ม.1' },
@@ -79,9 +77,6 @@ function homeroomWorkspace() {
 								id: ids.group,
 								code: 'M1-1-MATH',
 								name: 'คณิตศาสตร์ ม.1/1',
-								status: 'published',
-								rosterStatus: 'published',
-								teachersLocked: true,
 								primaryTeacherCount: 1,
 								timetableEntryCount: 2,
 								homeroomIds: [ids.homeroom],
@@ -184,42 +179,13 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				});
 				return;
 			}
-			if (url.pathname === '/api/academic/delivery-versions') {
-				await fulfill(route, [
-					{
-						id: ids.deliveryVersion,
-						academicYearId: ids.year,
-						academicTermId: ids.term,
-						sourceVersionId: null,
-						changeSetId: null,
-						effectiveFrom: '2026-08-15',
-						effectiveUntil: null,
-						status: 'published',
-						rowVersion: 1,
-						offeringCount: 2,
-						groupCount: 1,
-						teacherAssignmentCount: 1,
-						updatedAt: '2026-08-15T00:00:00Z'
-					}
-				]);
-				return;
-			}
-			if (url.pathname === `/api/academic/delivery-versions/${ids.deliveryVersion}`) {
+			if (url.pathname === '/api/academic/delivery/workspace') {
 				await fulfill(route, {
-					id: ids.deliveryVersion,
 					academicYearId: ids.year,
 					academicTermId: ids.term,
-					sourceVersionId: null,
-					effectiveFrom: '2026-08-15',
-					effectiveUntil: null,
-					status: 'published',
 					rowVersion: 1,
-					createdBy: ids.user,
-					publishedBy: ids.user,
-					createdAt: '2026-08-15T00:00:00Z',
-					updatedAt: '2026-08-15T00:00:00Z',
-					publishedAt: '2026-08-15T00:00:00Z',
-					snapshot: { offerings: [] }
+					offerings: [],
+					courseMetadata: []
 				});
 				return;
 			}
@@ -385,10 +351,6 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 				);
 				return;
 			}
-			if (url.pathname === '/api/academic/term-change-sets') {
-				await fulfill(route, []);
-				return;
-			}
 			if (url.pathname === '/api/menu/user') {
 				await fulfill(route, { groups: [] });
 				return;
@@ -430,7 +392,7 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 }
 
 const levelPath = `/staff/academic/curricula/${ids.curriculum}/levels/${ids.curriculumVersion}`;
-const alignmentQuery = `academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}&deliveryVersionId=${ids.deliveryVersion}`;
+const alignmentQuery = `academicYearId=${ids.year}&academicTermId=${ids.term}&studyProgramId=${ids.program}`;
 
 test('delivery links the selected opening to the exact edition and educational level without row fan-out', async ({
 	page
@@ -444,7 +406,7 @@ test('delivery links the selected opening to the exact edition and educational l
 		`${levelPath}?${alignmentQuery}`
 	);
 	expect(mocked.workspaceQueries).toHaveLength(1);
-	expect(mocked.workspaceQueries[0]?.get('deliveryVersionId')).toBe(ids.deliveryVersion);
+	expect(mocked.workspaceQueries[0]?.has('deliveryVersionId')).toBe(false);
 	expect(
 		mocked.academicRequests.filter(
 			(r) => r.includes('/offerings/') || r.includes('/learning-groups')
@@ -707,17 +669,17 @@ async function mockSharedComparison(
 		schedulingMode?: 'independent' | 'synchronized';
 		failWorkspace?: boolean;
 		wrongContext?: boolean;
-		noVersion?: boolean;
+		emptyCurrentOfferings?: boolean;
 		failPreview?: boolean;
 	} = {}
 ) {
 	await mockDeliveryNavigation(page, { manager: options.manager, readiness: 'course' });
 	const workspace = navigationWorkspace(),
-		version = navigationDelivery();
+		delivery = navigationDelivery();
 	const kind = options.kind ?? 'course',
 		schedulingMode = kind === 'activity' ? (options.schedulingMode ?? 'independent') : null;
 	const oldId = kind === 'course' ? navOfferings.basic21 : navOfferings.club;
-	const old = version.offerings.find((item) => item.id === oldId)!;
+	const old = delivery.offerings.find((item) => item.id === oldId)!;
 	old.code = kind === 'course' ? 'ว30104' : 'ACT-OLD';
 	old.name = kind === 'course' ? 'วิทยาศาสตร์*' : 'กิจกรรมเดิม';
 	for (const [index, room] of workspace.homerooms.entries()) {
@@ -768,7 +730,10 @@ async function mockSharedComparison(
 			reason: 'รายการเดิมยังเชื่อมห้องไม่ได้'
 		}
 	];
-	if (options.noVersion) {
+	if (options.emptyCurrentOfferings) {
+		delivery.offerings = [];
+		workspace.unlinked = [];
+		for (const room of workspace.homerooms) room.extraOfferings = [];
 	}
 	let failWorkspace = options.failWorkspace ?? false,
 		wrongContext = options.wrongContext ?? false,
@@ -795,15 +760,11 @@ async function mockSharedComparison(
 			wrongContext ? { ...workspace, academicTermId: navIds.activeTerm } : workspace
 		);
 	});
-	await page.route(`**/api/academic/delivery-versions/${navIds.version}`, (route) =>
-		fulfill(route, version)
-	);
-	if (options.noVersion)
-		await page.route('**/api/academic/delivery-versions?*', (route) => fulfill(route, []));
+	await page.route('**/api/academic/delivery/workspace?*', (route) => fulfill(route, delivery));
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) => {
 		previewAttempts++;
 		if (options.failPreview && previewAttempts === 1)
-			return fulfill(route, 'ฉบับทะเบียนนี้เริ่มใช้หลังวันที่เริ่มเปิดสอนที่เลือก', 409);
+			return fulfill(route, 'ฉบับทะเบียนที่เลือกไม่พร้อมใช้งาน', 409);
 		return fulfill(route, {
 			academicTermId: navIds.term,
 			curriculumSources: [],
@@ -854,10 +815,9 @@ async function mockSharedComparison(
 		subjectGroupId: kind === 'course' ? navIds.math : 'all',
 		offeringSearch: old.name
 	});
-	if (!options.noVersion) query.set('deliveryVersionId', navIds.version);
 	return {
 		workspace,
-		version,
+		delivery,
 		old,
 		origin: `/staff/academic/delivery?${query}`,
 		academicWrites,
@@ -893,7 +853,7 @@ for (const width of [390, 1280])
 				await trigger.focus();
 				await page.keyboard.press('Enter');
 				const report = page.getByRole('dialog', {
-					name: 'ผลเทียบหลักสูตรของรุ่นเปิดสอน',
+					name: 'ผลเทียบหลักสูตรกับการเปิดสอนปัจจุบัน',
 					exact: true
 				});
 				await expect(report).toBeVisible();
@@ -985,44 +945,30 @@ for (const mode of ['course', 'independent', 'synchronized'] as const)
 		await expect(preparation).toContainText('ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ');
 		if (mode === 'synchronized') await expect(preparation).toContainText('รายการกลาง');
 		else await expect(preparation).not.toContainText('รายการเปิดสอนกลางเพียงรายการเดียว');
-		await selectOfferingStartDate(page);
 		await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
-		await expect(preparation.getByRole('alert')).toContainText(
-			'ฉบับทะเบียนนี้เริ่มใช้หลังวันที่เริ่มเปิดสอนที่เลือก'
-		);
-		await selectOfferingStartDate(page);
+		await expect(preparation.getByRole('alert')).toContainText('ฉบับทะเบียนที่เลือกไม่พร้อมใช้งาน');
 		await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 		const applyButton = preparation.getByRole('button', {
 			name: mode === 'course' ? 'ยืนยันเปิดรายวิชา' : 'เปิดใช้งานกิจกรรม',
 			exact: true
 		});
 		await expect(applyButton).toBeEnabled();
-		const actualDate = preparation.getByRole('button', {
-			name: 'วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร',
-			exact: true
-		});
-		await actualDate.click();
-		await page
-			.locator('[data-calendar-day]:not([data-outside-month])')
-			.filter({ hasText: /^16$/ })
-			.click();
-		await expect(applyButton).toBeDisabled();
-		await expect(preparation.getByRole('alert')).toContainText('วันที่เริ่มเปิดสอนเปลี่ยน');
-		await actualDate.click();
-		await page
-			.locator('[data-calendar-day]:not([data-outside-month])')
-			.filter({ hasText: /^15$/ })
-			.click();
-		await expect(applyButton).toBeEnabled();
+		await expect(
+			preparation.getByRole('button', {
+				name: 'วันที่เริ่มเปิดสอนจริงสำหรับรายการจากหลักสูตร',
+				exact: true
+			})
+		).toHaveCount(0);
 		await applyButton.click();
 		await expect(preparation).toHaveCount(0);
 		const apply = fixture.academicWrites.find((write) =>
 			write.path.endsWith('/apply-from-curriculum')
 		)!;
+		expect(apply.body.sourceHash).toBe('e'.repeat(64));
+		expect(apply.body.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/);
 		expect(apply.body).toMatchObject({
 			academicTermId: navIds.term,
 			studyProgramIds: [navIds.program],
-			deliveryVersionId: navIds.version,
 			choices: [
 				{
 					proposalId: 'missing-current-requirement',
@@ -1037,7 +983,7 @@ for (const mode of ['course', 'independent', 'synchronized'] as const)
 			fixture.academicWrites.every((write) => !write.path.includes('/term-change-sets/'))
 		).toBe(true);
 		expect(
-			fixture.version.offerings.some(
+			fixture.delivery.offerings.some(
 				(item) => item.id === fixture.old.id && item.name === fixture.old.name
 			)
 		).toBe(true);
@@ -1100,13 +1046,11 @@ for (const mode of ['course', 'independent', 'synchronized'] as const) {
 			});
 			await expect(dialog).toContainText('การเพิ่มนี้ครอบคลุมทุกห้องที่ยังขาดฉบับนี้ รวม 2 ห้อง');
 			await expect(dialog).toContainText('ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ');
-			await selectOfferingStartDate(page);
 			await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 			await expect(dialog.getByRole('alert')).toHaveText(
-				'ฉบับทะเบียนนี้เริ่มใช้หลังวันที่เริ่มเปิดสอนที่เลือก กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
+				'ฉบับทะเบียนที่เลือกไม่พร้อมใช้งาน กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
 			);
 			await expect(dialog).toContainText(mode === 'course' ? 'วิทยาศาสตร์' : 'กิจกรรมใหม่');
-			await selectOfferingStartDate(page);
 			await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 			await page.screenshot({
 				path: testInfo.outputPath('inline-curriculum-preparation.png'),
@@ -1127,7 +1071,6 @@ for (const mode of ['course', 'independent', 'synchronized'] as const) {
 			).toMatchObject({
 				academicTermId: navIds.term,
 				studyProgramIds: [navIds.program],
-				deliveryVersionId: navIds.version,
 				choices: [
 					{
 						proposalId: 'missing-current-requirement',
@@ -1136,7 +1079,7 @@ for (const mode of ['course', 'independent', 'synchronized'] as const) {
 				]
 			});
 			await expect(page).toHaveURL(origin);
-			expect(fixture.version.offerings).toContainEqual(fixture.old);
+			expect(fixture.delivery.offerings).toContainEqual(fixture.old);
 		});
 	}
 }
@@ -1145,7 +1088,7 @@ test('inline missing requirements paginate in the URL even with no actual offeri
 	page
 }) => {
 	const fixture = await mockSharedComparison(page, { manager: true });
-	fixture.version.offerings = [];
+	fixture.delivery.offerings = [];
 	fixture.workspace.unlinked = [];
 	for (const room of fixture.workspace.homerooms) {
 		room.expectedCount = 10;
@@ -1235,15 +1178,14 @@ test('inline missing requirements wait for the workspace and distinguish rooms w
 	expect(fixture.academicWrites).toHaveLength(0);
 });
 
-for (const condition of ['reader', 'context', 'failure', 'noVersion'] as const) {
+for (const condition of ['reader', 'context', 'failure'] as const) {
 	test(`inline missing requirements are inspectable without unsafe actions for ${condition}`, async ({
 		page
 	}) => {
 		const fixture = await mockSharedComparison(page, {
 			manager: condition !== 'reader',
 			wrongContext: condition === 'context',
-			failWorkspace: condition === 'failure',
-			noVersion: condition === 'noVersion'
+			failWorkspace: condition === 'failure'
 		});
 		const target = new URL(fixture.origin, 'http://schoolorbit.test');
 		target.searchParams.delete('offeringSearch');
@@ -1255,8 +1197,6 @@ for (const condition of ['reader', 'context', 'failure', 'noVersion'] as const) 
 			await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(0);
 		} else {
 			await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(1);
-			if (condition === 'noVersion')
-				await expect(section).toContainText('สร้างรุ่นเปิดสอนก่อนเพิ่มรายการ');
 		}
 		await expect(
 			section.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true })
@@ -1286,17 +1226,21 @@ for (const reason of ['failure', 'context'] as const)
 		expect(fixture.academicWrites).toHaveLength(0);
 	});
 
-test('missing curriculum without an opening version explains the create-draft prerequisite', async ({
+test('an empty current offering registry can prepare its exact missing curriculum requirement directly', async ({
 	page
 }) => {
-	const fixture = await mockSharedComparison(page, { manager: true, noVersion: true });
-	await page.goto(fixture.origin);
-	await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
-	const report = page.getByRole('dialog', { name: 'ผลเทียบหลักสูตรของรุ่นเปิดสอน', exact: true });
-	await expect(report).toContainText('สร้างรุ่นเปิดสอนจากปุ่มด้านบนก่อนเปิดรายการตามหลักสูตร');
-	await expect(report.getByRole('button', { name: /^เปิดตามหลักสูตร/ })).toHaveCount(0);
-	expect(fixture.managementReads).toHaveLength(0);
+	const fixture = await mockSharedComparison(page, { manager: true, emptyCurrentOfferings: true });
+	const target = new URL(fixture.origin, 'https://schoolorbit.invalid');
+	target.searchParams.set('offeringSearch', 'วิทยาศาสตร์');
+	await page.goto(target.pathname + target.search);
+	const section = page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
+	await expect(section.getByTestId('delivery-inline-missing-requirement')).toHaveCount(1);
+	await section.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
+	const preparation = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์', exact: true });
+	await expect(preparation).toBeVisible();
+	expect(fixture.managementReads).toHaveLength(1);
 	expect(fixture.academicWrites).toHaveLength(0);
+	await expect(page.getByText('สร้างรุ่นเปิดสอนก่อนเพิ่มรายการ', { exact: true })).toHaveCount(0);
 });
 
 test('a partially offered exact course version opens pending program B for provider review instead of redirecting to program A', async ({
@@ -1320,7 +1264,7 @@ test('a partially offered exact course version opens pending program B for provi
 	fixture.old.name = 'วิทยาศาสตร์';
 	if (fixture.old.catalog.kind === 'course')
 		fixture.old.catalog.subjectVersionId = comparisonCatalog;
-	fixture.version.courseMetadata = fixture.version.courseMetadata.map((entry) =>
+	fixture.delivery.courseMetadata = fixture.delivery.courseMetadata.map((entry) =>
 		entry.subjectVersionId === navOfferings.basic21
 			? { ...entry, subjectVersionId: comparisonCatalog }
 			: entry
@@ -1372,7 +1316,6 @@ test('a partially offered exact course version opens pending program B for provi
 	const preparation = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์', exact: true });
 	await expect(preparation).toBeVisible();
 	await expect(preparation).toContainText('แผนที่ยังไม่เปิดสอน · 1 ห้อง');
-	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	await expect(preparation.getByText('ใช้รายการเดิม', { exact: true })).toBeVisible();
 	expect(previewBody).toMatchObject({ academicTermId: navIds.term, studyProgramIds: [programB] });
@@ -1382,201 +1325,158 @@ test('a partially offered exact course version opens pending program B for provi
 	).toHaveLength(0);
 });
 
-test('a superseded parent draft lookup cannot block a new term or clear its pending preparation after resolving late', async ({
+function focusedCurrentPreview(
+	academicTermId: string,
+	name: string,
+	catalogVersionId = comparisonCatalog
+): CurriculumOfferingPreview {
+	return {
+		academicTermId,
+		curriculumSources: [],
+		sourceHash: 'b'.repeat(64),
+		proposals: [
+			{
+				proposalId: catalogVersionId,
+				resourceKind: 'course',
+				catalogVersionId,
+				schedulingMode: null,
+				code: 'ว30104',
+				name,
+				targetHomeroomIds: [navIds.roomA, navIds.roomB],
+				requirementIds: [],
+				groupingState: 'proposed',
+				offeringAction: 'create',
+				conflicts: [],
+				defaultGroups: [
+					{
+						groupKey: 'b'.repeat(64),
+						name: 'กลุ่มที่ตรวจปัจจุบัน',
+						homeroomIds: [navIds.roomA, navIds.roomB]
+					}
+				]
+			}
+		]
+	};
+}
+function currentPreparationOptions(workspace: ReturnType<typeof navigationWorkspace>) {
+	return {
+		academicYearId: workspace.academicYearId,
+		academicTermId: workspace.academicTermId,
+		studyPrograms: workspace.homerooms.map((room) => room.studyProgram),
+		gradeLevels: [workspace.homerooms[0].gradeLevel],
+		homerooms: workspace.homerooms.map((room) => room.homeroom),
+		teachers: [],
+		rooms: [],
+		learningGroups: [],
+		catalogVersions: []
+	};
+}
+
+test('a late term A preview cannot replace or clear term B current preparation', async ({
 	page
 }) => {
-	const fixture = await mockSharedComparison(page, { manager: true });
-	const oldLookup = deferred(),
-		oldHandled = deferred(),
-		newOptions = deferred();
-	const draftB = 'c0000000-0000-4000-8000-000000000041',
-		changeSetB = 'c0000000-0000-4000-8000-000000000042';
-	const workspaceA = fixture.workspace;
-	const workspaceB = structuredClone(workspaceA);
-	workspaceB.academicTermId = navIds.activeTerm;
-	for (const room of workspaceB.homerooms)
+	const fixture = await mockSharedComparison(page, { manager: true }),
+		old = deferred(),
+		handled = deferred(),
+		nextOptions = deferred(),
+		nextWorkspace = structuredClone(fixture.workspace);
+	nextWorkspace.academicTermId = navIds.activeTerm;
+	for (const room of nextWorkspace.homerooms)
 		for (const item of room.items) item.name = 'วิทยาศาสตร์ภาคใหม่';
-	let oldLookups = 0,
-		newOptionReads = 0;
+	let previews = 0,
+		optionReads = 0;
+	const previewBodies: Record<string, unknown>[] = [];
 	await page.route('**/api/academic/context/options', (route) =>
 		fulfill(route, {
 			defaultAcademicYearId: navIds.year,
 			defaultAcademicTermId: navIds.term,
-			years: [
-				{
-					isVisible: true,
-					id: navIds.year,
-					name: 'ปีการศึกษา 2570',
-					year: 2570,
-					status: 'active'
-				}
-			],
-			terms: [
-				{
-					isVisible: true,
-					id: navIds.term,
-					academicYearId: navIds.year,
-					name: 'ภาคเรียนที่ 2',
-					code: '2',
-					sequence: 2,
-					termType: 'regular',
-					status: 'active'
-				},
-				{
-					isVisible: true,
-					id: navIds.activeTerm,
-					academicYearId: navIds.year,
-					name: 'ภาคเรียนที่ 1',
-					code: '1',
-					sequence: 1,
-					termType: 'regular',
-					status: 'active'
-				}
-			]
+			years: [{ isVisible: true, id: navIds.year, name: 'ปีทดสอบ', year: 2570, status: 'active' }],
+			terms: [navIds.term, navIds.activeTerm].map((id, index) => ({
+				isVisible: true,
+				id,
+				academicYearId: navIds.year,
+				name: `ภาคเรียนที่ ${index + 1}`,
+				code: String(index + 1),
+				sequence: index + 1,
+				status: 'active',
+				termType: 'regular',
+				includedInYearResult: true,
+				blocksYearClosure: true
+			}))
 		})
 	);
-	await page.route('**/api/academic/delivery-versions?*', async (route) => {
-		const term = new URL(route.request().url()).searchParams.get('academicTermId');
-		const base = {
-			academicYearId: navIds.year,
-			academicTermId: term,
-			sourceVersionId: null,
-			effectiveFrom: null,
-			effectiveUntil: null,
-			referenceDate: '2027-05-01',
-			rowVersion: 1,
-			offeringCount: 1,
-			groupCount: 0,
-			teacherAssignmentCount: 0,
-			updatedAt: '2027-05-01T00:00:00Z'
-		};
-		if (term === navIds.activeTerm)
-			return fulfill(route, [{ ...base, id: draftB, status: 'draft', changeSetId: changeSetB }]);
-		oldLookups++;
-		if (oldLookups > 1) {
-			await oldLookup.promise;
-			try {
-				await fulfill(route, [
-					{
-						...base,
-						id: navIds.version,
-						status: 'published',
-						changeSetId: null,
-						effectiveFrom: '2027-05-01'
-					},
-					{
-						...base,
-						id: draftB,
-						changeSetId: changeSetB,
-						sourceVersionId: navIds.version
-					}
-				]);
-			} finally {
-				oldHandled.release();
-			}
-			return;
-		}
-		return fulfill(route, [
-			{
-				...base,
-				id: navIds.version,
-				status: 'published',
-				changeSetId: null,
-				effectiveFrom: '2027-05-01'
-			}
-		]);
-	});
 	await page.route('**/api/academic/delivery/homerooms?*', (route) =>
 		fulfill(
 			route,
 			new URL(route.request().url()).searchParams.get('academicTermId') === navIds.activeTerm
-				? workspaceB
-				: workspaceA
+				? nextWorkspace
+				: fixture.workspace
 		)
 	);
-	await page.route(`**/api/academic/delivery-versions/${draftB}`, (route) =>
-		fulfill(route, { ...fixture.version, id: draftB, academicTermId: navIds.activeTerm })
-	);
-	await page.route(`**/api/academic/term-change-sets/${changeSetB}`, (route) =>
+	await page.route('**/api/academic/delivery/workspace?*', (route) =>
 		fulfill(route, {
-			id: changeSetB,
-			academicYearId: navIds.year,
-			academicTermId: navIds.activeTerm,
-			baseTeacherAssignments: [],
-			targetDeliveryVersionId: draftB,
-			rowVersion: 1,
-			effectiveFrom: null,
-			referenceDate: '2027-05-01',
-			reason: 'แบบร่างภาคใหม่',
-			createdBy: navIds.actor,
-			createdAt: '2027-05-01T00:00:00Z',
-			updatedAt: '2027-05-01T00:00:00Z',
-			items: [],
-			changes: [],
-			offeringLabels: []
+			...fixture.delivery,
+			academicTermId: new URL(route.request().url()).searchParams.get('academicTermId')
 		})
 	);
-	await page.route('**/api/academic/term-change-sets?*', (route) => fulfill(route, []));
 	await page.route('**/api/academic/delivery/management-options?*', async (route) => {
-		newOptionReads++;
-		await newOptions.promise;
-		return fulfill(route, {
-			academicYearId: navIds.year,
-			academicTermId: navIds.activeTerm,
-			studyPrograms: [workspaceB.homerooms[0].studyProgram],
-			gradeLevels: [workspaceB.homerooms[0].gradeLevel],
-			homerooms: workspaceB.homerooms.map((room) => room.homeroom),
-			learningGroups: [],
-			teachers: [],
-			rooms: [],
-			catalogVersions: []
-		});
+		optionReads++;
+		const next =
+			new URL(route.request().url()).searchParams.get('academicTermId') === navIds.activeTerm;
+		if (next) await nextOptions.promise;
+		return fulfill(route, currentPreparationOptions(next ? nextWorkspace : fixture.workspace));
 	});
-	const origin = new URL(fixture.origin, 'https://schoolorbit.invalid');
-	origin.searchParams.delete('deliveryVersionId');
+	await page.route('**/api/academic/offerings/preview-from-curriculum', async (route) => {
+		const body: Record<string, unknown> = route.request().postDataJSON();
+		previewBodies.push(body);
+		previews++;
+		if (previews === 1) {
+			await old.promise;
+			try {
+				await fulfill(route, focusedCurrentPreview(navIds.term, 'วิทยาศาสตร์'));
+			} finally {
+				handled.release();
+			}
+		} else await fulfill(route, focusedCurrentPreview(navIds.activeTerm, 'วิทยาศาสตร์ภาคใหม่'));
+	});
 	try {
-		await page.goto(origin.pathname + origin.search);
+		await page.goto(fixture.origin);
 		await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
 		await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์', exact: true }).click();
-		await expect.poll(() => oldLookups).toBe(2);
+		let dialog = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์', exact: true });
+		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+		await expect.poll(() => previews).toBe(1);
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveCount(0);
 		await page.getByRole('combobox', { name: 'เลือกภาคเรียน', exact: true }).click();
-		await page.getByRole('option', { name: /^ภาคเรียนที่ 1(?: กำลังใช้งาน)?$/ }).click();
-		await expect(page).toHaveURL(
-			(url) => url.searchParams.get('academicTermId') === navIds.activeTerm
-		);
+		await page.getByRole('option', { name: /^ภาคเรียนที่ 2/ }).click();
+		await expect(page).toHaveURL(new RegExp(`academicTermId=${navIds.activeTerm}`));
 		await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
 		await page
 			.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์ภาคใหม่', exact: true })
 			.click();
-		const preparationB = page.getByRole('dialog', {
-			name: 'เปิดรายวิชา วิทยาศาสตร์ภาคใหม่',
-			exact: true
-		});
-		await expect(preparationB).toBeVisible();
-		await expect.poll(() => newOptionReads).toBe(1);
-		oldLookup.release();
-		await oldHandled.promise;
-		await page.evaluate(
-			() =>
-				new Promise<void>((resolve) =>
-					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-				)
-		);
-		await expect(page.getByText('กำลังเตรียมรายการในแบบร่าง', { exact: true })).toHaveCount(1);
-		await expect(preparationB).toBeVisible();
-		await expect(page.getByText('เลือกร่างที่จะเพิ่มรายวิชา', { exact: true })).toHaveCount(0);
-		newOptions.release();
-		await selectOfferingStartDate(page);
+		dialog = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์ภาคใหม่', exact: true });
+		await expect(dialog).toBeVisible();
+		await expect.poll(() => optionReads).toBe(2);
+		old.release();
+		await handled.promise;
+		await expect(dialog).toBeVisible();
 		await expect(
-			preparationB.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true })
-		).toBeEnabled();
-		await expect(page.getByText('กำลังเตรียมรายการในแบบร่าง', { exact: true })).toHaveCount(0);
-		await expect(page).toHaveURL(
-			(url) => url.searchParams.get('academicTermId') === navIds.activeTerm
-		);
+			dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true })
+		).toHaveCount(0);
+		nextOptions.release();
+		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+		await expect(dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน', exact: true })).toHaveValue('กลุ่มที่ตรวจปัจจุบัน');
+		expect(previewBodies.map((body) => body.academicTermId)).toEqual([
+			navIds.term,
+			navIds.activeTerm
+		]);
+		expect(
+			fixture.academicWrites.filter((write) => write.path.endsWith('/apply-from-curriculum'))
+		).toEqual([]);
 	} finally {
-		oldLookup.release();
-		newOptions.release();
+		old.release();
+		nextOptions.release();
 	}
 });
 
@@ -1593,7 +1493,8 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 		fixture.old.catalog.subjectVersionId = comparisonCatalog;
 	fixture.old.groups = fixture.workspace.homerooms.map((room, index) => ({
 		id: groupIds[index],
-		rowVersion: 1, registrationOpen: false,
+		rowVersion: 1,
+		registrationOpen: false,
 		code: `MANUAL-${index + 1}`,
 		name: `กลุ่มที่จัดเอง ${index + 1}`,
 		description: null,
@@ -1686,7 +1587,6 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 		const missing = page.getByRole('region', { name: 'ตามหลักสูตรที่ยังไม่เปิดสอน', exact: true });
 		await missing.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
 		const dialog = page.getByRole('dialog', { name: `เปิดรายวิชา ${name}`, exact: true });
-		await selectOfferingStartDate(page);
 		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 		await expect(dialog.getByText(message, { exact: true })).toHaveCount(2);
 		await expect(
@@ -1711,7 +1611,6 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 		expect(apply.body).toEqual({
 			academicTermId: navIds.term,
 			studyProgramIds: [navIds.program],
-			deliveryVersionId: navIds.version,
 			sourceHash: 'c'.repeat(64),
 			idempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/),
 			choices: [{ proposalId: 'd'.repeat(64), action: 'defer_groups', groups: [] }]
@@ -1787,7 +1686,6 @@ test('a focused offering-level provider conflict blocks save without offering ap
 	await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
 	await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์', exact: true }).click();
 	const preparation = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์', exact: true });
-	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	await expect(
 		preparation.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true })
@@ -1803,7 +1701,6 @@ test('a focused offering-level provider conflict blocks save without offering ap
 	expect(
 		fixture.academicWrites.filter((write) => write.path.endsWith('/apply-from-curriculum'))
 	).toHaveLength(0);
-	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	await expect(action).toHaveText('ยังเปิดรายการนี้ไม่ได้');
 	await expect(
@@ -1902,7 +1799,6 @@ test('batch preparation can explicitly skip an offering conflict while deferring
 		.click();
 	await page.getByRole('option', { name: /แผนคณิตศาสตร์/ }).click();
 	await page.keyboard.press('Escape');
-	await selectOfferingStartDate(page);
 	await preparation.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
 	const save = preparation.getByRole('button', {
 		name: 'ยืนยันรายการและกลุ่มที่ตรวจแล้ว',
@@ -1941,183 +1837,76 @@ test('batch preparation can explicitly skip an offering conflict while deferring
 	]);
 });
 
-test('same-term history Back cancels a pending version A lookup before version B starts its own preparation', async ({
+test('reopening a different exact requirement fences its current choices from a late prior preview', async ({
 	page
 }) => {
-	const fixture = await mockSharedComparison(page, { manager: true });
-	const lookupA = deferred(),
-		lookupAHandled = deferred(),
-		optionsB = deferred();
-	const draftB = 'c0000000-0000-4000-8000-000000000061',
-		draftC = 'c0000000-0000-4000-8000-000000000062',
-		changeSetB = 'c0000000-0000-4000-8000-000000000063';
-	const workspaceA = fixture.workspace;
-	const workspaceB = structuredClone(workspaceA);
-	for (const room of workspaceB.homerooms)
-		for (const item of room.items) item.name = 'วิทยาศาสตร์รุ่นบี';
-	const summaryBase = {
-		academicYearId: navIds.year,
-		academicTermId: navIds.term,
-		sourceVersionId: null,
-		effectiveFrom: null,
-		effectiveUntil: null,
-		referenceDate: '2027-05-01',
-		rowVersion: 1,
-		offeringCount: 1,
-		groupCount: 0,
-		teacherAssignmentCount: 0,
-		updatedAt: '2027-05-01T00:00:00Z'
-	};
-	const summaries = [
-		{
-			...summaryBase,
-			id: navIds.version,
-			status: 'published',
-			changeSetId: null,
-			effectiveFrom: '2027-05-01'
-		},
-		{
-			...summaryBase,
-			id: draftB,
-			changeSetId: changeSetB,
-			sourceVersionId: navIds.version
-		},
-		{
-			...summaryBase,
-			id: draftC,
-			changeSetId: null,
-			sourceVersionId: navIds.version
-		}
-	];
-	let versionLists = 0,
-		optionReads = 0;
-	await page.route('**/api/academic/delivery-versions?*', async (route) => {
-		versionLists++;
-		if (versionLists === 3) {
-			await lookupA.promise;
-			try {
-				await fulfill(route, summaries);
-			} finally {
-				lookupAHandled.release();
-			}
-			return;
-		}
-		return fulfill(route, summaries);
-	});
-	await page.route('**/api/academic/delivery/homerooms?*', (route) =>
-		fulfill(
-			route,
-			new URL(route.request().url()).searchParams.get('deliveryVersionId') === draftB
-				? workspaceB
-				: workspaceA
-		)
-	);
-	await page.route(`**/api/academic/delivery-versions/${draftB}`, (route) =>
-		fulfill(route, {
-			...fixture.version,
-			id: draftB,
-			effectiveFrom: null,
-			sourceVersionId: navIds.version
-		})
-	);
-	await page.route(`**/api/academic/term-change-sets/${changeSetB}`, (route) =>
-		fulfill(route, {
-			id: changeSetB,
-			academicYearId: navIds.year,
-			academicTermId: navIds.term,
-			baseTeacherAssignments: [],
-			targetDeliveryVersionId: draftB,
-			rowVersion: 1,
-			effectiveFrom: null,
-			referenceDate: '2027-05-01',
-			reason: 'แบบร่างรุ่นบี',
-			createdBy: navIds.actor,
-			createdAt: '2027-05-01T00:00:00Z',
-			updatedAt: '2027-05-01T00:00:00Z',
-			items: [],
-			changes: [],
-			offeringLabels: []
-		})
-	);
-	await page.route('**/api/academic/term-change-sets?*', (route) => fulfill(route, []));
-	await page.route('**/api/academic/delivery/management-options?*', async (route) => {
-		optionReads++;
-		await optionsB.promise;
-		return fulfill(route, {
-			academicYearId: navIds.year,
-			academicTermId: navIds.term,
-			studyPrograms: [workspaceB.homerooms[0].studyProgram],
-			gradeLevels: [workspaceB.homerooms[0].gradeLevel],
-			homerooms: workspaceB.homerooms.map((room) => room.homeroom),
-			learningGroups: [],
-			teachers: [],
-			rooms: [],
-			catalogVersions: []
+	const fixture = await mockSharedComparison(page, { manager: true }),
+		old = deferred(),
+		handled = deferred(),
+		catalogB = 'c0000000-0000-4000-8000-000000000061';
+	for (const [index, room] of fixture.workspace.homerooms.entries())
+		room.items.push({
+			...room.items[0],
+			requirementId: `c0000000-0000-4000-8000-00000000007${index}`,
+			catalogVersionId: catalogB,
+			name: 'วิชาบี',
+			code: 'ว30105'
 		});
+	let previews = 0;
+	await page.route('**/api/academic/delivery/management-options?*', (route) =>
+		fulfill(route, currentPreparationOptions(fixture.workspace))
+	);
+	await page.route('**/api/academic/offerings/preview-from-curriculum', async (route) => {
+		previews++;
+		if (previews === 1) {
+			await old.promise;
+			try {
+				await fulfill(route, focusedCurrentPreview(navIds.term, 'วิทยาศาสตร์'));
+			} finally {
+				handled.release();
+			}
+		} else return fulfill(route, focusedCurrentPreview(navIds.term, 'วิชาบี', catalogB));
 	});
-	const originB = new URL(fixture.origin, 'https://schoolorbit.invalid');
-	originB.searchParams.set('deliveryVersionId', draftB);
 	try {
-		await page.goto(originB.pathname + originB.search);
-		await expect(page.getByTestId('delivery-alignment-summary')).toContainText(
-			'ยังไม่เปิดสอน 1 รายการ'
-		);
-		await page.getByRole('combobox', { name: 'เลือกรุ่นเปิดสอน', exact: true }).click();
-		await page.getByRole('option', { name: /^เผยแพร่แล้ว/ }).click();
-		await expect(page).toHaveURL(
-			(url) => url.searchParams.get('deliveryVersionId') === navIds.version
-		);
+		await page.goto(fixture.origin);
 		await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
 		await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์', exact: true }).click();
-		await expect.poll(() => versionLists).toBe(3);
-		await page.goBack();
-		await expect(page).toHaveURL(
-			(url) =>
-				url.searchParams.get('academicTermId') === navIds.term &&
-				url.searchParams.get('deliveryVersionId') === draftB
-		);
+		let dialog = page.getByRole('dialog', { name: 'เปิดรายวิชา วิทยาศาสตร์', exact: true });
+		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+		await expect.poll(() => previews).toBe(1);
+		await page.keyboard.press('Escape');
 		await page.getByRole('button', { name: 'ตรวจเทียบหลักสูตร', exact: true }).click();
-		await page
-			.getByRole('button', { name: 'เปิดตามหลักสูตร · วิทยาศาสตร์รุ่นบี', exact: true })
-			.click();
-		const preparationB = page.getByRole('dialog', {
-			name: 'เปิดรายวิชา วิทยาศาสตร์รุ่นบี',
-			exact: true
-		});
-		await expect(preparationB).toBeVisible();
-		await expect.poll(() => optionReads).toBe(1);
-		lookupA.release();
-		await lookupAHandled.promise;
-		await page.evaluate(
-			() =>
-				new Promise<void>((resolve) =>
-					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-				)
-		);
-		await expect(preparationB).toBeVisible();
-		await expect(page.getByText('กำลังเตรียมรายการในแบบร่าง', { exact: true })).toHaveCount(1);
-		await expect(page.getByText('เลือกร่างที่จะเพิ่มรายวิชา', { exact: true })).toHaveCount(0);
-		await expect(page).toHaveURL((url) => url.searchParams.get('deliveryVersionId') === draftB);
-		optionsB.release();
-		await selectOfferingStartDate(page);
+		await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิชาบี', exact: true }).click();
+		dialog = page.getByRole('dialog', { name: 'เปิดรายวิชา วิชาบี', exact: true });
+		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
+		await expect(dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน', exact: true })).toHaveValue('กลุ่มที่ตรวจปัจจุบัน');
 		await expect(
-			preparationB.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true })
+			dialog.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true })
 		).toBeEnabled();
-		await expect(page.getByText('กำลังเตรียมรายการในแบบร่าง', { exact: true })).toHaveCount(0);
-		await expect(page).toHaveURL((url) => url.searchParams.get('deliveryVersionId') === draftB);
+		old.release();
+		await handled.promise;
+		await expect(dialog).toBeVisible();
+		await expect(
+			dialog.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true })
+		).toBeEnabled();
+		await expect(dialog.getByRole('alert')).toHaveCount(0);
+		expect(fixture.managementReads).toHaveLength(1);
+		expect(previews).toBe(2);
+		expect(
+			fixture.academicWrites.filter((write) => write.path.endsWith('/apply-from-curriculum'))
+		).toEqual([]);
 	} finally {
-		lookupA.release();
-		optionsB.release();
+		old.release();
 	}
 });
 
 async function mockReviewStatuses(page: Page, wrongContext = false) {
 	await mockDeliveryNavigation(page);
 	const workspace = navigationWorkspace(),
-		version = navigationDelivery();
-	const course = version.offerings.find((item) => item.id === navOfferings.basic21)!;
-	const central = version.offerings.find((item) => item.id === navOfferings.club)!;
-	const extra = version.offerings.find((item) => item.id === navOfferings.guidance)!;
+		delivery = navigationDelivery();
+	const course = delivery.offerings.find((item) => item.id === navOfferings.basic21)!;
+	const central = delivery.offerings.find((item) => item.id === navOfferings.club)!;
+	const extra = delivery.offerings.find((item) => item.id === navOfferings.guidance)!;
 	if (extra.catalog.kind !== 'activity')
 		throw new Error('Expected the additional activity fixture');
 	const extraCatalogVersionId = extra.catalog.activityVersionId;
@@ -2127,7 +1916,8 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 	course.groups = [
 		{
 			id: groupId,
-			rowVersion: 1, registrationOpen: false,
+			rowVersion: 1,
+			registrationOpen: false,
 			code: 'MANUAL',
 			name: 'กลุ่มที่ยังขาดครู',
 			homeroomIds: [navIds.roomA],
@@ -2140,7 +1930,8 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 	extra.groups = [
 		{
 			id: extraGroupId,
-			rowVersion:1,registrationOpen:false,
+			rowVersion: 1,
+			registrationOpen: false,
 			code: 'EXTRA',
 			name: 'กลุ่มนอกหลักสูตร',
 			homeroomIds: [navIds.roomA],
@@ -2148,7 +1939,8 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 			teachers: [
 				{
 					assignmentId: 'd0000000-0000-4000-8000-000000000113',
-					rowVersion: 1, isActive: true,
+					rowVersion: 1,
+					isActive: true,
 					teacherId: navIds.actor,
 					displayName: 'ครูหลักกิจกรรมเพิ่มเติม',
 					role: 'primary'
@@ -2156,7 +1948,7 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 			]
 		}
 	];
-	version.offerings = [course, central, extra];
+	delivery.offerings = [course, central, extra];
 	const courseSource = workspace.homerooms[0].items.find((item) => item.offeringId === course.id)!;
 	workspace.homerooms[0].items = [
 		{
@@ -2245,16 +2037,19 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 	await page.route('**/api/academic/delivery/homerooms?*', (route) =>
 		fulfill(route, wrongContext ? { ...workspace, academicTermId: navIds.activeTerm } : workspace)
 	);
-	await page.route(`**/api/academic/delivery-versions/${navIds.version}`, (route) =>
-		fulfill(route, version)
-	);
+	await page.route('**/api/academic/delivery/workspace?*', (route) => fulfill(route, delivery));
 	const query = new URLSearchParams({
 		academicYearId: navIds.year,
 		academicTermId: navIds.term,
-		deliveryVersionId: navIds.version,
 		expandedRooms: ''
 	});
-	return { workspace, version, academicReads, writes, origin: `/staff/academic/delivery?${query}` };
+	return {
+		workspace,
+		delivery,
+		academicReads,
+		writes,
+		origin: `/staff/academic/delivery?${query}`
+	};
 }
 
 for (const width of [390, 1280])
@@ -2316,9 +2111,7 @@ for (const width of [390, 1280])
 				animations: 'disabled'
 			});
 			expect(
-				fixture.academicReads.filter(
-					(path) => path === `/api/academic/delivery-versions/${navIds.version}`
-				)
+				fixture.academicReads.filter((path) => path === '/api/academic/delivery/workspace')
 			).toHaveLength(0);
 			const beforeExpand = fixture.academicReads.length;
 			await summary.focus();
@@ -2457,9 +2250,7 @@ test('an opened course without real groups waits for grouping instead of claimin
 }) => {
 	const fixture = await mockReviewStatuses(page);
 	const item = fixture.workspace.homerooms[1].items[0];
-	const course = fixture.version.offerings.find(
-		(source) => source.id === navOfferings.basic21
-	)!;
+	const course = fixture.delivery.offerings.find((source) => source.id === navOfferings.basic21)!;
 	item.offeringId = course.id;
 	item.catalogVersionId = navOfferings.basic21;
 	item.name = course.name;
@@ -2485,14 +2276,13 @@ test('healthy course and supported central activity have no review badges or emp
 	page
 }) => {
 	const fixture = await mockReviewStatuses(page);
-	const course = fixture.version.offerings.find(
-		(item) => item.id === navOfferings.basic21
-	)!;
+	const course = fixture.delivery.offerings.find((item) => item.id === navOfferings.basic21)!;
 	course.weeklyPeriodTarget = 2;
 	course.groups[0].teachers = [
 		{
 			assignmentId: 'd0000000-0000-4000-8000-000000000121',
-					rowVersion: 1, isActive: true,
+			rowVersion: 1,
+			isActive: true,
 			teacherId: navIds.actor,
 			displayName: 'ครูหลัก',
 			role: 'primary'
@@ -2520,7 +2310,7 @@ test('healthy course and supported central activity have no review badges or emp
 			.filter({ hasText: name === 'ม.1/1' ? 'คณิตศาสตร์ต้น' : 'ชุมนุม' });
 		await expect(item.getByTestId('delivery-status-badges')).toHaveCount(0);
 		await expect(item.getByRole('cell').nth(1)).toHaveText('');
-		await expect(item.getByRole('cell').nth(2)).toHaveText('ฉบับร่าง');
+		await expect(item.getByRole('cell').nth(2)).toHaveText('เปิดสอนแล้ว');
 		await expect(item.getByRole('cell').nth(4)).toHaveText(
 			name === 'ม.1/1' ? 'มอบหมายแล้ว' : 'กำหนดภายหลัง'
 		);

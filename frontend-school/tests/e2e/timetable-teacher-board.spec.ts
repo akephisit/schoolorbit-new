@@ -87,7 +87,7 @@ test('preselects the board teacher before creating an exact-instructor period', 
 	]);
 });
 
-test('keeps published teacher boards read-only', async ({ page }) => {
+test('keeps the current teacher board read-only for a reader', async ({ page }) => {
 	await installTimetableMock(page, {
 		permissions: ['academic_timetable.read.school'],
 		blocks: [
@@ -99,6 +99,7 @@ test('keeps published teacher boards read-only', async ({ page }) => {
 	});
 	await page.goto(teacherUrl(timetableIds.teacherA, timetableIds.timetable));
 
-	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
+	await expect(page.getByLabel('บริบทตารางสอน')).toContainText('ตารางสอนปัจจุบัน');
+ await expect(page.getByRole('button',{name:'แก้ไข',exact:true})).toHaveCount(0);
 	await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable', 'false');
 });

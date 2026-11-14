@@ -357,6 +357,47 @@ async fn preparation_current_extension_preserves_manual_a_and_creates_b_groups()
 #[tokio::test]
 async fn preparation_current_generated_group_mismatch_keeps_defer_groups_policy() {
     let f = fixture("prep_draft_generated_extension", true).await;
+    let offering = offerings::get(&f.pool, f.offering_id).await.unwrap();
+    let mut targets = offering
+        .targets
+        .iter()
+        .map(|target| OfferingTargetInput {
+            target_kind: target.target_kind,
+            homeroom_id: target.homeroom_id,
+            grade_level_id: target.grade_level_id,
+            study_program_id: target.study_program_id,
+        })
+        .collect::<Vec<_>>();
+    targets.push(OfferingTargetInput {
+        target_kind: OfferingTargetKind::Homeroom,
+        homeroom_id: Some(f.room_b),
+        grade_level_id: f.context.grade_level_id,
+        study_program_id: f.program_b,
+    });
+    offerings::update(
+        &f.pool,
+        f.context.teacher_id,
+        f.offering_id,
+        UpdateLearningOfferingRequest {
+            row_version: offering.row_version,
+            weekly_period_target: offering.weekly_period_target,
+            targets,
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::get(&f.pool, f.group_id).await.unwrap();
+    groups::replace_homerooms(
+        &f.pool,
+        f.context.teacher_id,
+        group.id,
+        ReplaceLearningGroupHomeroomsRequest {
+            row_version: group.row_version,
+            homeroom_ids: vec![f.context.homeroom_id, f.room_b],
+        },
+    )
+    .await
+    .unwrap();
     let preview = preview(&f, f.program_b).await;
     assert_eq!(
         proposal(&preview).offering_action,

@@ -179,12 +179,30 @@ test('initial failed workspace reports one detailed toast and keeps an actionabl
 	await expect(errorToasts(page, 'synthetic-initial-read')).toHaveCount(1);
 });
 
-test('a failed current workspace refresh keeps board geometry and retries only that read',async({page})=>{
- const mock=await installTimetableMock(page);await page.goto(url());await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
- const top=(await page.getByTestId('timetable-board-ready').boundingBox())!.y;let broken=true,workspaceReads=0;
- await page.route('**/api/academic/timetable-blocks/workspace?**',route=>{workspaceReads++;return broken?fail(route,'synthetic-stream-workspace'):route.fallback();});
- await revalidatePage(page);await expect(errorToasts(page,'synthetic-stream-workspace')).toHaveCount(1);await stableBoard(page,top);
- broken=false;await errorToasts(page,'synthetic-stream-workspace').getByRole('button',{name:'ลองใหม่',exact:true}).click();await expect.poll(()=>workspaceReads).toBe(2);await stableBoard(page,top);expect(mock.workspaceRequestCount()).toBe(2);expect(mock.retiredRequests()).toEqual([]);
+test('a failed current workspace refresh keeps board geometry and retries only that read', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page);
+	await page.goto(url());
+	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
+	const top = (await page.getByTestId('timetable-board-ready').boundingBox())!.y;
+	let broken = true,
+		workspaceReads = 0;
+	await page.route('**/api/academic/timetable-blocks/workspace?**', (route) => {
+		workspaceReads++;
+		return broken ? fail(route, 'synthetic-stream-workspace') : route.fallback();
+	});
+	await revalidatePage(page);
+	await expect(errorToasts(page, 'synthetic-stream-workspace')).toHaveCount(1);
+	await stableBoard(page, top);
+	broken = false;
+	await errorToasts(page, 'synthetic-stream-workspace')
+		.getByRole('button', { name: 'ลองใหม่', exact: true })
+		.click();
+	await expect.poll(() => workspaceReads).toBe(2);
+	await stableBoard(page, top);
+	expect(mock.workspaceRequestCount()).toBe(2);
+	expect(mock.retiredRequests()).toEqual([]);
 });
 
 test('lifecycle nested read failure reports once, retains editing and inserts no board or dialog alert', async ({
@@ -201,23 +219,93 @@ test('lifecycle nested read failure reports once, retains editing and inserts no
 	);
 	await page.getByRole('button', { name: 'เสร็จสิ้น', exact: true }).click();
 	await expect(errorToasts(page, 'synthetic-finish-reload')).toHaveCount(1);
-	await expect(page.locator('header[aria-label="บริบทตารางสอน"]').getByText('กำลังแก้ไข',{exact:true})).toBeVisible();
+	await expect(
+		page.locator('header[aria-label="บริบทตารางสอน"]').getByText('กำลังแก้ไข', { exact: true })
+	).toBeVisible();
 	await stableBoard(page, top);
 });
 
-test('a superseded failed workspace cannot toast or replace the newly selected empty term',async({page})=>{
- const nextTerm='b1000000-0000-4000-8000-000000000299';
- const terms=[timetableIds.term,nextTerm].map((id,index)=>({id,academicYearId:timetableIds.year,name:`ภาคเรียนที่ ${index+1}`,code:String(index+1),sequence:index+1,status:'active',termType:'regular',schoolDays:['MON','TUE','WED','THU','FRI'],isVisible:true}));
- await installTimetableMock(page,{terms});await page.route('**/api/academic/timetable?*',route=>new URL(route.request().url()).searchParams.get('academicTermId')===nextTerm?route.fulfill({json:{success:true,data:null}}):route.fallback());
- await page.goto(url());await expect(page.getByTestId('timetable-board-ready')).toBeVisible();let release=()=>{},completed=()=>{},started=false;const gate=new Promise<void>(resolve=>release=resolve),completion=new Promise<void>(resolve=>completed=resolve);
- await page.route('**/api/academic/timetable-blocks/workspace?**',async route=>{started=true;try{await gate;await fail(route,'synthetic-superseded-read');}finally{completed();}});
- try{await revalidatePage(page);await expect.poll(()=>started).toBe(true);await page.getByLabel('เลือกภาคเรียน',{exact:true}).click();await page.getByRole('option',{name:'ภาคเรียนที่ 2',exact:true}).click();await expect(page.getByText('ยังไม่มีตารางสอน',{exact:true})).toBeVisible();release();await completion;await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>resolve())));await expect(page).toHaveURL(new RegExp(`academicTermId=${nextTerm}`));await expect(errorToasts(page,'synthetic-superseded-read')).toHaveCount(0);await expect(page.getByTestId('timetable-board-ready')).toHaveCount(0);}finally{release();}
+test('a superseded failed workspace cannot toast or replace the newly selected empty term', async ({
+	page
+}) => {
+	const nextTerm = 'b1000000-0000-4000-8000-000000000299';
+	const terms = [timetableIds.term, nextTerm].map((id, index) => ({
+		id,
+		academicYearId: timetableIds.year,
+		name: `ภาคเรียนที่ ${index + 1}`,
+		code: String(index + 1),
+		sequence: index + 1,
+		status: 'active' as const,
+		termType: 'regular' as const,
+		includedInYearResult: true,
+		blocksYearClosure: true,
+		schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+		isVisible: true
+	}));
+	await installTimetableMock(page, { terms });
+	await page.route('**/api/academic/timetable?*', (route) =>
+		new URL(route.request().url()).searchParams.get('academicTermId') === nextTerm
+			? route.fulfill({ json: { success: true, data: null } })
+			: route.fallback()
+	);
+	await page.goto(url());
+	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
+	let release = () => {},
+		completed = () => {},
+		started = false;
+	const gate = new Promise<void>((resolve) => (release = resolve)),
+		completion = new Promise<void>((resolve) => (completed = resolve));
+	await page.route('**/api/academic/timetable-blocks/workspace?**', async (route) => {
+		started = true;
+		try {
+			await gate;
+			await fail(route, 'synthetic-superseded-read');
+		} finally {
+			completed();
+		}
+	});
+	try {
+		await revalidatePage(page);
+		await expect.poll(() => started).toBe(true);
+		await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
+		await page.getByRole('option', { name: /^ภาคเรียนที่ 2 ใช้งาน$/ }).click();
+		await expect(page.getByText('ยังไม่มีตารางสอน', { exact: true })).toBeVisible();
+		release();
+		await completion;
+		await page.evaluate(
+			() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+		);
+		await expect(page).toHaveURL(new RegExp(`academicTermId=${nextTerm}`));
+		await expect(errorToasts(page, 'synthetic-superseded-read')).toHaveCount(0);
+		await expect(page.getByTestId('timetable-board-ready')).toHaveCount(0);
+	} finally {
+		release();
+	}
 });
 
-test('a failed direct removal has one toast and explicit unknown-result recovery without a dialog alert',async({page})=>{
- const block=makeTimetableBlock(timetableIds.blockA,timetableIds.period1),mock=await installTimetableMock(page,{blocks:[block]});
- await page.goto(url());await page.getByRole('button',{name:'แก้ไข',exact:true}).click();await page.route(`**/api/academic/timetable-blocks/${block.id}?*`,route=>route.request().method()==='DELETE'?fail(route,'synthetic-direct-remove'):route.fallback());
- await page.locator(`[data-block-id="${block.id}"]`).getByRole('button',{name:/นำ .* ออกจากตาราง/}).click();await page.getByRole('button',{name:'ยืนยันนำออก',exact:true}).click();await expect(errorToasts(page,'synthetic-direct-remove')).toHaveCount(1);await expect(page.locator(`[data-block-id="${block.id}"]`)).toBeVisible();await expect(page.getByText(/ยังยืนยันผลการบันทึกไม่ได้ การละทิ้ง/)).toBeVisible();await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);expect(mock.deleteRequestCount()).toBe(0);expect(mock.retiredRequests()).toEqual([]);
+test('a failed direct removal has one toast and explicit unknown-result recovery without a dialog alert', async ({
+	page
+}) => {
+	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1),
+		mock = await installTimetableMock(page, { blocks: [block] });
+	await page.goto(url());
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await page.route(`**/api/academic/timetable-blocks/${block.id}?*`, (route) =>
+		route.request().method() === 'DELETE'
+			? fail(route, 'synthetic-direct-remove')
+			: route.fallback()
+	);
+	await page
+		.locator(`[data-block-id="${block.id}"]`)
+		.getByRole('button', { name: /นำ .* ออกจากตาราง/ })
+		.click();
+	await page.getByRole('button', { name: 'ยืนยันนำออก', exact: true }).click();
+	await expect(errorToasts(page, 'synthetic-direct-remove')).toHaveCount(1);
+	await expect(page.locator(`[data-block-id="${block.id}"]`)).toBeVisible();
+	await expect(page.getByText(/ยังยืนยันผลการบันทึกไม่ได้ การละทิ้ง/)).toBeVisible();
+	await expect(page.getByRole('dialog').getByRole('alert')).toHaveCount(0);
+	expect(mock.deleteRequestCount()).toBe(0);
+	expect(mock.retiredRequests()).toEqual([]);
 });
 
 test('accepted lifecycle HTTP scope loss repairs the owner URL before regrant and same-current-board initialization', async ({
@@ -231,7 +319,8 @@ test('accepted lifecycle HTTP scope loss repairs the owner URL before regrant an
 		join(
 			workspace,
 			(event) => {
-				if (event.type === 'TimetableStateSync' || event.type === 'TimetablePatched') workspaceFrames++;
+				if (event.type === 'TimetableStateSync' || event.type === 'TimetablePatched')
+					workspaceFrames++;
 				output(event);
 			},
 			identity
@@ -258,21 +347,24 @@ test('accepted lifecycle HTTP scope loss repairs the owner URL before regrant an
 	expect(workspaceFrames).toBe(1);
 	const baselineFrames = workspaceFrames;
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	const readsAfterEdit=mock.workspaceRequestCount();
+	const readsAfterEdit = mock.workspaceRequestCount();
 	const complete = mock.workspace();
 	const restricted = structuredClone(complete);
 	restricted.staff = restricted.staff.filter((row) => row.id !== timetableIds.teacherB);
-	// Model a scoped HTTP read without delivering a canonical WS patch first.
-	mock.publishWorkspace(restricted, false);
+	// A scoped HTTP projection is not a canonical mutation or a technical journal entry.
+    let restrictedRead=true,scopedReads=0;
+    await page.route('**/api/academic/timetable-blocks/workspace?*',route=>{scopedReads++;return route.fulfill({json:{success:true,data:restrictedRead?restricted:complete}});});
 	await page.getByRole('button', { name: 'เสร็จสิ้น', exact: true }).click();
 	await expect(selector).toHaveText('ครูคณิตศาสตร์ A');
-	await expect(page.locator('header[aria-label="บริบทตารางสอน"]').getByText('โหมดดู',{exact:true})).toBeVisible();
+	await expect(
+		page.locator('header[aria-label="บริบทตารางสอน"] [data-slot="badge"]').filter({hasText:/^โหมดดู$/})
+	).toBeVisible();
 	expect(workspaceFrames).toBe(baselineFrames);
 	await expect(page).toHaveURL(new RegExp(`view=teacher&ownerId=${timetableIds.teacherA}`));
-	expect(mock.workspaceRequestCount()).toBe(readsAfterEdit+1);
-	mock.publishWorkspace(complete, false);
+	expect(mock.workspaceRequestCount()+scopedReads).toBe(readsAfterEdit+1);
+	restrictedRead=false;
 	await revalidatePage(page);
-	await expect.poll(mock.workspaceRequestCount).toBe(readsAfterEdit+2);
+	await expect.poll(()=>mock.workspaceRequestCount()+scopedReads).toBe(readsAfterEdit+2);
 	await expect(selector).toHaveText('ครูคณิตศาสตร์ A');
 	await expect(page).toHaveURL(new RegExp(`view=teacher&ownerId=${timetableIds.teacherA}`));
 	await selector.click();

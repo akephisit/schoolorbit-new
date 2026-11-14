@@ -113,7 +113,7 @@ async fn sync_groups_in_tx(
         })?;
 
     let selected = canonical_ids(selected_group_ids);
-    let source = school_academic_delivery::services::current::workspace_on_connection(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         transaction,
         context.academic_year_id,
         context.academic_term_id,
@@ -443,7 +443,7 @@ async fn load_states(
                     _ => {
                         return Err(AppError::InternalServerError(
                             "สถานะซิงค์ตารางสอนไม่ถูกต้อง".to_string(),
-                        ))
+                        ));
                     }
                 },
                 linked_block_group_id: row.linked_block_group_id,

@@ -286,7 +286,7 @@ async fn create_ordinary_block_in_permit(
         request.bell_schedule_period_id,
     )
     .await?;
-    let source = school_academic_delivery::services::current::workspace_on_connection(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         &mut transaction,
         version.academic_year_id,
         version.academic_term_id,
@@ -445,7 +445,7 @@ async fn create_synchronized_block_in_permit(
         request.bell_schedule_period_id,
     )
     .await?;
-    let source = school_academic_delivery::services::current::workspace_on_connection(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         &mut transaction,
         version.academic_year_id,
         version.academic_term_id,
@@ -1486,7 +1486,7 @@ async fn replace_group_instructors(
 ) -> Result<(), AppError> {
     let (year_id,term_id,group_id): (Uuid,Uuid,Uuid)=DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_block_service.replace_group_instructors", "SELECT version.academic_year_id,version.academic_term_id,placed.learning_group_id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetables version ON version.id=block.timetable_id WHERE placed.id=$1 AND version.id=$2")
         .bind(block_group_id).bind(timetable_id).fetch_one().await?;
-    let source = school_academic_delivery::services::current::workspace_on_connection(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         transaction,
         year_id,
         term_id,

@@ -15,9 +15,9 @@ use super::invigilation::{
 };
 use super::rounds_and_days::bump_round_revision;
 use super::shared::{
-    exam_session_conflict_lock_keys, has_same_classroom_conflict, has_same_room_conflict,
-    require_exam_write, validate_session_window, validation_error_to_app_error,
-    CandidateRoomSession, CandidateSession, ExamWriteTarget,
+    CandidateRoomSession, CandidateSession, ExamWriteTarget, exam_session_conflict_lock_keys,
+    has_same_classroom_conflict, has_same_room_conflict, require_exam_write,
+    validate_session_window, validation_error_to_app_error,
 };
 
 #[derive(Debug, sqlx::FromRow)]
@@ -146,6 +146,20 @@ pub async fn place_exam_session(
     .await?;
 
     require_exam_write(&mut tx, ExamWriteTarget::Day(request.exam_day_id)).await?;
+    let foreign_round: bool = DbSession::new(&mut *tx)
+        .scalar(
+            "academic_assessment.exam_schedule.placement_context",
+            "SELECT EXISTS(SELECT 1 FROM academic_exam_schedule_items item JOIN academic_exam_days day ON day.id=$1 WHERE item.id=$2 AND item.exam_round_id<>day.exam_round_id)",
+        )
+        .bind(request.exam_day_id)
+        .bind(request.exam_schedule_item_id)
+        .fetch_one()
+        .await?;
+    if foreign_round {
+        return Err(AppError::BadRequest(
+            "Exam day belongs to a different exam round".into(),
+        ));
+    }
     materialize_current_item(&mut tx, request.exam_day_id, request.exam_schedule_item_id).await?;
 
     let item =

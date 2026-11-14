@@ -146,6 +146,12 @@
 	const canDelete = $derived(
 		ownerContextReady && termAllowsEditing && $can.has(PERMISSIONS.LEARNING_OFFERING_MANAGE_SCHOOL)
 	);
+	const canManageMemberships = $derived(
+		Boolean(selectedGroup) &&
+			canManage &&
+			activeIdentityEpoch === identityEpoch &&
+			tracking?.mode === 'manual'
+	);
 	const backHref = $derived(
 		offering
 			? deliveryReturnHref(new URL((page.shallow?.url ?? page.url).href), offering)
@@ -834,6 +840,16 @@
 						/>
 					</div>
 				</div>
+				{#if selectedGroup.teacherAssignments.length}
+					<ul
+						aria-label="ครูผู้สอนปัจจุบัน"
+						class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground"
+					>
+						{#each selectedGroup.teacherAssignments as assignment (assignment.id)}
+							<li>{assignment.displayName?.trim() || 'ไม่พบชื่อครู'}</li>
+						{/each}
+					</ul>
+				{/if}
 				{#if editingGroup}{#if optionsLoading && !options}<PageSkeleton
 							variant="detail"
 						/>{:else if optionsError && !options}<PageState
@@ -869,7 +885,7 @@
 				/>
 				<DatedRosterMemberships
 					group={selectedGroup}
-					{canManage}
+					canManage={canManageMemberships}
 					initialMemberships={initialGroupSeedIsCurrent ? initialGroupSeed?.memberships : null}
 					onGroupChanged={async () => {
 						if (selectedGroup) await selectGroup(selectedGroup);

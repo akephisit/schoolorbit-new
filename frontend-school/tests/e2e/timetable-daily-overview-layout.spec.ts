@@ -144,7 +144,40 @@ async function installDailyOverview(page: Page, data = overview(), permissions?:
 		reads += 1;
 		return fulfill(route, data);
 	});
-	return { count: () => reads, setPermissions: fixture.setPermissions };
+	return {
+		count: () => reads,
+		setPermissions: fixture.setPermissions,
+		getSessionState: fixture.getSessionState,
+		setSessionState: fixture.setSessionState
+	};
+}
+
+async function acceptPermissionRefresh(
+	page: Page,
+	fixture: Pick<
+		Awaited<ReturnType<typeof installTimetableMock>>,
+		'getSessionState' | 'setSessionState'
+	>
+) {
+	const next = {
+		...fixture.getSessionState(),
+		sessionId: crypto.randomUUID(),
+		serverNow: new Date(Date.now() + 2000).toISOString()
+	};
+	fixture.setSessionState(next);
+	const refreshed = page.waitForResponse(
+		(response) => new URL(response.url()).pathname === '/api/auth/me'
+	);
+	await page.evaluate((session) => {
+		const channel = new BroadcastChannel(`schoolorbit:session-activity:${location.origin}`);
+		channel.postMessage({
+			type: 'observed',
+			sessionId: session.sessionId,
+			serverNow: session.serverNow
+		});
+		channel.close();
+	}, next);
+	await (await refreshed).finished();
 }
 
 test('fits ten equal daily periods inside the desktop table', async ({ page }) => {
@@ -786,19 +819,36 @@ for (const permission of [
 		page
 	}) => {
 		const api = await installDailyOverview(page, overview(), [permission]);
-		await page.goto(todayUrl());
+		await page.goto('/403');
+		await expect(page.locator('html')).toHaveAttribute('data-schoolorbit-app-mounted', 'true');
+		await page.evaluate((href) => {
+			const link = document.createElement('a');
+			link.href = href;
+			link.id = 'daily-preload-probe';
+			link.dataset.sveltekitPreloadData = 'hover';
+			link.textContent = 'ตรวจสิทธิ์ตารางรายวัน';
+			link.style.cssText = 'position:fixed;top:150px;left:200px;z-index:9999;background:white';
+			document.body.append(link);
+		}, `${todayUrl()}&preloadProbe=1`);
+		const routeNode = page.waitForResponse(
+			(response) =>
+				new URL(response.url()).pathname.includes('/_app/immutable/nodes/') &&
+				response.status() === 200
+		);
+		await page.locator('#daily-preload-probe').hover();
+		await (await routeNode).finished();
+		await page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+				)
+		);
+		expect(api.count()).toBe(0);
+		await page.locator('#daily-preload-probe').click();
 		await expect(page).toHaveURL(/\/403/);
 		await expect(page.getByRole('table')).toHaveCount(0);
 		await expect(page.getByTestId('daily-toolbar-actions')).toHaveCount(0);
 		await expect(page.getByRole('button', { name: 'พิมพ์', exact: true })).toHaveCount(0);
-		expect(api.count()).toBe(0);
-		const status = await page.evaluate(async (href) => {
-			// This is the installed public $app/navigation entry used by the Vite app.
-			const modulePath = '/node_modules/@sveltejs/kit/src/runtime/app/navigation/client.js';
-			const { preloadData } = await import(modulePath);
-			return (await preloadData(href)).status;
-		}, `${todayUrl()}&preloadProbe=1`);
-		expect(status).toBeLessThan(500);
 		expect(api.count()).toBe(0);
 	});
 }
@@ -847,11 +897,7 @@ test('revoking daily access removes toolbar and discards a delayed date response
 	await page.getByRole('button', { name: 'วันถัดไป', exact: true }).click();
 	await expect.poll(() => reads).toBe(2);
 	fixture.setPermissions([PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL]);
-	await page.evaluate(async () => {
-		const modulePath = '/src/lib/stores/permissions.ts';
-		const { setPermissions } = await import(modulePath);
-		setPermissions(['academic_timetable.read.school']);
-	});
+	await acceptPermissionRefresh(page, fixture);
 	await expect(page.getByTestId('daily-toolbar-actions')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'พิมพ์', exact: true })).toHaveCount(0);
 	release();
@@ -870,11 +916,7 @@ test('revoking daily access closes an opened period detail', async ({ page }) =>
 	await page.getByRole('table').locator('tbody button').first().click();
 	await expect(page.getByRole('dialog')).toBeVisible();
 	api.setPermissions([PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL]);
-	await page.evaluate(async () => {
-		const modulePath = '/src/lib/stores/permissions.ts';
-		const { setPermissions } = await import(modulePath);
-		setPermissions(['academic_timetable.read.school']);
-	});
+	await acceptPermissionRefresh(page, api);
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 	await expect(page.getByTestId('daily-toolbar-actions')).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'พิมพ์', exact: true })).toHaveCount(0);

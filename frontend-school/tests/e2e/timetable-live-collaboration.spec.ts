@@ -2020,7 +2020,7 @@ test('same-session metadata retains a native lease while same-user session repla
 		expect(headers['x-timetable-connection-id']).toBe([...relay.peers.keys()][0]);
 		expect(headers['x-timetable-connection-id']).not.toBe(id);
 		await expect.poll(mock.updateRequestCount).toBe(1);
-		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline+1);
 	} finally {
 		await context.close();
 		await server.close();

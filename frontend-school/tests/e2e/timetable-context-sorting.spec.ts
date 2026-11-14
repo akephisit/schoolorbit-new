@@ -139,7 +139,7 @@ for (const theme of ['light', 'dark'] as const)
 				fill
 			);
 			await assertTimetableTheme(page, theme);
-			expect(mock.workspaceRequestCount()).toBe(1);
+			expect(mock.workspaceRequestCount()).toBe(2);
 			expect(
 				mock.createRequestCount() +
 					mock.synchronizedCreateRequestCount() +

@@ -113,10 +113,12 @@ async fn learner_current_teacher_change_preserves_responses_and_revokes_previous
     .unwrap();
     let mut previous = actor.clone();
     previous.permissions = vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()];
-    assert!(matches!(
-        get_workspace(&pool, &previous, group, DC, &ctx).await,
-        Err(AppError::Forbidden(_))
-    ));
+    // The former teacher remains the independently saved subject coordinator.
+    // That role keeps review access while current teaching entry is revoked.
+    let review = get_workspace(&pool, &previous, group, DC, &ctx)
+        .await
+        .unwrap();
+    assert!(!review.can_manage && !review.can_confirm);
     let changed = get_workspace(&pool, &actor, group, DC, &ctx).await.unwrap();
     assert!(!changed.confirmation_is_current);
     assert_eq!(responses,sqlx::query_scalar::<_,Value>("SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_group_student_evaluations r WHERE learning_group_id=$1").bind(group).fetch_one(&pool).await.unwrap());

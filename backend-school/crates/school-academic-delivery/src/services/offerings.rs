@@ -21,8 +21,8 @@ use super::super::models::{
     PreparationGroupingState, PreviewCurriculumOfferingsRequest, UpdateLearningOfferingRequest,
 };
 use super::{
-    load_term_context, require_active_owner, require_writable_offering_term, require_writable_term,
-    stable_hash, validate_row_version, TermContext,
+    TermContext, load_term_context, require_active_owner, require_writable_offering_term,
+    require_writable_term, stable_hash, validate_row_version,
 };
 
 const OFFERING_COLUMNS: &str = r#"
@@ -33,7 +33,7 @@ const OFFERING_COLUMNS: &str = r#"
 "#;
 
 const DELIVERY_NAMESPACE: Uuid = Uuid::from_u128(0x83c8_46da_e34e_5146_8ff1_f7ca_aa6e_20a4);
-const MAX_TERM_OFFERINGS: usize = 500;
+pub(super) const MAX_TERM_OFFERINGS: usize = 500;
 
 pub fn prepared_offering_id(
     term_id: Uuid,
@@ -167,6 +167,7 @@ struct PreviewHashInput<'a> {
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     term_row_version: i64,
+    delivery_row_version: i64,
     term_code: &'a str,
     study_program_ids: &'a [Uuid],
     proposals: &'a [CurriculumPreparationProposal],
@@ -200,17 +201,37 @@ pub async fn list_on_connection(
     query: LearningOfferingQuery,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<LearningOffering>, AppError> {
+    list_for_projection_on_connection(
+        connection,
+        query,
+        filter,
+        super::current::WorkspacePurpose::Public,
+    )
+    .await
+}
+
+pub(super) async fn list_for_projection_on_connection(
+    connection: &mut sqlx::PgConnection,
+    query: LearningOfferingQuery,
+    filter: &AcademicResourceListFilter,
+    purpose: super::current::WorkspacePurpose,
+) -> Result<Vec<LearningOffering>, AppError> {
+    let assigned = match filter.assigned_actor_id {
+        Some(actor) => {
+            super::current::assigned_offering_ids_for_term_on_connection(
+                connection,
+                query.academic_term_id,
+                actor,
+            )
+            .await?
+        }
+        None => Vec::new(),
+    };
     let owner_ids = filter.allowed_organization_unit_ids();
     let sql = format!(
         "SELECT {OFFERING_COLUMNS} FROM learning_offerings \
          WHERE academic_term_id = $1 \
-           AND ($2 OR owning_organization_unit_id = ANY($3) OR EXISTS (\
-               SELECT 1 FROM learning_groups learning_group \
-               JOIN learning_group_teachers teacher \
-                 ON teacher.learning_group_id = learning_group.id \
-               WHERE learning_group.learning_offering_id = learning_offerings.id \
-                 AND teacher.teacher_id = $4\
-           )) \
+           AND ($2 OR owning_organization_unit_id = ANY($3) OR id=ANY($4)) \
          ORDER BY kind, code_snapshot, id LIMIT $5"
     );
     let rows: Vec<LearningOfferingRow> = DbSession::new(connection)
@@ -221,14 +242,14 @@ pub async fn list_on_connection(
         .bind(query.academic_term_id)
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
-        .bind(filter.assigned_actor_id)
-        .bind((MAX_TERM_OFFERINGS + 1) as i64)
+        .bind(&assigned)
+        .bind((purpose.offering_limit() + 1) as i64)
         .fetch_all()
         .await?;
-    if rows.len() > MAX_TERM_OFFERINGS {
-        return Err(AppError::ValidationError(
-            "จำนวนรายการเปิดสอนในภาคเรียนเกิน 500 รายการ กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน".to_string(),
-        ));
+    if rows.len() > purpose.offering_limit() {
+        return Err(
+            purpose.overflow("จำนวนรายการเปิดสอนในภาคเรียนเกิน 500 รายการ กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน")
+        );
     }
     hydrate_many(connection, rows).await
 }
@@ -1868,7 +1889,8 @@ async fn build_curriculum_preview_for_term(
                         offering_id: Some(offering_id),
                         group_id: Some(group.id),
                     });
-                } else if group.generation_source == "curriculum_prepare"
+                } else if overlaps_target
+                    && group.generation_source == "curriculum_prepare"
                     && group
                         .homeroom_ids
                         .iter()
@@ -1905,6 +1927,12 @@ async fn build_curriculum_preview_for_term(
         academic_term_id,
         academic_year_id: term.academic_year_id,
         term_row_version: term.row_version,
+        delivery_row_version: super::current::term_revision_on_connection(
+            transaction,
+            term.academic_year_id,
+            academic_term_id,
+        )
+        .await?,
         term_code: &term.code,
         study_program_ids: program_ids,
         proposals: &proposals,
@@ -2063,7 +2091,7 @@ async fn insert_generated_offering(
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
                owning_organization_unit_id, weekly_period_target
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10)"#,
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
         )
         .bind(id)
         .bind(term.id)
@@ -2071,6 +2099,12 @@ async fn insert_generated_offering(
         .bind(proposal.resource_kind)
         .bind(&proposal.code)
         .bind(&proposal.name)
+        .bind(match proposal.resource_kind {
+            LearningOfferingKind::Course => "curriculum_course_requirement",
+            LearningOfferingKind::Activity => "curriculum_activity_requirement",
+        })
+        .bind(proposal.requirement_ids.first().copied())
+        .bind(owner_id)
         .bind(weekly_period_target)
         .execute()
         .await?;
@@ -2161,6 +2195,16 @@ async fn insert_homeroom_targets(
                FROM homerooms homeroom
                WHERE homeroom.id = $5
                  AND homeroom.academic_year_id = $4
+                 AND NOT EXISTS (
+                     SELECT 1 FROM learning_offering_targets existing
+                     WHERE existing.learning_offering_id = $2
+                       AND existing.academic_term_id = $3
+                       AND existing.academic_year_id = $4
+                       AND ((existing.target_kind = 'homeroom' AND existing.homeroom_id = homeroom.id)
+                         OR (existing.target_kind = 'grade_program'
+                             AND existing.grade_level_id = homeroom.grade_level_id
+                             AND existing.study_program_id = homeroom.study_program_id))
+                 )
                ON CONFLICT ON CONSTRAINT learning_offering_targets_unique_key DO NOTHING"#,
             )
             .bind(Uuid::new_v5(

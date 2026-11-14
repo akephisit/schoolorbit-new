@@ -2,11 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { sessionState } from './fixtures/session-state';
 import { createDraftRelay, startNativeDraftRelay } from './timetable-collaboration-relay';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder';
-import {
-	installTimetableMock,
-	makeTimetableBlock,
-	timetableIds
-} from './timetable-test-harness';
+import { installTimetableMock, makeTimetableBlock, timetableIds } from './timetable-test-harness';
 
 type Mock = Awaited<ReturnType<typeof installTimetableMock>>;
 const url = (id: string = timetableIds.timetable) =>
@@ -58,7 +54,9 @@ for (const responseKind of ['success', 'error'] as const) {
 		await page.goto(url());
 		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 		const peer = [...mock.relay.peers.keys()][0];
-		const held = gate();
+		const held = gate(),
+			fresh = gate(),
+			handled = gate();
 		let started = false;
 		const stale = structuredClone(mock.workspace());
 		stale.blocks = [
@@ -67,16 +65,21 @@ for (const responseKind of ['success', 'error'] as const) {
 		];
 		await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
 			if (started) {
+				await fresh.promise;
 				await route.fallback();
 				return;
 			}
 			started = true;
 			await held.promise;
-			await route.fulfill(
-				responseKind === 'success'
-					? { json: { success: true, data: stale } }
-					: { status: 500, json: { success: false, error: 'old-session-reload-error' } }
-			);
+			try {
+				await route.fulfill(
+					responseKind === 'success'
+						? { json: { success: true, data: stale } }
+						: { status: 500, json: { success: false, error: 'old-session-reload-error' } }
+				);
+			} finally {
+				handled.release();
+			}
 		});
 		try {
 			await page.getByRole('button', { name: 'เสร็จสิ้น', exact: true }).click();
@@ -90,12 +93,8 @@ for (const responseKind of ['success', 'error'] as const) {
 			mock.relay.holdStateSync();
 			await replaceSession(page, mock);
 			await waitReplacementPeer(mock, peer);
-			const response = page.waitForResponse(
-				(response) =>
-					new URL(response.url()).pathname === '/api/academic/timetable-blocks/workspace'
-			);
 			held.release();
-			await (await response).finished();
+			await handled.promise;
 			await browserTurn(page);
 			await expect(card(page, timetableIds.blockA)).toHaveCount(1);
 			await expect(card(page, timetableIds.blockB)).toHaveCount(0);
@@ -105,6 +104,7 @@ for (const responseKind of ['success', 'error'] as const) {
 				page.getByText(/old-session-reload-error|old-session-workspace|บริบทตารางสอนเปลี่ยนไป/)
 			).toHaveCount(0);
 			expect(mock.workspaceRequestCount()).toBe(2);
+			fresh.release();
 			mock.relay.releaseStateSync();
 			await expect(card(page, timetableIds.createdBlock)).toHaveCount(1);
 			await expect(card(page, timetableIds.blockA)).toHaveCount(0);
@@ -112,6 +112,7 @@ for (const responseKind of ['success', 'error'] as const) {
 			await expect(board(page)).toHaveAttribute('aria-busy', 'false');
 		} finally {
 			held.release();
+			fresh.release();
 			mock.relay.releaseStateSync();
 		}
 	});
@@ -135,10 +136,7 @@ for (const deferred of ['patch', 'snapshot'] as const) {
 				window.WebSocket = class extends NativeWebSocket {
 					constructor(address: string | URL, protocols?: string | string[]) {
 						const target = new URL(String(address), location.href);
-						if (
-							target.pathname === '/ws/timetable' &&
-							target.searchParams.has('timetableId')
-						) {
+						if (target.pathname === '/ws/timetable' && target.searchParams.has('timetableId')) {
 							const redirected = new URL(relayUrl);
 							redirected.search = target.search;
 							redirected.searchParams.set('fixtureUser', userId);
@@ -150,7 +148,8 @@ for (const deferred of ['patch', 'snapshot'] as const) {
 			},
 			{ relayUrl: server.url, userId: timetableIds.user }
 		);
-		const held = gate();
+		const held = gate(),
+			fresh = gate();
 		let started = false;
 		let queuedPatchSeen = false;
 		let lastStateSyncConnectionId: string | null = null;
@@ -217,6 +216,10 @@ for (const deferred of ['patch', 'snapshot'] as const) {
 				await expect.poll(() => lastStateSyncConnectionId).toBe([...mock.relay.peers.keys()][0]);
 				await browserTurn(page);
 			}
+			await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
+				await fresh.promise;
+				await route.fallback();
+			});
 			const oldPeer = [...mock.relay.peers.keys()][0];
 			const replacement = structuredClone(mock.workspace());
 			replacement.blocks = [makeTimetableBlock(timetableIds.createdBlock, timetableIds.period3)];
@@ -243,12 +246,14 @@ for (const deferred of ['patch', 'snapshot'] as const) {
 			expect(lastStateSyncConnectionId).not.toBe(heldPeer);
 			expect(mock.workspaceRequestCount()).toBe(2);
 			expect(mock.retiredRequests()).toEqual([]);
+			fresh.release();
 			mock.relay.releaseStateSync();
 			await expect(card(page, timetableIds.createdBlock)).toHaveCount(1);
 			await expect(card(page, timetableIds.blockB)).toHaveCount(0);
 			await expect(card(page, timetableIds.blockA)).toHaveCount(0);
 		} finally {
 			held.release();
+			fresh.release();
 			mock.relay.releaseStateSync();
 			await page.close();
 			await server.close();
@@ -256,46 +261,118 @@ for (const deferred of ['patch', 'snapshot'] as const) {
 	});
 }
 
-for(const stage of ['timetable','workspace'] as const) test(`replacement session ignores a delayed original ${stage} hydration`,async({page})=>{
- const initial=makeTimetableBlock(timetableIds.blockA,timetableIds.period1);const mock=await installTimetableMock(page,{blocks:[initial]});
- const stale=structuredClone(mock.workspace()),held=gate();let tableReads=0,workspaceReads=0;
- await page.route('**/api/academic/timetable?*',async route=>{
-  tableReads++;if(stage==='timetable'&&tableReads===1){await held.promise;return route.fulfill({json:{success:true,data:stale.timetable}});}await route.fallback();
- });
- await page.route('**/api/academic/timetable-blocks/workspace?*',async route=>{
-  workspaceReads++;if(stage==='workspace'&&workspaceReads===1){await held.promise;return route.fulfill({json:{success:true,data:stale}});}await route.fallback();
- });
- try{
-  await page.goto(url());await expect.poll(()=>stage==='timetable'?tableReads:workspaceReads).toBe(1);
-  const replacement=structuredClone(mock.workspace());replacement.blocks=[makeTimetableBlock(timetableIds.createdBlock,timetableIds.period3)];replacement.timetable.rowVersion=5;replacement.summary.blockCount=1;
-  mock.publishWorkspace(replacement,false);await replaceSession(page,mock);
-  await expect(card(page,timetableIds.createdBlock)).toHaveCount(1);expect(tableReads).toBe(2);
-  held.release();await browserTurn(page);
-  await expect(card(page,timetableIds.blockA)).toHaveCount(0);await expect(card(page,timetableIds.createdBlock)).toHaveCount(1);
-  await expect(board(page)).toHaveAttribute('aria-busy','false');expect(mock.retiredRequests()).toEqual([]);
- }finally{held.release();}
+for (const stage of ['timetable', 'workspace'] as const)
+	test(`replacement session ignores a delayed original ${stage} hydration`, async ({ page }) => {
+		const initial = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
+		const mock = await installTimetableMock(page, { blocks: [initial] });
+		const stale = structuredClone(mock.workspace()),
+			held = gate();
+		let tableReads = 0,
+			workspaceReads = 0;
+		await page.route('**/api/academic/timetable?*', async (route) => {
+			tableReads++;
+			if (stage === 'timetable' && tableReads === 1) {
+				await held.promise;
+				return route.fulfill({ json: { success: true, data: stale.timetable } });
+			}
+			await route.fallback();
+		});
+		await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
+			workspaceReads++;
+			if (stage === 'workspace' && workspaceReads === 1) {
+				await held.promise;
+				return route.fulfill({ json: { success: true, data: stale } });
+			}
+			await route.fallback();
+		});
+		try {
+			await page.goto(url());
+			await expect.poll(() => (stage === 'timetable' ? tableReads : workspaceReads)).toBe(1);
+			const replacement = structuredClone(mock.workspace());
+			replacement.blocks = [makeTimetableBlock(timetableIds.createdBlock, timetableIds.period3)];
+			replacement.timetable.rowVersion = 5;
+			replacement.summary.blockCount = 1;
+			mock.publishWorkspace(replacement, false);
+			await replaceSession(page, mock);
+			await expect(card(page, timetableIds.createdBlock)).toHaveCount(1);
+			expect(tableReads).toBe(2);
+			held.release();
+			await browserTurn(page);
+			await expect(card(page, timetableIds.blockA)).toHaveCount(0);
+			await expect(card(page, timetableIds.createdBlock)).toHaveCount(1);
+			await expect(board(page)).toHaveAttribute('aria-busy', 'false');
+			expect(mock.retiredRequests()).toEqual([]);
+		} finally {
+			held.release();
+		}
+	});
+
+test('persistent current-workspace 404 resolves its singleton once and then waits for explicit retry', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page);
+	await page.goto(url());
+	await expect(board(page)).toBeVisible();
+	let missingReads = 0;
+	await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
+		missingReads++;
+		await route.fulfill({ status: 404, json: { success: false, error: 'ไม่พบตารางสอนปัจจุบัน' } });
+	});
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await expect(page.getByText('โหลดตารางสอนไม่สำเร็จ', { exact: true })).toBeVisible();
+	await expect(board(page)).toHaveCount(0);
+	await browserTurn(page);
+	expect(missingReads).toBe(2);
+	expect(mock.timetableRequestCount()).toBe(2);
+	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
+	await expect.poll(() => missingReads).toBe(3);
+	await browserTurn(page);
+	expect(missingReads).toBe(3);
+	expect(mock.timetableCreateRequestCount()).toBe(0);
+	expect(mock.retiredRequests()).toEqual([]);
 });
 
-test('persistent current-workspace 404 resolves its singleton once and then waits for explicit retry',async({page})=>{
- const mock=await installTimetableMock(page);await page.goto(url());await expect(board(page)).toBeVisible();let missingReads=0;
- await page.route('**/api/academic/timetable-blocks/workspace?*',async route=>{missingReads++;await route.fulfill({status:404,json:{success:false,error:'ไม่พบตารางสอนปัจจุบัน'}});});
- await page.getByRole('button',{name:'แก้ไข',exact:true}).click();await expect(page.getByText('โหลดตารางสอนไม่สำเร็จ',{exact:true})).toBeVisible();
- await expect(board(page)).toHaveCount(0);await browserTurn(page);expect(missingReads).toBe(2);expect(mock.timetableRequestCount()).toBe(2);
- await page.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await expect.poll(()=>missingReads).toBe(3);await browserTurn(page);expect(missingReads).toBe(3);
- expect(mock.timetableCreateRequestCount()).toBe(0);expect(mock.retiredRequests()).toEqual([]);
+test('a missing current workspace followed by nullable singleton None becomes an empty term without creating data', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page);
+	await page.goto(url());
+	await expect(board(page)).toBeVisible();
+	let missingReads = 0,
+		resolutions = 0;
+	await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
+		missingReads++;
+		await route.fulfill({ status: 404, json: { success: false, error: 'ไม่พบตารางสอนปัจจุบัน' } });
+	});
+	await page.route('**/api/academic/timetable?*', async (route) => {
+		resolutions++;
+		await route.fulfill({ json: { success: true, data: null } });
+	});
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await expect(page.getByText('ยังไม่มีตารางสอน', { exact: true })).toBeVisible();
+	expect(missingReads).toBe(1);
+	expect(resolutions).toBe(1);
+	expect(mock.timetableCreateRequestCount()).toBe(0);
+	await expect(board(page)).toHaveCount(0);
 });
 
-test('a missing current workspace followed by nullable singleton None becomes an empty term without creating data',async({page})=>{
- const mock=await installTimetableMock(page);await page.goto(url());await expect(board(page)).toBeVisible();let missingReads=0,resolutions=0;
- await page.route('**/api/academic/timetable-blocks/workspace?*',async route=>{missingReads++;await route.fulfill({status:404,json:{success:false,error:'ไม่พบตารางสอนปัจจุบัน'}});});
- await page.route('**/api/academic/timetable?*',async route=>{resolutions++;await route.fulfill({json:{success:true,data:null}});});
- await page.getByRole('button',{name:'แก้ไข',exact:true}).click();await expect(page.getByText('ยังไม่มีตารางสอน',{exact:true})).toBeVisible();
- expect(missingReads).toBe(1);expect(resolutions).toBe(1);expect(mock.timetableCreateRequestCount()).toBe(0);await expect(board(page)).toHaveCount(0);
-});
-
-test('a failed current-workspace network read preserves the visible board and never loops or replays a write',async({page})=>{
- const mock=await installTimetableMock(page,{blocks:[makeTimetableBlock(timetableIds.blockA,timetableIds.period1)]});await page.goto(url());await expect(board(page)).toBeVisible();let attempts=0;
- await page.route('**/api/academic/timetable-blocks/workspace?*',async route=>{attempts++;await route.abort('failed');});
- await page.getByRole('button',{name:'แก้ไข',exact:true}).click();await expect(page.getByRole('button',{name:'แก้ไข',exact:true})).toBeEnabled();await browserTurn(page);
- expect(attempts).toBe(1);await expect(card(page,timetableIds.blockA)).toBeVisible();expect(mock.updateRequestCount()+mock.createRequestCount()).toBe(0);
+test('a failed current-workspace network read preserves the visible board and never loops or replays a write', async ({
+	page
+}) => {
+	const mock = await installTimetableMock(page, {
+		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
+	});
+	await page.goto(url());
+	await expect(board(page)).toBeVisible();
+	let attempts = 0;
+	await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
+		attempts++;
+		await route.abort('failed');
+	});
+	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toBeEnabled();
+	await browserTurn(page);
+	expect(attempts).toBe(1);
+	await expect(card(page, timetableIds.blockA)).toBeVisible();
+	expect(mock.updateRequestCount() + mock.createRequestCount()).toBe(0);
 });

@@ -72,9 +72,9 @@ report_aggregate() {
             def stage: IN("migration_url","owner_connection","owner_identity","migration_identity",
                 "migration_execution","permission_sync","runtime_grants","owner_schema",
                 "owner_academic_core_cutover","owner_gradebook_results_cutover",
-                "owner_delivery_timetable_cutover","owner_publication_revisions_cutover","owner_staff_profile_cutover","runtime_connection",
+                "owner_current_operations_cutover","owner_staff_profile_cutover","runtime_connection",
                 "runtime_identity","runtime_schema","runtime_academic_core_cutover",
-                "runtime_gradebook_results_cutover","runtime_delivery_timetable_cutover","runtime_publication_revisions_cutover",
+                "runtime_gradebook_results_cutover","runtime_current_operations_cutover",
                 "runtime_staff_profile_cutover","admin_status");
             def error_class: IN("database","row_not_found","pool_timeout","pool_closed","connection",
                 "decode","encode","protocol","configuration","other","source","version_missing",
@@ -105,6 +105,29 @@ report_aggregate() {
                 "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE","PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
                 "PUBLICATION_151_PRESERVATION_FAILED","PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID",
                 "PUBLICATION_151_RECONCILIATION_FAILED");
+            def refusal155: IN("ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET",
+                "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED",
+                "ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED",
+                "ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID");
+            def refusal157: IN("ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE",
+                "ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED",
+                "ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE",
+                "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS",
+                "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS",
+                "ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING",
+                "ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS",
+                "ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING",
+                "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE",
+                "ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE",
+                "ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE",
+                "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH",
+                "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE",
+                "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE",
+                "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE",
+                "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE",
+                "ACADEMIC_CURRENT_OFFERING_NOT_FOUND",
+                "ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH",
+                "ACADEMIC_CURRENT_RECONCILIATION_FAILED");
             def tuple: [.stage,.version,.error_class,.sqlstate,.code];
             def bucket:
                 type == "object" and keys == ["code","count","error_class","sqlstate","stage","version"] and
@@ -117,7 +140,9 @@ report_aggregate() {
                         ((.version == 147 and (.code | refusal147)) or
                          (.version == 148 and (.code | refusal148)) or
                          (.version == 149 and (.code | refusal149)) or
-                         (.version == 151 and (.code | refusal151)))));
+                         (.version == 151 and (.code | refusal151)) or
+                         (.version == 155 and (.code | refusal155)) or
+                         (.version == 157 and (.code | refusal157)))));
             if length != 1 then error("invalid") else .[0] end |
             if type == "object" and
                 keys == ["failed","failures","latest_version","migrated","overflow_count","schema_version","tenants"] and

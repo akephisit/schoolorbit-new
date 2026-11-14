@@ -1,6 +1,11 @@
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
-import type {DeliveryWorkspace,LearningOffering,LearningGroup} from '../../src/lib/api/learning-delivery.js';
+import type {
+	DeliveryWorkspace,
+	LearningOffering,
+	LearningGroup,
+	LearningGroupRosterTracking
+} from '../../src/lib/api/learning-delivery.js';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -17,7 +22,6 @@ const paths = {
 	offering: `/api/academic/offerings/${ids.offering}`,
 	groups: `/api/academic/offerings/${ids.offering}/groups`,
 	versions: '/api/academic/delivery-versions',
-	version: `/api/academic/delivery-versions/${ids.version}`,
 	groupA: `/api/academic/learning-groups/${ids.groupA}`,
 	groupB: `/api/academic/learning-groups/${ids.groupB}`,
 	membershipsA: `/api/academic/learning-groups/${ids.groupA}/memberships`,
@@ -32,10 +36,88 @@ function deferred() {
 	return { promise, release };
 }
 
-const stamp='2026-05-01T00:00:00Z';
-function offering():LearningOffering{return{canManage:true,id:ids.offering,academicYearId:ids.year,academicTermId:ids.term,kind:'course',codeSnapshot:'ค21101',nameSnapshot:'คณิตศาสตร์พื้นฐาน',rowVersion:1,weeklyPeriodTarget:2,owningOrganizationUnitId:ids.offering,migrated:false,createdAt:stamp,updatedAt:stamp,targets:[],snapshot:{kind:'course',subjectId:ids.offering,subjectVersionId:ids.offering,credit:'1.0',hours:'40',standardPeriodsPerWeek:2,assessmentTotalScore:'100.00'}};}
-function group(id:string):LearningGroup{return{id,learningOfferingId:ids.offering,academicTermId:ids.term,academicYearId:ids.year,code:id===ids.groupA?'A':'B',name:id===ids.groupA?'กลุ่ม ก':'กลุ่ม ข',description:null,capacity:40,registrationOpen:false,teacherAssignments:[],homeroomIds:[ids.year],preferredRoomIds:[],rowVersion:1,migrated:false,createdAt:stamp,updatedAt:stamp};}
-function currentWorkspace():DeliveryWorkspace{return{academicYearId:ids.year,academicTermId:ids.term,rowVersion:1,courseMetadata:[],offerings:[{id:ids.offering,kind:'course',code:'ค21101',name:'คณิตศาสตร์พื้นฐาน',rowVersion:1,owningOrganizationUnitId:ids.offering,weeklyPeriodTarget:2,catalog:offering().snapshot,targets:[],homeroomIds:[],groups:[group(ids.groupA),group(ids.groupB)].map(row=>({id:row.id,code:row.code,name:row.name,description:null,capacity:40,rowVersion:row.rowVersion,registrationOpen:row.registrationOpen,homeroomIds:[],preferredRoomIds:[],teachers:[]}))}]};}
+const stamp = '2026-05-01T00:00:00Z';
+function offering(): LearningOffering {
+	return {
+		canManage: true,
+		id: ids.offering,
+		academicYearId: ids.year,
+		academicTermId: ids.term,
+		kind: 'course',
+		codeSnapshot: 'ค21101',
+		nameSnapshot: 'คณิตศาสตร์พื้นฐาน',
+		rowVersion: 1,
+		weeklyPeriodTarget: 2,
+		owningOrganizationUnitId: ids.offering,
+		migrated: false,
+		createdAt: stamp,
+		updatedAt: stamp,
+		targets: [],
+		snapshot: {
+			kind: 'course',
+			subjectId: ids.offering,
+			subjectVersionId: ids.offering,
+			credit: '1.0',
+			hours: '40',
+			standardPeriodsPerWeek: 2,
+			assessmentTotalScore: '100.00'
+		}
+	};
+}
+function group(id: string): LearningGroup {
+	return {
+		id,
+		learningOfferingId: ids.offering,
+		academicTermId: ids.term,
+		academicYearId: ids.year,
+		code: id === ids.groupA ? 'A' : 'B',
+		name: id === ids.groupA ? 'กลุ่ม ก' : 'กลุ่ม ข',
+		description: null,
+		capacity: 40,
+		registrationOpen: false,
+		teacherAssignments: [],
+		homeroomIds: [ids.year],
+		preferredRoomIds: [],
+		rowVersion: 1,
+		migrated: false,
+		createdAt: stamp,
+		updatedAt: stamp
+	};
+}
+function currentWorkspace(): DeliveryWorkspace {
+	return {
+		academicYearId: ids.year,
+		academicTermId: ids.term,
+		rowVersion: 1,
+		courseMetadata: [],
+		offerings: [
+			{
+				id: ids.offering,
+				kind: 'course',
+				code: 'ค21101',
+				name: 'คณิตศาสตร์พื้นฐาน',
+				rowVersion: 1,
+				owningOrganizationUnitId: ids.offering,
+				weeklyPeriodTarget: 2,
+				catalog: offering().snapshot,
+				targets: [],
+				homeroomIds: [],
+				groups: [group(ids.groupA), group(ids.groupB)].map((row) => ({
+					id: row.id,
+					code: row.code,
+					name: row.name,
+					description: null,
+					capacity: 40,
+					rowVersion: row.rowVersion,
+					registrationOpen: row.registrationOpen,
+					homeroomIds: [],
+					preferredRoomIds: [],
+					teachers: []
+				}))
+			}
+		]
+	};
+}
 async function fulfill(route: Route, data: unknown) {
 	await route.fulfill({
 		contentType: 'application/json',
@@ -49,22 +131,18 @@ async function mockOffering(
 	options: {
 		gate?: { path: string; promise: Promise<void> };
 		failOnce?: string;
-		published?: boolean;
 		permissions?: string[];
 		canManage?: boolean;
 		trackingMode?: 'manual' | 'homeroom';
 		failTrackingSave?: boolean;
-		resourceDraft?: boolean;
 		saveGate?: Promise<void>;
 	} = {}
 ) {
 	const counts = new Map<string, number>();
-	let tracking = {
+	let tracking: LearningGroupRosterTracking = {
 		mode: options.trackingMode ?? 'manual',
 		effectiveFrom: options.trackingMode === 'homeroom' ? '2026-10-09' : null,
-		groupRowVersion: 1,
-		startsOn: '2026-05-01',
-		endsOn: '2027-04-30'
+		groupRowVersion: 1
 	};
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),
@@ -150,14 +228,15 @@ async function mockOffering(
 			if (path === paths.offering)
 				return void (await fulfill(route, {
 					...offering(),
-					canManage: options.canManage ?? true,
+					canManage: options.canManage ?? true
 				}));
 			if (path === paths.groups)
 				return void (await fulfill(route, [
-					{...group(ids.groupA),rowVersion:tracking.groupRowVersion},
+					{ ...group(ids.groupA), rowVersion: tracking.groupRowVersion },
 					group(ids.groupB)
 				]));
-			if(path==='/api/academic/delivery/workspace')return void(await fulfill(route,currentWorkspace()));
+			if (path === '/api/academic/delivery/workspace')
+				return void (await fulfill(route, currentWorkspace()));
 			if (path === paths.groupA)
 				return void (await fulfill(route, {
 					...group(ids.groupA),
@@ -188,12 +267,16 @@ test('starts independent group reads while the opening identity is delayed', asy
 		await page.goto(url());
 		await expect.poll(() => count(paths.groups)).toBe(1);
 		await expect.poll(() => count(paths.groupA)).toBe(1);
-		await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toHaveCount(0);
+		await expect(
+			page.getByRole('heading', { name: 'คณิตศาสตร์พื้นฐาน', level: 1, exact: true })
+		).toHaveCount(0);
 		expect(count(paths.versions)).toBe(0);
 	} finally {
 		gate.release();
 	}
-	await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toBeVisible();
+	await expect(
+		page.getByRole('heading', { name: 'คณิตศาสตร์พื้นฐาน', level: 1, exact: true })
+	).toBeVisible();
 	expect(count(paths.versions)).toBe(0);
 	expect(count(paths.offering)).toBe(1);
 	expect(count(paths.groups)).toBe(1);
@@ -202,16 +285,18 @@ test('starts independent group reads while the opening identity is delayed', asy
 	expect(count(paths.management)).toBe(0);
 });
 
-test('offering and direct group detail paint while the group list is delayed', async ({
-	page
-}) => {
+test('offering and direct group detail paint while the group list is delayed', async ({ page }) => {
 	const gate = deferred();
 	const count = await mockOffering(page, { gate: { path: paths.groups, promise: gate.promise } });
 	try {
 		await page.goto(url());
-		await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: 'คณิตศาสตร์พื้นฐาน', level: 1, exact: true })
+		).toBeVisible();
 		expect(count(paths.versions)).toBe(0);
-		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toBeVisible();
+		await expect(
+			page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })
+		).toBeVisible();
 		await expect(page.getByTestId('delivery-groups-ready')).toHaveCount(0);
 		expect(count(paths.groups)).toBe(1);
 	} finally {
@@ -225,14 +310,18 @@ test('default group reuses the complete group list row without another GET', asy
 	const count = await mockOffering(page, { gate: { path: paths.groups, promise: gate.promise } });
 	try {
 		await page.goto(url(null));
-		await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toBeVisible();
-		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toHaveCount(0);
+		await expect(
+			page.getByRole('heading', { name: 'คณิตศาสตร์พื้นฐาน', level: 1, exact: true })
+		).toBeVisible();
+		await expect(page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })).toHaveCount(
+			0
+		);
 		expect(count(paths.groupA)).toBe(0);
 	} finally {
 		gate.release();
 	}
-	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toBeVisible();
-	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
+	await expect(page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })).toBeVisible();
+	await expect(page).not.toHaveURL(/groupId=/);
 	expect(count(paths.groupA)).toBe(0);
 });
 
@@ -240,18 +329,24 @@ test('group selection and Back load only the selected group', async ({ page }) =
 	const count = await mockOffering(page);
 	await page.goto(url());
 	await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
-	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ก');
+	await expect(page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })).toContainText(
+		'กลุ่ม ก'
+	);
 	await page.getByRole('button', { name: /กลุ่ม ข/ }).click();
 	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupB}`));
-	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ข');
+	await expect(page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })).toContainText(
+		'กลุ่ม ข'
+	);
 	await page.goBack();
 	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
-	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ก');
+	await expect(page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })).toContainText(
+		'กลุ่ม ก'
+	);
 	expect(count(paths.offering)).toBe(1);
 	expect(count(paths.groups)).toBe(1);
 	expect(count(paths.versions)).toBe(0);
 	expect(count(paths.groupB)).toBe(1);
- expect(count(paths.groupA)).toBe(2);
+	expect(count(paths.groupA)).toBe(2);
 });
 
 test('a late old selected group never replaces the newly selected group', async ({ page }) => {
@@ -262,7 +357,9 @@ test('a late old selected group never replaces the newly selected group', async 
 		await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
 		await expect.poll(() => count(paths.groupA)).toBe(1);
 		await page.getByRole('button', { name: /กลุ่ม ข/ }).click();
-		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ข');
+		await expect(
+			page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })
+		).toContainText('กลุ่ม ข');
 	} finally {
 		gate.release();
 	}
@@ -272,7 +369,9 @@ test('a late old selected group never replaces the newly selected group', async 
 				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
 			)
 	);
-	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ข');
+	await expect(page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })).toContainText(
+		'กลุ่ม ข'
+	);
 });
 
 test('late management options do not open the editor for a different group', async ({ page }) => {
@@ -283,11 +382,15 @@ test('late management options do not open the editor for a different group', asy
 	});
 	try {
 		await page.goto(url());
-		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ก');
+		await expect(
+			page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })
+		).toContainText('กลุ่ม ก');
 		await page.getByRole('button', { name: 'แก้ไขกลุ่มและครู' }).click();
 		await expect.poll(() => count(paths.management)).toBe(1);
 		await page.getByRole('button', { name: /กลุ่ม ข/ }).click();
-		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ข');
+		await expect(
+			page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })
+		).toContainText('กลุ่ม ข');
 	} finally {
 		gate.release();
 	}
@@ -297,7 +400,7 @@ test('late management options do not open the editor for a different group', asy
 test('dated membership history starts from the route without management options', async ({
 	page
 }) => {
-	const count = await mockOffering(page, { published: true });
+	const count = await mockOffering(page);
 	await page.goto(url());
 	await expect(page.getByRole('heading', { name: 'ประวัติสมาชิกกลุ่มเรียน' })).toBeVisible();
 	await expect.poll(() => count(paths.membershipsA)).toBe(1);
@@ -308,7 +411,6 @@ test('dated membership history starts from the route without management options'
 test('dated history has its own first skeleton and ready state', async ({ page }) => {
 	const gate = deferred();
 	const count = await mockOffering(page, {
-		published: true,
 		gate: { path: paths.membershipsA, promise: gate.promise }
 	});
 	try {
@@ -323,16 +425,26 @@ test('dated history has its own first skeleton and ready state', async ({ page }
 	await expect(page.getByTestId('delivery-memberships-ready')).toBeVisible();
 });
 
-test('a failed offering identity retries only its own region while current groups remain visible',async({page})=>{
- const count=await mockOffering(page,{failOnce:paths.offering});await page.goto(url());await expect.poll(()=>count(paths.groups)).toBe(1);await expect.poll(()=>count(paths.groupA)).toBe(1);await page.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toBeVisible();expect(count(paths.offering)).toBe(2);expect(count(paths.groups)).toBe(1);expect(count(paths.groupA)).toBe(1);expect(count(paths.versions)).toBe(0);
+test('a failed offering identity retries only its own region while current groups remain visible', async ({
+	page
+}) => {
+	const count = await mockOffering(page, { failOnce: paths.offering });
+	await page.goto(url());
+	await expect.poll(() => count(paths.groups)).toBe(1);
+	await expect.poll(() => count(paths.groupA)).toBe(1);
+	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
+	await expect(
+		page.getByRole('heading', { name: 'คณิตศาสตร์พื้นฐาน', level: 1, exact: true })
+	).toBeVisible();
+	expect(count(paths.offering)).toBe(2);
+	expect(count(paths.groups)).toBe(1);
+	expect(count(paths.groupA)).toBe(1);
+	expect(count(paths.versions)).toBe(0);
 });
 for (const width of [375, 1280]) {
-	test(`automatic roster mode is editable for current groups at ${width}px`, async ({
-		page
-	}) => {
+	test(`automatic roster mode is editable for current groups at ${width}px`, async ({ page }) => {
 		await page.setViewportSize({ width, height: 900 });
 		const count = await mockOffering(page, {
-			published: true,
 			permissions: ['learning_offering.read.school', 'learning_offering.manage.school']
 		});
 		await page.goto(url());
@@ -372,7 +484,6 @@ test('tracking save is pending locally and a conflict preserves mode and date', 
 }) => {
 	const gate = deferred();
 	await mockOffering(page, {
-		published: true,
 		permissions: ['learning_offering.read.school', 'learning_offering.manage.school'],
 		failTrackingSave: true,
 		saveGate: gate.promise
@@ -400,7 +511,6 @@ test('automatic roster focus refresh retains draft and updates only changed grou
 	page
 }) => {
 	const count = await mockOffering(page, {
-		published: true,
 		trackingMode: 'homeroom',
 		permissions: ['learning_offering.read.school', 'learning_offering.manage.school']
 	});
@@ -436,7 +546,7 @@ function bulkTeacher(teacherId: string, role: 'primary' | 'secondary' | 'assista
 		displayName: name,
 		role,
 		rowVersion: 1,
-		isActive:true
+		isActive: true
 	};
 }
 async function mockBulkSetup(
@@ -452,14 +562,10 @@ async function mockBulkSetup(
 		trackingGate?: Promise<void>;
 		trackingRefreshGate?: Promise<void>;
 		trackingSaveGate?: Promise<void>;
-		trackingStartsOn?: string;
-		resourceDraft?: boolean;
 	} = {}
 ) {
 	const count = await mockOffering(page, {
-		permissions: ['*'],
-		resourceDraft: options.resourceDraft,
-		published: options.resourceDraft === false
+		permissions: ['*']
 	});
 	let rows = [
 		{
@@ -482,9 +588,7 @@ async function mockBulkSetup(
 			{
 				mode: options.initialTrackingMode ?? 'manual',
 				effectiveFrom: options.initialTrackingMode === 'homeroom' ? '2026-10-27' : null,
-				groupRowVersion: row.rowVersion,
-				startsOn: options.trackingStartsOn ?? '2026-05-01',
-				endsOn: '2027-04-30'
+				groupRowVersion: row.rowVersion
 			}
 		])
 	);
@@ -818,8 +922,9 @@ for (const width of [1280, 390]) {
 			await expect(
 				page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/2', exact: true })
 			).toBeVisible();
-			await expect(page.getByText('ครูหลักเดิม', { exact: true })).toBeVisible();
-			await expect(page.getByText('ครูร่วมเดิม', { exact: true })).toBeVisible();
+			const editor = page.locator('section').filter({ has: page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/2', exact: true }) });
+			await expect(editor.getByText('ครูหลักเดิม', { exact: true })).toBeVisible();
+			await expect(editor.getByText('ครูร่วมเดิม', { exact: true })).toBeVisible();
 			await expect(
 				page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true })
 			).toBeDisabled();
@@ -1007,7 +1112,8 @@ test('bulk automatic roster configuration defaults to Bangkok today and patches 
 	});
 	expect(fixture.applyRequests[0].primaryTeacher).toBeUndefined();
 	expect(fixture.count(`${paths.groupA}/roster`)).toBe(0);
-	expect(fixture.count(paths.membershipsA)).toBe(0);
+	// Initial dated history and the newly accepted group revision each read once; no roster mutation/rebuild occurs.
+	expect(fixture.count(paths.membershipsA)).toBe(2);
 });
 
 test('opening bulk setup reads the fresh offering frame after a successful individual group save', async ({
@@ -1082,13 +1188,17 @@ test('a fresh bulk opening resolves the selected group while an older direct rea
 	});
 	await page.goto(url());
 	await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
-	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toHaveCount(0);
+	await expect(page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })).toHaveCount(
+		0
+	);
 	try {
 		await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 		const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
 		await expect(dialog).toContainText('เลือก 0/2 กลุ่ม');
 		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
-		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('ม.1/1');
+		await expect(
+			page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })
+		).toContainText('ม.1/1');
 		await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
 	} finally {
 		gate.release();
@@ -1099,7 +1209,9 @@ test('a fresh bulk opening resolves the selected group while an older direct rea
 				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
 			)
 	);
-	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('ม.1/1');
+	await expect(page.getByRole('heading', { level: 2, name: /^(กลุ่ม [กข]|ม\.1\/)/ })).toContainText(
+		'ม.1/1'
+	);
 	await expect(page.getByText('ข้อมูลเก่าที่มาช้า', { exact: true })).toHaveCount(0);
 });
 
@@ -1373,26 +1485,27 @@ test('bulk tracking dates retain custom choices through mode flips and refresh e
 	await expect(date).toContainText('29 ต.ค. 2569');
 });
 
-for (const resourceDraft of [false, true])
-	test(`single and bulk tracking ${resourceDraft ? 'draft defaults retain the explicit future start' : 'published defaults use today despite a future raw start'}`, async ({
-		page
-	}) => {
-		await page.clock.setFixedTime(new Date('2026-10-27T05:00:00Z'));
-		await mockBulkSetup(page, { trackingStartsOn: '2026-11-01', resourceDraft });
+for (const [clock, label] of [
+	['2026-10-26T16:59:00Z', '26 ต.ค. 2569'],
+	['2026-10-26T17:01:00Z', '27 ต.ค. 2569']
+] as const)
+	test(`single and bulk tracking initialize the actual Bangkok date ${label}`, async ({ page }) => {
+		await page.clock.setFixedTime(new Date(clock));
+		await mockBulkSetup(page);
 		await page.goto(url());
 		const panel = page.getByTestId('roster-tracking');
 		await panel.getByRole('combobox', { name: 'วิธีจัดรายชื่อ', exact: true }).click();
 		await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
 		await expect(
 			panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })
-		).toContainText('27 ต.ค. 2569');
+		).toContainText(label);
 		await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 		const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
 		await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
 		await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
 		await expect(
 			dialog.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
-		).toContainText('27 ต.ค. 2569');
+		).toContainText(label);
 	});
 
 test('rendering an existing past tracking date preserves the saved configuration', async ({

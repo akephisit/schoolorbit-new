@@ -26,7 +26,7 @@ const GROUP_COLUMNS: &str = r#"
     description, capacity, registration_open, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
-const MAX_TERM_GROUPS: usize = 2_000;
+pub(super) const MAX_TERM_GROUPS: usize = 2_000;
 
 const QUALIFIED_GROUP_COLUMNS: &str = r#"
     learning_group.id, learning_group.learning_offering_id,
@@ -287,6 +287,32 @@ pub async fn list_for_term_on_connection(
     academic_term_id: Uuid,
     filter: &AcademicResourceListFilter,
 ) -> Result<Vec<LearningGroup>, AppError> {
+    list_for_projection_on_connection(
+        connection,
+        academic_term_id,
+        filter,
+        super::current::WorkspacePurpose::Public,
+    )
+    .await
+}
+
+pub(super) async fn list_for_projection_on_connection(
+    connection: &mut sqlx::PgConnection,
+    academic_term_id: Uuid,
+    filter: &AcademicResourceListFilter,
+    purpose: super::current::WorkspacePurpose,
+) -> Result<Vec<LearningGroup>, AppError> {
+    let assigned = match filter.assigned_actor_id {
+        Some(actor) => {
+            super::current::assigned_offering_ids_for_term_on_connection(
+                connection,
+                academic_term_id,
+                actor,
+            )
+            .await?
+        }
+        None => Vec::new(),
+    };
     let owner_ids = filter.allowed_organization_unit_ids();
     let sql = format!(
         "SELECT {QUALIFIED_GROUP_COLUMNS} \
@@ -294,13 +320,7 @@ pub async fn list_for_term_on_connection(
          JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id \
          {GROUP_ROOM_ORDER_JOIN} \
          WHERE learning_group.academic_term_id = $1 \
-           AND ($2 OR offering.owning_organization_unit_id = ANY($3) OR EXISTS (\
-               SELECT 1 FROM learning_groups assigned_group \
-               JOIN learning_group_teachers teacher \
-                 ON teacher.learning_group_id = assigned_group.id \
-               WHERE assigned_group.learning_offering_id = offering.id \
-                 AND teacher.teacher_id = $4\
-           )) \
+           AND ($2 OR offering.owning_organization_unit_id = ANY($3) OR offering.id=ANY($4)) \
          ORDER BY {GROUP_ROOM_ORDER} \
          LIMIT $5"
     );
@@ -312,14 +332,12 @@ pub async fn list_for_term_on_connection(
         .bind(academic_term_id)
         .bind(filter.includes_school_owned)
         .bind(owner_ids)
-        .bind(filter.assigned_actor_id)
-        .bind((MAX_TERM_GROUPS + 1) as i64)
+        .bind(&assigned)
+        .bind((purpose.group_limit() + 1) as i64)
         .fetch_all()
         .await?;
-    if rows.len() > MAX_TERM_GROUPS {
-        return Err(AppError::ValidationError(
-            "จำนวนกลุ่มเรียนในภาคเรียนเกิน 2000 กลุ่ม กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน".to_string(),
-        ));
+    if rows.len() > purpose.group_limit() {
+        return Err(purpose.overflow("จำนวนกลุ่มเรียนในภาคเรียนเกิน 2000 กลุ่ม กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน"));
     }
     hydrate_many(connection, rows).await
 }
@@ -1577,9 +1595,11 @@ mod tests {
             candidates: Vec::new(),
             registration_type: None,
         };
-        assert!(build_roster_preview(Uuid::new_v4(), source(), Vec::new())
-            .students
-            .is_empty());
+        assert!(
+            build_roster_preview(Uuid::new_v4(), source(), Vec::new())
+                .students
+                .is_empty()
+        );
         let preview = build_roster_preview(Uuid::new_v4(), source(), vec![preview_current(1, 10)]);
         assert_eq!(preview.students.len(), 1);
         assert_eq!(preview.students[0].student_id, Uuid::from_u128(10));

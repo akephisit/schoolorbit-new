@@ -572,14 +572,20 @@ ALTER TABLE academic_exam_rounds DROP COLUMN status,DROP COLUMN published_at,DRO
 UPDATE attendance_sessions session SET source_key=mapping.source_key FROM academic157_session_key_map mapping WHERE mapping.id=session.id;
 
 CREATE FUNCTION academic_touch_delivery_revision() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE term uuid; item jsonb:=CASE WHEN TG_OP='DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
+DECLARE term uuid; year uuid; item jsonb:=CASE WHEN TG_OP='DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
 BEGIN
     IF TG_TABLE_NAME='learning_group_roster_tracking' THEN
         SELECT academic_term_id INTO term FROM learning_groups WHERE id=(item->>'learning_group_id')::uuid;
     ELSIF TG_TABLE_NAME='learning_offering_curriculum_sources' THEN
         SELECT academic_term_id INTO term FROM learning_offerings WHERE id=(item->>'learning_offering_id')::uuid;
     ELSE term:=(item->>'academic_term_id')::uuid; END IF;
-    UPDATE academic_delivery_state SET row_version=row_version+1 WHERE academic_term_id=term;
+    SELECT academic_year_id INTO year FROM academic_terms WHERE id=term;
+    IF year IS NOT NULL THEN
+        INSERT INTO academic_delivery_state(academic_term_id,academic_year_id,row_version)
+        VALUES(term,year,2)
+        ON CONFLICT(academic_term_id) DO UPDATE
+        SET row_version=academic_delivery_state.row_version+1;
+    END IF;
     RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
 END $$;
 DO $$ DECLARE relation_name text; BEGIN

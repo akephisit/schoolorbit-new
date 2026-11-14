@@ -1272,6 +1272,10 @@ acknowledgment cannot cancel a newer read or lower the next request revision. Th
 a mobile context with touch enabled and actual locator taps through preview, cancellation and an
 underlying action; viewport-only screenshots remain separate from this modality check.
 
+The retained `academic-teacher-change-handoff.spec.ts` filename now tests direct current teacher
+saves: revision conflicts retain unsaved choices, delayed acknowledgments stay bound to the selected
+group, and read-only staff use current teachers without management reads or writes.
+
 Physical room-name projections share the existing timetable contracts and display helpers. From
 `frontend-school`, run `npm run generate:api-contracts`, `npm run check:api-contracts` and
 `npm run test:api-contracts`, followed by:

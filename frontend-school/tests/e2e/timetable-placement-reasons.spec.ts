@@ -53,6 +53,7 @@ for (const layout of [
 		await page.goto(boardUrl());
 		await setTimetableTheme(page, layout.theme);
 		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		await expect(page.locator('aside article[draggable="true"]').first()).toBeVisible();
 		const readsAfterAdmission = mock.workspaceRequestCount();
 		const cell = page.locator(
 			`td[data-timetable-day="MON"][data-timetable-period-id="${timetableIds.period1}"]`
@@ -117,7 +118,7 @@ test('teacher view prioritizes the busy class and retains the blocking subject a
 	expect(mock.previewRequestCount()).toBe(0);
 });
 
-test('rejected drop keeps board geometry stable, shows only a toast and never writes', async ({
+test('rejected drop preserves cell geometry and an explicit not-submitted review without any write', async ({
 	page
 }) => {
 	const mock = await installTimetableMock(page);
@@ -157,6 +158,7 @@ test('rejected drop keeps board geometry stable, shows only a toast and never wr
 	});
 	await page.goto(boardUrl());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+	const readsAfterAdmission = mock.workspaceRequestCount();
 	const tray = page.locator('aside article[draggable="true"]').first();
 	const transfer = await page.evaluateHandle(() => new DataTransfer());
 	const cell = page.locator('td[data-timetable-day="MON"]').first();
@@ -174,7 +176,14 @@ test('rejected drop keeps board geometry stable, shows only a toast and never wr
 	await expect(page.locator('[data-sonner-toast][data-type="error"]')).toHaveText(
 		'วางคาบไม่ได้: ครูมีคาบสอนในตารางอื่นอยู่แล้ว'
 	);
-	await expect(page.locator('main [role="alert"]')).toHaveCount(0);
+	await expect(
+		page.getByText(
+			'ยังไม่ได้ส่งรายการนี้ไปบันทึก กรุณาทบทวนกับข้อมูลล่าสุดก่อนลองบันทึกด้วยตนเอง',
+			{ exact: true }
+		)
+	).toBeVisible();
+	await expect(page.getByText(/ยังยืนยันผลการบันทึกไม่ได้ การละทิ้ง/)).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'ทบทวนรายการ', exact: true })).toBeEnabled();
 	await expect(cell.locator('[data-timetable-placement-preview]')).toHaveCount(0);
 	await expect(cell.locator('[data-timetable-lesson-card]')).toHaveCount(0);
 	const after = await Promise.all([header.boundingBox(), board.boundingBox(), cell.boundingBox()]);
@@ -182,7 +191,9 @@ test('rejected drop keeps board geometry stable, shows only a toast and never wr
 		const current = after[index];
 		expect(initial).not.toBeNull();
 		expect(current).not.toBeNull();
-		for (const coordinate of ['x', 'y', 'width', 'height'] as const) {
+		// Durable recovery adds vertical space; the board's columns and cell dimensions remain stable.
+		const coordinates=index===1?(['x','width'] as const):(['x','width','height'] as const);
+		for (const coordinate of coordinates) {
 			expect(current![coordinate]).toBeCloseTo(initial![coordinate], 1);
 		}
 	}
@@ -192,7 +203,17 @@ test('rejected drop keeps board geometry stable, shows only a toast and never wr
 	expect(mock.synchronizedCreateRequestCount()).toBe(0);
 	expect(mock.updateRequestCount()).toBe(0);
 	expect(mock.blocks()).toHaveLength(0);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(readsAfterAdmission);
+	const claims = mock.relay.received.filter(({ message }) => message.type === 'ClientClaim').length;
+	await page.getByRole('button', { name: 'ทบทวนรายการ', exact: true }).click();
+	await expect(cell).toHaveAttribute('data-state', 'move');
+	await cell.click();
+	await expect.poll(() => previewRequests).toBe(2);
+	await expect
+		.poll(() => mock.relay.received.filter(({ message }) => message.type === 'ClientClaim').length)
+		.toBeGreaterThan(claims);
+	expect(mock.createRequestCount()).toBe(0);
+	expect(mock.blocks()).toHaveLength(0);
 });
 
 test('touch selection opens all blocking details and dismisses without cancelling the placement', async ({

@@ -170,7 +170,7 @@ pub async fn get_daily_teaching_overview_on_connection(
     let version = timetable_service::get_for_term_on_connection(connection, query.academic_term_id)
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบตารางเรียนในภาคเรียนที่เลือก".into()))?;
-    let source = school_academic_delivery::services::current::workspace_on_connection(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         connection,
         version.academic_year_id,
         version.academic_term_id,

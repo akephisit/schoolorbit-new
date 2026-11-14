@@ -10,7 +10,8 @@ import {
 } from './timetable-test-harness';
 
 test.use({ serviceWorkers: 'block' });
-test.describe.configure({ mode: 'serial' });
+// Each case owns its page, mock registry and collaboration room. A failure must not suppress later persistence checks.
+test.describe.configure({ mode: 'default' });
 
 function timetableUrl(): string {
 	return (
@@ -130,7 +131,14 @@ test('does not mutate when the dropped placement preview fails', async ({ page }
 	await expect(page.locator('[data-sonner-toast][data-type="error"]')).toHaveText(
 		'ตรวจตำแหน่งไม่สำเร็จ'
 	);
-	await expect(page.locator('main [role="alert"]')).toHaveCount(0);
+	await expect(
+		page.getByText(
+			'ยังไม่ได้ส่งรายการนี้ไปบันทึก กรุณาทบทวนกับข้อมูลล่าสุดก่อนลองบันทึกด้วยตนเอง',
+			{ exact: true }
+		)
+	).toBeVisible();
+	await expect(page.getByText(/ยังยืนยันผลการบันทึกไม่ได้ การละทิ้ง/)).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'ทบทวนรายการ', exact: true })).toBeEnabled();
 	await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
 	await expect(page.getByLabel('บริบทตารางสอน')).not.toContainText('กำลังบันทึก');
 	expect(mock.createRequestCount()).toBe(0);

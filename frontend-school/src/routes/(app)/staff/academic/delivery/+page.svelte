@@ -88,9 +88,19 @@
 			epoch = authStore.sessionEpoch;
 		return () => !disposed && activeContext === context && authStore.sessionEpoch === epoch;
 	}
+	const contextMismatch = 'ข้อมูลไม่ตรงกับปีการศึกษาและภาคเรียนที่เลือก กรุณาโหลดอีกครั้ง';
+	function matchesContext(
+		value: Pick<DeliveryWorkspace, 'academicYearId' | 'academicTermId'>,
+		yearId: string,
+		termId: string
+	): boolean {
+		return value.academicYearId === yearId && value.academicTermId === termId;
+	}
 	async function loadHomerooms() {
 		if (!academicYearId || !academicTermId) return;
-		const current = admission(),
+		const yearId = academicYearId,
+			termId = academicTermId,
+			current = admission(),
 			ticket = homeroomRequest.begin();
 		homeroomRevision++;
 		homeroomLoading = true;
@@ -99,7 +109,13 @@
 			const loaded = await getHomeroomDeliveryWorkspace(academicYearId, academicTermId, {
 				signal: ticket.signal
 			});
-			if (current() && homeroomRequest.isCurrent(ticket.revision)) workspace = loaded;
+			if (current() && homeroomRequest.isCurrent(ticket.revision)) {
+				if (!matchesContext(loaded, yearId, termId)) {
+					workspace = null;
+					throw new Error(contextMismatch);
+				}
+				workspace = loaded;
+			}
 		} catch (error) {
 			if (current() && homeroomRequest.isCurrent(ticket.revision) && !isAbortError(error))
 				homeroomError = error instanceof Error ? error.message : 'โหลดภาพรวมไม่สำเร็จ';
@@ -109,7 +125,9 @@
 	}
 	async function loadOverview() {
 		if (!academicYearId || !academicTermId) return;
-		const current = admission(),
+		const yearId = academicYearId,
+			termId = academicTermId,
+			current = admission(),
 			ticket = overviewRequest.begin();
 		overviewRevision++;
 		overviewLoading = true;
@@ -118,7 +136,13 @@
 			const loaded = await getDeliveryWorkspace(academicYearId, academicTermId, {
 				signal: ticket.signal
 			});
-			if (current() && overviewRequest.isCurrent(ticket.revision)) overview = loaded;
+			if (current() && overviewRequest.isCurrent(ticket.revision)) {
+				if (!matchesContext(loaded, yearId, termId)) {
+					overview = null;
+					throw new Error(contextMismatch);
+				}
+				overview = loaded;
+			}
 		} catch (error) {
 			if (current() && overviewRequest.isCurrent(ticket.revision) && !isAbortError(error))
 				overviewError = error instanceof Error ? error.message : 'โหลดรายการเปิดสอนไม่สำเร็จ';
@@ -182,8 +206,17 @@
 					return;
 				untrack(() => {
 					if (homeroomRevision !== initialHomeroomRevision) return;
-					if (result.ok) workspace = result.data;
-					else homeroomError = result.error;
+					if (result.ok) {
+						if (
+							context &&
+							matchesContext(result.data, context.academicYearId, context.academicTermId)
+						)
+							workspace = result.data;
+						else {
+							workspace = null;
+							homeroomError = contextMismatch;
+						}
+					} else homeroomError = result.error;
 					homeroomLoading = false;
 				});
 			});
@@ -193,8 +226,17 @@
 					return;
 				untrack(() => {
 					if (overviewRevision !== initialOverviewRevision) return;
-					if (result.ok) overview = result.data;
-					else overviewError = result.error;
+					if (result.ok) {
+						if (
+							context &&
+							matchesContext(result.data, context.academicYearId, context.academicTermId)
+						)
+							overview = result.data;
+						else {
+							overview = null;
+							overviewError = contextMismatch;
+						}
+					} else overviewError = result.error;
 					overviewLoading = false;
 				});
 			});

@@ -681,20 +681,22 @@ async fn learner_review_coordinator_reads_sibling_rooms_only_within_the_subject(
             .await
             .is_ok()
     );
-    // A live registry assignment omitted from the selected graph cannot extend
-    // the coordinator's rights to a different contributing subject.
+    // A new current teaching assignment grants assigned access immediately,
+    // independently of the coordinator's original subject scope.
     sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role) VALUES(uuidv7(),$1,$2,$3,$4,'primary')")
         .bind(unrelated).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(coordinator.user_id).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at) SELECT uuidv7(),$1,academic_term_id,academic_year_id,student_academic_year_id,student_id,'active','manual',joined_at FROM learning_group_students WHERE learning_group_id=$2 AND student_academic_year_id=$3 AND membership_status='active'")
         .bind(unrelated).bind(group).bind(student).execute(&pool).await.unwrap();
-    assert!(matches!(
-        summary_for_actor(&pool, &coordinator, &ctx, student).await,
-        Err(AppError::Forbidden(_))
-    ));
-    assert!(matches!(
-        get_workspace(&pool, &coordinator, unrelated, DC, &ctx).await,
-        Err(AppError::Forbidden(_))
-    ));
+    assert!(
+        summary_for_actor(&pool, &coordinator, &ctx, student)
+            .await
+            .is_ok()
+    );
+    assert!(
+        get_workspace(&pool, &coordinator, unrelated, DC, &ctx)
+            .await
+            .is_ok()
+    );
     assert!(
         summary_for_actor(&pool, &manager, &ctx, student)
             .await

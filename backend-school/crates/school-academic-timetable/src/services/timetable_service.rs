@@ -88,8 +88,8 @@ pub async fn create(
             permit.commit(tx).await?;
             return Ok(current);
         }
-        let valid: bool = DbSession::new(&mut tx).scalar("academic_timetable.current.create.schedule", "SELECT EXISTS(SELECT 1 FROM bell_schedules WHERE id=$1 AND academic_year_id=$2 AND is_active)").bind(schedule).bind(year).fetch_one().await?;
-        if !valid { return Err(AppError::ValidationError("ภาคเรียนต้องมีตารางคาบมาตรฐานที่ใช้งานได้".into())); }
+        let bell_schedule = school_academic_core::services::bell_schedules::get_on_connection(&mut tx, schedule).await?;
+        if bell_schedule.academic_year_id != year { return Err(AppError::ValidationError("ภาคเรียนต้องมีตารางคาบมาตรฐานที่ใช้งานได้".into())); }
         let id = Uuid::now_v7();
         DbSession::new(&mut tx).query("academic_timetable.current.create.insert", "INSERT INTO academic_timetables(id,academic_term_id,academic_year_id,bell_schedule_id) VALUES($1,$2,$3,$4)").bind(id).bind(request.academic_term_id).bind(year).bind(schedule).execute().await?;
         let current = get_by_id_on_connection(&mut tx, id).await?;

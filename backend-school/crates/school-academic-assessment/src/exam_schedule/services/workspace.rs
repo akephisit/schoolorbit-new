@@ -531,7 +531,7 @@ pub(super) async fn fetch_workspace_counts(
             WORKSPACE_COUNTS_SQL,
         )
         .bind(round_id)
-        .bind(false) // Draft readiness requires valid class numbers, without a manual generation step.
+        .bind(true) // Current completeness includes the actual canonical seat assignments.
         .fetch_one()
         .await?;
 

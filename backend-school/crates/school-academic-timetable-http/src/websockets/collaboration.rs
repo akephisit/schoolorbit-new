@@ -241,7 +241,16 @@ pub(super) async fn handle(
                     }
                     Err(_) => break,
                 }
-                if invalidated { break; }
+                if invalidated {
+                    let closing = socket.send(Message::Close(Some(CloseFrame {
+                        code: 1000,
+                        reason: "Reconcile required".into(),
+                    })));
+                    if !matches!(tokio::time::timeout(Duration::from_secs(1), closing).await, Ok(Ok(()))) {
+                        tracing::debug!("Failed to send timetable reconciliation close");
+                    }
+                    break;
+                }
             }
             incoming = socket.next() => match incoming {
                 Some(Ok(Message::Text(wire))) => {

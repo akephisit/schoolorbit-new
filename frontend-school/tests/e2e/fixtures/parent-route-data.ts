@@ -18,6 +18,7 @@ export async function mockParent(
 	options: { hold?: Region; holdAt?: number; fail?: Region; failAt?: number; denied?: boolean } = {}
 ) {
 	const base = await mockStaffHome(page, { userType: 'parent', permissions: [] });
+	let removedSources = false;
 	const reads: URL[] = [],
 		writes: string[] = [],
 		counts = new Map<string, number>();
@@ -192,9 +193,13 @@ export async function mockParent(
 				kind === 'context'
 					? academicOptions
 					: kind === 'timetable'
-						? blocks
+						? removedSources
+							? []
+							: blocks
 						: kind === 'exams'
-							? rounds
+							? removedSources
+								? []
+								: rounds
 							: kind === 'calendar'
 								? events
 								: path === '/api/parent/profile'
@@ -203,5 +208,14 @@ export async function mockParent(
 			);
 		}
 	);
-	return { ...base, reads, writes, release, count: (kind: Region) => counts.get(kind) ?? 0 };
+	return {
+		...base,
+		removeSources: () => {
+			removedSources = true;
+		},
+		reads,
+		writes,
+		release,
+		count: (kind: Region) => counts.get(kind) ?? 0
+	};
 }

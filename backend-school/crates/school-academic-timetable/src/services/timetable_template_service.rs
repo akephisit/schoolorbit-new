@@ -1,6 +1,6 @@
 use crate::collaboration::{CommitPermit, MutationScope, TimetableMutationContext};
 use school_database::DbSession;
-use sqlx::{types::Json, FromRow, PgPool};
+use sqlx::{FromRow, PgPool, types::Json};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -256,19 +256,19 @@ pub async fn from_current(
         "academic_timetable.services.timetable_template_service.from_current",
     )
     .await?;
-    let version_exists: bool = DbSession::new(&mut *transaction)
+    let timetable_exists: bool = DbSession::new(&mut *transaction)
         .scalar(
             "academic_timetable.services.timetable_template_service.from_current",
             r#"SELECT EXISTS(
                SELECT 1 FROM academic_timetables
-               WHERE id = $1 AND academic_term_id = $2 AND status <> 'cancelled'
+               WHERE id = $1 AND academic_term_id = $2
            )"#,
         )
         .bind(request.timetable_id)
         .bind(request.academic_term_id)
         .fetch_one()
         .await?;
-    if !version_exists {
+    if !timetable_exists {
         return Err(AppError::NotFound("ไม่พบตารางเรียนในภาคเรียนที่ระบุ".to_string()));
     }
     let template_id = Uuid::now_v7();
@@ -414,7 +414,7 @@ async fn apply_template_in_permit(
             AppError::Conflict("เพิ่มแม่แบบได้เฉพาะรุ่นตารางฉบับร่างในภาคเรียนที่เปิดอยู่".to_string())
         })?;
     let mut block_ids = Vec::with_capacity(template.entries.len());
-    let delivery = school_academic_delivery::services::current::workspace_on_connection(
+    let delivery = school_academic_delivery::services::current::complete_workspace_on_connection(
         &mut transaction,
         academic_year_id,
         request.academic_term_id,
@@ -879,8 +879,8 @@ fn require_name(name: &str) -> Result<&str, AppError> {
 mod tests {
     use super::{canonical_entry_types, eligible_template_group_instructors};
     use school_academic_delivery::models::{
-        current::{DeliveryGroup, DeliveryTeacher},
         LearningTeacherRole,
+        current::{DeliveryGroup, DeliveryTeacher},
     };
     use std::collections::HashSet;
     use uuid::Uuid;

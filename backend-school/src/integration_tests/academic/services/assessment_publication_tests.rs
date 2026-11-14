@@ -436,7 +436,7 @@ async fn assessment_publication_accepts_large_mixed_targets_and_preserves_owned_
     let activity_ids = (0..499).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
     let mut tx = pool.begin().await.unwrap();
     let activity_source: Uuid = sqlx::query_scalar(
-        "SELECT learning_offering_id FROM activity_offering_details ORDER BY learning_offering_id LIMIT 1",
+        "SELECT id FROM activity_versions WHERE status='published' ORDER BY id LIMIT 1",
     )
     .fetch_one(&mut *tx)
     .await
@@ -446,7 +446,7 @@ async fn assessment_publication_accepts_large_mixed_targets_and_preserves_owned_
          SELECT batch.id,target.academic_term_id,target.academic_year_id,'activity','COORD-ACT-'||batch.number::text,'Coordinator activity fixture',source.owning_organization_unit_id,1
          FROM unnest($1::uuid[]) WITH ORDINALITY batch(id,number)
          JOIN learning_offerings target ON target.id=$2
-         JOIN learning_offerings source ON source.id=$3",
+         JOIN activity_versions version ON version.id=$3 JOIN activities source ON source.id=version.activity_id",
     )
     .bind(&activity_ids)
     .bind(missing)
@@ -456,10 +456,10 @@ async fn assessment_publication_accepts_large_mixed_targets_and_preserves_owned_
     .unwrap();
     assert_eq!(inserted.rows_affected(), 499);
     sqlx::query(
-        "INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours,capacity,attendance_requirement,pass_criteria)
-         SELECT offering.id,offering.academic_term_id,offering.academic_year_id,source.activity_version_id,source.activity_id,source.registration_type,source.scheduling_mode,source.hours,source.capacity,source.attendance_requirement,source.pass_criteria
-         FROM learning_offerings offering JOIN activity_offering_details source ON source.learning_offering_id=$2
-         WHERE offering.id=ANY($1)",
+        r#"INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,academic_year_id,activity_version_id,activity_id,registration_type,scheduling_mode,hours,capacity,attendance_requirement,pass_criteria)
+         SELECT offering.id,offering.academic_term_id,offering.academic_year_id,source.id,source.activity_id,'assigned',source.scheduling_mode,source.hours_per_week,NULL,'{"minimumPercent":null,"requiredSessions":null}'::jsonb,'{"requireAttendance":false,"requireTeacherConfirmation":true,"outcomes":["pass","fail"]}'::jsonb
+         FROM learning_offerings offering JOIN activity_versions source ON source.id=$2
+         WHERE offering.id=ANY($1)"#,
     )
     .bind(&activity_ids)
     .bind(activity_source)

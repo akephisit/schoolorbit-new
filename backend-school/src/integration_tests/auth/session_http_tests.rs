@@ -2424,8 +2424,8 @@ pub(crate) mod protected_router {
             let bell:Uuid=sqlx::query_scalar("INSERT INTO bell_schedules(id,academic_year_id,code,name,is_default) VALUES(uuidv7(),$1,'BULK_HTTP','Bulk HTTP',true) RETURNING id").bind(year).fetch_one(&mut *tx).await.unwrap();
             let term:Uuid=sqlx::query_scalar("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES( 'MON,TUE,WED,THU,FRI',$1,1,'BULK_HTTP','Bulk HTTP','regular',$2,'planning',true,true) RETURNING id").bind(year).bind(bell).fetch_one(&mut *tx).await.unwrap();
             let id = Uuid::new_v4();
-            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on) SELECT $1,$2,$3,'course','BULK-HTTP','Bulk HTTP','draft',owning_organization_unit_id,$5 FROM subjects WHERE id=$4")
-                .bind(id).bind(term).bind(year).bind(source.id).bind(today).execute(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,owning_organization_unit_id,weekly_period_target) SELECT $1,$2,$3,'course','BULK-HTTP','Bulk HTTP',owning_organization_unit_id,1 FROM subjects WHERE id=$4")
+                .bind(id).bind(term).bind(year).bind(source.id).execute(&mut *tx).await.unwrap();
             sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours) VALUES($1,$2,$3,$4,$5,1,40)")
                 .bind(id).bind(term).bind(year).bind(source_version.id).bind(source.id).execute(&mut *tx).await.unwrap();
             tx.commit().await.unwrap();

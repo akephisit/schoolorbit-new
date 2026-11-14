@@ -628,8 +628,8 @@ def workspace(value, year_id, term_id, timetable_id):
         require(isinstance(value.get(key), list))
     require(isinstance(value.get("summary"), dict))
     require(type(value.get("deliveryRowVersion")) is int and value["deliveryRowVersion"] > 0)
-    count = value.get("totalTimetableBlockCount")
-    require("totalTimetableBlockCount" in value and (count is None or type(count) is int and count >= 0))
+    count = value.get("totalBlockCount")
+    require("totalBlockCount" in value and (count is None or type(count) is int and count >= 0))
 
 def run():
     global phase, http_status

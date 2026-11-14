@@ -1,496 +1,144 @@
-import { sessionState } from './fixtures/session-state';
-import { expect, test, type Page, type Route } from '@playwright/test';
-
+import { expect, test } from '@playwright/test';
+import { mockCurrentDelivery, deliveryReply } from './fixtures/current-delivery';
+import type { DatedRosterMembership } from '../../src/lib/api/learning-delivery';
 test.use({ serviceWorkers: 'block' });
-test.describe.configure({ mode: 'serial' });
+const confirmName = 'ยืนยันลบถาวร';
 
-const ids = {
-	year: '10000000-0000-4000-8000-000000000101',
-	term: '20000000-0000-4000-8000-000000000101',
-	baseVersion: '30000000-0000-4000-8000-000000000101',
-	targetVersion: '30000000-0000-4000-8000-000000000102',
-	changeSet: '40000000-0000-4000-8000-000000000101',
-	user: '50000000-0000-4000-8000-000000000101',
-	offering: '60000000-0000-4000-8000-000000000101',
-	group: '70000000-0000-4000-8000-000000000101',
-	membership: '80000000-0000-4000-8000-000000000101',
-	studentYear: '90000000-0000-4000-8000-000000000101',
-	student: 'a0000000-0000-4000-8000-000000000101'
-};
+test('a current weekly-target edit saves once without changing the pinned curriculum source', async ({
+	page
+}) => {
+	const fixture = await mockCurrentDelivery(page),
+		source = structuredClone(fixture.resource().snapshot);
+	await page.goto(fixture.detail);
+	await page.getByLabel('คาบต่อสัปดาห์', { exact: true }).fill('4');
+	await page.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
+	await expect.poll(() => fixture.resource().weeklyPeriodTarget).toBe(4);
+	expect(fixture.resource().snapshot).toEqual(source);
+	const writes = fixture.writes.filter((row) => row.method === 'PATCH');
+	expect(writes).toHaveLength(1);
+	expect(writes[0].body).toEqual({ rowVersion: 1, weeklyPeriodTarget: 4 });
+	expect(
+		fixture.reads.filter((url) => /delivery-versions|term-change-sets/.test(url.pathname))
+	).toEqual([]);
+});
 
-function fulfill(route: Route, data: unknown, status = 200) {
-	return route.fulfill({
-		status,
-		contentType: 'application/json',
-		body: JSON.stringify(status < 400 ? { success: true, data } : { success: false, error: data })
+test('read-only staff inspect the current opening without management options or mutation controls', async ({
+	page
+}) => {
+	const fixture = await mockCurrentDelivery(page, {
+		permissions: ['learning_offering.read.school']
 	});
-}
+	fixture.setCanManage(false);
+	await page.goto(fixture.detail);
+	await expect(page.getByRole('heading', { name: 'กลุ่ม ก', exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'แก้ไขกลุ่มและครู', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'ลบรายการเปิดสอน', exact: true })).toHaveCount(0);
+	expect(fixture.count('/api/academic/delivery/management-options')).toBe(0);
+	expect(fixture.writes).toEqual([]);
+});
 
-function changeSet(effectiveFrom: string) {
-	return {
-		id: ids.changeSet,
-		academicTermId: ids.term,
-		academicYearId: ids.year,
-		effectiveFrom,
-		reason: 'เพิ่มรายวิชาเสริมตามมติฝ่ายวิชาการ',
-		status: 'draft',
-		baseTimetableVersionId: ids.baseVersion,
-		targetTimetableVersionId: ids.targetVersion,
-		rowVersion: 1,
-		createdBy: ids.user,
-		publishedBy: null,
-		publishedAt: null,
-		cancelledBy: null,
-		cancelledAt: null,
-		createdAt: '2026-08-30T00:00:00Z',
-		updatedAt: '2026-08-30T00:00:00Z',
-		items: []
+test('read-only staff retain actual dated roster intervals without a publication or management preview', async ({
+	page
+}) => {
+	const fixture = await mockCurrentDelivery(page, {
+		permissions: ['learning_offering.read.school']
+	});
+	fixture.setCanManage(false);
+	const membership: DatedRosterMembership = {
+		id: 'd0000000-0000-4000-8000-000000000001',
+		learningGroupId: fixture.ids.groupA,
+		studentAcademicYearId: 'd0000000-0000-4000-8000-000000000002',
+		studentId: 'd0000000-0000-4000-8000-000000000003',
+		displayName: 'เด็กชายทดสอบ รายชื่อ',
+		studentCode: '101',
+		membershipStatus: 'ended',
+		rosterSource: 'manual',
+		joinedAt: '2026-08-30',
+		leftAt: '2026-09-01',
+		rowVersion: 2
 	};
-}
-
-function warningPreview() {
-	return {
-		changeSetId: ids.changeSet,
-		changeSetRowVersion: 1,
-		effectiveFrom: '2026-09-01',
-		targetTimetableVersionId: ids.targetVersion,
-		targetTimetableVersionRowVersion: 3,
-		previewHash: 'preview-hash-1',
-		findings: [
-			{
-				code: 'weekly_period_excess',
-				severity: 'warning',
-				title: 'คาบจริงมากกว่าเป้าหมาย',
-				guidance: 'ตรวจแล้วรับทราบก่อนเผยแพร่',
-				affectedCount: 1,
-				resourceId: null,
-				learningOfferingId: null,
-				learningGroupId: null,
-				route: null
-			},
-			{
-				code: 'weekly_period_excess',
-				severity: 'warning',
-				title: 'อีกกลุ่มมีคาบจริงมากกว่าเป้าหมาย',
-				guidance: 'ใช้การรับทราบรหัสเดียวกัน',
-				affectedCount: 1,
-				resourceId: null,
-				learningOfferingId: null,
-				learningGroupId: null,
-				route: null
-			}
-		],
-		impactCounts: {
-			groups: 1,
-			homerooms: 1,
-			membershipIntervals: 0,
-			teacherAssignments: 1,
-			targetTimetableEntries: 2,
-			courseAssessmentPlans: 0,
-			courseAssessmentCategories: 0,
-			courseAssessmentItems: 0,
-			learningResults: 0,
-			examScheduleItems: 0,
-			supervisionObservations: 0
-		},
-		scheduleCounts: []
-	};
-}
-
-async function mockWorkspace(
-	page: Page,
-	permissions: string[],
-	options: {
-		changeSets?: ReturnType<typeof changeSet>[];
-		preview?: Record<string, unknown>;
-		publishedRosterDetail?: boolean;
-		publishConflict?: boolean;
-	} = {}
-) {
-	let managementRequests = 0;
-	let rosterPreviewRequests = 0;
-	let changePreviewRequests = 0;
-	let createdBody: Record<string, unknown> | null = null;
-	let publishedBody: Record<string, unknown> | null = null;
-	let currentChangeSets: Record<string, unknown>[] = [...(options.changeSets ?? [])];
-	await page.route(
-		(url) => url.pathname.startsWith('/api/'),
-		async (route) => {
-			const url = new URL(route.request().url());
-			const changeSetPath = `/api/academic/term-change-sets/${ids.changeSet}`;
-			const groupPath = `/api/academic/learning-groups/${ids.group}`;
-			if (url.pathname === '/api/auth/me') {
-				await fulfill(route, {
-					id: ids.user,
-					username: 'academic-change-test',
-					firstName: 'วิชาการ',
-					displayName: 'วิชาการ ทดสอบ',
-					lastName: 'ทดสอบ',
-					userType: 'staff',
-					status: 'ACTIVE',
-					session: sessionState(),
-					createdAt: '2026-08-30T00:00:00Z',
-					email: null,
-					nationalId: null,
-					phone: null,
-					profileImageFileId: null,
-					permissions
-				});
-				return;
-			}
-			if (url.pathname === '/api/academic/context/options') {
-				await fulfill(route, {
-					defaultAcademicYearId: ids.year,
-					defaultAcademicTermId: ids.term,
-					years: [
-						{
-							isVisible: true,
-							id: ids.year,
-							name: 'ปีการศึกษา 2569',
-							year: 2569,
-							status: 'active'
-						}
-					],
-					terms: [
-						{
-							isVisible: true,
-							id: ids.term,
-							academicYearId: ids.year,
-							name: 'ภาคเรียนที่ 1',
-							code: '1',
-							sequence: 1,
-							termType: 'regular',
-							status: 'active',
-							includedInYearResult: true,
-							blocksYearClosure: true
-						}
-					]
-				});
-				return;
-			}
-			if (url.pathname === '/api/academic/delivery/homerooms') {
-				await fulfill(route, {
-					academicYearId: ids.year,
-					academicTermId: ids.term,
-					timetableId: ids.baseVersion,
-					timetableVersionStatus: 'published',
-					homerooms: [],
-					unlinked: []
-				});
-				return;
-			}
-			if (
-				options.publishedRosterDetail &&
-				url.pathname === `/api/academic/offerings/${ids.offering}`
-			) {
-				await fulfill(route, {
-					id: ids.offering,
-					academicTermId: ids.term,
-					academicYearId: ids.year,
-					kind: 'course',
-					codeSnapshot: 'ค21101',
-					nameSnapshot: 'คณิตศาสตร์พื้นฐาน',
-					status: 'published',
-					rowVersion: 1,
-					migrated: false,
-					startsOn: '2026-05-01',
-					endsOn: null,
-					stopReason: null,
-					targets: [],
-					snapshot: {
-						kind: 'course',
-						subjectId: ids.offering,
-						subjectVersionId: ids.offering,
-						credit: '1.0',
-						hours: '40',
-						standardPeriodsPerWeek: 2,
-						gradingPolicy: {
-							policyCode: 'school_default',
-							totalScore: '100.00',
-							passingScore: '50.00'
-						}
-					},
-					createdAt: '2026-05-01T00:00:00Z',
-					updatedAt: '2026-05-01T00:00:00Z'
-				});
-				return;
-			}
-			if (options.publishedRosterDetail && url.pathname === '/api/academic/timetable-versions') {
-				await fulfill(route, [
-					{
-						id: ids.baseVersion,
-						academicTermId: ids.term,
-						academicYearId: ids.year,
-						bellScheduleId: ids.baseVersion,
-						changeSetId: null,
-						status: 'published',
-						displayState: 'current',
-						effectiveFrom: '2026-05-01',
-						effectiveUntil: null,
-						sourceVersionId: null,
-						rowVersion: 1,
-						publishedAt: '2026-05-01T00:00:00Z',
-						publishedBy: ids.user,
-						createdBy: ids.user,
-						createdAt: '2026-05-01T00:00:00Z',
-						updatedAt: '2026-05-01T00:00:00Z',
-						targets: [
-							{
-								timetableId: ids.baseVersion,
-								learningOfferingId: ids.offering,
-								standardPeriodsPerWeek: 2,
-								weeklyPeriodTarget: 2
-							}
-						]
-					}
-				]);
-				return;
-			}
-			const publishedGroup = {
-				id: ids.group,
-				learningOfferingId: ids.offering,
-				academicTermId: ids.term,
-				academicYearId: ids.year,
-				code: 'M1-1',
-				name: 'ม.1/1',
-				description: null,
-				capacity: 40,
-				status: 'published',
-				rosterStatus: 'published',
-				rosterPublishedAt: '2026-05-01T00:00:00Z',
-				teachersLocked: true,
-				teacherAssignments: [],
-				homeroomIds: [ids.group],
-				preferredRoomIds: [],
-				rowVersion: 1,
-				migrated: false,
-				createdAt: '2026-05-01T00:00:00Z',
-				updatedAt: '2026-05-01T00:00:00Z'
-			};
-			if (
-				options.publishedRosterDetail &&
-				url.pathname === `/api/academic/offerings/${ids.offering}/groups`
-			) {
-				await fulfill(route, [publishedGroup]);
-				return;
-			}
-			if (options.publishedRosterDetail && url.pathname === groupPath) {
-				await fulfill(route, publishedGroup);
-				return;
-			}
-			if (options.publishedRosterDetail && url.pathname === `${groupPath}/memberships`) {
-				await fulfill(route, [
-					{
-						id: ids.membership,
-						learningGroupId: ids.group,
-						studentAcademicYearId: ids.studentYear,
-						studentId: ids.student,
-						studentCode: '10001',
-						displayName: 'เด็กชายทดสอบ รายชื่อ',
-						joinedAt: '2026-05-01',
-						leftAt: null,
-						membershipStatus: 'active',
-						rosterSource: 'manual',
-						publishedAt: '2026-05-01T00:00:00Z',
-						rowVersion: 1
-					}
-				]);
-				return;
-			}
-			if (options.publishedRosterDetail && url.pathname === `${groupPath}/roster`) {
-				rosterPreviewRequests += 1;
-				await fulfill(route, 'forbidden', 403);
-				return;
-			}
-			if (url.pathname === '/api/academic/term-change-sets' && route.request().method() === 'GET') {
-				await fulfill(route, currentChangeSets);
-				return;
-			}
-			if (
-				url.pathname === '/api/academic/term-change-sets' &&
-				route.request().method() === 'POST'
-			) {
-				createdBody = route.request().postDataJSON() as Record<string, unknown>;
-				const created = changeSet(String(createdBody.effectiveFrom));
-				currentChangeSets = [created, ...currentChangeSets];
-				await fulfill(route, created, 201);
-				return;
-			}
-			if (url.pathname === changeSetPath && route.request().method() === 'GET') {
-				await fulfill(route, currentChangeSets[0]);
-				return;
-			}
-			if (url.pathname === `${changeSetPath}/preview` && route.request().method() === 'GET') {
-				changePreviewRequests += 1;
-				await fulfill(route, options.preview ?? {});
-				return;
-			}
-			if (url.pathname === `${changeSetPath}/publish` && route.request().method() === 'POST') {
-				publishedBody = route.request().postDataJSON() as Record<string, unknown>;
-				if (options.publishConflict) {
-					await fulfill(route, { message: 'preview stale' }, 409);
-					return;
-				}
-				const published = {
-					...currentChangeSets[0],
-					status: 'published' as const,
-					rowVersion: 2,
-					publishedAt: '2026-08-30T04:00:00Z',
-					updatedAt: '2026-08-30T04:00:00Z'
-				};
-				currentChangeSets = [published];
-				await fulfill(route, published);
-				return;
-			}
-			if (url.pathname === '/api/academic/delivery/management-options') {
-				managementRequests += 1;
-				await fulfill(route, {});
-				return;
-			}
-			if (url.pathname === '/api/academic/delivery/workspace') {
-				await fulfill(route, { academicTermId: ids.term, offerings: [] });
-				return;
-			}
-			if (url.pathname === '/api/menu/user') return void (await fulfill(route, { groups: [] }));
-			if (url.pathname === '/api/me/work-items/counts')
-				return void (await fulfill(route, {
-					open: 0,
-					dueSoon: 0,
-					overdue: 0,
-					submitted: 0,
-					closed: 0,
-					total: 0
-				}));
-			if (url.pathname === '/api/notifications')
-				return void (await fulfill(route, { items: [], unread_count: 0 }));
-			if (url.pathname === '/api/notifications/stream')
-				return void (await route.fulfill({
-					status: 200,
-					contentType: 'text/event-stream',
-					body: ''
-				}));
-			await fulfill(route, {});
-		}
+	await page.route(`**/api/academic/learning-groups/${fixture.ids.groupA}/memberships`, (route) =>
+		deliveryReply(route, [membership])
 	);
-	return {
-		managementRequestCount: () => managementRequests,
-		rosterPreviewRequestCount: () => rosterPreviewRequests,
-		changePreviewRequestCount: () => changePreviewRequests,
-		createdRequest: () => createdBody,
-		publishedRequest: () => publishedBody
-	};
-}
-
-test('manager creates a dated midterm draft without changing curriculum', async ({ page }) => {
-	await page.clock.setFixedTime(new Date('2026-08-30T08:00:00+07:00'));
-	const mocked = await mockWorkspace(page, ['*']);
-	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
-
-	await page.getByRole('button', { name: 'เพิ่ม/ปรับ/หยุดกลางภาค' }).click();
-	await expect(page.getByText('ไม่เปลี่ยนหลักสูตร')).toBeVisible();
-	await page.getByRole('button', { name: 'เลือกวันที่เริ่มใช้จริง' }).click();
-	await page.getByRole('button', { name: 'วันอาทิตย์ที่ 30 สิงหาคม 2569', exact: true }).click();
-	await page.getByLabel('เหตุผลการเปลี่ยนแปลง').fill('เพิ่มรายวิชาเสริมตามมติฝ่ายวิชาการ');
-	await page.getByRole('button', { name: 'สร้างแบบร่าง' }).click();
-
+	await page.goto(fixture.detail);
+	const history = page.getByTestId('delivery-memberships-ready');
+	await expect(history).toContainText(membership.displayName);
+	await expect(history).toContainText('30 ส.ค. 2569');
+	await expect(history).toContainText('1 ก.ย. 2569');
 	await expect(
-		page.getByRole('heading', { name: 'การเปลี่ยนแปลงกลางภาค', exact: true })
-	).toBeVisible();
-	expect(mocked.createdRequest()).toMatchObject({
-		academicTermId: ids.term,
-		effectiveFrom: '2026-08-30',
-		reason: 'เพิ่มรายวิชาเสริมตามมติฝ่ายวิชาการ'
-	});
-});
-
-test('read-only staff never loads management options or sees mutation controls', async ({
-	page
-}) => {
-	const mocked = await mockWorkspace(page, ['learning_offering.read.school']);
-	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
-
-	await expect(page.getByRole('heading', { name: 'จัดการการเปิดสอน' })).toBeVisible();
-	await expect(page.getByRole('button', { name: 'เพิ่ม/ปรับ/หยุดกลางภาค' })).toHaveCount(0);
-	expect(mocked.managementRequestCount()).toBe(0);
-});
-
-test('read-only staff loads dated roster history without management-only preview', async ({
-	page
-}) => {
-	const mocked = await mockWorkspace(page, ['learning_offering.read.school'], {
-		publishedRosterDetail: true
-	});
-	await page.goto(
-		`/staff/academic/delivery/${ids.offering}?groupId=${ids.group}&academicYearId=${ids.year}&academicTermId=${ids.term}`
+		history.getByRole('button', { name: 'เพิ่มนักเรียนตามวันที่', exact: true })
+	).toHaveCount(0);
+	expect(fixture.count('/api/academic/delivery/management-options')).toBe(0);
+	expect(fixture.count(`/api/academic/learning-groups/${fixture.ids.groupA}/roster-preview`)).toBe(
+		0
 	);
-
-	await expect(page.getByRole('heading', { name: 'ประวัติสมาชิกกลุ่มเรียน' })).toBeVisible();
-	await expect(page.getByText('เด็กชายทดสอบ รายชื่อ')).toBeVisible();
-	expect(mocked.managementRequestCount()).toBe(0);
-	expect(mocked.rosterPreviewRequestCount()).toBe(0);
+	expect(fixture.writes).toEqual([]);
 });
 
-test('manager acknowledges the current preview warning before publishing', async ({ page }) => {
-	const mocked = await mockWorkspace(page, ['*'], {
-		changeSets: [changeSet('2026-09-01')],
-		preview: warningPreview()
-	});
-	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
-
-	await page.getByRole('button', { name: 'ตรวจความพร้อม' }).click();
-	const publish = page.getByRole('button', { name: /เผยแพร่ตั้งแต่/ });
-	await expect(publish).toBeDisabled();
-	await page.getByRole('checkbox', { name: 'รับทราบ คาบจริงมากกว่าเป้าหมาย' }).click();
-	await expect(publish).toBeEnabled();
-	await publish.click();
-
-	expect(mocked.publishedRequest()).toMatchObject({
-		rowVersion: 1,
-		targetTimetableVersionRowVersion: 3,
-		previewHash: 'preview-hash-1',
-		acknowledgedWarningCodes: ['weekly_period_excess']
-	});
-});
-
-test('publish conflict invalidates the preview and requires a new readiness check', async ({
+test('destructive current removal requires the exact accepted impact preview and deliberate confirmation', async ({
 	page
 }) => {
-	await mockWorkspace(page, ['*'], {
-		changeSets: [changeSet('2026-09-01')],
-		preview: warningPreview(),
-		publishConflict: true
-	});
-	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
-
-	await page.getByRole('button', { name: 'ตรวจความพร้อม' }).click();
-	await page.getByRole('checkbox', { name: 'รับทราบ คาบจริงมากกว่าเป้าหมาย' }).click();
-	const publish = page.getByRole('button', { name: /เผยแพร่ตั้งแต่/ });
-	await publish.click();
-
-	await expect(
-		page.getByText('ข้อมูลเปลี่ยนหลังตรวจความพร้อม กรุณาตรวจความพร้อมใหม่ก่อนเผยแพร่')
-	).toBeVisible();
-	await expect(page.getByText('ยังไม่ได้ตรวจความพร้อม')).toBeVisible();
-	await expect(publish).toBeDisabled();
+	const fixture = await mockCurrentDelivery(page);
+	await page.goto(fixture.detail);
+	await page.getByRole('button', { name: 'ลบกลุ่ม', exact: true }).click();
+	const dialog = page.getByRole('alertdialog');
+	await expect(dialog.getByRole('button', { name: confirmName, exact: true })).toBeEnabled();
+	await expect(dialog).toContainText('คะแนนและเช็คชื่อรายคาบ');
+	expect(fixture.writes).toEqual([]);
+	await page.keyboard.press('Escape');
+	expect(fixture.groups()).toHaveLength(2);
+	await page.getByRole('button', { name: 'ลบกลุ่ม', exact: true }).click();
+	await dialog.getByRole('button', { name: confirmName, exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(fixture.writes.filter((row) => row.method === 'DELETE')).toHaveLength(1);
+	expect(fixture.groups().map((row) => row.id)).toEqual([fixture.ids.groupB]);
 });
 
-test('readiness refreshes a stale draft before requesting a preview', async ({ page }) => {
-	const initial = changeSet('2026-09-01');
-	const mocked = await mockWorkspace(page, ['*'], {
-		changeSets: [initial]
-	});
-	await page.goto(`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}`);
-	await expect(page.getByText(initial.reason, { exact: true })).toBeVisible();
-	await page.route(`**/api/academic/term-change-sets/${ids.changeSet}`, (route) =>
-		fulfill(route, {
-			...initial,
-			rowVersion: 2,
-			reason: 'เหตุผลล่าสุดจากผู้ใช้อีกคน',
-			updatedAt: '2026-08-30T05:00:00Z'
-		})
-	);
+test('a stale destructive preview is invalidated and a new exact revision must be reviewed', async ({
+	page
+}) => {
+	const fixture = await mockCurrentDelivery(page, { deleteConflict: true });
+	await page.goto(fixture.detail);
+	await page.getByRole('button', { name: 'ลบกลุ่ม', exact: true }).click();
+	const dialog = page.getByRole('alertdialog'),
+		confirm = dialog.getByRole('button', { name: confirmName, exact: true });
+	await expect(confirm).toBeEnabled();
+	await confirm.click();
+	await expect(confirm).toBeDisabled();
+	await expect(dialog.getByRole('alert')).toContainText('ข้อมูลเปลี่ยนแล้ว');
+	expect(fixture.previewReads).toHaveLength(1);
+	expect(fixture.groups()).toHaveLength(2);
+	await dialog.getByRole('button', { name: 'ตรวจผลกระทบอีกครั้ง', exact: true }).click();
+	await expect(confirm).toBeEnabled();
+	await confirm.click();
+	await expect(dialog).toHaveCount(0);
+	expect(
+		fixture.writes.filter((row) => row.method === 'DELETE').map((row) => row.body.rowVersion)
+	).toEqual([3, 4]);
+	expect(fixture.previewReads).toHaveLength(2);
+});
 
-	await page.getByRole('button', { name: 'ตรวจความพร้อม' }).click();
-	await expect(page.getByText('เหตุผลล่าสุดจากผู้ใช้อีกคน')).toBeVisible();
-	expect(mocked.changePreviewRequestCount()).toBe(0);
+test('opening an impact preview captures the current server revision rather than the stale displayed group', async ({
+	page
+}) => {
+	const fixture = await mockCurrentDelivery(page);
+	await page.goto(fixture.detail);
+	await expect(page.getByRole('heading', { name: 'กลุ่ม ก', exact: true })).toBeVisible();
+	fixture.groups()[0].rowVersion = 4;
+	fixture.graph.rowVersion = 2;
+	await page.getByRole('button', { name: 'ลบกลุ่ม', exact: true }).click();
+	const dialog = page.getByRole('alertdialog');
+	await expect(dialog.getByRole('button', { name: confirmName, exact: true })).toBeEnabled();
+	await dialog.getByRole('button', { name: confirmName, exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	const writes = fixture.writes.filter((row) => row.method === 'DELETE');
+	expect(writes).toHaveLength(1);
+	expect(writes[0].body).toEqual({
+		academicYearId: fixture.ids.year,
+		academicTermId: fixture.ids.term,
+		rowVersion: 4,
+		sourceDigest: '2'.padStart(64, '0')
+	});
+	expect(fixture.previewReads).toHaveLength(1);
+	expect(fixture.groups().map((row) => row.id)).toEqual([fixture.ids.groupB]);
 });

@@ -1,6 +1,6 @@
 use super::{models::*, services::*};
 use crate::integration_tests::academic::{
-    cutover_test_support::{apply_migrations_through, seed_release_two_predecessor},
+    cutover_test_support::apply_migrations_through,
     delivery::{
         models::{
             AddDatedRosterMembershipRequest, LearningTeacherRole,
@@ -251,7 +251,7 @@ async fn fixture_with_unused_group(
 
 // Activity targets in052 require actual legacy lessons; raw offerings with
 // memberships alone never enter the historical Delivery source. Seed one valid
-// predecessor lesson before052, then let the normal migrations own publication.
+// predecessor lesson before052, then let the canonical cutover retain that actual source.
 async fn seed_results_activity_predecessor(pool: &sqlx::PgPool) {
     use school_test_db::cutover_test_support::{
         CutoverFixture, record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture,
@@ -297,11 +297,9 @@ async fn fixture_with_obligation_groups(
     Option<Uuid>,
 ) {
     let pool = create_named_test_pool_with_max_connections(name, 4).await;
-    if include_activity {
-        seed_results_activity_predecessor(&pool).await;
-    } else {
-        seed_release_two_predecessor(&pool).await.unwrap();
-    }
+    // Every ordinary Results fixture exercises course and activity facts. A raw
+    // unplaced legacy activity is intentionally omitted by the current cutover.
+    seed_results_activity_predecessor(&pool).await;
     apply_migrations_through(&pool, school_migrations::latest_migration_version())
         .await
         .unwrap();
@@ -368,6 +366,29 @@ async fn clone_empty_current_group(pool: &sqlx::PgPool, source: Uuid, name: &str
 async fn results_current_teacher_replacement_revokes_assigned_scope_and_preserves_scores() {
     let (pool, actor, ctx, group) = fixture("results_current_replacement").await;
     prepare_phases(&pool, &actor, &ctx, group).await;
+    let phase: Uuid = sqlx::query_scalar("SELECT assessment_phase_id FROM learning_group_score_items WHERE learning_group_id=$1 ORDER BY id LIMIT 1").bind(group).fetch_one(&pool).await.unwrap();
+    let gradebook_context = gm::GradebookContext {
+        academic_year_id: ctx.academic_year_id,
+        academic_term_id: ctx.academic_term_id,
+    };
+    let workspace = gb::get_group_phase_workspace(&pool, &actor, group, phase, &gradebook_context)
+        .await
+        .unwrap();
+    gradebook_adapter::save_scores_batch(
+        &pool,
+        &actor,
+        group,
+        phase,
+        &gradebook_context,
+        vec![gm::ScoreCellMutation::Set {
+            score_item_id: workspace.items[0].id,
+            student_academic_year_id: workspace.students[0].student_academic_year_id,
+            value: "1.00".into(),
+            row_version: None,
+        }],
+    )
+    .await
+    .unwrap();
     let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM learning_group_student_scores s WHERE learning_group_id=$1").bind(group).fetch_one(&pool).await.unwrap();
     let other:Uuid=sqlx::query_scalar("INSERT INTO users(username,password_hash,first_name,last_name,user_type,status) VALUES('results-current-'||uuidv7()::text,'not-login','Current','Teacher','staff','active') RETURNING id").fetch_one(&pool).await.unwrap();
     let old = delivery_groups::get(&pool, group).await.unwrap();
@@ -406,6 +427,58 @@ async fn results_current_teacher_replacement_revokes_assigned_scope_and_preserve
         user_id: other,
         permissions: assigned.permissions,
     };
+    let stale = get_course_workspace(&pool, &replacement, &ctx, group)
+        .await
+        .unwrap();
+    assert!(
+        !stale.can_manage,
+        "new assignment does not reuse the previous teacher's confirmations"
+    );
+    assert!(!stale.blockers.is_empty());
+    let phases:Vec<Uuid>=sqlx::query_scalar("SELECT assessment_phase_id FROM learning_group_score_items WHERE learning_group_id=$1 ORDER BY assessment_phase_id").bind(group).fetch_all(&pool).await.unwrap();
+    let mut new_teacher = replacement.clone();
+    new_teacher
+        .permissions
+        .push(codes::ACADEMIC_GRADEBOOK_MANAGE_ASSIGNED.into());
+    for control in gb::list_controls(&pool, &actor, &gradebook_context)
+        .await
+        .unwrap()
+    {
+        if !control.score_entry_enabled {
+            gb::update_control(
+                &pool,
+                &actor,
+                control.id,
+                &gradebook_context,
+                gm::UpdateControlInput {
+                    score_entry_enabled: true,
+                    row_version: control.row_version,
+                },
+            )
+            .await
+            .unwrap();
+        }
+    }
+    for phase in phases {
+        let workspace =
+            gb::get_group_phase_workspace(&pool, &new_teacher, group, phase, &gradebook_context)
+                .await
+                .unwrap();
+        gradebook_adapter::confirm_phase(
+            &pool,
+            &new_teacher,
+            group,
+            phase,
+            &gradebook_context,
+            gm::ConfirmInput {
+                source_checksum: workspace.source_checksum,
+                roster_checksum: workspace.roster_checksum,
+                row_version: workspace.confirmation.map(|row| row.row_version),
+            },
+        )
+        .await
+        .unwrap();
+    }
     assert!(
         get_course_workspace(&pool, &replacement, &ctx, group)
             .await
@@ -791,7 +864,6 @@ async fn course_subject_rooms(
            WHERE detail.subject_id = $1
              AND learning_group.academic_term_id = $2
              AND learning_group.academic_year_id = $3
-             AND learning_group.status <> 'closed'
            ORDER BY learning_group.id, teacher.id"#,
     )
     .bind(subject)

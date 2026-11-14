@@ -316,12 +316,13 @@ async fn candidate_reservations(
         let mut ids: Vec<Uuid> = {
             let timetable =
                 super::timetable_service::get_by_id_on_connection(connection, timetable_id).await?;
-            let source = school_academic_delivery::services::current::workspace_on_connection(
-                connection,
-                timetable.academic_year_id,
-                timetable.academic_term_id,
-            )
-            .await?;
+            let source =
+                school_academic_delivery::services::current::complete_workspace_on_connection(
+                    connection,
+                    timetable.academic_year_id,
+                    timetable.academic_term_id,
+                )
+                .await?;
             source
                 .offerings
                 .iter()
@@ -472,7 +473,7 @@ fn conflict_from_row(
         _ => {
             return Err(AppError::InternalServerError(
                 "ชนิดความขัดแย้งของตารางสอนไม่ถูกต้อง".to_string(),
-            ))
+            ));
         }
     };
     Ok(TimetableBlockConflict {

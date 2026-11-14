@@ -90,26 +90,30 @@ async fn current_assignments_are_immediate_context_scoped_and_require_active_acc
             .learning_group_ids
             .is_empty()
     );
-    assert!(group_teacher_assignments_on_connection(
-        &mut connection,
-        Uuid::new_v4(),
-        f.term,
-        &[f.group]
-    )
-    .await
-    .unwrap()
-    .groups
-    .is_empty());
-    assert!(group_teacher_assignments_on_connection(
-        &mut connection,
-        f.year,
-        Uuid::new_v4(),
-        &[f.group]
-    )
-    .await
-    .unwrap()
-    .groups
-    .is_empty());
+    assert!(
+        group_teacher_assignments_on_connection(
+            &mut connection,
+            Uuid::new_v4(),
+            f.term,
+            &[f.group]
+        )
+        .await
+        .unwrap()
+        .groups
+        .is_empty()
+    );
+    assert!(
+        group_teacher_assignments_on_connection(
+            &mut connection,
+            f.year,
+            Uuid::new_v4(),
+            &[f.group]
+        )
+        .await
+        .unwrap()
+        .groups
+        .is_empty()
+    );
     assert!(
         group_teacher_assignments_on_connection(&mut connection, f.year, f.term, &[])
             .await
@@ -165,9 +169,11 @@ impl AssessmentCurrentPort for AssessmentInitialization {
         offerings: &[Uuid],
     ) -> Result<(), AppError> {
         let visible = teacher_allocations_on_connection(tx, offerings).await?;
-        assert!(visible
-            .iter()
-            .any(|teacher| teacher.teacher_id == self.expected_teacher));
+        assert!(
+            visible
+                .iter()
+                .any(|teacher| teacher.teacher_id == self.expected_teacher)
+        );
         if self.fail {
             Err(AppError::Conflict(
                 "assessment initialization refused".into(),
@@ -549,4 +555,62 @@ fn destructive_school_scope_uses_canonical_wildcards() {
             Err(AppError::Forbidden(_))
         ));
     }
+}
+
+#[tokio::test]
+async fn complete_current_graph_preserves_private_rows_while_public_caps_follow_authorization() {
+    use school_academic_delivery::services::current::{
+        complete_workspace_on_connection, visible_workspace_on_connection, workspace_on_connection,
+    };
+    use school_authorization::AcademicResourceListFilter;
+    let f = fixture("delivery_complete_graph_budget").await;
+    let inserted: Vec<Uuid> = sqlx::query_scalar("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name) SELECT uuidv7(),$1,$2,$3,'UNRELATED-'||n,'Unrelated current group '||n FROM generate_series(1,2001) n RETURNING id")
+        .bind(f.offering).bind(f.term).bind(f.year).fetch_all(&f.pool).await.unwrap();
+    let mut connection = f.pool.acquire().await.unwrap();
+    let private = complete_workspace_on_connection(&mut connection, f.year, f.term)
+        .await
+        .unwrap();
+    let mut expected = inserted;
+    expected.push(f.group);
+    expected.sort_unstable();
+    let actual = private
+        .offerings
+        .iter()
+        .flat_map(|row| row.groups.iter().map(|group| group.id))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual, expected,
+        "technical projection never truncates at the public cap"
+    );
+    let scoped = visible_workspace_on_connection(
+        &mut connection,
+        f.year,
+        f.term,
+        &AcademicResourceListFilter {
+            assigned_actor_id: Some(f.other),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(scoped.offerings.is_empty());
+    assert!(scoped.course_metadata.is_empty());
+    assert_eq!(scoped.row_version, private.row_version);
+    assert!(
+        matches!(
+            workspace_on_connection(&mut connection, f.year, f.term).await,
+            Err(AppError::ValidationError(_))
+        ),
+        "management retains its existing public2000 group budget"
+    );
+    let after = complete_workspace_on_connection(&mut connection, f.year, f.term)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(after).unwrap(),
+        serde_json::to_value(private).unwrap(),
+        "a scoped read cannot poison the complete authority projection"
+    );
 }

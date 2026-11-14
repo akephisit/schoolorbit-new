@@ -430,7 +430,6 @@ async fn removing_a_placement_retires_its_item_but_keeps_round_room_and_seat_fac
 async fn current_student_view_requires_term_and_uses_group_roster() {
     let pool = migrated_pool("exam_published_group_roster").await;
     let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
     let term_id: Uuid =
         sqlx::query_scalar("SELECT academic_term_id FROM academic_exam_rounds WHERE id = $1")
@@ -438,18 +437,6 @@ async fn current_student_view_requires_term_and_uses_group_roster() {
             .fetch_one(&pool)
             .await
             .unwrap();
-
-    sqlx::query(
-        r#"UPDATE academic_exam_rounds
-           SET status = 'published', published_at = now(), published_by = $2,
-               row_version = row_version + 1, updated_by = $2, updated_at = now()
-           WHERE id = $1"#,
-    )
-    .bind(round_id)
-    .bind(actor_id)
-    .execute(&pool)
-    .await
-    .unwrap();
 
     let schedule = exam_schedule_service::list_my_exam_schedule(&pool, student_id, term_id)
         .await
@@ -906,9 +893,17 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
             .filter(|item| item.assessment_phase_id == phase_id)
             .all(|item| item.exam_arrangement == "outside_timetable")
     );
-    assert_eq!(
-        outside.unscheduled_items.len(),
-        before.unscheduled_items.len()
+    assert!(
+        before
+            .unscheduled_items
+            .iter()
+            .any(|item| item.assessment_phase_id == phase_id)
+    );
+    assert!(
+        outside
+            .unscheduled_items
+            .iter()
+            .all(|item| item.assessment_phase_id != phase_id)
     );
     assert_eq!(
         outside.scheduled_sessions.len(),

@@ -174,7 +174,7 @@ async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    let round:Uuid=sqlx::query_scalar("INSERT INTO academic_exam_rounds(academic_year_id,academic_term_id,name,status) VALUES($1,$2,'E2E-LIFECYCLE-details','draft') RETURNING id").bind(year).bind(term).fetch_one(&pool).await.unwrap();
+    let round:Uuid=sqlx::query_scalar("INSERT INTO academic_exam_rounds(academic_year_id,academic_term_id,name) VALUES($1,$2,'E2E-LIFECYCLE-details') RETURNING id").bind(year).bind(term).fetch_one(&pool).await.unwrap();
     let day:Uuid=sqlx::query_scalar("INSERT INTO academic_exam_days(exam_round_id,academic_year_id,academic_term_id,exam_date,start_time,end_time) VALUES($1,$2,$3,$4,'08:00','16:00') RETURNING id").bind(round).bind(year).bind(term).bind(date).fetch_one(&pool).await.unwrap();
     let homeroom: Uuid =
         sqlx::query_scalar("SELECT id FROM homerooms WHERE academic_year_id=$1 LIMIT 1")

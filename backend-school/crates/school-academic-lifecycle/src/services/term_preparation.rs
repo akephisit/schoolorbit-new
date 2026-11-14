@@ -523,9 +523,9 @@ async fn build_workspace(
                     target,
                     usize::from(source > 0),
                     if source > 0 {
-                        "สร้างแบบร่างหนึ่งรุ่นจากตารางที่เผยแพร่ล่าสุด".into()
+                        "เตรียมตารางสอนปัจจุบันจากภาคเรียนต้นทาง".into()
                     } else {
-                        "ต้นทางไม่มีตารางสอนที่เผยแพร่".into()
+                        "ภาคเรียนต้นทางยังไม่มีตารางสอน".into()
                     },
                 )
             }
@@ -549,7 +549,7 @@ async fn build_workspace(
                     source,
                     target,
                     source,
-                    format!("สร้างแบบร่างรอบสอบ {} รอบ", source),
+                    format!("เตรียมรอบสอบ {} รอบ", source),
                 )
             }
             TermPreparationModule::Supervision => {

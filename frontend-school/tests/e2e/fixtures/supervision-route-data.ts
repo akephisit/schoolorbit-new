@@ -1,3 +1,7 @@
+import type {
+	SupervisionObservation,
+	SupervisionObservationStatus
+} from '../../../src/lib/api/supervision';
 import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
 export const id = (n: number) => `44000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -60,7 +64,8 @@ export async function mock(
 		failAt?: number;
 		holdAt?: number;
 		term?: boolean;
-		observationStatus?: string;
+		observationStatus?: SupervisionObservationStatus;
+		observation?: Partial<SupervisionObservation>;
 		canManage?: boolean;
 		canReview?: boolean;
 		averageRating?: number;
@@ -72,25 +77,30 @@ export async function mock(
 	const counts = new Map<string, number>();
 	let cycleStatus = 'open';
 	let observationStatus = options.observationStatus ?? 'requested';
-	const observation = (academicYearId = year) => ({
+	const observation = (academicYearId = year): SupervisionObservation => ({
 		canManage: options.canManage ?? true,
 		canReview: options.canReview ?? true,
 		averageRating: options.averageRating ?? null,
 		id: id(30),
 		cycleId: firstCycle,
 		academicYearId,
-		academicTermId: options.term ? id(8) : null,
+		academicTermId: id(8),
 		templateId,
 		observedUserId: id(20),
 		observedDisplayName: academicYearId === nextYear ? 'ครู ปีใหม่' : 'ครู ในคิว',
 		observedAt: '2026-10-01T09:00:00Z',
 		requestedAt: '2026-09-30T09:00:00Z',
+		createdAt: '2026-09-30T09:00:00Z',
+		updatedAt: '2026-10-01T09:00:00Z',
 		status: observationStatus,
 		lessonSnapshot: { subjectName: 'วิชาทดสอบ', classroomLabel: 'ม.1/1' },
 		manualLesson: null,
 		evaluators: [
 			{
 				id: id(31),
+				observationId: id(30),
+				createdAt: '2026-09-30T09:00:00Z',
+				updatedAt: '2026-10-01T09:00:00Z',
 				evaluatorUserId: id(20),
 				evaluatorDisplayName: 'ผู้ประเมินทดสอบ',
 				roleLabel: 'ผู้ประเมิน',
@@ -98,7 +108,8 @@ export async function mock(
 				status: observationStatus === 'evaluators_submitted' ? 'submitted' : 'assigned'
 			}
 		],
-		actions: []
+		actions: [],
+		...options.observation
 	});
 	let templateTitle = 'แบบประเมินทดสอบ';
 	const detail = () => ({
@@ -302,7 +313,7 @@ export async function mock(
 								? 'returned'
 								: resource.includes('/evaluations/')
 									? 'evaluators_submitted'
-									: 'scheduled';
+									: 'planned';
 				return reply(route, observation());
 			}
 			if (resource === '/api/supervision/cycles' && method === 'GET')
@@ -354,6 +365,7 @@ export async function mock(
 	return {
 		reads,
 		writes,
+		observation: () => structuredClone(observation()),
 		release: held.release,
 		count: (resource: string) => counts.get(resource) ?? 0
 	};

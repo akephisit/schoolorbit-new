@@ -632,6 +632,33 @@ test("migration histogram accepts every exact version-bound refusal and no tenan
       "PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE",
       "PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE",
     ],
+    155: [
+      "ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET",
+      "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED",
+      "ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED",
+      "ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID",
+    ],
+    157: [
+      "ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE",
+      "ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED",
+      "ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE",
+      "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS",
+      "ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS",
+      "ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING",
+      "ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS",
+      "ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING",
+      "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE",
+      "ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE",
+      "ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE",
+      "ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH",
+      "ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE",
+      "ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE",
+      "ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE",
+      "ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE",
+      "ACADEMIC_CURRENT_OFFERING_NOT_FOUND",
+      "ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH",
+      "ACADEMIC_CURRENT_RECONCILIATION_FAILED",
+    ],
   };
   const buckets = Object.entries(codes).flatMap(([version, messages]) =>
     messages
@@ -639,6 +666,28 @@ test("migration histogram accepts every exact version-bound refusal and no tenan
       .map((code) => migrationBucket({ version: Number(version), code })),
   );
   const report = migrationReport(buckets);
+  report.latest_version = 157;
+  const { f, result } = migrationCutover(t, {
+    migrationOutput: report,
+    migrationExitCode: 1,
+  });
+  assertMigrationBlocked(f, result);
+  assert.deepEqual(JSON.parse(result.stdout), report);
+});
+test("current operations owner and runtime stages preserve bounded failure metadata", (t) => {
+  const report = migrationReport([
+    migrationBucket({
+      stage: "owner_current_operations_cutover",
+      version: null,
+      code: "unclassified",
+    }),
+    migrationBucket({
+      stage: "runtime_current_operations_cutover",
+      version: null,
+      code: "unclassified",
+    }),
+  ]);
+  report.latest_version = 157;
   const { f, result } = migrationCutover(t, {
     migrationOutput: report,
     migrationExitCode: 1,
@@ -709,6 +758,36 @@ const invalidMigrationReports = {
   ]),
   "148 refusal under version149": migrationReport([
     migrationBucket({ code: "ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE" }),
+  ]),
+  "157 refusal under version155": migrationReport([
+    migrationBucket({
+      version: 155,
+      code: "ACADEMIC_CURRENT_GRAPH_UNMAPPABLE",
+    }),
+  ]),
+  "155 refusal under version157": migrationReport([
+    migrationBucket({
+      version: 157,
+      code: "ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED",
+    }),
+  ]),
+  "unknown157 refusal": migrationReport([
+    migrationBucket({
+      version: 157,
+      code: "ACADEMIC_CURRENT_private-sentinel",
+    }),
+  ]),
+  "retired delivery stage": migrationReport([
+    migrationBucket({
+      stage: "owner_delivery_timetable_cutover",
+      code: "unclassified",
+    }),
+  ]),
+  "retired publication stage": migrationReport([
+    migrationBucket({
+      stage: "runtime_publication_revisions_cutover",
+      code: "unclassified",
+    }),
   ]),
   "wrong refusal stage": migrationReport([
     migrationBucket({ stage: "permission_sync" }),

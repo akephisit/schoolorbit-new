@@ -56,6 +56,7 @@ export async function mockStudentSchedules(
 	} = {}
 ) {
 	const base = await mockSelfProfile(page);
+	let removedSources = false;
 	const reads: URL[] = [],
 		writes: string[] = [],
 		counts = new Map<string, number>();
@@ -209,9 +210,13 @@ export async function mockStudentSchedules(
 			return reply(
 				route,
 				resource === 'timetable'
-					? blocks
+					? removedSources
+						? []
+						: blocks
 					: resource === 'exams'
-						? rounds
+						? removedSources
+							? []
+							: rounds
 						: resource === 'calendar'
 							? events
 							: offerings
@@ -220,6 +225,9 @@ export async function mockStudentSchedules(
 	);
 	return {
 		...base,
+		removeSources: () => {
+			removedSources = true;
+		},
 		reads,
 		writes,
 		release,

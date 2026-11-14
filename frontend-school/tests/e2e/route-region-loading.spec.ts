@@ -1,4 +1,7 @@
-import type {DeliveryWorkspace,HomeroomDeliveryWorkspace} from '../../src/lib/api/learning-delivery';
+import type {
+	DeliveryWorkspace,
+	HomeroomDeliveryWorkspace
+} from '../../src/lib/api/learning-delivery';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { RoutePerformanceProbe, summarizeFiveWarmRuns } from './helpers/route-performance';
@@ -54,11 +57,11 @@ async function fulfill(route: Route, data: unknown, headers?: Record<string, str
 	});
 }
 
-function homeroomWorkspace(academicTermId: string):HomeroomDeliveryWorkspace {
+function homeroomWorkspace(academicTermId: string): HomeroomDeliveryWorkspace {
 	return {
 		academicYearId: yearId,
 		academicTermId,
-		rowVersion:1,
+		rowVersion: 1,
 		homerooms: [
 			{
 				homeroom: {
@@ -76,6 +79,7 @@ function homeroomWorkspace(academicTermId: string):HomeroomDeliveryWorkspace {
 					level_order: 301
 				},
 				studyProgram: {
+					displayOrder: 1,
 					id: '40000000-0000-4000-8000-000000000001',
 					code: 'DEFAULT',
 					name: 'แผนมาตรฐาน',
@@ -111,7 +115,11 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'offerings', gate
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
 			const url = new URL(route.request().url());
-            if(/delivery-versions|term-change-sets/.test(url.pathname)){requests.retired.push(url.pathname);await route.fulfill({status:404,json:{success:false,error:'retired'}});return;}
+			if (/delivery-versions|term-change-sets/.test(url.pathname)) {
+				requests.retired.push(url.pathname);
+				await route.fulfill({ status: 404, json: { success: false, error: 'retired' } });
+				return;
+			}
 			switch (url.pathname) {
 				case '/api/auth/me':
 					await fulfill(route, {
@@ -180,10 +188,16 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'offerings', gate
 					return;
 				}
 				case '/api/academic/delivery/workspace':
-                    requests.workspace += 1;
-                    if(delayed==='offerings')await gate;
-                    await fulfill(route,{academicYearId:yearId,academicTermId:url.searchParams.get('academicTermId')??termId,rowVersion:1,offerings:[],courseMetadata:[]} satisfies DeliveryWorkspace);
-                    return;
+					requests.workspace += 1;
+					if (delayed === 'offerings') await gate;
+					await fulfill(route, {
+						academicYearId: yearId,
+						academicTermId: url.searchParams.get('academicTermId') ?? termId,
+						rowVersion: 1,
+						offerings: [],
+						courseMetadata: []
+					} satisfies DeliveryWorkspace);
+					return;
 				case '/api/academic/delivery/page-view':
 					requests.pageView += 1;
 					await fulfill(route, {});
@@ -197,28 +211,39 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'offerings', gate
 }
 
 for (const delayed of ['homerooms', 'offerings'] as const) {
- test(`Delivery keeps its tabs usable while current ${delayed} is unresolved`,async({page})=>{
-  const gate=deferred(),requests=await mockDelivery(page,delayed,gate.promise);
-  try{
-   await page.goto(delayed==='offerings'?`${deliveryPath}&view=offerings`:deliveryPath);
-   if(delayed==='homerooms'){
-    await expect(page.getByRole('region',{name:'มุมมองรายห้อง',exact:true})).toHaveAttribute('aria-busy','true');
-    expect(requests.workspace).toBe(0);
-    await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();
-    await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
-    expect(requests.workspace).toBe(1);
-   }else{
-    await expect(page.getByRole('region',{name:'มุมมองรายวิชาและกิจกรรม',exact:true})).toHaveAttribute('aria-busy','true');
-    await page.getByRole('tab',{name:'มุมมองรายห้อง',exact:true}).click();
-    await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
-    await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();
-    expect(requests.workspace).toBe(1);
-   }
-   expect(requests.homerooms).toBe(1);expect(requests.pageView).toBe(0);expect(requests.retired).toEqual([]);
-  }finally{gate.release();}
-  await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
-  expect(requests.workspace).toBe(1);
- });
+	test(`Delivery keeps its tabs usable while current ${delayed} is unresolved`, async ({
+		page
+	}) => {
+		const gate = deferred(),
+			requests = await mockDelivery(page, delayed, gate.promise);
+		try {
+			await page.goto(delayed === 'offerings' ? `${deliveryPath}&view=offerings` : deliveryPath);
+			if (delayed === 'homerooms') {
+				await expect(
+					page.getByRole('region', { name: 'มุมมองรายห้อง', exact: true })
+				).toHaveAttribute('aria-busy', 'true');
+				expect(requests.workspace).toBe(0);
+				await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+				await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+				expect(requests.workspace).toBe(1);
+			} else {
+				await expect(
+					page.getByRole('region', { name: 'มุมมองรายวิชาและกิจกรรม', exact: true })
+				).toHaveAttribute('aria-busy', 'true');
+				await page.getByRole('tab', { name: 'มุมมองรายห้อง', exact: true }).click();
+				await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+				await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+				expect(requests.workspace).toBe(1);
+			}
+			expect(requests.homerooms).toBe(1);
+			expect(requests.pageView).toBe(0);
+			expect(requests.retired).toEqual([]);
+		} finally {
+			gate.release();
+		}
+		await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+		expect(requests.workspace).toBe(1);
+	});
 }
 
 test('reports sanitized medians from five warm Delivery navigations', async ({ page }) => {

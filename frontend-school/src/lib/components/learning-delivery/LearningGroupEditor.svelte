@@ -352,7 +352,8 @@
 					variant="outline"
 					loading={busySection === 'details'}
 					loadingLabel="กำลังบันทึก"
-					disabled={!details.name.trim()}>บันทึกข้อมูลกลุ่ม</LoadingButton
+					disabled={busySection !== null || reloading || needsReload || !details.name.trim()}
+					>บันทึกข้อมูลกลุ่ม</LoadingButton
 				>
 			{/if}
 		</form>
@@ -427,6 +428,7 @@
 					variant="outline"
 					loading={busySection === 'teachers'}
 					loadingLabel="กำลังบันทึก"
+					disabled={busySection !== null || reloading || needsReload}
 					onclick={() =>
 						perform(
 							'teachers',
@@ -493,6 +495,7 @@
 					variant="outline"
 					loading={busySection === 'homerooms'}
 					loadingLabel="กำลังบันทึก"
+					disabled={busySection !== null || reloading || needsReload}
 					onclick={() =>
 						perform(
 							'homerooms',
