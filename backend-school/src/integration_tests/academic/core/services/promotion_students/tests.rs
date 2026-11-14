@@ -19,7 +19,7 @@ async fn promotion_student_projection_keeps_source_context_and_reports_existing_
     .await
     .unwrap();
     let target: Uuid = sqlx::query_scalar(
-        "INSERT INTO academic_years(year,name,school_days,status) \
+        "INSERT INTO academic_years(year,name,default_school_days,status) \
          SELECT max(year)+1,'E2E-LIFECYCLE-target','MON','planning' \
          FROM academic_years RETURNING id",
     )

@@ -2368,7 +2368,7 @@ async fn future_term_annual_inclusion_requires_closure_and_repairs_existing_flag
 }
 
 #[tokio::test]
-async fn future_term_configuration_rejects_ready_closing_closed_and_archived_years() {
+async fn future_term_configuration_limits_ready_year_edits_and_rejects_closed_contexts() {
     let pool = prepare_current_core_fixture("future_term_year_guards").await;
     let actor = fixture_actor(&pool).await;
     let year = years_terms::get_year(&pool, FUTURE_YEAR_ID).await.unwrap();
@@ -2406,6 +2406,27 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
     .execute(&pool)
     .await
     .unwrap();
+    let alternate_schedule = bell_schedules::create(
+        &pool,
+        actor,
+        CreateBellScheduleRequest {
+            academic_year_id: year.id,
+            name: "ตารางคาบสำหรับปีพร้อมเปิด".into(),
+            owning_organization_unit_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let mut update = UpdateAcademicTermRequest {
+        school_days: vec!["MON".into(), "WED".into(), "FRI".into()],
+        term_type: created.term_type,
+        custom_name: Some(created.name.clone()),
+        included_in_year_result: created.included_in_year_result,
+        blocks_year_closure: created.blocks_year_closure,
+        bell_schedule_id: alternate_schedule.id,
+        row_version: created.row_version,
+    };
+    let mut expected_term = created.clone();
     for status in ["ready", "closing", "closed", "archived"] {
         sqlx::query("UPDATE academic_years SET status=$1 WHERE id=$2")
             .bind(status)
@@ -2420,33 +2441,46 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
             ),
             "{status}"
         );
-        assert!(
-            matches!(
-                years_terms::update_term(
-                    &pool,
-                    actor,
-                    created.id,
-                    UpdateAcademicTermRequest {
-                        school_days: vec![
-                            "MON".into(),
-                            "TUE".into(),
-                            "WED".into(),
-                            "THU".into(),
-                            "FRI".into()
-                        ],
-                        term_type: created.term_type,
-                        custom_name: None,
-                        included_in_year_result: false,
-                        blocks_year_closure: false,
-                        bell_schedule_id: schedule,
-                        row_version: created.row_version,
-                    }
-                )
-                .await,
+        if status == "ready" {
+            let mut metadata_change = update.clone();
+            metadata_change.custom_name = Some("เปลี่ยนข้อมูลภาคเรียนไม่ได้".into());
+            assert!(matches!(
+                years_terms::update_term(&pool, actor, created.id, metadata_change).await,
                 Err(school_errors::AppError::Conflict(_))
-            ),
-            "{status}"
-        );
+            ));
+            assert_eq!(
+                serde_json::to_value(years_terms::get_term(&pool, created.id).await.unwrap())
+                    .unwrap(),
+                serde_json::to_value(&expected_term).unwrap(),
+                "a rejected metadata edit preserves every term field"
+            );
+            let updated = years_terms::update_term(&pool, actor, created.id, update.clone())
+                .await
+                .unwrap();
+            assert_eq!(updated.row_version, created.row_version + 1);
+            assert!(updated.updated_at >= created.updated_at);
+            expected_term.school_days = update.school_days.clone();
+            expected_term.bell_schedule_id = alternate_schedule.id;
+            expected_term.row_version += 1;
+            expected_term.updated_at = updated.updated_at;
+            assert_eq!(
+                serde_json::to_value(&updated).unwrap(),
+                serde_json::to_value(&expected_term).unwrap(),
+                "Ready-year configuration changes preserve identity, metadata and lifecycle"
+            );
+            // Later refusals use the accepted revision and attempt real config changes.
+            update.row_version = updated.row_version;
+            update.school_days = created.school_days.clone();
+            update.bell_schedule_id = created.bell_schedule_id;
+        } else {
+            assert!(
+                matches!(
+                    years_terms::update_term(&pool, actor, created.id, update.clone()).await,
+                    Err(school_errors::AppError::Conflict(_))
+                ),
+                "{status}"
+            );
+        }
         assert!(
             matches!(
                 years_terms::delete_term(&pool, actor, created.id).await,
@@ -2454,13 +2488,18 @@ async fn future_term_configuration_rejects_ready_closing_closed_and_archived_yea
             ),
             "{status}"
         );
+        assert_eq!(
+            serde_json::to_value(years_terms::get_term(&pool, created.id).await.unwrap()).unwrap(),
+            serde_json::to_value(&expected_term).unwrap(),
+            "{status} refusals preserve every accepted term field and revision"
+        );
     }
     assert_eq!(
         years_terms::get_term(&pool, created.id)
             .await
             .unwrap()
             .row_version,
-        created.row_version
+        created.row_version + 1
     );
 }
 
