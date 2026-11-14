@@ -2216,6 +2216,11 @@ and files mode0600. The key never enters arguments, release output or CI artifac
 points have no expiry until the entire cutover completes; successful completion sets a retention
 deadline of at least seven further days and never shortens an existing deadline. There is no
 automatic archive/key deletion command. Preserve both together in this protected location.
+Completion rechecks the private retained key, exact archive hash and full decryption through
+`pg_restore` validation before recording that deadline. A missing, replaced or unusable recovery
+point refuses completion and leaves its prior retention state unchanged. This check validates
+the retained recovery bytes; live source hashes intentionally change when the cutover contracts
+the schema and are not compared against their pre-migration value at completion.
 
 The isolated PostgreSQL18.6 restore has no network egress, host ports, application process or
 scheduler. It preserves source ownership, ACLs and role markers, uses fresh local passwords, and

@@ -33,7 +33,8 @@ class Fake(m.Controller):
         self.point=point;self.root=point;self.release='a'*40;self.image_digest='sha256:'+'b'*64
         self.rows=m.inventory({'schools':[row(ID),row(OTHER)],'total':2});self.inventory_hash=m.inventory_hash(self.rows)
         self.key=point/'identity.agekey';self.proof=point/'proof.json';self.state=point/'state.json'
-        self.client='source';self.copy='copy';self.volume='volume';self.versions=versions;self.restored=[];self.checked=False
+        self.client='source';self.copy='copy';self.volume='volume';self.verify='verify';self.versions=versions;self.restored=[];self.checked=False;self.recovery_validations=0
+    def labels(self):return []
     def exists(self,*args):return False
     def assert_quiesced(self):pass
     def unchanged_inventory(self):pass
@@ -46,9 +47,25 @@ class Fake(m.Controller):
         self.key.write_text('synthetic key');self.key.chmod(0o600);return 'synthetic recipient'
     def fingerprint(self,*args):return 'c'*64
     def command(self,*args,**kwargs):return b'1'
-    def stream(self,*args,**kwargs):kwargs['destination'].write(b'synthetic encrypted archive')
+    def stream(self,*args,**kwargs):
+        if 'destination' in kwargs:kwargs['destination'].write(b'synthetic encrypted archive')
+        else:
+            self.recovery_validations+=1
+            if kwargs['source'].read()!=b'synthetic encrypted archive':m.refuse('stream_failed')
     def restore_and_migrate(self,row,*args):self.restored.append(row['id']);return audit()
     def check(self):self.checked=True
+
+
+def completion_fixture(point):
+    fake=Fake(point,{ID:157,OTHER:157})
+    fake.key.write_bytes(b'synthetic key');fake.key.chmod(0o600)
+    archive=point/(ID.replace('-','')+'.dump.age')
+    archive.write_bytes(b'synthetic encrypted archive');archive.chmod(0o600)
+    item={'schoolId':ID,'subdomain':'tenant-1','cutoverDate':'2026-11-14','selectionFingerprint':'a'*64,'checks':audit()['checks'],'archiveSha256':m.digest_file(archive),'sourceFingerprint':'c'*64}
+    m.durable(fake.proof,{'schemaVersion':1,'operation':m.OPERATION,'releaseSha':fake.release,'imageDigest':fake.image_digest,'inventoryFingerprint':fake.inventory_hash,'tenants':[item]})
+    m.durable(fake.state,{'state':'prepared','retainUntil':None})
+    fake.command=lambda *a,**k:json.dumps(audit()).encode()
+    return fake,archive
 
 
 class PreparationTests(unittest.TestCase):
@@ -119,17 +136,34 @@ class PreparationTests(unittest.TestCase):
 
     def test_completion_binds_exact_eight_checks_date_hash_and_never_shortens_retention(self):
         with tempfile.TemporaryDirectory() as directory:
-            fake=Fake(Path(directory),{ID:157,OTHER:157})
-            item={'schoolId':ID,'subdomain':'tenant-1','cutoverDate':'2026-11-14','selectionFingerprint':'a'*64,'checks':audit()['checks']}
-            m.durable(fake.proof,{'releaseSha':fake.release,'imageDigest':fake.image_digest,'inventoryFingerprint':fake.inventory_hash,'tenants':[item]})
+            fake,_=completion_fixture(Path(directory))
             future=(dt.datetime.now(dt.timezone.utc)+dt.timedelta(days=20)).isoformat()
             m.durable(fake.state,{'state':'prepared','retainUntil':future})
-            fake.command=lambda *a,**k:json.dumps(audit()).encode()
+            fake.fingerprint=lambda *a,**k:self.fail('completion must not compare the contracted live source with its old hash')
             fake.complete();self.assertGreaterEqual(dt.datetime.fromisoformat(m.read_json(fake.state)['retainUntil']),dt.datetime.fromisoformat(future))
+            self.assertEqual(fake.recovery_validations,1)
             bad=audit();bad['selectionFingerprint']='d'*64;fake.command=lambda *a,**k:json.dumps(bad).encode()
             before=fake.state.read_bytes()
             with self.assertRaises(m.Refusal):fake.complete()
             self.assertEqual(fake.state.read_bytes(),before)
+
+    def test_check_and_completion_refuse_missing_replaced_or_unvalidated_recovery_without_starting_retention(self):
+        for operation in ['check','complete']:
+            for fault in ['missing_key','public_key','missing_archive','replaced_archive','truncated_archive']:
+                with self.subTest(operation=operation,fault=fault),tempfile.TemporaryDirectory() as directory:
+                    fake,archive=completion_fixture(Path(directory))
+                    if fault=='missing_key':fake.key.unlink()
+                    elif fault=='public_key':fake.key.chmod(0o644)
+                    elif fault=='missing_archive':archive.unlink()
+                    else:
+                        archive.write_bytes(b'wrong' if fault=='replaced_archive' else b'synthetic encrypted archiv')
+                        if fault=='truncated_archive':
+                            # Even a hash-valid private proof cannot bless a
+                            # consumer refusing the complete retained stream.
+                            proof=m.read_json(fake.proof);proof['tenants'][0]['archiveSha256']=m.digest_file(archive);m.durable(fake.proof,proof)
+                    before=fake.state.read_bytes()
+                    with self.assertRaises(m.Refusal):getattr(m.Controller,operation)(fake)
+                    self.assertEqual(fake.state.read_bytes(),before)
 
     def test_no_cleanup_or_arbitrary_command_input_is_supported(self):
         with mock.patch.object(sys,'argv',['fixed-controller','cleanup']):
@@ -202,6 +236,45 @@ class PreparationTests(unittest.TestCase):
 
 
 class CryptoTests(unittest.TestCase):
+    def test_completion_revalidates_real_age_key_and_entire_ciphertext_before_retention(self):
+        age=os.environ.get('AGE_BINARY') or shutil.which('age')
+        keygen=os.environ.get('AGE_KEYGEN_BINARY') or shutil.which('age-keygen')
+        self.assertTrue(age and keygen,'provision pinned age/age-keygen on PATH or their explicit binary variables')
+        self.assertEqual(subprocess.check_output([age,'--version']).strip(),b'v1.2.1')
+        self.assertEqual(subprocess.check_output([keygen,'--version']).strip(),b'v1.2.1')
+        identity=subprocess.check_output([keygen],stderr=subprocess.DEVNULL)
+        other_identity=subprocess.check_output([keygen],stderr=subprocess.DEVNULL)
+        payload=b'synthetic recovery stream; PostgreSQL archive validation belongs to native qualification\n'
+        for fault in ['intact','missing_key','wrong_key','truncated_archive','corrupt_archive']:
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                fake,archive=completion_fixture(Path(directory))
+                fake.key.write_bytes(identity)
+                recipient=subprocess.check_output([keygen,'-y',str(fake.key)]).strip().decode()
+                ciphertext=subprocess.run([age,'-r',recipient],input=payload,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,check=True).stdout
+                if fault=='truncated_archive':ciphertext=ciphertext[:-8]
+                elif fault=='corrupt_archive':ciphertext=ciphertext[:40]+b'corrupt'+ciphertext[47:]
+                archive.write_bytes(ciphertext)
+                proof=m.read_json(fake.proof);proof['tenants'][0]['archiveSha256']=m.digest_file(archive);m.durable(fake.proof,proof)
+                if fault=='missing_key':fake.key.unlink()
+                elif fault=='wrong_key':fake.key.write_bytes(other_identity)
+                fake.exits=0
+                fake.age=lambda *arguments:[age,*[str(fake.key) if value=='/run/recovery/identity.agekey' else value for value in arguments[1:]]]
+                def stream(producer,consumer,**kwargs):
+                    self.assertEqual(consumer[-2:],['pg_restore','--file=/dev/null'])
+                    self.assertIn('none',consumer)
+                    # Real age and child exit accounting, but no fake claim of
+                    # PostgreSQL restore: that requires the separate native run.
+                    validator=[sys.executable,'-c','import sys;assert sys.stdin.buffer.read()=='+repr(payload)]
+                    return m.Controller.stream(fake,producer,validator,**kwargs)
+                fake.stream=stream
+                fake.fingerprint=lambda *a,**k:self.fail('post-cutover source hashes intentionally differ')
+                before=fake.state.read_bytes()
+                if fault=='intact':
+                    fake.complete();self.assertEqual(m.read_json(fake.state)['state'],'completed')
+                else:
+                    with self.assertRaises(m.Refusal):fake.complete()
+                    self.assertEqual(fake.state.read_bytes(),before)
+
     def test_real_verified_age_roundtrip_refuses_wrong_key_and_truncated_ciphertext(self):
         age_path=os.environ.get('AGE_BINARY') or shutil.which('age')
         self.assertTrue(age_path,'set AGE_BINARY or provision pinned age on PATH')

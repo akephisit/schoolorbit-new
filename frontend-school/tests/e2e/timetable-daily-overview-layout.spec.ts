@@ -810,10 +810,23 @@ test('today-only reader sees daily teaching without planner authority', async ({
 	await expect(page.getByRole('link', { name: 'จัดตาราง', exact: true })).toHaveCount(0);
 });
 
+test('daily access with a legacy publication grant does not expose the planner', async ({
+	page
+}) => {
+	const api = await installDailyOverview(page, overview(), [
+		PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+		'academic_timetable.publish.school'
+	]);
+	await page.goto(todayUrl());
+	await expect(page.getByRole('table')).toBeVisible();
+	expect(api.count()).toBe(1);
+	await expect(page.getByRole('link', { name: 'จัดตาราง', exact: true })).toHaveCount(0);
+});
+
 for (const permission of [
 	PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL,
 	PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
-	PERMISSIONS.ACADEMIC_TIMETABLE_PUBLISH_SCHOOL
+	'academic_timetable.publish.school'
 ]) {
 	test(`planner-only ${permission} cannot navigate or preload the daily timetable`, async ({
 		page
@@ -853,20 +866,23 @@ for (const permission of [
 	});
 }
 
-test('daily reader with planner authority keeps the exact planner context link', async ({
-	page
-}) => {
-	await installDailyOverview(page, overview(), [
-		PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
-		PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL
-	]);
-	await page.goto(todayUrl());
-	await expect(page.getByRole('table')).toBeVisible();
-	await expect(page.getByRole('link', { name: 'จัดตาราง', exact: true })).toHaveAttribute(
-		'href',
-		`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}`
-	);
-});
+for (const permission of [
+	PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL,
+	PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL
+]) {
+	test(`daily reader with ${permission} keeps the exact planner context link`, async ({ page }) => {
+		await installDailyOverview(page, overview(), [
+			PERMISSIONS.ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+			permission
+		]);
+		await page.goto(todayUrl());
+		await expect(page.getByRole('table')).toBeVisible();
+		await expect(page.getByRole('link', { name: 'จัดตาราง', exact: true })).toHaveAttribute(
+			'href',
+			`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}`
+		);
+	});
+}
 
 test('revoking daily access removes toolbar and discards a delayed date response', async ({
 	page

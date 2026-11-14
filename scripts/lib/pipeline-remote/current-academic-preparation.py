@@ -571,6 +571,27 @@ class Controller:
         durable(self.state, {'schemaVersion': 1, 'state': 'prepared', 'completedAt': None, 'retainUntil': None})
         self.check()
 
+    def retained_recovery(self):
+        # Completion must revalidate the recovery bytes and key independently
+        # of the now-intentionally-contracted live business source.
+        private(self.key)
+        proof = read_json(self.proof)
+        if proof.get('schemaVersion') != 1 or proof.get('operation') != OPERATION or proof.get('releaseSha') != self.release or proof.get('imageDigest') != self.image_digest or proof.get('inventoryFingerprint') != self.inventory_hash or not isinstance(proof.get('tenants'),list) or not 1<=len(proof['tenants'])<=len(self.rows):
+            refuse('preparation_binding_changed')
+        seen=set()
+        for item in proof['tenants']:
+            if not isinstance(item,dict): refuse('preparation_binding_changed')
+            row=next((row for row in self.rows if row['id']==item.get('schoolId') and row['subdomain']==item.get('subdomain')),None)
+            if row is None or row['id'] in seen: refuse('preparation_coverage_changed')
+            seen.add(row['id'])
+            archive = private(self.point / (uuid.UUID(row['id']).hex + '.dump.age'))
+            if not valid_hash(item.get('archiveSha256')) or digest_file(archive) != item['archiveSha256']:
+                refuse('archive_changed')
+            # Verify the retained key still decrypts the complete archive now.
+            with archive.open('rb') as encrypted:
+                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'run', '--log-driver=none', '--rm', '-i', '--name', self.verify, *self.labels(), '--network', 'none', '--read-only', PG_IMAGE, 'pg_restore', '--file=/dev/null'], source=encrypted)
+        return proof
+
     def check(self):
         if self.state.exists() and read_json(self.state).get('state')=='already-current':
             for row in self.rows:
@@ -578,24 +599,13 @@ class Controller:
                     if self.identity(connection,base,environment)['version']<157: refuse('current_prefix_changed')
             self.unchanged_inventory()
             return
-        private(self.key)
-        proof = read_json(self.proof)
-        if proof.get('operation') != OPERATION or proof.get('releaseSha') != self.release or proof.get('imageDigest') != self.image_digest or proof.get('inventoryFingerprint') != self.inventory_hash or not isinstance(proof.get('tenants'),list) or len(proof['tenants'])>len(self.rows):
-            refuse('preparation_binding_changed')
+        proof=self.retained_recovery()
         for row in self.rows:
-            matches = [p for p in proof['tenants'] if p.get('schoolId') == row['id'] and p.get('subdomain') == row['subdomain']]
-            if not matches:
+            item=next((item for item in proof['tenants'] if item['schoolId']==row['id']),None)
+            if item is None:
                 with self.source(row) as (connection,base,environment):
                     if self.identity(connection,base,environment)['version']<157: refuse('preparation_coverage_changed')
                 continue
-            if len(matches)!=1: refuse('preparation_coverage_changed')
-            item = matches[0]
-            archive = private(self.point / (uuid.UUID(row['id']).hex + '.dump.age'))
-            if digest_file(archive) != item['archiveSha256']:
-                refuse('archive_changed')
-            # Verify the retained key still decrypts the complete archive now.
-            with archive.open('rb') as encrypted:
-                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'run', '--log-driver=none', '--rm', '-i', '--name', self.verify, *self.labels(), '--network', 'none', '--read-only', PG_IMAGE, 'pg_restore', '--file=/dev/null'], source=encrypted)
             state = read_json(self.point / (uuid.UUID(row['id']).hex + '.json'))
             with self.source(row) as (connection, base, environment):
                 identity = self.identity(connection, base, environment)
@@ -617,9 +627,7 @@ class Controller:
             self.check()
             return
         # No source hash comparison after migration: contraction is intentional.
-        proof = read_json(self.proof)
-        if proof.get('releaseSha') != self.release or proof.get('imageDigest') != self.image_digest or proof.get('inventoryFingerprint') != self.inventory_hash:
-            refuse('completion_binding_changed')
+        proof = self.retained_recovery()
         self.unchanged_inventory()
         for item in proof['tenants']:
             row=next((row for row in self.rows if row['id']==item['schoolId'] and row['subdomain']==item['subdomain']),None)

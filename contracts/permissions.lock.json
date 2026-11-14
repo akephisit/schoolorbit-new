@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "8323ee3d46e3d29554be305a41b0b8486662228086d5f46a728aa9d8282165ce",
+  "contract_sha256": "59f0f7d04aaeddbf23604819aa0af382d34a76b8350c72aafe47379d5903ad97",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",
@@ -16,7 +16,6 @@
     "academic_curriculum.manage.school",
     "academic_curriculum.read.school",
     "academic_exam_schedule.manage.school",
-    "academic_exam_schedule.publish.school",
     "academic_exam_schedule.read.school",
     "academic_gradebook.manage.assigned",
     "academic_gradebook.manage.school",
@@ -59,7 +58,6 @@
     "academic_timetable.manage.organization_tree",
     "academic_timetable.manage.organization_unit",
     "academic_timetable.manage.school",
-    "academic_timetable.publish.school",
     "academic_timetable.read.assigned",
     "academic_timetable.read.organization_tree",
     "academic_timetable.read.organization_unit",

@@ -24,6 +24,9 @@ mod new_term_revision;
 #[path = "current_academic_operations/preparation_guard.rs"]
 mod preparation_guard;
 
+#[path = "current_academic_operations/permission_retirement.rs"]
+mod permission_retirement;
+
 async fn predecessor(name: &str) -> PgPool {
     let pool = school_test_db::create_named_test_pool(name).await;
     seed_release_two_predecessor(&pool).await.unwrap();

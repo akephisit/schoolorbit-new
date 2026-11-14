@@ -16,6 +16,11 @@ LOCK TABLE academic_exam_rounds,academic_exam_schedule_items,academic_exam_sessi
     supervision_observations IN ACCESS EXCLUSIVE MODE;
 SET CONSTRAINTS ALL IMMEDIATE;
 
+-- Current operations have no publication action. Retain legacy identities and
+-- grants for reconciliation without turning those grants into management rights.
+UPDATE permissions SET is_active=false
+WHERE code IN ('academic_timetable.publish.school','academic_exam_schedule.publish.school');
+
 CREATE TEMP TABLE academic157_opening_policy ON COMMIT DROP AS
 SELECT to_jsonb(policy)-'require_published_offerings'-'require_published_timetable'
     ||jsonb_build_object('require_offerings',require_published_offerings,'require_timetable',require_published_timetable) value

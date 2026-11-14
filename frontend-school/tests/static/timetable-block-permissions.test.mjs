@@ -14,8 +14,7 @@ const timetableCodes = [
 	'academic_timetable.manage.assigned',
 	'academic_timetable.manage.organization_unit',
 	'academic_timetable.manage.organization_tree',
-	'academic_timetable.manage.school',
-	'academic_timetable.publish.school'
+	'academic_timetable.manage.school'
 ];
 
 test('timetable owns a generated permission boundary independent from Delivery', async () => {
@@ -40,11 +39,19 @@ test('timetable owns a generated permission boundary independent from Delivery',
 		assert.ok(contractCodes.includes(code), `${code} must be defined by the permission contract`);
 		assert.match(generatedRegistry, new RegExp(code.replaceAll('.', '\\.')));
 	}
+	for (const code of [
+		'academic_timetable.publish.school',
+		'academic_exam_schedule.publish.school'
+	]) {
+		assert.ok(!contractCodes.includes(code), `${code} is a retired operational action`);
+		assert.ok(!generatedRegistry.includes(code), `${code} must not be offered by the role editor`);
+	}
+	assert.ok(contractCodes.includes('academic_curriculum.manage.school'));
 
 	assert.match(policyModules, /pub mod policy;/);
 	assert.match(policy, /enum TimetableAction[\s\S]*Read[\s\S]*Manage/);
-	assert.doesNotMatch(policy,/enum TimetableAction[^{]*\{[^}]*Publish/);
-	assert.match(policy,/direct_management_retains_its_separate_permission/);
+	assert.doesNotMatch(policy, /enum TimetableAction[^{]*\{[^}]*Publish/);
+	assert.match(policy, /direct_management_retains_its_separate_permission/);
 	assert.match(policy, /struct TimetableResourceSet/);
 	assert.match(policy, /require_timetable_resources/);
 	assert.match(route, /permission:\s*PERMISSION_MODULES\.ACADEMIC_TIMETABLE/);

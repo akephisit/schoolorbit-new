@@ -302,15 +302,15 @@ async fn period_setup_http_capabilities_deny_without_writes_and_read_hidden_cont
 }
 
 #[tokio::test]
-async fn period_setup_draft_period_references_preserve_rows_and_block_target_reassignment() {
-    let pool = prepare_current_core_fixture("period_setup_draft_references").await;
+async fn period_setup_current_period_references_preserve_rows_and_block_target_reassignment() {
+    let pool = prepare_current_core_fixture("period_setup_current_references").await;
     let actor = fixture_actor(&pool).await;
     let schedule = bell_schedules::create(
         &pool,
         actor,
         CreateBellScheduleRequest {
             academic_year_id: CURRENT_YEAR_ID,
-            name: "Draft referenced schedule".into(),
+            name: "Current referenced schedule".into(),
             owning_organization_unit_id: None,
         },
     )
@@ -337,13 +337,11 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
     .snapshot
     .periods;
     let mut term = add_unopened_term(&pool, actor, schedule.id).await;
-    // A valid accepted empty delivery graph with a real draft structural block.
-    let delivery: Uuid = sqlx::query_scalar("INSERT INTO academic_delivery_versions(academic_term_id,academic_year_id,effective_from,status,snapshot,published_by,published_at,publication_idempotency_key,publication_request_hash,publication_no) VALUES($1,$2,CURRENT_DATE,'published','{\"offerings\":[]}', $3,now(),uuidv7(),repeat('a',64),1) RETURNING id")
-        .bind(term.id).bind(CURRENT_YEAR_ID).bind(actor).fetch_one(&pool).await.unwrap();
-    let version: Uuid = sqlx::query_scalar("INSERT INTO academic_timetable_versions(academic_term_id,academic_year_id,status,bell_schedule_id,delivery_version_id,created_by) VALUES($1,$2,'draft',$3,$4,$5) RETURNING id")
-        .bind(term.id).bind(CURRENT_YEAR_ID).bind(schedule.id).bind(delivery).bind(actor).fetch_one(&pool).await.unwrap();
-    sqlx::query("INSERT INTO academic_timetable_blocks(timetable_version_id,academic_term_id,academic_year_id,bell_schedule_id,bell_schedule_period_id,day_of_week,block_kind,structural_kind,title) VALUES($1,$2,$3,$4,$5,'MON','STRUCTURAL','BREAK','Real draft block')")
-        .bind(version).bind(term.id).bind(CURRENT_YEAR_ID).bind(schedule.id).bind(periods[0].id).execute(&pool).await.unwrap();
+    // A current singleton and a real structural placement protect this schedule.
+    let timetable: Uuid = sqlx::query_scalar("INSERT INTO academic_timetables(academic_term_id,academic_year_id,bell_schedule_id) VALUES($1,$2,$3) RETURNING id")
+        .bind(term.id).bind(CURRENT_YEAR_ID).bind(schedule.id).fetch_one(&pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_timetable_blocks(timetable_id,academic_term_id,academic_year_id,bell_schedule_id,bell_schedule_period_id,day_of_week,block_kind,structural_kind,title) VALUES($1,$2,$3,$4,$5,'MON','STRUCTURAL','BREAK','Real current block')")
+        .bind(timetable).bind(term.id).bind(CURRENT_YEAR_ID).bind(schedule.id).bind(periods[0].id).execute(&pool).await.unwrap();
     let change_days = |days, version| UpdateAcademicTermRequest {
         school_days: days,
         custom_name: Some(term.name.clone()),
@@ -378,7 +376,7 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
     let guarded = bell_schedules::get(&pool, schedule.id).await.unwrap();
     assert_eq!(
         guarded.edit_blocked_reason,
-        Some(BellScheduleEditBlockReason::TimetableReferences)
+        Some(BellScheduleEditBlockReason::PinnedTimetable)
     );
     assert!(matches!(
         bell_schedules::replace_periods(
@@ -449,7 +447,16 @@ async fn period_setup_draft_period_references_preserve_rows_and_block_target_rea
     .unwrap();
     assert!(!workspace.bell_schedule_setup_term_ids.contains(&term.id));
     assert!(workspace.school_days_editable_term_ids.contains(&term.id));
-    assert_eq!(sqlx::query_scalar::<_, Uuid>("SELECT bell_schedule_period_id FROM academic_timetable_blocks WHERE timetable_version_id=$1").bind(version).fetch_one(&pool).await.unwrap(), periods[0].id);
+    assert_eq!(
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT bell_schedule_period_id FROM academic_timetable_blocks WHERE timetable_id=$1"
+        )
+        .bind(timetable)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        periods[0].id
+    );
 }
 
 async fn occupied_room(pool: &PgPool) -> Homeroom {
@@ -850,7 +857,7 @@ async fn period_setup_shared_schedule_stays_locked_and_clone_is_atomic_for_unope
     .unwrap();
     assert!(
         workspace.bell_schedule_setup_term_ids.contains(&term.id),
-        "another term's published timetable must not prevent assignment to this unopened term"
+        "another term's current timetable must not prevent assignment to this unopened term"
     );
     assert_eq!(
         source.edit_blocked_reason,
@@ -1164,15 +1171,15 @@ async fn period_setup_opening_diagnostics_preserve_raw_invalid_days_and_identify
 }
 
 #[tokio::test]
-async fn period_setup_published_and_cancelled_used_schedules_cannot_be_reopened_for_edits() {
+async fn period_setup_current_and_cancelled_used_schedules_cannot_be_reopened_for_edits() {
     let pool = prepare_current_core_fixture("period_setup_pinned_schedule").await;
     let actor = fixture_actor(&pool).await;
     let (term, schedule): (Uuid, Uuid) = sqlx::query_as(
-        "SELECT academic_term_id,bell_schedule_id FROM academic_timetable_versions WHERE status='published' AND academic_year_id=$1 ORDER BY id LIMIT 1",
+        "SELECT academic_term_id,bell_schedule_id FROM academic_timetables WHERE academic_year_id=$1 ORDER BY id LIMIT 1",
     ).bind(CURRENT_YEAR_ID).fetch_one(&pool).await.unwrap();
     add_unopened_term(&pool, actor, schedule).await;
-    // Legacy publications retain their schedule even if the current term status
-    // no longer identifies operational use.
+    // A current timetable retains its schedule even if the term status no longer
+    // identifies operational use.
     sqlx::query("UPDATE academic_terms SET status='cancelled' WHERE id=$1")
         .bind(term)
         .execute(&pool)
@@ -1220,7 +1227,7 @@ async fn period_setup_published_and_cancelled_used_schedules_cannot_be_reopened_
         Err(AppError::Conflict(_))
     ));
     // Immutable acceptance records also protect a used schedule independently
-    // of its current term pointer and independently of timetable publication.
+    // of its current term pointer and independently of a current timetable.
     let clone = bell_schedules::clone_schedule(
         &pool,
         actor,

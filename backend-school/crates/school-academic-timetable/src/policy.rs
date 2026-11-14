@@ -558,7 +558,7 @@ mod tests {
         .unwrap();
         for permissions in [
             vec![codes::ACADEMIC_TIMETABLE_READ_SCHOOL],
-            vec![codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL],
+            vec!["academic_timetable.publish.school"],
             vec![codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED],
         ] {
             assert!(matches!(
