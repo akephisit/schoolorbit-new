@@ -921,8 +921,15 @@ async fn prepare_published_roster_mutation(pool: &sqlx::PgPool, group: Uuid) -> 
     .execute(pool)
     .await
     .unwrap();
-    let (academic_year_id, grade_level_id, study_program_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT group_row.academic_year_id,student_year.grade_level_id,student_year.study_program_id
+    let (academic_year_id, academic_term_id, learning_offering_id, grade_level_id, study_program_id): (
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+        Uuid,
+    ) = sqlx::query_as(
+        r#"SELECT group_row.academic_year_id,group_row.academic_term_id,
+                  group_row.learning_offering_id,student_year.grade_level_id,student_year.study_program_id
            FROM learning_groups group_row
            JOIN learning_group_students membership
              ON membership.learning_group_id=group_row.id
@@ -961,16 +968,45 @@ async fn prepare_published_roster_mutation(pool: &sqlx::PgPool, group: Uuid) -> 
     .execute(pool)
     .await
     .unwrap();
-    let joined_at: NaiveDate = sqlx::query_scalar(
-        r#"SELECT offering.starts_on
-           FROM learning_groups group_row
-           JOIN learning_offerings offering ON offering.id=group_row.learning_offering_id
-           WHERE group_row.id=$1"#,
-    )
-    .bind(group)
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    use school_academic_delivery::services::versions;
+
+    let source_id = versions::latest_published_for_term(pool, academic_term_id)
+        .await
+        .expect("read the roster fixture's published Delivery source")
+        .expect("the roster fixture must publish its exact term's allocations");
+    let source = versions::get_version(pool, source_id)
+        .await
+        .expect("read the roster fixture's typed published Delivery graph");
+    assert_eq!(source.academic_year_id, academic_year_id);
+    assert_eq!(source.academic_term_id, academic_term_id);
+    let offering = source
+        .snapshot
+        .offerings
+        .iter()
+        .find(|offering| offering.id == learning_offering_id)
+        .expect("the current published source must retain the roster fixture's offering");
+    assert!(
+        offering
+            .groups
+            .iter()
+            .any(|candidate| candidate.id == group),
+        "the current published offering must retain the roster fixture's group"
+    );
+    // Raw offering dates remain provenance; the published winner owns availability.
+    let joined_at = source
+        .effective_from
+        .expect("the published roster source must have a recorded effective start");
+    assert!(versions::contains_date(&source, joined_at));
+    let available: bool = sqlx::query_scalar("SELECT academic_delivery_offering_available($1,$2)")
+        .bind(learning_offering_id)
+        .bind(joined_at)
+        .fetch_one(pool)
+        .await
+        .expect("validate the roster fixture date through Delivery availability");
+    assert!(
+        available,
+        "the published roster source must be effective on its start date"
+    );
     (student, joined_at)
 }
 
