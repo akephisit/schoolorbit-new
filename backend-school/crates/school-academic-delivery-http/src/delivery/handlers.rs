@@ -9,13 +9,16 @@ use uuid::Uuid;
 
 use crate::state::AcademicDeliveryHttpState;
 use school_academic_core::policies::academic_curriculum_access_policy::{self, CurriculumAction};
+#[cfg(feature = "api-docs")]
+use school_academic_delivery::models::current::DeliveryWorkspace;
+use school_academic_delivery::models::current::DeliveryWorkspaceQuery;
 use school_academic_delivery::models::*;
 use school_academic_delivery::policies::learning_offering_access_policy::{self, OfferingAction};
 use school_academic_delivery::services::{
-    activities, change_sets, groups, offerings, roster_memberships, roster_tracking, workspaces,
+    activities, current, groups, offerings, roster_memberships, roster_tracking, workspaces,
 };
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
+use school_auth_http::context::actor_tenant_context_from_session;
 use school_authorization::ActorContext;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
@@ -114,60 +117,6 @@ fn require_student_session(session: &AuthenticatedSession) -> Result<(), AppErro
             "เฉพาะนักเรียนเท่านั้นที่จัดการการลงทะเบียนกิจกรรมของตนเองได้".to_string(),
         ))
     }
-}
-
-async fn visible_change_set_metadata(
-    context: &ActorTenantContext,
-    action: OfferingAction,
-    mut change_set: AcademicTermChangeSet,
-) -> Result<AcademicTermChangeSet, AppError> {
-    let access = learning_offering_access_policy::learning_offering_list_access(
-        &context.tenant.pool,
-        &context.actor,
-        action,
-    )
-    .await?;
-    change_set.base_teacher_assignments =
-        change_sets::visible_base_teacher_assignments(&context.tenant.pool, change_set.id, &access)
-            .await?;
-    Ok(change_set)
-}
-
-async fn signal_term_change_set_changed(
-    state: &AcademicDeliveryHttpState,
-    session: &AuthenticatedSession,
-    context: &ActorTenantContext,
-    change_set: &AcademicTermChangeSet,
-    prior_descriptors: &[offerings::LearningOfferingSignalDescriptor],
-) -> Result<(), AppError> {
-    state.websocket_manager.broadcast_academic_core_changed(
-        session.tenant.subdomain.clone(),
-        context.actor.user_id,
-        "academic_term_change_set",
-        Some(change_set.id),
-        Some(change_set.academic_year_id),
-        Some(change_set.academic_term_id),
-    );
-    let offering_ids =
-        offerings::operational_change_offering_ids(&context.tenant.pool, change_set.id).await?;
-    let current_descriptors =
-        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
-    let mut descriptors = std::collections::BTreeMap::new();
-    for descriptor in prior_descriptors.iter().chain(current_descriptors.iter()) {
-        descriptors.insert(descriptor.learning_offering_id, descriptor.clone());
-    }
-    for descriptor in descriptors.into_values() {
-        signal_delivery_changed(
-            state,
-            session,
-            &context.actor,
-            descriptor.academic_term_id,
-            descriptor.learning_offering_id,
-            None,
-            descriptor.row_version,
-        );
-    }
-    Ok(())
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -306,45 +255,26 @@ pub async fn list_offerings(
     Ok(ok(offerings))
 }
 
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    get,
-    path = "/api/academic/delivery/workspace",
-    operation_id = "getLearningDeliveryOverview",
-    tag = "academic",
-    params(LearningOfferingQuery),
-    responses(
-        (status = 200, description = "Term-scoped learning delivery overview", body = ApiResponse<LearningDeliveryOverview>),
-        (status = 400, description = "Invalid academic term query or oversized workspace", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse)
-    )
-))]
-pub async fn get_delivery_overview(
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/academic/delivery/workspace",operation_id="getDeliveryWorkspace",tag="academic",params(DeliveryWorkspaceQuery),responses((status=200,description="Current term Delivery workspace",body=ApiResponse<DeliveryWorkspace>),(status=403,description="Delivery read denied",body=ApiErrorResponse),(status=404,description="Academic context not found",body=ApiErrorResponse))))]
+pub async fn get_delivery_workspace(
     State(state): State<AcademicDeliveryHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<LearningOfferingQuery>,
+    Query(query): Query<DeliveryWorkspaceQuery>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let filter = learning_offering_access_policy::require_learning_offering_list_access(
+    let access = learning_offering_access_policy::require_learning_offering_list_access(
         &context.tenant.pool,
         &context.actor,
         OfferingAction::Read,
     )
     .await?;
-    let mut overview =
-        workspaces::delivery_overview(&context.tenant.pool, query.academic_term_id, &filter)
-            .await?;
-    learning_offering_access_policy::populate_offering_management_capabilities(
+    Ok(ok(current::workspace(
         &context.tenant.pool,
-        &context.actor,
-        &mut overview
-            .offerings
-            .iter_mut()
-            .map(|item| &mut item.offering)
-            .collect::<Vec<_>>(),
+        query.academic_year_id,
+        query.academic_term_id,
+        &access,
     )
-    .await?;
-    Ok(ok(overview))
+    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -379,7 +309,6 @@ pub async fn get_homeroom_delivery_workspace(
         &context.tenant.pool,
         query.academic_year_id,
         query.academic_term_id,
-        query.delivery_version_id,
         &filter,
     )
     .await?;
@@ -437,7 +366,6 @@ pub async fn get_delivery_management_options(
     path = "/api/academic/offerings",
     operation_id = "createLearningOffering",
     tag = "academic",
-    params(CreateLearningOfferingQuery),
     request_body = CreateLearningOfferingRequest,
     responses(
         (status = 201, description = "Learning offering created", body = ApiResponse<LearningOffering>),
@@ -450,7 +378,6 @@ pub async fn get_delivery_management_options(
 pub async fn create_offering(
     State(state): State<AcademicDeliveryHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<CreateLearningOfferingQuery>,
     Json(request): Json<CreateLearningOfferingRequest>,
 ) -> Result<Response, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
@@ -468,9 +395,9 @@ pub async fn create_offering(
         ));
     }
     let offering = offerings::create(
+        state.assessment_current,
         &context.tenant.pool,
         context.actor.user_id,
-        query.delivery_version_id,
         request,
     )
     .await?;
@@ -643,58 +570,6 @@ pub async fn update_offering(
     .await?;
     let offering =
         offerings::update(&context.tenant.pool, context.actor.user_id, id, request).await?;
-    signal_delivery_changed(
-        &state,
-        &session,
-        &context.actor,
-        offering.academic_term_id,
-        offering.id,
-        None,
-        offering.row_version,
-    );
-    let mut offering = offering;
-    offering.can_manage = true;
-    Ok(ok(offering))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    post,
-    path = "/api/academic/offerings/{id}/publish",
-    operation_id = "publishLearningOffering",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Learning offering ID")),
-    request_body = PublishLearningOfferingRequest,
-    responses(
-        (status = 200, description = "Learning offering published", body = ApiResponse<LearningOffering>),
-        (status = 400, description = "Learning offering cannot be published", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Learning offering not found", body = ApiErrorResponse),
-        (status = 409, description = "Learning offering publish conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn publish_offering(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<PublishLearningOfferingRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    learning_offering_access_policy::require_learning_offering_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let offering = offerings::publish(
-        state.assessment_publication,
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        request,
-    )
-    .await?;
     signal_delivery_changed(
         &state,
         &session,
@@ -1004,8 +879,14 @@ pub async fn replace_group_teachers(
         OfferingAction::Manage,
     )
     .await?;
-    let group =
-        groups::replace_teachers(&context.tenant.pool, context.actor.user_id, id, request).await?;
+    let group = groups::replace_teachers(
+        state.assessment_current,
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        request,
+    )
+    .await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(group))
 }
@@ -1074,590 +955,6 @@ pub async fn preview_group_roster(
     )
     .await?;
     Ok(ok(groups::preview_roster(&context.tenant.pool, id).await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    post,
-    path = "/api/academic/learning-groups/{id}/roster/publish",
-    operation_id = "publishLearningGroupRoster",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Learning group ID")),
-    request_body = PublishRosterRequest,
-    responses(
-        (status = 200, description = "Learning group roster published", body = ApiResponse<LearningGroup>),
-        (status = 400, description = "Learning group roster cannot be published", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning group management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Learning group not found", body = ApiErrorResponse),
-        (status = 409, description = "Learning group roster publish conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn publish_group_roster(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<PublishRosterRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    learning_offering_access_policy::require_learning_group_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let group =
-        groups::publish_roster(&context.tenant.pool, context.actor.user_id, id, request).await?;
-    signal_group_changed(&state, &session, &context.actor, &group);
-    Ok(ok(group))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    get,
-    path = "/api/academic/term-change-sets",
-    operation_id = "listAcademicTermChangeSets",
-    tag = "academic",
-    params(AcademicTermChangeSetQuery),
-    responses(
-        (status = 200, description = "Operational academic change summaries for the selected term", body = ApiResponse<Vec<AcademicTermChangeSetSummary>>),
-        (status = 400, description = "Invalid academic term query", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Academic term not found", body = ApiErrorResponse),
-        (status = 409, description = "Academic term state conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn list_term_change_sets(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<AcademicTermChangeSetQuery>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    learning_offering_access_policy::require_learning_offering_list_access(
-        &context.tenant.pool,
-        &context.actor,
-        OfferingAction::Read,
-    )
-    .await?;
-    Ok(ok(change_sets::list_change_set_summaries(
-        &context.tenant.pool,
-        query.academic_term_id,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    post,
-    path = "/api/academic/term-change-sets",
-    operation_id = "createAcademicTermChangeSet",
-    tag = "academic",
-    request_body = CreateAcademicTermChangeSetRequest,
-    responses(
-        (status = 201, description = "Operational academic change draft created", body = ApiResponse<AcademicTermChangeSet>),
-        (status = 400, description = "Invalid operational change", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Academic term or timetable version not found", body = ApiErrorResponse),
-        (status = 409, description = "Operational change creation conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn create_term_change_set(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Json(request): Json<CreateAcademicTermChangeSetRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    learning_offering_access_policy::require_learning_offering_list_access(
-        &context.tenant.pool,
-        &context.actor,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let change_set =
-        change_sets::create_change_set(&context.tenant.pool, context.actor.user_id, request)
-            .await?;
-    signal_term_change_set_changed(&state, &session, &context, &change_set, &[]).await?;
-    Ok(created(
-        visible_change_set_metadata(&context, OfferingAction::Manage, change_set).await?,
-    ))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    get,
-    path = "/api/academic/term-change-sets/{id}",
-    operation_id = "getAcademicTermChangeSet",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID")),
-    responses(
-        (status = 200, description = "Operational academic change", body = ApiResponse<AcademicTermChangeSet>),
-        (status = 400, description = "Invalid operational change ID", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
-        (status = 409, description = "Operational change state conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn get_term_change_set(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Read,
-    )
-    .await?;
-    Ok(ok(visible_change_set_metadata(
-        &context,
-        OfferingAction::Read,
-        change_sets::get_change_set(&context.tenant.pool, id).await?,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    patch,
-    path = "/api/academic/term-change-sets/{id}",
-    operation_id = "updateAcademicTermChangeSet",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID")),
-    request_body = UpdateAcademicTermChangeSetRequest,
-    responses(
-        (status = 200, description = "Operational academic change updated", body = ApiResponse<AcademicTermChangeSet>),
-        (status = 400, description = "Invalid operational change update", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
-        (status = 409, description = "Operational change row version conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn update_term_change_set(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<UpdateAcademicTermChangeSetRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let offering_ids = learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let prior_descriptors =
-        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
-    let change_set =
-        change_sets::update_change_set(&context.tenant.pool, context.actor.user_id, id, request)
-            .await?;
-    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
-        .await?;
-    Ok(ok(visible_change_set_metadata(
-        &context,
-        OfferingAction::Manage,
-        change_set,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    put,
-    path = "/api/academic/term-change-sets/{id}/items",
-    operation_id = "upsertAcademicTermChangeItem",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID")),
-    request_body = UpsertAcademicTermChangeItemRequest,
-    responses(
-        (status = 200, description = "Operational change item upserted", body = ApiResponse<AcademicTermChangeSet>),
-        (status = 400, description = "Invalid operational change item", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Operational change or offering not found", body = ApiErrorResponse),
-        (status = 409, description = "Operational change item conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn upsert_term_change_item(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<UpsertAcademicTermChangeItemRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let offering_ids = learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let prior_descriptors =
-        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
-    let manage_filter = learning_offering_access_policy::require_learning_offering_list_access(
-        &context.tenant.pool,
-        &context.actor,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let pending_offering = match &request {
-        UpsertAcademicTermChangeItemRequest::AddCourse { offering, .. } => {
-            Some(CreateLearningOfferingRequest::Course(offering.clone()))
-        }
-        UpsertAcademicTermChangeItemRequest::AddActivity { offering, .. } => {
-            Some(CreateLearningOfferingRequest::Activity(offering.clone()))
-        }
-        _ => None,
-    };
-    if let Some(pending_offering) = pending_offering {
-        let owner_id =
-            offerings::catalog_owner_for_create_request(&context.tenant.pool, &pending_offering)
-                .await?;
-        if !learning_offering_access_policy::learning_offering_owner_allowed(
-            &manage_filter,
-            owner_id,
-        ) {
-            return Err(AppError::Forbidden(
-                "ไม่มีสิทธิ์เพิ่มรายการเปิดสอนจากทะเบียนนี้".to_string(),
-            ));
-        }
-    }
-    if let Some(offering_id) = request.existing_learning_offering_id() {
-        learning_offering_access_policy::require_learning_offering_batch_access(
-            &context.tenant.pool,
-            &context.actor,
-            &[offering_id],
-            OfferingAction::Manage,
-        )
-        .await?;
-    }
-    if let Some(group_id) = request.existing_learning_group_id() {
-        learning_offering_access_policy::require_learning_group_access(
-            &context.tenant.pool,
-            &context.actor,
-            group_id,
-            OfferingAction::Manage,
-        )
-        .await?;
-    }
-    let change_set =
-        change_sets::upsert_change_item(&context.tenant.pool, context.actor.user_id, id, request)
-            .await?;
-    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
-        .await?;
-    Ok(ok(visible_change_set_metadata(
-        &context,
-        OfferingAction::Manage,
-        change_set,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    delete,
-    path = "/api/academic/term-change-sets/{id}/items/{itemId}",
-    operation_id = "deleteAcademicTermChangeItem",
-    tag = "academic",
-    params(
-        ("id" = Uuid, Path, description = "Operational change set ID"),
-        ("itemId" = Uuid, Path, description = "Operational change item ID")
-    ),
-    request_body = DeleteAcademicTermChangeItemRequest,
-    responses(
-        (status = 200, description = "Operational change item deleted", body = ApiResponse<AcademicTermChangeSet>),
-        (status = 400, description = "Invalid delete request", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Operational change item not found", body = ApiErrorResponse),
-        (status = 409, description = "Operational change item row version conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn delete_term_change_item(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path((id, item_id)): Path<(Uuid, Uuid)>,
-    Json(request): Json<DeleteAcademicTermChangeItemRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let offering_ids = learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let prior_descriptors =
-        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
-    let change_set = change_sets::delete_change_item(
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        item_id,
-        request,
-    )
-    .await?;
-    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
-        .await?;
-    Ok(ok(visible_change_set_metadata(
-        &context,
-        OfferingAction::Manage,
-        change_set,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    delete, path="/api/academic/term-change-sets/{id}/offerings/{offeringId}",
-    operation_id="removeDeliveryDraftOffering", tag="academic",
-    params(("id"=Uuid,Path,description="Draft change set ID"),
-        ("offeringId"=Uuid,Path,description="Offering to remove from this draft")),
-    request_body=RemoveDeliveryDraftResourceRequest,
-    responses((status=200,description="Offering removed from the selected draft",body=ApiResponse<AcademicTermChangeSet>),
-        (status=400,description="Invalid removal request",body=ApiErrorResponse),
-        (status=401,description="Authentication required",body=ApiErrorResponse),
-        (status=403,description="Offering management permission denied",body=ApiErrorResponse),
-        (status=404,description="Draft or offering not found",body=ApiErrorResponse),
-        (status=409,description="Draft changed or resource absent",body=ApiErrorResponse))
-))]
-pub async fn remove_draft_offering(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path((id, offering_id)): Path<(Uuid, Uuid)>,
-    Json(request): Json<RemoveDeliveryDraftResourceRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    learning_offering_access_policy::require_learning_offering_access(
-        &context.tenant.pool,
-        &context.actor,
-        offering_id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let mut ids = learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    ids.push(offering_id);
-    let prior_descriptors = offerings::signal_descriptors(&context.tenant.pool, &ids).await?;
-    let changed = change_sets::remove_draft_offering(
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        offering_id,
-        request,
-    )
-    .await?;
-    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
-        .await?;
-    Ok(ok(visible_change_set_metadata(
-        &context,
-        OfferingAction::Manage,
-        changed,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    delete, path="/api/academic/term-change-sets/{id}/offerings/{offeringId}/homerooms/{homeroomId}",
-    operation_id="removeDeliveryDraftOfferingHomeroom", tag="academic",
-    params(("id"=Uuid,Path,description="Draft change set ID"),
-        ("offeringId"=Uuid,Path,description="Offering to restrict"),
-        ("homeroomId"=Uuid,Path,description="Homeroom to remove from this draft")),
-    request_body=RemoveDeliveryDraftResourceRequest,
-    responses((status=200,description="Homeroom removed from the selected draft audience",body=ApiResponse<AcademicTermChangeSet>),
-        (status=400,description="Invalid removal request",body=ApiErrorResponse),
-        (status=401,description="Authentication required",body=ApiErrorResponse),
-        (status=403,description="Offering management permission denied",body=ApiErrorResponse),
-        (status=404,description="Draft or offering not found",body=ApiErrorResponse),
-        (status=409,description="Draft changed or resource absent",body=ApiErrorResponse))
-))]
-pub async fn remove_draft_offering_homeroom(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path((id, offering_id, homeroom_id)): Path<(Uuid, Uuid, Uuid)>,
-    Json(request): Json<RemoveDeliveryDraftResourceRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    learning_offering_access_policy::require_learning_offering_access(
-        &context.tenant.pool,
-        &context.actor,
-        offering_id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let mut ids = learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    ids.push(offering_id);
-    let prior_descriptors = offerings::signal_descriptors(&context.tenant.pool, &ids).await?;
-    let changed = change_sets::remove_draft_offering_homeroom(
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        offering_id,
-        homeroom_id,
-        request,
-    )
-    .await?;
-    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
-        .await?;
-    Ok(ok(visible_change_set_metadata(
-        &context,
-        OfferingAction::Manage,
-        changed,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    delete, path="/api/academic/term-change-sets/{id}/groups/{groupId}",
-    operation_id="removeDeliveryDraftGroup", tag="academic",
-    params(("id"=Uuid,Path,description="Draft change set ID"),
-        ("groupId"=Uuid,Path,description="Group to remove from this draft")),
-    request_body=RemoveDeliveryDraftResourceRequest,
-    responses((status=200,description="Group removed from the selected draft",body=ApiResponse<AcademicTermChangeSet>),
-        (status=400,description="Invalid removal request",body=ApiErrorResponse),
-        (status=401,description="Authentication required",body=ApiErrorResponse),
-        (status=403,description="Offering management permission denied",body=ApiErrorResponse),
-        (status=404,description="Draft or group not found",body=ApiErrorResponse),
-        (status=409,description="Draft changed or resource absent",body=ApiErrorResponse))
-))]
-pub async fn remove_draft_group(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path((id, group_id)): Path<(Uuid, Uuid)>,
-    Json(request): Json<RemoveDeliveryDraftResourceRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let offering_id = learning_offering_access_policy::require_learning_group_access(
-        &context.tenant.pool,
-        &context.actor,
-        group_id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let mut ids = learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    ids.push(offering_id);
-    let prior_descriptors = offerings::signal_descriptors(&context.tenant.pool, &ids).await?;
-    let changed = change_sets::remove_draft_group(
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        group_id,
-        request,
-    )
-    .await?;
-    signal_term_change_set_changed(&state, &session, &context, &changed, &prior_descriptors)
-        .await?;
-    Ok(ok(visible_change_set_metadata(
-        &context,
-        OfferingAction::Manage,
-        changed,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    get,
-    path = "/api/academic/term-change-sets/{id}/preview",
-    operation_id = "previewAcademicTermChangeSet",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID"), DeliveryPublicationPreviewQuery),
-    responses(
-        (status = 200, description = "Operational change readiness preview", body = ApiResponse<AcademicTermChangeSetPreview>),
-        (status = 400, description = "Invalid preview request", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering read permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
-        (status = 409, description = "Operational change preview conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn preview_term_change_set(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Query(query): Query<DeliveryPublicationPreviewQuery>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Read,
-    )
-    .await?;
-    Ok(ok(change_sets::preview_change_set_at(
-        state.publication_history,
-        &context.tenant.pool,
-        id,
-        query.effective_from,
-    )
-    .await?))
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    post,
-    path = "/api/academic/term-change-sets/{id}/publish",
-    operation_id = "publishAcademicTermChangeSet",
-    tag = "academic",
-    params(("id" = Uuid, Path, description = "Operational change set ID")),
-    request_body = PublishAcademicTermChangeSetRequest,
-    responses(
-        (status = 200, description = "Operational academic change published", body = ApiResponse<AcademicTermChangeSet>),
-        (status = 400, description = "Readiness blockers remain", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Learning offering management permission denied", body = ApiErrorResponse),
-        (status = 404, description = "Operational change not found", body = ApiErrorResponse),
-        (status = 409, description = "Preview or publication conflict", body = ApiErrorResponse)
-    )
-))]
-pub async fn publish_term_change_set(
-    State(state): State<AcademicDeliveryHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<PublishAcademicTermChangeSetRequest>,
-) -> Result<Response, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let offering_ids = learning_offering_access_policy::require_term_change_set_access(
-        &context.tenant.pool,
-        &context.actor,
-        id,
-        OfferingAction::Manage,
-    )
-    .await?;
-    let prior_descriptors =
-        offerings::signal_descriptors(&context.tenant.pool, &offering_ids).await?;
-    let change_set = change_sets::publish_change_set(
-        state.publication_history,
-        state.assessment_publication,
-        &context.tenant.pool,
-        context.actor.user_id,
-        id,
-        request,
-    )
-    .await?;
-    signal_term_change_set_changed(&state, &session, &context, &change_set, &prior_descriptors)
-        .await?;
-    Ok(ok(visible_change_set_metadata(
-        &context,
-        OfferingAction::Manage,
-        change_set,
-    )
-    .await?))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1832,7 +1129,7 @@ pub async fn get_group_roster_tracking(
     operation_id = "updateLearningGroupRosterTracking", tag = "academic",
     params(("id" = Uuid, Path, description = "Learning group ID")), request_body = UpdateRosterTrackingRequest,
     responses(
-        (status = 200, description = "Room tracking configuration saved and published memberships reconciled", body = ApiResponse<LearningGroupRosterTracking>),
+        (status = 200, description = "Room tracking configuration saved and current memberships reconciled", body = ApiResponse<LearningGroupRosterTracking>),
         (status = 400, description = "Invalid tracking configuration", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Group management denied", body = ApiErrorResponse),
@@ -1859,4 +1156,135 @@ pub async fn update_group_roster_tracking(
     let group = groups::get(&context.tenant.pool, id).await?;
     signal_group_changed(&state, &session, &context.actor, &group);
     Ok(ok(config))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(patch,path="/api/academic/offerings/{id}/weekly-period-target",operation_id="updateLearningOfferingWeeklyPeriodTarget",tag="academic",params(("id"=Uuid,Path,description="Learning offering ID")),request_body=school_academic_delivery::models::current::UpdateWeeklyPeriodTargetRequest,responses((status=200,description="Current weekly period target saved",body=ApiResponse<LearningOffering>),(status=403,description="Offering management denied",body=ApiErrorResponse),(status=409,description="Stale offering or closed context",body=ApiErrorResponse))))]
+pub async fn update_weekly_period_target(
+    State(state): State<AcademicDeliveryHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<school_academic_delivery::models::current::UpdateWeeklyPeriodTargetRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    learning_offering_access_policy::require_learning_offering_access(
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        OfferingAction::Manage,
+    )
+    .await?;
+    let offering =
+        offerings::update_weekly_period_target(&context.tenant.pool, id, request).await?;
+    signal_delivery_changed(
+        &state,
+        &session,
+        &context.actor,
+        offering.academic_term_id,
+        id,
+        None,
+        offering.row_version,
+    );
+    Ok(ok(offering))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/academic/offerings/{id}/deletion-preview",operation_id="previewLearningOfferingDeletion",tag="academic",params(("id"=Uuid,Path,description="Learning offering ID"),DeliveryWorkspaceQuery),responses((status=200,description="Current exact offering deletion impact",body=ApiResponse<school_academic_delivery::models::current::DeliveryDeletionPreview>),(status=403,description="School offering management required",body=ApiErrorResponse),(status=404,description="Offering not found in context",body=ApiErrorResponse))))]
+pub async fn preview_offering_deletion(
+    State(state): State<AcademicDeliveryHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<DeliveryWorkspaceQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    Ok(ok(school_academic_delivery::services::deletion::preview(
+        state.delivery_deletion,
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        query.academic_year_id,
+        query.academic_term_id,
+        None,
+    )
+    .await?))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(delete,path="/api/academic/offerings/{id}",operation_id="deleteLearningOffering",tag="academic",params(("id"=Uuid,Path,description="Learning offering ID")),request_body=school_academic_delivery::models::current::DeleteDeliveryResourceRequest,responses((status=200,description="Exact offering and owned contributions removed",body=ApiResponse<school_academic_delivery::models::current::DeletedDeliveryResource>),(status=403,description="School offering management required",body=ApiErrorResponse),(status=409,description="Stale impact or closed context",body=ApiErrorResponse))))]
+pub async fn delete_offering(
+    State(state): State<AcademicDeliveryHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<school_academic_delivery::models::current::DeleteDeliveryResourceRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let result = school_academic_delivery::services::deletion::delete(
+        state.delivery_deletion,
+        &context.tenant.pool,
+        &context.actor,
+        id,
+        None,
+        request,
+    )
+    .await?;
+    signal_delivery_changed(
+        &state,
+        &session,
+        &context.actor,
+        result.academic_term_id,
+        id,
+        None,
+        result.delivery_row_version,
+    );
+    Ok(ok(result))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/academic/learning-groups/{id}/deletion-preview",operation_id="previewLearningGroupDeletion",tag="academic",params(("id"=Uuid,Path,description="Learning group ID"),DeliveryWorkspaceQuery),responses((status=200,description="Current exact group deletion impact",body=ApiResponse<school_academic_delivery::models::current::DeliveryDeletionPreview>),(status=403,description="School offering management required",body=ApiErrorResponse),(status=404,description="Group not found in context",body=ApiErrorResponse))))]
+pub async fn preview_group_deletion(
+    State(state): State<AcademicDeliveryHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<DeliveryWorkspaceQuery>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    school_academic_delivery::services::deletion::require_school_management(&context.actor)?;
+    let group = groups::get(&context.tenant.pool, id).await?;
+    Ok(ok(school_academic_delivery::services::deletion::preview(
+        state.delivery_deletion,
+        &context.tenant.pool,
+        &context.actor,
+        group.learning_offering_id,
+        query.academic_year_id,
+        query.academic_term_id,
+        Some(id),
+    )
+    .await?))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(delete,path="/api/academic/learning-groups/{id}",operation_id="deleteLearningGroup",tag="academic",params(("id"=Uuid,Path,description="Learning group ID")),request_body=school_academic_delivery::models::current::DeleteDeliveryResourceRequest,responses((status=200,description="Exact group and owned contributions removed",body=ApiResponse<school_academic_delivery::models::current::DeletedDeliveryResource>),(status=403,description="School offering management required",body=ApiErrorResponse),(status=409,description="Stale impact or closed context",body=ApiErrorResponse))))]
+pub async fn delete_group(
+    State(state): State<AcademicDeliveryHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<school_academic_delivery::models::current::DeleteDeliveryResourceRequest>,
+) -> Result<Response, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    school_academic_delivery::services::deletion::require_school_management(&context.actor)?;
+    let group = groups::get(&context.tenant.pool, id).await?;
+    let result = school_academic_delivery::services::deletion::delete(
+        state.delivery_deletion,
+        &context.tenant.pool,
+        &context.actor,
+        group.learning_offering_id,
+        Some(id),
+        request,
+    )
+    .await?;
+    signal_delivery_changed(
+        &state,
+        &session,
+        &context.actor,
+        result.academic_term_id,
+        result.learning_offering_id,
+        Some(id),
+        result.delivery_row_version,
+    );
+    Ok(ok(result))
 }

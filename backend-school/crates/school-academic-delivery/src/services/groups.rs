@@ -11,19 +11,19 @@ use school_errors::AppError;
 use super::super::models::{
     ActivityRegistrationType, ApplyRosterRequest, CreateLearningGroupRequest,
     CurriculumGroupProposal, LearningGroup, LearningGroupRow, LearningGroupStudentRow,
-    LearningGroupTeacherAssignment, LearningOfferingKind, LearningOfferingStatus,
-    PublishRosterRequest, ReplaceLearningGroupHomeroomsRequest,
-    ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterPreview, RosterPreviewStudent,
-    RosterStatus, TeacherAssignmentInput, UpdateLearningGroupRequest,
+    LearningGroupTeacherAssignment, LearningOfferingKind, LearningTeacherRole,
+    ReplaceLearningGroupHomeroomsRequest, ReplaceLearningGroupTeachersRequest,
+    RosterOverrideAction, RosterPreview, RosterPreviewStudent, TeacherAssignmentInput,
+    UpdateLearningGroupRequest,
 };
 use super::{
-    append_audit, invalidate_group_academic_confirmations, require_writable_offering_term,
-    require_writable_term, stable_hash, validate_row_version,
+    invalidate_group_academic_confirmations, require_writable_offering_term, require_writable_term,
+    stable_hash, validate_row_version,
 };
 
 const GROUP_COLUMNS: &str = r#"
     id, learning_offering_id, academic_term_id, academic_year_id, code, name,
-    description, capacity, status, roster_status, roster_published_at, row_version,
+    description, capacity, registration_open, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
 const MAX_TERM_GROUPS: usize = 2_000;
@@ -32,15 +32,14 @@ const QUALIFIED_GROUP_COLUMNS: &str = r#"
     learning_group.id, learning_group.learning_offering_id,
     learning_group.academic_term_id, learning_group.academic_year_id,
     learning_group.code, learning_group.name, learning_group.description,
-    learning_group.capacity, learning_group.status, learning_group.roster_status,
-    learning_group.roster_published_at, learning_group.row_version,
+    learning_group.capacity, learning_group.registration_open, learning_group.row_version,
     learning_group.migration_provenance <> '{}'::jsonb AS migrated,
     learning_group.created_at, learning_group.updated_at
 "#;
 
 // Multiple-room groups use their first academic room as an ordering anchor.
 // Numeric tokens compare by significant digit count then digits, without casts
-// or locale configuration. Persisted snapshots keep their existing order.
+// or locale configuration. Current projections use the same stable order.
 const GROUP_ROOM_ORDER_JOIN: &str = r#"
     LEFT JOIN LATERAL (
         SELECT room.id AS homeroom_id,
@@ -73,10 +72,7 @@ struct GroupLockRow {
     learning_offering_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
-    status: LearningOfferingStatus,
-    roster_status: RosterStatus,
     row_version: i64,
-    roster_source_hash: Option<String>,
     capacity: Option<i32>,
 }
 
@@ -189,9 +185,8 @@ pub(super) async fn apply_curriculum_generated_group(
             "academic_delivery.services.groups.apply_curriculum_generated_group",
             r#"INSERT INTO learning_groups (
                id, learning_offering_id, academic_term_id, academic_year_id,
-               code, name, status, roster_status, generation_source, generation_key
-           ) VALUES ($1, $2, $3, $4, $5, $6, 'draft', 'draft',
-                     'curriculum_prepare', $7)"#,
+               code, name, generation_source, generation_key
+           ) VALUES ($1, $2, $3, $4, $5, $6, 'curriculum_prepare', $7)"#,
         )
         .bind(group_id)
         .bind(learning_offering_id)
@@ -377,8 +372,8 @@ pub(super) async fn create_target_homeroom_groups(
     let room_ids: Vec<Uuid> = rooms.iter().map(|room| room.0).collect();
     let group_ids: Vec<Uuid> = rooms.iter().map(|_| Uuid::now_v7()).collect();
     let names: Vec<String> = rooms.into_iter().map(|room| room.1).collect();
-    DbSession::new(&mut **transaction).query("academic_delivery.services.groups.create_target_homeroom_groups", "INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) \
-        SELECT group_id,$1,$2,$3,'ROOM-' || group_id::text,name,'draft','draft' \
+    DbSession::new(&mut **transaction).query("academic_delivery.services.groups.create_target_homeroom_groups", "INSERT INTO learning_groups (id,learning_offering_id,academic_term_id,academic_year_id,code,name) \
+        SELECT group_id,$1,$2,$3,'ROOM-' || group_id::text,name \
         FROM unnest($4::uuid[],$5::text[]) AS input(group_id,name)")
         .bind(offering_id).bind(term_id).bind(year_id).bind(&group_ids).bind(&names)
         .execute().await?;
@@ -391,7 +386,7 @@ pub(super) async fn create_target_homeroom_groups(
 
 pub async fn create(
     pool: &PgPool,
-    actor_user_id: Uuid,
+    _actor_user_id: Uuid,
     offering_id: Uuid,
     request: CreateLearningGroupRequest,
 ) -> Result<LearningGroup, AppError> {
@@ -404,23 +399,17 @@ pub async fn create(
     )
     .await?;
     require_writable_offering_term(&mut transaction, offering_id).await?;
-    let (term_id, year_id, offering_status): (Uuid, Uuid, LearningOfferingStatus) =
-        DbSession::new(&mut *transaction)
-            .query_as(
-                "academic_delivery.services.groups.create",
-                "SELECT academic_term_id, academic_year_id, status \
+    let (term_id, year_id): (Uuid, Uuid) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_delivery.services.groups.create",
+            "SELECT academic_term_id, academic_year_id \
              FROM learning_offerings WHERE id = $1 FOR UPDATE",
-            )
-            .bind(offering_id)
-            .fetch_optional()
-            .await?
-            .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".to_string()))?;
-    if matches!(
-        offering_status,
-        LearningOfferingStatus::Cancelled | LearningOfferingStatus::Closed
-    ) {
-        return Err(AppError::Conflict("รายการเปิดสอนปิดแล้ว".to_string()));
-    }
+        )
+        .bind(offering_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".to_string()))?;
+    validate_registration_open(&mut transaction, offering_id, request.registration_open).await?;
     ensure_unique_internal_group_code(&mut transaction, offering_id, &internal_code).await?;
     validate_preferred_rooms(&mut transaction, &request.preferred_room_ids).await?;
     DbSession::new(&mut *transaction)
@@ -428,8 +417,8 @@ pub async fn create(
             "academic_delivery.services.groups.create",
             r#"INSERT INTO learning_groups (
                id, learning_offering_id, academic_term_id, academic_year_id,
-               code, name, description, capacity, status, roster_status
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', 'draft')"#,
+               code, name, description, capacity,registration_open
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9)"#,
         )
         .bind(id)
         .bind(offering_id)
@@ -439,6 +428,7 @@ pub async fn create(
         .bind(request.name.trim())
         .bind(request.description)
         .bind(request.capacity)
+        .bind(request.registration_open)
         .execute()
         .await?;
     replace_preferred_rooms_in_transaction(
@@ -449,30 +439,14 @@ pub async fn create(
         &request.preferred_room_ids,
     )
     .await?;
-    super::versions::refresh_drafts_for_offering(&mut transaction, offering_id).await?;
+    let accepted = get_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.groups.create.completion",
-    )
-    .await?;
-    append_audit(
-        &mut completion,
-        "learning_group.created",
-        "learning_group",
-        id,
-        year_id,
-        term_id,
-        actor_user_id,
-        serde_json::json!({ "learningOfferingId": offering_id }),
-    )
-    .await?;
-    get_on_connection(&mut completion, id).await
+    Ok(accepted)
 }
 
 pub async fn update(
     pool: &PgPool,
-    actor_user_id: Uuid,
+    _actor_user_id: Uuid,
     id: Uuid,
     request: UpdateLearningGroupRequest,
 ) -> Result<LearningGroup, AppError> {
@@ -487,17 +461,23 @@ pub async fn update(
     require_writable_term(&mut transaction, term_id, false).await?;
     let group = lock_offering_then_group(&mut transaction, id, term_id).await?;
     require_mutable_group(&group, request.row_version, false)?;
+    validate_registration_open(
+        &mut transaction,
+        group.learning_offering_id,
+        request.registration_open,
+    )
+    .await?;
     validate_preferred_rooms(&mut transaction, &request.preferred_room_ids).await?;
     DbSession::new(&mut *transaction)
         .query(
             "academic_delivery.services.groups.update",
-            "UPDATE learning_groups SET name = $1, description = $2, capacity = $3, \
-         row_version = row_version + 1, updated_at = now() WHERE id = $4",
+            "UPDATE learning_groups SET name = $1, description = $2, capacity = $3, registration_open=$5, row_version = row_version + 1, updated_at = now() WHERE id = $4",
         )
         .bind(request.name.trim())
         .bind(request.description)
         .bind(request.capacity)
         .bind(id)
+        .bind(request.registration_open)
         .execute()
         .await?;
     replace_preferred_rooms_in_transaction(
@@ -508,25 +488,13 @@ pub async fn update(
         &request.preferred_room_ids,
     )
     .await?;
-    super::versions::refresh_drafts_for_offering(&mut transaction, group.learning_offering_id)
-        .await?;
+    let accepted = get_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.groups.update.completion",
-    )
-    .await?;
-    append_group_audit(
-        &mut completion,
-        actor_user_id,
-        &group,
-        "learning_group.updated",
-    )
-    .await?;
-    get_on_connection(&mut completion, id).await
+    Ok(accepted)
 }
 
 pub async fn replace_teachers(
+    assessments: &dyn crate::ports::AssessmentCurrentPort,
     pool: &PgPool,
     actor_user_id: Uuid,
     id: Uuid,
@@ -543,7 +511,6 @@ pub async fn replace_teachers(
     require_writable_term(&mut transaction, academic_term_id, false).await?;
     let group = lock_offering_then_group(&mut transaction, id, academic_term_id).await?;
     require_mutable_group(&group, request.row_version, false)?;
-    require_draft_group_teachers(&group)?;
     if !teacher_ids.is_empty() {
         let count: i64 = DbSession::new(&mut *transaction)
             .scalar(
@@ -560,30 +527,35 @@ pub async fn replace_teachers(
             ));
         }
     }
-    let offering_starts_on: chrono::NaiveDate = DbSession::new(&mut *transaction)
-        .scalar(
-            "academic_delivery.services.groups.replace_teachers",
-            "SELECT starts_on FROM learning_offerings WHERE id = $1",
-        )
-        .bind(group.learning_offering_id)
-        .fetch_one()
-        .await?;
-    DbSession::new(&mut *transaction)
-        .query(
-            "academic_delivery.services.groups.replace_teachers",
-            "DELETE FROM learning_group_teachers WHERE learning_group_id = $1",
-        )
-        .bind(id)
-        .execute()
-        .await?;
+    let mut existing:Vec<(Uuid,LearningTeacherRole)>=DbSession::new(&mut *transaction).query_as("academic_delivery.groups.current_teacher_set","SELECT teacher_id,role FROM learning_group_teachers WHERE learning_group_id=$1 ORDER BY teacher_id").bind(id).fetch_all().await?;
+    let mut requested = request
+        .teachers
+        .iter()
+        .map(|teacher| (teacher.teacher_id, teacher.role))
+        .collect::<Vec<_>>();
+    existing.sort_by_key(|teacher| teacher.0);
+    requested.sort_by_key(|teacher| teacher.0);
+    if existing == requested {
+        assessments
+            .fill_missing_coordinators(
+                &mut transaction,
+                actor_user_id,
+                &[group.learning_offering_id],
+            )
+            .await?;
+        let accepted = get_on_connection(&mut transaction, id).await?;
+        transaction.commit().await?;
+        return Ok(accepted);
+    }
+    DbSession::new(&mut *transaction).query("academic_delivery.groups.remove_teachers", "DELETE FROM learning_group_teachers WHERE learning_group_id=$1 AND NOT(teacher_id=ANY($2))").bind(id).bind(&teacher_ids).execute().await?;
     for teacher in request.teachers {
         DbSession::new(&mut *transaction)
             .query(
                 "academic_delivery.services.groups.replace_teachers",
                 r#"INSERT INTO learning_group_teachers (
                    id, learning_group_id, academic_term_id, academic_year_id,
-                   teacher_id, role, starts_on, created_by, updated_by
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)"#,
+                   teacher_id, role, created_by, updated_by
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $7) ON CONFLICT(learning_group_id,teacher_id) DO UPDATE SET role=EXCLUDED.role,updated_by=EXCLUDED.updated_by,row_version=learning_group_teachers.row_version+1,updated_at=now() WHERE learning_group_teachers.role IS DISTINCT FROM EXCLUDED.role"#,
             )
             .bind(Uuid::now_v7())
             .bind(id)
@@ -591,34 +563,27 @@ pub async fn replace_teachers(
             .bind(group.academic_year_id)
             .bind(teacher.teacher_id)
             .bind(teacher.role)
-            .bind(offering_starts_on)
             .bind(actor_user_id)
             .execute()
             .await?;
     }
+    assessments
+        .fill_missing_coordinators(
+            &mut transaction,
+            actor_user_id,
+            &[group.learning_offering_id],
+        )
+        .await?;
     increment_group_revision(&mut transaction, id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[id]).await?;
-    super::versions::refresh_drafts_for_offering(&mut transaction, group.learning_offering_id)
-        .await?;
+    let accepted = get_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.groups.replace_teachers.completion",
-    )
-    .await?;
-    append_group_audit(
-        &mut completion,
-        actor_user_id,
-        &group,
-        "learning_group.teachers_replaced",
-    )
-    .await?;
-    get_on_connection(&mut completion, id).await
+    Ok(accepted)
 }
 
 pub async fn replace_homerooms(
     pool: &PgPool,
-    actor_user_id: Uuid,
+    _actor_user_id: Uuid,
     id: Uuid,
     request: ReplaceLearningGroupHomeroomsRequest,
 ) -> Result<LearningGroup, AppError> {
@@ -662,28 +627,14 @@ pub async fn replace_homerooms(
     DbSession::new(&mut *transaction)
         .query(
             "academic_delivery.services.groups.replace_homerooms",
-            "UPDATE learning_groups SET roster_source_hash = NULL, \
-         row_version = row_version + 1, updated_at = now() WHERE id = $1",
+            "UPDATE learning_groups SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
         )
         .bind(id)
         .execute()
         .await?;
-    super::versions::refresh_drafts_for_offering(&mut transaction, group.learning_offering_id)
-        .await?;
+    let accepted = get_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.groups.replace_homerooms.completion",
-    )
-    .await?;
-    append_group_audit(
-        &mut completion,
-        actor_user_id,
-        &group,
-        "learning_group.homerooms_replaced",
-    )
-    .await?;
-    get_on_connection(&mut completion, id).await
+    Ok(accepted)
 }
 
 pub async fn preview_roster(pool: &PgPool, group_id: Uuid) -> Result<RosterPreview, AppError> {
@@ -826,129 +777,16 @@ pub async fn apply_roster(
     DbSession::new(&mut *transaction)
         .query(
             "academic_delivery.services.groups.apply_roster",
-            "UPDATE learning_groups SET roster_status = 'draft', roster_source_hash = $1, \
-         roster_published_at = NULL, roster_publish_idempotency_key = NULL, \
-         row_version = row_version + 1, updated_at = now() WHERE id = $2",
+            "UPDATE learning_groups SET row_version = row_version + 1, updated_at = now() WHERE id = $1",
         )
-        .bind(&source.hash)
         .bind(group_id)
         .execute()
         .await?;
-    invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
-    transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.groups.apply_roster.completion",
-    )
-    .await?;
-    append_group_audit(
-        &mut completion,
-        actor_user_id,
-        &group,
-        "learning_group.roster_applied",
-    )
-    .await?;
-    get_on_connection(&mut completion, group_id).await
-}
-
-pub async fn publish_roster(
-    pool: &PgPool,
-    actor_user_id: Uuid,
-    group_id: Uuid,
-    request: PublishRosterRequest,
-) -> Result<LearningGroup, AppError> {
-    validate_row_version(request.row_version)?;
-    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.groups.publish_roster.preflight",
-    )
-    .await?;
-    if let Some(existing_id) = DbSession::new(&mut preflight)
-        .scalar::<Uuid>(
-            "academic_delivery.services.groups.publish_roster.preflight",
-            "SELECT id FROM learning_groups WHERE roster_publish_idempotency_key = $1",
-        )
-        .bind(request.idempotency_key)
-        .fetch_optional()
-        .await?
-    {
-        if existing_id == group_id {
-            return get_on_connection(&mut preflight, group_id).await;
-        }
-        return Err(AppError::Conflict(
-            "idempotencyKey ถูกใช้กับกลุ่มอื่นแล้ว".to_string(),
-        ));
-    }
-    drop(preflight);
-    let mut transaction = school_tenancy::TenantPool::begin_observed(
-        pool,
-        "academic_delivery.services.groups.publish_roster",
-    )
-    .await?;
-    let academic_term_id = find_group_term(&mut transaction, group_id).await?;
-    require_writable_term(&mut transaction, academic_term_id, false).await?;
-    let group = lock_offering_then_group(&mut transaction, group_id, academic_term_id).await?;
-    require_mutable_group(&group, request.row_version, false)?;
-    if group.roster_status != RosterStatus::Draft {
-        return Err(AppError::Conflict(
-            "roster นี้เผยแพร่แล้ว หากต้องการเปลี่ยนรายชื่อต้องสร้างฉบับ draft ใหม่".to_string(),
-        ));
-    }
-    let offering_status: LearningOfferingStatus = DbSession::new(&mut *transaction)
-        .scalar(
-            "academic_delivery.services.groups.publish_roster",
-            "SELECT status FROM learning_offerings WHERE id = $1",
-        )
-        .bind(group.learning_offering_id)
-        .fetch_one()
-        .await?;
-    if offering_status != LearningOfferingStatus::Published {
-        return Err(AppError::Conflict(
-            "ต้องเผยแพร่รายการเปิดสอนก่อนเผยแพร่ roster".to_string(),
-        ));
-    }
-    let source = roster_source(&mut transaction, &group).await?;
-    if group.roster_source_hash.as_deref().map(str::trim_end) != Some(source.hash.as_str()) {
-        return Err(AppError::Conflict(
-            "รายชื่อนักเรียนต้นทางเปลี่ยนไป กรุณาสร้าง roster ใหม่".to_string(),
-        ));
-    }
     validate_publishable_roster(&mut transaction, &group).await?;
-    DbSession::new(&mut *transaction)
-        .query(
-            "academic_delivery.services.groups.publish_roster",
-            "UPDATE learning_group_students SET published_at = now(), updated_at = now() \
-         WHERE learning_group_id = $1 AND membership_status = 'active'",
-        )
-        .bind(group_id)
-        .execute()
-        .await?;
-    DbSession::new(&mut *transaction)
-        .query(
-            "academic_delivery.services.groups.publish_roster",
-            "UPDATE learning_groups SET roster_status = 'published', roster_published_at = now(), \
-         roster_publish_idempotency_key = $1, row_version = row_version + 1, \
-         updated_at = now() WHERE id = $2",
-        )
-        .bind(request.idempotency_key)
-        .bind(group_id)
-        .execute()
-        .await?;
-    super::roster_tracking::sync_group(&mut transaction, actor_user_id, group_id, None).await?;
+    invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
+    let accepted = get_on_connection(&mut transaction, group_id).await?;
     transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.groups.publish_roster.completion",
-    )
-    .await?;
-    append_group_audit(
-        &mut completion,
-        actor_user_id,
-        &group,
-        "learning_group.roster_published",
-    )
-    .await?;
-    get_on_connection(&mut completion, group_id).await
+    Ok(accepted)
 }
 
 async fn hydrate(
@@ -974,8 +812,8 @@ async fn hydrate_many(
         .query_as(
             "academic_delivery.services.groups.hydrate_many",
             r#"SELECT teacher.learning_group_id, teacher.id, teacher.teacher_id,
-                  user_account.display_name AS display_name,
-                  teacher.role, teacher.starts_on, teacher.ends_on, teacher.row_version
+                  user_account.display_name AS display_name,(user_account.status='active' AND user_account.user_type='staff') AS is_active,
+                  teacher.role, teacher.row_version
            FROM learning_group_teachers teacher
            JOIN user_display_names user_account ON user_account.id = teacher.teacher_id
            WHERE teacher.learning_group_id = ANY($1)
@@ -985,7 +823,7 @@ async fn hydrate_many(
                         WHEN 'secondary' THEN 2
                         ELSE 3
                     END,
-                    teacher.starts_on, teacher.id"#,
+                    teacher.id"#,
         )
         .bind(&group_ids)
         .fetch_all()
@@ -1035,54 +873,46 @@ async fn hydrate_many(
 
     Ok(rows
         .into_iter()
-        .map(|row| {
-            let teachers_locked = row.status != LearningOfferingStatus::Draft;
-            LearningGroup {
-                id: row.id,
-                learning_offering_id: row.learning_offering_id,
-                academic_term_id: row.academic_term_id,
-                academic_year_id: row.academic_year_id,
-                code: row.code,
-                name: row.name,
-                description: row.description,
-                capacity: row.capacity,
-                status: row.status,
-                teachers_locked,
-                roster_status: row.roster_status,
-                roster_published_at: row.roster_published_at,
-                row_version: row.row_version,
-                migrated: row.migrated,
-                created_at: row.created_at,
-                updated_at: row.updated_at,
-                teacher_assignments: teachers_by_group.remove(&row.id).unwrap_or_default(),
-                homeroom_ids: homerooms_by_group.remove(&row.id).unwrap_or_default(),
-                preferred_room_ids: preferred_rooms_by_group.remove(&row.id).unwrap_or_default(),
-            }
+        .map(|row| LearningGroup {
+            id: row.id,
+            learning_offering_id: row.learning_offering_id,
+            academic_term_id: row.academic_term_id,
+            academic_year_id: row.academic_year_id,
+            code: row.code,
+            name: row.name,
+            description: row.description,
+            capacity: row.capacity,
+            registration_open: row.registration_open,
+            row_version: row.row_version,
+            migrated: row.migrated,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            teacher_assignments: teachers_by_group.remove(&row.id).unwrap_or_default(),
+            homeroom_ids: homerooms_by_group.remove(&row.id).unwrap_or_default(),
+            preferred_room_ids: preferred_rooms_by_group.remove(&row.id).unwrap_or_default(),
         })
         .collect())
 }
 
 #[derive(sqlx::FromRow)]
 struct GroupTeacherRow {
+    is_active: bool,
     learning_group_id: Uuid,
     id: Uuid,
     teacher_id: Uuid,
     display_name: String,
     role: super::super::models::LearningTeacherRole,
-    starts_on: chrono::NaiveDate,
-    ends_on: Option<chrono::NaiveDate>,
     row_version: i64,
 }
 
 impl From<GroupTeacherRow> for LearningGroupTeacherAssignment {
     fn from(row: GroupTeacherRow) -> Self {
         Self {
+            is_active: row.is_active,
             id: row.id,
             teacher_id: row.teacher_id,
             display_name: row.display_name,
             role: row.role,
-            starts_on: row.starts_on,
-            ends_on: row.ends_on,
             row_version: row.row_version,
         }
     }
@@ -1108,7 +938,7 @@ async fn lock_group(
         .query_as(
             "academic_delivery.services.groups.lock_group",
             "SELECT id, learning_offering_id, academic_term_id, academic_year_id, \
-         status, roster_status, row_version, roster_source_hash::text, capacity \
+         row_version, capacity \
          FROM learning_groups WHERE id = $1 FOR UPDATE",
         )
         .bind(id)
@@ -1165,31 +995,12 @@ async fn find_group_term(
 fn require_mutable_group(
     group: &GroupLockRow,
     expected_row_version: i64,
-    require_draft_roster: bool,
+    _roster: bool,
 ) -> Result<(), AppError> {
-    if group.status == LearningOfferingStatus::Closed || group.roster_status == RosterStatus::Closed
-    {
-        return Err(AppError::Conflict("กลุ่มเรียนปิดแล้ว".to_string()));
-    }
-    if require_draft_roster && group.roster_status != RosterStatus::Draft {
-        return Err(AppError::Conflict(
-            "roster ที่เผยแพร่แล้วต้องปิดก่อนจึงจะแก้ไขความครอบคลุมได้".to_string(),
-        ));
-    }
     if group.row_version != expected_row_version {
-        return Err(AppError::Conflict("กลุ่มเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string()));
+        return Err(AppError::Conflict("กลุ่มเรียนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".into()));
     }
     Ok(())
-}
-
-fn require_draft_group_teachers(group: &GroupLockRow) -> Result<(), AppError> {
-    if group.status != LearningOfferingStatus::Draft {
-        Err(AppError::Conflict(
-            "เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้".to_string(),
-        ))
-    } else {
-        Ok(())
-    }
 }
 
 fn internal_group_code(name: &str) -> Result<String, AppError> {
@@ -1385,36 +1196,7 @@ async fn roster_source(
         .fetch_all()
         .await?;
     homeroom_ids.sort_unstable();
-    let today: chrono::NaiveDate = DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_delivery.services.groups.roster_source",
-            "SELECT (now() AT TIME ZONE 'Asia/Bangkok')::date",
-        )
-        .fetch_one()
-        .await?;
-    let constraint = super::audiences::dated_constraint_on_connection(
-        &mut **transaction,
-        group.learning_offering_id,
-        today,
-    )
-    .await?;
-    if constraint
-        .as_ref()
-        .is_some_and(|scope| !scope.allows_group(group.id))
-    {
-        return Err(AppError::Conflict(
-            "กลุ่มเรียนไม่ได้อยู่ในขอบเขตเปิดสอนที่มีผลแล้ว".into(),
-        ));
-    }
-    let allowed_rooms: Vec<_> = homeroom_ids
-        .iter()
-        .copied()
-        .filter(|room| {
-            constraint
-                .as_ref()
-                .is_none_or(|scope| scope.allows_homeroom(group.id, Some(*room)))
-        })
-        .collect();
+    let allowed_rooms = homeroom_ids.clone();
     let mut candidates: Vec<RosterSourceStudent> = DbSession::new(&mut **transaction)
         .query_as(
             "academic_delivery.services.groups.roster_source",
@@ -1471,10 +1253,7 @@ async fn roster_source(
         homeroom_ids: &homeroom_ids,
         candidates: &candidates,
     })?;
-    let hash = match &constraint {
-        None => registry_hash,
-        Some(scope) => stable_hash(&(registry_hash, scope.delivery_version_id, &scope.offering))?,
-    };
+    let hash = registry_hash;
     Ok(RosterSource {
         hash,
         candidates,
@@ -1715,25 +1494,6 @@ async fn validate_publishable_roster(
     Ok(())
 }
 
-async fn append_group_audit(
-    connection: &mut sqlx::PgConnection,
-    actor_user_id: Uuid,
-    group: &GroupLockRow,
-    event_code: &str,
-) -> Result<(), AppError> {
-    append_audit(
-        connection,
-        event_code,
-        "learning_group",
-        group.id,
-        group.academic_year_id,
-        group.academic_term_id,
-        actor_user_id,
-        serde_json::json!({ "learningOfferingId": group.learning_offering_id }),
-    )
-    .await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1838,4 +1598,20 @@ mod tests {
         assert_ne!(first, other_name);
         assert!(first.starts_with("GROUP-"));
     }
+}
+
+async fn validate_registration_open(
+    tx: &mut Transaction<'_, Postgres>,
+    offering: Uuid,
+    open: bool,
+) -> Result<(), AppError> {
+    if open {
+        let valid:bool=DbSession::new(&mut **tx).scalar("academic_delivery.groups.registration_open","SELECT EXISTS(SELECT 1 FROM activity_offering_details WHERE learning_offering_id=$1 AND registration_type='self')").bind(offering).fetch_one().await?;
+        if !valid {
+            return Err(AppError::ValidationError(
+                "เปิดลงทะเบียนได้เฉพาะกิจกรรมที่ให้นักเรียนลงทะเบียนเอง".into(),
+            ));
+        }
+    }
+    Ok(())
 }

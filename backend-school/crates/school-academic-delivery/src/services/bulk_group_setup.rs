@@ -5,8 +5,8 @@ use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-use super::{groups, offerings::LearningOfferingSignalDescriptor, roster_tracking, versions};
-use crate::models::{versions::DeliveryVersionStatus, *};
+use super::{groups, offerings::LearningOfferingSignalDescriptor, roster_tracking};
+use crate::models::*;
 
 /// Internal command result; the HTTP envelope serializes only `response`.
 /// Signal evidence is captured under the same offering lock as the accepted setup.
@@ -16,7 +16,7 @@ pub struct BulkGroupSetupOutcome {
 }
 
 fn validate_request(request: &BulkGroupSetupRequest) -> Result<(), AppError> {
-    super::validate_row_version(request.delivery_version_row_version)?;
+    super::validate_row_version(request.delivery_row_version)?;
     if request.groups.is_empty() || request.groups.len() > 500 {
         return Err(AppError::ValidationError(
             "เลือกกลุ่มเรียนตั้งแต่ 1 ถึง 500 กลุ่ม".into(),
@@ -66,21 +66,21 @@ async fn build_preview(
     offering_id: Uuid,
     request: &BulkGroupSetupRequest,
 ) -> Result<BulkGroupSetupPreview, AppError> {
-    let version =
-        versions::get_version_on_connection(connection, request.delivery_version_id).await?;
-    if version.status != DeliveryVersionStatus::Draft
-        || version.row_version != request.delivery_version_row_version
-    {
-        return Err(AppError::Conflict(
-            "รุ่นเปิดสอนเปลี่ยนแล้วหรือไม่ใช่แบบร่าง กรุณาโหลดใหม่".into(),
-        ));
+    let registry = super::offerings::get_on_connection(connection, offering_id).await?;
+    let version = super::current::workspace_on_connection(
+        connection,
+        registry.academic_year_id,
+        registry.academic_term_id,
+    )
+    .await?;
+    if version.row_version != request.delivery_row_version {
+        return Err(AppError::Conflict("ข้อมูลเปิดสอนเปลี่ยนแล้ว กรุณาโหลดใหม่".into()));
     }
     let offering = version
-        .snapshot
         .offerings
         .iter()
         .find(|offering| offering.id == offering_id)
-        .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่อยู่ในรุ่นที่เลือก".into()))?;
+        .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".into()))?;
     let writable: bool = DbSession::new(connection).scalar("academic_delivery.services.bulk_group_setup.build_preview", "SELECT y.status NOT IN ('closed','archived') AND t.status NOT IN ('closed','cancelled') FROM academic_terms t JOIN academic_years y ON y.id=t.academic_year_id WHERE t.id=$1 AND y.id=$2")
         .bind(version.academic_term_id).bind(version.academic_year_id).fetch_one().await?;
     if !writable {
@@ -105,7 +105,7 @@ async fn build_preview(
         .any(|id| !offering.groups.iter().any(|group| group.id == *id))
     {
         return Err(AppError::ValidationError(
-            "กลุ่มเรียนไม่อยู่ในรายการเปิดสอนและรุ่นที่เลือก".into(),
+            "กลุ่มเรียนไม่อยู่ในรายการเปิดสอนที่เลือก".into(),
         ));
     }
     let ids: Vec<_> = selected.keys().copied().collect();
@@ -142,14 +142,7 @@ async fn build_preview(
         let tracking = tracking_by_group
             .remove(&group.id)
             .ok_or_else(|| AppError::NotFound("ไม่พบการตั้งค่ารายชื่อของกลุ่มเรียน".into()))?;
-        let mut blocked_reason = if group.teachers_locked
-            || group.status != LearningOfferingStatus::Draft
-            || group.roster_status != RosterStatus::Draft
-        {
-            Some("ตั้งค่าเป็นชุดได้เฉพาะกลุ่มและรายชื่อแบบร่าง".into())
-        } else {
-            None
-        };
+        let mut blocked_reason = None;
         let primary_teacher_action =
             teacher_action(&group.teacher_assignments, request.primary_teacher.as_ref());
         if let Some(teacher) = &request.primary_teacher {
@@ -191,7 +184,7 @@ async fn build_preview(
         .count();
     let skipped_count = targets.len() - blocked_count - changed_count;
     Ok(BulkGroupSetupPreview {
-        delivery_version_row_version: version.row_version,
+        delivery_row_version: version.row_version,
         targets,
         changed_count,
         skipped_count,
@@ -229,6 +222,7 @@ fn changes(target: &BulkGroupSetupPreviewTarget) -> bool {
 }
 
 pub async fn apply(
+    assessments: &dyn crate::ports::AssessmentCurrentPort,
     pool: &PgPool,
     actor: Uuid,
     offering_id: Uuid,
@@ -240,7 +234,7 @@ pub async fn apply(
         "academic_delivery.services.bulk_group_setup.apply",
     )
     .await?;
-    // Initial exclusive term mode avoids lock upgrades and serializes publication and draft refresh.
+    // Exclusive term mode serializes the current atomic setup with all term writers.
     let term_id: Uuid = DbSession::new(&mut *tx)
         .scalar(
             "academic_delivery.services.bulk_group_setup.apply",
@@ -251,31 +245,7 @@ pub async fn apply(
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".into()))?;
     super::require_writable_term(&mut tx, term_id, true).await?;
-    let (starts_on, offering_term_id, offering_row_version): (chrono::NaiveDate, Uuid, i64) = DbSession::new(&mut *tx).query_as("academic_delivery.services.bulk_group_setup.apply", "SELECT starts_on,academic_term_id,row_version FROM learning_offerings WHERE id=$1 AND academic_term_id=$2 AND status IN ('draft','published') FOR UPDATE")
-        .bind(offering_id).bind(term_id).fetch_optional().await?.ok_or_else(|| AppError::Conflict("รายการเปิดสอนไม่พร้อมแก้ไข".into()))?;
-    // Verify scope before acquiring any requested group/version locks, then recheck revisions under those locks.
-    let scope_version =
-        versions::get_version_on_connection(&mut tx, request.delivery_version_id).await?;
-    let scope_offering = scope_version
-        .snapshot
-        .offerings
-        .iter()
-        .find(|offering| offering.id == offering_id);
-    if scope_version.academic_term_id != term_id
-        || scope_offering.is_none()
-        || request.groups.iter().any(|target| {
-            !scope_offering.is_some_and(|offering| {
-                offering
-                    .groups
-                    .iter()
-                    .any(|group| group.id == target.learning_group_id)
-            })
-        })
-    {
-        return Err(AppError::ValidationError(
-            "กลุ่มเรียนและรุ่นต้องอยู่ในรายการเปิดสอนและภาคเรียนที่เลือก".into(),
-        ));
-    }
+    let (year,offering_term_id,offering_row_version): (Uuid,Uuid,i64) = DbSession::new(&mut *tx).query_as("academic_delivery.bulk_group_setup.lock_offering", "SELECT academic_year_id,academic_term_id,row_version FROM learning_offerings WHERE id=$1 AND academic_term_id=$2 FOR UPDATE").bind(offering_id).bind(term_id).fetch_one().await?;
     let ids: Vec<_> = request
         .groups
         .iter()
@@ -288,8 +258,6 @@ pub async fn apply(
             "กลุ่มเรียนบางกลุ่มไม่อยู่ในรายการเปิดสอนที่เลือก".into(),
         ));
     }
-    DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "SELECT id FROM academic_delivery_versions WHERE id=$1 AND academic_term_id=$2 AND EXISTS(SELECT 1 FROM jsonb_array_elements(snapshot->'offerings') offering WHERE (offering->>'id')::uuid=$3) FOR UPDATE")
-        .bind(request.delivery_version_id).bind(term_id).bind(offering_id).execute().await?;
     let preview = build_preview(&mut tx, offering_id, &request).await?;
     if preview.blocked_count > 0 {
         return Err(AppError::Conflict(
@@ -328,11 +296,11 @@ pub async fn apply(
         .collect();
     if let Some(teacher) = &request.primary_teacher {
         if !teacher_changed.is_empty() {
-            // Only draft primary assignments are replaced; other roles retain episode identities.
-            DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "DELETE FROM learning_group_teachers WHERE learning_group_id=ANY($1) AND role='primary'")
-                .bind(&teacher_changed).execute().await?;
-            DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,starts_on,created_by,updated_by) SELECT uuidv7(),g.id,g.academic_term_id,g.academic_year_id,$2,'primary',$3,$4,$4 FROM learning_groups g WHERE g.id=ANY($1)")
-                .bind(&teacher_changed).bind(teacher.teacher_id).bind(starts_on).bind(actor).execute().await?;
+            // Replace only selected primary memberships; other roles retain assignment identities.
+            DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "DELETE FROM learning_group_teachers WHERE learning_group_id=ANY($1) AND role='primary' AND teacher_id<>$2")
+                .bind(&teacher_changed).bind(teacher.teacher_id).execute().await?;
+            DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role,created_by,updated_by) SELECT uuidv7(),g.id,g.academic_term_id,g.academic_year_id,$2,'primary',$3,$3 FROM learning_groups g WHERE g.id=ANY($1) ON CONFLICT(learning_group_id,teacher_id) DO UPDATE SET role='primary',updated_by=EXCLUDED.updated_by,row_version=learning_group_teachers.row_version+1,updated_at=now()")
+                .bind(&teacher_changed).bind(teacher.teacher_id).bind(actor).execute().await?;
             super::invalidate_group_academic_confirmations(&mut tx, &teacher_changed).await?;
         }
     }
@@ -350,15 +318,14 @@ pub async fn apply(
     DbSession::new(&mut *tx).query("academic_delivery.services.bulk_group_setup.apply", "UPDATE learning_groups SET row_version=row_version+1,updated_at=now() WHERE id=ANY($1)")
         .bind(&changed_ids).execute().await?;
     // One bounded audit record captures the explicit atomic scope in the same transaction.
-    super::append_audit(&mut tx, "learning_group.bulk_setup", "learning_offering", offering_id, scope_version.academic_year_id, term_id, actor,
-        serde_json::json!({"deliveryVersionId":request.delivery_version_id,"selectedGroupIds":ids,"changedGroupIds":changed_ids,"primaryTeacherGroupIds":teacher_changed,"rosterTrackingGroupIds":tracking_changed})).await?;
-    if !teacher_changed.is_empty() {
-        versions::refresh_drafts_for_offering(&mut tx, offering_id).await?;
+    assessments
+        .fill_missing_coordinators(&mut tx, actor, &[offering_id])
+        .await?;
+    for group in &tracking_changed {
+        roster_tracking::sync_group(&mut tx, actor, *group, None).await?;
     }
-    let delivery_version_row_version =
-        versions::get_version_on_connection(&mut tx, request.delivery_version_id)
-            .await?
-            .row_version;
+    let delivery_row_version =
+        super::current::term_revision_on_connection(&mut tx, year, term_id).await?;
     let fresh_groups = groups::get_many_on_connection(&mut tx, &ids).await?;
     let mut tracking_by_group = roster_tracking::get_many_on_connection(&mut tx, &ids).await?;
     let mut tracking = Vec::with_capacity(ids.len());
@@ -372,7 +339,7 @@ pub async fn apply(
     }
     let outcome = BulkGroupSetupOutcome {
         response: BulkGroupSetupResponse {
-            delivery_version_row_version,
+            delivery_row_version,
             groups: fresh_groups,
             roster_tracking: tracking,
         },
@@ -392,8 +359,7 @@ mod tests {
 
     fn request() -> BulkGroupSetupRequest {
         BulkGroupSetupRequest {
-            delivery_version_id: Uuid::now_v7(),
-            delivery_version_row_version: 1,
+            delivery_row_version: 1,
             groups: vec![BulkGroupSetupTarget {
                 learning_group_id: Uuid::now_v7(),
                 row_version: 1,
@@ -413,8 +379,8 @@ mod tests {
             match case {
                 0 => input.groups.clear(),
                 1 => input.primary_teacher = None,
-                2 => input.delivery_version_row_version = 0,
-                3 => input.delivery_version_row_version = -1,
+                2 => input.delivery_row_version = 0,
+                3 => input.delivery_row_version = -1,
                 4 => input.groups[0].row_version = 0,
                 5 => input.groups[0].row_version = -1,
                 _ => input.groups.push(input.groups[0].clone()),
@@ -448,12 +414,11 @@ mod tests {
 
     fn assignment(teacher_id: Uuid, role: LearningTeacherRole) -> LearningGroupTeacherAssignment {
         LearningGroupTeacherAssignment {
+            is_active: true,
             id: Uuid::now_v7(),
             teacher_id,
             display_name: "Synthetic teacher".into(),
             role,
-            starts_on: chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap(),
-            ends_on: None,
             row_version: 1,
         }
     }

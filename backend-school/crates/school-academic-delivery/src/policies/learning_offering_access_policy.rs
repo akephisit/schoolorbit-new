@@ -39,19 +39,6 @@ pub enum OfferingAction {
     Manage,
 }
 
-/// Authorize every offering touched by the selected operational change set.
-pub async fn require_term_change_set_access(
-    pool: &PgPool,
-    actor: &ActorContext,
-    change_set_id: Uuid,
-    action: OfferingAction,
-) -> Result<Vec<Uuid>, AppError> {
-    let offering_ids =
-        crate::services::offerings::operational_change_offering_ids(pool, change_set_id).await?;
-    require_learning_offering_batch_access(pool, actor, &offering_ids, action).await?;
-    Ok(offering_ids)
-}
-
 pub async fn learning_offering_list_access(
     pool: &PgPool,
     actor: &ActorContext,

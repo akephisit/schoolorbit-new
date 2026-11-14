@@ -7,13 +7,10 @@ use uuid::Uuid;
 use school_errors::AppError;
 
 use super::super::models::{
-    ActivityRegistrationType, LearningOfferingStatus, RosterStatus, StudentActivityGroupOption,
-    StudentActivityOfferingOption, StudentActivityRegistrationQuery,
-    StudentActivityRegistrationResult,
+    ActivityRegistrationType, StudentActivityGroupOption, StudentActivityOfferingOption,
+    StudentActivityRegistrationQuery, StudentActivityRegistrationResult,
 };
-use super::{
-    append_audit, invalidate_group_academic_confirmations, require_writable_term, TermContext,
-};
+use super::{invalidate_group_academic_confirmations, require_writable_term, TermContext};
 
 pub async fn list_registration_options(
     pool: &PgPool,
@@ -101,9 +98,7 @@ pub async fn list_registration_options_on_connection(
                         AND member.membership_status = 'active'
                   ) AS enrolled,
                   selected_term.status NOT IN ('closing', 'closed', 'cancelled')
-                      AND offering.status = 'published'
-                      AND learning_group.status = 'published'
-                      AND learning_group.roster_status = 'draft' AS registration_open
+                      AND learning_group.registration_open AS registration_open
            FROM student_context learner
            JOIN academic_terms selected_term ON selected_term.id = $1
            JOIN learning_offerings offering
@@ -115,17 +110,7 @@ pub async fn list_registration_options_on_connection(
            JOIN activities activity ON activity.id = detail.activity_id
            JOIN learning_groups learning_group
              ON learning_group.learning_offering_id = offering.id
-           WHERE offering.status IN ('published', 'closed')
-             AND (
-                 learning_group.status <> 'closed'
-                 OR EXISTS (
-                     SELECT 1
-                     FROM learning_group_students member
-                     WHERE member.learning_group_id = learning_group.id
-                       AND member.student_id = $2
-                       AND member.membership_status = 'active'
-                 )
-             )
+           WHERE true
              AND EXISTS (
                  SELECT 1
                  FROM learning_offering_targets target
@@ -158,32 +143,9 @@ pub async fn list_registration_options_on_connection(
         .fetch_all()
         .await?;
 
-    let offering_ids = rows
-        .iter()
-        .map(|row| row.learning_offering_id)
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let constraints = match rows.first() {
-        Some(row) => {
-            super::audiences::dated_constraints_on_connection(
-                connection,
-                &offering_ids,
-                row.registration_date,
-            )
-            .await?
-        }
-        None => HashMap::new(),
-    };
     let mut offerings = Vec::<StudentActivityOfferingOption>::new();
     let mut offering_indexes = HashMap::<Uuid, usize>::new();
     for row in rows {
-        let audience_allowed = constraints
-            .get(&row.learning_offering_id)
-            .is_none_or(|scope| scope.allows_homeroom(row.learning_group_id, row.homeroom_id));
-        if !audience_allowed && !row.enrolled {
-            continue;
-        }
         let offering_index = match offering_indexes.get(&row.learning_offering_id) {
             Some(index) => *index,
             None => {
@@ -215,7 +177,7 @@ pub async fn list_registration_options_on_connection(
             member_count: row.member_count,
             teacher_names: row.teacher_names,
             enrolled: row.enrolled,
-            registration_open: row.registration_open && audience_allowed,
+            registration_open: row.registration_open,
         });
     }
     Ok(offerings)
@@ -307,25 +269,6 @@ pub async fn enroll(
     let revision = increment_group_revision(&mut transaction, group_id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
     transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.activities.enroll.completion",
-    )
-    .await?;
-    append_audit(
-        &mut completion,
-        "activity.self_registered",
-        "learning_group",
-        group_id,
-        context.academic_year_id,
-        context.academic_term_id,
-        student_id,
-        serde_json::json!({
-            "learningOfferingId": context.learning_offering_id,
-            "membershipId": membership_id
-        }),
-    )
-    .await?;
 
     Ok(StudentActivityRegistrationResult {
         learning_offering_id: context.learning_offering_id,
@@ -382,25 +325,6 @@ pub async fn unenroll(
     let revision = increment_group_revision(&mut transaction, group_id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
     transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.activities.unenroll.completion",
-    )
-    .await?;
-    append_audit(
-        &mut completion,
-        "activity.self_unregistered",
-        "learning_group",
-        group_id,
-        context.academic_year_id,
-        context.academic_term_id,
-        student_id,
-        serde_json::json!({
-            "learningOfferingId": context.learning_offering_id,
-            "membershipId": membership.0
-        }),
-    )
-    .await?;
 
     Ok(StudentActivityRegistrationResult {
         learning_offering_id: context.learning_offering_id,
@@ -413,8 +337,6 @@ pub async fn unenroll(
 
 #[derive(Debug, sqlx::FromRow)]
 struct StudentActivityRegistrationRow {
-    homeroom_id: Option<Uuid>,
-    registration_date: chrono::NaiveDate,
     learning_offering_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
@@ -438,9 +360,7 @@ struct RegistrationLockRow {
     learning_offering_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
-    offering_status: LearningOfferingStatus,
-    group_status: LearningOfferingStatus,
-    roster_status: RosterStatus,
+    registration_open: bool,
     registration_type: ActivityRegistrationType,
     group_capacity: Option<i32>,
     activity_capacity: Option<i32>,
@@ -495,9 +415,7 @@ async fn lock_registration_context(
                   offering.id AS learning_offering_id,
                   offering.academic_term_id,
                   offering.academic_year_id,
-                  offering.status AS offering_status,
-                  learning_group.status AS group_status,
-                  learning_group.roster_status,
+                  learning_group.registration_open,
                   detail.registration_type,
                   learning_group.capacity AS group_capacity,
                   detail.capacity AS activity_capacity
@@ -536,10 +454,7 @@ fn require_registration_window(
             "กิจกรรมนี้จัดรายชื่อโดยโรงเรียนและไม่เปิดให้นักเรียนลงทะเบียนเอง".to_string(),
         ));
     }
-    if context.offering_status != LearningOfferingStatus::Published
-        || context.group_status != LearningOfferingStatus::Published
-        || context.roster_status != RosterStatus::Draft
-    {
+    if !context.registration_open {
         return Err(AppError::Conflict(
             "กิจกรรมนี้ไม่ได้อยู่ในช่วงเปิดลงทะเบียน".to_string(),
         ));
@@ -621,16 +536,7 @@ async fn require_eligible_student(
         .bind(learner.homeroom_id)
         .fetch_one()
         .await?;
-    let constraint = super::audiences::dated_constraint_on_connection(
-        &mut **transaction,
-        context.learning_offering_id,
-        registration_date(term),
-    )
-    .await?;
-    let audience_allowed = constraint
-        .as_ref()
-        .is_none_or(|scope| scope.allows_homeroom(context.learning_group_id, learner.homeroom_id));
-    if !target_allowed || !coverage_allowed || !audience_allowed {
+    if !target_allowed || !coverage_allowed {
         return Err(AppError::Forbidden(
             "กิจกรรมนี้ไม่ได้เปิดสำหรับระดับชั้น แผนการเรียน หรือห้องเรียนของนักเรียน".to_string(),
         ));
@@ -660,15 +566,20 @@ async fn increment_group_revision(
 
 #[cfg(test)]
 mod tests {
-    use chrono::{NaiveDate, TimeZone, Utc};
-
+    use chrono::NaiveDate;
     #[test]
-    fn registration_uses_actual_bangkok_operation_day() {
-        let before =
-            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 1, 16, 59, 59).unwrap());
-        let after =
-            super::super::bangkok_date_at(Utc.with_ymd_and_hms(2026, 7, 1, 17, 0, 0).unwrap());
-        assert_eq!(before, NaiveDate::from_ymd_opt(2026, 7, 1).unwrap());
-        assert_eq!(after, NaiveDate::from_ymd_opt(2026, 7, 2).unwrap());
+    fn registration_uses_captured_operation_day_from_explicit_term_context() {
+        let day = NaiveDate::from_ymd_opt(2026, 7, 2).unwrap();
+        let term = super::TermContext {
+            id: uuid::Uuid::new_v4(),
+            academic_year_id: uuid::Uuid::new_v4(),
+            code: "TERM".into(),
+            operation_date: day,
+            term_type: "regular".into(),
+            type_occurrence: 1,
+            status: "planning".into(),
+            row_version: 1,
+        };
+        assert_eq!(super::registration_date(&term), day);
     }
 }

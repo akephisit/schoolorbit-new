@@ -38,7 +38,7 @@ pub async fn list_subjects(
     .await?;
     validate_context(&mut tx, ctx).await?;
     let assignments =
-        school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+        school_academic_delivery::services::current::assigned_group_ids_on_connection(
             &mut tx,
             ctx.academic_year_id,
             ctx.academic_term_id,
@@ -50,7 +50,7 @@ pub async fn list_subjects(
         g.id=ANY($7::uuid[]) AS assigned,
         EXISTS(SELECT 1 FROM course_assessment_plans p JOIN course_offering_details coordinated ON coordinated.learning_offering_id=p.learning_offering_id WHERE coordinated.subject_id=d.subject_id AND p.academic_term_id=g.academic_term_id AND p.academic_year_id=g.academic_year_id AND p.assessment_coordinator_id=$3) AS coordinator
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN course_offering_details d ON d.learning_offering_id=o.id JOIN academic_terms t ON t.id=g.academic_term_id
-        WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 AND g.status<>'closed')
+        WHERE g.academic_term_id=$1 AND g.academic_year_id=$2 )
         SELECT subject_id,learning_group_id,learning_offering_id,code,name,group_name,assigned FROM groups
         WHERE $4 OR owning_organization_unit_id=ANY($5) OR ($6 AND (assigned OR coordinator))
         ORDER BY assigned DESC,code,subject_id,learning_group_id LIMIT 1001"#).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(actor.user_id).bind(access.includes_school_owned).bind(&access.organization_unit_ids).bind(access.assigned_actor_id.is_some()).bind(&assignments.learning_group_ids).fetch_all().await?;
@@ -106,7 +106,6 @@ pub(super) struct SubjectScope {
     pub academic_state: AcademicWriteState,
     pub subject_id: Uuid,
     pub domain: LearnerEvaluationDomain,
-    pub delivery_version_id: Option<Uuid>,
     pub groups: Vec<GroupScope>,
     pub coordinator: bool,
     pub entry_enabled: bool,
@@ -156,7 +155,7 @@ pub(super) async fn begin_subject_with_selection(
     let (group_ids, operation_date) = if result_locks.is_some() {
         let locked_groups: Vec<Uuid> = DbSession::new(&mut *tx).scalar(
             "academic_assessment.learner_evaluation.services.begin_subject",
-            "SELECT id FROM learning_groups WHERE learning_offering_id=ANY($1) AND status<>'closed' ORDER BY id LIMIT $2 FOR UPDATE",
+            "SELECT id FROM learning_groups WHERE learning_offering_id=ANY($1) ORDER BY id LIMIT $2 FOR UPDATE",
         ).bind(&offerings).bind((crate::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT+1) as i64).fetch_all().await?;
         if locked_groups.len() > crate::ports::CURRENT_OBLIGATION_GROUP_SCAN_LIMIT {
             return Err(AppError::ValidationError(
@@ -177,7 +176,7 @@ pub(super) async fn begin_subject_with_selection(
         (locked_groups, None)
     };
     let assignments =
-        school_academic_delivery::services::versions::group_teacher_assignments_on_connection(
+        school_academic_delivery::services::current::group_teacher_assignments_on_connection(
             &mut tx,
             ctx.academic_year_id,
             ctx.academic_term_id,
@@ -192,7 +191,7 @@ pub(super) async fn begin_subject_with_selection(
         FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id JOIN academic_terms t ON t.id=g.academic_term_id
         LEFT JOIN jsonb_to_recordset($3::jsonb) AS teaching(learning_group_id uuid,teacher_ids uuid[],primary_teacher_ids uuid[])
           ON teaching.learning_group_id=g.id
-        WHERE g.learning_offering_id=ANY($1) AND g.status<>'closed' ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).bind(sqlx::types::Json(&assignments.groups)).fetch_all().await?;
+        WHERE g.learning_offering_id=ANY($1)  ORDER BY g.id"#).bind(&offerings).bind(actor.user_id).bind(sqlx::types::Json(&assignments.groups)).fetch_all().await?;
     if !groups
         .iter()
         .any(|g| policy::can_read_group(&access, g.owner, g.assigned, coordinator))
@@ -235,7 +234,6 @@ pub(super) async fn begin_subject_with_selection(
             academic_state,
             subject_id: subject,
             domain,
-            delivery_version_id: assignments.delivery_version_id,
             groups,
             coordinator,
             entry_enabled,

@@ -16,20 +16,18 @@ use super::super::models::{
     CreateActivityOfferingRequest, CreateCourseOfferingRequest, CreateLearningOfferingRequest,
     CurriculumGroupProposal, CurriculumOfferingPreview, CurriculumPreparationChoice,
     CurriculumPreparationProposal, CurriculumPreviewAction, LearningOffering, LearningOfferingKind,
-    LearningOfferingQuery, LearningOfferingRow, LearningOfferingSnapshot, LearningOfferingStatus,
-    LearningOfferingTarget, OfferingTargetInput, OfferingTargetKind, PreparationAction,
-    PreparationConflict, PreparationGroupingState, PreviewCurriculumOfferingsRequest,
-    PublishLearningOfferingRequest, UpdateLearningOfferingRequest,
+    LearningOfferingQuery, LearningOfferingRow, LearningOfferingSnapshot, LearningOfferingTarget,
+    OfferingTargetInput, OfferingTargetKind, PreparationAction, PreparationConflict,
+    PreparationGroupingState, PreviewCurriculumOfferingsRequest, UpdateLearningOfferingRequest,
 };
 use super::{
-    append_audit, load_term_context, require_active_owner, require_writable_offering_term,
-    require_writable_term, stable_hash, validate_row_version, TermContext,
+    load_term_context, require_active_owner, require_writable_offering_term, require_writable_term,
+    stable_hash, validate_row_version, TermContext,
 };
 
 const OFFERING_COLUMNS: &str = r#"
     id, academic_term_id, academic_year_id, kind, code_snapshot, name_snapshot,
-    source_requirement_kind, source_requirement_id, status, published_at,
-    starts_on, ends_on, stop_reason,
+    source_requirement_kind, source_requirement_id, weekly_period_target,
     owning_organization_unit_id, row_version,
     migration_provenance <> '{}'::jsonb AS migrated, created_at, updated_at
 "#;
@@ -135,24 +133,6 @@ struct ExistingPreviewOfferingRow {
 #[derive(Debug, sqlx::FromRow)]
 struct ExistingPreparationOffering {
     offering_id: Uuid,
-    status: LearningOfferingStatus,
-    covered_homeroom_ids: Vec<Uuid>,
-}
-
-impl ExistingPreparationOffering {
-    fn targets_are_immutable(&self) -> bool {
-        matches!(
-            self.status,
-            LearningOfferingStatus::Published | LearningOfferingStatus::Closed
-        )
-    }
-
-    fn covers(&self, proposal: &CurriculumPreparationProposal) -> bool {
-        proposal
-            .target_homeroom_ids
-            .iter()
-            .all(|id| self.covered_homeroom_ids.contains(id))
-    }
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -191,7 +171,6 @@ struct PreviewHashInput<'a> {
     study_program_ids: &'a [Uuid],
     proposals: &'a [CurriculumPreparationProposal],
     curriculum_sources: &'a [crate::models::CurriculumPublicationSource],
-    delivery_context: Option<&'a super::audiences::RevisionContext>,
 }
 
 #[derive(Serialize)]
@@ -199,7 +178,6 @@ struct PreviewHashInput<'a> {
 struct ApplyRequestHashInput<'a> {
     academic_term_id: Uuid,
     study_program_ids: &'a [Uuid],
-    delivery_version_id: Option<Uuid>,
     source_hash: &'a str,
     choices: &'a [CurriculumPreparationChoice],
 }
@@ -226,7 +204,6 @@ pub async fn list_on_connection(
     let sql = format!(
         "SELECT {OFFERING_COLUMNS} FROM learning_offerings \
          WHERE academic_term_id = $1 \
-           AND status <> 'cancelled' \
            AND ($2 OR owning_organization_unit_id = ANY($3) OR EXISTS (\
                SELECT 1 FROM learning_groups learning_group \
                JOIN learning_group_teachers teacher \
@@ -311,9 +288,7 @@ pub async fn catalog_owners_for_curriculum_request(
     let preview = preview_from_curriculum(
         pool,
         PreviewCurriculumOfferingsRequest {
-            delivery_version_id: request.delivery_version_id,
             academic_term_id: request.academic_term_id,
-            starts_on: request.starts_on,
             study_program_ids: request.study_program_ids.clone(),
         },
     )
@@ -369,9 +344,9 @@ pub async fn catalog_owners_for_curriculum_request(
 }
 
 pub async fn create(
+    assessments: &dyn crate::ports::AssessmentCurrentPort,
     pool: &PgPool,
     actor_user_id: Uuid,
-    delivery_version_id: Option<Uuid>,
     request: CreateLearningOfferingRequest,
 ) -> Result<LearningOffering, AppError> {
     let term_id = request.academic_term_id();
@@ -380,8 +355,7 @@ pub async fn create(
         "academic_delivery.services.offerings.create",
     )
     .await?;
-    let term =
-        require_writable_term(&mut transaction, term_id, delivery_version_id.is_some()).await?;
+    let term = require_writable_term(&mut transaction, term_id, true).await?;
     validate_targets(&mut transaction, &term, request.targets()).await?;
     let id = Uuid::now_v7();
     match request {
@@ -392,223 +366,85 @@ pub async fn create(
             insert_activity(&mut transaction, id, &term, request).await?;
         }
     }
-    if let Some(delivery_version_id) = delivery_version_id {
-        super::versions::include_offering(&mut transaction, delivery_version_id, id, actor_user_id)
-            .await?;
-    }
+    assessments
+        .fill_missing_coordinators(&mut transaction, actor_user_id, &[id])
+        .await?;
+    let accepted = get_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
-    let offering = get(pool, id).await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.offerings.create.completion",
-    )
-    .await?;
-    append_audit(
-        &mut completion,
-        "learning_offering.created",
-        "learning_offering",
-        id,
-        offering.academic_year_id,
-        offering.academic_term_id,
-        actor_user_id,
-        serde_json::json!({ "kind": offering.kind }),
-    )
-    .await?;
-    Ok(offering)
+    Ok(accepted)
 }
 
 pub async fn update(
     pool: &PgPool,
-    actor_user_id: Uuid,
+    _actor_user_id: Uuid,
     id: Uuid,
     request: UpdateLearningOfferingRequest,
 ) -> Result<LearningOffering, AppError> {
     validate_row_version(request.row_version)?;
+    validate_weekly_target(request.weekly_period_target)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_delivery.services.offerings.update",
     )
     .await?;
     let term = require_writable_offering_term(&mut transaction, id).await?;
-    let row: (
-        Uuid,
-        Uuid,
-        LearningOfferingKind,
-        LearningOfferingStatus,
-        i64,
-    ) = DbSession::new(&mut *transaction)
+    let row: (Uuid, Uuid, LearningOfferingKind, i64) = DbSession::new(&mut *transaction)
         .query_as(
             "academic_delivery.services.offerings.update",
-            "SELECT academic_term_id, academic_year_id, kind, status, row_version \
+            "SELECT academic_term_id, academic_year_id, kind, row_version \
          FROM learning_offerings WHERE id = $1 FOR UPDATE",
         )
         .bind(id)
         .fetch_optional()
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาหรือกิจกรรมที่เปิดสอน".to_string()))?;
-    if row.3 != LearningOfferingStatus::Draft {
-        return Err(AppError::Conflict(
-            "ข้อมูล snapshot ที่เผยแพร่แล้วแก้ไขไม่ได้".to_string(),
-        ));
-    }
-    if row.4 != request.row_version {
+    if row.3 != request.row_version {
         return Err(AppError::Conflict(
             "รายการเปิดสอนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
         ));
     }
     validate_targets(&mut transaction, &term, &request.targets).await?;
-    DbSession::new(&mut *transaction)
-        .query(
-            "academic_delivery.services.offerings.update",
-            "DELETE FROM learning_offering_targets WHERE learning_offering_id = $1",
-        )
-        .bind(id)
-        .execute()
-        .await?;
-    insert_targets(&mut transaction, id, &term, &request.targets).await?;
-    DbSession::new(&mut *transaction)
-        .query(
-            "academic_delivery.services.offerings.update",
-            "UPDATE learning_offerings SET row_version = row_version + 1, \
-         updated_at = now() WHERE id = $1",
-        )
-        .bind(id)
-        .execute()
-        .await?;
-    super::versions::refresh_drafts_for_offering(&mut transaction, id).await?;
-    transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.offerings.update.completion",
-    )
-    .await?;
-    append_audit(
-        &mut completion,
-        "learning_offering.updated",
-        "learning_offering",
-        id,
-        row.1,
-        row.0,
-        actor_user_id,
-        serde_json::json!({ "rowVersion": request.row_version }),
-    )
-    .await?;
-    get_on_connection(&mut completion, id).await
-}
+    let covered_rooms:Vec<(Uuid,Uuid,Uuid)>=DbSession::new(&mut *transaction).query_as("academic_delivery.offerings.validate_current_group_coverage", "SELECT DISTINCT room.id,room.grade_level_id,room.study_program_id FROM learning_group_homerooms coverage JOIN learning_groups group_row ON group_row.id=coverage.learning_group_id JOIN homerooms room ON room.id=coverage.homeroom_id WHERE group_row.learning_offering_id=$1 ORDER BY room.id").bind(id).fetch_all().await?;
+    if covered_rooms.iter().any(|(room, grade, program)| {
+        !request
+            .targets
+            .iter()
+            .any(|target| match target.target_kind {
+                OfferingTargetKind::Homeroom => target.homeroom_id == Some(*room),
+                OfferingTargetKind::GradeProgram => {
+                    target.grade_level_id == *grade && target.study_program_id == *program
+                }
+            })
+    }) {
+        return Err(AppError::Conflict(
+            "นำห้องออกจากความครอบคลุมของกลุ่มเรียนก่อนเปลี่ยนเป้าหมายรายการเปิดสอน".into(),
+        ));
+    }
 
-pub async fn publish(
-    assessments: &dyn crate::ports::AssessmentPublicationPort,
-    pool: &PgPool,
-    actor_user_id: Uuid,
-    id: Uuid,
-    request: PublishLearningOfferingRequest,
-) -> Result<LearningOffering, AppError> {
-    validate_row_version(request.row_version)?;
-    let mut preflight = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.offerings.publish.preflight",
-    )
-    .await?;
-    if let Some(existing_id) = DbSession::new(&mut preflight)
-        .scalar::<Uuid>(
-            "academic_delivery.services.offerings.publish.preflight",
-            "SELECT id FROM learning_offerings WHERE publish_idempotency_key = $1",
-        )
-        .bind(request.idempotency_key)
-        .fetch_optional()
-        .await?
-    {
-        if existing_id == id {
-            return get_on_connection(&mut preflight, id).await;
+    let mut retained_target_ids = Vec::with_capacity(request.targets.len());
+    for target in &request.targets {
+        let existing: Option<Uuid>=DbSession::new(&mut *transaction).scalar("academic_delivery.offerings.retain_target", "SELECT id FROM learning_offering_targets WHERE learning_offering_id=$1 AND target_kind=$2 AND homeroom_id IS NOT DISTINCT FROM $3 AND grade_level_id=$4 AND study_program_id=$5").bind(id).bind(target.target_kind).bind(target.homeroom_id).bind(target.grade_level_id).bind(target.study_program_id).fetch_optional().await?;
+        if let Some(existing) = existing {
+            retained_target_ids.push(existing);
+        } else {
+            insert_targets(&mut transaction, id, &term, std::slice::from_ref(target)).await?;
+            let created: Uuid=DbSession::new(&mut *transaction).scalar("academic_delivery.offerings.created_target", "SELECT id FROM learning_offering_targets WHERE learning_offering_id=$1 AND target_kind=$2 AND homeroom_id IS NOT DISTINCT FROM $3 AND grade_level_id=$4 AND study_program_id=$5").bind(id).bind(target.target_kind).bind(target.homeroom_id).bind(target.grade_level_id).bind(target.study_program_id).fetch_one().await?;
+            retained_target_ids.push(created);
         }
-        return Err(AppError::Conflict(
-            "idempotencyKey ถูกใช้กับรายการอื่นแล้ว".to_string(),
-        ));
     }
-
-    drop(preflight);
-    let mut transaction = school_tenancy::TenantPool::begin_observed(
-        pool,
-        "academic_delivery.services.offerings.publish",
-    )
-    .await?;
-    let term_id: Uuid = DbSession::new(&mut *transaction)
-        .scalar(
-            "academic_delivery.services.offerings.publish.context",
-            "SELECT academic_term_id FROM learning_offerings WHERE id=$1",
-        )
-        .bind(id)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบรายการเปิดสอน".into()))?;
-    let term = require_writable_term(&mut transaction, term_id, true).await?;
-    let row: (
-        Uuid,
-        Uuid,
-        LearningOfferingKind,
-        LearningOfferingStatus,
-        i64,
-    ) = DbSession::new(&mut *transaction)
-        .query_as(
-            "academic_delivery.services.offerings.publish",
-            "SELECT academic_term_id, academic_year_id, kind, status, row_version \
-         FROM learning_offerings WHERE id = $1 FOR UPDATE",
-        )
-        .bind(id)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบรายวิชาหรือกิจกรรมที่เปิดสอน".to_string()))?;
-    if row.3 != LearningOfferingStatus::Draft {
-        return Err(AppError::Conflict("รายการนี้ไม่ได้อยู่ในสถานะ draft".to_string()));
-    }
-    if row.4 != request.row_version {
-        return Err(AppError::Conflict(
-            "รายการเปิดสอนถูกแก้ไขโดยผู้ใช้อื่นแล้ว".to_string(),
-        ));
-    }
-    validate_publishable(&mut transaction, id, row.2, &term).await?;
-    super::construction::capture_teachers(&mut transaction, id, None, true, None).await?;
+    DbSession::new(&mut *transaction).query("academic_delivery.offerings.remove_targets", "DELETE FROM learning_offering_targets WHERE learning_offering_id=$1 AND NOT(id=ANY($2))").bind(id).bind(&retained_target_ids).execute().await?;
     DbSession::new(&mut *transaction)
         .query(
-            "academic_delivery.services.offerings.publish",
-            "UPDATE learning_groups SET status = 'published', row_version = row_version + 1, \
-         updated_at = now() WHERE learning_offering_id = $1 AND status = 'draft'",
+            "academic_delivery.services.offerings.update",
+            "UPDATE learning_offerings SET weekly_period_target=$2,row_version = row_version + 1, updated_at = now() WHERE id = $1",
         )
         .bind(id)
+        .bind(request.weekly_period_target)
         .execute()
         .await?;
-    DbSession::new(&mut *transaction)
-        .query(
-            "academic_delivery.services.offerings.publish",
-            "UPDATE learning_offerings SET status = 'published', published_at = now(), \
-         publish_idempotency_key = $1, row_version = row_version + 1, updated_at = now() \
-         WHERE id = $2",
-        )
-        .bind(request.idempotency_key)
-        .bind(id)
-        .execute()
-        .await?;
-    assessments
-        .fill_missing_coordinators(&mut transaction, actor_user_id, &[id])
-        .await?;
+    let accepted = get_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
-    let mut completion = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.offerings.publish.completion",
-    )
-    .await?;
-    append_audit(
-        &mut completion,
-        "learning_offering.published",
-        "learning_offering",
-        id,
-        row.1,
-        row.0,
-        actor_user_id,
-        serde_json::json!({ "kind": row.2 }),
-    )
-    .await?;
-    get_on_connection(&mut completion, id).await
+    Ok(accepted)
 }
 
 pub async fn preview_from_curriculum(
@@ -621,21 +457,16 @@ pub async fn preview_from_curriculum(
         "academic_delivery.services.offerings.preview_from_curriculum",
     )
     .await?;
-    let prepared = build_curriculum_preview_scoped(
-        &mut transaction,
-        request.academic_term_id,
-        &program_ids,
-        request.delivery_version_id,
-        request.starts_on,
-    )
-    .await?;
+    let prepared =
+        build_curriculum_preview_scoped(&mut transaction, request.academic_term_id, &program_ids)
+            .await?;
     transaction.commit().await?;
     Ok(prepared.preview)
 }
 
 #[derive(Debug, Clone)]
 pub struct TermPreparationDeliveryOutcome {
-    pub delivery_revision_id: Uuid,
+    pub delivery_row_version: i64,
     pub offering_ids: Vec<Uuid>,
     pub group_ids: Vec<Uuid>,
     pub created_offering_count: usize,
@@ -679,7 +510,6 @@ pub async fn preview_term_preparation(
         &program_ids,
         term,
         false,
-        None,
         starts_on,
     )
     .await
@@ -708,7 +538,7 @@ fn default_preparation_choice(
 
 pub async fn apply_term_preparation(
     transaction: &mut Transaction<'_, Postgres>,
-    actor: Uuid,
+    _actor: Uuid,
     preview: &CurriculumOfferingPreview,
 ) -> Result<TermPreparationDeliveryOutcome, AppError> {
     let term = require_writable_term(transaction, preview.academic_term_id, true).await?;
@@ -718,20 +548,12 @@ pub async fn apply_term_preparation(
         .map(default_preparation_choice)
         .collect::<Vec<_>>();
     validate_preparation_choices(&preview.proposals, &choices)?;
-    let applied = apply_preview_in_transaction(transaction, &term, preview, &choices, None).await?;
-    let revision_id = super::change_sets::create_change_set_with_initial_offerings(
-        transaction,
-        actor,
-        crate::models::CreateAcademicTermChangeSetRequest {
-            academic_term_id: term.id,
-            reason: "เตรียมเปิดสอนตามโครงสร้างหลักสูตร".into(),
-            idempotency_key: Uuid::new_v4(),
-        },
-        Some((&applied.offering_ids, preview.starts_on)),
-    )
-    .await?;
+    let applied = apply_preview_in_transaction(transaction, &term, preview, &choices).await?;
+    let delivery_row_version =
+        super::current::term_revision_on_connection(transaction, term.academic_year_id, term.id)
+            .await?;
     Ok(TermPreparationDeliveryOutcome {
-        delivery_revision_id: revision_id,
+        delivery_row_version,
         offering_ids: applied.offering_ids,
         group_ids: applied.group_ids,
         created_offering_count: applied.created_offering_count,
@@ -749,7 +571,6 @@ pub async fn apply_from_curriculum(
     let request_hash = stable_hash(&ApplyRequestHashInput {
         academic_term_id: request.academic_term_id,
         study_program_ids: &program_ids,
-        delivery_version_id: request.delivery_version_id,
         source_hash: &request.source_hash,
         choices: &choices,
     })?;
@@ -761,7 +582,7 @@ pub async fn apply_from_curriculum(
     .await?;
     if let Some((
         stored_request_hash,
-        stored_starts_on,
+        _stored_starts_on,
         source_hash,
         offering_ids,
         group_ids,
@@ -793,9 +614,7 @@ pub async fn apply_from_curriculum(
         .fetch_optional()
         .await?
     {
-        if stored_request_hash.trim_end() != request_hash
-            || stored_starts_on.is_some_and(|date| date != request.starts_on)
-        {
+        if stored_request_hash.trim_end() != request_hash {
             return Err(AppError::Conflict(
                 "idempotencyKey ถูกใช้กับคำขออื่นแล้ว".to_string(),
             ));
@@ -820,14 +639,9 @@ pub async fn apply_from_curriculum(
     )
     .await?;
     let term = require_writable_term(&mut transaction, request.academic_term_id, true).await?;
-    let PreparedCurriculumPreview { preview, context } = build_curriculum_preview_scoped(
-        &mut transaction,
-        request.academic_term_id,
-        &program_ids,
-        request.delivery_version_id,
-        request.starts_on,
-    )
-    .await?;
+    let PreparedCurriculumPreview { preview } =
+        build_curriculum_preview_scoped(&mut transaction, request.academic_term_id, &program_ids)
+            .await?;
     if preview.source_hash != request.source_hash {
         return Err(AppError::Conflict(
             "โครงสร้างหลักสูตรหรือภาคเรียนเปลี่ยนไป กรุณา preview ใหม่".to_string(),
@@ -835,37 +649,7 @@ pub async fn apply_from_curriculum(
     }
     validate_preparation_choices(&preview.proposals, &choices)?;
 
-    let applied = apply_preview_in_transaction(
-        &mut transaction,
-        &term,
-        &preview,
-        &choices,
-        context.as_ref(),
-    )
-    .await?;
-    if let Some(version_id) = request.delivery_version_id {
-        for offering_id in &applied.offering_ids {
-            super::versions::include_offering(
-                &mut transaction,
-                version_id,
-                *offering_id,
-                actor_user_id,
-            )
-            .await?;
-        }
-        if let Some(context) = &context {
-            for id in &applied.offering_ids {
-                super::audiences::clear_omitted_group_commands(
-                    &mut transaction,
-                    context.revision_id,
-                    *id,
-                )
-                .await?;
-            }
-            super::versions::refresh_revision_snapshot(&mut transaction, context.revision_id)
-                .await?;
-        }
-    }
+    let applied = apply_preview_in_transaction(&mut transaction, &term, &preview, &choices).await?;
     DbSession::new(&mut *transaction)
         .query(
             "academic_delivery.services.offerings.apply_from_curriculum",
@@ -889,7 +673,7 @@ pub async fn apply_from_curriculum(
         .bind(applied.skipped_count as i32)
         .bind(actor_user_id)
         .bind(sqlx::types::Json(&preview.curriculum_sources))
-        .bind((applied.created_offering_count > 0).then_some(request.starts_on))
+        .bind((applied.created_offering_count > 0).then_some(term.operation_date))
         .execute()
         .await?;
     transaction.commit().await?;
@@ -922,44 +706,7 @@ async fn apply_preview_in_transaction(
     term: &TermContext,
     preview: &CurriculumOfferingPreview,
     choices: &[CurriculumPreparationChoice],
-    context: Option<&super::audiences::RevisionContext>,
 ) -> Result<AppliedCurriculumPreview, AppError> {
-    let retained_ids = preview
-        .proposals
-        .iter()
-        .filter_map(|proposal| proposal.existing_offering_id)
-        .collect::<Vec<_>>();
-    let scopes = load_preparation_offering_scopes(transaction, &retained_ids).await?;
-    let mut immutable_target_ids = std::collections::HashSet::new();
-    for proposal in &preview.proposals {
-        let selected = choices
-            .iter()
-            .find(|choice| choice.proposal_id == proposal.proposal_id)
-            .ok_or_else(|| AppError::ValidationError("ตัวเลือกการเตรียมรายการไม่ครบ".into()))?;
-        if selected.action == PreparationAction::Skip {
-            continue;
-        }
-        if proposal.offering_action == CurriculumPreviewAction::Conflict {
-            return Err(AppError::Conflict(format!(
-                "รายการ {} ขัดแย้งกับข้อมูลเปิดสอนเดิม",
-                preparation_label(proposal)
-            )));
-        }
-        if let Some(id) = proposal.existing_offering_id {
-            let existing = scopes.get(&id).ok_or_else(|| {
-                AppError::Conflict("รายการเปิดสอนเดิมเปลี่ยนไป กรุณา preview ใหม่".into())
-            })?;
-            if existing.targets_are_immutable() {
-                if !existing.covers(proposal) {
-                    return Err(AppError::Conflict(format!(
-                        "รายการ {} เผยแพร่หรือปิดแล้ว ไม่สามารถเพิ่มห้องเป้าหมายจากการเตรียมเปิดสอนได้",
-                        preparation_label(proposal)
-                    )));
-                }
-                immutable_target_ids.insert(id);
-            }
-        }
-    }
     let mut offering_ids = Vec::new();
     let mut group_ids = Vec::new();
     let mut created_offering_count = 0_usize;
@@ -991,7 +738,7 @@ async fn apply_preview_in_transaction(
         } else {
             created_offering_count += 1;
             let id =
-                insert_generated_offering(transaction, term, proposal, preview.starts_on).await?;
+                insert_generated_offering(transaction, term, proposal, term.operation_date).await?;
             record_curriculum_sources(
                 transaction,
                 id,
@@ -1005,22 +752,7 @@ async fn apply_preview_in_transaction(
             .await?;
             id
         };
-        // BEFORE INSERT immutability triggers run even with ON CONFLICT DO NOTHING.
-        // Already-covered published targets must not issue an insert at all.
-        if !immutable_target_ids.contains(&offering_id) {
-            insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
-        }
-        let effective_rooms = context
-            .map(|context| preparation_rooms(context, offering_id, &proposal.target_homeroom_ids));
-        if let (Some(context), Some(rooms)) = (context, &effective_rooms) {
-            super::audiences::set_revision_audience(
-                transaction,
-                context.revision_id,
-                offering_id,
-                rooms,
-            )
-            .await?;
-        }
+        insert_homeroom_targets(transaction, offering_id, term, proposal).await?;
         offering_ids.push(offering_id);
         if choice.action == PreparationAction::Apply {
             for group in &choice.groups {
@@ -1030,12 +762,9 @@ async fn apply_preview_in_transaction(
                     term.id,
                     term.academic_year_id,
                     group,
-                    effective_rooms.as_deref(),
+                    None,
                 )
                 .await?;
-                if let Some(context) = context {
-                    DbSession::new(&mut **transaction).query("academic_delivery.services.offerings.apply_preview_in_transaction", "UPDATE academic_term_change_sets SET excluded_group_ids=array_remove(excluded_group_ids,$2) WHERE id=$1 AND $2=ANY(excluded_group_ids)").bind(context.revision_id).bind(outcome.id).execute().await?;
-                }
                 group_ids.push(outcome.id);
                 if outcome.created {
                     created_group_count += 1;
@@ -1114,52 +843,6 @@ pub async fn signal_descriptors_on_connection(
             })
         })
         .collect()
-}
-
-pub async fn operational_change_offering_ids(
-    pool: &PgPool,
-    change_set_id: Uuid,
-) -> Result<Vec<Uuid>, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_delivery.services.offerings.operational_change_offering_ids",
-    )
-    .await?;
-    operational_change_offering_ids_on_connection(&mut connection, change_set_id).await
-}
-
-pub async fn operational_change_offering_ids_on_connection(
-    connection: &mut sqlx::PgConnection,
-    change_set_id: Uuid,
-) -> Result<Vec<Uuid>, AppError> {
-    let change_set_exists: bool = DbSession::new(connection)
-        .scalar(
-            "academic_delivery.services.offerings.operational_change_offering_ids_on_connection",
-            "SELECT EXISTS (SELECT 1 FROM academic_term_change_sets WHERE id = $1)",
-        )
-        .bind(change_set_id)
-        .fetch_one()
-        .await?;
-    if !change_set_exists {
-        return Err(AppError::NotFound("ไม่พบชุดการเปลี่ยนแปลงภาคเรียน".to_string()));
-    }
-    Ok(DbSession::new(connection)
-        .scalar(
-            "academic_delivery.services.offerings.operational_change_offering_ids_on_connection",
-            r#"SELECT item.learning_offering_id
-           FROM academic_term_change_items item
-           WHERE item.change_set_id = $1
-             AND item.learning_offering_id IS NOT NULL
-           UNION
-           SELECT learning_group.learning_offering_id
-           FROM academic_term_change_items item
-           JOIN learning_groups learning_group ON learning_group.id = item.learning_group_id
-           WHERE item.change_set_id = $1
-           ORDER BY 1"#,
-        )
-        .bind(change_set_id)
-        .fetch_all()
-        .await?)
 }
 
 async fn hydrate(
@@ -1281,11 +964,7 @@ async fn hydrate_many(
                 name_snapshot: row.name_snapshot,
                 source_requirement_kind: row.source_requirement_kind,
                 source_requirement_id: row.source_requirement_id,
-                status: row.status,
-                published_at: row.published_at,
-                starts_on: row.starts_on,
-                ends_on: row.ends_on,
-                stop_reason: row.stop_reason,
+                weekly_period_target: row.weekly_period_target,
                 owning_organization_unit_id: row.owning_organization_unit_id,
                 row_version: row.row_version,
                 migrated: row.migrated,
@@ -1332,7 +1011,8 @@ pub(super) async fn insert_course(
     }
     let source = course_version_source(transaction, request.subject_version_id).await?;
     require_active_owner(transaction, source.owning_organization_unit_id).await?;
-    validate_version_for_term(&source.status, source.effective_from, request.starts_on)?;
+    validate_version_for_term(&source.status, source.effective_from, term.operation_date)?;
+    validate_weekly_target(request.weekly_period_target)?;
     required_standard_periods_per_week(source.standard_periods_per_week)?;
     let (credit, hours) = if let Some(requirement_id) = request.curriculum_course_requirement_id {
         let requirement: (Uuid, Uuid, Uuid, String, i32, String, Option<String>) =
@@ -1371,8 +1051,8 @@ pub(super) async fn insert_course(
             r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
-               status, owning_organization_unit_id, starts_on
-           ) VALUES ($1, $2, $3, 'course', $4, $5, $6, $7, 'draft', $8, $9)"#,
+               owning_organization_unit_id, weekly_period_target
+           ) VALUES ($1, $2, $3, 'course', $4, $5, $6, $7, $8, $9)"#,
         )
         .bind(id)
         .bind(term.id)
@@ -1386,7 +1066,7 @@ pub(super) async fn insert_course(
         )
         .bind(request.curriculum_course_requirement_id)
         .bind(source.owning_organization_unit_id)
-        .bind(request.starts_on)
+        .bind(request.weekly_period_target)
         .execute()
         .await?;
     DbSession::new(&mut **transaction)
@@ -1429,7 +1109,8 @@ pub(super) async fn insert_activity(
     validate_activity_rules(&request.attendance_requirement, &request.pass_criteria)?;
     let source = activity_version_source(transaction, request.activity_version_id).await?;
     require_active_owner(transaction, source.owning_organization_unit_id).await?;
-    validate_version_for_term(&source.status, source.effective_from, request.starts_on)?;
+    validate_version_for_term(&source.status, source.effective_from, term.operation_date)?;
+    validate_weekly_target(request.weekly_period_target)?;
     if source.scheduling_mode != request.scheduling_mode {
         return Err(AppError::ValidationError(
             "รูปแบบตารางกิจกรรมต้องตรงกับเวอร์ชันกิจกรรม".to_string(),
@@ -1473,8 +1154,8 @@ pub(super) async fn insert_activity(
             r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
-               status, owning_organization_unit_id, starts_on
-           ) VALUES ($1, $2, $3, 'activity', $4, $5, $6, $7, 'draft', $8, $9)"#,
+               owning_organization_unit_id, weekly_period_target
+           ) VALUES ($1, $2, $3, 'activity', $4, $5, $6, $7, $8, $9)"#,
         )
         .bind(id)
         .bind(term.id)
@@ -1488,7 +1169,7 @@ pub(super) async fn insert_activity(
         )
         .bind(request.curriculum_activity_requirement_id)
         .bind(source.owning_organization_unit_id)
-        .bind(request.starts_on)
+        .bind(request.weekly_period_target)
         .execute()
         .await?;
     DbSession::new(&mut **transaction)
@@ -1780,99 +1461,6 @@ fn validate_activity_rules(
     Ok(())
 }
 
-async fn validate_publishable(
-    transaction: &mut Transaction<'_, Postgres>,
-    offering_id: Uuid,
-    kind: LearningOfferingKind,
-    _term: &TermContext,
-) -> Result<(), AppError> {
-    let offering_starts_on: chrono::NaiveDate = DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_delivery.services.offerings.publication_date",
-            "SELECT starts_on FROM learning_offerings WHERE id=$1",
-        )
-        .bind(offering_id)
-        .fetch_one()
-        .await?;
-
-    let target_count: i64 = DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_delivery.services.offerings.validate_publishable",
-            "SELECT count(*) FROM learning_offering_targets WHERE learning_offering_id = $1",
-        )
-        .bind(offering_id)
-        .fetch_one()
-        .await?;
-    let group_count: i64 = DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_delivery.services.offerings.validate_publishable",
-            "SELECT count(*) FROM learning_groups WHERE learning_offering_id = $1",
-        )
-        .bind(offering_id)
-        .fetch_one()
-        .await?;
-    if target_count == 0 || group_count == 0 {
-        return Err(AppError::ValidationError(
-            "ต้องมีเป้าหมายและกลุ่มเรียนอย่างน้อยหนึ่งรายการก่อนเผยแพร่".to_string(),
-        ));
-    }
-    let groups_without_primary_teacher: i64 = DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_delivery.services.offerings.validate_publishable",
-            r#"SELECT count(*)
-           FROM learning_groups learning_group
-           WHERE learning_group.learning_offering_id = $1
-             AND NOT EXISTS (
-                 SELECT 1
-                 FROM learning_group_teachers assignment
-                 JOIN users teacher ON teacher.id = assignment.teacher_id
-                 WHERE assignment.learning_group_id = learning_group.id
-                   AND assignment.role = 'primary'
-                   AND teacher.user_type = 'staff'
-                   AND teacher.status = 'active'
-             )"#,
-        )
-        .bind(offering_id)
-        .fetch_one()
-        .await?;
-    if groups_without_primary_teacher != 0 {
-        return Err(AppError::ValidationError(
-            "ทุกกลุ่มเรียนต้องมีครูหลักที่ใช้งานอยู่ก่อนเผยแพร่".to_string(),
-        ));
-    }
-    match kind {
-        LearningOfferingKind::Course => {
-            let (status, from): (String, chrono::NaiveDate) = DbSession::new(&mut **transaction)
-                .query_as(
-                    "academic_delivery.services.offerings.validate_publishable",
-                    "SELECT version.status, version.effective_from \
-                     FROM course_offering_details detail \
-                     JOIN subject_versions version ON version.id = detail.subject_version_id \
-                     WHERE detail.learning_offering_id = $1",
-                )
-                .bind(offering_id)
-                .fetch_one()
-                .await?;
-            validate_version_for_term(&status, from, offering_starts_on)?;
-        }
-        LearningOfferingKind::Activity => {
-            let (status, from): (String, chrono::NaiveDate) = DbSession::new(&mut **transaction)
-                .query_as(
-                    "academic_delivery.services.offerings.validate_publishable",
-                    "SELECT version.status, version.effective_from \
-                     FROM activity_offering_details detail \
-                     JOIN activity_versions version ON version.id = detail.activity_version_id \
-                     WHERE detail.learning_offering_id = $1",
-                )
-                .bind(offering_id)
-                .fetch_one()
-                .await?;
-            validate_version_for_term(&status, from, offering_starts_on)?;
-        }
-    }
-    Ok(())
-}
-
 fn normalized_program_ids(ids: &[Uuid]) -> Result<Vec<Uuid>, AppError> {
     if ids.is_empty() {
         return Err(AppError::ValidationError(
@@ -2019,51 +1607,25 @@ fn offering_kind_order(kind: LearningOfferingKind) -> u8 {
 
 struct PreparedCurriculumPreview {
     preview: CurriculumOfferingPreview,
-    context: Option<super::audiences::RevisionContext>,
 }
 
 async fn build_curriculum_preview_scoped(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
     program_ids: &[Uuid],
-    version: Option<Uuid>,
-    starts_on: chrono::NaiveDate,
 ) -> Result<PreparedCurriculumPreview, AppError> {
     let term = require_writable_term(transaction, academic_term_id, false).await?;
-    let context = match version {
-        Some(id) => {
-            Some(super::audiences::revision_context(transaction, id, academic_term_id).await?)
-        }
-        None => None,
-    };
+    let starts_on = term.operation_date;
     let preview = build_curriculum_preview_for_term(
         transaction,
         academic_term_id,
         program_ids,
         term,
         true,
-        context.as_ref(),
         starts_on,
     )
     .await?;
-    Ok(PreparedCurriculumPreview { preview, context })
-}
-fn preparation_rooms(
-    context: &super::audiences::RevisionContext,
-    offering: Uuid,
-    reviewed: &[Uuid],
-) -> Vec<Uuid> {
-    let mut rooms = context
-        .snapshot
-        .offerings
-        .iter()
-        .find(|o| o.id == offering)
-        .map(|o| o.homeroom_ids.clone())
-        .unwrap_or_default();
-    rooms.extend_from_slice(reviewed);
-    rooms.sort_unstable();
-    rooms.dedup();
-    rooms
+    Ok(PreparedCurriculumPreview { preview })
 }
 
 async fn build_curriculum_preview_for_term(
@@ -2072,7 +1634,6 @@ async fn build_curriculum_preview_for_term(
     program_ids: &[Uuid],
     term: TermContext,
     lock_rows: bool,
-    context: Option<&super::audiences::RevisionContext>,
     starts_on: chrono::NaiveDate,
 ) -> Result<CurriculumOfferingPreview, AppError> {
     // Lock stable owners before resolving their pointers. Joining publication rows
@@ -2171,7 +1732,7 @@ async fn build_curriculum_preview_for_term(
             .push(homeroom);
     }
     let existing_offerings =
-        load_existing_preview_offerings(transaction, academic_term_id, &rows, context).await?;
+        load_existing_preview_offerings(transaction, academic_term_id, &rows).await?;
     let existing_offering_ids = existing_offerings
         .values()
         .map(|offering| offering.offering_id)
@@ -2262,29 +1823,6 @@ async fn build_curriculum_preview_for_term(
                 .cmp(&right.homeroom_ids)
                 .then(left.group_key.cmp(&right.group_key))
         });
-        let mut scoped_groups = Vec::new();
-        if let Some(context) = context {
-            let excluded = &context.exclusions.groups;
-            if let Some(id) = proposal.existing_offering_id {
-                let allowed = preparation_rooms(context, id, &proposal.target_homeroom_ids);
-                for group in existing_groups
-                    .iter()
-                    .filter(|g| g.learning_offering_id == id && !excluded.contains(&g.id))
-                {
-                    let mut group = group.clone();
-                    let had_rooms = !group.homeroom_ids.is_empty();
-                    group.homeroom_ids.retain(|room| allowed.contains(room));
-                    if !had_rooms || !group.homeroom_ids.is_empty() {
-                        scoped_groups.push(group);
-                    }
-                }
-            }
-        }
-        let existing_groups = if context.is_some() {
-            &scoped_groups
-        } else {
-            &existing_groups
-        };
         if let Some(offering_id) = proposal.existing_offering_id {
             let generated_groups = existing_groups
                 .iter()
@@ -2348,19 +1886,6 @@ async fn build_curriculum_preview_for_term(
                 }
             }
         }
-        if let Some(existing) =
-            existing_offerings.get(&(proposal.resource_kind, proposal.catalog_version_id))
-        {
-            if existing.targets_are_immutable() && !existing.covers(proposal) {
-                proposal.offering_action = CurriculumPreviewAction::Conflict;
-                proposal.conflicts.push(PreparationConflict {
-                    code: "published_offering_target_extension".into(),
-                    message: format!("รายการ {} เผยแพร่หรือปิดแล้ว และยังไม่ครอบคลุมห้องเป้าหมายที่เลือก ไม่สามารถเพิ่มเป้าหมายจากการเตรียมเปิดสอนได้", preparation_label(proposal)),
-                    offering_id: Some(existing.offering_id),
-                    group_id: None,
-                });
-            }
-        }
         proposal.grouping_state = if !proposal.conflicts.is_empty() {
             PreparationGroupingState::Conflict
         } else if proposal.default_groups.is_empty() {
@@ -2384,10 +1909,8 @@ async fn build_curriculum_preview_for_term(
         study_program_ids: program_ids,
         proposals: &proposals,
         curriculum_sources: &curriculum_sources,
-        delivery_context: context,
     })?;
     Ok(CurriculumOfferingPreview {
-        starts_on,
         curriculum_sources,
         academic_term_id,
         source_hash,
@@ -2399,7 +1922,6 @@ async fn load_existing_preview_offerings(
     transaction: &mut Transaction<'_, Postgres>,
     academic_term_id: Uuid,
     requirements: &[PreviewRequirementRow],
-    context: Option<&super::audiences::RevisionContext>,
 ) -> Result<HashMap<(LearningOfferingKind, Uuid), ExistingPreparationOffering>, AppError> {
     let course_version_ids: Vec<Uuid> = requirements
         .iter()
@@ -2411,7 +1933,7 @@ async fn load_existing_preview_offerings(
         .filter(|row| row.resource_kind == LearningOfferingKind::Activity)
         .map(|row| row.catalog_version_id)
         .collect();
-    let mut rows: Vec<ExistingPreviewOfferingRow> = DbSession::new(&mut **transaction)
+    let rows: Vec<ExistingPreviewOfferingRow> = DbSession::new(&mut **transaction)
         .query_as(
             "academic_delivery.services.offerings.load_existing_preview_offerings",
             r#"SELECT 'course'::text AS resource_kind,
@@ -2438,29 +1960,6 @@ async fn load_existing_preview_offerings(
         .bind(&activity_version_ids)
         .fetch_all()
         .await?;
-    if let Some(context) = context {
-        rows.sort_by_key(|row| {
-            let rank = if context
-                .snapshot
-                .offerings
-                .iter()
-                .any(|o| o.id == row.offering_id)
-            {
-                0
-            } else if context.exclusions.offerings.contains(&row.offering_id)
-                || context
-                    .exclusions
-                    .audiences
-                    .iter()
-                    .any(|a| a.offering == row.offering_id)
-            {
-                1
-            } else {
-                2
-            };
-            (rank, row.offering_id)
-        });
-    }
     let ids = rows.iter().map(|row| row.offering_id).collect::<Vec<_>>();
     let mut scopes = load_preparation_offering_scopes(transaction, &ids).await?;
     let mut existing = HashMap::new();
@@ -2482,19 +1981,15 @@ async fn load_preparation_offering_scopes(
     if offering_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows: Vec<ExistingPreparationOffering> = DbSession::new(&mut **transaction).query_as(
-        "academic_delivery.services.offerings.load_preparation_offering_scopes",
-        "SELECT offering.id AS offering_id,offering.status,
-            ARRAY(SELECT room.id FROM homerooms room
-                WHERE room.academic_year_id=offering.academic_year_id
-                AND EXISTS(SELECT 1 FROM learning_offering_targets target
-                    WHERE target.learning_offering_id=offering.id AND (
-                        (target.target_kind='homeroom' AND target.homeroom_id=room.id)
-                        OR (target.target_kind='grade_program' AND target.grade_level_id=room.grade_level_id
-                            AND target.study_program_id=room.study_program_id)))
-                ORDER BY room.id) AS covered_homeroom_ids
+    let rows: Vec<ExistingPreparationOffering> = DbSession::new(&mut **transaction)
+        .query_as(
+            "academic_delivery.services.offerings.load_preparation_offering_scopes",
+            "SELECT offering.id AS offering_id
          FROM learning_offerings offering WHERE offering.id=ANY($1) ORDER BY offering.id",
-    ).bind(offering_ids).fetch_all().await?;
+        )
+        .bind(offering_ids)
+        .fetch_all()
+        .await?;
     Ok(rows.into_iter().map(|row| (row.offering_id, row)).collect())
 }
 
@@ -2544,13 +2039,30 @@ async fn insert_generated_offering(
     .await?;
     require_active_owner(transaction, owner_id).await?;
     let id = prepared_offering_id(term.id, proposal.resource_kind, proposal.catalog_version_id);
+    let weekly_period_target = match proposal.resource_kind {
+        LearningOfferingKind::Course => required_standard_periods_per_week(
+            course_version_source(transaction, proposal.catalog_version_id)
+                .await?
+                .standard_periods_per_week,
+        )?,
+        LearningOfferingKind::Activity => {
+            DbSession::new(&mut **transaction)
+                .scalar::<i32>(
+                    "academic_delivery.offerings.activity_target",
+                    "SELECT periods_per_week FROM activity_versions WHERE id=$1",
+                )
+                .bind(proposal.catalog_version_id)
+                .fetch_one()
+                .await?
+        }
+    };
     DbSession::new(&mut **transaction)
         .query(
             "academic_delivery.services.offerings.insert_generated_offering",
             r#"INSERT INTO learning_offerings (
                id, academic_term_id, academic_year_id, kind, code_snapshot,
                name_snapshot, source_requirement_kind, source_requirement_id,
-               status, owning_organization_unit_id, starts_on
+               owning_organization_unit_id, weekly_period_target
            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10)"#,
         )
         .bind(id)
@@ -2559,13 +2071,7 @@ async fn insert_generated_offering(
         .bind(proposal.resource_kind)
         .bind(&proposal.code)
         .bind(&proposal.name)
-        .bind(match proposal.resource_kind {
-            LearningOfferingKind::Course => "curriculum_course_requirement",
-            LearningOfferingKind::Activity => "curriculum_activity_requirement",
-        })
-        .bind(proposal.requirement_ids.first().copied())
-        .bind(owner_id)
-        .bind(starts_on)
+        .bind(weekly_period_target)
         .execute()
         .await?;
     match proposal.resource_kind {
@@ -2854,12 +2360,47 @@ mod pool_facade_preflight_tests {
         let pool = closed_pool().await;
         assert!(signal_descriptors(&pool, &[]).await.unwrap().is_empty());
     }
-    #[tokio::test]
-    async fn pool_facade_preflight_empty_snapshot_labels_need_no_database() {
-        let pool = closed_pool().await;
-        assert!(super::super::version_changes::load_labels(&pool, &[])
-            .await
-            .unwrap()
-            .is_empty());
+    #[test]
+    fn current_weekly_targets_allow_zero_and_reject_negative() {
+        assert!(validate_weekly_target(0).is_ok());
+        assert!(validate_weekly_target(3).is_ok());
+        assert!(matches!(
+            validate_weekly_target(-1),
+            Err(AppError::ValidationError(_))
+        ));
     }
+}
+
+fn validate_weekly_target(value: i32) -> Result<(), AppError> {
+    if value < 0 {
+        Err(AppError::ValidationError(
+            "จำนวนคาบต่อสัปดาห์ต้องเป็นศูนย์หรือมากกว่า".into(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+pub async fn update_weekly_period_target(
+    pool: &PgPool,
+    id: Uuid,
+    request: crate::models::current::UpdateWeeklyPeriodTargetRequest,
+) -> Result<LearningOffering, AppError> {
+    validate_row_version(request.row_version)?;
+    validate_weekly_target(request.weekly_period_target)?;
+    let mut tx = school_tenancy::TenantPool::begin_observed(
+        pool,
+        "academic_delivery.offerings.update_weekly_target",
+    )
+    .await?;
+    require_writable_offering_term(&mut tx, id).await?;
+    let changed=DbSession::new(&mut *tx).query("academic_delivery.offerings.update_weekly_target","UPDATE learning_offerings SET weekly_period_target=$2,row_version=row_version+1,updated_at=now() WHERE id=$1 AND row_version=$3").bind(id).bind(request.weekly_period_target).bind(request.row_version).execute().await?;
+    if changed.rows_affected() != 1 {
+        return Err(AppError::Conflict(
+            "รายการเปิดสอนถูกแก้ไขแล้ว กรุณาโหลดใหม่".into(),
+        ));
+    }
+    let result = get_on_connection(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(result)
 }
