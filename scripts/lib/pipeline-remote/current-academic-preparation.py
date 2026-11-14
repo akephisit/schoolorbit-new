@@ -547,6 +547,28 @@ class Controller:
         # The fixed owned container has no egress or production credentials.
         return self.command(['podman', 'exec', '-i', self.copy, 'psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database], data=sql.encode())
 
+    def copy_role_profile(self, owner):
+        names=[owner,owner[:-6]+'_runtime','schoolorbit_provisioner']
+        selected=','.join(literal(name) for name in names)
+        target=','.join(literal(name) for name in names[:2])
+        sql="SET search_path=pg_catalog; SELECT jsonb_build_object('roles',(SELECT jsonb_agg(jsonb_build_object('name',rolname,'login',rolcanlogin,'super',rolsuper,'createDb',rolcreatedb,'createRole',rolcreaterole,'inherit',rolinherit,'replication',rolreplication,'bypass',rolbypassrls,'limit',rolconnlimit,'comment',shobj_description(oid,'pg_authid')) ORDER BY rolname) FROM pg_roles WHERE rolname IN("+selected+")),'memberships',(SELECT COALESCE(jsonb_agg(jsonb_build_object('role',pg_get_userbyid(m.roleid),'member',pg_get_userbyid(m.member),'grantor',pg_get_userbyid(m.grantor),'admin',m.admin_option,'inherit',m.inherit_option,'set',m.set_option) ORDER BY pg_get_userbyid(m.roleid),pg_get_userbyid(m.member),pg_get_userbyid(m.grantor)),'[]') FROM pg_auth_members m WHERE m.roleid IN(SELECT oid FROM pg_roles WHERE rolname IN("+target+")) OR m.member IN(SELECT oid FROM pg_roles WHERE rolname IN("+target+"))));"
+        raw=self.bounded_capture(['podman','exec','-i',self.copy,'psql','-XAtq','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres'],data=sql.encode(),limit=MAX_JSON)
+        profile=decode_json(raw)
+        fidelity.require(isinstance(profile,dict) and set(profile)=={'roles','memberships'})
+        fidelity.supported_profile(owner,profile['roles'],profile['memberships'])
+        return profile
+
+    def verify_copy_profile(self, connection, identity):
+        profile=self.copy_role_profile(connection['user'])
+        fidelity.require(fidelity.exact(profile,{'roles':identity['roles'],'memberships':identity['memberships']}))
+        return profile
+
+    def migrate_copy(self, connection, identity, environment):
+        # This readback happens after restore/oracle, at the actual CLI boundary.
+        profile=self.verify_copy_profile(connection,identity)
+        raw=self.command(['podman', 'run', '--log-driver=none', '--rm', '--name', self.worker, *self.labels(), '--network', 'container:' + self.copy, '--read-only', '--cap-drop=all', '--security-opt=no-new-privileges', '--env', 'MIGRATION_SCHEMA_DATABASE_URL', '--env', 'MIGRATION_SCHEMA_NAME', '--env', 'MIGRATION_SCHEMA_ALLOW_PUBLIC', self.image, '/app/migrate_tenant_schema'], environment=environment)
+        return raw,profile
+
     def bounded_capture(self, args, data=b'', environment=None, limit=fidelity.MAX_METADATA):
         """Bound stdout while reading, and feed oracle SQL without pipe deadlock."""
         child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment)
@@ -678,6 +700,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
 
     @contextlib.contextmanager
     def isolated(self, connection, identity):
+        profile=fidelity.supported_profile(connection['user'],identity['roles'],identity['memberships'])
         if self.exists('container', self.copy) or self.exists('volume', self.volume):
             refuse('copy_resource_unresolved')
         self.command(['podman', 'volume', 'create', *self.labels(), self.volume])
@@ -694,14 +717,21 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
                 time.sleep(1)
             else:
                 refuse('copy_postgres_unavailable')
-            roles = []
-            for role in identity['roles']:
+            def create_role(role):
                 flags = ['LOGIN' if role['login'] else 'NOLOGIN', 'SUPERUSER' if role['super'] else 'NOSUPERUSER', 'CREATEDB' if role['createDb'] else 'NOCREATEDB', 'CREATEROLE' if role['createRole'] else 'NOCREATEROLE', 'INHERIT' if role['inherit'] else 'NOINHERIT', 'REPLICATION' if role['replication'] else 'NOREPLICATION', 'BYPASSRLS' if role['bypass'] else 'NOBYPASSRLS']
-                roles.append('CREATE ROLE ' + ident(role['name']) + ' ' + ' '.join(flags) + ' CONNECTION LIMIT ' + str(int(role['limit'])) + ' PASSWORD ' + literal(secrets.token_hex(32)) + '; COMMENT ON ROLE ' + ident(role['name']) + ' IS ' + (literal(role['comment']) if role['comment'] is not None else 'NULL') + ';')
-            roles.append('GRANT ' + ident(connection['user']) + ' TO schoolorbit_provisioner WITH SET TRUE, INHERIT FALSE;')
-            roles.append('CREATE DATABASE ' + ident(connection['database']) + ' OWNER ' + ident(connection['user']) + " TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8';")
-            roles.append('REVOKE ALL ON DATABASE '+ident(connection['database'])+' FROM PUBLIC; GRANT CONNECT ON DATABASE '+ident(connection['database'])+' TO '+ident(connection['user'])+','+ident(connection['user'][:-6]+'_runtime')+';')
-            self.copy_sql('\n'.join(roles))
+                return 'CREATE ROLE ' + ident(role['name']) + ' ' + ' '.join(flags) + ' CONNECTION LIMIT ' + str(role['limit']) + ' PASSWORD ' + literal(secrets.token_hex(32)) + '; COMMENT ON ROLE ' + ident(role['name']) + ' IS ' + (literal(role['comment']) if role['comment'] is not None else 'NULL') + ';'
+            roles={role['name']:role for role in identity['roles']}
+            self.copy_sql(create_role(roles['schoolorbit_provisioner']))
+            tenant_sql='\n'.join(create_role(roles[name]) for name in [connection['user'],connection['user'][:-6]+'_runtime'])
+            tenant_sql+='\nGRANT '+ident(connection['user'])+' TO schoolorbit_provisioner WITH SET TRUE, INHERIT FALSE;'
+            if profile=='provider3':
+                # Effective current_user is the original non-super creator.
+                # SET ROLE also preserves a legitimate source NOLOGIN flag.
+                tenant_sql='SET ROLE schoolorbit_provisioner;\n'+tenant_sql+'\nRESET ROLE;'
+            self.copy_sql(tenant_sql)
+            self.verify_copy_profile(connection,identity)
+            self.copy_sql('CREATE DATABASE '+ident(connection['database'])+' OWNER '+ident(connection['user'])+" TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8';")
+            self.copy_sql('REVOKE ALL ON DATABASE '+ident(connection['database'])+' FROM PUBLIC; GRANT CONNECT ON DATABASE '+ident(connection['database'])+' TO '+ident(connection['user'])+','+ident(connection['user'][:-6]+'_runtime')+';')
             yield
         finally:
             # Only the exact resources created by this invocation may be removed.
@@ -731,8 +761,9 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
             with self.source(row) as (_,source_base,source_environment):
                 source=self.fingerprint(source_base,source_environment,nonce,evidence,'source')
             fidelity.require(source['raw']==source_hash and source['canonical']==restored['canonical'])
+            restored_profile=self.verify_copy_profile(connection,identity)
             name=uuid.UUID(row['id']).hex
-            metadata={'schemaVersion':2,'policy':fidelity.POLICY,'schoolId':row['id'],'archiveSha256':digest_file(archive),'roleMetadata':identity['roles'],'membershipMetadata':identity['memberships'],'source':source_metadata,'restoredBefore':before_metadata,'restored':restored_metadata,'oracle':evidence,'physicalIndexBookkeepingDifferenceCount':physical}
+            metadata={'schemaVersion':2,'policy':fidelity.POLICY,'schoolId':row['id'],'archiveSha256':digest_file(archive),'roleMetadata':identity['roles'],'membershipMetadata':identity['memberships'],'restoredRoleMetadata':restored_profile['roles'],'restoredMembershipMetadata':restored_profile['memberships'],'source':source_metadata,'restoredBefore':before_metadata,'restored':restored_metadata,'oracle':evidence,'physicalIndexBookkeepingDifferenceCount':physical}
             mapping={'schemaVersion':2,'policy':fidelity.POLICY,'schoolId':row['id'],'archiveSha256':digest_file(archive),'renames':renames}
             fidelity.require(len(fidelity.encoded(metadata))<=fidelity.MAX_METADATA and len(fidelity.encoded(mapping))<=fidelity.MAX_METADATA)
             metadata_path=self.point/(name+'.restore-metadata.json')
@@ -745,7 +776,11 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
             self.copy_sql('ALTER ROLE ' + ident(connection['user']) + ' PASSWORD ' + literal(local_password) + ';', connection['database'])
             local_url = 'postgresql://' + connection['user'] + ':' + local_password + '@127.0.0.1:5432/' + connection['database'] + '?sslmode=disable'
             environment = {**os.environ, 'MIGRATION_SCHEMA_DATABASE_URL': local_url, 'MIGRATION_SCHEMA_NAME': 'public', 'MIGRATION_SCHEMA_ALLOW_PUBLIC': '1'}
-            migrated=self.command(['podman', 'run', '--log-driver=none', '--rm', '--name', self.worker, *self.labels(), '--network', 'container:' + self.copy, '--read-only', '--cap-drop=all', '--security-opt=no-new-privileges', '--env', 'MIGRATION_SCHEMA_DATABASE_URL', '--env', 'MIGRATION_SCHEMA_NAME', '--env', 'MIGRATION_SCHEMA_ALLOW_PUBLIC', self.image, '/app/migrate_tenant_schema'], environment=environment)
+            migrated,restored_profile=self.migrate_copy(connection,identity,environment)
+            metadata['restoredRoleMetadata']=restored_profile['roles']
+            metadata['restoredMembershipMetadata']=restored_profile['memberships']
+            durable(metadata_path,metadata)
+            restore['restoreFidelity']['metadataSha256']=digest_file(metadata_path)
             try: migrated=json.loads(migrated)
             except ValueError: refuse('copy_runner_evidence_invalid')
             if migrated!={'schemaVersion':1,'operation':'migrate_tenant_schema','status':'migrated','version':self.compiled[-1][0],'checksumsVerified':True}: refuse('copy_runner_evidence_invalid')
@@ -765,7 +800,10 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         pending_rows=[]
         for row in self.rows:
             with self.source(row) as (connection,base,environment):
-                if self.identity(connection,base,environment)['version']<157: pending_rows.append(row)
+                identity=self.identity(connection,base,environment)
+                if identity['version']<157:
+                    fidelity.supported_profile(connection['user'],identity['roles'],identity['memberships'])
+                    pending_rows.append(row)
         self.unchanged_inventory()
         if not pending_rows:
             durable(self.state,{'schemaVersion':1,'state':'already-current','completedAt':None,'retainUntil':None})
@@ -867,10 +905,13 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         metadata_path=self.point/(name+'.restore-metadata.json');mapping_path=self.point/(name+'.nn-identities.json')
         metadata=read_json(metadata_path,fidelity.MAX_METADATA);mapping=read_json(mapping_path,fidelity.MAX_METADATA)
         fidelity.require(digest_file(metadata_path)==f['metadataSha256'] and digest_file(mapping_path)==f['nnIdentityMapSha256'])
-        fidelity.require(set(metadata)=={'schemaVersion','policy','schoolId','archiveSha256','roleMetadata','membershipMetadata','source','restoredBefore','restored','oracle','physicalIndexBookkeepingDifferenceCount'} and set(mapping)=={'schemaVersion','policy','schoolId','archiveSha256','renames'})
+        fidelity.require(set(metadata)=={'schemaVersion','policy','schoolId','archiveSha256','roleMetadata','membershipMetadata','restoredRoleMetadata','restoredMembershipMetadata','source','restoredBefore','restored','oracle','physicalIndexBookkeepingDifferenceCount'} and set(mapping)=={'schemaVersion','policy','schoolId','archiveSha256','renames'})
         for document in [metadata,mapping]:
             fidelity.require(type(document['schemaVersion']) is int and document['schemaVersion']==2 and document['policy']==fidelity.POLICY and document['schoolId']==row['id'] and document['archiveSha256']==item['archiveSha256'])
-        fidelity.validate_profiles(metadata['roleMetadata'],metadata['membershipMetadata'])
+        owner='so_'+uuid.UUID(row['id']).hex+'_owner'
+        fidelity.supported_profile(owner,metadata['roleMetadata'],metadata['membershipMetadata'])
+        fidelity.supported_profile(owner,metadata['restoredRoleMetadata'],metadata['restoredMembershipMetadata'])
+        fidelity.require(fidelity.exact(metadata['roleMetadata'],metadata['restoredRoleMetadata']) and fidelity.exact(metadata['membershipMetadata'],metadata['restoredMembershipMetadata']))
         state=read_json(self.point/(name+'.json'))
         fidelity.require(fidelity.exact(metadata['roleMetadata'],state['roleMetadata']) and fidelity.exact(metadata['membershipMetadata'],state['membershipMetadata']))
         fidelity.require(fidelity.exact(fidelity.plan_nn(metadata['source'],metadata['restoredBefore']),mapping['renames']))

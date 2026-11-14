@@ -53,6 +53,24 @@ def metadata(number=1):
 
 
 class FidelityTests(unittest.TestCase):
+    def test_role_profiles_reject_structurally_valid_graph_and_capability_deviations(self):
+        owner='so_11111111111141118111111111111111_owner';runtime=owner[:-6]+'_runtime';prov='schoolorbit_provisioner'
+        roles=[{'name':name,'login':True,'super':False,'createDb':name==prov,'createRole':name==prov,'inherit':True,'replication':False,'bypass':False,'limit':-1,'comment':None} for name in [prov,owner,runtime]]
+        graph=[{'role':owner,'member':prov,'grantor':'postgres','admin':True,'inherit':False,'set':False},{'role':owner,'member':prov,'grantor':prov,'admin':False,'inherit':False,'set':True},{'role':runtime,'member':prov,'grantor':'postgres','admin':True,'inherit':False,'set':False}]
+        self.assertEqual(f.supported_profile(owner,roles,graph),'provider3')
+        fixture=[dict(graph[0],admin=False,set=True)]
+        self.assertEqual(f.supported_profile(owner,roles,fixture),'postgresFixture1')
+        for base in [graph,fixture]:
+            for field,value in [('grantor','unrecognized'),('admin',not base[0]['admin']),('inherit',True),('set',not base[0]['set']),('member',runtime)]:
+                changed=copy.deepcopy(base);changed[0][field]=value
+                with self.assertRaises(f.FidelityError):f.supported_profile(owner,roles,changed)
+            with self.assertRaises(f.FidelityError):f.supported_profile(owner,roles,base[1:])
+            changed=copy.deepcopy(base)+[{'role':owner,'member':runtime,'grantor':'postgres','admin':False,'inherit':True,'set':True}]
+            with self.assertRaises(f.FidelityError):f.supported_profile(owner,roles,changed)
+        for name,field,value in [(owner,'super',True),(runtime,'bypass',True),(runtime,'createRole',True),(runtime,'replication',True),(prov,'createRole',False),(prov,'createDb',False),(prov,'super',True)]:
+            changed=copy.deepcopy(roles);next(x for x in changed if x['name']==name)[field]=value
+            with self.assertRaises(f.FidelityError):f.supported_profile(owner,changed,graph)
+
     def test_streaming_exact_expression_substitution_is_chunk_independent_and_retains_true_raw_hashes(self):
         left=sql(SOURCE);right=sql(RESTORED)
         for width in [1,2,7,31,4096,1024*1024]:

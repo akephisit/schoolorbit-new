@@ -54,6 +54,27 @@ def validate_profiles(roles, memberships):
         seen.add(key)
 
 
+def supported_profile(owner, roles, memberships):
+    """Finite PG18.6 provider/fixture graphs, not a generic role restorer."""
+    validate_profiles(roles, memberships)
+    require(isinstance(owner,str) and re.fullmatch('so_[0-9a-f]{32}_owner',owner) is not None)
+    runtime=owner[:-6]+'_runtime'
+    provisioner='schoolorbit_provisioner'
+    by_name={r['name']:r for r in roles}
+    require(set(by_name)=={owner,runtime,provisioner})
+    for name in [owner,runtime]:
+        role=by_name[name]
+        require(not any(role[k] for k in ['super','createDb','createRole','replication','bypass']))
+    require(not any(by_name[provisioner][k] for k in ['super','replication','bypass']))
+    require(by_name[provisioner]['createDb'] and by_name[provisioner]['createRole'])
+    actual=sorted(tuple(row[k] for k in ['role','member','grantor','admin','inherit','set']) for row in memberships)
+    fixture=[(owner,provisioner,'postgres',False,False,True)]
+    provider=sorted([(owner,provisioner,'postgres',True,False,False),(owner,provisioner,provisioner,False,False,True),(runtime,provisioner,'postgres',True,False,False)])
+    if exact(actual,provider):return 'provider3'
+    require(exact(actual,fixture))
+    return 'postgresFixture1'
+
+
 def validate_metadata(document):
     require(isinstance(document,dict) and set(document)=={'catalog','database','indexes'})
     require(isinstance(document['catalog'],dict) and set(document['catalog'])=={'relations','constraints','constraintNames'})

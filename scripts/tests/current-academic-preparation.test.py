@@ -28,6 +28,17 @@ def audit():
     return {'version':157,'passed':True,'selectionFingerprint':'a'*64,'cutoverDate':'2026-11-14','runtimeGrants':True,'checks':[{'code':code,'passed':True,'mismatchCount':0} for code in m.CHECKS]}
 
 
+def role_profile(identifier=ID,kind='postgresFixture1'):
+    owner='so_'+identifier.replace('-','')+'_owner';runtime=owner[:-6]+'_runtime';provisioner='schoolorbit_provisioner'
+    roles=[]
+    for name,purpose in [(owner,'migration'),(runtime,'runtime'),(provisioner,None)]:
+        roles.append({'name':name,'login':True,'super':False,'createDb':name==provisioner,'createRole':name==provisioner,'inherit':name!=provisioner,'replication':False,'bypass':False,'limit':7 if name==provisioner else -1,'comment':None if purpose is None else 'schoolorbit:'+identifier+':'+purpose})
+    memberships=[{'role':owner,'member':provisioner,'grantor':'postgres','admin':False,'inherit':False,'set':True}]
+    if kind=='provider3':
+        memberships=[{'role':owner,'member':provisioner,'grantor':'postgres','admin':True,'inherit':False,'set':False},{'role':owner,'member':provisioner,'grantor':provisioner,'admin':False,'inherit':False,'set':True},{'role':runtime,'member':provisioner,'grantor':'postgres','admin':True,'inherit':False,'set':False}]
+    return {'roles':sorted(roles,key=lambda x:x['name']),'memberships':memberships}
+
+
 class Fake(m.Controller):
     def __init__(self,point,versions):
         self.point=point;self.root=point;self.release='a'*40;self.image_digest='sha256:'+'b'*64
@@ -35,7 +46,7 @@ class Fake(m.Controller):
         self.key=point/'identity.agekey';self.proof=point/'proof.json';self.state=point/'state.json'
         self.client='source';self.copy='copy';self.volume='volume';self.verify='verify';self.versions=versions;self.restored=[];self.checked=False;self.recovery_validations=0
         self.compiled=[[157,True,'a'*96]]
-        self.source_database={'metadata':{},'owner':'synthetic','tablespace':'pg_default','acl':None,'settings':None}
+        self.source_database={'metadata':{},'owner':'so_'+ID.replace('-','')+'_owner','tablespace':'pg_default','acl':None,'settings':None}
     def labels(self):return []
     def exists(self,*args):return False
     def assert_quiesced(self):pass
@@ -43,7 +54,7 @@ class Fake(m.Controller):
     @contextlib.contextmanager
     def source(self,row):
         yield {'id':row['id'],'database':'tenant_'+row['id'].replace('-',''),'user':'so_'+row['id'].replace('-','')+'_owner'},['source'],{}
-    def identity(self,connection,*args):return {'date':'2026-11-14','version':self.versions[connection['id']],'roles':[],'memberships':[]}
+    def identity(self,connection,*args):return dict(role_profile(connection['id']),date='2026-11-14',version=self.versions[connection['id']])
     def age(self,*arguments):return ["synthetic-age",*arguments]
     def ensure_key(self):
         self.key.write_text('synthetic key');self.key.chmod(0o600);return 'synthetic recipient'
@@ -62,7 +73,8 @@ class Fake(m.Controller):
         archive=args[2]
         metadata={'catalog':{'relations':[],'constraints':[],'constraintNames':[]},'database':copy.deepcopy(self.source_database),'indexes':[]}
         name=row['id'].replace('-','');archive_hash=m.digest_file(archive)
-        md={'schemaVersion':2,'policy':m.fidelity.POLICY,'schoolId':row['id'],'archiveSha256':archive_hash,'roleMetadata':[],'membershipMetadata':[],'source':metadata,'restoredBefore':metadata,'restored':metadata,'oracle':[],'physicalIndexBookkeepingDifferenceCount':0}
+        profile=role_profile(row['id'])
+        md={'schemaVersion':2,'policy':m.fidelity.POLICY,'schoolId':row['id'],'archiveSha256':archive_hash,'roleMetadata':profile['roles'],'membershipMetadata':profile['memberships'],'restoredRoleMetadata':copy.deepcopy(profile['roles']),'restoredMembershipMetadata':copy.deepcopy(profile['memberships']),'source':metadata,'restoredBefore':metadata,'restored':metadata,'oracle':[],'physicalIndexBookkeepingDifferenceCount':0}
         nm={'schemaVersion':2,'policy':m.fidelity.POLICY,'schoolId':row['id'],'archiveSha256':archive_hash,'renames':[]}
         md_path=self.point/(name+'.restore-metadata.json');nm_path=self.point/(name+'.nn-identities.json')
         m.durable(md_path,md);m.durable(nm_path,nm)
@@ -80,7 +92,8 @@ def completion_fixture(point):
     bundle={'schemaVersion':2,'operation':m.OPERATION,'releaseSha':fake.release,'imageDigest':fake.image_digest,'inventoryFingerprint':fake.inventory_hash,'tenants':[item]}
     item['restoreFidelity']['evidenceSha256']=m.fidelity.evidence_digest(bundle,item)
     m.durable(fake.proof,bundle)
-    m.durable(point/(ID.replace('-','')+'.json'),{'roleMetadata':[],'membershipMetadata':[]})
+    profile=role_profile()
+    m.durable(point/(ID.replace('-','')+'.json'),{'roleMetadata':profile['roles'],'membershipMetadata':profile['memberships']})
     m.durable(fake.state,{'state':'prepared','retainUntil':None})
     fake.command=lambda *a,**k:json.dumps(audit()).encode()
     return fake,archive
@@ -97,17 +110,90 @@ def refresh_archive_binding(fake,archive):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_supported_role_profiles_are_finite_and_initial_unsafe_graph_never_creates_recovery(self):
+        owner='so_'+ID.replace('-','')+'_owner'
+        for kind in ['provider3','postgresFixture1']:
+            profile=role_profile(kind=kind)
+            self.assertEqual(m.fidelity.supported_profile(owner,profile['roles'],profile['memberships']),kind)
+            provisioner=next(r for r in profile['roles'] if r['name']=='schoolorbit_provisioner')
+            provisioner['login']=False;provisioner['inherit']=False
+            self.assertEqual(m.fidelity.supported_profile(owner,profile['roles'],profile['memberships']),kind)
+        with tempfile.TemporaryDirectory() as directory:
+            fake=Fake(Path(directory),{ID:155,OTHER:157});original=fake.identity
+            def unsafe(connection,*args):
+                identity=original(connection,*args)
+                identity['memberships'].append({'role':connection['user'],'member':connection['user'][:-6]+'_runtime','grantor':'postgres','admin':False,'inherit':True,'set':True})
+                return identity
+            fake.identity=unsafe
+            with self.assertRaises(m.fidelity.FidelityError):fake.prepare()
+            self.assertFalse(fake.key.exists());self.assertFalse(fake.proof.exists())
+            self.assertEqual(list(fake.point.glob('*.dump.age')),[]);self.assertEqual(fake.restored,[])
+            fake.versions={ID:157,OTHER:157}
+            fake.prepare()
+            self.assertEqual(m.read_json(fake.state)['state'],'already-current')
+            self.assertFalse(fake.key.exists())
+
+    def test_role_creation_uses_original_effective_authority_and_reads_actual_copy(self):
+        owner='so_'+ID.replace('-','')+'_owner'
+        for kind in ['provider3','postgresFixture1']:
+            with self.subTest(kind=kind),tempfile.TemporaryDirectory() as directory:
+                fake=Fake(Path(directory),{ID:155})
+                profile=role_profile(kind=kind);profile['roles'][0]['login']=False
+                calls=[]
+                fake.copy_sql=lambda sql,*a,**k:calls.append(sql) or b''
+                fake.copy_role_profile=lambda *a:copy.deepcopy(profile)
+                with mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
+                    with fake.isolated({'user':owner,'database':'tenant'},profile):
+                        pass
+                self.assertIn('CREATE ROLE "schoolorbit_provisioner"',calls[0])
+                self.assertEqual('SET ROLE schoolorbit_provisioner;' in calls[1],kind=='provider3')
+                self.assertIn('RESET ROLE;',calls[1]) if kind=='provider3' else None
+                self.assertIn('NOLOGIN',calls[0])
+                self.assertFalse(any('GRANTED BY' in x or 'pg_auth_members' in x for x in calls))
+
+    def test_final_copy_profile_readback_blocks_cli_after_valid_initial_creation(self):
+        owner='so_'+ID.replace('-','')+'_owner';connection={'user':owner}
+        with tempfile.TemporaryDirectory() as directory:
+            fake=Fake(Path(directory),{ID:155});identity=role_profile()
+            fake.worker='worker';fake.image='immutable'
+            current=copy.deepcopy(identity);fake.copy_role_profile=lambda *a:copy.deepcopy(current)
+            self.assertEqual(fake.verify_copy_profile(connection,identity),identity)
+            calls=[];fake.command=lambda *a,**k:calls.append(a) or b'child result'
+            raw,profile=fake.migrate_copy(connection,identity,{})
+            self.assertEqual(raw,b'child result');self.assertEqual(profile,identity);self.assertEqual(len(calls),1)
+            for fault in ['flags','comment','limit','membership']:
+                current=copy.deepcopy(identity)
+                if fault=='flags':current['roles'][0]['inherit']=not current['roles'][0]['inherit']
+                elif fault=='comment':current['roles'][0]['comment']='changed after restore'
+                elif fault=='limit':current['roles'][0]['limit']+=1
+                else:current['memberships'][0]['set']=False
+                before=len(calls)
+                with self.assertRaises(m.fidelity.FidelityError):fake.migrate_copy(connection,identity,{})
+                self.assertEqual(len(calls),before)
+
+    def test_retained_actual_restored_profile_cannot_be_replaced_even_with_updated_file_hash(self):
+        for field in ['restoredRoleMetadata','restoredMembershipMetadata']:
+            with self.subTest(field=field),tempfile.TemporaryDirectory() as directory:
+                fake,archive=completion_fixture(Path(directory));before=fake.state.read_bytes()
+                path=fake.point/(ID.replace('-','')+'.restore-metadata.json');doc=m.read_json(path)
+                if field=='restoredRoleMetadata':doc[field][0]['limit']+=1
+                else:doc[field][0]['inherit']=True
+                m.durable(path,doc);refresh_archive_binding(fake,archive)
+                with self.assertRaises(m.fidelity.FidelityError):fake.complete()
+                self.assertEqual(fake.state.read_bytes(),before)
+
     def test_isolated_readiness_waits_for_final_tcp_server_not_temporary_socket(self):
         with tempfile.TemporaryDirectory() as directory:
             fake=Fake(Path(directory),{ID:155,OTHER:157})
             fake.copy_sql=lambda *a,**k:b''
+            fake.copy_role_profile=lambda *a:role_profile()
             probes=[]
             def ready(arguments,**kwargs):
                 probes.append(arguments)
                 self.assertEqual(arguments[arguments.index('-h')+1],'127.0.0.1')
                 return subprocess.CompletedProcess(arguments,1 if len(probes)==1 else 0)
             with mock.patch.object(m.subprocess,'run',side_effect=ready),mock.patch.object(m.time,'sleep'):
-                with fake.isolated({'database':'tenant','user':'so_'+ID.replace('-','')+'_owner'},{'roles':[]}):
+                with fake.isolated({'database':'tenant','user':'so_'+ID.replace('-','')+'_owner'},role_profile()):
                     self.assertEqual(len(probes),2)
 
     def test_bounded_metadata_reader_limits_output_and_records_real_child_failures(self):
