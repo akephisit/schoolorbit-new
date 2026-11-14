@@ -401,7 +401,7 @@
 		const id = selectedGroup.id,
 			current = admission(id);
 		const value = await updateLearningGroup(id, body);
-		if (current()) {
+		if (current() && canManage) {
 			groupRevision++;
 			acceptGroup(value);
 		}
@@ -412,7 +412,7 @@
 		const id = selectedGroup.id,
 			current = admission(id);
 		const value = await replaceLearningGroupTeachers(id, body);
-		if (current()) {
+		if (current() && canManage) {
 			groupRevision++;
 			acceptGroup(value);
 		}
@@ -423,7 +423,7 @@
 		const id = selectedGroup.id,
 			current = admission(id);
 		const value = await replaceLearningGroupHomerooms(id, body);
-		if (current()) {
+		if (current() && canManage) {
 			groupRevision++;
 			acceptGroup(value);
 			previewStale = true;
@@ -852,7 +852,7 @@
 								const id = selectedGroup.id,
 									current = admission(id);
 								const latest = await getLearningGroup(id);
-								if (current()) acceptGroup(latest);
+								if (current() && canManage) acceptGroup(latest);
 								return latest;
 							}}
 							onBusyChange={editorBusyObserver()}

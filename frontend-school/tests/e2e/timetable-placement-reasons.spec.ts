@@ -53,6 +53,7 @@ for (const layout of [
 		await page.goto(boardUrl());
 		await setTimetableTheme(page, layout.theme);
 		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		const readsAfterAdmission = mock.workspaceRequestCount();
 		const cell = page.locator(
 			`td[data-timetable-day="MON"][data-timetable-period-id="${timetableIds.period1}"]`
 		);
@@ -81,7 +82,7 @@ for (const layout of [
 		await expect(details).toContainText('กิจกรรม: กิจกรรมอ่านหนังสือ');
 		await expect(details.locator('li')).toHaveCount(2);
 		await expect(cell.locator('[data-timetable-placement-preview]')).toHaveCount(0);
-		expect(mock.workspaceRequestCount()).toBe(1);
+		expect(mock.workspaceRequestCount()).toBe(readsAfterAdmission);
 		await tray.dispatchEvent('dragend', { dataTransfer: transfer });
 		release();
 		await expect(page.locator('[data-timetable-placement-reason]')).toHaveCount(0);

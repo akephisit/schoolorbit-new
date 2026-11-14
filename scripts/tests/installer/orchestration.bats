@@ -310,9 +310,9 @@ install_orchestration_fakes() {
     grep -Fq 'X-CSRF-Token' "$smoke"
     grep -Fq '/api/auth/sessions' "$smoke"
     grep -Fq '/api/auth/logout' "$smoke"
-    grep -Fq '/api/academic/timetable-versions?academicTermId=$term_id' "$smoke"
-    grep -Fq '/api/academic/timetable-blocks/workspace?academicYearId=$year_id&academicTermId=$term_id&timetableVersionId=$timetable_version_id' "$smoke"
-    ! grep -Fq '"/api/academic/timetable?academicTermId=$term_id"' "$smoke"
+    grep -Fq '/api/academic/timetable?academicTermId=$term_id' "$smoke"
+    grep -Fq '/api/academic/timetable-blocks/workspace?academicYearId=$year_id&academicTermId=$term_id&timetableId=$timetable_id' "$smoke"
+    ! grep -Fq '/api/academic/timetable-versions' "$smoke"
     ! grep -Fq 'pass "login auth_token cookie"' "$smoke"
 }
 

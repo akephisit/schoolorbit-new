@@ -10,7 +10,7 @@ export async function deliveryReply(route:Route,data:unknown,status=200){await r
 export async function mockCurrentDelivery(page:Page,options:{permissions?:string[];kind?:'course'|'activity';registrationType?:'self'|'assigned';deleteConflict?:boolean;deleteGate?:Promise<void>;createGate?:Promise<void>;teacherGate?:Promise<void>;groupConflict?:boolean;groupReadGate?:Promise<void>}={}){
  const ids=currentDeliveryIds;
  await mockDeliveryNavigation(page,{manager:true});
- let currentSession=sessionState();let currentActor:string=ids.actor;let permissions=options.permissions??['*'];
+ let currentSession=sessionState();let currentActor:string=ids.actor;let resourceManage=true;let permissions=options.permissions??['*'];
  const graph=navigationDelivery();
  const selectedId=options.kind==='activity'?navigationOfferingIds.club:navigationOfferingIds.basic21;
  const selected=graph.offerings.find(row=>row.id===selectedId)!;
@@ -24,7 +24,7 @@ export async function mockCurrentDelivery(page:Page,options:{permissions?:string
  let conflict=options.deleteConflict??false,groupConflict=options.groupConflict??false;
  function synchronize(){selected.groups=groups.map(group=>({id:group.id,code:group.code,name:group.name,description:group.description,capacity:group.capacity,rowVersion:group.rowVersion,registrationOpen:group.registrationOpen,homeroomIds:[...group.homeroomIds],preferredRoomIds:[...group.preferredRoomIds],teachers:group.teacherAssignments.map(row=>({assignmentId:row.id,teacherId:row.teacherId,displayName:row.displayName,role:row.role,rowVersion:row.rowVersion,isActive:row.isActive}))}));}
  synchronize();
- function resource():LearningOffering{return{canManage:true,id:selected.id,academicYearId:ids.year,academicTermId:ids.term,kind:selected.kind,codeSnapshot:selected.code,nameSnapshot:selected.name,owningOrganizationUnitId:selected.owningOrganizationUnitId,rowVersion:selected.rowVersion,migrated:false,createdAt:stamp,updatedAt:stamp,snapshot:selected.catalog,targets:selected.targets,weeklyPeriodTarget:selected.weeklyPeriodTarget};}
+ function resource():LearningOffering{return{canManage:resourceManage,id:selected.id,academicYearId:ids.year,academicTermId:ids.term,kind:selected.kind,codeSnapshot:selected.code,nameSnapshot:selected.name,owningOrganizationUnitId:selected.owningOrganizationUnitId,rowVersion:selected.rowVersion,migrated:false,createdAt:stamp,updatedAt:stamp,snapshot:selected.catalog,targets:selected.targets,weeklyPeriodTarget:selected.weeklyPeriodTarget};}
  function preview(groupId:string|null):DeliveryDeletionPreview{
   const scoped=groupId?groups.filter(group=>group.id===groupId):groups;
   return{academicYearId:ids.year,academicTermId:ids.term,learningOfferingId:selectedId,learningGroupId:groupId,rowVersion:groupId?scoped[0].rowVersion:selected.rowVersion,sourceDigest:graph.rowVersion.toString(16).padStart(64,'0'),impact:{learningGroups:scoped.length,teacherAssignments:scoped.reduce((sum,group)=>sum+group.teacherAssignments.length,0),memberships:2,timetableBlocks:2,examScheduleItems:1,assessmentScores:3,attendanceSessions:4,attendanceSummaries:0,officialResults:1,resultCorrections:1,termAggregates:1,annualAggregates:1,supervisionLinks:1,derivedBehaviorEvents:1,evidenceFiles:1}};
@@ -85,7 +85,7 @@ export async function mockCurrentDelivery(page:Page,options:{permissions?:string
  });
  const overview=`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&view=offerings`;
  const detail=`/staff/academic/delivery/${selectedId}?academicYearId=${ids.year}&academicTermId=${ids.term}`;
- return{ids,reads,writes,previewReads,graph,resource,groups:()=>groups,tracking,management,overview,detail,session:()=>structuredClone(currentSession),setActor:(id:string)=>{currentActor=id;},setSession:(next:ReturnType<typeof sessionState>)=>{currentSession=structuredClone(next);},setPermissions:(next:string[])=>{permissions=[...next];},count:(path:string)=>reads.filter(url=>url.pathname===path).length};
+ return{ids,reads,writes,previewReads,graph,resource,groups:()=>groups,tracking,management,overview,detail,session:()=>structuredClone(currentSession),setActor:(id:string)=>{currentActor=id;},setCanManage:(value:boolean)=>{resourceManage=value;},setSession:(next:ReturnType<typeof sessionState>)=>{currentSession=structuredClone(next);},setPermissions:(next:string[])=>{permissions=[...next];},count:(path:string)=>reads.filter(url=>url.pathname===path).length};
 }
 
 export async function replaceDeliverySession(page:Page,fixture:Pick<Awaited<ReturnType<typeof mockCurrentDelivery>>,'session'|'setSession'>){

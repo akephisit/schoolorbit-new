@@ -1,3 +1,4 @@
+import type {DeliveryWorkspace,HomeroomDeliveryWorkspace} from '../../src/lib/api/learning-delivery';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { RoutePerformanceProbe, summarizeFiveWarmRuns } from './helpers/route-performance';
@@ -8,8 +9,6 @@ test.describe.configure({ mode: 'serial' });
 const yearId = '10000000-0000-4000-8000-000000000001';
 const termId = '20000000-0000-4000-8000-000000000001';
 const nextTermId = '20000000-0000-4000-8000-000000000002';
-const versionId = '70000000-0000-4000-8000-000000000001';
-const nextVersionId = '70000000-0000-4000-8000-000000000002';
 const deliveryPath = `/staff/academic/delivery?academicYearId=${yearId}&academicTermId=${termId}`;
 
 function deferred() {
@@ -55,13 +54,11 @@ async function fulfill(route: Route, data: unknown, headers?: Record<string, str
 	});
 }
 
-function homeroomWorkspace(academicTermId: string) {
+function homeroomWorkspace(academicTermId: string):HomeroomDeliveryWorkspace {
 	return {
 		academicYearId: yearId,
 		academicTermId,
-		deliveryVersionId: academicTermId === termId ? versionId : nextVersionId,
-		deliveryVersionStatus: 'published',
-		deliveryVersionEffectiveFrom: '2026-05-01',
+		rowVersion:1,
 		homerooms: [
 			{
 				homeroom: {
@@ -101,13 +98,12 @@ function homeroomWorkspace(academicTermId: string) {
 	};
 }
 
-async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: Promise<void>) {
+async function mockDelivery(page: Page, delayed: 'homerooms' | 'offerings', gate: Promise<void>) {
 	const oldHomeroomSettled = deferred();
 	const requests = {
 		homerooms: 0,
-		changes: 0,
+		retired: [] as string[],
 		workspace: 0,
-		selectedVersion: 0,
 		pageView: 0,
 		oldHomeroomSettled: oldHomeroomSettled.promise
 	};
@@ -115,6 +111,7 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 		(url) => url.pathname.startsWith('/api/'),
 		async (route) => {
 			const url = new URL(route.request().url());
+            if(/delivery-versions|term-change-sets/.test(url.pathname)){requests.retired.push(url.pathname);await route.fulfill({status:404,json:{success:false,error:'retired'}});return;}
 			switch (url.pathname) {
 				case '/api/auth/me':
 					await fulfill(route, {
@@ -169,45 +166,6 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 				case '/api/menu/user':
 					await fulfill(route, { groups: [] });
 					return;
-				case '/api/academic/delivery-versions': {
-					const selectedTerm = url.searchParams.get('academicTermId') ?? termId;
-					await fulfill(route, [
-						{
-							id: selectedTerm === termId ? versionId : nextVersionId,
-							academicYearId: yearId,
-							academicTermId: selectedTerm,
-							status: 'published',
-							rowVersion: 1,
-							effectiveFrom: '2026-05-01',
-							effectiveUntil: null,
-							changeSetId: null,
-							sourceVersionId: null,
-							offeringCount: 0,
-							groupCount: 0,
-							teacherAssignmentCount: 0,
-							updatedAt: '2026-05-01T00:00:00Z'
-						}
-					]);
-					return;
-				}
-				case `/api/academic/delivery-versions/${versionId}`:
-				case `/api/academic/delivery-versions/${nextVersionId}`:
-					requests.selectedVersion++;
-					await fulfill(route, {
-						id: url.pathname.endsWith(nextVersionId) ? nextVersionId : versionId,
-						academicYearId: yearId,
-						academicTermId: url.pathname.endsWith(nextVersionId) ? nextTermId : termId,
-						status: 'published',
-						rowVersion: 1,
-						effectiveFrom: '2026-05-01',
-						effectiveUntil: null,
-						sourceVersionId: null,
-						createdAt: '2026-05-01T00:00:00Z',
-						updatedAt: '2026-05-01T00:00:00Z',
-						publishedAt: '2026-05-01T00:00:00Z',
-						snapshot: { offerings: [] }
-					});
-					return;
 				case '/api/academic/delivery/homerooms': {
 					requests.homerooms += 1;
 					const requestedTermId = url.searchParams.get('academicTermId') ?? termId;
@@ -221,15 +179,11 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 					}
 					return;
 				}
-				case '/api/academic/term-change-sets':
-					requests.changes += 1;
-					if (delayed === 'changes') await gate;
-					await fulfill(route, []);
-					return;
 				case '/api/academic/delivery/workspace':
-					requests.workspace += 1;
-					await fulfill(route, { academicTermId: termId, offerings: [] });
-					return;
+                    requests.workspace += 1;
+                    if(delayed==='offerings')await gate;
+                    await fulfill(route,{academicYearId:yearId,academicTermId:url.searchParams.get('academicTermId')??termId,rowVersion:1,offerings:[],courseMetadata:[]} satisfies DeliveryWorkspace);
+                    return;
 				case '/api/academic/delivery/page-view':
 					requests.pageView += 1;
 					await fulfill(route, {});
@@ -242,31 +196,29 @@ async function mockDelivery(page: Page, delayed: 'homerooms' | 'changes', gate: 
 	return requests;
 }
 
-for (const delayed of ['homerooms', 'changes'] as const) {
-	test(`Delivery paints the ready region while ${delayed} is unresolved`, async ({ page }) => {
-		const gate = deferred();
-		const requests = await mockDelivery(page, delayed, gate.promise);
-		const readyTestId =
-			delayed === 'homerooms' ? 'delivery-change-set-ready' : 'delivery-homerooms-ready';
-		const waitingTestId =
-			delayed === 'homerooms' ? 'delivery-homerooms-ready' : 'delivery-change-set-ready';
-		try {
-			await page.goto(deliveryPath);
-			await expect(page.getByTestId(readyTestId)).toBeVisible();
-			await expect(page.getByTestId(waitingTestId)).toHaveCount(0);
-			expect(requests.homerooms).toBe(1);
-			expect(requests.changes).toBe(1);
-			expect(requests.workspace).toBe(0);
-			expect(requests.pageView).toBe(0);
-		} finally {
-			gate.release();
-		}
-		await expect(page.getByTestId(waitingTestId)).toBeVisible();
-		await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม' }).click();
-		await expect.poll(() => requests.selectedVersion).toBe(1);
-		expect(requests.workspace).toBe(0);
-		expect(requests.pageView).toBe(0);
-	});
+for (const delayed of ['homerooms', 'offerings'] as const) {
+ test(`Delivery keeps its tabs usable while current ${delayed} is unresolved`,async({page})=>{
+  const gate=deferred(),requests=await mockDelivery(page,delayed,gate.promise);
+  try{
+   await page.goto(delayed==='offerings'?`${deliveryPath}&view=offerings`:deliveryPath);
+   if(delayed==='homerooms'){
+    await expect(page.getByRole('region',{name:'มุมมองรายห้อง',exact:true})).toHaveAttribute('aria-busy','true');
+    expect(requests.workspace).toBe(0);
+    await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();
+    await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+    expect(requests.workspace).toBe(1);
+   }else{
+    await expect(page.getByRole('region',{name:'มุมมองรายวิชาและกิจกรรม',exact:true})).toHaveAttribute('aria-busy','true');
+    await page.getByRole('tab',{name:'มุมมองรายห้อง',exact:true}).click();
+    await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+    await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();
+    expect(requests.workspace).toBe(1);
+   }
+   expect(requests.homerooms).toBe(1);expect(requests.pageView).toBe(0);expect(requests.retired).toEqual([]);
+  }finally{gate.release();}
+  await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+  expect(requests.workspace).toBe(1);
+ });
 }
 
 test('reports sanitized medians from five warm Delivery navigations', async ({ page }) => {

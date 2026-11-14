@@ -75,17 +75,21 @@
 			offering.snapshot.kind === 'activity' &&
 			offering.snapshot.registrationType === 'self'
 	);
-	function admission() {
+	function ownership() {
 		const offeringId = offering.id,
 			groupId = group.id,
 			epoch = authStore.sessionEpoch;
 		return () =>
 			!disposed &&
-			canManage &&
 			offering.id === offeringId &&
 			group.id === groupId &&
 			authStore.sessionEpoch === epoch;
 	}
+	function admission() {
+		const owned = ownership();
+		return () => owned() && canManage;
+	}
+
 	onDestroy(() => {
 		disposed = true;
 	});
@@ -164,7 +168,8 @@
 		fallback: string
 	) {
 		if (!canManage || busySection || reloading || needsReload) return;
-		const current = admission(),
+		const owned = ownership(),
+			current = admission(),
 			busy = onBusyChange;
 		if (section === 'homerooms' && coverageEditingBlocked) {
 			errorMessage = 'ห้องต้นทางเปลี่ยนไป กรุณาโหลดข้อมูลล่าสุดก่อนแก้ไข';
@@ -176,12 +181,16 @@
 		try {
 			const accepted = await action();
 			if (current()) acceptedRowVersion = accepted.rowVersion;
+			else if (owned()) {
+				needsReload = true;
+				errorMessage = 'สิทธิ์แก้ไขเปลี่ยนระหว่างบันทึก โหลดข้อมูลล่าสุดก่อนลองอีกครั้ง';
+			}
 		} catch (error) {
 			if (!current()) return;
 			errorMessage = error instanceof Error ? error.message : fallback;
 			needsReload = true;
 		} finally {
-			if (current()) {
+			if (owned()) {
 				busySection = null;
 				busy(false);
 			}
@@ -206,13 +215,17 @@
 	}
 	async function reloadBaseline() {
 		if (busySection || reloading || !canManage) return;
-		const current = admission(),
+		const owned = ownership(),
+			current = admission(),
 			busy = onBusyChange;
 		reloading = true;
 		busy(true);
 		try {
 			const latest = await onReload();
-			if (!current()) return;
+			if (!current()) {
+				if (owned()) needsReload = true;
+				return;
+			}
 			details = {
 				name: latest.name,
 				description: latest.description ?? '',
@@ -229,7 +242,7 @@
 			if (current())
 				errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลกลุ่มล่าสุดไม่สำเร็จ';
 		} finally {
-			if (current()) {
+			if (owned()) {
 				reloading = false;
 				busy(false);
 			}
@@ -247,7 +260,7 @@
 
 	{#if needsReload}<div role="alert" class="space-y-2 border-b p-4 text-sm">
 			<p>ข้อมูลที่คุณแก้ไขยังอยู่ โหลดข้อมูลกลุ่มล่าสุดก่อนลองบันทึกอีกครั้ง</p>
-			<Button variant="outline" disabled={reloading} onclick={reloadBaseline}
+			<Button variant="outline" disabled={reloading || !canManage} onclick={reloadBaseline}
 				>ใช้ข้อมูลกลุ่มล่าสุด</Button
 			>
 		</div>{/if}

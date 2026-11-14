@@ -2101,7 +2101,7 @@ pub(crate) mod protected_router {
 
         for path in [
             "/api/academic/context/options",
-            "/api/academic/delivery-versions",
+            "/api/academic/delivery/workspace?academicYearId=11000000-0000-0000-0000-000000000001&academicTermId=11000000-0000-0000-0000-000000000251",
             "/api/academic/gradebook/subjects",
             "/api/academic/learner-evaluations/subjects",
             "/api/academic/lifecycle/promotion-runs",
@@ -2207,32 +2207,31 @@ pub(crate) mod protected_router {
         }
 
         let timetable_list =
-            "/api/academic/timetable-versions?academicTermId=11000000-0000-0000-0000-000000000251";
-        let timetable_resolve = "/api/academic/timetable-versions/resolve?academicTermId=11000000-0000-0000-0000-000000000251&date=2026-05-18";
-        let timetable_clone =
-            "/api/academic/timetable-versions/61000000-0000-0000-0000-000000000001/clone";
+            "/api/academic/timetable?academicTermId=11000000-0000-0000-0000-000000000251";
+        let timetable_workspace = "/api/academic/timetable-blocks/workspace?academicYearId=11000000-0000-0000-0000-000000000001&academicTermId=11000000-0000-0000-0000-000000000251&timetableId=61000000-0000-0000-0000-000000000001";
+        let timetable_create = "/api/academic/timetable";
         for (method, path) in [
             (Method::GET, timetable_list),
-            (Method::GET, timetable_resolve),
-            (Method::POST, timetable_clone),
+            (Method::GET, timetable_workspace),
+            (Method::POST, timetable_create),
         ] {
             let response = app
                 .clone()
                 .oneshot(request(method.clone(), path, Some(origin), None, None))
                 .await
-                .expect("protected timetable version route");
+                .expect("protected current timetable route");
             assert_eq!(
                 response.status(),
                 StatusCode::UNAUTHORIZED,
                 "{method} {path}"
             );
         }
-        for path in [timetable_list, timetable_resolve] {
+        for path in [timetable_list, timetable_workspace] {
             let response = app
                 .clone()
                 .oneshot(request(Method::GET, path, Some(origin), Some(&token), None))
                 .await
-                .expect("authenticated timetable version read");
+                .expect("authenticated current timetable read");
             assert_eq!(response.status(), StatusCode::FORBIDDEN, "GET {path}");
         }
 
@@ -2329,30 +2328,28 @@ pub(crate) mod protected_router {
                 );
             }
         }
-        let mut clone_request = request(
+        let mut create_request = request(
             Method::POST,
-            timetable_clone,
+            timetable_create,
             Some(origin),
             Some(&token),
             Some(&csrf),
         );
-        clone_request.headers_mut().insert(
+        create_request.headers_mut().insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        *clone_request.body_mut() = Body::from(
+        *create_request.body_mut() = Body::from(
             serde_json::json!({
-                "sourceRowVersion": 1,
-                "resumeDraftId": null,
-                "draftRowVersion": null,
+                "academicTermId":"11000000-0000-0000-0000-000000000251",
             })
             .to_string(),
         );
         let response = app
             .clone()
-            .oneshot(clone_request)
+            .oneshot(create_request)
             .await
-            .expect("authenticated timetable version clone");
+            .expect("authenticated current timetable creation");
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
         let subject_group_id: Uuid = sqlx::query_scalar("SELECT g.id FROM subject_groups g JOIN organization_units u ON u.subject_group_id=g.id WHERE g.is_active AND u.is_active ORDER BY g.id LIMIT 1")
                 .fetch_one(&fixture.tenant_a_pool).await.unwrap();
@@ -2471,7 +2468,7 @@ pub(crate) mod protected_router {
                     header::CONTENT_TYPE,
                     HeaderValue::from_static("application/json"),
                 );
-                *req.body_mut()=Body::from(serde_json::json!({"deliveryVersionId":Uuid::new_v4(),"deliveryVersionRowVersion":1,"groups":[{"learningGroupId":Uuid::new_v4(),"rowVersion":1}],"primaryTeacher":{"teacherId":user_id,"replaceExistingPrimary":false},"rosterTracking":null}).to_string());
+                *req.body_mut()=Body::from(serde_json::json!({"deliveryRowVersion":1,"groups":[{"learningGroupId":Uuid::new_v4(),"rowVersion":1}],"primaryTeacher":{"teacherId":user_id,"replaceExistingPrimary":false},"rosterTracking":null}).to_string());
                 let response = app.clone().oneshot(req).await.unwrap();
                 assert_eq!(
                     response.status(),

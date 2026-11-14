@@ -555,87 +555,74 @@ their application-owned prefixes instead of assuming registrations live in `app.
 
 Personnel rank milestones share a pure versioned calendar calculator in `school-staff`. Run its state/date and bounded scoped database cases with `./scripts/test_backend_school.sh --package school-staff rank_milestone -- --nocapture`, and the authorized HTTP checks with `./scripts/test_backend_school.sh integration_tests::staff::career_integration_tests -- --nocapture`. The fixture covers 53 canonical histories, chronological 50-row pages, own access, missing staff information, all profile scopes, status filters and denied access. Against a ready production preview, run `E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/personnel-workflow.spec.ts tests/e2e/staff-career-workflow.spec.ts tests/e2e/rank-milestones-workflow.spec.ts --project=chromium --workers=2` from `frontend-school`; milestone coverage includes conditional-review wording, independent errors/retry, superseded status, paging and mobile/desktop light/dark layouts.
 
-Publication chronology regressions use migration 151 and independent opening/timetable numbers.
+Current Delivery is the normalized registry for one explicit term. Direct saves use technical
+row revisions and current authorization. Timetable has one nullable current parent per term;
+Exam rounds retain their identities and save placements directly. These domains have no business
+version, draft, publication or source-selection workflow. Catalog and Curriculum publications
+remain independent owners.
+
 Use the shared local Cargo profile (`CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0`,
-`CARGO_PROFILE_TEST_DEBUG=0`) and serialize Cargo against the existing target. The focused
-`teacher_assignments` package fixture now reaches 151 and verifies number-selected allocation
-membership without deriving chronology from dates or timestamp ties. Publication-revision
-fixtures additionally cover preservation/refusal/retry, same-day and earlier replacement, future
-source exclusion, retained assignment materialization, immutable audit/effectivity provenance,
-actual DML-only runtime execution, concurrent replay and unchanged historical sources. Run the
-owning release-filter checks when changing the 151 readiness boundary:
+`CARGO_PROFILE_TEST_DEBUG=0`) and serialize Cargo against the existing target. Rehearse the current
+cutover, current responsibility and real application composition on disposable PostgreSQL:
 
 ```bash
+./scripts/test_backend_school.sh --package school-migrations --test current_academic_operations -- --test-threads=1
+./scripts/test_backend_school.sh --package school-academic-delivery --test teacher_assignments -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::services::exam_schedule_service_tests -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::lifecycle::services::term_preparation_tests -- --test-threads=1
+./scripts/test_backend_school.sh composed_deletion_tests -- --test-threads=1
+./scripts/test_backend_school.sh --package school-behavior --test database -- --test-threads=1
+./scripts/test_backend_school.sh system::handlers::migration::tests -- --test-threads=1
 node --test scripts/tests/migration-completion-gate.test.mjs scripts/tests/pipeline-storage-namespace.test.mjs
 ```
 
-The release filter requires version 151 and the exact protected eight zero-mismatch checks;
-existing 87/88 and 149 gates still run. These checks exercise local disposable reports and do not
-prove production migration or application acceptance.
+Migration156 transforms only exact removed Results contributions using sealed transaction guards.
+Migration157 materializes the applicable current graph, preserves retained IDs and actual facts,
+removes retired operational graphs/audits and unplaced Exam import copies, and verifies its sealed
+eight zero-mismatch current-cutover checks. The release gate requires157 and that exact receipt;
+it cannot accept an older publication-readiness receipt as current evidence.
 
-The focused publication owner and preservation cases run through the same disposable runner:
+The composed HTTP cases use real tenant sessions, CSRF, current permission generations and owning
+providers. They verify exact offering/group impact and digest binding, sibling/context preservation,
+frozen Result/correction and nested term/year aggregate cleanup, saved Supervision detachment,
+Attendance/Behavior reconciliation, terminal notification receipts and durable evidence-file cleanup.
+A fault at the final source DELETE rolls all owners back. An aborted HTTP request retains accepted
+admission through commit; queued saves and permission/session revocation remain serialized.
+Concurrent scoped and global zero-effect Behavior cleanup invalidate a previously confirmed digest.
+Cleanup reference locks precede the Behavior mutex and remain available in closed academic contexts.
+
+Current zero-demand saves preserve Catalog metadata, groups, current teachers, actual rosters and
+saved scores. Existing saved lessons remain until explicitly removed; new zero-demand placement is
+refused. Curriculum preparation previews current configuration without writes, preserves retained
+manual/generated group identities, binds source changes and idempotency, and never copies actual
+student membership, scores, invigilation or Supervision evaluations into another term.
+
+Actual roster dates remain independent facts. Attendance synthesizes unsaved lessons only for
+Bangkok today. Past lesson reads, choices and finalization use materialized saved sessions and
+immutable rosters; current timetable edits cannot reconstruct an old unsaved round. Known counted
+saved unchecked rosters still receive midnight auto-absence, with existing generation, progress,
+count overrides, explicit results and closure guards. Arrival and special dated sources retain their
+own rules. Face-scan cases require the existing test `ENCRYPTION_KEY` configuration.
+
+Historical001–155 migration fixtures are separate exact-boundary SQL rehearsals. The retained
+087/088/089 and150→151 targets validate their immutable migration behavior, refusal, atomic rollback
+and retry at that boundary. They do not call retired runtime providers or stand in for157 acceptance:
 
 ```bash
+./scripts/test_backend_school.sh --integration delivery_versions -- --test-threads=1
+./scripts/test_backend_school.sh --integration delivery_draft_lifecycle -- --test-threads=1
 ./scripts/test_backend_school.sh --integration publication_revision_migration -- --test-threads=1
-./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests::publication_revision_tests -- --test-threads=1
-./scripts/test_backend_school.sh draft_teacher_construction_tests -- --test-threads=1
-./scripts/test_backend_school.sh initial_construction_tests -- --test-threads=1
-./scripts/test_backend_school.sh roster_tracking_tests -- --test-threads=1
-./scripts/test_backend_school.sh publication_source_tests -- --test-threads=1
-./scripts/test_backend_school.sh --package school-academic-delivery --test teacher_assignments -- --test-threads=1
 ```
 
-Attendance queue cases use real timetable publications and canonical lesson seeds, observe the
-actual term-lock wait, and exercise first ensure/save/cancel/scan plus after-lock finalization.
-Already accepted historical lesson fixtures retain their frozen facts even when their old source
-cannot be recreated; those report/history fixtures insert explicit accepted rows rather than
-passing fabricated lesson keys through new-source validation. Their prior downstream assertions
-remain in place. Face-scan cases require the existing test `ENCRYPTION_KEY` configuration.
-Initial-construction cases cover unchanged first-plan membership across earlier candidate dates,
-command undo, the last staged teacher selection at standalone publication with and without a
-publication base, exact future term-preparation outputs, and scoped before-command metadata.
-Migration preservation normalizes only the three added provenance columns on old change-set rows;
-all original command, receipt, snapshot and audit bytes remain exact.
-
-Delivery and timetable versions have independent publication lifecycles. Rehearse their canonical
-migration and concurrent writers against disposable PostgreSQL using:
-
-```bash
-./scripts/test_backend_school.sh --integration delivery_versions -- --nocapture
-./scripts/test_backend_school.sh --integration delivery_versions zero_ -- --nocapture
-./scripts/test_backend_school.sh activity_zero_targets_http -- added_activity_target_migration subject_zero_workload add_change_items_create_draft_course_and_activity_delivery_then_delete_cleanly --nocapture
-./scripts/test_backend_school.sh --integration delivery_draft_lifecycle -- --nocapture
-./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests -- --nocapture
-./scripts/test_backend_school.sh integration_tests::academic::services::timetable_ -- --nocapture
-./scripts/test_backend_school.sh integration_tests::academic::lifecycle::services::term_preparation_tests -- --nocapture
-./scripts/test_backend_school.sh system::handlers::migration::tests -- --nocapture
-./scripts/test_backend_school.sh --package school-academic-delivery
-./scripts/test_backend_school.sh --package school-academic-timetable
-```
-
-The focused `zero_` version cases cover courses plus independent and synchronized activities:
-zero demand preserves catalog, groups, teachers, rosters, evaluations/results and published history;
-existing lessons survive latest-source alignment and must be removed before publication. Both
-ordinary and synchronized creation reject zero-demand placements. The HTTP case verifies zero
-acceptance, negative rejection, management scope and stale revisions. The manual-opening fixture
-also checks explicit zero inclusion; opening defaults are not inferred from curriculum hours.
-The added-target migration case starts with pre143 ignored adjustments, verifies only cached
-weekly scalars and revision counters change, and checks unchanged journals, ordered graphs,
-published receipts/history, stale-request refusal and no-op replay.
-
-The migration fixtures cover stable identities, a delivery graph shared by multiple tables,
-dated A/B/A source chains, independent placement drafts, mixed opening/placement drafts,
-explicit legacy target inclusions, early publication boundaries, unmappable sources/targets/historical
-groups, fresh reconciliation gates, and safe retry. Runtime
-cases cover separate opening publication, exact instructor handoff, source reconciliation,
-semantic content comparisons, publication receipts, deletion rollback, and serialized writers.
-Against the ready local production preview, run the opening/table workflows from `frontend-school`:
+Against a ready local production preview, run current registry, placement and source-refresh flows
+from `frontend-school`:
 
 ```bash
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
   tests/e2e/homeroom-delivery-workspace.spec.ts \
   tests/e2e/delivery-offering-route-loading.spec.ts \
-  tests/e2e/academic-teacher-change-handoff.spec.ts \
   tests/e2e/timetable-version-workspace.spec.ts \
   tests/e2e/timetable-board-templates-region-loading.spec.ts \
   tests/e2e/timetable-drag-board.spec.ts \
@@ -644,18 +631,12 @@ E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test \
   tests/e2e/timetable-dense-board-layout.spec.ts --project=chromium --workers=2
 ```
 
-The draft-lifecycle fixtures also verify migration 088→089 with unchanged published facts,
-nullable draft dates, DELETE-only cancelled guards, optimistic counts/revisions, protected references,
-and whole-batch rollback, including an unknown downstream foreign key. Delivery service tests cover
-candidate-date hashes, fresh references, dated instructors, idempotency and concurrent writers.
-The opening workspace browser fixture exercises repeated finding keys, eager names and before/after
-differences, scoped retry, date-change invalidation, deletion refusal/success, read-only controls,
-keyboard confirmation and mobile/desktop in both themes. Use protected tenant copies for operational
-rehearsal, and keep production cleanup separate from routine disposable-schema tests.
-
-Fixtures use synthetic staff/resources and generated API shapes. A published opening never
-implicitly creates or publishes a timetable or student roster. Opening snapshots retain their
-course/group/teacher facts; dated student memberships remain on their separate roster lifecycle.
+The historical filename `timetable-version-workspace.spec.ts` now exercises the current singleton.
+Fixtures use synthetic staff/resources and generated API shapes. Delivery edits invalidate the
+current native collaboration source and reconcile clients before they reload current metadata and
+assignment authority; management views retain saved inactive teacher assignments for correction.
+Use protected tenant copies for operational rehearsal. Disposable-schema checks prove neither a
+production migration nor deployed application acceptance.
 
 For application-selected roster and Behavior runtime providers, run the owning database fixtures:
 
@@ -676,37 +657,30 @@ Lifecycle respectively. Lifecycle and Supervision expose dev-only integration-su
 only for root tests that intentionally span domain owners; the normal release graph must keep
 those features disabled. The application supplies external readiness, timetable consequence,
 result-lock, notification, cache, and realtime adapters without duplicating crate-owned SQL.
-Assessment also owns exam scheduling models and services, including published views and
+Assessment also owns exam scheduling models and services, including live current schedule views and
 transaction-scoped lifecycle operations. Its pure tests run with
 `cargo test -p school-academic-assessment --lib`; the existing application exam-schedule
 database fixtures continue to exercise the HTTP/lifecycle adapters and shared transactions.
 
-Assessment coordinator regressions use the latest published Delivery allocation in the selected
-offering's exact context, including future-effective publications. Run
-`./scripts/test_backend_school.sh --package school-academic-assessment -- --test-threads=8` and
-`./scripts/test_backend_school.sh integration_tests::academic::services::assessment_ -- --nocapture`.
-These cover dated episode preservation, shared read/save/exam membership, strict missing coverage,
-canonical names, active accounts, assignment identities and the registry-group denominator.
-Delivery publication coverage remains in
-`./scripts/test_backend_school.sh integration_tests::academic::delivery::services_tests:: -- --test-threads=1`;
-it verifies initialization after publication transitions, complete rollback and accepted replay.
-
-For selected-context teacher responsibility, run
-`./scripts/test_backend_school.sh --package school-academic-delivery teacher_assignments --locked -- --test-threads=1`.
-Its single-connection fixture verifies source availability, active ID/primary sets, empty requests,
-missing/omitted/draft/future graphs and the typed SQL-binding representation. Gradebook, learner
-evaluation and Results regressions live in their existing application integration owners:
+Assessment coordinators, Gradebook, Learner Evaluation and Results share typed current Delivery
+teacher providers in the exact offering/year/term context. Active staff accounts determine access
+and eligibility; saved assignment identity and primary roles remain stable on unchanged saves.
+Real teacher/role changes revoke prior assigned access and invalidate confirmations without deleting
+scores or responses. Existing school, organization, assigned and own authorization unions,
+coordinator rights, lifecycle locks and official Results history remain independent guards.
 
 ```bash
-./scripts/test_backend_school.sh integration_tests::academic::gradebook --locked -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::academic::learner_evaluation --locked -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::academic::results --locked -- --test-threads=4
-./scripts/test_backend_school.sh integration_tests::academic::services::assessment_ --locked -- --test-threads=4
+./scripts/test_backend_school.sh --package school-academic-assessment --lib -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::services::assessment_ -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::gradebook -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::learner_evaluation -- --test-threads=1
+./scripts/test_backend_school.sh integration_tests::academic::results -- --test-threads=1
 ```
 
-These retain real dated roster/audience coverage while checking allocation-based read/write/history
-scope, both published primaries, removed confirmers, source-unknown read preservation, existing
-invalidation, coordinator rights, organization unions, lifecycle/result locks and official history.
+These cover readonly current projection, exact-context and scan-budget refusal, canonical names,
+active accounts, multiple primaries, replaced confirmers, unchanged teacher-save confirmation
+preservation and current empty-group obligations until explicit physical deletion. Historical146/150
+coordinator migrations keep exact-version SQL assertions and do not select a current business version.
 
 The Operations `benchmark` task calls [Backend Build Benchmark](../.github/workflows/backend-build-benchmark.yml) and uses
 the pinned Docker builder for both backends. It records repeated source-changing Cargo/link
@@ -1222,8 +1196,9 @@ The region binds a promise when its first authenticated consumer is known, retai
 bootstrap, and rejects reusing that same promise or late mutation results for another identity.
 Timetable repair links follow the destination route's actual module permission.
 
-Actual event, offering, placement and Behavior cutoff dates stay in their owning forms.
-Curriculum preparation requires a matching preview after changing the actual offering date.
+Actual event, placement and Behavior cutoff dates stay in their owning forms.
+Current Delivery and curriculum preparation use an explicit term without an offering-date stage;
+configuration changes require a matching current source preview.
 Calendar targeting selects an enrollment year explicitly; a cutoff is the final inclusive
 day of a Behavior cycle, with the next cycle starting the following day. Manual roster preparation sends explicit source/destination year IDs and decisions without civil
 boundary fields; annual membership has nullable civil bounds. Historical dated placement and
@@ -1252,14 +1227,15 @@ From the repository root, run these focused runtime replay cases separately:
 ```bash
 ./scripts/test_backend_school.sh historical_term_transition_replays_canonical_request_without_rewriting_evidence -- --test-threads=1
 ./scripts/test_backend_school.sh curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes -- --test-threads=1
-./scripts/test_backend_school.sh delivery_preparation_preview_is_read_only_and_apply_creates_only_target_drafts -- --test-threads=1
+./scripts/test_backend_school.sh delivery_preparation_preview_is_read_only_and_apply_saves_only_current_target_configuration -- --test-threads=1
 ```
 
-These cases exercise canonical transition replay and accepted offering-date constraints. A legacy
-implicitly inferred date was never explicit accepted input, so migrated requests retain a NULL date
-constraint. Runs that create new offerings bind their explicit accepted date; retrying the same key
-with a different date returns 409. Retained-only and legacy replay preserve current actual offering
-dates, independent Delivery revision/version identities and dates, and original audit evidence.
+These cases exercise canonical transition replay and current source/checksum binding. Technical
+request receipts retain actor, normalized input and accepted output identities; replay cannot
+create a new operational version, restore a deleted resource or copy actual records. Historical
+147–149 receipt normalization is covered at its immutable migration boundary. Current direct
+configuration changes and lifecycle closure invalidate a stale preparation preview without
+changing the source term's saved facts.
 
 The facility fixtures cover building-to-room navigation, deep links/history and retained academic
 context, lazy and cancelled region reads, separate unassigned rooms, name-only filtering before
@@ -1865,18 +1841,19 @@ test. The workflow alone sets `SMOKE_DIRECT_BACKEND=true`; that mode skips only 
 CORS/preflight assertions while login, session, CSRF, readiness, and every selected academic read
 remain required.
 
-For each selected authorized term, academic context mode opens `/ws/timetable` without legacy
-identity parameters, validates term state sync, exchanges RFC ping/pong, and closes cleanly. It
-separately selects an existing draft from that term's version list, reads its authorized HTTP
-workspace, and validates the draft socket's `DraftStateSync` envelope, epoch/sequence, connection,
-workspace scope, participants and reservations. It sends only `ClientPresenceUpdate`, read-only
-`ClientReplay`, and transport control frames; current-sequence replay needs no acknowledgement.
-It never creates a draft, claims a reservation, or changes timetable/account data. Missing credentials,
-term context or an existing draft is an explicit `SKIP` with that coverage unrun. Published workspace
-HTTP acceptance remains independent. Response bodies, cookies and identity payloads are never printed.
-The inline Python standard-library client keeps the smoke script self-contained for verified private
-copies. It preserves the intended hostname and TLS SNI while `SMOKE_RESOLVE_IP` selects the connection
-address, using system CA trust or the explicitly supplied synthetic `SMOKE_CA_CERT`.
+For each selected authorized term, academic context mode reads
+`GET /api/academic/timetable?academicTermId=...` and validates an exact term/year singleton or an
+explicit null. It always opens the term `/ws/timetable` channel and checks state, RFC ping/pong and
+clean close. A nonnull singleton supplies `timetableId` to the authorized HTTP workspace and current
+room socket. The probe checks `TimetableStateSync`, epoch/sequence, current parent/context and
+technical revisions, participants and reservations. It sends only `ClientPresenceUpdate`, readonly
+`ClientReplay` and transport control frames; current-sequence replay needs no acknowledgement.
+It creates no resource and claims no reservation. Missing credentials, term context or a current
+singleton reports an explicit `SKIP` for the corresponding unrun coverage. Malformed or foreign
+singleton data fails acceptance. Response bodies, cookies and identity payloads are never printed.
+The inline Python standard-library client remains self-contained for verified private copies,
+preserves Host/TLS SNI with `SMOKE_RESOLVE_IP`, and uses system CA trust or an explicitly supplied
+synthetic `SMOKE_CA_CERT`.
 
 The API-domain cookie is `__Host-schoolorbit_session`; it is opaque and unavailable to frontend JavaScript. Login and authenticated `/api/auth/me` responses expose `X-CSRF-Token`. The smoke script captures that value only in a shell variable, updates it after rotation-capable responses, and sends it on every authenticated `POST`, `PUT`, `PATCH`, or `DELETE`. Never print, export, persist, or enable trace output for the CSRF value. A manual flow should use private temporary files:
 

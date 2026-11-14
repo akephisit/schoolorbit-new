@@ -2009,32 +2009,30 @@ These counts do not authorize guessed data repair or changes to applied migratio
 
 Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql), [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) and [149](../backend-school/migrations/149_academic_receipt_recovery.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits prior binaries against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
 
-[Migration150](../backend-school/migrations/150_assessment_coordinator_delivery_versions.sql) shares
-Delivery's latest published allocation projection with Assessment and exam eligibility. Deploy its
-matching binary through the same maintenance and all-tenant migration gates; the schema fence
-rejects the older today-based binary. Recovery rolls forward. The migration changes read
-projections only: preserve stored coordinators, teacher intervals, allocation graphs and exam
-snapshots, and never edit applied migrations or backfill guessed allocation coverage.
-
-Gradebook, Learner Evaluation and Results teacher responsibility also consume the same published
-allocation IDs, including readiness, locking and retained-confirmation checks. This extension uses
-the existing150 schema and changes no stored interval or official result snapshot. Deploy the
-matching application release through the normal maintenance/acceptance gates; missing allocation
-coverage must be resolved through its ordinary publication workflow, without guessed data repair.
-This extension retains schema150, so that schema fence does not reject every preceding150 binary.
-After activation, recover forward to an ID-provider-compatible release: the preceding Learner
-Evaluation reader can persist an incorrect invalidation when another valid primary has a lower
-assignment ID. Do not restore that reader to recover the new responsibility policy.
+[Migration150](../backend-school/migrations/150_assessment_coordinator_delivery_versions.sql)
+was the historical allocation-projection transition. Its migration assertions remain at that exact
+schema boundary. Current157 retires those Delivery publication tables and projections. Assessment,
+exam eligibility, Gradebook, Learner Evaluation and Results now consume typed current Delivery
+providers in the exact term/year context. Repair responsibility through authorized current teacher
+saves; never recreate a publication source or deploy an old version writer to recover access.
+Saved coordinators, actual scores and roster dates, unrelated official Results history and technical
+schema fences retain their owning safeguards. Deployment and recovery use the normal maintenance,
+all-tenant migration and current157 acceptance gates, with forward recovery to a compatible release.
 
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.
 
 Migration148 preserves existing explicit context links and actual dated facts. Only missing scoped Calendar target years are mapped: a homeroom supplies its authoritative year, otherwise the event's original date must identify exactly one year. Global targets remain legitimately yearless. Zero or multiple candidates, room/year conflicts, unknown date-dependent functions/constraints/indexes/views, excessive calendar materialization, changed retained facts or mismatched transformed intent refuse cleanup atomically. Keep maintenance active, investigate the bounded failure and prepare explicit reviewed data remediation before rerunning; never guess a year, retime an event or delete history to force success.
 
-Attendance owns explicit dated counting decisions after cutover. Migration materializes the old weekday/default/override meaning across the old term range and finite persisted Attendance fact dates into `attendance_days`, retaining original override notes and saved rosters. Future counted dates are explicitly saved in the Attendance calendar; saved weekdays are a preset for explicit range generation. A missing date is uncounted, with explicit session overrides retaining precedence and captures remaining independently available. Behavior's old term/year reset intent becomes explicit inclusive cycle-end dates under its own scheduled policy; the following cycle starts on the next date after existing readiness gates. Empty scheduled lists create no invented resets. Promotion retains its intended placement date; new Admission/Promotion/Delivery commands supply actual placement/offering dates. Timetable/publication/membership intervals and official result snapshot dates remain with their existing owners.
+Attendance owns explicit dated counting decisions after cutover. Migration materializes the old weekday/default/override meaning across the old term range and finite persisted Attendance fact dates into `attendance_days`, retaining original override notes and saved rosters. Future counted dates are explicitly saved in the Attendance calendar; saved weekdays are a preset for explicit range generation. A missing date is uncounted, with explicit session overrides retaining precedence and captures remaining independently available. Behavior's old term/year reset intent becomes explicit inclusive cycle-end dates under its own scheduled policy; the following cycle starts on the next date after existing readiness gates. Empty scheduled lists create no invented resets. Promotion and Admission retain actual placement dates. Current Delivery saves target an explicit term without an offering effective-date stage. Actual membership intervals and official result snapshot dates remain with their existing owners;157 removes the retired operational publication intervals.
 
 Original lifecycle audit payloads, accepted readiness and request checksums remain unchanged. Migration verifies the original ordered request identity before normalizing only the active replay projection. Historical operation days come from each receipt's Bangkok creation day. Promotion's run date is a default for new or pending work; executed items retain the dates of their exact placement receipts, including mixed dates and legitimate decisions with no placement. Approval and execution bind the per-item date.
 
-Curriculum and preparation receipts preserve an accepted explicit offering-date constraint only for new requests that create offerings. Legacy requests predate that input and migrate with a null constraint independently of their created counts, as do new retained-only results; publication can legitimately change an offering's actual date later. The source-confirmed historical draft delete/reapply path could recreate the same offering UUID, so current timestamps do not necessarily prove the original created subset. The cause of the three observed production mismatches remains unknown; a lower timestamp-matched count does not establish that an accepted historical count is wrong. Preparation may also create a separately dated Delivery revision/version. Actual offering/reference dates, links and original creation audits remain intact. Preparation verifies its original normalized module/mapping request and checksum; unrelated malformed, altered or unprovable history still refuses cutover without retiming or rewriting it.
+The historical147–149 receipt transition preserved accepted identities and normalized only its
+verified replay projection. Current157 removes Delivery business versions and edit journals; it
+retains necessary technical request identities/counts without introducing an operational history
+archive. Current curriculum preparation has no offering-date input. Preparation still verifies its
+normalized module/mapping identity and checksum, refuses altered or unprovable receipts, and
+preserves independently owned Catalog/Curriculum provenance and actual roster facts.
 
 Migration 149 owns a finite correction of that transition premise. On an exact verified, locked
 147 cohort, the canonical runner retains ordinary mask-0 receipts. Among violating receipts it

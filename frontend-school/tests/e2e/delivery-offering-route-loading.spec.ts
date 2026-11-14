@@ -250,7 +250,8 @@ test('group selection and Back load only the selected group', async ({ page }) =
 	expect(count(paths.offering)).toBe(1);
 	expect(count(paths.groups)).toBe(1);
 	expect(count(paths.versions)).toBe(0);
-	expect(count(paths.groupB)).toBe(0);
+	expect(count(paths.groupB)).toBe(1);
+ expect(count(paths.groupA)).toBe(2);
 });
 
 test('a late old selected group never replaces the newly selected group', async ({ page }) => {

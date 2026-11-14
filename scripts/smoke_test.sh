@@ -581,12 +581,12 @@ PY
 # Timetable WebSocket read-only smoke start
 # Kept inline: the DNS verification owner hashes/copies this script alone.
 timetable_websocket_smoke() {
-    local name="$1" year_id="$2" term_id="$3" version_id="$4" workspace_body="$5"
+    local name="$1" year_id="$2" term_id="$3" timetable_id="$4" workspace_body="$5"
     if SMOKE_API_URL="$SMOKE_API_URL" SMOKE_ORIGIN="$SMOKE_ORIGIN" \
         SMOKE_SUBDOMAIN="$SMOKE_SUBDOMAIN" SMOKE_TIMEOUT_SECONDS="$SMOKE_TIMEOUT_SECONDS" \
         SMOKE_DIRECT_BACKEND="$SMOKE_DIRECT_BACKEND" SMOKE_RESOLVE_IP="$SMOKE_RESOLVE_IP" \
         SMOKE_CA_CERT="$SMOKE_CA_CERT" SMOKE_RELEASE_PROBE_TOKEN="${SMOKE_RELEASE_PROBE_TOKEN-}" \
-        python3 - "$cookie_jar" "$year_id" "$term_id" "$version_id" "$workspace_body" <<'PY'; then
+        python3 - "$cookie_jar" "$year_id" "$term_id" "$timetable_id" "$workspace_body" <<'PY'; then
 import base64
 import hashlib
 import http.cookiejar
@@ -616,30 +616,32 @@ def canonical_uuid(value):
 def sequence(value):
     require(type(value) is int and 0 <= value <= 2**64 - 1)
 
-def workspace(value, year_id, term_id, version_id):
-    require(isinstance(value, dict) and isinstance(value.get("version"), dict))
-    version = value["version"]
-    require(version.get("id") == version_id and version.get("academicTermId") == term_id)
-    require(version.get("academicYearId") == year_id and version.get("status") == "draft")
+def workspace(value, year_id, term_id, timetable_id):
+    require(isinstance(value, dict) and isinstance(value.get("timetable"), dict))
+    timetable = value["timetable"]
+    require(timetable.get("id") == timetable_id and timetable.get("academicTermId") == term_id)
+    require(timetable.get("academicYearId") == year_id)
+    canonical_uuid(timetable.get("bellScheduleId"))
+    require(type(timetable.get("rowVersion")) is int and timetable["rowVersion"] > 0)
     for key in ("sourceIssues", "bellPeriods", "blocks", "ordinaryDemands", "synchronizedDemands",
                 "learningGroups", "homerooms", "rooms", "staff", "offeringSubjectGroups"):
         require(isinstance(value.get(key), list))
     require(isinstance(value.get("summary"), dict))
-    canonical_uuid(value.get("latestDeliveryVersionId"))
-    count = value.get("totalDraftBlockCount")
-    require("totalDraftBlockCount" in value and (count is None or type(count) is int and count >= 0))
+    require(type(value.get("deliveryRowVersion")) is int and value["deliveryRowVersion"] > 0)
+    count = value.get("totalTimetableBlockCount")
+    require("totalTimetableBlockCount" in value and (count is None or type(count) is int and count >= 0))
 
 def run():
     global phase, http_status
-    cookie_path, year_id, term_id, version_id, workspace_path = sys.argv[1:]
+    cookie_path, year_id, term_id, timetable_id, workspace_path = sys.argv[1:]
     canonical_uuid(year_id)
     canonical_uuid(term_id)
-    if version_id:
-        canonical_uuid(version_id)
+    if timetable_id:
+        canonical_uuid(timetable_id)
         with open(workspace_path, encoding="utf-8") as handle:
             authoritative = json.load(handle)
         require(authoritative.get("success") is True)
-        workspace(authoritative.get("data"), year_id, term_id, version_id)
+        workspace(authoritative.get("data"), year_id, term_id, timetable_id)
     url = urllib.parse.urlsplit(os.environ["SMOKE_API_URL"])
     require(url.scheme in ("http", "https") and url.hostname and not url.username and not url.password)
     require(not url.query and not url.fragment and url.path in ("", "/"))
@@ -655,8 +657,8 @@ def run():
                and (cookie.expires in (None, 0) or not cookie.is_expired())]
     require(len(cookies) == 1)
     query = {"academicTermId": term_id}
-    if version_id:
-        query["timetableVersionId"] = version_id
+    if timetable_id:
+        query["timetableId"] = timetable_id
     request_path = "/ws/timetable?" + urllib.parse.urlencode(query)
     key = base64.b64encode(os.urandom(16)).decode("ascii")
     headers = {
@@ -782,14 +784,14 @@ def run():
 
         phase = "state"
         sync = initial_sync()
-        if version_id:
-            require(sync.get("type") == "DraftStateSync")
+        if timetable_id:
+            require(sync.get("type") == "TimetableStateSync")
             epoch = canonical_uuid(sync.get("epoch"))
             sequence(sync.get("seq"))
             payload = sync.get("payload")
             require(isinstance(payload, dict))
             connection_id = canonical_uuid(payload.get("connectionId"))
-            workspace(payload.get("workspace"), year_id, term_id, version_id)
+            workspace(payload.get("workspace"), year_id, term_id, timetable_id)
             for field in ("users", "reservations"):
                 require(isinstance(payload.get(field), list))
             own_connection = False
@@ -826,13 +828,13 @@ def run():
             require(opcode != 8)
             if opcode == 10 and message == ping:
                 break
-            if opcode == 1 and version_id:
+            if opcode == 1 and timetable_id:
                 require(isinstance(message, dict))
                 require(message.get("epoch") == sync["epoch"])
                 sequence(message.get("seq"))
                 require(message.get("type") in {
-                    "DraftStateSync", "DraftPresenceChanged", "DraftPresenceLeft",
-                    "DraftReservationsChanged", "DraftAvailability", "DraftPatched", "DraftReconcileRequired",
+                    "TimetableStateSync", "TimetablePresenceChanged", "TimetablePresenceLeft",
+                    "TimetableReservationsChanged", "TimetableAvailability", "TimetablePatched", "TimetableReconcileRequired",
                 } and isinstance(message.get("payload"), dict))
         else:
             raise ValueError("Missing realtime pong")
@@ -891,8 +893,7 @@ run_academic_context_smoke() {
     local selected_terms="$tmp_dir/academic-terms"
     local year_id
     local term_id
-    local timetable_version_id
-    local draft_version_id
+    local timetable_id
     local year_index=0
     local term_index=0
 
@@ -992,79 +993,51 @@ PY
         academic_context_get "gradebook-$term_index" "gradebook subjects context $term_index" "/api/academic/gradebook/subjects?academicYearId=$year_id&academicTermId=$term_id"
         academic_context_get "learner-evaluations-$term_index" "learner evaluation subjects context $term_index" "/api/academic/learner-evaluations/subjects?academicYearId=$year_id&academicTermId=$term_id"
         academic_context_get "results-$term_index" "academic result readiness context $term_index" "/api/academic/results/readiness?academicYearId=$year_id&academicTermId=$term_id"
-        academic_context_get "timetable-versions-$term_index" "academic timetable versions context $term_index" "/api/academic/timetable-versions?academicTermId=$term_id"
-        if ! timetable_version_id="$(
-            python3 - "$tmp_dir/academic-timetable-versions-$term_index.body" "$term_id" <<'PY'
-import json
-import sys
-import uuid
-
-body_path, expected_term_id = sys.argv[1:]
-with open(body_path, encoding="utf-8") as handle:
-    payload = json.load(handle)
-
-versions = payload.get("data") if isinstance(payload, dict) else None
-if not isinstance(versions, list):
-    raise SystemExit(1)
-
-for version in versions:
-    if not isinstance(version, dict) or version.get("status") != "published":
-        continue
-    try:
-        version_id = str(uuid.UUID(version.get("id")))
-        academic_term_id = str(uuid.UUID(version.get("academicTermId")))
-    except (AttributeError, TypeError, ValueError):
-        continue
-    if academic_term_id == expected_term_id.lower():
-        print(version_id)
-        break
-PY
-        )"; then
-            fail "academic timetable versions context $term_index expected a valid API payload"
-            timetable_version_id=
-        fi
-        if [[ -n $timetable_version_id ]]; then
-            academic_context_get "timetable-$term_index" "academic timetable context $term_index" "/api/academic/timetable-blocks/workspace?academicYearId=$year_id&academicTermId=$term_id&timetableVersionId=$timetable_version_id"
-        else
-            printf 'SKIP academic timetable context %s: no published timetable version.\n' "$term_index"
-        fi
         timetable_websocket_smoke "academic term WebSocket context $term_index" "$year_id" "$term_id" "" ""
-        if ! draft_version_id="$(
-            python3 - "$tmp_dir/academic-timetable-versions-$term_index.body" "$term_id" <<'PYDRAFT'
+        academic_context_get "timetable-$term_index" "academic current timetable context $term_index" "/api/academic/timetable?academicTermId=$term_id"
+        if ! timetable_id="$(
+            python3 - "$tmp_dir/academic-timetable-$term_index.body" "$year_id" "$term_id" <<'PYCURRENT'
 import json
 import sys
 import uuid
 
-with open(sys.argv[1], encoding="utf-8") as handle:
-    payload = json.load(handle)
-versions = payload.get("data") if isinstance(payload, dict) else None
-if not isinstance(versions, list):
+def canonical_uuid(value):
+    if not isinstance(value, str) or str(uuid.UUID(value)) != value:
+        raise ValueError()
+    return value
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, dict) or payload.get("success") is not True or "data" not in payload:
+        raise ValueError()
+    current = payload["data"]
+    if current is not None:
+        if not isinstance(current, dict):
+            raise ValueError()
+        timetable_id = canonical_uuid(current.get("id"))
+        canonical_uuid(current.get("bellScheduleId"))
+        if current.get("academicYearId") != sys.argv[2] or current.get("academicTermId") != sys.argv[3]:
+            raise ValueError()
+        if type(current.get("rowVersion")) is not int or current["rowVersion"] <= 0:
+            raise ValueError()
+        print(timetable_id)
+except (OSError, ValueError, TypeError, KeyError):
     raise SystemExit(1)
-for version in versions:
-    if not isinstance(version, dict) or version.get("status") != "draft":
-        continue
-    try:
-        version_id = str(uuid.UUID(version.get("id")))
-        term_id = str(uuid.UUID(version.get("academicTermId")))
-    except (AttributeError, TypeError, ValueError):
-        continue
-    if term_id == sys.argv[2]:
-        print(version_id)
-        break
-PYDRAFT
+PYCURRENT
         )"; then
-            fail "academic draft context $term_index expected valid timetable versions"
-        elif [[ -n $draft_version_id ]]; then
-            academic_context_get "draft-$term_index" "academic draft workspace context $term_index" "/api/academic/timetable-blocks/workspace?academicYearId=$year_id&academicTermId=$term_id&timetableVersionId=$draft_version_id"
-            timetable_websocket_smoke "academic draft WebSocket context $term_index" "$year_id" "$term_id" "$draft_version_id" "$tmp_dir/academic-draft-$term_index.body"
+            fail "academic current timetable context $term_index expected an exact singleton or null"
+        elif [[ -n $timetable_id ]]; then
+            academic_context_get "timetable-workspace-$term_index" "academic current timetable workspace context $term_index" "/api/academic/timetable-blocks/workspace?academicYearId=$year_id&academicTermId=$term_id&timetableId=$timetable_id"
+            timetable_websocket_smoke "academic current timetable WebSocket context $term_index" "$year_id" "$term_id" "$timetable_id" "$tmp_dir/academic-timetable-workspace-$term_index.body"
         else
-            printf 'SKIP academic draft WebSocket context %s: no existing draft; draft protocol unrun.\n' "$term_index"
+            printf 'SKIP academic current timetable context %s: no current timetable; current-room protocol unrun.\n' "$term_index"
         fi
         academic_context_get "exams-$term_index" "exam schedules context $term_index" "/api/academic/exam-schedules?academicTermId=$term_id"
         academic_context_get "supervision-$term_index" "supervision observations context $term_index" "/api/supervision/observations?academicYearId=$year_id&academicTermId=$term_id"
     done <"$selected_terms"
     if [[ $term_index -eq 0 ]]; then
-        printf 'SKIP timetable WebSocket acceptance: no authorized academic term; term and draft protocols unrun.\n'
+        printf 'SKIP timetable WebSocket acceptance: no authorized academic term; term and current-room protocols unrun.\n'
     fi
 }
 # Academic Core maintenance read-only smoke end
@@ -1157,7 +1130,7 @@ if [[ -z "$SMOKE_USERNAME" || -z "$SMOKE_PASSWORD" ]]; then
         fail "authenticated checks are required but smoke credentials are missing"
     else
         printf '\nSKIP authenticated checks: set SMOKE_USERNAME and SMOKE_PASSWORD to test login.\n'
-        printf 'SKIP timetable WebSocket acceptance: credentials unavailable; term and draft protocols unrun.\n'
+        printf 'SKIP timetable WebSocket acceptance: credentials unavailable; term and current-room protocols unrun.\n'
     fi
 else
     login_payload="$tmp_dir/login.json"

@@ -461,125 +461,49 @@ test('School deployment remains in maintenance until exact current157 and retain
 	}
 });
 
-test('academic smoke reads the canonical timetable workspace with its selected year term and published version', async () => {
-	const smoke = await readRepo('scripts/smoke_test.sh');
-	const openapi = JSON.parse(await readRepo('contracts/openapi/school-api.json'));
-	const [workspacePath, { get: workspace }] = Object.entries(openapi.paths).find(
-		([, resource]) => resource.get?.operationId === 'getTimetableBlockWorkspace'
-	);
-	const yearId = '00000000-0000-0000-0000-000000000001';
-	const termId = '00000000-0000-0000-0000-000000000002';
-	const otherTermId = '00000000-0000-0000-0000-000000000003';
-	const versionId = '00000000-0000-0000-0000-000000000004';
-	const directory = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-academic-smoke-'));
-	try {
-		await writeFile(
-			path.join(directory, 'context.json'),
-			JSON.stringify({
-				success: true,
-				data: {
-					defaultAcademicYearId: yearId,
-					defaultAcademicTermId: termId,
-					years: [
-						{
-							isVisible: true,
-							id: yearId,
-							year: 2569,
-							name: '2569',
-							status: 'active'
-						}
-					],
-					terms: [termId, otherTermId].map((id, index) => ({
-						isVisible: true,
-						id,
-						academicYearId: yearId,
-						sequence: index + 1,
-						code: String(index + 1),
-						name: `Term ${index + 1}`,
-						termType: 'regular',
-						includedInYearResult: true,
-						blocksYearClosure: true,
-						status: index === 0 ? 'active' : 'planning'
-					}))
-				}
-			})
-		);
-		await writeFile(
-			path.join(directory, 'versions.json'),
-			JSON.stringify({
-				success: true,
-				data: [
-					{
-						id: versionId,
-						academicYearId: yearId,
-						academicTermId: termId,
-						effectiveFrom: '2026-05-01',
-						effectiveUntil: null,
-						status: 'published',
-						displayState: null,
-						sourceVersionId: null,
-						changeSetId: null,
-						bellScheduleId: '00000000-0000-0000-0000-000000000005',
-						rowVersion: 1,
-						createdBy: null,
-						publishedBy: null,
-						publishedAt: '2026-05-01T00:00:00Z',
-						createdAt: '2026-05-01T00:00:00Z',
-						updatedAt: '2026-05-01T00:00:00Z',
-						targets: []
-					}
-				]
-			})
-		);
-		const start = smoke.indexOf('run_academic_context_smoke() {');
-		const end = smoke.indexOf('# Academic Core maintenance read-only smoke end', start);
-		assert.ok(start >= 0 && end > start, 'the runnable academic smoke region must exist');
-		const { stdout } = await execFileAsync('bash', [
-			'-euc',
-			`
-tmp_dir=$1
-timetable_websocket_smoke() { :; }
-academic_context_get() {
-    printf '%s\\t%s\\n' "$1" "$3" >>"$tmp_dir/requests"
-    case "$1" in
-        context) cp "$tmp_dir/context.json" "$tmp_dir/academic-$1.body" ;;
-        timetable-versions-1) cp "$tmp_dir/versions.json" "$tmp_dir/academic-$1.body" ;;
-        timetable-versions-2) printf '%s' '{"success":true,"data":[]}' >"$tmp_dir/academic-$1.body" ;;
-    esac
-}
-pass() { :; }
-fail() { printf '%s\\n' "$1" >&2; exit 1; }
-${smoke.slice(start, end)}
-run_academic_context_smoke
-`,
-			'academic-smoke-test',
-			directory
-		]);
-		const requests = (await readFile(path.join(directory, 'requests'), 'utf8'))
-			.trim()
-			.split('\n')
-			.map((line) => line.split('\t'));
-		const timetableRequests = requests.filter(([key]) => /^timetable-\d+$/.test(key));
-		assert.equal(timetableRequests.length, 1, 'only the context with a published version is read');
-		const url = new URL(timetableRequests[0][1], 'https://school-api.example.test');
-		assert.equal(url.pathname, workspacePath, 'smoke must use the registered workspace operation');
-		assert.deepEqual(Object.fromEntries(url.searchParams), {
-			academicYearId: yearId,
-			academicTermId: termId,
-			timetableId: versionId
-		});
-		for (const parameter of workspace.parameters.filter(
-			(item) => item.in === 'query' && item.required
-		)) {
-			assert.ok(
-				url.searchParams.has(parameter.name),
-				`smoke must supply required query ${parameter.name}`
-			);
-		}
-		assert.match(stdout, /SKIP academic timetable context 2: no published timetable version/);
-	} finally {
-		await rm(directory, { recursive: true, force: true });
-	}
+test('academic smoke reads nullable current timetables and bounds HTTP and native WS to the exact context',async()=>{
+ const smoke=await readRepo('scripts/smoke_test.sh'),openapi=JSON.parse(await readRepo('contracts/openapi/school-api.json'));
+ const year='00000000-0000-0000-0000-000000000001',term='00000000-0000-0000-0000-000000000002',other='00000000-0000-0000-0000-000000000003',id='00000000-0000-0000-0000-000000000004';
+ const current={id,academicYearId:year,academicTermId:term,bellScheduleId:'00000000-0000-0000-0000-000000000005',rowVersion:1,createdAt:'2026-05-01T00:00:00Z',updatedAt:'2026-05-01T00:00:00Z'};
+ const directory=await mkdtemp(path.join(os.tmpdir(),'schoolorbit-current-smoke-'));
+ try{
+  await writeFile(path.join(directory,'context.json'),JSON.stringify({success:true,data:{defaultAcademicYearId:year,defaultAcademicTermId:term,years:[{isVisible:true,id:year,year:2569,name:'2569',status:'active'}],terms:[term,other].map((id,index)=>({isVisible:true,id,academicYearId:year,sequence:index+1,code:String(index+1),name:`Term ${index+1}`,termType:'regular',includedInYearResult:true,blocksYearClosure:true,status:index?'planning':'active'}))}}));
+  await writeFile(path.join(directory,'current.json'),JSON.stringify({success:true,data:current}));
+  await writeFile(path.join(directory,'workspace.json'),JSON.stringify({success:true,data:{timetable:current,deliveryRowVersion:1,totalBlockCount:0}}));
+  const start=smoke.indexOf('run_academic_context_smoke() {'),end=smoke.indexOf('# Academic Core maintenance read-only smoke end',start);assert.ok(start>=0&&end>start);
+  const program=`
+ tmp_dir=$1
+ timetable_websocket_smoke(){ printf 'WS\\t%s\\t%s\\t%s\\t%s\\n' "$2" "$3" "$4" "$5" >>"$tmp_dir/requests"; }
+ academic_context_get(){
+  printf 'GET\\t%s\\t%s\\n' "$1" "$3" >>"$tmp_dir/requests"
+  case "$1" in
+   context) cp "$tmp_dir/context.json" "$tmp_dir/academic-$1.body" ;;
+   timetable-1) cp "$tmp_dir/current.json" "$tmp_dir/academic-$1.body" ;;
+   timetable-2) printf '%s' '{"success":true,"data":null}' >"$tmp_dir/academic-$1.body" ;;
+   timetable-workspace-1) cp "$tmp_dir/workspace.json" "$tmp_dir/academic-$1.body" ;;
+  esac
+ }
+ pass(){ :; }
+ fail(){ printf '%s\\n' "$1" >&2; exit 1; }
+ ${smoke.slice(start,end)}
+ run_academic_context_smoke
+ `;
+  const {stdout}=await execFileAsync('bash',['-euc',program,'current-smoke-test',directory]);
+  const requests=(await readFile(path.join(directory,'requests'),'utf8')).trim().split('\n').map(line=>line.split('\t'));
+  const gets=requests.filter(([kind,key])=>kind==='GET'&&/^timetable-\d+$/.test(key));assert.equal(gets.length,2);
+  for(const[index,[,key,href]]of gets.entries()){const url=new URL(href,'https://school.test');assert.equal(url.pathname,'/api/academic/timetable');assert.deepEqual(Object.fromEntries(url.searchParams),{academicTermId:index?other:term});assert.equal(key,`timetable-${index+1}`);}
+  const workspace=requests.filter(([kind,key])=>kind==='GET'&&key.startsWith('timetable-workspace-'));assert.equal(workspace.length,1);const url=new URL(workspace[0][2],'https://school.test');assert.equal(url.pathname,'/api/academic/timetable-blocks/workspace');assert.deepEqual(Object.fromEntries(url.searchParams),{academicYearId:year,academicTermId:term,timetableId:id});
+  for(const field of openapi.paths[url.pathname].get.parameters.filter(parameter=>parameter.in==='query'&&parameter.required))assert.ok(url.searchParams.has(field.name));
+  const sockets=requests.filter(([kind])=>kind==='WS');assert.deepEqual(sockets, [['WS',year,term,'',''],['WS',year,term,id,path.join(directory,'academic-timetable-workspace-1.body')],['WS',year,other,'','']]);
+  assert.ok(requests.findIndex(([kind,,selected])=>kind==='WS'&&selected===term)<requests.findIndex(([kind,key])=>kind==='GET'&&key==='timetable-1'));
+  assert.match(stdout,/SKIP academic current timetable context 2: no current timetable; current-room protocol unrun\./);
+  assert.doesNotMatch(program,/timetable-versions|timetableVersionId|deliveryVersionId|\/publish|\/clone/);
+  for(const invalid of [[current],{...current,academicTermId:other},{...current,rowVersion:0},{...current,id:'not-a-uuid'}]){
+   await writeFile(path.join(directory,'requests'),'');await writeFile(path.join(directory,'current.json'),JSON.stringify({success:true,data:invalid}));
+   await assert.rejects(execFileAsync('bash',['-euc',program,'invalid-current-smoke',directory]),error=>error.code===1&&error.stderr.includes('expected an exact singleton or null'));
+   assert.doesNotMatch(await readFile(path.join(directory,'requests'),'utf8'),/timetable-workspace-/,'invalid evidence cannot authorize a current-room read');
+  }
+ }finally{await rm(directory,{recursive:true,force:true});}
 });
 
 test('backend-school deployment validates the admin network alias before maintenance activation', async () => {

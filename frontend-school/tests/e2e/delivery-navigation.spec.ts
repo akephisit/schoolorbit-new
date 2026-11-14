@@ -123,7 +123,7 @@ for (const width of [390, 1280]) {
 			animations: 'disabled'
 		});
 		await link.click();
-		await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
+		await expect(page.getByRole('heading',{name:'ภาษาไทยเก่า',level:1,exact:true})).toBeVisible();
 		await expectRequestedContext(page);
 		await expect(page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true })).toHaveCount(0);
 		await page.goBack();
@@ -188,8 +188,8 @@ test('offering filters use the authorized current projection and preserve natura
 	try {
 		await tab.goto(target.href);
 		await expectRequestedContext(tab);
-		await expect(tab.getByTestId('delivery-offering-ready')).toBeVisible();
-		await tab.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
+		await expect(tab.getByRole('heading',{name:'คณิตศาสตร์ต้น',level:1,exact:true})).toBeVisible();
+		await tab.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
 		await expect(
 			tab.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true })
 		).toHaveAttribute('aria-selected', 'true');
@@ -337,7 +337,7 @@ test('touch users can filter offerings and return from detail with their group s
 			animations: 'disabled'
 		});
 		await region.getByRole('link', { name: 'รายละเอียด', exact: true }).tap();
-		await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
+		await expect(page.getByRole('heading',{name:'ภาษาไทยเก่า',level:1,exact:true})).toBeVisible();
 		await expectRequestedContext(page);
 		await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).tap();
 		await expect(group).toHaveText('ภาษาไทย');
@@ -385,7 +385,7 @@ async function expectManagerOrigin(page: Page, view: 'homerooms' | 'offerings', 
 }
 
 test('an existing current activity detail restores its originating room filters without preparing a duplicate',async({page})=>{
- const api=await mockDeliveryNavigation(page,{manager:true});await page.goto(managerOrigin('homerooms'));const room=page.locator('details').filter({has:page.getByRole('heading',{name:'ม.1/2',exact:true})});await expect(room).toHaveAttribute('open','');await room.locator('tr').filter({hasText:'ชุมนุม'}).getByRole('link',{name:'รายละเอียด',exact:true}).click();await expect(page.getByRole('heading',{name:'ชุมนุม',level:1,exact:true})).toBeVisible();await expectRequestedContext(page);await page.getByRole('link',{name:'ย้อนกลับ',exact:true}).click();await expectManagerOrigin(page,'homerooms');expect(api.creations).toEqual([]);expect(api.reads.filter(url=>/delivery-versions|term-change-sets/.test(url.pathname))).toEqual([]);
+ const api=await mockDeliveryNavigation(page,{manager:true});await page.goto(managerOrigin('homerooms'));const room=page.locator('details').filter({has:page.getByRole('heading',{name:'ม.1/2',exact:true})});await expect(room).toHaveAttribute('open','');await room.getByRole('link',{name:'จัดการ ชุมนุม',exact:true}).click();await expect(page.getByRole('heading',{name:'ชุมนุม',level:1,exact:true})).toBeVisible();await expectRequestedContext(page);await page.getByRole('link',{name:'ย้อนกลับ',exact:true}).click();await expectManagerOrigin(page,'homerooms');expect(api.creations).toEqual([]);expect(api.reads.filter(url=>/delivery-versions|term-change-sets/.test(url.pathname))).toEqual([]);
 });
 
 test('creating an activity with groups navigates with the created offering context and restores the originating offering view', async ({

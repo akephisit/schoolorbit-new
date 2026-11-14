@@ -23,6 +23,7 @@ async function drop(page:Page,period=timetableIds.period2){
 test('read-only current Delivery refresh keeps the same table and sends no lifecycle commands',async({page})=>{
  const mock=await installTimetableMock(page,{permissions:['academic_timetable.read.school'],blocks:[makeTimetableBlock(timetableIds.blockA,timetableIds.period1)]});
  await page.goto(url());await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
+ await expect.poll(()=>mock.relay.received.some(({message})=>message.type==='ClientPresenceUpdate')).toBe(true);
  mock.changeDelivery({requiredPeriods:4});
  await expect.poll(mock.workspaceRequestCount).toBe(2);
  await expect(page.locator('header[aria-label="บริบทตารางสอน"]')).toHaveAttribute('data-timetable-id',timetableIds.timetable);

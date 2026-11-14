@@ -75,7 +75,7 @@ test('places exactly one unscheduled period and projects it into both editable v
 
 	await expect(page.getByText('2/3', { exact: true })).toBeVisible();
 	expect(mock.previewRequestCount()).toBe(1);
-	expect(mock.createRequestCount()).toBe(1);
+	await expect.poll(mock.createRequestCount).toBe(1);
 	expect(mock.workspaceRequestCount()).toBe(2);
 	expect(mock.blocks()).toHaveLength(1);
 
@@ -103,7 +103,7 @@ test('hovering multiple cells and cancelling never requests validation or saves 
 	await expect(page.getByLabel('บริบทตารางสอน')).not.toContainText('กำลังบันทึก');
 	await trayCard.dispatchEvent('dragend', { dataTransfer });
 	await expect(page.locator('[data-timetable-placement-preview]')).toHaveCount(0);
-	await expect(page.getByLabel('บริบทตารางสอน')).toContainText('บันทึกอัตโนมัติแล้ว');
+	await expect(page.getByLabel('บริบทตารางสอน')).toContainText('บันทึกแล้ว');
 	await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
 	expect(mock.createRequestCount()).toBe(0);
 	expect(mock.synchronizedCreateRequestCount()).toBe(0);
@@ -475,7 +475,7 @@ test('places immediately and keeps other timetable cards editable while saves ru
 		timeout: 300
 	});
 	await expect(page.getByLabel(/^กำลังบันทึกคาบ /)).toHaveCount(0, { timeout: 4000 });
-	expect(mock.createRequestCount()).toBe(1);
+	await expect.poll(mock.createRequestCount).toBe(1);
 	expect(mock.updateRequestCount()).toBe(1);
 	expect(mock.workspaceRequestCount()).toBe(2);
 });
@@ -710,7 +710,7 @@ test('keeps a quick drop alive while its placement preview is still loading', as
 	await firstPeriod.dispatchEvent('drop', { dataTransfer });
 
 	await expect(page.getByText('บันทึกตำแหน่งคาบแล้ว', { exact: true })).toBeVisible();
-	expect(mock.createRequestCount()).toBe(1);
+	await expect.poll(mock.createRequestCount).toBe(1);
 	expect(mock.blocks()).toHaveLength(1);
 });
 
@@ -891,7 +891,7 @@ test('requires an exact teacher choice when a group has several eligible teacher
 	await page.getByRole('button', { name: 'วางคาบที่นี่' }).first().click();
 	await expect(page.getByText('2/3', { exact: true })).toBeVisible();
 
-	expect(mock.createRequestCount()).toBe(1);
+	await expect.poll(mock.createRequestCount).toBe(1);
 	expect(mock.blocks()[0]?.groups[0]?.instructors.map((teacher) => teacher.teacherId)).toEqual([
 		timetableIds.teacherB
 	]);

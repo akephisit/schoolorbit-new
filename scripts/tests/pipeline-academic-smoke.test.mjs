@@ -24,26 +24,31 @@ set -eu
 
 const smokeSource=readFileSync(new URL('../smoke_test.sh',import.meta.url),'utf8');
 const academicSource=smokeSource.slice(smokeSource.indexOf('run_academic_context_smoke() {'),smokeSource.indexOf('# Academic Core maintenance read-only smoke end'));
-test('academic acceptance preserves published reads, selects only existing in-term drafts and reports missing context honestly',t=>{
- const directory=mkdtempSync(path.join(os.tmpdir(),'academic-ws-selection-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
- const year='00000000-0000-0000-0000-000000000001',term='00000000-0000-0000-0000-000000000002',published='00000000-0000-0000-0000-000000000003',draft='00000000-0000-0000-0000-000000000004',other='00000000-0000-0000-0000-000000000005';
- const version=(id,status,academicTermId=term)=>({id,status,academicTermId});
+test('academic acceptance reads the exact current singleton and reports absent context without creating resources',t=>{
+ const directory=mkdtempSync(path.join(os.tmpdir(),'academic-current-selection-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+ const year='00000000-0000-0000-0000-000000000001',term='00000000-0000-0000-0000-000000000002',current='00000000-0000-0000-0000-000000000003',other='00000000-0000-0000-0000-000000000004';
+ const timetable={id:current,academicYearId:year,academicTermId:term,bellScheduleId:other,rowVersion:1};
  const cases=[
-  {name:'published and draft',versions:[version(published,'published'),version(draft,'draft')],draft:true,published:true},
-  {name:'draft only',versions:[version(draft,'draft')],draft:true,published:false},
-  {name:'no draft',versions:[version(published,'published')],draft:false,published:true},
-  {name:'foreign and invalid drafts',versions:[version(draft,'draft',other),version('invalid','draft')],draft:false,published:false},
-  {name:'no context',versions:[],noContext:true,draft:false,published:false},
+  {name:'current singleton',payload:{success:true,data:timetable},current:true},
+  {name:'no current timetable',payload:{success:true,data:null}},
+  {name:'foreign term',payload:{success:true,data:{...timetable,academicTermId:other}},invalid:true},
+  {name:'foreign year',payload:{success:true,data:{...timetable,academicYearId:other}},invalid:true},
+  {name:'malformed identity',payload:{success:true,data:{...timetable,id:'invalid'}},invalid:true},
+  {name:'retired list shape',payload:{success:true,data:[timetable]},invalid:true},
+  {name:'missing data',payload:{success:true},invalid:true},
+  {name:'failed response',payload:{success:false,data:timetable},invalid:true},
+  {name:'invalid technical revision',payload:{success:true,data:{...timetable,rowVersion:true}},invalid:true},
+  {name:'no academic context',payload:{success:true,data:null},noContext:true},
  ];
  for(const fixture of cases){
   writeFileSync(path.join(directory,'context.json'),JSON.stringify({success:true,data:{defaultAcademicYearId:year,defaultAcademicTermId:term,years:fixture.noContext?[]:[{id:year}],terms:fixture.noContext?[]:[{id:term,academicYearId:year}]}}));
-  writeFileSync(path.join(directory,'versions.json'),JSON.stringify({success:true,data:fixture.versions}));
+  writeFileSync(path.join(directory,'timetable.json'),JSON.stringify(fixture.payload));
   writeFileSync(path.join(directory,'requests'),'');writeFileSync(path.join(directory,'sockets'),'');
   const result=spawnSync('bash',['-euc',`
 tmp_dir=$1
 academic_context_get() {
  printf '%s\\t%s\\n' "$1" "$3" >>"$tmp_dir/requests"
- case "$1" in context) cp "$tmp_dir/context.json" "$tmp_dir/academic-context.body";; timetable-versions-*) cp "$tmp_dir/versions.json" "$tmp_dir/academic-$1.body";; esac
+ case "$1" in context) cp "$tmp_dir/context.json" "$tmp_dir/academic-context.body";; timetable-1) cp "$tmp_dir/timetable.json" "$tmp_dir/academic-$1.body";; esac
 }
 timetable_websocket_smoke() { printf '%s\\t%s\\t%s\\t%s\\n' "$2" "$3" "$4" "$5" >>"$tmp_dir/sockets"; }
 pass() { :; }
@@ -51,15 +56,15 @@ fail() { printf '%s\\n' "$1" >&2; exit 1; }
 ${academicSource}
 run_academic_context_smoke
 `,'academic-selection',directory],{encoding:'utf8'});
-  assert.equal(result.status,0,fixture.name+result.stderr);
+  assert.equal(result.status,fixture.invalid?1:0,fixture.name+result.stderr);
   const requests=readFileSync(path.join(directory,'requests'),'utf8');
   const sockets=readFileSync(path.join(directory,'sockets'),'utf8').split('\n').filter(Boolean);
-  assert.equal(requests.includes(`timetableVersionId=${published}`),fixture.published,fixture.name);
-  assert.equal(requests.includes(`timetableVersionId=${draft}`),fixture.draft,fixture.name);
-  assert.equal(sockets.length,fixture.noContext?0:fixture.draft?2:1,fixture.name);
-  if(!fixture.noContext)assert.ok(sockets[0].startsWith(`${year}\t${term}\t`));
-  if(fixture.draft)assert.ok(sockets[1].startsWith(`${year}\t${term}\t${draft}\t`));
-  else assert.match(result.stdout,/SKIP .*protocol.*unrun/);
-  assert.doesNotMatch(requests,/POST|PUT|PATCH|DELETE/);
+  assert.equal(requests.includes(`/api/academic/timetable?academicTermId=${term}`),!fixture.noContext,fixture.name);
+  assert.equal(requests.includes(`timetableId=${current}`),Boolean(fixture.current),fixture.name);
+  assert.equal(sockets.length,fixture.noContext?0:fixture.current?2:1,fixture.name);
+  if(!fixture.noContext)assert.ok(sockets[0].startsWith(`${year}\t${term}\t\t`),fixture.name);
+  if(fixture.current)assert.ok(sockets[1].startsWith(`${year}\t${term}\t${current}\t${directory}/academic-timetable-workspace-1.body`),fixture.name);
+  else if(!fixture.invalid)assert.match(result.stdout,/SKIP .*protocol.*unrun/,fixture.name);
+  assert.doesNotMatch(requests,/POST|PUT|PATCH|DELETE|timetable-versions|timetableVersionId|\/clone|\/publish/);
  }
 });
