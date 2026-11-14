@@ -92,7 +92,7 @@ async fn main() -> SeedResult<()> {
 
     if config.run_migrations {
         println!("Running tenant migrations...");
-        school_migrations::run_tenant_migrations(&pool).await?;
+        school_migrations::run_fresh_tenant_migrations(&pool).await?;
     }
 
     let summary = seed_database(&pool, &config).await?;
@@ -1051,7 +1051,7 @@ mod tests {
         cutover_test_support::apply_phase_b_runtime_migrations(&pool)
             .await
             .expect("apply academic cutover migrations");
-        school_migrations::run_tenant_migrations(&pool)
+        school_migrations::run_fresh_tenant_migrations(&pool)
             .await
             .expect("apply remaining active migrations");
 

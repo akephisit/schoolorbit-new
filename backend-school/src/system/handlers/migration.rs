@@ -576,7 +576,12 @@ async fn migrate_single_school(
 
     let migration = async {
         let owner_pool = school_tenancy::connect_privileged_pool(db_url, 1).await?;
-        let result = school_migrations::run_tenant_migrations(&owner_pool).await;
+        let result = crate::operations::tenant_rollout::migrate_operational_school(
+            &owner_pool,
+            &state.admin_client,
+            subdomain,
+        )
+        .await;
         // Migrations/permission sync may have committed even if a later grant failed.
         // Invalidate before drainage or any other fallible post-migration work.
         state.invalidate_permission_tenant(subdomain);

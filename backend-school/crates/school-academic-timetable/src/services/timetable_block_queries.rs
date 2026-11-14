@@ -294,7 +294,9 @@ pub(crate) async fn get_canonical_workspace(
                             .get(&teacher.teacher_id)
                             .cloned()
                             .ok_or_else(|| {
-                                AppError::Conflict("ไม่พบข้อมูลบุคลากรของครูผู้สอนในรุ่นเปิดสอน".into())
+                                AppError::Conflict(
+                                    "ไม่พบข้อมูลบุคลากรของครูผู้สอนในข้อมูลเปิดสอนปัจจุบัน".into(),
+                                )
                             })?;
                         Ok(TimetableBlockInstructor {
                             teacher_id: teacher.teacher_id,

@@ -254,7 +254,8 @@ test('standalone smoke fails closed for invalid upgrades, scope, frames, private
  delete legacyCount.totalBlockCount;
  const wrongContract = await runProbe(directory, `http://localhost:${port}`, { httpWorkspace: legacyCount });
  assert.equal(wrongContract.status, 1);
- assert.match(wrongContract.stdout, /^FAIL fixture input/);
+ assert.match(wrongContract.stdout, /^FAIL fixture handshake/);
+ assert.equal(wrongContract.stderr, 'WebSocket acceptance failed phase=input\n');
  assert.equal(observations.requests.length, 1, 'a fabricated legacy count field cannot reach the real socket');
 });
 

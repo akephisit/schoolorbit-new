@@ -15,26 +15,24 @@ test('default-route seeds belong only to their accepted group even when its revi
 		groupRowVersion: 9
 	});
 	const memberships = new Map<string, DatedRosterMembership[]>(
-		fixture
-			.groups()
-			.map((group, index) => [
-				group.id,
-				[
-					{
-						id: `b0000000-0000-4000-8000-00000000000${index + 1}`,
-						learningGroupId: group.id,
-						studentAcademicYearId: `b0000000-0000-4000-8000-00000000001${index + 1}`,
-						studentId: `b0000000-0000-4000-8000-00000000002${index + 1}`,
-						displayName: index ? 'นักเรียนกลุ่ม ข' : 'นักเรียนกลุ่ม ก',
-						studentCode: index ? '002' : '001',
-						membershipStatus: 'active',
-						rosterSource: 'manual',
-						joinedAt: '2026-10-01',
-						leftAt: null,
-						rowVersion: 1
-					}
-				]
-			])
+		fixture.groups().map((group, index) => [
+			group.id,
+			[
+				{
+					id: `b0000000-0000-4000-8000-00000000000${index + 1}`,
+					learningGroupId: group.id,
+					studentAcademicYearId: `b0000000-0000-4000-8000-00000000001${index + 1}`,
+					studentId: `b0000000-0000-4000-8000-00000000002${index + 1}`,
+					displayName: index ? 'นักเรียนกลุ่ม ข' : 'นักเรียนกลุ่ม ก',
+					studentCode: index ? '002' : '001',
+					membershipStatus: 'active',
+					rosterSource: 'manual',
+					joinedAt: '2026-10-01',
+					leftAt: null,
+					rowVersion: 1
+				}
+			]
+		])
 	);
 	const reads: string[] = [];
 	await page.route('**/api/academic/learning-groups/*/memberships', (route) => {

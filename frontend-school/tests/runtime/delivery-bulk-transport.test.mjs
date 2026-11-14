@@ -16,11 +16,55 @@ const compiled = ts.transpileModule(source, {
 
 function transportHarness() {
 	const calls = [];
+	const impact = Object.fromEntries(
+		Object.keys(contract.components.schemas.OfferingDeletionImpact.properties).map((key) => [
+			key,
+			0
+		])
+	);
 	const results = {
-		previewBulkLearningGroupSetup: { targets: [], changedCount: 1 },
-		applyBulkLearningGroupSetup: { groups: [] },
-		removeDeliveryDraftOffering: { id: 'change-set', rowVersion: 8 },
-		removeDeliveryDraftGroup: { id: 'change-set', rowVersion: 9 }
+		previewBulkLearningGroupSetup: {
+			targets: [],
+			changedCount: 0,
+			blockedCount: 0,
+			skippedCount: 0,
+			deliveryRowVersion: 1
+		},
+		applyBulkLearningGroupSetup: { groups: [], rosterTracking: [], deliveryRowVersion: 2 },
+		previewLearningOfferingDeletion: {
+			academicYearId: 'year-id',
+			academicTermId: 'term-id',
+			learningOfferingId: 'target-offering',
+			learningGroupId: null,
+			rowVersion: 7,
+			sourceDigest: 'a'.repeat(64),
+			impact: { ...impact }
+		},
+		previewLearningGroupDeletion: {
+			academicYearId: 'year-id',
+			academicTermId: 'term-id',
+			learningOfferingId: 'target-offering',
+			learningGroupId: 'target-group',
+			rowVersion: 8,
+			sourceDigest: 'b'.repeat(64),
+			impact: { ...impact, learningGroups: 1 }
+		},
+		deleteLearningOffering: {
+			academicYearId: 'year-id',
+			academicTermId: 'term-id',
+			learningOfferingId: 'target-offering',
+			learningGroupId: null,
+			deleted: true,
+			deliveryRowVersion: 9
+		},
+		deleteLearningGroup: {
+			academicYearId: 'year-id',
+			academicTermId: 'term-id',
+			learningOfferingId: 'target-offering',
+			learningGroupId: 'target-group',
+			deleted: true,
+			deliveryRowVersion: 10
+		}
 	};
 	class ApiClientError extends Error {
 		constructor(message, status) {
@@ -29,13 +73,26 @@ function transportHarness() {
 		}
 	}
 	const send = async (method, path, body, options) => {
-		calls.push({ method, path, body, options });
-		const resourcePath = path
-			.replace('/offering-id/', '/{id}/')
-			.replace('/change-set-id/', '/{id}/')
-			.replace('/offerings/target-offering', '/offerings/{offeringId}')
-			.replace('/groups/target-group', '/groups/{groupId}');
+		const url = new URL(path, 'https://transport.invalid');
+		const resourcePath = url.pathname.replace(
+			/\/(offering-id|target-offering|target-group)(?=\/|$)/g,
+			'/{id}'
+		);
 		const operation = contract.paths[resourcePath]?.[method.toLowerCase()];
+		calls.push({
+			method,
+			path,
+			body,
+			options,
+			resourcePath,
+			query: options?.query,
+			operationId: operation?.operationId
+		});
+		assert.equal(
+			url.search,
+			'',
+			'query context belongs to API options separately from the registered path'
+		);
 		return operation
 			? { success: true, status: 200, data: results[operation.operationId] }
 			: { success: false, status: 405, error: `Method not registered: ${method} ${resourcePath}` };
@@ -46,6 +103,7 @@ function transportHarness() {
 		return {
 			ApiClientError,
 			apiClient: {
+				get: (path, options) => send('GET', path, undefined, options),
 				post: (...args) => send('POST', ...args),
 				put: (...args) => send('PUT', ...args),
 				deleteWithBody: (...args) => send('DELETE', ...args)
@@ -63,8 +121,7 @@ function transportHarness() {
 test('bulk preview and apply wrappers use the separately registered OpenAPI operations', async () => {
 	const { api, calls, results } = transportHarness();
 	const request = {
-		deliveryVersionId: 'version',
-		deliveryVersionRowVersion: 1,
+		deliveryRowVersion: 1,
 		groups: [{ learningGroupId: 'group', rowVersion: 1 }],
 		primaryTeacher: { teacherId: 'teacher', replaceExistingPrimary: false }
 	};
@@ -85,6 +142,21 @@ test('bulk preview and apply wrappers use the separately registered OpenAPI oper
 		]
 	);
 	assert.equal(calls[0].body, request);
+	assert.equal(calls[1].body, request);
+	assert.deepEqual(request, {
+		deliveryRowVersion: 1,
+		groups: [{ learningGroupId: 'group', rowVersion: 1 }],
+		primaryTeacher: { teacherId: 'teacher', replaceExistingPrimary: false }
+	});
+	assert.deepEqual(
+		calls.map((call) => call.operationId),
+		['previewBulkLearningGroupSetup', 'applyBulkLearningGroupSetup']
+	);
+	assert.ok(
+		Object.keys(request).every((key) =>
+			Object.hasOwn(contract.components.schemas.BulkGroupSetupRequest.properties, key)
+		)
+	);
 	assert.equal(calls[0].options, options);
 });
 
@@ -95,22 +167,65 @@ test('unregistered POST to the bulk apply path is refused instead of serving a p
 	assert.equal(response.success, false);
 });
 
-test('draft resource removal uses version-scoped generated DELETE operations and exact revision bodies', async () => {
+test('current resource previews and deletion use registered operations and exact accepted context, revisions and digests', async () => {
 	const { api, calls, results } = transportHarness();
-	const body = { changeSetRowVersion: 7, targetDeliveryVersionRowVersion: 4 };
+	const context = { academicYearId: 'year-id', academicTermId: 'term-id' };
+	const options = { signal: new AbortController().signal };
+	const offering = await api.previewOfferingDeletion('target-offering', context, options);
+	const group = await api.previewGroupDeletion('target-group', context, options);
+	assert.equal(offering, results.previewLearningOfferingDeletion);
+	assert.equal(group, results.previewLearningGroupDeletion);
+	const offeringBody = {
+		...context,
+		rowVersion: offering.rowVersion,
+		sourceDigest: offering.sourceDigest
+	};
+	const groupBody = { ...context, rowVersion: group.rowVersion, sourceDigest: group.sourceDigest };
 	assert.equal(
-		await api.removeDeliveryDraftOffering('change-set-id', 'target-offering', body),
-		results.removeDeliveryDraftOffering
+		await api.deleteLearningOffering('target-offering', offeringBody),
+		results.deleteLearningOffering
 	);
 	assert.equal(
-		await api.removeDeliveryDraftGroup('change-set-id', 'target-group', body),
-		results.removeDeliveryDraftGroup
+		await api.deleteLearningGroup('target-group', groupBody),
+		results.deleteLearningGroup
 	);
 	assert.deepEqual(
-		calls.map(({ method, path, body: payload }) => [method, path, payload]),
+		calls.map(({ method, path, operationId }) => [method, path, operationId]),
 		[
-			['DELETE', '/api/academic/term-change-sets/change-set-id/offerings/target-offering', body],
-			['DELETE', '/api/academic/term-change-sets/change-set-id/groups/target-group', body]
+			[
+				'GET',
+				'/api/academic/offerings/target-offering/deletion-preview',
+				'previewLearningOfferingDeletion'
+			],
+			[
+				'GET',
+				'/api/academic/learning-groups/target-group/deletion-preview',
+				'previewLearningGroupDeletion'
+			],
+			['DELETE', '/api/academic/offerings/target-offering', 'deleteLearningOffering'],
+			['DELETE', '/api/academic/learning-groups/target-group', 'deleteLearningGroup']
 		]
 	);
+	for (const call of calls.slice(0, 2)) {
+		assert.equal(call.body, undefined);
+		assert.equal(call.query, context);
+		assert.equal(call.options.signal, options.signal);
+		assert.deepEqual(
+			contract.paths[call.resourcePath].get.parameters
+				.filter((parameter) => parameter.in === 'query')
+				.map((parameter) => parameter.name)
+				.sort(),
+			Object.keys(context).sort()
+		);
+	}
+	assert.equal(calls[2].body, offeringBody);
+	assert.equal(calls[3].body, groupBody);
+	assert.deepEqual(offeringBody, { ...context, rowVersion: 7, sourceDigest: 'a'.repeat(64) });
+	assert.deepEqual(groupBody, { ...context, rowVersion: 8, sourceDigest: 'b'.repeat(64) });
+	for (const body of [offeringBody, groupBody]) {
+		assert.deepEqual(
+			Object.keys(body).sort(),
+			[...contract.components.schemas.DeleteDeliveryResourceRequest.required].sort()
+		);
+	}
 });

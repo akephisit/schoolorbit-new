@@ -214,7 +214,7 @@ async fn sync_groups_in_tx(
                 "WAITING_FOR_DATA",
                 None,
                 Some("TIMETABLE_SYNC_MISSING_INSTRUCTOR"),
-                Some("กลุ่มกิจกรรมยังไม่มีครูที่มีผลในวันที่รุ่นตารางเริ่มใช้"),
+                Some("กลุ่มกิจกรรมยังไม่มีครูผู้สอนที่ใช้งานอยู่"),
                 actor_id,
             )
             .await?;

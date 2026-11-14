@@ -352,19 +352,25 @@ test('accepted lifecycle HTTP scope loss repairs the owner URL before regrant an
 	const restricted = structuredClone(complete);
 	restricted.staff = restricted.staff.filter((row) => row.id !== timetableIds.teacherB);
 	// A scoped HTTP projection is not a canonical mutation or a technical journal entry.
-    let restrictedRead=true,scopedReads=0;
-    await page.route('**/api/academic/timetable-blocks/workspace?*',route=>{scopedReads++;return route.fulfill({json:{success:true,data:restrictedRead?restricted:complete}});});
+	let restrictedRead = true,
+		scopedReads = 0;
+	await page.route('**/api/academic/timetable-blocks/workspace?*', (route) => {
+		scopedReads++;
+		return route.fulfill({ json: { success: true, data: restrictedRead ? restricted : complete } });
+	});
 	await page.getByRole('button', { name: 'เสร็จสิ้น', exact: true }).click();
 	await expect(selector).toHaveText('ครูคณิตศาสตร์ A');
 	await expect(
-		page.locator('header[aria-label="บริบทตารางสอน"] [data-slot="badge"]').filter({hasText:/^โหมดดู$/})
+		page
+			.locator('header[aria-label="บริบทตารางสอน"] [data-slot="badge"]')
+			.filter({ hasText: /^โหมดดู$/ })
 	).toBeVisible();
 	expect(workspaceFrames).toBe(baselineFrames);
 	await expect(page).toHaveURL(new RegExp(`view=teacher&ownerId=${timetableIds.teacherA}`));
-	expect(mock.workspaceRequestCount()+scopedReads).toBe(readsAfterEdit+1);
-	restrictedRead=false;
+	expect(mock.workspaceRequestCount() + scopedReads).toBe(readsAfterEdit + 1);
+	restrictedRead = false;
 	await revalidatePage(page);
-	await expect.poll(()=>mock.workspaceRequestCount()+scopedReads).toBe(readsAfterEdit+2);
+	await expect.poll(() => mock.workspaceRequestCount() + scopedReads).toBe(readsAfterEdit + 2);
 	await expect(selector).toHaveText('ครูคณิตศาสตร์ A');
 	await expect(page).toHaveURL(new RegExp(`view=teacher&ownerId=${timetableIds.teacherA}`));
 	await selector.click();

@@ -302,7 +302,9 @@ async fn create_ordinary_block_in_permit(
                 .find(|group| group.id == request.learning_group_id)
                 .map(|group| (offering, group))
         })
-        .ok_or_else(|| AppError::ValidationError("กลุ่มเรียนไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?;
+        .ok_or_else(|| {
+            AppError::ValidationError("กลุ่มเรียนไม่อยู่ในข้อมูลเปิดสอนปัจจุบันของภาคเรียน".into())
+        })?;
     if offering.weekly_period_target == 0 {
         return Err(AppError::ValidationError(
             "รายการเปิดสอนนี้ตั้งเป็น 0 คาบต่อสัปดาห์ จึงไม่ต้องจัดคาบแยกในตารางสอน".into(),
@@ -455,7 +457,7 @@ async fn create_synchronized_block_in_permit(
         .offerings
         .iter()
         .find(|offering| offering.id == request.learning_offering_id)
-        .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่อยู่ในรุ่นที่ตารางอ้างอิง".into()))?;
+        .ok_or_else(|| AppError::ValidationError("รายการเปิดสอนไม่อยู่ในข้อมูลปัจจุบันของภาคเรียน".into()))?;
     if !matches!(&offering.catalog,school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity)
         if activity.scheduling_mode==school_academic_delivery::models::ActivitySchedulingMode::Synchronized)
     {

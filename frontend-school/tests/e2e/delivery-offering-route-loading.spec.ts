@@ -922,7 +922,9 @@ for (const width of [1280, 390]) {
 			await expect(
 				page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/2', exact: true })
 			).toBeVisible();
-			const editor = page.locator('section').filter({ has: page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/2', exact: true }) });
+			const editor = page
+				.locator('section')
+				.filter({ has: page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/2', exact: true }) });
 			await expect(editor.getByText('ครูหลักเดิม', { exact: true })).toBeVisible();
 			await expect(editor.getByText('ครูร่วมเดิม', { exact: true })).toBeVisible();
 			await expect(

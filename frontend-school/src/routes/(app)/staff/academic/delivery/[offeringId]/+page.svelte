@@ -206,15 +206,18 @@
 		routeEpochs.set(promise, epoch);
 		return epoch;
 	}
-	function admission(groupId?: string) {
+	function readAdmission() {
 		const id = activeOfferingId,
 			epoch = authStore.sessionEpoch;
 		return () =>
 			!disposed &&
 			activeOfferingId === id &&
-			ownerContextReady &&
-			authStore.sessionEpoch === epoch &&
-			(!groupId || selectedGroup?.id === groupId);
+			data.offeringId === id &&
+			authStore.sessionEpoch === epoch;
+	}
+	function admission(groupId?: string) {
+		const current = readAdmission();
+		return () => current() && ownerContextReady && (!groupId || selectedGroup?.id === groupId);
 	}
 	function acceptOffering(value: LearningOffering) {
 		if (value.id !== activeOfferingId || (offering && offering.rowVersion > value.rowVersion))
@@ -240,7 +243,7 @@
 			selectedGroup = value;
 	}
 	async function loadOffering() {
-		const current = admission(),
+		const current = readAdmission(),
 			ticket = offeringRequest.begin();
 		offeringRevision++;
 		offeringLoading = true;
@@ -268,28 +271,67 @@
 	async function loadGroups(
 		signal?: AbortSignal
 	): Promise<RouteLoadResult<LearningGroup[]> | null> {
-		const current = admission(),
-			ticket = groupsRequest.begin();
-		groupsRevision++;
+		const current = readAdmission(),
+			ticket = groupsRequest.begin(),
+			selectedReadRevision = groupRevision,
+			readRevision = ++groupsRevision;
 		groupsLoading = true;
 		groupsError = '';
 		try {
 			const loaded = await listLearningGroups(activeOfferingId, {
 				signal: signal ? AbortSignal.any([signal, ticket.signal]) : ticket.signal
 			});
-			if (!current() || !groupsRequest.isCurrent(ticket.revision)) return null;
-			groups = loaded;
-			if (selectedGroup && !groups.some((g) => g.id === selectedGroup?.id)) {
-				selectedGroup = null;
-				editingGroup = false;
-				editorSession++;
-				editorBusy = false;
-				preview = null;
-				tracking = null;
-			} else if (selectedGroup) acceptGroup(groups.find((g) => g.id === selectedGroup?.id)!);
-			return { ok: true, data: loaded, error: null };
+			if (
+				!current() ||
+				!groupsRequest.isCurrent(ticket.revision) ||
+				groupsRevision !== readRevision
+			)
+				return null;
+			if (loaded.some((group) => group.learningOfferingId !== activeOfferingId))
+				throw new Error('กลุ่มเรียนไม่อยู่ในรายการเปิดสอนนี้');
+			const observed = Object.fromEntries(groups.map((group) => [group.id, group]));
+			if (selectedGroup) observed[selectedGroup.id] = selectedGroup;
+			groups = loaded.map((group) => {
+				const prior = observed[group.id];
+				return prior && prior.rowVersion > group.rowVersion ? prior : group;
+			});
+			if (groupRevision === selectedReadRevision) {
+				const url = page.shallow?.url ?? page.url;
+				const requested =
+					pendingGroupId ||
+					url.searchParams.get('groupId') ||
+					data.requestedGroupId ||
+					selectedGroup?.id;
+				const selected = requested
+					? (groups.find((group) => group.id === requested) ?? null)
+					: (groups[0] ?? null);
+				const establishing = selectedGroup?.id !== selected?.id;
+				groupRequest.abort();
+				groupRevision++;
+				pendingGroupId = '';
+				groupLoading = false;
+				groupError = requested && !selected ? 'ไม่พบกลุ่มเรียนที่เลือกในรายการเปิดสอนนี้' : '';
+				if (establishing) {
+					initialGroupSeed = null;
+					editingGroup = false;
+					editorSession++;
+					editorBusy = false;
+					preview = null;
+					tracking = null;
+				}
+				selectedGroup = selected;
+			} else if (selectedGroup) {
+				const selected = groups.find((group) => group.id === selectedGroup?.id);
+				if (selected) acceptGroup(selected);
+			}
+			return { ok: true, data: groups, error: null };
 		} catch (error) {
-			if (!current() || !groupsRequest.isCurrent(ticket.revision) || isAbortError(error))
+			if (
+				!current() ||
+				!groupsRequest.isCurrent(ticket.revision) ||
+				groupsRevision !== readRevision ||
+				isAbortError(error)
+			)
 				return null;
 			groupsError = error instanceof Error ? error.message : 'โหลดกลุ่มไม่สำเร็จ';
 			return { ok: false, data: null, error: groupsError };
@@ -298,7 +340,7 @@
 		}
 	}
 	async function selectGroupId(id: string, navigate = true) {
-		const current = admission(),
+		const current = readAdmission(),
 			ticket = groupRequest.begin();
 		groupRevision++;
 		initialGroupSeed = null;
@@ -319,8 +361,8 @@
 		try {
 			const loaded = await getLearningGroup(id, { signal: ticket.signal });
 			if (current() && groupRequest.isCurrent(ticket.revision) && pendingGroupId === id) {
-				if (loaded.learningOfferingId !== activeOfferingId)
-					throw new Error('กลุ่มเรียนไม่อยู่ในรายการเปิดสอนนี้');
+				if (loaded.id !== id || loaded.learningOfferingId !== activeOfferingId)
+					throw new Error('กลุ่มเรียนไม่ตรงกับรายการที่ขอ');
 				selectedGroup = loaded;
 				acceptGroup(loaded);
 			}
@@ -372,6 +414,7 @@
 		if (options) return options;
 		if (!offering || !canManage) return null;
 		const current = admission(),
+			owned = readAdmission(),
 			ticket = optionsRequest.begin();
 		optionsLoading = true;
 		optionsError = '';
@@ -379,24 +422,29 @@
 			const loaded = await getLearningDeliveryManagementOptions(offering.academicTermId, {
 				signal: ticket.signal
 			});
-			if (current() && optionsRequest.isCurrent(ticket.revision)) {
+			if (current() && canManage && optionsRequest.isCurrent(ticket.revision)) {
 				options = loaded;
 				return loaded;
 			}
 			return null;
 		} catch (error) {
-			if (current() && optionsRequest.isCurrent(ticket.revision) && !isAbortError(error))
+			if (
+				current() &&
+				canManage &&
+				optionsRequest.isCurrent(ticket.revision) &&
+				!isAbortError(error)
+			)
 				optionsError = error instanceof Error ? error.message : 'โหลดตัวเลือกไม่สำเร็จ';
 			return null;
 		} finally {
-			if (current() && optionsRequest.isCurrent(ticket.revision)) optionsLoading = false;
+			if (owned() && optionsRequest.isCurrent(ticket.revision)) optionsLoading = false;
 		}
 	}
 	async function createGroup(body: CreateLearningGroupRequest) {
 		if (!canManage) return;
 		const current = admission();
 		const created = await createLearningGroup(activeOfferingId, body);
-		if (current()) {
+		if (current() && canManage) {
 			groupsRevision++;
 			acceptGroup(created);
 			await selectGroup(created);
@@ -437,19 +485,21 @@
 		return value;
 	}
 	async function refreshRoster() {
-		if (!selectedGroup) return;
+		if (!selectedGroup || !canManage) return;
 		const id = selectedGroup.id,
 			current = admission(id),
+			owned = readAdmission(),
 			ticket = rosterRequest.begin();
 		rosterLoading = true;
 		try {
 			const result = await previewLearningGroupRoster(id);
-			if (current() && rosterRequest.isCurrent(ticket.revision)) {
+			if (current() && canManage && rosterRequest.isCurrent(ticket.revision)) {
 				preview = result;
 				previewStale = false;
 			}
 		} finally {
-			if (current() && rosterRequest.isCurrent(ticket.revision)) rosterLoading = false;
+			if (owned() && selectedGroup?.id === id && rosterRequest.isCurrent(ticket.revision))
+				rosterLoading = false;
 		}
 	}
 	async function applyRoster(sourceHash: string) {
@@ -461,7 +511,7 @@
 			sourceHash,
 			overrides: []
 		});
-		if (current()) {
+		if (current() && canManage) {
 			groupRevision++;
 			acceptGroup(value);
 			preview = null;
@@ -483,6 +533,7 @@
 		)
 			return;
 		const current = admission(),
+			owned = readAdmission(),
 			id = offering.id;
 		weeklySaving = true;
 		weeklyError = '';
@@ -491,16 +542,16 @@
 				rowVersion: offering.rowVersion,
 				weeklyPeriodTarget
 			});
-			if (current()) {
+			if (current() && canManage) {
 				offeringRevision++;
 				acceptOffering(value);
 				toast.success('บันทึกจำนวนคาบแล้ว');
 			}
 		} catch (error) {
-			if (current())
+			if (current() && canManage)
 				weeklyError = error instanceof Error ? error.message : 'บันทึกจำนวนคาบไม่สำเร็จ';
 		} finally {
-			if (current()) weeklySaving = false;
+			if (owned()) weeklySaving = false;
 		}
 	}
 	function trackingUpdated(id: string, config: LearningGroupRosterTracking) {
@@ -711,6 +762,7 @@
 				academicYearId={offering.academicYearId}
 				academicTermId={offering.academicTermId}
 				offeringId={offering.id}
+				offeringName={offering.nameSnapshot}
 				label={offering.nameSnapshot}
 				canManage={canDelete}
 				onDeleted={() => goto(backHref)}
@@ -830,6 +882,7 @@
 							academicYearId={offering.academicYearId}
 							academicTermId={offering.academicTermId}
 							offeringId={offering.id}
+							offeringName={offering.nameSnapshot}
 							groupId={selectedGroup.id}
 							label={selectedGroup.name}
 							canManage={canDelete}

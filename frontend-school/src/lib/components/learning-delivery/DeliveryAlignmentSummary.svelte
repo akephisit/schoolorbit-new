@@ -135,11 +135,11 @@
 				<Button size="sm" variant="outline" onclick={onRetry}>ลองโหลดผลเทียบอีกครั้ง</Button>
 			</div>
 		{:else}<p class="text-sm text-muted-foreground">
-				ยังไม่มีข้อมูลสำหรับเทียบหลักสูตรของรุ่นที่เลือก
+				ยังไม่มีข้อมูลสำหรับเทียบหลักสูตรของภาคเรียนที่เลือก
 			</p>{/if}
 	{:else}
 		<div class="min-w-0 text-sm">
-			<p class="font-medium">เทียบกับหลักสูตรปัจจุบัน · ทุกห้องของรุ่นที่เลือก</p>
+			<p class="font-medium">เทียบกับหลักสูตรปัจจุบัน · ทุกห้องของภาคเรียนที่เลือก</p>
 			<p class="text-xs text-muted-foreground" data-testid="delivery-alignment-summary">
 				ยังไม่เปิดสอน {facts.missingCount} รายการ · รายการเดิมที่ต้องตรวจ {facts.affectedExistingCount}
 				รายการ · นอกโครงสร้าง {facts.extraCount} รายการ · ยังเชื่อมห้องไม่ได้ {facts.unlinkedCount} รายการ{facts
@@ -163,7 +163,7 @@
 	>
 		<Dialog.Header class="shrink-0"
 			><Dialog.Title>ผลเทียบหลักสูตรกับการเปิดสอนปัจจุบัน</Dialog.Title><Dialog.Description
-				>แสดงทุกห้องของรุ่นที่เลือก โดยไม่ใช้ตัวกรองในตารางรายการเปิดสอน
+				>แสดงทุกห้องของภาคเรียนที่เลือก โดยไม่ใช้ตัวกรองในตารางรายการเปิดสอน
 				รายการเดียวอาจมีหลายสถานะในคนละห้อง จึงไม่นำจำนวนแต่ละสถานะมาบวกรวม</Dialog.Description
 			></Dialog.Header
 		>

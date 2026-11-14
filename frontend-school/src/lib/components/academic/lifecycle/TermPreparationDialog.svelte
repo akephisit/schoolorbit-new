@@ -1,27 +1,29 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { ArrowRight, CalendarRange, CheckCircle2, Layers3, RefreshCw } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import {
-		getAcademicContextStore,
-		registerAcademicContextDirtySource
-	} from '#lib/academic-context/store.js';
+	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import {
 		applyAcademicTermPreparation,
 		previewAcademicTermPreparation,
 		type ApplyTermPreparationInput,
+		type PreviewTermPreparationInput,
 		type TermPreparationMappingKind,
 		type TermPreparationMappings,
 		type TermPreparationModule,
-		type TermPreparationWorkspace
+		type TermPreparationWorkspace,
+		type YearLifecycleWorkspace
 	} from '#lib/api/academic-lifecycle.js';
 	import {
 		listAcademicYears,
 		listAcademicTerms,
-		type AcademicTerm
+		type AcademicTerm,
+		type AcademicYear
 	} from '#lib/api/academic-core.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { authStore } from '#lib/stores/auth.js';
 	import { LoadingButton, PageSkeleton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
@@ -33,17 +35,18 @@
 	import { can } from '#lib/stores/permissions.js';
 
 	let {
-		sourceTermId,
+		sourceYear,
+		sourceTerm,
 		disabled = false,
 		onapplied
 	}: {
-		sourceTermId: string;
+		sourceYear: YearLifecycleWorkspace['context'];
+		sourceTerm: YearLifecycleWorkspace['terms'][number];
 		disabled?: boolean;
 		onapplied?: () => Promise<void> | void;
 	} = $props();
-
-	const academicContext = getAcademicContextStore();
-	const latest = new LatestRequest();
+	const latest = new LatestRequest(),
+		targetReads = new LatestRequest();
 	const moduleDefinitions: Array<{
 		id: TermPreparationModule;
 		label: string;
@@ -59,20 +62,16 @@
 			label: 'โครงสร้างคะแนน',
 			description: 'คัดลอกเฉพาะ 4 ช่วงคะแนน ไม่คัดลอกงานย่อยหรือคะแนน'
 		},
-		{
-			id: 'timetable',
-			label: 'ตารางสอน',
-			description: 'เตรียมตารางปัจจุบันและตรวจการชนกันใหม่'
-		},
+		{ id: 'timetable', label: 'ตารางสอน', description: 'เตรียมตารางปัจจุบันและตรวจการชนกันใหม่' },
 		{
 			id: 'exams',
 			label: 'ตารางสอบ',
-			description: 'สร้างรอบ วัน และคาบสอบรายการที่เตรียม โดยไม่คัดลอกกรรมการหรือผลสอบ'
+			description: 'เตรียมรอบ วัน และคาบสอบ โดยไม่คัดลอกกรรมการหรือผลสอบ'
 		},
 		{
 			id: 'supervision',
 			label: 'นิเทศการสอน',
-			description: 'สร้างรอบและกลุ่มเป้าหมายรายการที่เตรียม โดยไม่คัดลอกผลประเมิน'
+			description: 'เตรียมรอบและกลุ่มเป้าหมาย โดยไม่คัดลอกผลประเมิน'
 		}
 	];
 	const kindLabels: Record<TermPreparationMappingKind, string> = {
@@ -84,116 +83,244 @@
 		bell_period: 'คาบเรียน',
 		assessment_plan: 'โครงสร้างคะแนน'
 	};
-
-	let alive = false;
-	let open = $state(false);
-	let loading = $state(false);
-	let busy = $state(false);
+	let alive = false,
+		dialogSession = 0,
+		activeFence = '';
+	let open = $state(false),
+		loadingTargets = $state(false),
+		previewLoading = $state(false),
+		busy = $state(false);
 	let targetTermId = $state('');
 	let modules = $state<TermPreparationModule[]>(['delivery']);
-	let mappings = $state<TermPreparationMappings>({
-		entities: [],
-		dates: []
-	});
+	let mappings = $state<TermPreparationMappings>({ entities: [], dates: [] });
 	let workspace = $state.raw<TermPreparationWorkspace | null>(null);
-	let previewStale = $state(false);
-	let errorMessage = $state('');
+	let previewStale = $state(false),
+		errorMessage = $state('');
+	let managementYears = $state<AcademicYear[]>([]),
+		managementTerms = $state<AcademicTerm[]>([]);
 	let pending: { key: string; request: ApplyTermPreparationInput } | null = null;
-	const canManage = $derived($can.has(PERMISSIONS.ACADEMIC_LIFECYCLE_MANAGE_SCHOOL));
-	const sourceTerm = $derived(
-		$academicContext.options?.terms.find((term) => term.id === sourceTermId) ?? null
+	const identityEpoch = $derived.by(() => {
+		void $authStore;
+		return authStore.sessionEpoch;
+	});
+	const identityKey = $derived.by(() => {
+		void $authStore;
+		return appIdentityKey();
+	});
+	const sourceKey = $derived(
+		`${sourceYear.academicYearId}:${sourceYear.rowVersion}:${sourceTerm.academicTermId}:${sourceTerm.rowVersion}`
 	);
-	let managementTerms = $state<AcademicTerm[]>([]);
-	const targetReads = new LatestRequest();
+	const canReadTargets = $derived(
+		$can.hasAny(PERMISSIONS.ACADEMIC_YEAR_READ_SCHOOL, PERMISSIONS.ACADEMIC_YEAR_MANAGE_SCHOOL) &&
+			$can.hasAny(PERMISSIONS.ACADEMIC_TERM_READ_SCHOOL, PERMISSIONS.ACADEMIC_TERM_MANAGE_SCHOOL)
+	);
+	const canOperate = $derived(
+		!disabled &&
+			sourceTerm.status === 'closed' &&
+			canReadTargets &&
+			$can.hasAll(
+				PERMISSIONS.ACADEMIC_LIFECYCLE_READ_SCHOOL,
+				PERMISSIONS.ACADEMIC_LIFECYCLE_MANAGE_SCHOOL
+			)
+	);
 	const targetTerms = $derived(
-		managementTerms.filter((term) => term.id !== sourceTermId && term.status === 'planning')
+		managementTerms.filter((term) => {
+			const year = managementYears.find((candidate) => candidate.id === term.academicYearId);
+			return (
+				year &&
+				!['closed', 'archived'].includes(year.status) &&
+				term.status === 'planning' &&
+				(year.year > sourceYear.year ||
+					(year.year === sourceYear.year && term.sequence > sourceTerm.sequence))
+			);
+		})
 	);
+	const loading = $derived(loadingTargets || previewLoading);
 	const canPreview = $derived(
-		canManage && !disabled && !loading && !busy && !!targetTermId && modules.length > 0
+		open &&
+			canOperate &&
+			!loading &&
+			!busy &&
+			targetTerms.some((term) => term.id === targetTermId) &&
+			modules.length > 0
 	);
 	const canApply = $derived(
 		canPreview && !previewStale && !!workspace?.canApply && workspace.sourceChecksum.length === 64
 	);
 
+	function targetLabel(term: AcademicTerm | undefined): string {
+		if (!term) return 'เลือกภาคเรียน';
+		const year = managementYears.find((candidate) => candidate.id === term.academicYearId);
+		if (!year) return 'ไม่พบปีการศึกษาของภาคเรียน';
+		const name = year.name.trim();
+		const yearLabel =
+			name === `ปีการศึกษา ${year.year}` ? name : `${name} (ปีการศึกษา ${year.year})`;
+		return `${yearLabel} · ${term.name} · ลำดับ ${term.sequence}`;
+	}
+
+	function owner() {
+		const source = sourceKey,
+			epoch = authStore.sessionEpoch,
+			identity = appIdentityKey(),
+			session = dialogSession;
+		return () =>
+			alive &&
+			sourceKey === source &&
+			authStore.sessionEpoch === epoch &&
+			appIdentityKey() === identity &&
+			dialogSession === session;
+	}
+	function requestBody(): PreviewTermPreparationInput {
+		return {
+			sourceTermId: sourceTerm.academicTermId,
+			targetTermId,
+			modules: [...modules],
+			mappings: {
+				entities: mappings.entities?.map((item) => ({ ...item })) ?? [],
+				dates: mappings.dates?.map((item) => ({ ...item })) ?? []
+			}
+		};
+	}
 	function resetPreview() {
 		latest.abort();
+		previewLoading = false;
 		workspace = null;
 		previewStale = false;
 		errorMessage = '';
 		pending = null;
 	}
-
+	function resetDialog() {
+		dialogSession++;
+		targetReads.abort();
+		resetPreview();
+		open = false;
+		busy = false;
+		loadingTargets = false;
+		targetTermId = '';
+		managementYears = [];
+		managementTerms = [];
+		modules = ['delivery'];
+		mappings = { entities: [], dates: [] };
+	}
 	function changeOpen(value: boolean) {
-		if (busy) return;
-		open = value;
+		if (busy || (value && !canOperate)) return;
+		resetDialog();
 		if (value) {
-			targetTermId = targetTerms[0]?.id ?? '';
-			modules = ['delivery'];
-			mappings = { entities: [], dates: [] };
-			resetPreview();
+			open = true;
 			void loadTargets();
-		} else {
-			targetReads.abort();
-			latest.abort();
 		}
 	}
-
+	$effect(() => {
+		const fence = `${sourceKey}:${identityEpoch}:${identityKey}`,
+			allowed = canOperate;
+		untrack(() => {
+			if (activeFence !== fence) {
+				resetDialog();
+				activeFence = fence;
+			} else if (!allowed && (open || busy || loadingTargets || previewLoading)) resetDialog();
+		});
+	});
 	async function loadTargets() {
-		const { revision, signal } = targetReads.begin();
-		loading = true;
+		if (!open || !canOperate) return;
+		const current = owner(),
+			{ revision, signal } = targetReads.begin();
+		loadingTargets = true;
+		errorMessage = '';
 		try {
 			const years = (await listAcademicYears({ signal })).toSorted((a, b) => a.year - b.year);
-			const terms = await Promise.all(years.map((year) => listAcademicTerms(year.id, { signal })));
-			if (!alive || !targetReads.isCurrent(revision)) return;
-			managementTerms = terms.flatMap((items) => items.toSorted((a, b) => a.sequence - b.sequence));
-			targetTermId = targetTerms[0]?.id ?? '';
+			if (!current() || !open || !canOperate || !targetReads.isCurrent(revision)) return;
+			const eligibleYears = years.filter(
+				(year) => !['closed', 'archived'].includes(year.status) && year.year >= sourceYear.year
+			);
+			const results = await Promise.all(
+				eligibleYears.map(async (year) => {
+					const terms = await listAcademicTerms(year.id, { signal });
+					if (terms.some((term) => term.academicYearId !== year.id))
+						throw new Error('ข้อมูลภาคเรียนไม่ตรงกับปีที่ขอ กรุณาโหลดใหม่');
+					return terms;
+				})
+			);
+			if (!current() || !open || !canOperate || !targetReads.isCurrent(revision)) return;
+			managementYears = eligibleYears;
+			managementTerms = results
+				.flat()
+				.toSorted(
+					(a, b) =>
+						(eligibleYears.find((year) => year.id === a.academicYearId)?.year ?? 0) -
+							(eligibleYears.find((year) => year.id === b.academicYearId)?.year ?? 0) ||
+						a.sequence - b.sequence
+				);
 		} catch (cause) {
-			if (!isAbortError(cause) && targetReads.isCurrent(revision))
-				errorMessage =
-					cause instanceof Error
-						? cause.message
-						: 'โหลดภาคเรียนร่างไม่สำเร็จ กรุณาตรวจสิทธิ์อ่านปีและภาคเรียน';
+			if (
+				current() &&
+				open &&
+				canOperate &&
+				targetReads.isCurrent(revision) &&
+				!isAbortError(cause)
+			)
+				errorMessage = cause instanceof Error ? cause.message : 'โหลดภาคเรียนเป้าหมายไม่สำเร็จ';
 		} finally {
-			if (targetReads.isCurrent(revision)) loading = false;
+			if (current() && targetReads.isCurrent(revision)) loadingTargets = false;
 		}
 	}
-
 	function toggleModule(module: TermPreparationModule, checked: boolean) {
 		modules = checked
-			? [...modules, module].filter((item, index, values) => values.indexOf(item) === index)
+			? [...new Set([...modules, module])]
 			: modules.filter((item) => item !== module);
 		mappings = { entities: [], dates: [] };
 		resetPreview();
 	}
-
+	function validContext(value: TermPreparationWorkspace, body: PreviewTermPreparationInput) {
+		const target = targetTerms.find((term) => term.id === body.targetTermId);
+		return (
+			target &&
+			value.context.sourceYearId === sourceYear.academicYearId &&
+			value.context.sourceTermId === body.sourceTermId &&
+			value.context.targetYearId === target.academicYearId &&
+			value.context.targetTermId === body.targetTermId &&
+			value.context.sourceStatus === 'closed' &&
+			value.context.targetStatus === 'planning'
+		);
+	}
 	async function preview() {
 		if (!canPreview) return;
-		const { revision, signal } = latest.begin();
-		loading = true;
+		const current = owner(),
+			body = requestBody(),
+			key = JSON.stringify(body),
+			{ revision, signal } = latest.begin();
+		previewLoading = true;
 		errorMessage = '';
 		try {
-			const next = await previewAcademicTermPreparation(
-				{
-					sourceTermId,
-					targetTermId,
-					modules: [...modules],
-					mappings: mappings
-				},
-				{ signal }
-			);
-			if (!alive || !latest.isCurrent(revision)) return;
+			const next = await previewAcademicTermPreparation(body, { signal });
+			if (
+				!current() ||
+				!open ||
+				!canOperate ||
+				!latest.isCurrent(revision) ||
+				key !== JSON.stringify(requestBody())
+			)
+				return;
+			if (!validContext(next, body))
+				throw new Error('ผลตรวจไม่ตรงกับภาคเรียนต้นทางและปลายทางที่เลือก กรุณาตรวจใหม่');
 			workspace = next;
 			previewStale = false;
 			pending = null;
-		} catch (error) {
-			if (!isAbortError(error) && alive && latest.isCurrent(revision)) {
-				errorMessage = error instanceof Error ? error.message : 'ตรวจตัวอย่างไม่สำเร็จ';
+		} catch (cause) {
+			if (current() && open && canOperate && latest.isCurrent(revision) && !isAbortError(cause)) {
+				errorMessage = cause instanceof Error ? cause.message : 'ตรวจตัวอย่างไม่สำเร็จ';
+				previewStale = true;
 			}
 		} finally {
-			if (latest.isCurrent(revision)) loading = false;
+			if (current() && latest.isCurrent(revision)) previewLoading = false;
 		}
 	}
-
+	function invalidateMappingPreview() {
+		latest.abort();
+		previewLoading = false;
+		previewStale = true;
+		pending = null;
+		errorMessage = '';
+	}
 	function entityValue(kind: TermPreparationMappingKind, sourceId: string): string {
 		return (
 			mappings.entities?.find((item) => item.kind === kind && item.sourceId === sourceId)
@@ -204,7 +331,6 @@
 			''
 		);
 	}
-
 	function setEntityMapping(kind: TermPreparationMappingKind, sourceId: string, targetId: string) {
 		mappings = {
 			...mappings,
@@ -215,10 +341,8 @@
 				...(targetId ? [{ kind, sourceId, targetId }] : [])
 			]
 		};
-		previewStale = true;
-		pending = null;
+		invalidateMappingPreview();
 	}
-
 	function dateValue(sourceDate: string): string | undefined {
 		return (
 			mappings.dates?.find((item) => item.sourceDate === sourceDate)?.targetDate ??
@@ -227,7 +351,6 @@
 			undefined
 		);
 	}
-
 	function setDateMapping(sourceDate: string, targetDate: string | undefined) {
 		mappings = {
 			...mappings,
@@ -236,46 +359,56 @@
 				...(targetDate ? [{ sourceDate, targetDate }] : [])
 			]
 		};
-		previewStale = true;
-		pending = null;
+		invalidateMappingPreview();
 	}
-
 	async function applyPreparation() {
 		if (!canApply || !workspace) return;
-		const body = {
-			sourceChecksum: workspace.sourceChecksum,
-			sourceTermId,
-			targetTermId,
-			modules: [...modules],
-			mappings: mappings
-		};
-		const key = JSON.stringify(body);
-		if (pending?.key !== key) {
+		const current = owner(),
+			body = { ...requestBody(), sourceChecksum: workspace.sourceChecksum },
+			key = JSON.stringify(body);
+		if (pending?.key !== key)
 			pending = { key, request: { ...body, requestId: crypto.randomUUID() } };
-		}
+		const request = pending.request;
 		busy = true;
 		errorMessage = '';
 		try {
-			const outcome = await applyAcademicTermPreparation(pending.request);
-			if (!alive) return;
+			const outcome = await applyAcademicTermPreparation(request);
+			if (
+				!current() ||
+				!open ||
+				!canOperate ||
+				key !== JSON.stringify({ ...requestBody(), sourceChecksum: workspace?.sourceChecksum })
+			)
+				return;
+			if (
+				outcome.requestId !== request.requestId ||
+				outcome.sourceTermId !== request.sourceTermId ||
+				outcome.targetTermId !== request.targetTermId
+			) {
+				previewStale = true;
+				throw new Error('ผลบันทึกไม่ตรงกับคำขอปัจจุบัน กรุณาตรวจข้อมูลใหม่');
+			}
 			pending = null;
 			open = false;
+			busy = false;
 			const created = outcome.modules.reduce((total, item) => total + item.createdCount, 0);
 			toast.success(`สร้างรายการที่เตรียมสำหรับภาคเรียนถัดไปแล้ว ${created} รายการ`);
-			await onapplied?.();
-		} catch (error) {
-			if (!alive) return;
-			errorMessage = error instanceof Error ? error.message : 'เตรียมภาคเรียนไม่สำเร็จ';
-			if (error instanceof ApiClientError && error.status === 409) previewStale = true;
+			if (current() && canOperate) await onapplied?.();
+		} catch (cause) {
+			if (!current() || !open || !canOperate) return;
+			errorMessage = cause instanceof Error ? cause.message : 'เตรียมภาคเรียนไม่สำเร็จ';
+			if (cause instanceof ApiClientError && cause.status === 409) {
+				previewStale = true;
+				pending = null;
+			}
 		} finally {
-			busy = false;
+			if (current()) busy = false;
 		}
 	}
-
 	onMount(() => {
 		alive = true;
 		const unregister = registerAcademicContextDirtySource(
-			`term-preparation:${sourceTermId}`,
+			`term-preparation:${sourceTerm.academicTermId}`,
 			() => open || busy
 		);
 		return () => {
@@ -290,7 +423,7 @@
 <Button
 	variant="outline"
 	class="w-full justify-start"
-	disabled={disabled || !canManage || sourceTerm?.status !== 'closed'}
+	disabled={!canOperate}
 	onclick={() => changeOpen(true)}
 >
 	<Layers3 class="size-4" />เตรียมภาคเรียนถัดไป
@@ -317,7 +450,7 @@
 			>
 				<div>
 					<p class="text-xs font-medium text-muted-foreground">ต้นทางที่ปิดแล้ว</p>
-					<p class="mt-1 font-semibold">{sourceTerm?.name ?? 'ภาคเรียนที่เลือก'}</p>
+					<p class="mt-1 font-semibold">{sourceYear.name} · {sourceTerm.name}</p>
 				</div>
 				<ArrowRight class="hidden size-5 text-muted-foreground sm:block" />
 				<div class="space-y-2">
@@ -333,11 +466,11 @@
 						}}
 					>
 						<Select.Trigger id="term-preparation-target" class="w-full">
-							{targetTerms.find((term) => term.id === targetTermId)?.name ?? 'เลือกภาคเรียน'}
+							{targetLabel(targetTerms.find((term) => term.id === targetTermId))}
 						</Select.Trigger>
 						<Select.Content>
 							{#each targetTerms as term (term.id)}
-								<Select.Item value={term.id}>{term.name} · ลำดับ {term.sequence}</Select.Item>
+								<Select.Item value={term.id}>{targetLabel(term)}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
@@ -386,7 +519,7 @@
 			{:else if workspace}
 				<section class="space-y-3" aria-labelledby="preparation-summary">
 					<div>
-						<h3 id="preparation-summary" class="font-semibold">รายการรายการที่เตรียมที่จะสร้าง</h3>
+						<h3 id="preparation-summary" class="font-semibold">รายการที่เตรียมจะสร้าง</h3>
 						<p class="text-sm text-muted-foreground">
 							{workspace.context.sourceLabel} → {workspace.context.targetLabel}
 						</p>

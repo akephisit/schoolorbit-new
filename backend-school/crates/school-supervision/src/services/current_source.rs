@@ -70,9 +70,10 @@ pub async fn detach_timetable_sources_in_transaction(
           AND NOT(manual_subject_name IS NOT NULL AND manual_classroom_label IS NOT NULL AND manual_period_label IS NOT NULL AND manual_reason IS NOT NULL))))
     "#).bind(block_group_ids).fetch_one().await?;
     if missing {
-        return Err(AppError::Conflict(
-            "SUPERVISION_LESSON_EVIDENCE_UNMAPPABLE".into(),
-        ));
+        return Err(AppError::ConflictWithCode {
+            code: "SUPERVISION_LESSON_EVIDENCE_UNMAPPABLE",
+            message: "ข้อมูลคาบเรียนที่บันทึกไว้ไม่สมบูรณ์ จึงยังนำรายการนี้ออกไม่ได้ กรุณาตรวจข้อมูลการนิเทศก่อน".into(),
+        });
     }
     Ok(DbSession::new(&mut **tx).query("supervision.current_source.detach_exact_placements", r#"
         UPDATE supervision_observations SET

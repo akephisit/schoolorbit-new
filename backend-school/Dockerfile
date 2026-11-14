@@ -11,6 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN cargo install cargo-chef --version 0.1.78 --locked
 WORKDIR /app
 
+FROM base AS academic-age-tool
+ADD --checksum=sha256:7df45a6cc87d4da11cc03a539a7470c15b1041ab2b396af088fe9990f7c79d50 https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz /tmp/academic-age.tar.gz
+RUN tar -xzf /tmp/academic-age.tar.gz -C /tmp \
+    && install -m 0755 /tmp/age/age /usr/local/bin/age \
+    && install -m 0755 /tmp/age/age-keygen /usr/local/bin/age-keygen \
+    && test "$(/usr/local/bin/age --version)" = v1.2.1 \
+    && test "$(/usr/local/bin/age-keygen --version)" = v1.2.1
+
 FROM base AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
@@ -153,6 +161,8 @@ RUN apt-get update -y \
     && install -d -o 1000 -g 1000 /app
 
 COPY --chown=1000:1000 --from=builder /app/target/release/backend-school /app/backend-school
+COPY --chown=1000:1000 --from=builder /app/target/release/migrate_tenant_schema /app/migrate_tenant_schema
+COPY --from=academic-age-tool /usr/local/bin/age /usr/local/bin/age-keygen /usr/local/bin/
 COPY --chown=1000:1000 migrations ./migrations
 
 USER appuser

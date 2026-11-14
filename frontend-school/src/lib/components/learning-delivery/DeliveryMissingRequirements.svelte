@@ -64,7 +64,7 @@
 	<div class="space-y-2 border-b bg-muted/20 p-4">
 		<h2 class="font-semibold">ตามหลักสูตรที่ยังไม่เปิดสอน</h2>
 		<p class="text-sm text-muted-foreground">
-			ข้อกำหนดที่ยังขาดของทุกห้องในรุ่นที่เลือก · รวมทุกกลุ่มสาระ
+			ข้อกำหนดที่ยังขาดของทุกห้องในภาคเรียนที่เลือก · รวมทุกกลุ่มสาระ
 			ตัวกรองกลุ่มสาระไม่ใช้กับรายการส่วนนี้ ใช้ประเภทและคำค้นเดียวกับรายการเปิดสอน
 		</p>
 		{#if showFilters}<div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">

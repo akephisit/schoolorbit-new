@@ -62,6 +62,23 @@ DO $$ DECLARE term record; candidates uuid[]; BEGIN
     END LOOP;
 END $$;
 
+-- Only the canonical operational entry installs this session-local marker.
+-- It constrains the actual locked decision; no supplied date or ID is selected.
+DO $$ DECLARE expectation record; actual_fingerprint bytea; BEGIN
+    IF to_regclass('pg_temp.academic_current_preparation_expected') IS NOT NULL THEN
+        IF (SELECT count(*) FROM pg_temp.academic_current_preparation_expected)<>1 THEN
+            RAISE EXCEPTION 'ACADEMIC_CURRENT_PREPARATION_REQUIRED' USING ERRCODE='check_violation'; END IF;
+        SELECT * INTO expectation FROM pg_temp.academic_current_preparation_expected;
+        IF expectation.required IS DISTINCT FROM true OR expectation.singleton IS DISTINCT FROM true
+           OR expectation.cutover_date IS NULL OR expectation.selection_fingerprint IS NULL THEN
+            RAISE EXCEPTION 'ACADEMIC_CURRENT_PREPARATION_REQUIRED' USING ERRCODE='check_violation'; END IF;
+        SELECT sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(s) ORDER BY academic_term_id)::text,'[]'),'UTF8')) INTO actual_fingerprint FROM academic157_sources s;
+        IF expectation.cutover_date IS DISTINCT FROM (SELECT cutover_date FROM academic157_context)
+           OR expectation.selection_fingerprint IS DISTINCT FROM actual_fingerprint THEN
+            RAISE EXCEPTION 'ACADEMIC_CURRENT_PREPARATION_MISMATCH' USING ERRCODE='check_violation'; END IF;
+    END IF;
+END $$;
+
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM academic157_sources s JOIN academic_delivery_versions v ON v.id=s.delivery_id
         WHERE jsonb_typeof(v.snapshot) IS DISTINCT FROM 'object' OR jsonb_typeof(v.snapshot->'offerings') IS DISTINCT FROM 'array') THEN

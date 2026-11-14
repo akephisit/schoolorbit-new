@@ -81,7 +81,15 @@ function workspace(): TimetableBlockWorkspace {
 		deliveryRowVersion: 1,
 		sourceIssues: [],
 		totalBlockCount: blocks.length,
-		timetable: {id: 'timetable-1', academicTermId: 'term-1', academicYearId: 'year-1', bellScheduleId: 'schedule-1', rowVersion: 1, createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z'},
+		timetable: {
+			id: 'timetable-1',
+			academicTermId: 'term-1',
+			academicYearId: 'year-1',
+			bellScheduleId: 'schedule-1',
+			rowVersion: 1,
+			createdAt: '2026-05-01T00:00:00Z',
+			updatedAt: '2026-05-01T00:00:00Z'
+		},
 		bellPeriods: [
 			{ id: 'period-1', orderIndex: 1 },
 			{ id: 'period-2', orderIndex: 2 }

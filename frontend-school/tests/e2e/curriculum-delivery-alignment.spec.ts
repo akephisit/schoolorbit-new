@@ -1466,7 +1466,9 @@ test('a late term A preview cannot replace or clear term B current preparation',
 		).toHaveCount(0);
 		nextOptions.release();
 		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
-		await expect(dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน', exact: true })).toHaveValue('กลุ่มที่ตรวจปัจจุบัน');
+		await expect(dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน', exact: true })).toHaveValue(
+			'กลุ่มที่ตรวจปัจจุบัน'
+		);
 		expect(previewBodies.map((body) => body.academicTermId)).toEqual([
 			navIds.term,
 			navIds.activeTerm
@@ -1879,7 +1881,9 @@ test('reopening a different exact requirement fences its current choices from a 
 		await page.getByRole('button', { name: 'เปิดตามหลักสูตร · วิชาบี', exact: true }).click();
 		dialog = page.getByRole('dialog', { name: 'เปิดรายวิชา วิชาบี', exact: true });
 		await dialog.getByRole('button', { name: 'ตรวจและจัดกลุ่มก่อน', exact: true }).click();
-		await expect(dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน', exact: true })).toHaveValue('กลุ่มที่ตรวจปัจจุบัน');
+		await expect(dialog.getByRole('textbox', { name: 'ชื่อกลุ่มเรียน', exact: true })).toHaveValue(
+			'กลุ่มที่ตรวจปัจจุบัน'
+		);
 		await expect(
 			dialog.getByRole('button', { name: 'ยืนยันเปิดรายวิชา', exact: true })
 		).toBeEnabled();

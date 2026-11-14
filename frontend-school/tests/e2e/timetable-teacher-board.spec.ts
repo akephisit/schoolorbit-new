@@ -100,6 +100,6 @@ test('keeps the current teacher board read-only for a reader', async ({ page }) 
 	await page.goto(teacherUrl(timetableIds.teacherA, timetableIds.timetable));
 
 	await expect(page.getByLabel('บริบทตารางสอน')).toContainText('ตารางสอนปัจจุบัน');
- await expect(page.getByRole('button',{name:'แก้ไข',exact:true})).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
 	await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable', 'false');
 });

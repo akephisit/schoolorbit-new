@@ -88,6 +88,9 @@ else
     export SCHOOLORBIT_LINK_METRICS="$PWD/$metrics_dir/link-nanoseconds.txt"
     : >"$SCHOOLORBIT_LINK_METRICS"
     cargo rustc --release --locked --bin backend-school --timings --message-format=json-render-diagnostics -- -C lto=off -C "linker=$PWD/scripts/release_linker.sh" | tee "$metrics_dir/cargo-artifacts.jsonl"
+    # This server-free existing CLI derives actual-copy rehearsal evidence.
+    # Keep its output separate from the main binary's JSON/timing artifact stream.
+    cargo build --release --locked --bin migrate_tenant_schema
 fi
 compile_nanoseconds=$(($(date +%s%N) - compile_started))
 

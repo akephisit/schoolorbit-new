@@ -1241,7 +1241,10 @@ async fn assigned_synchronized_creation_allows_extra_teacher_but_keeps_scope_and
     let fixture = Fixture::new("collaboration_sync_create_scope").await;
     let pool = &fixture.auth.tenant_a_pool;
     let actor_id = Uuid::parse_str(ACTOR).unwrap();
-    let scoped_actor = Uuid::parse_str("50000000-0000-0000-0000-000000000003").unwrap();
+    let scoped_actor = fixture
+        .auth
+        .insert_user(pool, "collab-sync-current-scope", "active")
+        .await;
     let version_id = fixture.timetable;
     let term_id = fixture.term;
     let year_id: Uuid =
@@ -2782,7 +2785,7 @@ process.stdout.write(decodeDraftEvent(wire) === null ? 'rejected' : 'accepted');
 #[tokio::test]
 async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
     let mut outcomes = Vec::new();
-    for field in ["room_code", "homeroom_number", "version_creator"] {
+    for field in ["room_code", "homeroom_number", "current_aggregate"] {
         let fixture = Fixture::new(&format!("native_nullable_{field}")).await;
         let pool = &fixture.auth.tenant_a_pool;
         let path = format!(
@@ -2859,13 +2862,7 @@ async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
                     .await
                     .unwrap();
             }
-            "version_creator" => {
-                sqlx::query("UPDATE academic_timetables SET created_by=NULL WHERE id=$1")
-                    .bind(fixture.timetable)
-                    .execute(pool)
-                    .await
-                    .unwrap();
-            }
+            "current_aggregate" => {}
             _ => unreachable!(),
         }
         let response = fixture
@@ -2895,11 +2892,10 @@ async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
                     .iter()
                     .any(|room| room.get("roomNumber").is_some_and(Value::is_null))
             ),
-            "version_creator" => assert!(
-                workspace["timetable"]
-                    .get("createdBy")
-                    .is_some_and(Value::is_null)
-            ),
+            "current_aggregate" => {
+                assert_eq!(workspace["timetable"]["id"], fixture.timetable.to_string());
+                assert!(workspace["timetable"].get("createdBy").is_none());
+            }
             _ => unreachable!(),
         }
         let (mut manager, sync_wire) = native_socket_wire(&fixture, &fixture.cookie).await;
@@ -2913,23 +2909,39 @@ async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
             "state_sync",
             frontend_accepts_native_wire(&sync_wire).await,
         ));
-        if field == "version_creator" {
+        if field == "current_aggregate" {
             let update = fixture
-                .update(None, "nullable creator patch")
+                .update(None, "current aggregate patch")
                 .send()
                 .await
                 .unwrap();
             assert_eq!(update.status(), 200);
             let patch_wire = native_frame_wire(&mut manager, "TimetablePatched").await;
             let patch: Value = serde_json::from_str(&patch_wire).unwrap();
+            let current = &patch["payload"]["timetable"];
+            for field in ["id", "academicYearId", "academicTermId", "bellScheduleId"] {
+                assert_eq!(current[field], workspace["timetable"][field]);
+            }
             assert!(
-                patch["payload"]["timetable"]
-                    .get("createdBy")
-                    .is_some_and(Value::is_null)
+                current["rowVersion"].as_i64().unwrap()
+                    > workspace["timetable"]["rowVersion"].as_i64().unwrap()
             );
+            assert!(current["updatedAt"].is_string());
+            for retired in [
+                "createdBy",
+                "status",
+                "sourceVersionId",
+                "deliveryVersionId",
+                "publishedAt",
+            ] {
+                assert!(
+                    current.get(retired).is_none(),
+                    "retired aggregate field {retired}"
+                );
+            }
             outcomes.push((
                 field,
-                "version_patch",
+                "current_aggregate_patch",
                 frontend_accepts_native_wire(&patch_wire).await,
             ));
         } else {

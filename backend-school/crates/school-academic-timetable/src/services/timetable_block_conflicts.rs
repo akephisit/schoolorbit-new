@@ -37,7 +37,7 @@ pub(crate) fn map_write_error(error: sqlx::Error) -> AppError {
             "ACADEMIC_TIMETABLE_ROOM_CONFLICT" => Some("ห้องเรียนนี้ถูกใช้ในวันและคาบดังกล่าวแล้ว"),
             "ACADEMIC_TIMETABLE_INSTRUCTOR_DOUBLE_BOOKED" => Some("ครูมีรายการอื่นในวันและคาบดังกล่าวแล้ว"),
             "ACADEMIC_PUBLISHED_TIMETABLE_VERSION_CHILD_IMMUTABLE" => {
-                Some("รุ่นตารางสอนที่เผยแพร่แล้วแก้ไขไม่ได้")
+                Some("ตารางสอนของภาคเรียนนี้ไม่พร้อมให้แก้ไข")
             }
             _ => None,
         },
@@ -110,10 +110,11 @@ pub(crate) async fn preview_placement(
                 code: if version_valid {
                     "TIMETABLE_DAY_NOT_ALLOWED"
                 } else {
-                    "TIMETABLE_VERSION_NOT_EDITABLE"
+                    "TIMETABLE_NOT_EDITABLE"
                 }
                 .to_string(),
-                message: "รุ่นตารางสอนไม่พร้อมแก้ไข หรือคาบและวันที่เลือกไม่อยู่ในวันเรียนของภาคเรียน".to_string(),
+                message: "ไม่พบตารางสอนปัจจุบันที่ตรงกับภาคเรียน หรือคาบและวันที่เลือกไม่อยู่ในวันเรียนของภาคเรียน"
+                    .to_string(),
                 existing_block_id: None,
                 target_kind: None,
                 target_id: None,

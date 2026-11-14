@@ -1,4 +1,4 @@
-import type { DeliveryWorkspace, LearningGroup } from '#lib/api/learning-delivery.js';
+import type { DeliveryWorkspace } from '#lib/api/learning-delivery.js';
 import type { DeliveryOverviewState } from '#lib/navigation/learning-delivery.js';
 
 const naturalOrder = new Intl.Collator('th-TH', { numeric: true });
@@ -61,26 +61,4 @@ export function filterDeliveryOfferings(
 			return !search || deliveryOfferingLabel(item).toLocaleLowerCase('th-TH').includes(search);
 		})
 		.sort(compareDeliveryOfferings);
-}
-
-export type DeliveryGroupCoverage = Pick<
-	DeliveryWorkspace['offerings'][number]['groups'][number],
-	'id' | 'homeroomIds'
->;
-
-/** A selected workspace supplies presentation coverage, never a replacement registry mutation payload. */
-export function deliveryGroupCoverage(
-	group: Pick<LearningGroup, 'id' | 'homeroomIds'>,
-	selectedGroups: readonly DeliveryGroupCoverage[] | null
-) {
-	const selected = selectedGroups?.find((item) => item.id === group.id);
-	const homeroomIds = selectedGroups === null ? group.homeroomIds : (selected?.homeroomIds ?? []);
-	const registryIds = new Set(group.homeroomIds);
-	const selectedIds = new Set(homeroomIds);
-	return {
-		homeroomIds: [...homeroomIds],
-		differsFromRegistry:
-			selectedGroups !== null &&
-			(selectedIds.size !== registryIds.size || [...selectedIds].some((id) => !registryIds.has(id)))
-	};
 }

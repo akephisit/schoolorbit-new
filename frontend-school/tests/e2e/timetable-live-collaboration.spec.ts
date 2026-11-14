@@ -45,10 +45,7 @@ async function redirectSocket(
 			window.WebSocket = class extends NativeWebSocket {
 				constructor(address: string | URL, protocols?: string | string[]) {
 					const target = new URL(String(address), location.href);
-					if (
-						target.pathname === '/ws/timetable' &&
-						target.searchParams.has('timetableId')
-					) {
+					if (target.pathname === '/ws/timetable' && target.searchParams.has('timetableId')) {
 						const redirected = new URL(relayUrl);
 						redirected.search = target.search;
 						redirected.searchParams.set('fixtureUser', userId);
@@ -800,12 +797,10 @@ test('native draft joins, edits and patches preserve valid nullable metadata wit
 	const draftSocketsA: string[] = [],
 		draftSocketsB: string[] = [];
 	a.on('websocket', (socket) => {
-		if (new URL(socket.url()).searchParams.has('timetableId'))
-			draftSocketsA.push(socket.url());
+		if (new URL(socket.url()).searchParams.has('timetableId')) draftSocketsA.push(socket.url());
 	});
 	b.on('websocket', (socket) => {
-		if (new URL(socket.url()).searchParams.has('timetableId'))
-			draftSocketsB.push(socket.url());
+		if (new URL(socket.url()).searchParams.has('timetableId')) draftSocketsB.push(socket.url());
 	});
 	const server = await startNativeDraftRelay(relay, mockA.workspace);
 	try {
@@ -1614,7 +1609,9 @@ test('a newer canonical patch supersedes an older in-flight recovery read and ke
 		await expect.poll(() => heldRequest !== null).toBe(true);
 		expect(heldRequest && failedRequests.has(heldRequest)).toBe(false);
 		const workspace = structuredClone(mock.workspace());
-		workspace.blocks = [{...makeTimetableBlock(timetableIds.blockB, timetableIds.period2),rowVersion:7}];
+		workspace.blocks = [
+			{ ...makeTimetableBlock(timetableIds.blockB, timetableIds.period2), rowVersion: 7 }
+		];
 		workspace.timetable.rowVersion = 3;
 		workspace.summary.blockCount = 1;
 		workspace.totalBlockCount = 1;
@@ -1626,15 +1623,17 @@ test('a newer canonical patch supersedes an older in-flight recovery read and ke
 		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toHaveCount(1);
 		await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
 		// The older read cannot replace the accepted block or its revision.
-		await page.getByRole('button', {name:'แก้ไข',exact:true}).click();
-		await page.locator(`[data-block-id="${timetableIds.blockB}"]`).getByRole('button',{name:/ดูรายละเอียด/}).click();
-		const dialog=page.getByRole('dialog');
+		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
+		await page
+			.locator(`[data-block-id="${timetableIds.blockB}"]`)
+			.getByRole('button', { name: /ดูรายละเอียด/ })
+			.click();
+		const dialog = page.getByRole('dialog');
 		await expect(dialog.getByLabel('ชื่อที่แสดงในตาราง')).toBeEnabled();
 		await dialog.getByLabel('ชื่อที่แสดงในตาราง').fill('บันทึกจากข้อมูลล่าสุด');
-		await dialog.getByRole('button',{name:'บันทึก',exact:true}).click();
+		await dialog.getByRole('button', { name: 'บันทึก', exact: true }).click();
 		await expect.poll(mock.updateRequestCount).toBe(1);
 		expect(mock.lastUpdateBody()?.rowVersion).toBe(7);
-
 	} finally {
 		release();
 	}
@@ -2020,7 +2019,7 @@ test('same-session metadata retains a native lease while same-user session repla
 		expect(headers['x-timetable-connection-id']).toBe([...relay.peers.keys()][0]);
 		expect(headers['x-timetable-connection-id']).not.toBe(id);
 		await expect.poll(mock.updateRequestCount).toBe(1);
-		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline+1);
+		expect(mock.workspaceRequestCount()).toBe(workspaceReadBaseline + 1);
 	} finally {
 		await context.close();
 		await server.close();

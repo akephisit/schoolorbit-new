@@ -554,7 +554,7 @@ fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
             .join("src/services/timetable_block_service.rs"),
     ));
 
-    // UUID arguments compile even when actor, block, series and version IDs are swapped.
+    // UUID arguments compile even when actor, block, series and current timetable IDs are swapped.
     // Check the HTTP boundary against the service's named parameters, not only its types.
     for operation in [
         "create_ordinary_block",
@@ -579,7 +579,7 @@ fn timetable_mutation_handlers_preserve_service_identity_argument_order() {
                 "request" => "payload",
                 "block_id" => "block_id",
                 "series_id" => "series_id",
-                "timetable_version_id" => "query.timetable_version_id",
+                "timetable_id" => "query.timetable_id",
                 "row_version" => "query.row_version",
                 unexpected => panic!("unmapped {operation} parameter: {unexpected}"),
             })
@@ -896,6 +896,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-auth",
                 "school-auth-http",
                 "school-authorization",
+                "school-errors",
                 "school-http",
             ],
         ),
@@ -942,6 +943,8 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-realtime",
                 "school-auth",
                 "school-auth-http",
+                "school-authorization",
+                "school-errors",
                 "school-http",
             ],
         ),
@@ -1259,6 +1262,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-supervision",
             &[
                 "school-academic-core",
+                "school-academic-delivery",
                 "school-academic-timetable",
                 "school-auth",
                 "school-auth-http",
@@ -1566,9 +1570,15 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         assert!(certificate_dependencies.contains(required));
     }
     assert!(!certificate_dependencies.contains("school-test-db"));
-    for runtime_manifest in [&permissions, &migrations, &errors, &http] {
+    for runtime_manifest in [&permissions, &errors, &http] {
         assert!(!runtime_manifest.contains("school-test-db"));
     }
+    assert!(!school_dependencies_in_section(&migrations, "dependencies").contains("school-test-db"));
+    assert_eq!(
+        school_dependencies_in_section(&migrations, "dev-dependencies"),
+        BTreeSet::from(["school-behavior".to_string(), "school-test-db".to_string()]),
+        "Migration preservation fixtures may use the owned database and Behavior providers only as dev dependencies"
+    );
     assert!(
         !school_dependencies_in_section(&authorization, "dependencies").contains("school-test-db")
     );
@@ -1969,16 +1979,17 @@ fn homeroom_delivery_workspace_keeps_database_reads_bounded_and_set_based() {
 
     assert!(workspace.contains("join_context_and_homeroom_reads"));
     assert!(!workspace.contains("else if let Some(draft)"));
-    assert!(source.contains("LEFT JOIN LATERAL"));
+
     assert!(workspace.contains("finish_homeroom_delivery_workspace("));
     let finish = extract_braced_block(
         &source,
         "async fn finish_homeroom_delivery_workspace",
         false,
     );
-    assert!(finish.contains("versions::visible_version_on_connection"));
-    assert!(finish.contains("versions::roster_statuses_on_connection"));
-    assert!(finish.contains("source.snapshot.offerings"));
+    assert!(finish.contains("current::visible_workspace_on_connection"));
+    assert!(finish.contains("source.offerings"));
+    assert!(!finish.contains("versions::"));
+    assert!(!source.contains("academic_delivery_versions"));
     assert!(!workspace.contains("academic_timetable_blocks"));
     assert!(!workspace.contains("learning_group_teachers"));
     assert!(!finish.contains("academic_timetable_blocks"));
@@ -2561,12 +2572,70 @@ fn workspace_crates_do_not_depend_on_application_state_or_source_paths() {
     for file in list_files(manifest_dir().join("crates"), |path| {
         path.extension().is_some_and(|extension| extension == "rs")
     }) {
-        for forbidden in application_source_dependency_violations(&read_source(&file)) {
+        let source = read_source(&file);
+        for forbidden in application_source_dependency_violations(&source) {
+            if forbidden == "#[path ="
+                && owner_local_current_migration_fixture_modules(&file, &source)
+            {
+                continue;
+            }
             violations.push(format!("{}: {forbidden}", relative(&file)));
         }
     }
 
     assert_eq!(violations, Vec::<String>::new());
+}
+
+// Standalone migration tests may split their sanitized fixtures into their own
+// test directory. This permits no production module or cross-owner source path.
+fn owner_local_current_migration_fixture_modules(file: &Path, source: &str) -> bool {
+    let owner =
+        manifest_dir().join("crates/school-migrations/tests/current_academic_operations.rs");
+    if file != owner {
+        return false;
+    }
+    let Ok(root) = owner
+        .parent()
+        .unwrap()
+        .join("current_academic_operations")
+        .canonicalize()
+    else {
+        return false;
+    };
+    let paths = Regex::new(r#"#\[path\s*=\s*"([^"]+)"\]"#).unwrap();
+    let modules = paths.captures_iter(source).collect::<Vec<_>>();
+    !modules.is_empty()
+        && modules.iter().all(|module| {
+            let path = Path::new(&module[1]);
+            path.components()
+                .all(|part| matches!(part, std::path::Component::Normal(_)))
+                && path.starts_with("current_academic_operations")
+                && owner.parent().unwrap().join(path).is_file()
+                && owner
+                    .parent()
+                    .unwrap()
+                    .join(path)
+                    .canonicalize()
+                    .is_ok_and(|resolved| resolved.starts_with(&root))
+        })
+}
+
+#[test]
+fn migration_fixture_paths_cannot_admit_production_or_cross_owner_modules() {
+    let owner =
+        manifest_dir().join("crates/school-migrations/tests/current_academic_operations.rs");
+    let local = "#[path = \"current_academic_operations/source_fences.rs\"]\nmod source_fences;";
+    assert!(owner_local_current_migration_fixture_modules(&owner, local));
+    for (file,source) in [
+        (owner.with_file_name("another_test.rs"),local),
+        (manifest_dir().join("crates/school-migrations/src/lib.rs"),local),
+        (owner.clone(),"#[path = \"../src/lib.rs\"]\nmod source;"),
+        (owner.clone(),"#[path = \"current_academic_operations/../../../school-academic-core/src/lib.rs\"]\nmod source;"),
+        (owner.clone(),"#[path = \"/tmp/source.rs\"]\nmod source;"),
+    ] {
+        assert!(!owner_local_current_migration_fixture_modules(&file,source),"unexpected module exemption: {} {source}",file.display());
+    }
+    assert!(!application_source_dependency_violations("use crate::AppState;").is_empty());
 }
 
 fn application_source_dependency_violations(source: &str) -> Vec<&'static str> {
@@ -3015,7 +3084,7 @@ fn timetable_block_service_uses_only_canonical_delivery_identity() {
         "academic_timetable_block_groups",
         "academic_timetable_block_group_instructors",
         "row_version",
-        "versions::published_source",
+        "current::complete_workspace_on_connection",
         "source_assignments",
     ] {
         assert!(
@@ -3030,6 +3099,8 @@ fn timetable_block_service_uses_only_canonical_delivery_identity() {
         "activity_slots",
         "legacy_classroom_course_id",
         "legacy_activity_slot_id",
+        "versions::published_source",
+        "academic_delivery_versions",
     ] {
         assert!(
             !service.contains(forbidden),
@@ -3227,8 +3298,8 @@ fn exam_schedule_service_uses_a_thin_private_module_facade() {
 
     for module in [
         "invigilation",
-        "published_views",
-        "publishing",
+        "current_views",
+        "term_preparation",
         "room_assignments",
         "rounds_and_days",
         "sessions_and_conflicts",
@@ -3257,17 +3328,14 @@ fn exam_schedule_service_uses_a_thin_private_module_facade() {
         "generate_seats_for_assignment",
         "get_invigilator_workspace",
         "get_workspace",
-        "list_child_published_exam_schedule",
+        "list_child_exam_schedule",
         "list_day_room_assignments",
         "list_invigilator_staff_options",
-        "list_my_published_exam_schedule",
+        "list_my_exam_schedule",
         "list_rounds",
-        "list_staff_published_exam_schedule",
+        "list_staff_exam_schedule",
         "place_exam_session",
-        "preview_exam_sources",
-        "publish_round",
         "remove_invigilator_from_assignment",
-        "sync_exam_sources",
         "update_assignment_invigilators",
         "update_exam_day",
         "update_round",
@@ -3280,6 +3348,18 @@ fn exam_schedule_service_uses_a_thin_private_module_facade() {
         );
     }
 
+    for retired in [
+        "mod publishing;",
+        "mod published_views;",
+        "publish_round",
+        "sync_exam_sources",
+        "preview_exam_sources",
+    ] {
+        assert!(
+            !source.contains(retired),
+            "retired operational workflow must not return: {retired}"
+        );
+    }
     let nonblank_line_count = source
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -4567,7 +4647,7 @@ fn academic_assessment_plans_are_offering_and_term_scoped() {
 }
 
 #[test]
-fn academic_assessment_unions_resource_and_published_assignment_scope() {
+fn academic_assessment_unions_resource_and_current_assignment_scope() {
     let service = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-assessment/src/assessment/services.rs"),
     ));
@@ -4609,10 +4689,10 @@ fn academic_assessment_unions_resource_and_published_assignment_scope() {
             )
             && list.contains("AND $6::uuid IS NOT NULL")
             && list.contains("AND learning_group.id = ANY($9::uuid[])"),
-        "assessment list must union school, exact organization ownership and published group assignment"
+        "assessment list must union school, exact organization ownership and current group assignment"
     );
     assert!(
-        detail_flow.contains("school_academic_delivery::services::versions::group_teacher_assignments_on_connection(connection,year,term,&group_ids,)")
+        detail_flow.contains("school_academic_delivery::services::current::group_teacher_assignments_on_connection(connection,year,term,&group_ids,)")
             && detail_flow.contains(".any(|group|group.teacher_ids.contains(&actor.user_id))")
             && detail_flow.contains("resource_access_policy::academic_resource_access_for(&filter,owning_organization_unit_id,actor_is_assigned,)"),
         "assessment detail policy must union the same resource ownership and context-bound Delivery membership"
@@ -4651,7 +4731,7 @@ fn academic_assessment_teacher_scope_uses_delivery_ids_before_pagination() {
             resolution.len(),
         );
         assert!(
-            flow.contains(&format!("school_academic_delivery::services::versions::assigned_group_ids_on_connection(connection,year,query.academic_term_id,{teacher},).await?.learning_group_ids")),
+            flow.contains(&format!("school_academic_delivery::services::current::assigned_group_ids_on_connection(connection,year,query.academic_term_id,{teacher},).await?.learning_group_ids")),
             "assessment {teacher} scope must resolve exact-context group IDs through Delivery"
         );
     }
@@ -4900,7 +4980,7 @@ fn daily_teaching_overview_endpoint_is_read_only_and_pii_safe() {
     assert!(service.contains("#[serde(rename_all = \"camelCase\")]"));
     assert!(service.contains("DailyTeachingOverview"));
     assert!(service.contains("academic_timetable_block_group_instructors"));
-    assert!(service.contains("timetable_version_service::resolve_for_date"));
+    assert!(service.contains("timetable_service::get_for_term_on_connection"));
     assert!(!service.contains("FROM academic_terms"));
     assert!(service.contains("bell_schedule_periods"));
     assert!(service.contains("course_offering_details"));
@@ -5176,10 +5256,10 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     let parent_services = strip_comments(&read_source(
         manifest_dir().join("crates/school-students/src/parents/services.rs"),
     ));
-    let exam_service =
-        strip_comments(&read_source(manifest_dir().join(
-            "crates/school-academic-assessment/src/exam_schedule/services/published_views.rs",
-        )));
+    let exam_service = strip_comments(&read_source(
+        manifest_dir()
+            .join("crates/school-academic-assessment/src/exam_schedule/services/current_views.rs"),
+    ));
     let exam_handler_path =
         manifest_dir().join("crates/school-academic-assessment-http/src/handlers/exam_schedule.rs");
 
@@ -5197,8 +5277,6 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     for route in [
         "\"/exam-schedules\"",
         "\"/exam-schedules/{round_id}\"",
-        "\"/exam-schedules/{round_id}/source-preview\"",
-        "\"/exam-schedules/{round_id}/source-sync\"",
         "\"/exam-schedules/{round_id}/days\"",
         "\"/exam-schedules/days/{exam_day_id}\"",
         "\"/exam-schedules/days/{exam_day_id}/room-assignments\"",
@@ -5208,7 +5286,6 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "\"/exam-schedules/{round_id}/invigilators\"",
         "\"/exam-schedules/{round_id}/invigilator-staff-options\"",
         "\"/exam-schedules/room-assignments/{assignment_id}/invigilators\"",
-        "\"/exam-schedules/{round_id}/publish\"",
     ] {
         assert!(
             academic_routes.contains(route),
@@ -5221,8 +5298,6 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "post(handlers::exam_schedule::create_round)",
         "get(handlers::exam_schedule::get_workspace)",
         ".patch(handlers::exam_schedule::update_round)",
-        "get(handlers::exam_schedule::preview_sources)",
-        "post(handlers::exam_schedule::sync_sources)",
         "post(handlers::exam_schedule::upsert_day)",
         "patch(handlers::exam_schedule::update_day)",
         "delete(handlers::exam_schedule::delete_day)",
@@ -5234,7 +5309,6 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "get(handlers::exam_schedule::get_invigilator_workspace)",
         "get(handlers::exam_schedule::get_invigilator_staff_options)",
         "put(handlers::exam_schedule::update_assignment_invigilators)",
-        "post(handlers::exam_schedule::publish_round)",
     ] {
         assert!(
             academic_routes.contains(handler_ref),
@@ -5247,6 +5321,12 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         "\"/exam-schedules/{round_id}/clear-mismatched-items\"",
         "handlers::exam_schedule::import_items",
         "handlers::exam_schedule::clear_mismatched_items",
+        "\"/exam-schedules/{round_id}/source-preview\"",
+        "\"/exam-schedules/{round_id}/source-sync\"",
+        "\"/exam-schedules/{round_id}/publish\"",
+        "handlers::exam_schedule::preview_sources",
+        "handlers::exam_schedule::sync_sources",
+        "handlers::exam_schedule::publish_round",
     ] {
         assert!(
             !academic_routes.contains(retired_registration),
@@ -5277,7 +5357,6 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     for read_handler in [
         "list_rounds",
         "get_workspace",
-        "preview_sources",
         "list_day_room_assignments",
         "get_invigilator_workspace",
     ] {
@@ -5291,7 +5370,6 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
     for manage_handler in [
         "create_round",
         "update_round",
-        "sync_sources",
         "upsert_day",
         "delete_day",
         "upsert_day_room_assignment",
@@ -5308,31 +5386,25 @@ fn academic_exam_schedule_routes_are_registered_and_authorized() {
         );
     }
 
-    assert_handler_permission(
-        &exam_handler,
-        "publish_round",
-        "ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL",
-    );
-
     let self_handler = handler_body(&exam_handler, "list_my_exam_schedule");
-    assert!(self_handler.contains("list_my_published_exam_schedule"));
+    assert!(self_handler.contains("exam_schedule_service::list_my_exam_schedule("));
     assert!(
         !self_handler.contains("ACADEMIC_EXAM_SCHEDULE_"),
         "self exam schedule route must not require academic permissions"
     );
 
     let staff_handler = handler_body(&exam_handler, "list_staff_exam_schedule");
-    assert!(staff_handler.contains("list_staff_published_exam_schedule"));
+    assert!(staff_handler.contains("exam_schedule_service::list_staff_exam_schedule("));
     assert!(
         !staff_handler.contains("ACADEMIC_EXAM_SCHEDULE_"),
-        "staff published exam schedule route must not require academic permissions"
+        "staff exam schedule route must not require academic permissions"
     );
     assert!(exam_service.contains("ensure_active_staff_user_for_exam_schedule"));
-    assert!(exam_service.contains("list_published_exam_schedule_for_staff"));
+    assert!(exam_service.contains("pub async fn list_staff_exam_schedule_on_connection("));
 
     assert!(parent_handlers.contains("pub async fn get_child_exam_schedule"));
     assert!(parent_services.contains("pub async fn get_child_exam_schedule"));
-    assert!(parent_services.contains("list_child_published_exam_schedule"));
+    assert!(parent_services.contains("list_child_exam_schedule"));
 }
 
 #[test]
@@ -5430,8 +5502,13 @@ fn academic_core_resource_policies_preserve_independent_scopes() {
     assert!(shared_policy.contains("accessible_exact_units_for_permission"));
     assert!(shared_policy.contains("accessible_tree_units_for_permission"));
     assert!(exact_unit_policy.contains("p.is_active = true"));
-    assert!(offering_policy.contains("JOIN learning_group_teachers teacher"));
-    assert!(offering_policy.contains("teacher.teacher_id = $2"));
+    assert!(offering_policy.contains("current::assigned_offering_ids_on_connection"));
+    assert!(!offering_policy.contains("JOIN learning_group_teachers"));
+    let current = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery/src/services/current.rs"),
+    ));
+    assert!(current.contains("account.status='active' AND account.user_type='staff'"));
+    assert!(current.contains("teacher.teacher_id=$3"));
 }
 
 #[test]
@@ -8789,7 +8866,7 @@ fn academic_core_smoke_is_private_authenticated_read_only_and_precedes_go_live()
         "/api/academic/terms?academicYearId=",
         "/api/academic/offerings?academicTermId=",
         "/api/academic/assessments/plans?academicTermId=",
-        "/api/academic/timetable-versions?academicTermId=",
+        "/api/academic/timetable?academicTermId=",
         "/api/academic/timetable-blocks/workspace?academicYearId=",
         "/api/academic/exam-schedules?academicTermId=",
         "/api/supervision/cycles?academicYearId=",
@@ -8836,12 +8913,11 @@ fn learning_delivery_handlers_enforce_policy_and_service_boundaries() {
         "list_offerings",
         "create_offering",
         "update_offering",
-        "publish_offering",
+        "update_weekly_period_target",
         "list_groups",
         "create_group",
         "replace_group_teachers",
         "apply_group_roster",
-        "publish_group_roster",
     ] {
         let body = extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
         assert!(
@@ -9970,7 +10046,7 @@ fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() 
     for (handler_name, action) in [
         ("get_offering", "OfferingAction::Read"),
         ("update_offering", "OfferingAction::Manage"),
-        ("publish_offering", "OfferingAction::Manage"),
+        ("update_weekly_period_target", "OfferingAction::Manage"),
         ("list_groups", "OfferingAction::Read"),
         ("create_group", "OfferingAction::Manage"),
     ] {
@@ -9999,7 +10075,6 @@ fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() 
         ("replace_group_teachers", "OfferingAction::Manage"),
         ("preview_group_roster", "OfferingAction::Manage"),
         ("apply_group_roster", "OfferingAction::Manage"),
-        ("publish_group_roster", "OfferingAction::Manage"),
     ] {
         let handler =
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
@@ -10011,13 +10086,12 @@ fn learning_delivery_handlers_are_thin_policy_owned_and_signal_after_mutation() 
         "create_offering",
         "apply_offerings_from_curriculum",
         "update_offering",
-        "publish_offering",
+        "update_weekly_period_target",
         "create_group",
         "update_group",
         "replace_group_homerooms",
         "replace_group_teachers",
         "apply_group_roster",
-        "publish_group_roster",
     ] {
         let handler =
             extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
@@ -10040,13 +10114,16 @@ fn learning_delivery_registers_the_canonical_offering_group_and_roster_routes() 
         "\"/offerings/preview-from-curriculum\"",
         "\"/offerings/apply-from-curriculum\"",
         "\"/offerings/{id}\"",
-        "\"/offerings/{id}/publish\"",
+        "\"/offerings/{id}/weekly-period-target\"",
+        "\"/offerings/{id}/deletion-preview\"",
         "\"/offerings/{id}/groups\"",
         "\"/learning-groups/{id}\"",
         "\"/learning-groups/{id}/homerooms\"",
         "\"/learning-groups/{id}/teachers\"",
         "\"/learning-groups/{id}/roster\"",
-        "\"/learning-groups/{id}/roster/publish\"",
+        "\"/learning-groups/{id}/roster-tracking\"",
+        "\"/learning-groups/{id}/deletion-preview\"",
+        "\"/delivery/workspace\"",
     ] {
         assert!(
             routes.contains(required),
@@ -10054,81 +10131,77 @@ fn learning_delivery_registers_the_canonical_offering_group_and_roster_routes() 
         );
     }
     assert!(aggregate_routes.contains("crate::delivery::routes()"));
+    for retired in [
+        "/offerings/{id}/publish",
+        "/learning-groups/{id}/roster/publish",
+    ] {
+        assert!(
+            !routes.contains(retired),
+            "retired publication route: {retired}"
+        );
+    }
 }
 
 #[test]
-fn operational_academic_changes_register_authorized_contract_routes() {
+fn current_delivery_changes_register_authorized_contract_routes() {
     let routes = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-delivery-http/src/delivery.rs"),
     ));
     let handlers = strip_comments(&read_source(
         manifest_dir().join("crates/school-academic-delivery-http/src/delivery/handlers.rs"),
     ));
+    let deletion = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery/src/services/deletion.rs"),
+    ));
+    let command = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery-http/src/deletion_command.rs"),
+    ));
 
     for required in [
-        "\"/term-change-sets\"",
-        "\"/term-change-sets/{id}\"",
-        "\"/delivery-versions/{id}\"",
-        "\"/term-change-sets/{id}/items\"",
-        "\"/term-change-sets/{id}/items/{itemId}\"",
-        "\"/term-change-sets/{id}/preview\"",
-        "\"/term-change-sets/{id}/publish\"",
+        "\"/delivery/workspace\"",
+        "\"/offerings/{id}/weekly-period-target\"",
+        "\"/offerings/{id}/deletion-preview\"",
+        "\"/learning-groups/{id}/deletion-preview\"",
         "\"/learning-groups/{id}/memberships\"",
         "\"/learning-groups/{id}/memberships/{membershipId}/end\"",
     ] {
         assert!(
             routes.contains(required),
-            "missing operational route: {required}"
+            "missing current route: {required}"
         );
     }
-
-    assert!(!routes.contains("/term-change-sets/{id}/cancel"));
-    let version_handlers = strip_comments(&read_source(
-        manifest_dir()
-            .join("crates/school-academic-delivery-http/src/delivery/version_handlers.rs"),
+    for retired in ["/term-change-sets", "/delivery-versions", "/publish"] {
+        assert!(
+            !routes.contains(retired),
+            "retired operational route: {retired}"
+        );
+    }
+    let membership_read =
+        extract_braced_block(&handlers, "pub async fn list_group_memberships", false);
+    assert!(membership_read.contains("OfferingAction::Read"));
+    for name in ["add_group_membership", "end_group_membership"] {
+        let body = extract_braced_block(&handlers, &format!("pub async fn {name}"), false);
+        assert!(body.contains("OfferingAction::Manage"));
+        assert!(body.contains("signal_group_changed"));
+    }
+    for name in ["delete_offering", "delete_group"] {
+        let body = extract_braced_block(&handlers, &format!("pub async fn {name}"), false);
+        assert!(body.contains("services::deletion::delete("));
+        assert!(body.contains("crate::deletion_command::from_session(&state, &session, &context)"));
+    }
+    let authority = extract_braced_block(&deletion, "pub fn require_school_management", false);
+    assert!(authority.contains(
+        "has_permission(school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL)"
     ));
-    let delete = extract_braced_block(&version_handlers, "pub async fn delete_version", false);
-    assert!(delete.contains("OfferingAction::Manage"));
-    assert!(delete.contains("require_learning_offering_batch_access"));
-    for handler_name in [
-        "list_term_change_sets",
-        "get_term_change_set",
-        "preview_term_change_set",
-        "list_group_memberships",
-    ] {
-        let handler =
-            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
-        assert!(
-            handler.contains("OfferingAction::Read"),
-            "{handler_name} must require learning-offering read access"
-        );
-    }
-
-    for handler_name in [
-        "create_term_change_set",
-        "update_term_change_set",
-        "upsert_term_change_item",
-        "delete_term_change_item",
-        "publish_term_change_set",
-        "add_group_membership",
-        "end_group_membership",
-    ] {
-        let handler =
-            extract_braced_block(&handlers, &format!("pub async fn {handler_name}"), false);
-        assert!(
-            handler.contains("OfferingAction::Manage"),
-            "{handler_name} must require learning-offering management access"
-        );
-        assert!(
-            handler.contains("signal_") || handler.contains("signal_group_changed"),
-            "{handler_name} must emit a bounded invalidation after mutation"
-        );
-    }
-
+    assert!(!authority.contains("MANAGE_ASSIGNED"));
+    assert!(command.contains("permission_cache"));
+    assert!(command.contains("revalidate_realtime_session"));
+    assert!(command.contains("pool_lease: context.tenant.pool.clone()"));
+    assert!(command.contains("broadcast_learning_delivery_changed"));
     for forbidden_db_call in ["sqlx::query", ".execute(", ".fetch_"] {
         assert!(
             !handlers.contains(forbidden_db_call),
-            "delivery handlers must delegate {forbidden_db_call} to services"
+            "handlers must delegate {forbidden_db_call}"
         );
     }
 }
@@ -10146,7 +10219,25 @@ fn learning_delivery_contract_is_strictly_tagged_idempotent_and_pii_safe() {
     assert!(models.contains("#[serde(tag = \"kind\", rename_all = \"snake_case\")]"));
     assert!(models.contains("Course(CreateCourseOfferingRequest)"));
     assert!(models.contains("Activity(CreateActivityOfferingRequest)"));
-    assert!(models.contains("pub struct PublishRosterRequest"));
+    let current_models = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery/src/models/current.rs"),
+    ));
+    assert!(!models.contains("PublishRosterRequest"));
+    for request in [
+        "UpdateWeeklyPeriodTargetRequest",
+        "DeleteDeliveryResourceRequest",
+    ] {
+        let body = extract_braced_block(&current_models, &format!("pub struct {request}"), false);
+        assert!(body.contains("pub row_version: i64"));
+    }
+    let deletion_request = extract_braced_block(
+        &current_models,
+        "pub struct DeleteDeliveryResourceRequest",
+        false,
+    );
+    assert!(deletion_request.contains("pub source_digest: String"));
+    assert!(deletion_request.contains("pub academic_year_id: Uuid"));
+    assert!(deletion_request.contains("pub academic_term_id: Uuid"));
     assert!(models.contains("pub idempotency_key: Uuid"));
 
     for required in [
@@ -10411,15 +10502,58 @@ fn academic_list_hydration_does_not_issue_one_query_per_response_item() {
 }
 
 #[test]
-fn academic_term_change_set_summaries_do_not_hydrate_detail_rows() {
-    let change_sets = strip_comments(&read_source(
-        manifest_dir().join("crates/school-academic-delivery/src/services/change_sets.rs"),
+fn current_delivery_projections_keep_private_authority_and_public_budgets_distinct() {
+    let current = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery/src/services/current.rs"),
     ));
-    let summaries = connection_work_body(&change_sets, "list_change_set_summaries");
-
-    assert!(!summaries.contains("hydrate_many"));
-    assert!(!summaries.contains("academic_term_change_items"));
-    assert!(summaries.contains("fetch_all"));
+    let offerings = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery/src/services/offerings.rs"),
+    ));
+    let groups = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-delivery/src/services/groups.rs"),
+    ));
+    let visible = extract_braced_block(
+        &current,
+        "pub async fn visible_workspace_on_connection",
+        false,
+    );
+    let complete = extract_braced_block(
+        &current,
+        "pub async fn complete_workspace_on_connection",
+        false,
+    );
+    assert!(visible.contains("access, WorkspacePurpose::Public"));
+    assert!(complete.contains("&all_access()"));
+    assert!(complete.contains("WorkspacePurpose::Complete"));
+    assert!(current.contains("MAX_COMPLETE_OFFERINGS: usize = 20_000"));
+    assert!(current.contains("MAX_COMPLETE_GROUPS: usize = 20_000"));
+    assert!(current.contains("MAX_TARGET_RELATIONS: usize = 250_000"));
+    assert!(offerings.contains("MAX_TERM_OFFERINGS: usize = 500"));
+    assert!(groups.contains("MAX_TERM_GROUPS: usize = 2_000"));
+    for (source, limit) in [(&offerings, "offering_limit"), (&groups, "group_limit")] {
+        let projection = extract_braced_block(
+            source,
+            "pub(super) async fn list_for_projection_on_connection",
+            false,
+        );
+        assert!(projection.contains("assigned_offering_ids_for_term_on_connection"));
+        assert!(projection.contains(&format!("purpose.{limit}() + 1")));
+        assert!(projection.contains(&format!("rows.len() > purpose.{limit}()")));
+        assert!(projection.contains("return Err("));
+        assert!(projection.contains("hydrate_many(connection, rows).await"));
+        assert!(!projection.contains(".truncate("));
+    }
+    for retired in [
+        "academic_delivery_versions",
+        "academic_term_change_sets",
+        "snapshot_json",
+    ] {
+        assert!(
+            !current.contains(retired),
+            "current authority must not read {retired}"
+        );
+    }
+    assert!(current.contains("learning_offering_id=ANY($3)"));
 }
 
 #[test]
@@ -10503,13 +10637,26 @@ fn academic_delivery_and_timetable_collection_reads_are_set_based() {
         Regex::new(r"context\s*\.\s*execute")
             .unwrap()
             .is_match(&clear_entry)
-            && clear_entry.contains("MutationScope::WholeDraft")
+            && clear_entry.contains("MutationScope::WholeTimetable")
     );
     let clear_timetable =
         extract_braced_block(&templates, "async fn clear_timetable_in_permit", false);
-    assert!(clear_timetable.contains("get_blocks_on_connection("));
+    assert!(clear_timetable.contains("remove_blocks_in_transaction("));
+    let deletion = strip_comments(&read_source(
+        manifest_dir().join("crates/school-academic-timetable/src/services/deletion.rs"),
+    ));
+    let remove = extract_source_block(
+        &deletion,
+        "pub(crate) async fn remove_blocks_in_transaction",
+        false,
+    );
+    assert!(remove.contains("get_blocks_on_connection("));
+    assert!(remove.contains("detach_timetable_sources"));
+    assert!(remove.contains("DELETE FROM academic_timetable_blocks"));
     assert!(
-        clear_timetable.find("get_blocks_on_connection(").unwrap()
+        clear_timetable
+            .find("remove_blocks_in_transaction(")
+            .unwrap()
             < clear_timetable.find("permit.commit(transaction)").unwrap(),
         "the one batched hydration must precede COMMIT so failure cannot hide committed changes"
     );

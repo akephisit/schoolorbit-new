@@ -1244,12 +1244,14 @@ test('accepted Saturday save refreshes central context before in-app timetable n
 	page
 }) => {
 	await installTimetableMock(page, {
-		timetables: [{
-			...makeTimetable(),
-			academicYearId: yearId,
-			academicTermId: nextTermId,
-			bellScheduleId: scheduleId
-		}]
+		timetables: [
+			{
+				...makeTimetable(),
+				academicYearId: yearId,
+				academicTermId: nextTermId,
+				bellScheduleId: scheduleId
+			}
+		]
 	});
 	const observed = await fixture(page, { timetableDraft: true, timetableHarness: true });
 	await page.goto(`/staff/academic/core?academicTermId=${nextTermId}`);
@@ -1368,12 +1370,14 @@ test('accepted day save after leaving setup still refreshes the session discover
 	let release = () => {};
 	const daySaveGate = new Promise<void>((resolve) => (release = resolve));
 	await installTimetableMock(page, {
-		timetables: [{
-			...makeTimetable(),
-			academicYearId: yearId,
-			academicTermId: nextTermId,
-			bellScheduleId: scheduleId
-		}]
+		timetables: [
+			{
+				...makeTimetable(),
+				academicYearId: yearId,
+				academicTermId: nextTermId,
+				bellScheduleId: scheduleId
+			}
+		]
 	});
 	const observed = await fixture(page, {
 		timetableDraft: true,

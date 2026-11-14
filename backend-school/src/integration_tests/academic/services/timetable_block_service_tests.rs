@@ -1769,9 +1769,16 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
         "INSERT INTO academic_timetables(id,academic_term_id,academic_year_id,bell_schedule_id) SELECT uuidv7(),term.id,term.academic_year_id,term.bell_schedule_id FROM academic_terms term WHERE term.id<>$1 AND term.academic_year_id=$2 ORDER BY term.sequence_no LIMIT 1 ON CONFLICT(academic_term_id) DO UPDATE SET academic_term_id=EXCLUDED.academic_term_id RETURNING id",
     ).bind(term).bind(source.academic_year_id).fetch_one(&pool).await.unwrap();
     assert_ne!(other_timetable, timetable);
-    let mut stale = request.clone();
-    stale.timetable_id = other_timetable;
-    stale_requests.push(stale);
+    let mut foreign_context = request.clone();
+    foreign_context.timetable_id = other_timetable;
+    let foreign_preview = timetable_block_service::preview_placement(&pool, foreign_context)
+        .await
+        .unwrap();
+    assert_eq!(foreign_preview.state, TimetableBlockPlacementState::Blocked);
+    assert_eq!(foreign_preview.mutation, None);
+    assert_eq!(foreign_preview.conflicts.len(), 1);
+    assert_eq!(foreign_preview.conflicts[0].code, "TIMETABLE_NOT_EDITABLE");
+    assert_eq!(foreign_preview.conflicts[0].existing_block_id, None);
     let mut stale = request.clone();
     stale.source = TimetableBlockPlacementSource::ExistingBlock {
         block_id: Uuid::new_v4(),

@@ -328,7 +328,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 	let lastUpdateBody: Record<string, unknown> | null = null;
 
 	const workspace = (
-		timetable = timetables.find((item) => item.academicTermId === selectedTimetable.academicTermId) ?? selectedTimetable
+		timetable = timetables.find(
+			(item) => item.academicTermId === selectedTimetable.academicTermId
+		) ?? selectedTimetable
 	): TimetableBlockWorkspace => {
 		const scheduledPeriods = blocks.filter((block) =>
 			block.groups.some((group) => group.learningGroupId === timetableIds.groupA)
@@ -543,24 +545,36 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			if (url.pathname === '/api/academic/timetable') {
 				if (method === 'GET') {
 					timetableRequests++;
-					await fulfill(route, timetables.find((item) => item.academicTermId === url.searchParams.get('academicTermId')) ?? null);
+					await fulfill(
+						route,
+						timetables.find(
+							(item) => item.academicTermId === url.searchParams.get('academicTermId')
+						) ?? null
+					);
 				} else if (method === 'POST') {
 					timetableCreateRequests++;
 					const body = route.request().postDataJSON();
-					const timetable = timetables.find((item) => item.academicTermId === body.academicTermId) ?? makeTimetable({academicTermId: body.academicTermId});
+					const timetable =
+						timetables.find((item) => item.academicTermId === body.academicTermId) ??
+						makeTimetable({ academicTermId: body.academicTermId });
 					if (!timetables.some((item) => item.id === timetable.id)) timetables.push(timetable);
 					await fulfill(route, timetable);
 				}
 				return;
 			}
-			if (url.pathname.includes('timetable-versions') || /\/(clone|publish|delivery-source|delete-draft|publication-preview)$/.test(url.pathname)) {
+			if (
+				url.pathname.includes('timetable-versions') ||
+				/\/(clone|publish|delivery-source|delete-draft|publication-preview)$/.test(url.pathname)
+			) {
 				retiredRequests.push(url.pathname);
 				await fulfill(route, 'Retired timetable operation', 404);
 				return;
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/workspace') {
 				workspaceRequests++;
-				const timetable = timetables.find((item) => item.id === url.searchParams.get('timetableId'));
+				const timetable = timetables.find(
+					(item) => item.id === url.searchParams.get('timetableId')
+				);
 				if (!timetable) throw new Error('Unknown current timetable');
 				await fulfill(route, workspace(timetable));
 				return;
@@ -842,7 +856,9 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		},
 		publishWorkspace: (next: TimetableBlockWorkspace, publish = true) => {
 			blocks = structuredClone(next.blocks);
-			timetables = timetables.map((timetable) => timetable.id === next.timetable.id ? structuredClone(next.timetable) : timetable);
+			timetables = timetables.map((timetable) =>
+				timetable.id === next.timetable.id ? structuredClone(next.timetable) : timetable
+			);
 			deliveryRowVersion = next.deliveryRowVersion;
 			sourceIssues = structuredClone(next.sourceIssues);
 			options.staff = structuredClone(next.staff);
@@ -866,7 +882,13 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		timetableRequestCount: () => timetableRequests,
 		timetableCreateRequestCount: () => timetableCreateRequests,
 		retiredRequests: () => [...retiredRequests],
-		changeDelivery: (patch: {requiredPeriods?: number; eligibleInstructorIds?: string[]; learningGroups?: TimetableBlockWorkspace['learningGroups']} = {}) => {
+		changeDelivery: (
+			patch: {
+				requiredPeriods?: number;
+				eligibleInstructorIds?: string[];
+				learningGroups?: TimetableBlockWorkspace['learningGroups'];
+			} = {}
+		) => {
 			deliveryRowVersion++;
 			if (patch.requiredPeriods !== undefined) requiredPeriods = patch.requiredPeriods;
 			if (patch.eligibleInstructorIds) eligibleInstructorIds = patch.eligibleInstructorIds;

@@ -90,20 +90,53 @@ export function navigationDelivery(): DeliveryWorkspace {
 		academicYearId: navigationIds.year,
 		academicTermId: navigationIds.term,
 		rowVersion: 1,
-		courseMetadata: definitions.flatMap((item) => item.kind === 'course' ? [{subjectVersionId: item.id,subjectGroupId: item.group!,subjectGroupName: item.group === navigationIds.math ? 'คณิตศาสตร์' : 'ภาษาไทย'}] : []),
+		courseMetadata: definitions.flatMap((item) =>
+			item.kind === 'course'
+				? [
+						{
+							subjectVersionId: item.id,
+							subjectGroupId: item.group!,
+							subjectGroupName: item.group === navigationIds.math ? 'คณิตศาสตร์' : 'ภาษาไทย'
+						}
+					]
+				: []
+		),
 		offerings: definitions.map((item) => ({
-			id: item.id, kind: item.kind, code: item.code, name: item.name, rowVersion: 1,
+			id: item.id,
+			kind: item.kind,
+			code: item.code,
+			name: item.name,
+			rowVersion: 1,
 			owningOrganizationUnitId: item.group ?? navigationIds.program,
-			weeklyPeriodTarget: 2, groups: [], homeroomIds: [], targets: [],
-			catalog: item.kind === 'course' ? {
-				kind: 'course' as const, subjectId: item.id,subjectVersionId: item.id,
-				standardPeriodsPerWeek: 2, credit: '1.0',hours: '40',assessmentTotalScore: '100.00'
-			} : {
-				kind: 'activity' as const, activityId: item.id,activityVersionId: item.id,
-				registrationType: 'assigned' as const,schedulingMode: 'synchronized' as const,
-				hours: '20',attendanceRequirement: {minimumPercent: '80'},
-				passCriteria: {requireAttendance:true,requireTeacherConfirmation:true,outcomes:['pass' as const,'fail' as const]}
-			}
+			weeklyPeriodTarget: 2,
+			groups: [],
+			homeroomIds: [],
+			targets: [],
+			catalog:
+				item.kind === 'course'
+					? {
+							kind: 'course' as const,
+							subjectId: item.id,
+							subjectVersionId: item.id,
+							standardPeriodsPerWeek: 2,
+							credit: '1.0',
+							hours: '40',
+							assessmentTotalScore: '100.00'
+						}
+					: {
+							kind: 'activity' as const,
+							activityId: item.id,
+							activityVersionId: item.id,
+							registrationType: 'assigned' as const,
+							schedulingMode: 'synchronized' as const,
+							hours: '20',
+							attendanceRequirement: { minimumPercent: '80' },
+							passCriteria: {
+								requireAttendance: true,
+								requireTeacherConfirmation: true,
+								outcomes: ['pass' as const, 'fail' as const]
+							}
+						}
 		}))
 	};
 }
@@ -224,15 +257,25 @@ export async function mockDeliveryNavigation(
 	}
 	function currentDelivery(): DeliveryWorkspace {
 		const workspace = navigationDelivery();
-		if (options.groupedCreation && !created) workspace.offerings = workspace.offerings.filter((item) => item.id !== navigationOfferingIds.club);
+		if (options.groupedCreation && !created)
+			workspace.offerings = workspace.offerings.filter(
+				(item) => item.id !== navigationOfferingIds.club
+			);
 		return workspace;
 	}
 	function workspaceResource(): HomeroomDeliveryWorkspace {
 		const workspace = navigationWorkspace();
-		if (options.groupedCreation && !created) for (const room of workspace.homerooms) {
-			const activity = room.items.find((item) => item.offeringId === navigationOfferingIds.club)!;
-			Object.assign(activity, {offeringId:null,offeringState:'missing',groupMode:'missing',teacherState:'missing_primary',alignmentStates:['curriculum_requirement_not_offered']});
-		}
+		if (options.groupedCreation && !created)
+			for (const room of workspace.homerooms) {
+				const activity = room.items.find((item) => item.offeringId === navigationOfferingIds.club)!;
+				Object.assign(activity, {
+					offeringId: null,
+					offeringState: 'missing',
+					groupMode: 'missing',
+					teacherState: 'missing_primary',
+					alignmentStates: ['curriculum_requirement_not_offered']
+				});
+			}
 		return workspace;
 	}
 	async function reply(route: Route, data: unknown) {
@@ -304,7 +347,11 @@ export async function mockDeliveryNavigation(
 				});
 			if (path === '/api/academic/delivery/workspace') return reply(route, currentDelivery());
 			if (path === '/api/academic/delivery/homerooms') return reply(route, workspaceResource());
-			if (path.includes('delivery-versions') || path.includes('term-change-sets')) return route.fulfill({status:404,json:{success:false,error:'Retired operational endpoint'}});
+			if (path.includes('delivery-versions') || path.includes('term-change-sets'))
+				return route.fulfill({
+					status: 404,
+					json: { success: false, error: 'Retired operational endpoint' }
+				});
 			if (path === '/api/academic/delivery/management-options')
 				return reply(route, {
 					academicYearId: navigationIds.year,

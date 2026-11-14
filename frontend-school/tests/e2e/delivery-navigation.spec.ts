@@ -123,7 +123,9 @@ for (const width of [390, 1280]) {
 			animations: 'disabled'
 		});
 		await link.click();
-		await expect(page.getByRole('heading',{name:'ภาษาไทยเก่า',level:1,exact:true})).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: 'ภาษาไทยเก่า', level: 1, exact: true })
+		).toBeVisible();
 		await expectRequestedContext(page);
 		await expect(page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true })).toHaveCount(0);
 		await page.goBack();
@@ -188,7 +190,9 @@ test('offering filters use the authorized current projection and preserve natura
 	try {
 		await tab.goto(target.href);
 		await expectRequestedContext(tab);
-		await expect(tab.getByRole('heading',{name:'คณิตศาสตร์ต้น',level:1,exact:true})).toBeVisible();
+		await expect(
+			tab.getByRole('heading', { name: 'คณิตศาสตร์ต้น', level: 1, exact: true })
+		).toBeVisible();
 		await tab.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
 		await expect(
 			tab.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true })
@@ -225,7 +229,7 @@ test('activity details and labels hide technical activity codes while retaining 
 		.filter({ hasText: 'ชุมนุม' })
 		.getByRole('link', { name: 'รายละเอียด', exact: true })
 		.click();
-	await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
+	await expect(page.getByRole('heading', { name: /คณิตศาสตร์ต้น|ชุมนุม/, level: 1 })).toBeVisible();
 	await expectRequestedContext(page);
 	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
 	await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
@@ -249,7 +253,9 @@ for (const missing of [true, false]) {
 		}
 		await page.goto(`/staff/academic/delivery/${offerings.basic21}?${query}`);
 		await expectRequestedContext(page);
-		await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: /คณิตศาสตร์ต้น|ชุมนุม/, level: 1 })
+		).toBeVisible();
 		const back = page.getByRole('link', { name: 'ย้อนกลับ', exact: true });
 		const target = new URL((await back.getAttribute('href'))!, page.url());
 		expect(target.origin).toBe(new URL(page.url()).origin);
@@ -337,7 +343,9 @@ test('touch users can filter offerings and return from detail with their group s
 			animations: 'disabled'
 		});
 		await region.getByRole('link', { name: 'รายละเอียด', exact: true }).tap();
-		await expect(page.getByRole('heading',{name:'ภาษาไทยเก่า',level:1,exact:true})).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: 'ภาษาไทยเก่า', level: 1, exact: true })
+		).toBeVisible();
 		await expectRequestedContext(page);
 		await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).tap();
 		await expect(group).toHaveText('ภาษาไทย');
@@ -352,10 +360,7 @@ test('touch users can filter offerings and return from detail with their group s
 	}
 });
 
-function managerOrigin(
-	view: 'homerooms' | 'offerings',
-	course = false
-): string {
+function managerOrigin(view: 'homerooms' | 'offerings', course = false): string {
 	const url = new URL(navigationOverviewPath(), 'https://schoolorbit.invalid');
 	url.searchParams.set('view', view);
 	url.searchParams.set('homeroomSearch', 'ม.1/2');
@@ -384,8 +389,24 @@ async function expectManagerOrigin(page: Page, view: 'homerooms' | 'offerings', 
 	if (course) expect(current.searchParams.get('subjectGroupId')).toBe(ids.math);
 }
 
-test('an existing current activity detail restores its originating room filters without preparing a duplicate',async({page})=>{
- const api=await mockDeliveryNavigation(page,{manager:true});await page.goto(managerOrigin('homerooms'));const room=page.locator('details').filter({has:page.getByRole('heading',{name:'ม.1/2',exact:true})});await expect(room).toHaveAttribute('open','');await room.getByRole('link',{name:'จัดการ ชุมนุม',exact:true}).click();await expect(page.getByRole('heading',{name:'ชุมนุม',level:1,exact:true})).toBeVisible();await expectRequestedContext(page);await page.getByRole('link',{name:'ย้อนกลับ',exact:true}).click();await expectManagerOrigin(page,'homerooms');expect(api.creations).toEqual([]);expect(api.reads.filter(url=>/delivery-versions|term-change-sets/.test(url.pathname))).toEqual([]);
+test('an existing current activity detail restores its originating room filters without preparing a duplicate', async ({
+	page
+}) => {
+	const api = await mockDeliveryNavigation(page, { manager: true });
+	await page.goto(managerOrigin('homerooms'));
+	const room = page
+		.locator('details')
+		.filter({ has: page.getByRole('heading', { name: 'ม.1/2', exact: true }) });
+	await expect(room).toHaveAttribute('open', '');
+	await room.getByRole('link', { name: 'จัดการ ชุมนุม', exact: true }).click();
+	await expect(page.getByRole('heading', { name: 'ชุมนุม', level: 1, exact: true })).toBeVisible();
+	await expectRequestedContext(page);
+	await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
+	await expectManagerOrigin(page, 'homerooms');
+	expect(api.creations).toEqual([]);
+	expect(
+		api.reads.filter((url) => /delivery-versions|term-change-sets/.test(url.pathname))
+	).toEqual([]);
 });
 
 test('creating an activity with groups navigates with the created offering context and restores the originating offering view', async ({
@@ -411,12 +432,12 @@ test('creating an activity with groups navigates with the created offering conte
 		await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
 		await visibleOption.click();
 	}
-	await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์',{exact:true}).fill('2');
+	await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('2');
 	await choose(page, 'รูปแบบการเปิด', 'เปิดพร้อมจัดกลุ่ม');
 	await dialog.getByRole('button', { name: 'สร้างข้อมูลปัจจุบัน', exact: true }).click();
 	await expect(page).toHaveURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
 	await expectRequestedContext(page);
-	await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
+	await expect(page.getByRole('heading', { name: /คณิตศาสตร์ต้น|ชุมนุม/, level: 1 })).toBeVisible();
 	expect(api.count(`/api/academic/offerings/${offerings.club}`)).toBe(1);
 	expect(api.creations).toHaveLength(1);
 	expect(api.creations[0]).toMatchObject({
@@ -432,6 +453,31 @@ test('creating an activity with groups navigates with the created offering conte
 	await expect(page.getByTestId('delivery-offerings-ready')).toContainText('ชุมนุม');
 });
 
-for(const kind of ['course','activity'] as const)test(`${kind} current comparison detail keeps exact context and originating filters without a publication workflow`,async({page})=>{
- const api=await mockDeliveryNavigation(page,{manager:true});await page.goto(managerOrigin('offerings',kind==='course'));await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();const row=page.getByTestId('delivery-offerings-ready').locator('tbody tr').filter({hasText:kind==='course'?'คณิตศาสตร์ต้น':'ชุมนุม'});const link=row.getByRole('link',{name:'รายละเอียด',exact:true});const target=new URL((await link.getAttribute('href'))!,page.url());expect(target.searchParams.get('academicYearId')).toBe(ids.year);expect(target.searchParams.get('academicTermId')).toBe(ids.term);expect(target.searchParams.has('deliveryVersionId')).toBe(false);const origin=new URL(target.searchParams.get('returnTo')!,page.url());expect(origin.searchParams.get('expandedRooms')).toBe(ids.roomB);expect(origin.searchParams.get('kind')).toBe(kind);await link.click();await expectRequestedContext(page);await page.getByRole('link',{name:'ย้อนกลับ',exact:true}).click();await expectManagerOrigin(page,'offerings',kind==='course');expect(api.writes).toEqual([]);expect(api.reads.filter(url=>/delivery-versions|term-change-sets/.test(url.pathname))).toEqual([]);
-});
+for (const kind of ['course', 'activity'] as const)
+	test(`${kind} current comparison detail keeps exact context and originating filters without a publication workflow`, async ({
+		page
+	}) => {
+		const api = await mockDeliveryNavigation(page, { manager: true });
+		await page.goto(managerOrigin('offerings', kind === 'course'));
+		await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+		const row = page
+			.getByTestId('delivery-offerings-ready')
+			.locator('tbody tr')
+			.filter({ hasText: kind === 'course' ? 'คณิตศาสตร์ต้น' : 'ชุมนุม' });
+		const link = row.getByRole('link', { name: 'รายละเอียด', exact: true });
+		const target = new URL((await link.getAttribute('href'))!, page.url());
+		expect(target.searchParams.get('academicYearId')).toBe(ids.year);
+		expect(target.searchParams.get('academicTermId')).toBe(ids.term);
+		expect(target.searchParams.has('deliveryVersionId')).toBe(false);
+		const origin = new URL(target.searchParams.get('returnTo')!, page.url());
+		expect(origin.searchParams.get('expandedRooms')).toBe(ids.roomB);
+		expect(origin.searchParams.get('kind')).toBe(kind);
+		await link.click();
+		await expectRequestedContext(page);
+		await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
+		await expectManagerOrigin(page, 'offerings', kind === 'course');
+		expect(api.writes).toEqual([]);
+		expect(
+			api.reads.filter((url) => /delivery-versions|term-change-sets/.test(url.pathname))
+		).toEqual([]);
+	});

@@ -215,7 +215,7 @@ fn hash_valid(value: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
-fn inventory_digest(tenants: &[OperationalTenant]) -> Result<String, BindingError> {
+pub(super) fn inventory_digest(tenants: &[OperationalTenant]) -> Result<String, BindingError> {
     let mut hash = Sha256::new();
     for tenant in tenants {
         let route =
@@ -467,9 +467,21 @@ pub async fn startup_check(admin: &AdminClient) -> Result<(), BindingError> {
     }
 }
 
+/// Shared library/main entry for authenticated internal migration operations.
+/// Proof parsing stays private; callers cannot supply a date or skip policy.
+pub async fn migrate_operational_school(
+    pool: &PgPool,
+    admin: &AdminClient,
+    subdomain: &str,
+) -> Result<(), String> {
+    super::current_preparation::run_for_school(pool, admin, subdomain).await
+}
+
 pub async fn migrate_tenants() -> Result<bool, BindingError> {
     let admin = admin_client()?;
     let tenants = snapshot(&admin).await?;
+    let preparation = super::current_preparation::ValidatedPreparation::load(&tenants)
+        .map_err(|_| BindingError::Configuration)?;
     let mut migrated = 0;
     let mut failures = FailureHistogram::default();
     for tenant in &tenants {
@@ -488,8 +500,19 @@ pub async fn migrate_tenants() -> Result<bool, BindingError> {
                 })?;
             let migration = async {
                 verify_pool_detailed(pool.as_ref(), tenant.id, true, false).await?;
-                let migrated =
-                    school_migrations::run_tenant_migrations_detailed(pool.as_ref()).await;
+                let expected = preparation
+                    .expectation(tenant.id, &tenant.subdomain)
+                    .map_err(|_| {
+                        RolloutFailure::plain(
+                            FailureStage::MigrationIdentity,
+                            BindingError::Configuration,
+                        )
+                    })?;
+                let migrated = school_migrations::run_operational_tenant_migrations(
+                    pool.as_ref(),
+                    expected.as_ref(),
+                )
+                .await;
                 // A grant or later audit can fail after the migration transaction committed.
                 // Record only a canonical checksum-verified version, never a fabricated zero.
                 if let Ok(mut connection) = school_tenancy::TenantPool::observed_checkout_pool(

@@ -32,7 +32,7 @@ FILES = sorted([
     *['scripts/lib/pipeline-remote/' + name for name in [
         'release-paths.sh', 'runtime-env.sh', 'storage-namespace-input.sh',
         'maintenance.sh', 'admin-accounts.sh', 'admin-deploy.sh',
-        'school-deploy-backend.sh', 'school-storage-rollout.sh',
+        'school-deploy-backend.sh', 'school-storage-rollout.sh', 'current-academic-preparation.py',
         'school-verify-academic.sh', 'school-verify-release.sh',
     ]],
 ])

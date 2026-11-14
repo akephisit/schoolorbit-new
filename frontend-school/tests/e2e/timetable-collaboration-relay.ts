@@ -391,7 +391,12 @@ export function createDraftRelay() {
 			timetable: workspace.timetable,
 			lookupChanges: previous ? lookupChanges(previous, workspace) : undefined
 		};
-		const event: TimetableEventEnvelope = { type: 'TimetablePatched', payload: patch, epoch, seq: ++seq };
+		const event: TimetableEventEnvelope = {
+			type: 'TimetablePatched',
+			payload: patch,
+			epoch,
+			seq: ++seq
+		};
 		journal.push(event);
 		if (publish) for (const peer of peers.values()) peer.send(event);
 		const consumed = identity.leaseToken ? leases.get(identity.leaseToken) : null;

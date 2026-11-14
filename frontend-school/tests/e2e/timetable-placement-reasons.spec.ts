@@ -192,7 +192,8 @@ test('rejected drop preserves cell geometry and an explicit not-submitted review
 		expect(initial).not.toBeNull();
 		expect(current).not.toBeNull();
 		// Durable recovery adds vertical space; the board's columns and cell dimensions remain stable.
-		const coordinates=index===1?(['x','width'] as const):(['x','width','height'] as const);
+		const coordinates =
+			index === 1 ? (['x', 'width'] as const) : (['x', 'width', 'height'] as const);
 		for (const coordinate of coordinates) {
 			expect(current![coordinate]).toBeCloseTo(initial![coordinate], 1);
 		}

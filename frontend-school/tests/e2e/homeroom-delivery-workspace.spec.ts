@@ -1,45 +1,268 @@
-import {expect,test,type Page,type Route} from '@playwright/test';
-import {mockDeliveryNavigation,navigationIds as ids,navigationOfferingIds as offerings,navigationDelivery,navigationWorkspace} from './fixtures/delivery-navigation-route-data';
-import {deferred,deliveryReply} from './fixtures/current-delivery';
-import type {DeliveryManagementOptions} from '../../src/lib/api/learning-delivery';
-test.use({serviceWorkers:'block'});
-const href=(view='homerooms')=>`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&view=${view}`;
-const roomRegion=(page:Page)=>page.getByRole('region',{name:'มุมมองรายห้อง',exact:true});
-const overviewRegion=(page:Page)=>page.getByRole('region',{name:'มุมมองรายวิชาและกิจกรรม',exact:true});
-async function navigate(page:Page,href:string){await page.evaluate(href=>{const a=document.createElement('a');a.href=href;a.id='current-context-link';a.textContent='เปิดบริบทใหม่';a.style.cssText='position:fixed;top:0;left:0;z-index:99999;background:white';document.body.append(a);},href);await page.locator('#current-context-link').click();}
-async function choose(page:Page,control:string,option:string){await page.getByRole('combobox',{name:control,exact:true}).click();await page.getByRole('option').filter({has:page.getByText(option,{exact:true})}).click();}
+import { expect, test, type Page, type Route } from '@playwright/test';
+import {
+	mockDeliveryNavigation,
+	navigationIds as ids,
+	navigationOfferingIds as offerings,
+	navigationDelivery,
+	navigationWorkspace
+} from './fixtures/delivery-navigation-route-data';
+import { deferred, deliveryReply } from './fixtures/current-delivery';
+import type { DeliveryManagementOptions } from '../../src/lib/api/learning-delivery';
+test.use({ serviceWorkers: 'block' });
+const href = (view = 'homerooms') =>
+	`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&view=${view}`;
+const roomRegion = (page: Page) => page.getByRole('region', { name: 'มุมมองรายห้อง', exact: true });
+const overviewRegion = (page: Page) =>
+	page.getByRole('region', { name: 'มุมมองรายวิชาและกิจกรรม', exact: true });
+async function navigate(page: Page, href: string) {
+	await page.evaluate((href) => {
+		const a = document.createElement('a');
+		a.href = href;
+		a.id = 'current-context-link';
+		a.textContent = 'เปิดบริบทใหม่';
+		a.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:white';
+		document.body.append(a);
+	}, href);
+	await page.locator('#current-context-link').click();
+}
+async function choose(page: Page, control: string, option: string) {
+	await page.getByRole('combobox', { name: control, exact: true }).click();
+	await page
+		.getByRole('option')
+		.filter({ has: page.getByText(option, { exact: true }) })
+		.click();
+}
 
-test('academic context starts without waiting for the menu response',async({page})=>{
- const api=await mockDeliveryNavigation(page),held=deferred();await page.route('**/api/menu/user',async route=>{await held.promise;return deliveryReply(route,{groups:[]});});try{await page.goto(href());await expect.poll(()=>api.count('/api/academic/context/options')).toBe(1);}finally{held.release();}
+test('academic context starts without waiting for the menu response', async ({ page }) => {
+	const api = await mockDeliveryNavigation(page),
+		held = deferred();
+	await page.route('**/api/menu/user', async (route) => {
+		await held.promise;
+		return deliveryReply(route, { groups: [] });
+	});
+	try {
+		await page.goto(href());
+		await expect.poll(() => api.count('/api/academic/context/options')).toBe(1);
+	} finally {
+		held.release();
+	}
 });
-test('homeroom-first reads one visible region and current offerings only after changing tabs',async({page})=>{
- const api=await mockDeliveryNavigation(page);await page.goto(href());await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();expect(api.count('/api/academic/delivery/homerooms')).toBe(1);expect(api.count('/api/academic/delivery/workspace')).toBe(0);
- await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();expect(api.count('/api/academic/delivery/workspace')).toBe(1);await page.getByRole('tab',{name:'มุมมองรายห้อง',exact:true}).click();await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();expect(api.count('/api/academic/delivery/workspace')).toBe(1);expect(api.reads.filter(url=>/page-view|delivery-versions|term-change-sets/.test(url.pathname))).toEqual([]);expect(api.writes).toEqual([]);
+test('homeroom-first reads one visible region and current offerings only after changing tabs', async ({
+	page
+}) => {
+	const api = await mockDeliveryNavigation(page);
+	await page.goto(href());
+	await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+	expect(api.count('/api/academic/delivery/homerooms')).toBe(1);
+	expect(api.count('/api/academic/delivery/workspace')).toBe(0);
+	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+	await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+	expect(api.count('/api/academic/delivery/workspace')).toBe(1);
+	await page.getByRole('tab', { name: 'มุมมองรายห้อง', exact: true }).click();
+	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+	expect(api.count('/api/academic/delivery/workspace')).toBe(1);
+	expect(
+		api.reads.filter((url) => /page-view|delivery-versions|term-change-sets/.test(url.pathname))
+	).toEqual([]);
+	expect(api.writes).toEqual([]);
 });
-test('a delayed homeroom region is busy without preventing the independent current offering view',async({page})=>{
- const api=await mockDeliveryNavigation(page),held=deferred();await page.route('**/api/academic/delivery/homerooms?*',async route=>{await held.promise;return route.fallback();});try{await page.goto(href());await expect(roomRegion(page)).toHaveAttribute('aria-busy','true');await expect(roomRegion(page).locator('[data-slot="skeleton"]').first()).toBeVisible();await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();expect(api.count('/api/academic/delivery/workspace')).toBe(1);}finally{held.release();}await page.getByRole('tab',{name:'มุมมองรายห้อง',exact:true}).click();await expect(roomRegion(page)).toHaveAttribute('aria-busy','false');await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+test('a delayed homeroom region is busy without preventing the independent current offering view', async ({
+	page
+}) => {
+	const api = await mockDeliveryNavigation(page),
+		held = deferred();
+	await page.route('**/api/academic/delivery/homerooms?*', async (route) => {
+		await held.promise;
+		return route.fallback();
+	});
+	try {
+		await page.goto(href());
+		await expect(roomRegion(page)).toHaveAttribute('aria-busy', 'true');
+		await expect(roomRegion(page).locator('[data-slot="skeleton"]').first()).toBeVisible();
+		await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+		await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+		expect(api.count('/api/academic/delivery/workspace')).toBe(1);
+	} finally {
+		held.release();
+	}
+	await page.getByRole('tab', { name: 'มุมมองรายห้อง', exact: true }).click();
+	await expect(roomRegion(page)).toHaveAttribute('aria-busy', 'false');
+	await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
 });
-test('a delayed current offering view does not hide ready homeroom comparison facts',async({page})=>{
- await mockDeliveryNavigation(page);const held=deferred();await page.route('**/api/academic/delivery/workspace?*',async route=>{await held.promise;return route.fallback();});try{await page.goto(href('offerings'));await expect(overviewRegion(page)).toHaveAttribute('aria-busy','true');await page.getByRole('tab',{name:'มุมมองรายห้อง',exact:true}).click();await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();await expect(roomRegion(page)).toHaveAttribute('aria-busy','false');}finally{held.release();}await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+test('a delayed current offering view does not hide ready homeroom comparison facts', async ({
+	page
+}) => {
+	await mockDeliveryNavigation(page);
+	const held = deferred();
+	await page.route('**/api/academic/delivery/workspace?*', async (route) => {
+		await held.promise;
+		return route.fallback();
+	});
+	try {
+		await page.goto(href('offerings'));
+		await expect(overviewRegion(page)).toHaveAttribute('aria-busy', 'true');
+		await page.getByRole('tab', { name: 'มุมมองรายห้อง', exact: true }).click();
+		await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+		await expect(roomRegion(page)).toHaveAttribute('aria-busy', 'false');
+	} finally {
+		held.release();
+	}
+	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+	await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
 });
-for(const failed of ['homerooms','workspace'] as const)test(`retry reloads only the failed ${failed} current region`,async({page})=>{
- const api=await mockDeliveryNavigation(page);let attempts=0;await page.route(`**/api/academic/delivery/${failed}?*`,async route=>{if(++attempts===1)return deliveryReply(route,'โหลดบริบทนี้ไม่สำเร็จ',503);return route.fallback();});await page.goto(href(failed==='workspace'?'offerings':'homerooms'));const region=failed==='workspace'?overviewRegion(page):roomRegion(page);await region.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await expect(region).toHaveAttribute('aria-busy','false');await expect(region).not.toContainText('โหลดบริบทนี้ไม่สำเร็จ');expect(attempts).toBe(2);expect(api.count(`/api/academic/delivery/${failed==='workspace'?'homerooms':'workspace'}`)).toBe(failed==='workspace'?1:0);expect(api.writes).toEqual([]);
+for (const failed of ['homerooms', 'workspace'] as const)
+	test(`retry reloads only the failed ${failed} current region`, async ({ page }) => {
+		const api = await mockDeliveryNavigation(page);
+		let attempts = 0;
+		await page.route(`**/api/academic/delivery/${failed}?*`, async (route) => {
+			if (++attempts === 1) return deliveryReply(route, 'โหลดบริบทนี้ไม่สำเร็จ', 503);
+			return route.fallback();
+		});
+		await page.goto(href(failed === 'workspace' ? 'offerings' : 'homerooms'));
+		const region = failed === 'workspace' ? overviewRegion(page) : roomRegion(page);
+		await region.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
+		await expect(region).toHaveAttribute('aria-busy', 'false');
+		await expect(region).not.toContainText('โหลดบริบทนี้ไม่สำเร็จ');
+		expect(attempts).toBe(2);
+		expect(
+			api.count(`/api/academic/delivery/${failed === 'workspace' ? 'homerooms' : 'workspace'}`)
+		).toBe(failed === 'workspace' ? 1 : 0);
+		expect(api.writes).toEqual([]);
+	});
+test('browser reload clears old homerooms until the exact current context returns', async ({
+	page
+}) => {
+	await mockDeliveryNavigation(page);
+	const held = deferred();
+	let reads = 0;
+	await page.route('**/api/academic/delivery/homerooms?*', async (route) => {
+		if (++reads > 1) await held.promise;
+		return route.fallback();
+	});
+	try {
+		await page.goto(href());
+		await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+		await page.reload();
+		await expect(roomRegion(page)).toHaveAttribute('aria-busy', 'true');
+		await expect(page.getByTestId('delivery-homerooms-ready')).toHaveCount(0);
+		await expect(roomRegion(page).locator('[data-slot="skeleton"]').first()).toBeVisible();
+	} finally {
+		held.release();
+	}
+	await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+	expect(reads).toBe(2);
 });
-test('browser reload clears old homerooms until the exact current context returns',async({page})=>{
- await mockDeliveryNavigation(page);const held=deferred();let reads=0;await page.route('**/api/academic/delivery/homerooms?*',async route=>{if(++reads>1)await held.promise;return route.fallback();});try{await page.goto(href());await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();await page.reload();await expect(roomRegion(page)).toHaveAttribute('aria-busy','true');await expect(page.getByTestId('delivery-homerooms-ready')).toHaveCount(0);await expect(roomRegion(page).locator('[data-slot="skeleton"]').first()).toBeVisible();}finally{held.release();}await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();expect(reads).toBe(2);
+test('new explicit year and term clear prior homerooms before delayed destination results', async ({
+	page
+}) => {
+	await mockDeliveryNavigation(page);
+	const held = deferred();
+	let nextReads = 0;
+	await page.route('**/api/academic/delivery/homerooms?*', async (route) => {
+		const url = new URL(route.request().url());
+		if (url.searchParams.get('academicTermId') !== ids.activeTerm) return route.fallback();
+		nextReads++;
+		await held.promise;
+		const result = navigationWorkspace();
+		result.academicYearId = ids.activeYear;
+		result.academicTermId = ids.activeTerm;
+		result.homerooms[0].homeroom.name = 'ห้องภาคเรียนใหม่';
+		return deliveryReply(route, result);
+	});
+	try {
+		await page.goto(href());
+		await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+		await navigate(
+			page,
+			`/staff/academic/delivery?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`
+		);
+		await expect.poll(() => nextReads).toBe(1);
+		await expect(page.getByTestId('delivery-homerooms-ready')).toHaveCount(0);
+		await expect(roomRegion(page)).toHaveAttribute('aria-busy', 'true');
+	} finally {
+		held.release();
+	}
+	await expect(roomRegion(page)).toContainText('ห้องภาคเรียนใหม่');
 });
-test('new explicit year and term clear prior homerooms before delayed destination results',async({page})=>{
- await mockDeliveryNavigation(page);const held=deferred();let nextReads=0;await page.route('**/api/academic/delivery/homerooms?*',async route=>{const url=new URL(route.request().url());if(url.searchParams.get('academicTermId')!==ids.activeTerm)return route.fallback();nextReads++;await held.promise;const result=navigationWorkspace();result.academicYearId=ids.activeYear;result.academicTermId=ids.activeTerm;result.homerooms[0].homeroom.name='ห้องภาคเรียนใหม่';return deliveryReply(route,result);});try{await page.goto(href());await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();await navigate(page,`/staff/academic/delivery?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`);await expect.poll(()=>nextReads).toBe(1);await expect(page.getByTestId('delivery-homerooms-ready')).toHaveCount(0);await expect(roomRegion(page)).toHaveAttribute('aria-busy','true');}finally{held.release();}await expect(roomRegion(page)).toContainText('ห้องภาคเรียนใหม่');
-});
-test('read-only staff inspect all current coverage without loading management options or mutation controls',async({page})=>{
- const api=await mockDeliveryNavigation(page);await page.goto(href());await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();await expect(page.getByRole('button',{name:'เปิดการเรียนการสอน',exact:true})).toHaveCount(0);await page.getByRole('tab',{name:'มุมมองรายวิชา/กิจกรรม',exact:true}).click();await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();expect(api.count('/api/academic/delivery/management-options')).toBe(0);expect(api.writes).toEqual([]);
+test('read-only staff inspect all current coverage without loading management options or mutation controls', async ({
+	page
+}) => {
+	const api = await mockDeliveryNavigation(page);
+	await page.goto(href());
+	await expect(page.getByTestId('delivery-homerooms-ready')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true })).toHaveCount(
+		0
+	);
+	await page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true }).click();
+	await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+	expect(api.count('/api/academic/delivery/management-options')).toBe(0);
+	expect(api.writes).toEqual([]);
 });
 
-for(const width of [390,1280])for(const dark of [false,true])test(`manual activity creation uses a current weekly target, explicit groups and no operational date at ${width}px ${dark?'dark':'light'}`,async({page},info)=>{
- await page.setViewportSize({width,height:900});const api=await mockDeliveryNavigation(page,{manager:true,groupedCreation:true});await page.goto(href('offerings'));await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();expect(api.count('/api/academic/delivery/management-options')).toBe(0);if(dark)await page.getByRole('button',{name:'Toggle Dark Mode',exact:true}).click();
- await page.getByRole('button',{name:'เปิดการเรียนการสอน',exact:true}).focus();await page.keyboard.press('Enter');const modal=page.getByRole('dialog');await modal.getByRole('button',{name:/เพิ่มรายการเอง/}).click();await choose(page,'ประเภท','กิจกรรมพัฒนาผู้เรียน');await choose(page,'เลือกกิจกรรม','ชุมนุม (ฉบับ 3)');await choose(page,'เลือกระดับชั้น','มัธยมศึกษาปีที่ 1');await choose(page,'เลือกแผนการเรียน','แผนคณิตศาสตร์');await choose(page,'รูปแบบการเปิด','เปิดพร้อมจัดกลุ่ม');await modal.getByLabel('คาบที่จัดจริงต่อสัปดาห์',{exact:true}).fill('0');
- await expect(modal).not.toContainText('ACT-TECHNICAL');await expect(modal.getByRole('button',{name:'วันที่เริ่มเปิดสอนจริง',exact:true})).toHaveCount(0);await expect(modal.getByRole('button',{name:'สร้างข้อมูลปัจจุบัน',exact:true})).toBeEnabled();await page.screenshot({animations:'disabled',path:info.outputPath(`current-create-${width}-${dark}.png`)});await modal.getByRole('button',{name:'สร้างข้อมูลปัจจุบัน',exact:true}).click();await page.waitForURL(url=>url.pathname.endsWith(`/delivery/${offerings.club}`));expect(api.creations).toHaveLength(1);expect(api.creations[0]).toMatchObject({kind:'activity',academicTermId:ids.term,activityVersionId:offerings.club,createHomeroomGroups:true,weeklyPeriodTarget:0});expect(api.creations[0]).not.toHaveProperty('startsOn');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
-});
-test('cancelled pending catalog options cannot reopen a dismissed create dialog',async({page})=>{
- const api=await mockDeliveryNavigation(page,{manager:true}),held=deferred();await page.route('**/api/academic/delivery/management-options?*',async route=>{await held.promise;return route.fallback();});try{await page.goto(href());await page.getByRole('button',{name:'เปิดการเรียนการสอน',exact:true}).click();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);}finally{held.release();}await expect(page.getByRole('dialog')).toHaveCount(0);expect(api.creations).toEqual([]);
+for (const width of [390, 1280])
+	for (const dark of [false, true])
+		test(`manual activity creation uses a current weekly target, explicit groups and no operational date at ${width}px ${dark ? 'dark' : 'light'}`, async ({
+			page
+		}, info) => {
+			await page.setViewportSize({ width, height: 900 });
+			const api = await mockDeliveryNavigation(page, { manager: true, groupedCreation: true });
+			await page.goto(href('offerings'));
+			await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();
+			expect(api.count('/api/academic/delivery/management-options')).toBe(0);
+			if (dark) await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
+			await page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true }).focus();
+			await page.keyboard.press('Enter');
+			const modal = page.getByRole('dialog');
+			await modal.getByRole('button', { name: /เพิ่มรายการเอง/ }).click();
+			await choose(page, 'ประเภท', 'กิจกรรมพัฒนาผู้เรียน');
+			await choose(page, 'เลือกกิจกรรม', 'ชุมนุม (ฉบับ 3)');
+			await choose(page, 'เลือกระดับชั้น', 'มัธยมศึกษาปีที่ 1');
+			await choose(page, 'เลือกแผนการเรียน', 'แผนคณิตศาสตร์');
+			await choose(page, 'รูปแบบการเปิด', 'เปิดพร้อมจัดกลุ่ม');
+			await modal.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('0');
+			await expect(modal).not.toContainText('ACT-TECHNICAL');
+			await expect(
+				modal.getByRole('button', { name: 'วันที่เริ่มเปิดสอนจริง', exact: true })
+			).toHaveCount(0);
+			await expect(
+				modal.getByRole('button', { name: 'สร้างข้อมูลปัจจุบัน', exact: true })
+			).toBeEnabled();
+			await page.screenshot({
+				animations: 'disabled',
+				path: info.outputPath(`current-create-${width}-${dark}.png`)
+			});
+			await modal.getByRole('button', { name: 'สร้างข้อมูลปัจจุบัน', exact: true }).click();
+			await page.waitForURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
+			expect(api.creations).toHaveLength(1);
+			expect(api.creations[0]).toMatchObject({
+				kind: 'activity',
+				academicTermId: ids.term,
+				activityVersionId: offerings.club,
+				createHomeroomGroups: true,
+				weeklyPeriodTarget: 0
+			});
+			expect(api.creations[0]).not.toHaveProperty('startsOn');
+			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+				true
+			);
+		});
+test('cancelled pending catalog options cannot reopen a dismissed create dialog', async ({
+	page
+}) => {
+	const api = await mockDeliveryNavigation(page, { manager: true }),
+		held = deferred();
+	await page.route('**/api/academic/delivery/management-options?*', async (route) => {
+		await held.promise;
+		return route.fallback();
+	});
+	try {
+		await page.goto(href());
+		await page.getByRole('button', { name: 'เปิดการเรียนการสอน', exact: true }).click();
+		await page.keyboard.press('Escape');
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+	} finally {
+		held.release();
+	}
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	expect(api.creations).toEqual([]);
 });

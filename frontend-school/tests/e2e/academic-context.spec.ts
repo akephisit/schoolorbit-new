@@ -1,5 +1,5 @@
 import { mockYearManagement, openRoster, id as yearManagementId } from './fixtures/year-management';
-import type {HomeroomDeliveryWorkspace} from '../../src/lib/api/learning-delivery';
+import type { HomeroomDeliveryWorkspace } from '../../src/lib/api/learning-delivery';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
@@ -160,13 +160,12 @@ async function mockAcademicContextApis(
 				await fulfillJson(route, {
 					academicYearId: url.searchParams.get('academicYearId')!,
 					academicTermId: url.searchParams.get('academicTermId')!,
-					rowVersion:1,
+					rowVersion: 1,
 					homerooms: [],
 					unlinked: []
 				} satisfies HomeroomDeliveryWorkspace);
 				return;
 			}
-
 
 			if (url.pathname === '/api/notifications/stream') {
 				await route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' });

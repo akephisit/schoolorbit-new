@@ -1,8 +1,4 @@
 <script lang="ts">
-	import {
-		deliveryGroupCoverage,
-		type DeliveryGroupCoverage
-	} from '#lib/academic/learning-delivery-presentation.js';
 	import type {
 		CreateLearningGroupRequest,
 		DeliveryManagementOptions,
@@ -25,7 +21,6 @@
 	let {
 		offering,
 		groups,
-		selectedGroups = null,
 		selectedGroupId = null,
 		canManage = false,
 		onSelect,
@@ -35,7 +30,6 @@
 	}: {
 		offering: LearningOffering;
 		groups: LearningGroup[];
-		selectedGroups?: readonly DeliveryGroupCoverage[] | null;
 		selectedGroupId?: string | null;
 		canManage?: boolean;
 		onSelect: (group: LearningGroup) => void;
@@ -136,7 +130,6 @@
 	</header>
 	<div class="divide-y">
 		{#each groups as group (group.id)}
-			{@const coverage = deliveryGroupCoverage(group, selectedGroups)}
 			<div class="flex flex-wrap items-center gap-2 pr-3">
 				<Button
 					type="button"
@@ -155,11 +148,8 @@
 						<div class="min-w-0 flex-1">
 							<p class="font-medium">{group.name}</p>
 							<p class="mt-1 text-xs text-muted-foreground">
-								ครู {group.teacherAssignments.length} คน · {selectedGroups === null
-									? 'ห้องต้นทาง'
-									: 'ห้องในรุ่นที่เลือก'}
-								{coverage.homeroomIds.length} ห้อง · ห้องเรียนที่ต้องการ {group.preferredRoomIds
-									.length} ห้อง
+								ครู {group.teacherAssignments.length} คน · ห้องต้นทาง {group.homeroomIds.length} ห้อง
+								· ห้องเรียนที่ต้องการ {group.preferredRoomIds.length} ห้อง
 							</p>
 						</div>
 						<Badge variant="secondary"

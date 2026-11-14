@@ -410,9 +410,7 @@ async fn apply_template_in_permit(
         .bind(request.academic_term_id)
         .fetch_optional()
         .await?
-        .ok_or_else(|| {
-            AppError::Conflict("เพิ่มแม่แบบได้เฉพาะรุ่นตารางฉบับร่างในภาคเรียนที่เปิดอยู่".to_string())
-        })?;
+        .ok_or_else(|| AppError::Conflict("ไม่พบตารางสอนปัจจุบันในภาคเรียนที่ระบุ".to_string()))?;
     let mut block_ids = Vec::with_capacity(template.entries.len());
     let delivery = school_academic_delivery::services::current::complete_workspace_on_connection(
         &mut transaction,
@@ -499,7 +497,9 @@ async fn apply_template_in_permit(
                 .offerings
                 .iter()
                 .find(|offering| offering.groups.iter().any(|group| group.id == group_id))
-                .ok_or_else(|| AppError::ValidationError("กลุ่มไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?;
+                .ok_or_else(|| {
+                    AppError::ValidationError("กลุ่มเรียนไม่อยู่ในข้อมูลเปิดสอนปัจจุบันของภาคเรียน".into())
+                })?;
             let offering_id = offering.id;
             let offering_kind = offering.kind;
             if matches!(&offering.catalog, school_academic_delivery::models::LearningOfferingSnapshot::Activity(activity)
@@ -557,7 +557,7 @@ async fn apply_template_in_permit(
             .bind(academic_year_id)
             .bind(entry.room_id)
             .bind(actor_user_id)
-            .bind(pinned_group.ok_or_else(|| AppError::ValidationError("กลุ่มไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into()))?.homeroom_ids.clone())
+            .bind(pinned_group.ok_or_else(|| AppError::ValidationError("กลุ่มเรียนไม่อยู่ในข้อมูลเปิดสอนปัจจุบันของภาคเรียน".into()))?.homeroom_ids.clone())
             .execute()
             .await
             .map_err(map_write_error)?;
@@ -571,7 +571,7 @@ async fn apply_template_in_permit(
                     })
                     .map(|teacher| teacher.role)
                     .ok_or_else(|| {
-                        AppError::ValidationError("ครูไม่อยู่ในรุ่นเปิดสอนที่ตารางอ้างอิง".into())
+                        AppError::ValidationError("ครูไม่อยู่ในข้อมูลเปิดสอนปัจจุบันของกลุ่มเรียน".into())
                     })?;
                 DbSession::new(&mut *transaction)
                     .query(
@@ -738,7 +738,9 @@ async fn clear_timetable_in_permit(
         .await?
         .unwrap_or(false);
     if !exists_current {
-        return Err(AppError::Conflict("ล้างได้เฉพาะรุ่นตารางฉบับร่าง".to_string()));
+        return Err(AppError::Conflict(
+            "ไม่พบตารางสอนปัจจุบันที่ต้องการล้างในภาคเรียนที่ระบุ".to_string(),
+        ));
     }
     let ids: Vec<Uuid> = DbSession::new(&mut *transaction)
         .scalar(
@@ -791,7 +793,7 @@ fn resolve_target_group(
     match matches.as_slice() {
         [id] => Ok(Some(*id)),
         [] => Err(AppError::ValidationError(
-            "ไม่พบกลุ่มเรียนที่ตรงกับแม่แบบในรุ่นเปิดสอนที่ตารางอ้างอิง".into(),
+            "ไม่พบกลุ่มเรียนปัจจุบันที่ตรงกับแม่แบบในภาคเรียนนี้".into(),
         )),
         _ => Err(AppError::Conflict(
             "กลุ่มเรียนในแม่แบบตรงกับหลายกลุ่ม กรุณาจัดคาบตาม ID เอง".into(),

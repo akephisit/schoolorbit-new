@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import { authStore } from '#lib/stores/auth.js';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import {
 		previewOfferingDeletion,
 		previewGroupDeletion,
@@ -20,6 +21,7 @@
 		offeringId,
 		groupId = null,
 		label,
+		offeringName,
 		canManage,
 		onDeleted
 	}: {
@@ -28,9 +30,32 @@
 		offeringId: string;
 		groupId?: string | null;
 		label: string;
+		offeringName: string;
 		canManage: boolean;
 		onDeleted: (result: DeletedDeliveryResource) => void | Promise<void>;
 	} = $props();
+	const academicContext = getAcademicContextStore();
+	const year = $derived(
+		$academicContext.options?.years.find((candidate) => candidate.id === academicYearId)
+	);
+	const term = $derived(
+		$academicContext.options?.terms.find(
+			(candidate) => candidate.id === academicTermId && candidate.academicYearId === academicYearId
+		)
+	);
+	const contextMetadataReady = $derived(
+		Boolean(year?.name.trim() && term?.name.trim() && offeringName.trim() && label.trim())
+	);
+	const yearLabel = $derived.by(() => {
+		if (!year?.name.trim()) return 'ชื่อปีการศึกษายังไม่พร้อม';
+		const name = year.name.trim(),
+			standard = `ปีการศึกษา ${year.year}`;
+		return name === standard ? name : `${name} (${standard})`;
+	});
+	const termLabel = $derived(
+		term?.name.trim() ? `${term.name} · ลำดับ ${term.sequence}` : 'ชื่อภาคเรียนยังไม่พร้อม'
+	);
+
 	let open = $state(false),
 		loading = $state(false),
 		saving = $state(false),
@@ -77,6 +102,14 @@
 						{ signal: ticket.signal }
 					));
 			if (current(owner, token, epoch) && request.isCurrent(ticket.revision)) {
+				if (
+					result.academicYearId !== academicYearId ||
+					result.academicTermId !== academicTermId ||
+					result.learningOfferingId !== offeringId ||
+					(result.learningGroupId ?? null) !== (groupId ?? null)
+				) {
+					throw new Error('ผลตรวจไม่ตรงกับปี ภาคเรียน หรือรายการที่ขอ กรุณาตรวจผลกระทบใหม่');
+				}
 				preview = result;
 				previewEpoch = epoch;
 			}
@@ -117,6 +150,7 @@
 			saving ||
 			loading ||
 			!canManage ||
+			!contextMetadataReady ||
 			previewEpoch !== authStore.sessionEpoch ||
 			dialogEpoch !== authStore.sessionEpoch
 		)
@@ -185,8 +219,23 @@
 				>ตรวจผลกระทบก่อนลบถาวร ข้อมูลคะแนนและเช็คชื่อรายคาบที่เป็นของรายการนี้จะถูกลบด้วย</AlertDialog.Description
 			></AlertDialog.Header
 		>
+		<section aria-label="บริบทการลบ" class="rounded-xl border bg-muted/30 p-3 text-sm">
+			<dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
+				<dt>ปีการศึกษา</dt>
+				<dd class="break-words">{yearLabel}</dd>
+				<dt>ภาคเรียน</dt>
+				<dd class="break-words">{termLabel}</dd>
+				<dt>รายการเปิดสอน</dt>
+				<dd class="break-words">{offeringName.trim() || 'ชื่อรายการเปิดสอนยังไม่พร้อม'}</dd>
+				{#if groupId}<dt>กลุ่มเรียน</dt>
+					<dd class="break-words">{label.trim() || 'ชื่อกลุ่มเรียนยังไม่พร้อม'}</dd>{/if}
+			</dl>
+			{#if !contextMetadataReady}<p role="status" class="mt-3 text-muted-foreground">
+					ข้อมูลชื่อปีการศึกษา ภาคเรียน หรือรายการยังไม่ครบ จึงยังยืนยันลบไม่ได้
+				</p>{/if}
+		</section>
 		{#if loading}<p role="status">กำลังตรวจผลกระทบ...</p>{:else if preview}
-			<dl class="grid grid-cols-2 gap-3 text-sm">
+			<dl aria-label="ผลกระทบการลบ" class="grid grid-cols-2 gap-3 text-sm">
 				<dt>กลุ่มเรียน</dt>
 				<dd>{preview.impact.learningGroups}</dd>
 				<dt>การมอบหมายครู</dt>
@@ -227,7 +276,7 @@
 				variant="destructive"
 				loading={saving}
 				loadingLabel="กำลังลบ"
-				disabled={!preview || loading}
+				disabled={!preview || loading || !contextMetadataReady}
 				onclick={remove}>ยืนยันลบถาวร</LoadingButton
 			></AlertDialog.Footer
 		>
