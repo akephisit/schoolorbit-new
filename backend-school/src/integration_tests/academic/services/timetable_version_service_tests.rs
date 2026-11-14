@@ -1,490 +1,174 @@
-use chrono::{Days, NaiveDate};
+//! Current aggregates replace publication/clone/source-alignment workflow tests.
+use super::timetable_block_service_tests::migrated_pool;
+use school_academic_timetable::{
+    collaboration::TimetableMutationContext,
+    models::{timetable::CreateTimetableRequest, timetable_block::TimetableBlockWorkspaceQuery},
+    policy::TimetableAccessFilter,
+    services::{timetable_block_service, timetable_service},
+};
 use uuid::Uuid;
 
-use super::timetable_version_service;
-use crate::integration_tests::academic::cutover_test_support::{
-    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
-    CutoverFixture,
-};
-use school_academic_timetable::models::timetable_version::CloneTimetableVersionRequest;
-use school_errors::AppError;
-use school_test_db::create_named_test_pool;
-
-async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
-    let pool = create_named_test_pool(test_name).await;
-    apply_migrations_through(&pool, 40).await.unwrap();
-    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
-        .await
-        .unwrap();
-    apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, school_migrations::latest_migration_version())
-        .await
-        .unwrap();
-    pool
-}
-
-async fn insert_deferred_synchronized_offering(
-    pool: &sqlx::PgPool,
-    term_id: Uuid,
-    year_id: Uuid,
-    code: &str,
-    starts_on: NaiveDate,
-) -> Uuid {
-    let offering_id = Uuid::new_v4();
-    let mut transaction = pool.begin().await.unwrap();
-    let saved_starts_on: NaiveDate = sqlx::query_scalar(
-        r#"INSERT INTO learning_offerings (
-               id, academic_term_id, academic_year_id, kind, code_snapshot,
-               name_snapshot, status, owning_organization_unit_id, starts_on
-           )
-           SELECT $1, $2, $3, 'activity', $4,
-                  'กิจกรรมรอจัดกลุ่ม', 'draft', activity.owning_organization_unit_id, $5
-           FROM activities activity
-           JOIN activity_versions version ON version.activity_id = activity.id
-           WHERE version.scheduling_mode = 'synchronized'
-           ORDER BY version.id
-           LIMIT 1
-           RETURNING starts_on"#,
-    )
-    .bind(offering_id)
-    .bind(term_id)
-    .bind(year_id)
-    .bind(code)
-    .bind(starts_on)
-    .fetch_one(&mut *transaction)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO activity_offering_details (
-               learning_offering_id, academic_term_id, academic_year_id,
-               activity_version_id, activity_id, curriculum_activity_requirement_id,
-               registration_type, scheduling_mode, hours, capacity,
-               attendance_requirement, pass_criteria
-           )
-           SELECT $1, $2, $3, version.id, version.activity_id, NULL,
-                  'assigned', 'synchronized', version.hours_per_week, NULL,
-                  '{}'::jsonb, '{}'::jsonb
-           FROM activity_versions version
-           WHERE version.scheduling_mode = 'synchronized'
-           ORDER BY version.id
-           LIMIT 1"#,
-    )
-    .bind(offering_id)
-    .bind(term_id)
-    .bind(year_id)
-    .execute(&mut *transaction)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_offering_targets (
-               id, learning_offering_id, academic_term_id, academic_year_id,
-               target_kind, homeroom_id, grade_level_id, study_program_id
-           )
-           SELECT gen_random_uuid(), $1, $2, $3, 'homeroom',
-                  homeroom.id, homeroom.grade_level_id, homeroom.study_program_id
-           FROM homerooms homeroom
-           WHERE homeroom.academic_year_id = $3 AND homeroom.is_active
-           ORDER BY homeroom.id
-           LIMIT 1"#,
-    )
-    .bind(offering_id)
-    .bind(term_id)
-    .bind(year_id)
-    .execute(&mut *transaction)
-    .await
-    .unwrap();
-    transaction.commit().await.unwrap();
-    assert_eq!(saved_starts_on, starts_on);
-    offering_id
-}
-
 #[tokio::test]
-async fn list_resolve_and_clone_preserve_version_isolation_and_targets() {
-    let pool = migrated_pool("timetable_version_list_resolve_clone").await;
-    apply_migrations_through(&pool, school_migrations::latest_migration_version())
-        .await
-        .unwrap();
-    let (term_id,term_start,source_id,actor_id): (Uuid,NaiveDate,Uuid,Uuid)=sqlx::query_as("SELECT version.academic_term_id,version.effective_from,version.id,version.published_by FROM academic_timetable_versions version WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
-    let source = timetable_version_service::get_version(&pool, source_id, term_start)
-        .await
-        .unwrap();
-    let listed = timetable_version_service::list_versions(&pool, term_id)
-        .await
-        .unwrap();
-    assert!(listed
-        .iter()
-        .any(|version| version.id == source_id && !version.targets.is_empty()));
-    assert_eq!(
-        timetable_version_service::resolve_for_date(&pool, term_id, term_start)
+async fn reading_an_empty_term_is_read_only_and_concurrent_creation_keeps_one_identity() {
+    let pool = migrated_pool("timetable_current_singleton").await;
+    let (year,bell): (Uuid,Uuid) = sqlx::query_as("SELECT academic_year_id,bell_schedule_id FROM academic_terms WHERE status='active' ORDER BY id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let term = Uuid::new_v4();
+    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,sequence_no,code,name,term_type,included_in_year_result,blocks_year_closure,bell_schedule_id,school_days,status) SELECT $1,$2,COALESCE(max(sequence_no),0)+1,'CURRENT-TEST','Current singleton test','regular',false,false,$3,'MON,TUE,WED,THU,FRI','planning' FROM academic_terms WHERE academic_year_id=$2").bind(term).bind(year).bind(bell).execute(&pool).await.unwrap();
+    for _ in 0..2 {
+        assert!(timetable_service::get_for_term(&pool, term)
             .await
             .unwrap()
-            .id,
-        source_id
+            .is_none());
+    }
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let mutation = TimetableMutationContext::for_tests(&pool, actor);
+    let first = timetable_service::create(
+        &pool,
+        &mutation,
+        CreateTimetableRequest {
+            academic_term_id: term,
+        },
     );
-    assert!(matches!(
-        timetable_version_service::resolve_for_date(&pool, term_id, term_start.pred_opt().unwrap())
-            .await,
-        Err(AppError::NotFound(_))
-    ));
-    let cloned = timetable_version_service::clone_draft(
+    let second = timetable_service::create(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            source_row_version: source.row_version,
-            resume_draft_id: None,
-            draft_row_version: None,
+        &mutation,
+        CreateTimetableRequest {
+            academic_term_id: term,
         },
-    )
-    .await
-    .unwrap();
-    assert_eq!(cloned.source_version_id, Some(source_id));
-    assert_eq!(cloned.effective_from, None, "date is chosen at publication");
-    assert_eq!(cloned.delivery_version_id, source.delivery_version_id);
-    assert_eq!(
-        cloned
-            .targets
-            .iter()
-            .map(|target| (target.learning_offering_id, target.weekly_period_target))
-            .collect::<Vec<_>>(),
-        source
-            .targets
-            .iter()
-            .map(|target| (target.learning_offering_id, target.weekly_period_target))
-            .collect::<Vec<_>>()
     );
-    let resumed = timetable_version_service::clone_draft(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            source_row_version: source.row_version,
-            resume_draft_id: None,
-            draft_row_version: None,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(resumed.id, cloned.id);
-    assert!(matches!(
-        timetable_version_service::clone_draft(
-            &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-                &pool, actor_id
-            ),
-            source_id,
-            CloneTimetableVersionRequest {
-                source_row_version: source.row_version + 1,
-                resume_draft_id: None,
-                draft_row_version: None
-            }
-        )
-        .await,
-        Err(AppError::Conflict(_))
-    ));
-    sqlx::query("UPDATE academic_terms SET status='closing' WHERE id=$1")
-        .bind(term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert!(timetable_version_service::clone_draft(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            source_row_version: source.row_version,
-            resume_draft_id: Some(cloned.id),
-            draft_row_version: Some(cloned.row_version)
-        }
-    )
-    .await
-    .is_ok());
-    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
-        .bind(term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert!(matches!(
-        timetable_version_service::clone_draft(
-            &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-                &pool, actor_id
-            ),
-            source_id,
-            CloneTimetableVersionRequest {
-                source_row_version: source.row_version,
-                resume_draft_id: None,
-                draft_row_version: None
-            }
-        )
-        .await,
-        Err(AppError::Conflict(_))
-    ));
-}
-
-#[tokio::test]
-async fn clone_draft_uses_only_its_published_opening_not_unpublished_registry_resources() {
-    let pool = migrated_pool("timetable_version_no_raw_resources").await;
-    apply_migrations_through(&pool, school_migrations::latest_migration_version())
-        .await
-        .unwrap();
-    let (source_id,term_id,year_id,actor,effective_from): (Uuid,Uuid,Uuid,Uuid,NaiveDate)=sqlx::query_as("SELECT id,academic_term_id,academic_year_id,published_by,effective_from FROM academic_timetable_versions WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
-    let offering = insert_deferred_synchronized_offering(
-        &pool,
-        term_id,
-        year_id,
-        "UNPUBLISHED-REGISTRY",
-        effective_from,
-    )
-    .await;
-    let source = timetable_version_service::get_version(&pool, source_id, effective_from)
-        .await
-        .unwrap();
-    let cloned = timetable_version_service::clone_draft(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor,
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            source_row_version: source.row_version,
-            resume_draft_id: None,
-            draft_row_version: None,
-        },
-    )
-    .await
-    .unwrap();
-    assert!(!cloned
-        .targets
-        .iter()
-        .any(|target| target.learning_offering_id == offering));
-    assert_eq!(cloned.delivery_version_id, source.delivery_version_id);
-    assert_eq!(cloned.targets.len(), source.targets.len());
-}
-
-#[tokio::test]
-async fn timetable_source_alignment_rejects_source_choice_and_ignores_unpublished_drafts() {
-    let pool = migrated_pool("timetable_version_source_update_guard").await;
-    // This exercises the current change-set service, including revision audience ownership.
-    school_test_db::run_test_migrations(&pool).await;
-    let (source_id,actor): (Uuid,Uuid)=sqlx::query_as("SELECT id,published_by FROM academic_timetable_versions WHERE status='published' AND academic_term_id IN (SELECT id FROM academic_terms WHERE status='active') ORDER BY effective_from,id LIMIT 1").fetch_one(&pool).await.unwrap();
-    let source =
-        timetable_version_service::get_version(&pool, source_id, chrono::Utc::now().date_naive())
-            .await
-            .unwrap();
-    let date = source.effective_from.unwrap().succ_opt().unwrap();
-    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
-        .bind(source.academic_term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let opening = school_academic_delivery::services::change_sets::create_change_set(
-        &pool,
-        actor,
-        school_academic_delivery::models::CreateAcademicTermChangeSetRequest {
-            academic_term_id: source.academic_term_id,
-            reason: "ร่างเปิดสอนยังไม่เผยแพร่".into(),
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    let cloned = timetable_version_service::clone_draft(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor,
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            source_row_version: source.row_version,
-            resume_draft_id: None,
-            draft_row_version: None,
-        },
-    )
-    .await
-    .unwrap();
-    use school_academic_timetable::models::timetable_version::UpdateTimetableDeliverySourceRequest;
-    assert!(
-        serde_json::from_value::<UpdateTimetableDeliverySourceRequest>(serde_json::json!({
-            "rowVersion":cloned.row_version,"deliveryVersionId":opening.target_delivery_version_id
-        }))
-        .is_err(),
-        "a client cannot select even a same-term opening UUID"
-    );
-    let aligned = school_academic_timetable::services::timetable_lifecycle::update_source(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor,
-        ),
-        cloned.id,
-        UpdateTimetableDeliverySourceRequest {
-            row_version: cloned.row_version,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(aligned.delivery_version_id, source.delivery_version_id);
-    assert_eq!(aligned.row_version, cloned.row_version);
-    let unchanged = timetable_version_service::get_version(&pool, cloned.id, date)
-        .await
-        .unwrap();
-    assert_eq!(unchanged.delivery_version_id, source.delivery_version_id);
-    assert_eq!(unchanged.row_version, cloned.row_version);
-}
-
-#[tokio::test]
-async fn migration_080_reconciles_eligible_offerings_into_existing_drafts() {
-    let pool = create_named_test_pool("timetable_version_reconcile_existing_draft").await;
-    apply_migrations_through(&pool, 40).await.unwrap();
-    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
-        .await
-        .unwrap();
-    apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, 79).await.unwrap();
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (term_id, year_id, term_start, source_id, bell_schedule_id): (
-        Uuid,
-        Uuid,
-        NaiveDate,
-        Uuid,
-        Uuid,
-    ) = sqlx::query_as(
-        r#"SELECT term.id, term.academic_year_id, term.start_date,
-                  version.id, version.bell_schedule_id
-           FROM academic_terms term
-           JOIN academic_timetable_versions version
-             ON version.academic_term_id = term.id
-            AND version.status = 'published'
-           WHERE term.status = 'active'
-           ORDER BY version.effective_from, version.id
-           LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let draft_id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO academic_timetable_versions (
-               id, academic_term_id, academic_year_id, effective_from, status,
-               source_version_id, bell_schedule_id, created_by
-           ) VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)"#,
-    )
-    .bind(draft_id)
-    .bind(term_id)
-    .bind(year_id)
-    .bind(term_start.checked_add_days(Days::new(7)).unwrap())
-    .bind(source_id)
-    .bind(bell_schedule_id)
-    .bind(actor_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    let offering_id =
-        insert_deferred_synchronized_offering(&pool, term_id, year_id, "MIGRATION-080", term_start)
-            .await;
-
-    apply_migrations_through(&pool, 80)
-        .await
-        .expect("migration 080 must reconcile existing draft targets");
-
-    let reconciled: Option<(i32, serde_json::Value)> = sqlx::query_as(
-        r#"SELECT weekly_period_target, migration_provenance
-           FROM academic_timetable_version_targets
-           WHERE timetable_version_id = $1 AND learning_offering_id = $2"#,
-    )
-    .bind(draft_id)
-    .bind(offering_id)
-    .fetch_optional(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        reconciled,
-        Some((1, serde_json::json!({ "reconciledByMigration": 80 })))
-    );
-    let row_version: i64 =
-        sqlx::query_scalar("SELECT row_version FROM academic_timetable_versions WHERE id = $1")
-            .bind(draft_id)
+    let (first, second) = tokio::join!(first, second);
+    let first = first.unwrap();
+    let second = second.unwrap();
+    assert_eq!(first.id, second.id);
+    assert_eq!(first.row_version, second.row_version);
+    assert_eq!(first.bell_schedule_id, bell);
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM academic_timetables WHERE academic_term_id=$1")
+            .bind(term)
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(row_version, 2);
+    assert_eq!(count, 1);
+    assert_eq!(
+        timetable_service::get_for_term(&pool, term)
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        first.id
+    );
 }
 
 #[tokio::test]
-async fn cloned_timetable_version_preserves_exact_instructor_sets() {
-    let pool = migrated_pool("timetable_version_clone_exact_instructors").await;
-    apply_migrations_through(&pool, school_migrations::latest_migration_version())
-        .await
-        .unwrap();
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (source_id, source_row_version, _term_start): (Uuid, i64, NaiveDate) = sqlx::query_as(
-        r#"SELECT version.id, version.row_version, version.effective_from
-           FROM academic_timetable_versions version
-           JOIN academic_terms term ON term.id = version.academic_term_id
-           WHERE version.status = 'published' AND term.status = 'active'
-           ORDER BY version.effective_from, version.id LIMIT 1"#,
+async fn current_workspace_reads_weekly_demand_without_source_alignment_or_new_aggregate() {
+    let pool = migrated_pool("timetable_current_live_demand").await;
+    let (id,term,year): (Uuid,Uuid,Uuid)=sqlx::query_as("SELECT timetable.id,timetable.academic_term_id,timetable.academic_year_id FROM academic_timetables timetable JOIN academic_terms term ON term.id=timetable.academic_term_id WHERE term.status='active' ORDER BY timetable.id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let query = || TimetableBlockWorkspaceQuery {
+        academic_year_id: year,
+        academic_term_id: term,
+        timetable_id: id,
+    };
+    let access = TimetableAccessFilter {
+        includes_school_owned: true,
+        ..Default::default()
+    };
+    let before = timetable_block_service::get_workspace(
+        &pool,
+        query(),
+        &access,
+        &crate::adapters::staff_directory::STAFF_DIRECTORY,
     )
+    .await
+    .unwrap();
+    let demand = before.ordinary_demands.first().unwrap();
+    let (revision, weekly): (i64, i32) = sqlx::query_as(
+        "SELECT row_version,weekly_period_target FROM learning_offerings WHERE id=$1",
+    )
+    .bind(demand.learning_offering_id)
     .fetch_one(&pool)
     .await
     .unwrap();
-    let cloned = timetable_version_service::clone_draft(
+    school_academic_delivery::services::offerings::update_weekly_period_target(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            resume_draft_id: None,
-            draft_row_version: None,
-            source_row_version,
+        demand.learning_offering_id,
+        school_academic_delivery::models::current::UpdateWeeklyPeriodTargetRequest {
+            row_version: revision,
+            weekly_period_target: weekly + 1,
         },
     )
     .await
     .unwrap();
+    let after = timetable_block_service::get_workspace(
+        &pool,
+        query(),
+        &access,
+        &crate::adapters::staff_directory::STAFF_DIRECTORY,
+    )
+    .await
+    .unwrap();
+    assert_eq!(after.timetable.id, before.timetable.id);
+    assert!(after.delivery_row_version > before.delivery_row_version);
+    assert_eq!(
+        after
+            .ordinary_demands
+            .iter()
+            .find(|row| row.learning_group_id == demand.learning_group_id)
+            .unwrap()
+            .required_periods,
+        weekly + 1
+    );
+    assert_eq!(
+        serde_json::to_value(&before.blocks).unwrap(),
+        serde_json::to_value(&after.blocks).unwrap()
+    );
+    let retired: Option<String> = sqlx::query_scalar(
+        "SELECT to_regclass(current_schema()||'.academic_timetable_versions')::text",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(retired.is_none());
+}
 
-    let (source_entry_count, mapped_entry_count, mismatched_instructor_sets): (i64, i64, i64) =
-        sqlx::query_as(
-            r#"SELECT (
-                      SELECT count(*)
-                      FROM academic_timetable_blocks
-                      WHERE timetable_version_id = $1 AND is_active
-                  ),
-                  count(*),
-                  count(*) FILTER (
-                      WHERE ARRAY(
-                          SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
-                          FROM academic_timetable_block_groups block_group
-                          JOIN academic_timetable_block_group_instructors instructor
-                            ON instructor.block_group_id = block_group.id
-                          WHERE block_group.block_id = source.id AND block_group.is_active
-                          ORDER BY instructor.instructor_id
-                      ) <> ARRAY(
-                          SELECT concat(instructor.instructor_id::text, ':', instructor.role::text)
-                          FROM academic_timetable_block_groups block_group
-                          JOIN academic_timetable_block_group_instructors instructor
-                            ON instructor.block_group_id = block_group.id
-                          WHERE block_group.block_id = target.id AND block_group.is_active
-                          ORDER BY instructor.instructor_id
-                      )
-                  )
-           FROM academic_timetable_blocks source
-           JOIN academic_timetable_blocks target
-             ON target.timetable_version_id = $2
-            AND target.migration_provenance ->> 'clonedFromBlockId' = source.id::text
-           WHERE source.timetable_version_id = $1 AND source.is_active"#,
-        )
-        .bind(source_id)
-        .bind(cloned.id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert!(source_entry_count > 0);
-    assert_eq!(mapped_entry_count, source_entry_count);
-    assert_eq!(mismatched_instructor_sets, 0);
+#[tokio::test]
+async fn removing_current_teacher_revokes_assigned_board_access_without_rewriting_placements() {
+    let pool = migrated_pool("timetable_current_teacher_scope").await;
+    let (id,term,year,group,teacher,offering):(Uuid,Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT block.timetable_id,block.academic_term_id,block.academic_year_id,placed.learning_group_id,instructor.instructor_id,placed.learning_offering_id FROM academic_timetable_blocks block JOIN academic_timetable_block_groups placed ON placed.block_id=block.id AND placed.is_active JOIN academic_timetable_block_group_instructors instructor ON instructor.block_group_id=placed.id JOIN learning_group_teachers current_teacher ON current_teacher.learning_group_id=placed.learning_group_id AND current_teacher.teacher_id=instructor.instructor_id WHERE block.is_active ORDER BY block.id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let query = || TimetableBlockWorkspaceQuery {
+        academic_year_id: year,
+        academic_term_id: term,
+        timetable_id: id,
+    };
+    let access = TimetableAccessFilter {
+        assigned_actor_id: Some(teacher),
+        ..Default::default()
+    };
+    let before = timetable_block_service::get_workspace(
+        &pool,
+        query(),
+        &access,
+        &crate::adapters::staff_directory::STAFF_DIRECTORY,
+    )
+    .await
+    .unwrap();
+    assert!(before
+        .blocks
+        .iter()
+        .any(|block| block.learning_offering_id == Some(offering)));
+    let captured:serde_json::Value=sqlx::query_scalar("SELECT COALESCE(jsonb_agg(to_jsonb(instructor) ORDER BY instructor.id),'[]') FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups placed ON placed.id=instructor.block_group_id WHERE placed.learning_group_id=$1").bind(group).fetch_one(&pool).await.unwrap();
+    sqlx::query("DELETE FROM learning_group_teachers WHERE teacher_id=$1 AND learning_group_id IN(SELECT id FROM learning_groups WHERE learning_offering_id=$2)").bind(teacher).bind(offering).execute(&pool).await.unwrap();
+    let after = timetable_block_service::get_workspace(
+        &pool,
+        query(),
+        &access,
+        &crate::adapters::staff_directory::STAFF_DIRECTORY,
+    )
+    .await
+    .unwrap();
+    assert!(!after
+        .blocks
+        .iter()
+        .any(|block| block.learning_offering_id == Some(offering)));
+    let retained:serde_json::Value=sqlx::query_scalar("SELECT COALESCE(jsonb_agg(to_jsonb(instructor) ORDER BY instructor.id),'[]') FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups placed ON placed.id=instructor.block_group_id WHERE placed.learning_group_id=$1").bind(group).fetch_one(&pool).await.unwrap();
+    assert_eq!(retained, captured);
 }

@@ -11,9 +11,8 @@ use school_academic_core::ports::{
 };
 
 #[derive(FromRow)]
-struct SourceVersion {
+struct SourceTimetable {
     id: Uuid,
-    delivery_version_id: Uuid,
 }
 
 #[derive(FromRow)]
@@ -91,17 +90,25 @@ fn reserve_resource_slot(
 
 pub async fn apply(
     tx: &mut Transaction<'_, Postgres>,
-    permit: &crate::collaboration::CreationPermit,
+    permit: &crate::collaboration::TimetableMutationPermit,
     context: &TermPreparationContext,
     mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
     let actor = permit.actor_id();
-    let source: Option<SourceVersion> = DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
-        "SELECT id,delivery_version_id FROM academic_timetable_versions WHERE id=academic_timetable_latest_publication($1)",
+    school_academic_core::services::lifecycle_guard::require_term_write_exclusive(
+        tx,
+        context.target_year_id,
+        context.target_term_id,
     )
-    .bind(context.source_term_id)
-    .fetch_optional()
     .await?;
+    let source: Option<SourceTimetable> = DbSession::new(&mut **tx)
+        .query_as(
+            "academic_timetable.services.timetable_service.term_preparation.apply",
+            "SELECT id FROM academic_timetables WHERE academic_term_id=$1",
+        )
+        .bind(context.source_term_id)
+        .fetch_optional()
+        .await?;
     let Some(source) = source else {
         return Ok(TermPreparationModuleOutcome {
             module: TermPreparationModule::Timetable,
@@ -109,73 +116,77 @@ pub async fn apply(
             target_ids: Vec::new(),
         });
     };
-    let target_delivery_id = school_academic_delivery::services::versions::latest_published_id(
+    let target_delivery = school_academic_delivery::services::current::workspace_on_connection(
         tx,
+        context.target_year_id,
         context.target_term_id,
     )
     .await?;
-    let target_delivery = school_academic_delivery::services::versions::published_source(
+    let source_delivery = school_academic_delivery::services::current::workspace_on_connection(
         tx,
-        target_delivery_id,
-        context.target_term_id,
-    )
-    .await?;
-    let source_delivery = school_academic_delivery::services::versions::published_source(
-        tx,
-        source.delivery_version_id,
+        context.source_year_id,
         context.source_term_id,
     )
     .await?;
-    for offering in &source_delivery.snapshot.offerings {
+    for offering in &source_delivery.offerings {
         let mapped_id = mapped(
             mappings,
             TermPreparationMappingKind::LearningOffering,
             offering.id,
         )?;
         if !target_delivery
-            .snapshot
             .offerings
             .iter()
             .any(|offering| offering.id == mapped_id)
         {
             return Err(AppError::Conflict(
-                "รายการเปิดสอนที่จับคู่ไม่ได้อยู่ในรุ่นเปิดสอนที่เผยแพร่ของภาคเรียนเป้าหมาย".into(),
+                "รายการเปิดสอนที่จับคู่ไม่ได้อยู่ในข้อมูลเปิดสอนปัจจุบันของภาคเรียนเป้าหมาย".into(),
             ));
         }
     }
     let target_bell_schedule_id: Uuid = DbSession::new(&mut **tx)
         .scalar(
-            "academic_timetable.services.timetable_version_service.term_preparation.apply",
+            "academic_timetable.services.timetable_service.term_preparation.apply",
             "SELECT bell_schedule_id FROM academic_terms WHERE id=$1 AND academic_year_id=$2",
         )
         .bind(context.target_term_id)
         .bind(context.target_year_id)
         .fetch_one()
         .await?;
-    let version_id = Uuid::now_v7();
-    DbSession::new(&mut **tx)
-        .query(
-            "academic_timetable.services.timetable_version_service.term_preparation.apply",
-            r#"INSERT INTO academic_timetable_versions(
-               id,academic_term_id,academic_year_id,effective_from,status,
-               source_version_id,delivery_version_id,bell_schedule_id,row_version,created_by
-           ) VALUES($1,$2,$3,NULL,'draft',NULL,$4,$5,1,$6)"#,
-        )
-        .bind(version_id)
-        .bind(context.target_term_id)
-        .bind(context.target_year_id)
-        .bind(target_delivery_id)
-        .bind(target_bell_schedule_id)
-        .bind(actor)
-        .execute()
-        .await?;
+    let timetable_id = if let Some(current) =
+        super::get_for_term_on_connection(&mut **tx, context.target_term_id).await?
+    {
+        permit.require_existing(current.id)?;
+        let occupied: bool = DbSession::new(&mut **tx)
+            .scalar(
+                "academic_timetable.preparation.pristine",
+                "SELECT EXISTS(SELECT 1 FROM academic_timetable_blocks WHERE timetable_id=$1)",
+            )
+            .bind(current.id)
+            .fetch_one()
+            .await?;
+        if occupied {
+            return Err(AppError::Conflict("ภาคเรียนเป้าหมายมีคาบตารางเรียนแล้ว".into()));
+        }
+        current.id
+    } else {
+        if !matches!(
+            permit,
+            crate::collaboration::TimetableMutationPermit::Creation(_)
+        ) {
+            return Err(AppError::Conflict("ตารางเรียนเป้าหมายเปลี่ยนไป".into()));
+        }
+        let id = Uuid::now_v7();
+        DbSession::new(&mut **tx).query("academic_timetable.preparation.create", "INSERT INTO academic_timetables(id,academic_term_id,academic_year_id,bell_schedule_id) VALUES($1,$2,$3,$4)").bind(id).bind(context.target_term_id).bind(context.target_year_id).bind(target_bell_schedule_id).execute().await?;
+        id
+    };
 
     let blocks: Vec<SourceBlock> = DbSession::new(&mut **tx)
         .query_as(
-            "academic_timetable.services.timetable_version_service.term_preparation.apply",
+            "academic_timetable.services.timetable_service.term_preparation.apply",
             r#"SELECT id,bell_schedule_period_id,day_of_week,block_kind,scheduling_mode,
                   learning_offering_id,structural_kind,title,note,series_id
-           FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND is_active
+           FROM academic_timetable_blocks WHERE timetable_id=$1 AND is_active
            ORDER BY day_of_week,bell_schedule_period_id,id"#,
         )
         .bind(source.id)
@@ -185,7 +196,7 @@ pub async fn apply(
     let block_groups: Vec<SourceBlockGroup> = if block_ids.is_empty() {
         Vec::new()
     } else {
-        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
+        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_service.term_preparation.apply",
         "SELECT id,block_id,learning_group_id,learning_offering_id,room_id,homeroom_ids FROM academic_timetable_block_groups WHERE block_id=ANY($1) AND is_active ORDER BY block_id,id",
     ).bind(&block_ids).fetch_all().await?
     };
@@ -193,21 +204,21 @@ pub async fn apply(
     let instructors: Vec<SourceInstructor> = if source_group_ids.is_empty() {
         Vec::new()
     } else {
-        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
+        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_service.term_preparation.apply",
         "SELECT block_group_id,instructor_id,role,display_order FROM academic_timetable_block_group_instructors WHERE block_group_id=ANY($1) ORDER BY block_group_id,display_order,id",
     ).bind(&source_group_ids).fetch_all().await?
     };
     let homerooms: Vec<SourceHomeroom> = if block_ids.is_empty() {
         Vec::new()
     } else {
-        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
+        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_service.term_preparation.apply",
         "SELECT block_id,homeroom_id,target_kind,room_id FROM academic_timetable_block_homerooms WHERE block_id=ANY($1) AND is_active ORDER BY block_id,id",
     ).bind(&block_ids).fetch_all().await?
     };
     let teachers: Vec<SourceTeacher> = if block_ids.is_empty() {
         Vec::new()
     } else {
-        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_version_service.term_preparation.apply",
+        DbSession::new(&mut **tx).query_as("academic_timetable.services.timetable_service.term_preparation.apply",
         "SELECT block_id,teacher_id FROM academic_timetable_block_teachers WHERE block_id=ANY($1) AND is_active ORDER BY block_id,id",
     ).bind(&block_ids).fetch_all().await?
     };
@@ -236,16 +247,16 @@ pub async fn apply(
         });
         DbSession::new(&mut **tx)
             .query(
-                "academic_timetable.services.timetable_version_service.term_preparation.apply",
+                "academic_timetable.services.timetable_service.term_preparation.apply",
                 r#"INSERT INTO academic_timetable_blocks(
-                   id,timetable_version_id,academic_term_id,academic_year_id,bell_schedule_id,
+                   id,timetable_id,academic_term_id,academic_year_id,bell_schedule_id,
                    bell_schedule_period_id,day_of_week,block_kind,scheduling_mode,
                    learning_offering_id,structural_kind,title,note,series_id,row_version,
                    is_active,created_by,updated_by
                ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,1,true,$15,$15)"#,
             )
             .bind(target_block_id)
-            .bind(version_id)
+            .bind(timetable_id)
             .bind(context.target_term_id)
             .bind(context.target_year_id)
             .bind(target_bell_schedule_id)
@@ -290,7 +301,7 @@ pub async fn apply(
             return Err(AppError::Conflict("ห้องเรียนเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
         let target_block_group_id = Uuid::now_v7();
-        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_version_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_groups(id,block_id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,room_id,row_version,is_active,created_by,updated_by,homeroom_ids)
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_groups(id,block_id,learning_group_id,learning_offering_id,academic_term_id,academic_year_id,room_id,row_version,is_active,created_by,updated_by,homeroom_ids)
                        VALUES($1,$2,$3,$4,$5,$6,$7,1,true,$8,$8,$9)"#)
             .bind(target_block_group_id).bind(target_block_id).bind(target_group_id).bind(target_offering_id)
             .bind(context.target_term_id).bind(context.target_year_id).bind(room_id).bind(actor).bind(&coverage).execute().await?;
@@ -310,7 +321,7 @@ pub async fn apply(
         if !reserve_resource_slot(&mut teacher_slots, &day, period, teacher, target_block_id) {
             return Err(AppError::Conflict("ครูเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
-        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_version_service.term_preparation.apply", "INSERT INTO academic_timetable_block_group_instructors(id,block_group_id,instructor_id,role,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4)")
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_service.term_preparation.apply", "INSERT INTO academic_timetable_block_group_instructors(id,block_group_id,instructor_id,role,display_order) VALUES(gen_random_uuid(),$1,$2,$3,$4)")
             .bind(target_block_group_id).bind(teacher).bind(instructor.role).bind(instructor.display_order).execute().await?;
     }
     for homeroom in homerooms {
@@ -340,7 +351,7 @@ pub async fn apply(
         }) {
             return Err(AppError::Conflict("ห้องเรียนเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
-        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_version_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_homerooms(id,block_id,homeroom_id,academic_term_id,academic_year_id,target_kind,room_id,row_version,is_active,created_by,updated_by)
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_homerooms(id,block_id,homeroom_id,academic_term_id,academic_year_id,target_kind,room_id,row_version,is_active,created_by,updated_by)
                        VALUES(gen_random_uuid(),$1,$2,$3,$4,$5,$6,1,true,$7,$7)"#)
             .bind(target_block_id).bind(target_homeroom).bind(context.target_term_id).bind(context.target_year_id).bind(homeroom.target_kind).bind(room).bind(actor).execute().await?;
     }
@@ -360,14 +371,14 @@ pub async fn apply(
         ) {
             return Err(AppError::Conflict("ครูเป้าหมายชนกันในตารางที่เตรียม".into()));
         }
-        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_version_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_teachers(id,block_id,teacher_id,academic_term_id,academic_year_id,row_version,is_active,created_by,updated_by)
+        DbSession::new(&mut **tx).query("academic_timetable.services.timetable_service.term_preparation.apply", r#"INSERT INTO academic_timetable_block_teachers(id,block_id,teacher_id,academic_term_id,academic_year_id,row_version,is_active,created_by,updated_by)
                        VALUES(gen_random_uuid(),$1,$2,$3,$4,1,true,$5,$5)"#)
             .bind(target_block_id).bind(target_teacher).bind(context.target_term_id).bind(context.target_year_id).bind(actor).execute().await?;
     }
     Ok(TermPreparationModuleOutcome {
         module: TermPreparationModule::Timetable,
         created_count: block_map.len() + 1,
-        target_ids: vec![version_id],
+        target_ids: vec![timetable_id],
     })
 }
 

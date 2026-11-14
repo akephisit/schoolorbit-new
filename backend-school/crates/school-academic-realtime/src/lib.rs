@@ -44,7 +44,7 @@ pub enum TimetableEvent {
     TimetableChanged {
         user_id: Uuid,
         academic_term_id: Uuid,
-        timetable_version_id: Uuid,
+        timetable_id: Uuid,
         block_id: Option<Uuid>,
         revision: i64,
     },
@@ -167,11 +167,11 @@ mod tests {
                 TimetableEvent::TimetableChanged {
                     user_id,
                     academic_term_id: term_id,
-                    timetable_version_id: entity_id,
+                    timetable_id: entity_id,
                     block_id: None,
                     revision: 8,
                 },
-                json!({"type":"TimetableChanged","payload":{"user_id":user_id,"academic_term_id":term_id,"timetable_version_id":entity_id,"block_id":null,"revision":8}}),
+                json!({"type":"TimetableChanged","payload":{"user_id":user_id,"academic_term_id":term_id,"timetable_id":entity_id,"block_id":null,"revision":8}}),
                 true,
             ),
             (

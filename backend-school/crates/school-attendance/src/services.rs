@@ -3,7 +3,6 @@ pub mod faces;
 pub mod finalization;
 pub mod notifications;
 pub(crate) mod processing_dates;
-pub mod publication;
 pub mod reports;
 pub mod reset;
 pub mod score_changes;
@@ -163,3 +162,5 @@ pub async fn lock_module_exclusive(tx: &mut Transaction<'_, Postgres>) -> Result
 }
 
 pub mod retention;
+
+pub mod deletion;

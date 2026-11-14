@@ -133,8 +133,10 @@ pub(crate) async fn list_on_connection(
     actor: &ActorContext,
     q: &AttendanceQuery,
 ) -> Result<Vec<AttendanceSession>, AppError> {
+    let access =
+        policy::session_access_on_connection(connection, actor, q.academic_term_id).await?;
     let sql = format!(
-        "SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND ($3 OR $4=ANY(teacher_ids)) ORDER BY start_time,title,id"
+        "SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND ($3 OR ($6 AND ((kind='lesson' AND learning_group_id=ANY($5)) OR (kind<>'lesson' AND $4=ANY(teacher_ids))))) ORDER BY start_time,title,id"
     );
     Ok(DbSession::new(&mut *connection)
         .query_as(
@@ -145,6 +147,11 @@ pub(crate) async fn list_on_connection(
         .bind(q.date)
         .bind(policy::read_school(actor))
         .bind(actor.user_id)
+        .bind(access.assigned_group_ids())
+        .bind(actor.has_any_permission(&[
+            school_permissions::registry::codes::ATTENDANCE_READ_ASSIGNED,
+            school_permissions::registry::codes::ATTENDANCE_UPDATE_ASSIGNED,
+        ]))
         .fetch_all()
         .await?)
 }
@@ -153,13 +160,13 @@ pub async fn ensure(
     actor: &ActorContext,
     seed: AttendanceSeed,
 ) -> Result<AttendanceSession, AppError> {
-    policy::require_session(actor, &seed.session, true)?;
     if seed.students.len() > 2000 {
         return Err(invalid("รอบเช็คชื่อเกิน 2000 คน กรุณาแบ่งกลุ่ม"));
     }
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "attendance.sessions.transaction").await?;
     lock_term(&mut tx, seed.session.academic_term_id, true, false).await?;
+    policy::require_session_on_connection(&mut tx, actor, &seed.session, true).await?;
     insert_seed(&mut tx, &seed).await?;
     tx.commit().await?;
     let s = &seed.session;
@@ -180,7 +187,7 @@ pub async fn ensure(
         .bind(&s.source_key)
         .fetch_one()
         .await?;
-    policy::require_session(actor, &found, true)?;
+    policy::require_session_on_connection(&mut connection, actor, &found, true).await?;
     let generation = module_generation_on_connection(&mut connection).await?;
     token_with_generation(found, generation)
 }
@@ -286,7 +293,7 @@ pub async fn detail(
     let s = get_optional_on_connection(&mut connection, id)
         .await?
         .ok_or_else(|| AppError::NotFound("ไม่พบรอบเช็คชื่อ".into()))?;
-    policy::require_session(actor, &s, false)?;
+    policy::require_session_on_connection(&mut connection, actor, &s, false).await?;
     let context =
         settings::AttendanceReadContext::load(&mut connection, s.academic_term_id).await?;
     detail_with_context(&mut connection, s, &context).await
@@ -412,8 +419,8 @@ pub async fn save_with_seed(
             with_token_on_connection(&mut preflight, s).await?
         }
     };
+    policy::require_session_on_connection(&mut preflight, actor, &initial, true).await?;
     drop(preflight);
-    policy::require_session(actor, &initial, true)?;
     if initial.id != id
         || initial.academic_term_id != p.session.academic_term_id
         || initial.date != p.session.date
@@ -479,7 +486,7 @@ pub async fn save_with_seed(
         },
     )
     .await?;
-    policy::require_session(actor, &s, true)?;
+    policy::require_session_on_connection(&mut tx, actor, &s, true).await?;
     if s.cancelled {
         return Err(AppError::Conflict("รอบนี้งดเช็คชื่อ".into()));
     }
@@ -587,8 +594,8 @@ pub async fn cancel_with_seed(
             with_token_on_connection(&mut preflight, s).await?
         }
     };
+    policy::require_session_on_connection(&mut preflight, actor, &s, true).await?;
     drop(preflight);
-    policy::require_session(actor, &s, true)?;
     if s.roster_token != p.roster_token
         || s.academic_term_id != p.session.academic_term_id
         || s.date != p.session.date
@@ -625,7 +632,7 @@ pub async fn cancel_with_seed(
     if token_with_generation(s.clone(), epoch)?.roster_token != p.roster_token {
         return Err(AppError::Conflict("รายชื่อเปลี่ยนแล้ว กรุณาเปิดใหม่".into()));
     }
-    policy::require_session(actor, &s, true)?;
+    policy::require_session_on_connection(&mut tx, actor, &s, true).await?;
     DbSession::new(&mut *tx).query("attendance.services.sessions.cancel_with_seed", "UPDATE attendance_sessions SET cancelled=$2,cancellation_reason=$3,row_version=row_version+1 WHERE id=$1").bind(id).bind(p.cancelled).bind(&p.reason).execute().await?;
     audit(&mut tx, actor.user_id, id, "update", &p.reason).await?;
     super::score_changes::enqueue_day(&mut tx, s.academic_term_id, s.date).await?;

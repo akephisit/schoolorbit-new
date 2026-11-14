@@ -16,6 +16,120 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 pub mod finalization;
 pub mod projection;
+
+#[derive(Clone, sqlx::FromRow)]
+pub(super) struct LessonSourceFact {
+    session_id: Uuid,
+    date: NaiveDate,
+    learning_group_id: Uuid,
+    source_key: String,
+}
+
+pub(super) async fn lesson_source_facts_on_connection(
+    connection: &mut sqlx::PgConnection,
+    term: Uuid,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Result<Vec<LessonSourceFact>, AppError> {
+    let rows: Vec<LessonSourceFact> = DbSession::new(connection).query_as("attendance.application.materialized_lesson_sources", "SELECT id session_id,date,learning_group_id,source_key FROM attendance_sessions WHERE academic_term_id=$1 AND date BETWEEN $2 AND $3 AND kind='lesson' AND learning_group_id IS NOT NULL ORDER BY date,learning_group_id,source_key LIMIT 200001").bind(term).bind(start).bind(end).fetch_all().await?;
+    if rows.len() > 200_000 {
+        return Err(invalid("คาบที่บันทึกไว้เกินขนาดที่รองรับ"));
+    }
+    Ok(rows)
+}
+
+/// New occurrences use stable placement identity, so a move cannot create a second
+/// occurrence for that date. Legacy facts match only exact group/period identities.
+/// An unmatched legacy source proves that its old placement cannot be reconstructed;
+/// preserve that group's saved date facts and refuse speculative replacement rounds.
+fn current_lesson_sources(
+    placements: &[(Uuid, Uuid, Uuid)],
+    facts: &[LessonSourceFact],
+) -> HashMap<Uuid, String> {
+    let legacy_keys = placements
+        .iter()
+        .map(|(_, group, period)| format!("{group}:{period}"))
+        .collect::<HashSet<_>>();
+    let saved = facts
+        .iter()
+        .map(|fact| fact.source_key.as_str())
+        .collect::<HashSet<_>>();
+    let unmappable = facts
+        .iter()
+        .filter(|fact| {
+            let mut parts = fact.source_key.split(':');
+            let legacy = parts
+                .next()
+                .and_then(|part| Uuid::parse_str(part).ok())
+                .is_some()
+                && parts
+                    .next()
+                    .and_then(|part| Uuid::parse_str(part).ok())
+                    .is_some()
+                && parts.next().is_none();
+            legacy && !legacy_keys.contains(&fact.source_key)
+        })
+        .map(|fact| fact.learning_group_id)
+        .collect::<HashSet<_>>();
+    placements
+        .iter()
+        .filter_map(|(placement, group, period)| {
+            let stable = format!("placement:{placement}");
+            let legacy = format!("{group}:{period}");
+            let key = if saved.contains(stable.as_str()) {
+                stable
+            } else if saved.contains(legacy.as_str()) {
+                legacy
+            } else if unmappable.contains(group) {
+                return None;
+            } else {
+                stable
+            };
+            Some((*placement, key))
+        })
+        .collect()
+}
+
+pub(super) fn lesson_occurrence_id(
+    term: Uuid,
+    date: NaiveDate,
+    source: &str,
+    facts: &[LessonSourceFact],
+) -> Uuid {
+    facts
+        .iter()
+        .find(|fact| fact.date == date && fact.source_key == source)
+        .map(|fact| fact.session_id)
+        .unwrap_or_else(|| Uuid::new_v5(&term, format!("{date}:lesson:{source}").as_bytes()))
+}
+
+pub(super) fn lesson_sources_for_date(
+    blocks: &[school_academic_timetable::models::timetable_block::TimetableBlock],
+    facts: &[LessonSourceFact],
+    date: NaiveDate,
+) -> HashMap<Uuid, String> {
+    let day = school_academic_timetable::services::daily_teaching::day_code_from_date(date);
+    let placements = blocks
+        .iter()
+        .filter(|block| {
+            block.day_of_week == day && block.block_kind != TimetableBlockKind::Structural
+        })
+        .flat_map(|block| {
+            block
+                .groups
+                .iter()
+                .filter(|group| group.is_active)
+                .map(|group| {
+                    (
+                        group.id,
+                        group.learning_group_id,
+                        block.bell_schedule_period_id,
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    current_lesson_sources(&placements, facts)
+}
 pub async fn seeds(
     pool: &PgPool,
     term: Uuid,
@@ -56,18 +170,10 @@ async fn seeds_with_choices_on_connection(
             .collect::<Vec<_>>();
         seeds.push(arrival_seed(term, date, room, roster, c.late_after));
     }
-    let timetable =
-        match school_academic_timetable::services::attendance::source_blocks_on_connection(
-            connection, term, date,
-        )
-        .await
-        {
-            Ok(b) => Some(b),
-            Err(AppError::NotFound(_)) => None,
-            Err(e) => return Err(e),
-        };
-    let delivery_version_id = timetable.as_ref().map(|source| source.delivery_version_id);
-    let blocks = timetable.map(|source| source.blocks).unwrap_or_default();
+    let blocks = school_academic_timetable::services::attendance::blocks_on_connection(
+        connection, term, date,
+    )
+    .await?;
     let groups = blocks
         .iter()
         .filter(|b| b.block_kind != TimetableBlockKind::Structural)
@@ -80,15 +186,13 @@ async fn seeds_with_choices_on_connection(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let memberships = match delivery_version_id {
-        Some(version) => {
-            school_academic_delivery::services::attendance_roster::pinned_students_on_connection(
-                connection, version, &groups, date,
-            )
-            .await?
-        }
-        None => Vec::new(),
-    };
+    let memberships =
+        school_academic_delivery::services::attendance_roster::students_on_connection(
+            connection, &groups, date,
+        )
+        .await?;
+    let saved_sources = lesson_source_facts_on_connection(connection, term, date, date).await?;
+    let sources = lesson_sources_for_date(&blocks, &saved_sources, date);
     let student_map: HashMap<_, _> = students.iter().map(|s| (s.student_id, s)).collect();
     for block in blocks {
         if block.block_kind == TimetableBlockKind::Structural {
@@ -105,17 +209,16 @@ async fn seeds_with_choices_on_connection(
                 })
                 .collect();
             let teachers = group.instructors.iter().map(|i| i.teacher_id).collect();
-            let source = format!(
-                "{}:{}",
-                group.learning_group_id, block.bell_schedule_period_id
-            );
+            let Some(source) = sources.get(&group.id).cloned() else {
+                continue;
+            };
             let title = format!(
                 "{} · {} · {}",
                 block.offering_name.as_deref().unwrap_or("คาบเรียน"),
                 group.name,
                 block.period_name
             );
-            let session = seed_session(
+            let mut session = seed_session(
                 term,
                 date,
                 AttendanceKind::Lesson,
@@ -128,6 +231,7 @@ async fn seeds_with_choices_on_connection(
                 block.start_time,
                 block.end_time,
             );
+            session.id = lesson_occurrence_id(term, date, &session.source_key, &saved_sources);
             lesson_choices.push(AttendanceLessonChoice {
                 session_id: session.id,
                 period_name: block.period_name.clone(),
@@ -251,9 +355,11 @@ pub async fn workspace(
     } else {
         seeds_with_choices_on_connection(&mut connection, q.academic_term_id, q.date).await?
     };
+    let access =
+        policy::session_access_on_connection(&mut connection, actor, q.academic_term_id).await?;
     let mut rows = available_seeds
         .into_iter()
-        .filter(|s| policy::require_session(actor, &s.session, false).is_ok())
+        .filter(|s| access.require_session(actor, &s.session, false).is_ok())
         .map(|s| s.session)
         .collect::<Vec<_>>();
     if !settings.archived {
@@ -261,7 +367,7 @@ pub async fn workspace(
             specials::seeds_on_connection(&mut connection, q.academic_term_id, q.date)
                 .await?
                 .into_iter()
-                .filter(|s| policy::require_session(actor, &s.session, false).is_ok())
+                .filter(|s| access.require_session(actor, &s.session, false).is_ok())
                 .map(|s| s.session),
         );
     }
@@ -328,7 +434,7 @@ async fn preview_seed_with_context(
     seed: AttendanceSeed,
     context: &settings::AttendanceReadContext,
 ) -> Result<AttendanceDetail, AppError> {
-    policy::require_session(actor, &seed.session, false)?;
+    policy::require_session_on_connection(connection, actor, &seed.session, false).await?;
     let mut session =
         match sessions::get_optional_on_connection(connection, seed.session.id).await? {
             Some(s) => s,
@@ -345,7 +451,7 @@ async fn preview_seed_with_context(
             .await?;
         session = sessions::token_with_generation(session, generation)?;
     }
-    policy::require_session(actor, &session, false)?;
+    policy::require_session_on_connection(connection, actor, &session, false).await?;
     sessions::detail_with_context(connection, session, context).await
 }
 pub async fn resolve_seed(
@@ -363,6 +469,23 @@ pub(crate) async fn resolve_seed_on_connection(
     connection: &mut sqlx::PgConnection,
     p: &OpenAttendanceSession,
 ) -> Result<AttendanceSeed, AppError> {
+    if p.kind == AttendanceKind::Lesson {
+        let id: Option<Uuid> = DbSession::new(connection).scalar("attendance.application.saved_lesson_identity", "SELECT id FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND kind='lesson' AND source_key=$3").bind(p.academic_term_id).bind(p.date).bind(&p.source_key).fetch_optional().await?;
+        if let Some(id) = id {
+            if let Some(session) = sessions::get_optional_on_connection(connection, id).await? {
+                if session.academic_term_id == p.academic_term_id
+                    && session.date == p.date
+                    && session.kind == p.kind
+                    && session.source_key == p.source_key
+                {
+                    return Ok(AttendanceSeed {
+                        students: session.roster.clone(),
+                        session,
+                    });
+                }
+            }
+        }
+    }
     if p.kind == AttendanceKind::Arrival {
         let context = settings::AttendanceReadContext::load(connection, p.academic_term_id).await?;
         return resolve_arrival_on_connection(connection, p, &context).await;
@@ -981,8 +1104,10 @@ async fn require_evidence_file_on_connection(
         let s = sessions::get_optional_on_connection(connection, session)
             .await?
             .ok_or_else(|| AppError::NotFound("ไม่พบรอบเช็คชื่อ".into()))?;
-        if policy::require_session(actor, &s, false).is_ok() {
-            return Ok(());
+        match policy::require_session_on_connection(connection, actor, &s, false).await {
+            Ok(()) => return Ok(()),
+            Err(AppError::Forbidden(_)) => {},
+            Err(error) => return Err(error),
         }
         if own_student_read_on_connection(connection, actor, student).await? {
             Ok(())
@@ -1213,5 +1338,61 @@ mod connection_preflight_tests {
             settings::days(&pool, term, today, today - chrono::Duration::days(1)).await,
             Err(AppError::ValidationError(_))
         ));
+    }
+}
+
+#[cfg(test)]
+mod current_lesson_source_tests {
+    use super::*;
+    #[test]
+    fn saving_first_of_two_legacy_lessons_keeps_the_second_available() {
+        let group = Uuid::from_u128(1);
+        let first = (Uuid::from_u128(2), group, Uuid::from_u128(3));
+        let second = (Uuid::from_u128(4), group, Uuid::from_u128(5));
+        let legacy = format!("{}:{}", group, first.2);
+        let facts = [LessonSourceFact {
+            session_id: Uuid::from_u128(99),
+            date: NaiveDate::MIN,
+            learning_group_id: group,
+            source_key: legacy.clone(),
+        }];
+        let sources = current_lesson_sources(&[first, second], &facts);
+        assert_eq!(sources.get(&first.0), Some(&legacy));
+        assert_eq!(
+            sources.get(&second.0),
+            Some(&format!("placement:{}", second.0))
+        );
+    }
+    #[test]
+    fn stable_placement_occurrence_survives_a_period_move() {
+        let placement = Uuid::from_u128(1);
+        let group = Uuid::from_u128(2);
+        let stable = format!("placement:{placement}");
+        let facts = [LessonSourceFact {
+            session_id: Uuid::from_u128(99),
+            date: NaiveDate::MIN,
+            learning_group_id: group,
+            source_key: stable.clone(),
+        }];
+        let before = current_lesson_sources(&[(placement, group, Uuid::from_u128(3))], &facts);
+        let after = current_lesson_sources(&[(placement, group, Uuid::from_u128(4))], &facts);
+        assert_eq!(before, after);
+        assert_eq!(after.get(&placement), Some(&stable));
+    }
+    #[test]
+    fn unmatched_legacy_source_refuses_only_speculative_group_replacement() {
+        let group = Uuid::from_u128(1);
+        let unrelated = Uuid::from_u128(2);
+        let facts = [LessonSourceFact {
+            session_id: Uuid::from_u128(99),
+            date: NaiveDate::MIN,
+            learning_group_id: group,
+            source_key: format!("{}:{}", group, Uuid::from_u128(3)),
+        }];
+        let replacement = (Uuid::from_u128(4), group, Uuid::from_u128(5));
+        let other = (Uuid::from_u128(6), unrelated, Uuid::from_u128(7));
+        let sources = current_lesson_sources(&[replacement, other], &facts);
+        assert!(!sources.contains_key(&replacement.0));
+        assert!(sources.contains_key(&other.0));
     }
 }

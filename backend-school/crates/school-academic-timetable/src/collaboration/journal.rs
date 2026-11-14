@@ -12,17 +12,17 @@ const JOURNAL_BYTES: usize = 16 * 1024 * 1024;
 
 pub(super) struct JournalEntry {
     seq: u64,
-    patches: BTreeMap<Uuid, DraftPatch>,
+    patches: BTreeMap<Uuid, TimetablePatch>,
     bytes: usize,
 }
 
-impl DraftRoom {
+impl TimetableRoom {
     /// The caller retains the mutation gate and commit pin. Expensive projections are computed
     /// outside the memory mutex, so presence/lease frames never wait for whole-workspace copies.
     pub fn publish_blocks(
         &self,
         blocks: Vec<TimetableBlock>,
-        version: Option<crate::models::timetable_version::TimetableVersion>,
+        version: Option<crate::models::timetable::Timetable>,
         origin_connection_id: Option<Uuid>,
         mutation_id: Uuid,
     ) -> Result<u64, AppError> {
@@ -46,10 +46,10 @@ impl DraftRoom {
         let changed_ids = blocks.iter().map(|block| block.id).collect::<BTreeSet<_>>();
         let mut after = (*before).clone();
         if let Some(version) = version {
-            if version.id != self.key.timetable_version_id {
+            if version.id != self.key.timetable_id {
                 return Err(stale());
             }
-            after.version = version;
+            after.timetable = version;
         }
         for block in blocks {
             let existing = after.blocks.iter().position(|entry| entry.id == block.id);
@@ -57,9 +57,12 @@ impl DraftRoom {
                 (Some(index), true) => after.blocks[index] = block,
                 (Some(index), false) => {
                     after.blocks.remove(index);
+                    if let Some(count) = after.total_block_count.as_mut() {
+                        *count -= 1;
+                    }
                 }
                 (None, true) => {
-                    if let Some(count) = after.total_draft_block_count.as_mut() {
+                    if let Some(count) = after.total_block_count.as_mut() {
                         *count += 1;
                     }
                     after.blocks.push(block);
@@ -153,7 +156,7 @@ impl DraftRoom {
             }
         }
         drop(state);
-        let _ = self.signals.send(DraftSignal::Committed(seq));
+        let _ = self.signals.send(TimetableSignal::Committed(seq));
         Ok(seq)
     }
 }
@@ -195,7 +198,7 @@ fn lookup_delta<T: serde::Serialize + Clone>(
 fn lookup_changes(
     before: &TimetableBlockWorkspace,
     after: &TimetableBlockWorkspace,
-) -> Result<Option<DraftLookupChanges>, AppError> {
+) -> Result<Option<TimetableLookupChanges>, AppError> {
     let (upserted_staff, removed_staff_ids) =
         lookup_delta(&before.staff, &after.staff, |entry| entry.id)?;
     let (upserted_homerooms, removed_homeroom_ids) =
@@ -240,7 +243,7 @@ fn lookup_changes(
             .map(|entry| entry.learning_offering_id)
             .collect()
     });
-    Ok(Some(DraftLookupChanges {
+    Ok(Some(TimetableLookupChanges {
         staff_order,
         homeroom_order,
         room_order,
@@ -265,7 +268,7 @@ fn project_patch(
     changed_ids: &BTreeSet<Uuid>,
     origin_connection_id: Option<Uuid>,
     mutation_id: Uuid,
-) -> Result<DraftPatch, AppError> {
+) -> Result<TimetablePatch, AppError> {
     let before_ids = before
         .blocks
         .iter()
@@ -322,8 +325,8 @@ fn project_patch(
             synchronized_demands.push(demand.clone());
         }
     }
-    Ok(DraftPatch {
-        timetable_version_id: after.version.id,
+    Ok(TimetablePatch {
+        timetable_id: after.timetable.id,
         origin_connection_id,
         mutation_id,
         upserted_blocks,
@@ -332,37 +335,37 @@ fn project_patch(
         synchronized_demands,
         summary: after.summary.clone(),
         source_issues: after.source_issues.clone(),
-        total_draft_block_count: after.total_draft_block_count,
-        version: Some(after.version.clone()),
+        total_block_count: after.total_block_count,
+        timetable: Some(after.timetable.clone()),
         lookup_changes: lookup_changes(before, after)?,
     })
 }
 
 pub(super) fn events_after(
     state: &RoomState,
-    member: &DraftMember,
+    member: &TimetableMember,
     epoch: Uuid,
     after_seq: u64,
     through: Option<u64>,
-) -> Result<Vec<DraftEventEnvelope>, AppError> {
+) -> Result<Vec<TimetableEventEnvelope>, AppError> {
     if state
         .member_visibility
         .get(&member.connection_id)
         .is_some_and(|index| index.requires_reconcile)
     {
-        return Ok(vec![DraftEventEnvelope {
+        return Ok(vec![TimetableEventEnvelope {
             epoch: state.epoch,
             seq: state.seq,
-            event: DraftServerMessage::DraftReconcileRequired {
+            event: TimetableServerMessage::TimetableReconcileRequired {
                 reason: "workspace_limit".into(),
             },
         }]);
     }
     let reconcile = || {
-        vec![DraftEventEnvelope {
+        vec![TimetableEventEnvelope {
             epoch: state.epoch,
             seq: state.seq,
-            event: DraftServerMessage::DraftReconcileRequired {
+            event: TimetableServerMessage::TimetableReconcileRequired {
                 reason: "journal_gap".into(),
             },
         }]
@@ -388,10 +391,10 @@ pub(super) fn events_after(
         let Some(patch) = entry.patches.get(&member.connection_id) else {
             return Ok(reconcile());
         };
-        events.push(DraftEventEnvelope {
+        events.push(TimetableEventEnvelope {
             epoch: state.epoch,
             seq: entry.seq,
-            event: DraftServerMessage::DraftPatched(patch.clone()),
+            event: TimetableServerMessage::TimetablePatched(patch.clone()),
         });
     }
     Ok(events)

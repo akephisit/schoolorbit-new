@@ -66,14 +66,14 @@ pub(crate) async fn preview_placement(
         .scalar(
             "academic_timetable.services.timetable_block_conflicts.preview_placement",
             r#"SELECT EXISTS (
-               SELECT 1 FROM academic_timetable_versions version
+               SELECT 1 FROM academic_timetables version
                JOIN bell_schedule_periods period
                  ON period.bell_schedule_id = version.bell_schedule_id
                WHERE version.id = $1 AND version.academic_term_id = $2
-                 AND version.status = 'draft' AND period.id = $3 AND period.is_active
+                 AND period.id = $3 AND period.is_active
            )"#,
         )
-        .bind(request.timetable_version_id)
+        .bind(request.timetable_id)
         .bind(request.academic_term_id)
         .bind(request.target_bell_schedule_period_id)
         .fetch_one()
@@ -82,9 +82,9 @@ pub(crate) async fn preview_placement(
         let schedule: Uuid = DbSession::new(connection)
             .scalar(
                 "academic_timetable.services.timetable_block_conflicts.preview_placement.schedule",
-                "SELECT bell_schedule_id FROM academic_timetable_versions WHERE id=$1",
+                "SELECT bell_schedule_id FROM academic_timetables WHERE id=$1",
             )
-            .bind(request.timetable_version_id)
+            .bind(request.timetable_id)
             .fetch_one()
             .await?;
         school_academic_core::services::school_days::period_allows_day_on_connection(
@@ -106,7 +106,7 @@ pub(crate) async fn preview_placement(
             request.target_bell_schedule_period_id,
             candidate,
             TimetableBlockConflict {
-                conflict_type: TimetableBlockConflictType::Version,
+                conflict_type: TimetableBlockConflictType::Timetable,
                 code: if version_valid {
                     "TIMETABLE_DAY_NOT_ALLOWED"
                 } else {
@@ -114,38 +114,6 @@ pub(crate) async fn preview_placement(
                 }
                 .to_string(),
                 message: "รุ่นตารางสอนไม่พร้อมแก้ไข หรือคาบและวันที่เลือกไม่อยู่ในวันเรียนของภาคเรียน".to_string(),
-                existing_block_id: None,
-                target_kind: None,
-                target_id: None,
-            },
-        ));
-    }
-
-    let source: Uuid = DbSession::new(connection)
-        .scalar(
-            "academic_timetable.services.timetable_block_conflicts.preview_placement.latest_source",
-            "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
-        )
-        .bind(request.timetable_version_id)
-        .fetch_one()
-        .await?;
-    let latest =
-        school_academic_delivery::services::versions::latest_published_for_term_on_connection(
-            connection,
-            request.academic_term_id,
-        )
-        .await?;
-    if Some(source) != latest {
-        return Ok(blocked_preview(
-            source_block_id,
-            request.expected_target_block_id,
-            target_day,
-            request.target_bell_schedule_period_id,
-            candidate,
-            TimetableBlockConflict {
-                conflict_type: TimetableBlockConflictType::Version,
-                code: "TIMETABLE_DELIVERY_SOURCE_OUTDATED".into(),
-                message: "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนจัดคาบ".into(),
                 existing_block_id: None,
                 target_kind: None,
                 target_id: None,
@@ -161,7 +129,7 @@ pub(crate) async fn preview_placement(
         load_placement_block(
             connection,
             *block_id,
-            request.timetable_version_id,
+            request.timetable_id,
             request.academic_term_id,
         )
         .await?
@@ -173,7 +141,7 @@ pub(crate) async fn preview_placement(
         load_placement_block(
             connection,
             block_id,
-            request.timetable_version_id,
+            request.timetable_id,
             request.academic_term_id,
         )
         .await?
@@ -213,11 +181,11 @@ pub(crate) async fn preview_placement(
     let reservations = if let Some(block) = &source_block {
         block.reservations()
     } else {
-        candidate_reservations(connection, request.timetable_version_id, &candidate).await?
+        candidate_reservations(connection, request.timetable_id, &candidate).await?
     };
     let mut conflicts = placement_conflicts(
         connection,
-        request.timetable_version_id,
+        request.timetable_id,
         &target_day,
         request.target_bell_schedule_period_id,
         &reservations,
@@ -227,7 +195,7 @@ pub(crate) async fn preview_placement(
     if let (Some(source), Some(target)) = (&source_block, &target_block) {
         let mut return_conflicts = placement_conflicts(
             connection,
-            request.timetable_version_id,
+            request.timetable_id,
             &source.day_of_week,
             source.bell_schedule_period_id,
             &target.reservations(),
@@ -301,7 +269,7 @@ impl PlacementBlock {
 async fn load_placement_block(
     connection: &mut sqlx::PgConnection,
     block_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     academic_term_id: Uuid,
 ) -> Result<Option<PlacementBlock>, AppError> {
     Ok(DbSession::new(connection)
@@ -326,11 +294,11 @@ async fn load_placement_block(
                   UNION SELECT room_id FROM academic_timetable_block_homerooms
                   WHERE block_id = block.id AND is_active AND room_id IS NOT NULL) AS room_ids
            FROM academic_timetable_blocks block
-           WHERE block.id = $1 AND block.timetable_version_id = $2
+           WHERE block.id = $1 AND block.timetable_id = $2
              AND block.academic_term_id = $3 AND block.is_active"#,
         )
         .bind(block_id)
-        .bind(timetable_version_id)
+        .bind(timetable_id)
         .bind(academic_term_id)
         .fetch_optional()
         .await?)
@@ -338,7 +306,7 @@ async fn load_placement_block(
 
 async fn candidate_reservations(
     connection: &mut sqlx::PgConnection,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     candidate: &TimetableBlockPlacementCandidate,
 ) -> Result<PlacementReservations, AppError> {
     let group_ids = candidate.learning_group_id.into_iter().collect::<Vec<_>>();
@@ -346,20 +314,15 @@ async fn candidate_reservations(
         candidate.homeroom_ids.clone()
     } else {
         let mut ids: Vec<Uuid> = {
-            let source_id: Uuid = DbSession::new(connection)
-                .scalar(
-                    "academic_timetable.services.timetable_block_conflicts.preview_placement",
-                    "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
-                )
-                .bind(timetable_version_id)
-                .fetch_one()
-                .await?;
-            let source = school_academic_delivery::services::versions::get_version_on_connection(
-                connection, source_id,
+            let timetable =
+                super::timetable_service::get_by_id_on_connection(connection, timetable_id).await?;
+            let source = school_academic_delivery::services::current::workspace_on_connection(
+                connection,
+                timetable.academic_year_id,
+                timetable.academic_term_id,
             )
             .await?;
             source
-                .snapshot
                 .offerings
                 .iter()
                 .flat_map(|offering| offering.groups.iter())
@@ -385,7 +348,7 @@ async fn candidate_reservations(
 
 async fn placement_conflicts(
     connection: &mut sqlx::PgConnection,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     day: &str,
     period_id: Uuid,
     reservations: &PlacementReservations,
@@ -399,7 +362,7 @@ async fn placement_conflicts(
                       target.learning_group_id AS target_id
                FROM academic_timetable_blocks block
                JOIN academic_timetable_block_groups target ON target.block_id = block.id
-               WHERE block.timetable_version_id = $1 AND block.day_of_week = $2
+               WHERE block.timetable_id = $1 AND block.day_of_week = $2
                  AND block.bell_schedule_period_id = $3
                  AND block.is_active AND target.is_active
                  AND target.learning_group_id = ANY($4)
@@ -407,7 +370,7 @@ async fn placement_conflicts(
                SELECT 'homeroom', block.id, target.homeroom_id
                FROM academic_timetable_blocks block
                JOIN academic_timetable_block_homerooms target ON target.block_id = block.id
-               WHERE block.timetable_version_id = $1 AND block.day_of_week = $2
+               WHERE block.timetable_id = $1 AND block.day_of_week = $2
                  AND block.bell_schedule_period_id = $3
                  AND block.is_active AND target.is_active
                  AND target.homeroom_id = ANY($5)
@@ -416,7 +379,7 @@ async fn placement_conflicts(
                FROM academic_timetable_blocks block
                JOIN academic_timetable_block_groups target ON target.block_id = block.id
                CROSS JOIN LATERAL unnest(target.homeroom_ids) coverage(homeroom_id)
-               WHERE block.timetable_version_id = $1 AND block.day_of_week = $2
+               WHERE block.timetable_id = $1 AND block.day_of_week = $2
                  AND block.bell_schedule_period_id = $3
                  AND block.is_active AND target.is_active
                  AND coverage.homeroom_id = ANY($5)
@@ -424,7 +387,7 @@ async fn placement_conflicts(
                SELECT 'teacher', block.id, target.teacher_id
                FROM academic_timetable_blocks block
                JOIN academic_timetable_block_teachers target ON target.block_id = block.id
-               WHERE block.timetable_version_id = $1 AND block.day_of_week = $2
+               WHERE block.timetable_id = $1 AND block.day_of_week = $2
                  AND block.bell_schedule_period_id = $3
                  AND block.is_active AND target.is_active
                  AND target.teacher_id = ANY($6)
@@ -434,7 +397,7 @@ async fn placement_conflicts(
                JOIN academic_timetable_block_groups target ON target.block_id = block.id
                JOIN academic_timetable_block_group_instructors instructor
                  ON instructor.block_group_id = target.id
-               WHERE block.timetable_version_id = $1 AND block.day_of_week = $2
+               WHERE block.timetable_id = $1 AND block.day_of_week = $2
                  AND block.bell_schedule_period_id = $3
                  AND block.is_active AND target.is_active
                  AND instructor.instructor_id = ANY($6)
@@ -442,7 +405,7 @@ async fn placement_conflicts(
                SELECT 'room', block.id, target.room_id
                FROM academic_timetable_blocks block
                JOIN academic_timetable_block_groups target ON target.block_id = block.id
-               WHERE block.timetable_version_id = $1 AND block.day_of_week = $2
+               WHERE block.timetable_id = $1 AND block.day_of_week = $2
                  AND block.bell_schedule_period_id = $3
                  AND block.is_active AND target.is_active
                  AND target.room_id = ANY($7)
@@ -450,7 +413,7 @@ async fn placement_conflicts(
                SELECT 'room', block.id, target.room_id
                FROM academic_timetable_blocks block
                JOIN academic_timetable_block_homerooms target ON target.block_id = block.id
-               WHERE block.timetable_version_id = $1 AND block.day_of_week = $2
+               WHERE block.timetable_id = $1 AND block.day_of_week = $2
                  AND block.bell_schedule_period_id = $3
                  AND block.is_active AND target.is_active
                  AND target.room_id = ANY($7)
@@ -460,7 +423,7 @@ async fn placement_conflicts(
            WHERE NOT (block_id = ANY($8))
            ORDER BY kind, block_id, target_id"#,
         )
-        .bind(timetable_version_id)
+        .bind(timetable_id)
         .bind(day)
         .bind(period_id)
         .bind(&reservations.group_ids)

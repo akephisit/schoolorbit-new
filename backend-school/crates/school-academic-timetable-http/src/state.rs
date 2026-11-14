@@ -8,7 +8,8 @@ pub struct AcademicTimetableHttpState {
     pub websocket_manager: Arc<dyn AcademicRealtimePort>,
     pub collaboration: Arc<school_academic_timetable::collaboration::TimetableCollaborationRuntime>,
     pub staff_directory: &'static dyn school_academic_timetable::ports::StaffDirectoryPort,
-    pub publication_history: &'static dyn school_academic_delivery::ports::PublicationHistoryPort,
+    pub lesson_source_detachment:
+        &'static dyn school_academic_timetable::ports::LessonSourceDetachmentPort,
 }
 
 #[derive(Clone)]

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
-use crate::models::timetable_version::TimetableVersion;
+use crate::models::timetable::Timetable;
 use school_academic_core::models::BellSchedulePeriod;
 use school_academic_delivery::models::ActivitySchedulingMode;
 
@@ -57,7 +57,7 @@ pub enum TimetableBlockConflictType {
     Homeroom,
     Teacher,
     Room,
-    Version,
+    Timetable,
     StaleBlock,
     MissingInstructor,
     OutsideScope,
@@ -170,7 +170,7 @@ pub struct TimetableBlockSyncState {
 #[serde(rename_all = "camelCase")]
 pub struct TimetableBlock {
     pub id: Uuid,
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub academic_term_id: Uuid,
     pub academic_year_id: Uuid,
     pub bell_schedule_id: Uuid,
@@ -216,8 +216,7 @@ pub struct TimetableBlockWorkspaceLearningGroup {
     pub learning_offering_id: Uuid,
     pub code: String,
     pub name: String,
-    pub status: String,
-    pub roster_status: String,
+    pub registration_open: bool,
     pub offering_kind: String,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub subject_type: Option<String>,
@@ -330,16 +329,11 @@ pub struct TimetableBlockSummary {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct TimetableBlockWorkspace {
-    pub publication_date_rules: school_academic_delivery::models::versions::PublicationDateRules,
-    pub delivery_publication:
-        school_academic_delivery::models::versions::DeliveryPublicationContext,
-    pub latest_delivery_publication:
-        school_academic_delivery::models::versions::DeliveryPublicationContext,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub total_draft_block_count: Option<i64>,
+    pub total_block_count: Option<i64>,
     pub source_issues: Vec<super::timetable_source::TimetableSourceIssue>,
-    pub latest_delivery_version_id: Uuid,
-    pub version: TimetableVersion,
+    pub delivery_row_version: i64,
+    pub timetable: Timetable,
     pub bell_periods: Vec<BellSchedulePeriod>,
     pub blocks: Vec<TimetableBlock>,
     pub ordinary_demands: Vec<TimetableOrdinaryDemand>,
@@ -359,14 +353,14 @@ pub struct TimetableBlockWorkspace {
 pub struct TimetableBlockWorkspaceQuery {
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateOrdinaryTimetableBlockRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub academic_term_id: Uuid,
     pub learning_group_id: Uuid,
     pub day_of_week: String,
@@ -383,7 +377,7 @@ pub struct CreateOrdinaryTimetableBlockRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateSynchronizedTimetableBlockRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub academic_term_id: Uuid,
     pub learning_offering_id: Uuid,
     pub day_of_week: String,
@@ -410,7 +404,7 @@ pub struct TimetableStructuralSlotInput {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateStructuralTimetableBlocksRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub academic_term_id: Uuid,
     pub structural_kind: TimetableStructuralKind,
     pub title: String,
@@ -434,7 +428,7 @@ pub struct CreateStructuralTimetableBlocksRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateTimetableBlockRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub row_version: i64,
     #[serde(default)]
     pub day_of_week: Option<String>,
@@ -462,7 +456,7 @@ pub struct UpdateTimetableBlockRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RemoveTimetableBlockTargetRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub block_row_version: i64,
     pub target_kind: TimetableTargetKind,
     pub target_id: Uuid,
@@ -473,7 +467,7 @@ pub struct RemoveTimetableBlockTargetRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RetryTimetableBlockSyncRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub block_row_version: i64,
     #[serde(default)]
     pub learning_group_ids: Vec<Uuid>,
@@ -483,7 +477,7 @@ pub struct RetryTimetableBlockSyncRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RestoreTimetableBlockGroupRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub block_row_version: i64,
     pub learning_group_id: Uuid,
 }
@@ -541,7 +535,7 @@ pub struct TimetableBlockPlacementCandidate {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TimetableBlockPlacementPreviewRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub academic_term_id: Uuid,
     pub source: TimetableBlockPlacementSource,
     pub candidate: TimetableBlockPlacementCandidate,
@@ -589,7 +583,7 @@ pub struct TimetableBlockPlacementPreview {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SwapTimetableBlocksRequest {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub block_a_id: Uuid,
     pub block_a_row_version: i64,
     pub block_b_id: Uuid,
@@ -609,7 +603,7 @@ pub struct SwapTimetableBlocksResponse {
 #[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteTimetableBlockQuery {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
     pub row_version: i64,
 }
 
@@ -618,7 +612,7 @@ pub struct DeleteTimetableBlockQuery {
 #[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DeleteTimetableBlockSeriesQuery {
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
 }
 
 fn deserialize_required_nullable_uuid<'de, D>(deserializer: D) -> Result<Option<Uuid>, D::Error>

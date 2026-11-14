@@ -1,15 +1,17 @@
 //! Draft transport adapts authenticated sockets to the domain's memory authority.
 use std::collections::{BTreeMap, BTreeSet};
 
-use school_academic_timetable::collaboration::{DraftMember, DraftRoom, DraftSignal};
-use school_academic_timetable::models::collaboration::{DraftClientMessage, DraftEventEnvelope};
+use school_academic_timetable::collaboration::{TimetableMember, TimetableRoom, TimetableSignal};
+use school_academic_timetable::models::collaboration::{
+    TimetableClientMessage, TimetableEventEnvelope,
+};
 use school_auth_http::context::ActorTenantContext;
 
 use super::*;
 
 pub(super) struct PreparedDraft {
-    room: Arc<DraftRoom>,
-    member: DraftMember,
+    room: Arc<TimetableRoom>,
+    member: TimetableMember,
 }
 
 pub(super) async fn prepare(
@@ -23,7 +25,7 @@ pub(super) async fn prepare(
         .websocket_manager
         .register_tenant(&context.tenant.subdomain, context.tenant.tenant_id)?;
     let access =
-        school_academic_timetable::services::timetable_realtime_service::authorize_draft_socket(
+        school_academic_timetable::services::timetable_realtime_service::authorize_collaboration_socket(
             &context.tenant.pool,
             &context.actor,
             term_id,
@@ -58,7 +60,7 @@ pub(super) async fn prepare(
         )
         .await?,
     );
-    let member = DraftMember {
+    let member = TimetableMember {
         connection_id: Uuid::new_v4(),
         actor: context.actor.clone(),
         session_id: session.session_id,
@@ -74,7 +76,7 @@ pub(super) async fn prepare(
     Ok(PreparedDraft { room, member })
 }
 
-async fn send(socket: &mut WebSocket, events: Vec<DraftEventEnvelope>) -> Result<(), ()> {
+async fn send(socket: &mut WebSocket, events: Vec<TimetableEventEnvelope>) -> Result<(), ()> {
     for event in events {
         let wire = serde_json::to_string(&event).map_err(|_| ())?;
         socket
@@ -228,9 +230,9 @@ pub(super) async fn handle(
                 }
             }
             signal = changes.recv() => {
-                if matches!(&signal, Ok(DraftSignal::Committed(seq)) if *seq <= sent_seq) { continue; }
-                let invalidated = matches!(signal, Ok(DraftSignal::Invalidated) | Err(_));
-                let signal = signal.unwrap_or(DraftSignal::Invalidated);
+                if matches!(&signal, Ok(TimetableSignal::Committed(seq)) if *seq <= sent_seq) { continue; }
+                let invalidated = matches!(signal, Ok(TimetableSignal::Invalidated) | Err(_));
+                let signal = signal.unwrap_or(TimetableSignal::Invalidated);
                 match room.signal_events(connection_id, signal) {
                     Ok(events) => {
                         let next_seq = committed_watermark(&events, sent_seq);
@@ -245,8 +247,8 @@ pub(super) async fn handle(
                 Some(Ok(Message::Text(wire))) => {
                     last_inbound = Instant::now();
                     if text_frame_too_large(wire.len()) { break; }
-                    let Ok(command) = serde_json::from_str::<DraftClientMessage>(&wire) else { continue; };
-                    if matches!(command, DraftClientMessage::ClientPresenceUpdate(_)) {
+                    let Ok(command) = serde_json::from_str::<TimetableClientMessage>(&wire) else { continue; };
+                    if matches!(command, TimetableClientMessage::ClientPresenceUpdate(_)) {
                         if last_presence.elapsed() < Duration::from_millis(16) { continue; }
                         last_presence = Instant::now();
                     }
@@ -278,7 +280,7 @@ pub(super) async fn handle(
     room.disconnect(connection_id);
 }
 
-fn committed_watermark(events: &[DraftEventEnvelope], previous: u64) -> u64 {
-    events.iter().filter(|event| matches!(event.event, school_academic_timetable::models::collaboration::DraftServerMessage::DraftPatched(_) | school_academic_timetable::models::collaboration::DraftServerMessage::DraftStateSync(_)))
+fn committed_watermark(events: &[TimetableEventEnvelope], previous: u64) -> u64 {
+    events.iter().filter(|event| matches!(event.event, school_academic_timetable::models::collaboration::TimetableServerMessage::TimetablePatched(_) | school_academic_timetable::models::collaboration::TimetableServerMessage::TimetableStateSync(_)))
         .map(|event| event.seq).max().unwrap_or(previous).max(previous)
 }

@@ -1,7 +1,7 @@
 //! Shared HTTP and collaboration visibility. Entire blocks/offerings retain their existing scope.
 use std::collections::{BTreeMap, BTreeSet};
 
-use school_academic_delivery::models::versions::DeliverySnapshot;
+use school_academic_delivery::models::current::DeliveryGraph;
 use school_errors::AppError;
 use uuid::Uuid;
 
@@ -12,7 +12,7 @@ use crate::models::timetable_block::{
 
 #[derive(Debug, Clone)]
 pub struct TimetableVisibility {
-    pub source: DeliverySnapshot,
+    pub source: DeliveryGraph,
     pub block_offering_owners: BTreeMap<Uuid, Uuid>,
     pub homeroom_advisors: BTreeMap<Uuid, BTreeSet<Uuid>>,
 }
@@ -36,7 +36,7 @@ impl TimetableVisibility {
                             group
                                 .teachers
                                 .iter()
-                                .any(|teacher| teacher.teacher_id == actor)
+                                .any(|teacher| teacher.teacher_id == actor && teacher.is_active)
                         })
                     })
             })
@@ -56,21 +56,16 @@ impl TimetableVisibility {
         {
             return true;
         }
+        if block.block_kind != crate::models::timetable_block::TimetableBlockKind::Structural {
+            return block
+                .learning_offering_id
+                .is_some_and(|id| self.offering_visible(id, access));
+        }
         access.assigned_actor_id.is_some_and(|actor| {
             block
-                .groups
+                .teachers
                 .iter()
-                .filter(|group| group.is_active)
-                .any(|group| {
-                    group
-                        .instructors
-                        .iter()
-                        .any(|teacher| teacher.teacher_id == actor)
-                })
-                || block
-                    .teachers
-                    .iter()
-                    .any(|teacher| teacher.is_active && teacher.teacher_id == actor)
+                .any(|teacher| teacher.is_active && teacher.teacher_id == actor)
                 || block.homerooms.iter().any(|target| {
                     target.is_active
                         && self
@@ -131,10 +126,6 @@ pub(crate) fn project_visibility(
         .filter(|offering| visibility.offering_visible(offering.id, access))
         .map(|offering| offering.id)
         .collect::<BTreeSet<_>>();
-    result
-        .version
-        .targets
-        .retain(|target| offering_ids.contains(&target.learning_offering_id));
     result
         .learning_groups
         .retain(|group| offering_ids.contains(&group.learning_offering_id));
@@ -215,7 +206,7 @@ pub(crate) fn project_visibility(
         .bell_periods
         .retain(|period| period.is_active || period_ids.contains(&period.id));
     if !access.includes_school_owned {
-        result.total_draft_block_count = None;
+        result.total_block_count = None;
     }
     recompute_workspace(&mut result, visibility);
     result

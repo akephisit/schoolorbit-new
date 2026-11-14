@@ -21,7 +21,7 @@ use school_errors::AppError;
 #[derive(Debug, FromRow)]
 struct BlockRow {
     id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     bell_schedule_id: Uuid,
@@ -115,8 +115,7 @@ struct WorkspaceGroupRow {
     learning_offering_id: Uuid,
     code: String,
     name: String,
-    status: String,
-    roster_status: String,
+    registration_open: bool,
     offering_kind: String,
     offering_code: String,
     offering_name: String,
@@ -149,17 +148,13 @@ pub(crate) async fn get_canonical_workspace(
     // Canonical metadata is private authority state. Public workspace limits belong after
     // viewer projection; unrelated school resources must neither reject nor truncate it.
 
-    let mut version = super::timetable_version_service::get_version_on_connection(
-        connection,
-        query.timetable_version_id,
-        super::timetable_version_service::bangkok_today(),
-    )
-    .await?;
+    let version =
+        super::timetable_service::get_by_id_on_connection(connection, query.timetable_id).await?;
     if version.academic_year_id != query.academic_year_id
         || version.academic_term_id != query.academic_term_id
     {
         return Err(AppError::ValidationError(
-            "รุ่นตารางสอนไม่อยู่ในปีการศึกษาและภาคเรียนที่เลือก".to_string(),
+            "ตารางเรียนไม่อยู่ในปีการศึกษาและภาคเรียนที่เลือก".to_string(),
         ));
     }
     let mut owner_ids = access.organization_unit_ids.clone();
@@ -172,7 +167,7 @@ pub(crate) async fn get_canonical_workspace(
             r#"SELECT block.id
            FROM academic_timetable_blocks block
            LEFT JOIN learning_offerings offering ON offering.id = block.learning_offering_id
-           WHERE block.timetable_version_id = $1 AND block.is_active
+           WHERE block.timetable_id = $1 AND block.is_active
              AND (
                  $2
                  OR offering.owning_organization_unit_id = ANY($3)
@@ -197,7 +192,7 @@ pub(crate) async fn get_canonical_workspace(
              )
            ORDER BY block.id"#,
         )
-        .bind(query.timetable_version_id)
+        .bind(query.timetable_id)
         .bind(access.includes_school_owned)
         .bind(&owner_ids)
         .bind(access.assigned_actor_id)
@@ -222,13 +217,13 @@ pub(crate) async fn get_canonical_workspace(
         .fetch_all()
         .await?;
 
-    let source = school_academic_delivery::services::versions::get_version_on_connection(
+    let source = school_academic_delivery::services::current::workspace_on_connection(
         connection,
-        version.delivery_version_id,
+        version.academic_year_id,
+        version.academic_term_id,
     )
     .await?;
     let visible_offerings = source
-        .snapshot
         .offerings
         .iter()
         .filter(|offering| {
@@ -244,22 +239,6 @@ pub(crate) async fn get_canonical_workspace(
                 })
         })
         .collect::<Vec<_>>();
-    let source_group_ids = visible_offerings
-        .iter()
-        .flat_map(|offering| offering.groups.iter().map(|group| group.id))
-        .collect::<Vec<_>>();
-    let roster_statuses =
-        school_academic_delivery::services::versions::roster_statuses_on_connection(
-            connection,
-            &source_group_ids,
-        )
-        .await?;
-    version.targets.retain(|target| {
-        visible_offerings
-            .iter()
-            .any(|offering| offering.id == target.learning_offering_id)
-    });
-
     let staff_ids =
         visible_offerings
             .iter()
@@ -308,6 +287,7 @@ pub(crate) async fn get_canonical_workspace(
                 group
                     .teachers
                     .iter()
+                    .filter(|teacher| teacher.is_active)
                     .enumerate()
                     .map(|(index, teacher)| {
                         let display_name = staff_names
@@ -330,16 +310,7 @@ pub(crate) async fn get_canonical_workspace(
                 learning_offering_id: offering.id,
                 code: group.code.clone(),
                 name: group.name.clone(),
-                status: "published".into(),
-                roster_status: match roster_statuses
-                    .get(&group.id)
-                    .ok_or_else(|| AppError::Conflict("ไม่พบทะเบียนกลุ่มเรียนของรุ่นเปิดสอน".into()))?
-                {
-                    school_academic_delivery::models::RosterStatus::Draft => "draft",
-                    school_academic_delivery::models::RosterStatus::Published => "published",
-                    school_academic_delivery::models::RosterStatus::Closed => "closed",
-                }
-                .into(),
+                registration_open: group.registration_open,
                 offering_kind: match offering.kind {
                     school_academic_delivery::models::LearningOfferingKind::Course => "course",
                     school_academic_delivery::models::LearningOfferingKind::Activity => "activity",
@@ -360,7 +331,6 @@ pub(crate) async fn get_canonical_workspace(
         }
     }
     let offering_versions = source
-        .snapshot
         .offerings
         .iter()
         .filter(|offering| {
@@ -417,8 +387,7 @@ pub(crate) async fn get_canonical_workspace(
             learning_offering_id: group.learning_offering_id,
             code: group.code.clone(),
             name: group.name.clone(),
-            status: group.status.clone(),
-            roster_status: group.roster_status.clone(),
+            registration_open: group.registration_open,
             offering_kind: group.offering_kind.clone(),
             subject_type: subject_types_by_offering
                 .get(&group.learning_offering_id)
@@ -608,35 +577,14 @@ pub(crate) async fn get_canonical_workspace(
             .map(|demand| demand.excluded_group_count)
             .sum(),
     };
-    let source_issues = super::timetable_source::source_issues(&source.snapshot, &blocks);
-    let latest_delivery_version_id: Uuid = DbSession::new(connection)
-        .scalar(
-            "academic_timetable.services.timetable_block_queries.get_workspace",
-            "SELECT delivery_version_id FROM academic_timetable_versions WHERE id=$1",
-        )
-        .bind(query.timetable_version_id)
-        .fetch_one()
-        .await?;
-    let latest_delivery_version_id =
-        school_academic_delivery::services::versions::latest_published_for_term_on_connection(
-            connection,
-            query.academic_term_id,
-        )
-        .await?
-        .unwrap_or(latest_delivery_version_id);
-    let total_draft_block_count = if access.includes_school_owned
-        && version.status == school_academic_core::models::TimetableVersionStatus::Draft
-    {
-        Some(
-            DbSession::new(connection)
-                .scalar(
-                    "academic_timetable.services.timetable_block_queries.get_workspace",
-                    "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
-                )
-                .bind(version.id)
-                .fetch_one()
-                .await?,
-        )
+    let source_issues = super::timetable_source::source_issues(
+        &school_academic_delivery::models::current::DeliveryGraph {
+            offerings: source.offerings.clone(),
+        },
+        &blocks,
+    );
+    let total_block_count = if access.includes_school_owned {
+        Some(DbSession::new(connection).scalar("academic_timetable.current.block_count", "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_id=$1 AND is_active").bind(version.id).fetch_one().await?)
     } else {
         None
     };
@@ -649,7 +597,6 @@ pub(crate) async fn get_canonical_workspace(
         homeroom_advisors.entry(homeroom).or_default().insert(actor);
     }
     let offering_ids = source
-        .snapshot
         .offerings
         .iter()
         .map(|offering| offering.id)
@@ -658,42 +605,20 @@ pub(crate) async fn get_canonical_workspace(
         .into_iter()
         .collect::<Vec<_>>();
     let block_offering_owners = DbSession::new(connection).query_as::<(Uuid, Uuid)>("academic_timetable.services.timetable_block_queries.get_canonical_workspace.live_owners", "SELECT id,owning_organization_unit_id FROM learning_offerings WHERE id=ANY($1)").bind(&offering_ids).fetch_all().await?.into_iter().collect();
-    let mut publication_date_rules =
-        school_academic_delivery::services::publication::date_rules_on_connection(
-            connection,
-            query.academic_term_id,
-        )
-        .await?;
-    let delivery_publication = school_academic_delivery::services::publication::context(&source)?;
-    let latest_delivery_publication =
-        school_academic_delivery::services::publication::context_on_connection(
-            connection,
-            latest_delivery_version_id,
-        )
-        .await?;
-    if version.status == school_academic_core::models::TimetableVersionStatus::Draft {
-        publication_date_rules.minimum_effective_from = Some(
-            publication_date_rules
-                .minimum_effective_from
-                .map_or(latest_delivery_publication.effective_from, |minimum| {
-                    minimum.max(latest_delivery_publication.effective_from)
-                }),
-        );
-    }
+    let delivery_row_version = source.row_version;
     let visibility = crate::policy::TimetableVisibility {
-        source: source.snapshot,
+        source: school_academic_delivery::models::current::DeliveryGraph {
+            offerings: source.offerings,
+        },
         homeroom_advisors,
         block_offering_owners,
     };
     Ok((
         TimetableBlockWorkspace {
-            publication_date_rules,
-            delivery_publication,
-            latest_delivery_publication,
-            total_draft_block_count,
+            total_block_count,
             source_issues,
-            latest_delivery_version_id,
-            version,
+            delivery_row_version,
+            timetable: version,
             bell_periods,
             blocks,
             ordinary_demands,
@@ -726,10 +651,10 @@ pub(crate) async fn get_blocks_on_connection(
     if block_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let mut rows: Vec<BlockRow> = DbSession::new(&mut *connection)
+    let rows: Vec<BlockRow> = DbSession::new(&mut *connection)
         .query_as(
             "academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
-            r#"SELECT block.id, block.timetable_version_id, block.academic_term_id,
+            r#"SELECT block.id, block.timetable_id, block.academic_term_id,
                   block.academic_year_id, block.bell_schedule_id,
                   block.bell_schedule_period_id, period.name AS period_name,
                   period.start_time, period.end_time, block.day_of_week,
@@ -922,71 +847,11 @@ pub(crate) async fn get_blocks_on_connection(
             });
     }
 
-    let version_ids = rows
-        .iter()
-        .map(|row| row.timetable_version_id)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    // The explicit timetable origin supplies labels for placements retained for review
-    // after their resource has been removed from the newly pinned opening.
-    let sources: Vec<(Uuid, Uuid, Option<Uuid>)> = DbSession::new(&mut *connection).query_as("academic_timetable.services.timetable_block_queries.get_blocks_on_connection",
-        "SELECT version.id,version.delivery_version_id,origin.delivery_version_id FROM academic_timetable_versions version LEFT JOIN academic_timetable_versions origin ON origin.id=version.source_version_id WHERE version.id=ANY($1)",
-    ).bind(&version_ids).fetch_all().await?;
-    let delivery_ids = sources
-        .iter()
-        .flat_map(|(_, id, origin)| [Some(*id), *origin])
-        .flatten()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let snapshots = school_academic_delivery::services::versions::snapshots_on_connection(
-        &mut *connection,
-        &delivery_ids,
-    )
-    .await?;
-    let source_ids = sources
-        .into_iter()
-        .map(|(version, id, origin)| (version, (id, origin)))
-        .collect::<BTreeMap<_, _>>();
-    for row in &mut rows {
-        if let Some((source, origin)) = source_ids.get(&row.timetable_version_id) {
-            let graphs = [
-                snapshots.get(source),
-                origin.and_then(|id| snapshots.get(&id)),
-            ];
-            if let Some(offering) = row.learning_offering_id.and_then(|id| {
-                graphs
-                    .iter()
-                    .flatten()
-                    .flat_map(|graph| &graph.offerings)
-                    .find(|offering| offering.id == id)
-            }) {
-                row.offering_code = Some(offering.code.clone());
-                row.offering_name = Some(offering.name.clone());
-            }
-            if let Some(groups) = groups_by_block.get_mut(&row.id) {
-                for placed in groups {
-                    let captured = graphs
-                        .iter()
-                        .flatten()
-                        .flat_map(|graph| &graph.offerings)
-                        .flat_map(|offering| &offering.groups)
-                        .filter(|group| group.id == placed.learning_group_id)
-                        .collect::<Vec<_>>();
-                    if let Some(group) = captured.first() {
-                        placed.code = group.code.clone();
-                        placed.name = group.name.clone();
-                    }
-                }
-            }
-        }
-    }
     rows.into_iter()
         .map(|row| {
             Ok(TimetableBlock {
                 id: row.id,
-                timetable_version_id: row.timetable_version_id,
+                timetable_id: row.timetable_id,
                 academic_term_id: row.academic_term_id,
                 academic_year_id: row.academic_year_id,
                 bell_schedule_id: row.bell_schedule_id,

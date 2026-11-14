@@ -26,7 +26,6 @@ const READ_TREE_PERMISSIONS: &[&str] = &[
 const READ_SCHOOL_PERMISSIONS: &[&str] = &[
     codes::ACADEMIC_TIMETABLE_READ_SCHOOL,
     codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
-    codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL,
 ];
 const MANAGE_ASSIGNED_PERMISSIONS: &[&str] = &[codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED];
 const MANAGE_UNIT_PERMISSIONS: &[&str] = &[codes::ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_UNIT];
@@ -37,8 +36,6 @@ const MANAGE_SCHOOL_PERMISSIONS: &[&str] = &[codes::ACADEMIC_TIMETABLE_MANAGE_SC
 pub enum TimetableAction {
     Read,
     Manage,
-    Publish,
-    AlignDeliverySource,
 }
 
 enum ScopedTimetableAction {
@@ -48,7 +45,7 @@ enum ScopedTimetableAction {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TimetableResourceSet {
-    pub timetable_version_ids: Vec<Uuid>,
+    pub timetable_ids: Vec<Uuid>,
     pub learning_offering_ids: Vec<Uuid>,
     pub learning_group_ids: Vec<Uuid>,
     pub homeroom_ids: Vec<Uuid>,
@@ -59,7 +56,7 @@ pub struct TimetableResourceSet {
 
 impl TimetableResourceSet {
     pub fn include_block(&mut self, block: &crate::models::timetable_block::TimetableBlock) {
-        self.timetable_version_ids.push(block.timetable_version_id);
+        self.timetable_ids.push(block.timetable_id);
         self.learning_offering_ids
             .extend(block.learning_offering_id);
         self.learning_group_ids
@@ -152,21 +149,10 @@ pub async fn timetable_list_access_on_connection(
 }
 
 fn scoped_action(
-    actor: &ActorContext,
+    _actor: &ActorContext,
     action: TimetableAction,
 ) -> Result<Option<ScopedTimetableAction>, AppError> {
     let action = match action {
-        TimetableAction::AlignDeliverySource => {
-            actor.require_any_permission(&[
-                codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
-                codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL,
-            ])?;
-            return Ok(None);
-        }
-        TimetableAction::Publish => {
-            actor.require_permission(codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL)?;
-            return Ok(None);
-        }
         TimetableAction::Read => ScopedTimetableAction::Read,
         TimetableAction::Manage => ScopedTimetableAction::Manage,
     };
@@ -275,7 +261,7 @@ fn needs_resource_lookup(
         return Ok(false);
     }
 
-    Ok(!resources.timetable_version_ids.is_empty()
+    Ok(!resources.timetable_ids.is_empty()
         || !resources.learning_offering_ids.is_empty()
         || !resources.learning_group_ids.is_empty()
         || !resources.homeroom_ids.is_empty()
@@ -311,7 +297,7 @@ impl TimetableResourceAccessSnapshot {
             return Ok(());
         }
         for (kind, ids) in [
-            ("version", &resources.timetable_version_ids),
+            ("version", &resources.timetable_ids),
             ("offering", &resources.learning_offering_ids),
             ("group", &resources.learning_group_ids),
             ("homeroom", &resources.homeroom_ids),
@@ -347,44 +333,32 @@ pub async fn resource_access_snapshot_on_connection(
     actor: &ActorContext,
     resources: &TimetableResourceSet,
 ) -> Result<TimetableResourceAccessSnapshot, AppError> {
-    let version_ids = normalized_ids(&resources.timetable_version_ids);
+    let version_ids = normalized_ids(&resources.timetable_ids);
     let offering_ids = normalized_ids(&resources.learning_offering_ids);
     let group_ids = normalized_ids(&resources.learning_group_ids);
     let homeroom_ids = normalized_ids(&resources.homeroom_ids);
     let teacher_ids = normalized_ids(&resources.teacher_ids);
     let room_ids = normalized_ids(&resources.room_ids);
-    let targets = DbSession::new(connection).query_as::<TimetableResourceTargetRow>("academic_timetable.policy.require_timetable_resources_on_connection",
+    let mut targets = DbSession::new(connection).query_as::<TimetableResourceTargetRow>("academic_timetable.policy.require_timetable_resources_on_connection",
         r#"
         SELECT 'version'::text AS resource_kind,
                version.id AS resource_id,
                ARRAY[]::uuid[] AS owner_organization_unit_ids,
                false AS actor_is_assigned,
                true AS permission_neutral
-        FROM academic_timetable_versions version
+        FROM academic_timetables version
         WHERE version.id = ANY($1)
         UNION ALL
         SELECT 'offering', offering.id,
                ARRAY_REMOVE(ARRAY[offering.owning_organization_unit_id], NULL)::uuid[],
-               EXISTS (
-                   SELECT 1
-                   FROM learning_groups learning_group
-                   JOIN learning_group_teachers teacher
-                     ON teacher.learning_group_id = learning_group.id
-                   WHERE learning_group.learning_offering_id = offering.id
-                     AND teacher.teacher_id = $7
-               ),
+               false AS actor_is_assigned,
                false
         FROM learning_offerings offering
         WHERE offering.id = ANY($2)
         UNION ALL
         SELECT 'group', learning_group.id,
                ARRAY_REMOVE(ARRAY[offering.owning_organization_unit_id], NULL)::uuid[],
-               EXISTS (
-                   SELECT 1
-                   FROM learning_group_teachers teacher
-                   WHERE teacher.learning_group_id = learning_group.id
-                     AND teacher.teacher_id = $7
-               ),
+               false AS actor_is_assigned,
                false
         FROM learning_groups learning_group
         JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
@@ -431,6 +405,37 @@ pub async fn resource_access_snapshot_on_connection(
     .bind(actor.user_id)
     .fetch_all()
     .await?;
+
+    let mut assigned_offerings = offering_ids.clone();
+    let group_offerings: Vec<Uuid> = DbSession::new(connection)
+        .scalar(
+            "academic_timetable.policy.current_group_offerings",
+            "SELECT DISTINCT learning_offering_id FROM learning_groups WHERE id=ANY($1)",
+        )
+        .bind(&group_ids)
+        .fetch_all()
+        .await?;
+    assigned_offerings.extend(group_offerings);
+    assigned_offerings.sort_unstable();
+    assigned_offerings.dedup();
+    let allocations =
+        school_academic_delivery::services::current::teacher_allocations_on_connection(
+            connection,
+            &assigned_offerings,
+        )
+        .await?;
+    for target in &mut targets {
+        if target.resource_kind == "offering" || target.resource_kind == "group" {
+            target.actor_is_assigned = allocations.iter().any(|allocation| {
+                allocation.teacher_id == actor.user_id
+                    && if target.resource_kind == "offering" {
+                        allocation.learning_offering_id == target.resource_id
+                    } else {
+                        allocation.learning_group_id == target.resource_id
+                    }
+            });
+        }
+    }
 
     Ok(TimetableResourceAccessSnapshot {
         targets: targets
@@ -537,98 +542,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn alignment_accepts_only_school_manage_or_publish_without_granting_other_actions() {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .connect_lazy("postgresql://unused:unused@127.0.0.1:1/unused")
-            .unwrap();
-        pool.close().await;
-        for permission in [
-            codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
-            codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL,
-        ] {
-            let actor = actor(&[permission]);
-            let filter = timetable_list_access(&pool, &actor, TimetableAction::AlignDeliverySource)
-                .await
-                .unwrap();
-            assert!(filter.includes_school_owned);
-            let unrelated = if permission == codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL {
-                TimetableAction::Manage
-            } else {
-                TimetableAction::Publish
-            };
-            assert!(matches!(
-                require_timetable_resources(
-                    &pool,
-                    &actor,
-                    unrelated,
-                    &TimetableResourceSet {
-                        requires_school_scope: true,
-                        ..Default::default()
-                    }
-                )
-                .await,
-                Err(AppError::Forbidden(_))
-            ));
-        }
-        for permissions in [
-            vec![],
-            vec![codes::ACADEMIC_TIMETABLE_READ_SCHOOL],
-            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED],
-            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_UNIT],
-            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_TREE],
-        ] {
-            assert!(matches!(
-                timetable_list_access(
-                    &pool,
-                    &actor(&permissions),
-                    TimetableAction::AlignDeliverySource
-                )
-                .await,
-                Err(AppError::Forbidden(_))
-            ));
-        }
-    }
-
-    #[tokio::test]
-    async fn publish_requires_school_publish_permission_without_resolving_resource_scopes() {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .connect_lazy("postgresql://unused:unused@127.0.0.1:1/unused")
-            .unwrap();
-        pool.close().await;
-        for permissions in [
-            vec![],
-            vec![codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL],
-            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED],
-        ] {
-            assert!(matches!(
-                timetable_list_access(&pool, &actor(&permissions), TimetableAction::Publish).await,
-                Err(AppError::Forbidden(_))
-            ));
-        }
-        let access = timetable_list_access(
-            &pool,
-            &actor(&[codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL]),
-            TimetableAction::Publish,
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            access,
-            TimetableAccessFilter {
-                includes_school_owned: true,
-                ..Default::default()
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn timetable_policy_separates_read_manage_and_school_publish() {
+    async fn direct_management_retains_its_separate_permission() {
         let pool = create_named_test_pool("timetable_access_policy_actions").await;
         let school_target = TimetableResourceSet {
             requires_school_scope: true,
-            ..TimetableResourceSet::default()
+            ..Default::default()
         };
-
         require_timetable_resources(
             &pool,
             &actor(&[codes::ACADEMIC_TIMETABLE_READ_SCHOOL]),
@@ -636,31 +555,31 @@ mod tests {
             &school_target,
         )
         .await
-        .expect("school reader must read a school-wide timetable resource");
-        assert!(require_timetable_resources(
+        .unwrap();
+        for permissions in [
+            vec![codes::ACADEMIC_TIMETABLE_READ_SCHOOL],
+            vec![codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL],
+            vec![codes::ACADEMIC_TIMETABLE_MANAGE_ASSIGNED],
+        ] {
+            assert!(matches!(
+                require_timetable_resources(
+                    &pool,
+                    &actor(&permissions),
+                    TimetableAction::Manage,
+                    &school_target
+                )
+                .await,
+                Err(AppError::Forbidden(_))
+            ));
+        }
+        require_timetable_resources(
             &pool,
-            &actor(&[codes::ACADEMIC_TIMETABLE_READ_SCHOOL]),
+            &actor(&[codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL]),
             TimetableAction::Manage,
             &school_target,
         )
         .await
-        .is_err());
-        assert!(require_timetable_resources(
-            &pool,
-            &actor(&[codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL]),
-            TimetableAction::Publish,
-            &school_target,
-        )
-        .await
-        .is_err());
-        require_timetable_resources(
-            &pool,
-            &actor(&[codes::ACADEMIC_TIMETABLE_PUBLISH_SCHOOL]),
-            TimetableAction::Publish,
-            &school_target,
-        )
-        .await
-        .expect("publish must require its dedicated school permission");
+        .unwrap();
     }
 
     #[test]
