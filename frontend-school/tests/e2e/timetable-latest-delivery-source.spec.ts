@@ -3,13 +3,13 @@ import {
 	installTimetableMock,
 	makeDeliveryPublication,
 	makeTimetableBlock,
-	makeTimetableVersion,
+	makeTimetable,
 	makeStructuralTimetableBlock,
 	timetableIds
 } from './timetable-test-harness';
 
-const url = (id: string = timetableIds.draftVersion) =>
-	`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${id}&view=homeroom&ownerId=${timetableIds.homeroom}`;
+const url = (id: string = timetableIds.timetable) =>
+	`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${id}&view=homeroom&ownerId=${timetableIds.homeroom}`;
 const publications = () => [
 	makeDeliveryPublication(),
 	makeDeliveryPublication(timetableIds.newDeliveryVersion, 5, '2026-11-05')
@@ -32,7 +32,7 @@ for (const permissions of [
 			await expect(page.getByText(/ให้ผู้จัดการตารางระดับโรงเรียนหรือผู้เผยแพร่/)).toBeVisible();
 		}
 		expect(mock.sourceUpdateRequestCount()).toBe(0);
-		expect(mock.workspace().version.deliveryVersionId).toBe(timetableIds.deliveryVersion);
+		expect(mock.workspace().timetable.deliveryVersionId).toBe(timetableIds.deliveryVersion);
 	});
 }
 
@@ -97,7 +97,7 @@ test('late source response cannot move a newly selected published history into e
 	});
 	let started = false;
 	await page.route('**/api/academic/timetable-versions/*/delivery-source', async (route) => {
-		const draft = mock.workspace().version;
+		const draft = mock.workspace().timetable;
 		draft.deliveryVersionId = timetableIds.newDeliveryVersion;
 		draft.rowVersion += 1;
 		started = true;
@@ -107,12 +107,12 @@ test('late source response cannot move a newly selected published history into e
 	await page.goto(url());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	await expect.poll(() => started).toBe(true);
-	await page.goto(url(timetableIds.publishedVersion));
+	await page.goto(url(timetableIds.timetable));
 	release();
 	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
-	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
+	await expect(page).toHaveURL(new RegExp(`timetableId=${timetableIds.timetable}`));
 	await expect(page.getByRole('button', { name: 'เสร็จสิ้น', exact: true })).toHaveCount(0);
-	expect(mock.workspace().version.deliveryVersionId).toBe(timetableIds.newDeliveryVersion);
+	expect(mock.workspace().timetable.deliveryVersionId).toBe(timetableIds.newDeliveryVersion);
 });
 
 test('opening alignment drains a captured save before updating source and preserves its content', async ({
@@ -428,9 +428,9 @@ test('a rejected structural form keeps targets, dates and text for explicit revi
 		};
 		const next = structuredClone(mock.workspace());
 		next.blocks = [block];
-		next.version.rowVersion++;
+		next.timetable.rowVersion++;
 		next.summary.blockCount = 1;
-		next.totalDraftBlockCount = 1;
+		next.totalBlockCount = 1;
 		mock.publishWorkspace(next);
 		await route.fulfill({ json: { success: true, data: [block] } });
 	});
@@ -481,10 +481,10 @@ test('late source completion cannot clear a new term lifecycle busy state or rel
 	});
 	const mock = await installTimetableMock(page, {
 		versions: [
-			makeTimetableVersion('published'),
-			makeTimetableVersion('draft'),
+			makeTimetable(),
+			makeTimetable(),
 			{
-				...makeTimetableVersion('draft'),
+				...makeTimetable(),
 				id: nextVersion,
 				academicTermId: nextTerm,
 				deliveryVersionId: nextSource
@@ -500,7 +500,7 @@ test('late source completion cannot clear a new term lifecycle busy state or rel
 	});
 	let oldStarted = false;
 	await page.route('**/api/academic/timetable-versions/*/delivery-source', async (route) => {
-		const draft = mock.workspace().version;
+		const draft = mock.workspace().timetable;
 		draft.deliveryVersionId = timetableIds.newDeliveryVersion;
 		draft.rowVersion++;
 		oldStarted = true;
@@ -521,7 +521,7 @@ test('late source completion cannot clear a new term lifecycle busy state or rel
 	});
 	await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
 		const requestUrl = new URL(route.request().url());
-		if (holdNew && requestUrl.searchParams.get('timetableVersionId') === nextVersion) {
+		if (holdNew && requestUrl.searchParams.get('timetableId') === nextVersion) {
 			holdNew = false;
 			newStarted = true;
 			await newGate;
@@ -563,19 +563,19 @@ test('late source completion cannot clear a new term lifecycle busy state or rel
 			workspaceQueries.some(
 				(query) =>
 					query.get('academicTermId') === nextTerm &&
-					query.get('timetableVersionId') === timetableIds.draftVersion
+					query.get('timetableId') === timetableIds.timetable
 			)
 		).toBe(false);
 		releaseNew();
 		await expect(
 			page.getByRole('dialog').getByRole('button', { name: 'ตรวจความพร้อม', exact: true })
 		).toBeEnabled();
-		await expect(page).toHaveURL(new RegExp(`timetableVersionId=${nextVersion}`));
+		await expect(page).toHaveURL(new RegExp(`timetableId=${nextVersion}`));
 		expect(
 			workspaceQueries.some(
 				(query) =>
 					query.get('academicTermId') === nextTerm &&
-					query.get('timetableVersionId') === timetableIds.draftVersion
+					query.get('timetableId') === timetableIds.timetable
 			)
 		).toBe(false);
 	} finally {

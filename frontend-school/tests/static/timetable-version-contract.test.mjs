@@ -30,8 +30,8 @@ test('canonical timetable operations require explicit term and version context',
 	);
 	for (const schemaName of requiredVersionSchemas) {
 		assert.ok(
-			openapi.components.schemas[schemaName].required.includes('timetableVersionId'),
-			`${schemaName} must require timetableVersionId`
+			openapi.components.schemas[schemaName].required.includes('timetableId'),
+			`${schemaName} must require timetableId`
 		);
 	}
 	assert.ok(
@@ -70,12 +70,12 @@ test('academic timetable keeps one URL-backed version and published boards read-
 	);
 
 	assert.match(page, /listTimetableVersions\(/);
-	assert.match(page, /searchParams\.set\('timetableVersionId'/);
+	assert.match(page, /searchParams\.set\('timetableId'/);
 	assert.match(page, /controller\?\.canEdit/);
 	assert.match(page, /goto\(resolve\([\s\S]*?shallow:\s*true/);
 	assert.match(header, /เผยแพร่แล้ว/);
 	assert.match(header, /โหมดดู/);
-	assert.match(page, /timetableVersionId:\s*controller\.workspace\.version\.id/);
+	assert.match(page, /timetableId:\s*controller\.workspace\.version\.id/);
 });
 
 test('published timetable revisions and teacher load export remain available after block cutover', async () => {

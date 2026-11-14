@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { DraftPatch } from '../../src/lib/api/timetable.js';
+import type { TimetablePatch } from '../../src/lib/api/timetable.js';
 import {
-	applyDraftPatch,
+	applyTimetablePatch,
 	InvalidDraftLookupPatch
 } from '../../src/lib/academic/timetable/collaboration-patch.ts';
 import { collaborationWorkspace, emptyLookupChanges } from './timetable-collaboration-fixture.ts';
@@ -21,8 +21,8 @@ test('a partial patch changes only affected blocks/demands and preserves server 
 		bellSchedulePeriodId: timetableIds.period3,
 		rowVersion: 2
 	};
-	const patch: DraftPatch = {
-		timetableVersionId: workspace.version.id,
+	const patch: TimetablePatch = {
+		timetableId: workspace.timetable.id,
 		mutationId: 'remote-change',
 		upsertedBlocks: [moved],
 		removedBlockIds: [timetableIds.blockB],
@@ -30,20 +30,20 @@ test('a partial patch changes only affected blocks/demands and preserves server 
 		synchronizedDemands: [],
 		summary: { ...workspace.summary, blockCount: 17 },
 		sourceIssues: [],
-		totalDraftBlockCount: 17,
-		version: { ...workspace.version, rowVersion: 4 }
+		totalBlockCount: 17,
+		version: { ...workspace.timetable, rowVersion: 4 }
 	};
-	const next = applyDraftPatch(workspace, patch);
+	const next = applyTimetablePatch(workspace, patch);
 	assert.deepEqual(next.blocks, [moved]);
 	assert.equal(next.ordinaryDemands[0].scheduledPeriods, 7);
 	assert.equal(next.ordinaryDemands[0].remainingPeriods, 3);
 	assert.equal(next.ordinaryDemands[1], unchanged);
 	assert.equal(next.summary.blockCount, 17);
-	assert.equal(next.totalDraftBlockCount, 17);
-	assert.equal(next.version.rowVersion, 4);
+	assert.equal(next.totalBlockCount, 17);
+	assert.equal(next.timetable.rowVersion, 4);
 	assert.equal(workspace.blocks.length, 2);
 	assert.equal(
-		applyDraftPatch(workspace, { ...patch, timetableVersionId: 'another-draft' }),
+		applyTimetablePatch(workspace, { ...patch, timetableId: 'another-draft' }),
 		workspace
 	);
 });
@@ -97,8 +97,8 @@ test('lookup deltas preserve complete DTOs, remove lost scope and use exact prod
 	workspace.homerooms = [homeroomA, { ...homeroomA, id: oldId }];
 	workspace.offeringSubjectGroups = [subjectA, { ...subjectA, learningOfferingId: oldId }];
 	const before = structuredClone(workspace);
-	const patch: DraftPatch = {
-		timetableVersionId: workspace.version.id,
+	const patch: TimetablePatch = {
+		timetableId: workspace.timetable.id,
 		mutationId: timetableIds.blockA,
 		upsertedBlocks: [],
 		removedBlockIds: [],
@@ -124,7 +124,7 @@ test('lookup deltas preserve complete DTOs, remove lost scope and use exact prod
 			subjectGroupOfferingOrder: [subjectB.learningOfferingId, subjectA.learningOfferingId]
 		}
 	};
-	const next = applyDraftPatch(workspace, patch);
+	const next = applyTimetablePatch(workspace, patch);
 	assert.deepEqual(next.staff, [staffB, staffA]);
 	assert.deepEqual(next.homerooms, [homeroomB, homeroomA]);
 	assert.deepEqual(next.rooms, [roomB, roomA]);
@@ -132,7 +132,7 @@ test('lookup deltas preserve complete DTOs, remove lost scope and use exact prod
 	assert.deepEqual(next.offeringSubjectGroups, [subjectB, subjectA]);
 	assert.equal(next.summary.blockCount, 99);
 	assert.deepEqual(workspace, before);
-	const cleared = applyDraftPatch(next, {
+	const cleared = applyTimetablePatch(next, {
 		...patch,
 		lookupChanges: {
 			...emptyLookupChanges(),
@@ -149,8 +149,8 @@ test('incomplete, duplicate or unknown producer orders refuse the complete patch
 	workspace.staff = [
 		{ id: timetableIds.teacherA, displayName: 'ครูเดิม', status: 'active', subjectGroups: [] }
 	];
-	const base: DraftPatch = {
-		timetableVersionId: workspace.version.id,
+	const base: TimetablePatch = {
+		timetableId: workspace.timetable.id,
 		mutationId: timetableIds.blockA,
 		upsertedBlocks: [],
 		removedBlockIds: [],
@@ -166,7 +166,7 @@ test('incomplete, duplicate or unknown producer orders refuse the complete patch
 	]) {
 		assert.throws(
 			() =>
-				applyDraftPatch(workspace, {
+				applyTimetablePatch(workspace, {
 					...base,
 					lookupChanges: { ...emptyLookupChanges(), staffOrder: order }
 				}),
@@ -175,7 +175,7 @@ test('incomplete, duplicate or unknown producer orders refuse the complete patch
 	}
 	assert.throws(
 		() =>
-			applyDraftPatch(workspace, {
+			applyTimetablePatch(workspace, {
 				...base,
 				lookupChanges: {
 					...emptyLookupChanges(),

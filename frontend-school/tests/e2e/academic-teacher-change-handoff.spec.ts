@@ -123,7 +123,7 @@ async function mockTeacherHandoff(
 	let lastApplyBody: Record<string, unknown> | null = null;
 	let stalePreviewRemaining = options.stalePreviewOnce ? 1 : 0;
 	const changeSet = teacherChangeSet();
-	const timetableRoute = `/staff/academic/timetable?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableVersionId=${ids.targetVersion}&view=group&ownerId=${ids.group}`;
+	const timetableRoute = `/staff/academic/timetable?academicYearId=${ids.year}&academicTermId=${ids.term}&timetableId=${ids.targetVersion}&view=group&ownerId=${ids.group}`;
 
 	await page.route(
 		(url) => url.pathname.startsWith('/api/'),

@@ -61,7 +61,7 @@ export function createTimetableBoardState(workspace: TimetableBlockWorkspace): T
 		demandsByGroupId: new Map(
 			workspace.ordinaryDemands.map((demand) => [demand.learningGroupId, demand])
 		),
-		canEdit: workspace.version.status === 'draft'
+		canEdit: true
 	};
 }
 

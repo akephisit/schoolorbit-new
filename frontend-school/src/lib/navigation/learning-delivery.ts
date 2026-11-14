@@ -3,9 +3,6 @@ const navigationOrigin = 'https://schoolorbit.invalid';
 const overviewParameters = new Set([
 	'academicYearId',
 	'academicTermId',
-	'deliveryVersionId',
-	'changeSetId',
-	'teacherChangeItemId',
 	'view',
 	'kind',
 	'offeringSearch',
@@ -19,7 +16,6 @@ const overviewParameters = new Set([
 export type DeliveryAcademicContext = {
 	academicYearId: string;
 	academicTermId: string;
-	deliveryVersionId?: string | null;
 };
 export type DeliveryOverviewState = {
 	view: 'homerooms' | 'offerings';
@@ -75,17 +71,13 @@ export function deliveryOverviewHref(context: DeliveryAcademicContext): string {
 		academicYearId: context.academicYearId,
 		academicTermId: context.academicTermId
 	});
-	if (context.deliveryVersionId) query.set('deliveryVersionId', context.deliveryVersionId);
 	return `${overviewPath}?${query}`;
 }
 
 export function deliveryOverviewReturnHref(url: URL, context: DeliveryAcademicContext): string {
 	const target = new URL(deliveryOverviewHref(context), navigationOrigin);
 	for (const [key, value] of url.searchParams) {
-		if (
-			overviewParameters.has(key) &&
-			!['academicYearId', 'academicTermId', 'deliveryVersionId'].includes(key)
-		)
+		if (overviewParameters.has(key) && !['academicYearId', 'academicTermId'].includes(key))
 			target.searchParams.set(key, value);
 	}
 	return target.pathname + target.search;
@@ -128,7 +120,6 @@ export function deliveryOfferingHref(
 		academicYearId: context.academicYearId,
 		academicTermId: context.academicTermId
 	});
-	if (context.deliveryVersionId) query.set('deliveryVersionId', context.deliveryVersionId);
 	const destination = safeOverviewReturn(returnTo ?? null, context);
 	if (destination) query.set('returnTo', destination);
 	return `${overviewPath}/${encodeURIComponent(offeringId)}?${query}`;
@@ -157,8 +148,7 @@ export function deliveryFindingHref(
 		deliveryOfferingHref(
 			offeringId,
 			{
-				...context,
-				deliveryVersionId: target.searchParams.get('deliveryVersionId') || context.deliveryVersionId
+				...context
 			},
 			returnTo
 		),
@@ -181,8 +171,6 @@ export function repairedDeliveryOfferingHref(
 	const repaired = new URL(url);
 	repaired.searchParams.set('academicYearId', context.academicYearId);
 	repaired.searchParams.set('academicTermId', context.academicTermId);
-	if (repaired.searchParams.get('deliveryVersionId') !== context.deliveryVersionId)
-		repaired.searchParams.delete('deliveryVersionId');
 	if (
 		repaired.searchParams.has('returnTo') &&
 		!safeOverviewReturn(repaired.searchParams.get('returnTo'), context)

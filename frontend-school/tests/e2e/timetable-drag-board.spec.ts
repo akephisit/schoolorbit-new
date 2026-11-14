@@ -16,7 +16,7 @@ function timetableUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}` +
+		`&timetableId=${timetableIds.timetable}` +
 		`&view=homeroom&ownerId=${timetableIds.homeroom}`
 	);
 }
@@ -315,7 +315,7 @@ test('keeps all room and teacher choices visible and submits all except the unch
 	await expect
 		.poll(() => submitted)
 		.toMatchObject({
-			timetableVersionId: timetableIds.draftVersion,
+			timetableId: timetableIds.timetable,
 			title: 'กิจกรรมทดสอบ',
 			allHomerooms: false,
 			allTeachers: false,

@@ -163,7 +163,7 @@ async function mockAcademicContextApis(
 				await fulfillJson(route, {
 					academicYearId: url.searchParams.get('academicYearId'),
 					academicTermId: url.searchParams.get('academicTermId'),
-					timetableVersionId: null,
+					timetableId: null,
 					timetableVersionStatus: null,
 					timetableVersionEffectiveFrom: null,
 					homerooms: [],

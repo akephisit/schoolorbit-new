@@ -1,8 +1,8 @@
 import type {
-	StaffPublishedExamInvigilator,
-	StaffPublishedExamRoomAssignment,
-	StaffPublishedExamScheduleRound,
-	StaffPublishedExamSession
+	StaffExamInvigilator,
+	StaffExamRoomAssignment,
+	StaffExamScheduleRound,
+	StaffExamSession
 } from '#lib/api/examSchedule.js';
 
 export type StaffExamScheduleLevelFilter = 'all' | 'lower_secondary' | 'upper_secondary';
@@ -14,18 +14,18 @@ export interface StaffExamScheduleFilters {
 	query: string;
 }
 
-export interface StaffExamScheduleSessionRecord extends StaffPublishedExamSession {
+export interface StaffExamScheduleSessionRecord extends StaffExamSession {
 	examDayId: string;
 	examDate: string;
 	dayLabel: string | null;
-	invigilators: StaffPublishedExamInvigilator[];
+	invigilators: StaffExamInvigilator[];
 }
 
-export interface StaffExamRoomAssignmentRecord extends StaffPublishedExamRoomAssignment {
+export interface StaffExamRoomAssignmentRecord extends StaffExamRoomAssignment {
 	examDayId: string;
 	examDate: string;
 	dayLabel: string | null;
-	sessions: StaffPublishedExamSession[];
+	sessions: StaffExamSession[];
 }
 
 export interface StaffExamScheduleRenderRow {
@@ -128,7 +128,7 @@ function searchableText(values: Array<string | null | undefined>): string {
 }
 
 function sessionMatchesLevel(
-	session: StaffPublishedExamSession,
+	session: StaffExamSession,
 	level: StaffExamScheduleLevelFilter
 ): boolean {
 	if (level === 'all') return true;
@@ -173,7 +173,7 @@ function assignmentEndTimestamp(assignment: StaffExamRoomAssignmentRecord): numb
 	return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
 }
 
-export function flattenStaffExamScheduleRound(round: StaffPublishedExamScheduleRound): {
+export function flattenStaffExamScheduleRound(round: StaffExamScheduleRound): {
 	sessions: StaffExamScheduleSessionRecord[];
 	assignments: StaffExamRoomAssignmentRecord[];
 } {
@@ -218,7 +218,7 @@ export function flattenStaffExamScheduleRound(round: StaffPublishedExamScheduleR
 }
 
 export function filterStaffExamScheduleRound(
-	round: StaffPublishedExamScheduleRound,
+	round: StaffExamScheduleRound,
 	filters: StaffExamScheduleFilters
 ): {
 	sessions: StaffExamScheduleSessionRecord[];
@@ -414,7 +414,7 @@ export function buildMyExamInvigilationSummary(
 }
 
 export function buildStaffExamRoundSummary(
-	round: StaffPublishedExamScheduleRound,
+	round: StaffExamScheduleRound,
 	currentStaffId: string,
 	now: Date
 ): StaffExamRoundSummary {

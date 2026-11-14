@@ -93,8 +93,8 @@ function fulfillResponse(route: Route, data: unknown, status = 200) {
 	});
 }
 
-export function makeTimetableVersion(status: 'draft' | 'published'): TimetableVersion {
-	const id = status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion;
+export function makeTimetable(status: 'draft' | 'published'): TimetableVersion {
+	const id = status === 'draft' ? timetableIds.timetable : timetableIds.timetable;
 	return {
 		id,
 		academicTermId: timetableIds.term,
@@ -106,7 +106,7 @@ export function makeTimetableVersion(status: 'draft' | 'published'): TimetableVe
 		displayState: status === 'published' ? 'current' : null,
 		effectiveFrom: status === 'published' ? '2026-05-01' : null,
 		effectiveUntil: null,
-		sourceVersionId: status === 'draft' ? timetableIds.publishedVersion : null,
+		sourceVersionId: status === 'draft' ? timetableIds.timetable : null,
 		rowVersion: 1,
 		publishedAt: status === 'published' ? '2026-05-01T00:00:00Z' : null,
 		publishedBy: status === 'published' ? timetableIds.user : null,
@@ -190,7 +190,7 @@ export function makeTimetableBlock(
 		groupId === timetableIds.groupA ? timetableIds.blockGroupA : timetableIds.blockGroupB;
 	return {
 		id,
-		timetableVersionId: options.versionId ?? timetableIds.draftVersion,
+		timetableId: options.timetableId ?? timetableIds.timetable,
 		academicTermId: timetableIds.term,
 		academicYearId: timetableIds.year,
 		bellScheduleId: timetableIds.schedule,
@@ -340,10 +340,10 @@ function periods(count = 3) {
 export async function installTimetableMock(page: Page, options: TimetableMockOptions = {}) {
 	let currentSession = sessionState();
 	const status = options.status ?? 'draft';
-	const selectedVersion = makeTimetableVersion(status);
+	const selectedVersion = makeTimetable(status);
 	let versions = options.versions ?? [
-		makeTimetableVersion('published'),
-		makeTimetableVersion('draft')
+		makeTimetable(),
+		makeTimetable()
 	];
 	const deliveryPublications = options.deliveryPublications ?? [makeDeliveryPublication()];
 	const publicationDateRules = options.publicationDateRules ?? {
@@ -390,7 +390,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 						.id;
 		return {
 			version,
-			totalDraftBlockCount: version.status === 'draft' ? blocks.length : null,
+			totalBlockCount: version.status === 'draft' ? blocks.length : null,
 			sourceIssues,
 			latestDeliveryVersionId: latestId,
 			deliveryPublication: scopedPublications.find(
@@ -610,7 +610,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname === '/api/academic/timetable-blocks/workspace') {
 				workspaceRequests += 1;
-				const requestedVersionId = url.searchParams.get('timetableVersionId');
+				const requestedVersionId = url.searchParams.get('timetableId');
 				const version = versions.find((item) => item.id === requestedVersionId) ?? selectedVersion;
 				await fulfill(route, workspace(version));
 				return;
@@ -618,7 +618,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			if (url.pathname.endsWith('/delivery-source')) {
 				sourceUpdateRequests += 1;
 				const body = route.request().postDataJSON();
-				const draft = versions.find((version) => version.id === timetableIds.draftVersion);
+				const draft = versions.find((version) => version.id === timetableIds.timetable);
 				if (!draft) throw new Error('draft missing');
 				if (Object.keys(body).length !== 1 || !Number.isInteger(body.rowVersion))
 					throw new Error('source alignment accepts rowVersion only');
@@ -640,14 +640,14 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname.endsWith('/publication-preview')) {
 				const body = route.request().postDataJSON();
-				const draft = versions.find((item) => item.id === timetableIds.draftVersion)!;
+				const draft = versions.find((item) => item.id === timetableIds.timetable)!;
 				const canPublish =
 					draft.deliveryVersionId === latestDeliveryVersionId &&
 					body.effectiveFrom >= workspace().latestDeliveryPublication.effectiveFrom;
 				await fulfill(route, {
-					timetableVersionId: timetableIds.draftVersion,
+					timetableId: timetableIds.timetable,
 					rowVersion: draft.rowVersion,
-					deliveryVersionId: versions.find((item) => item.id === timetableIds.draftVersion)!
+					deliveryVersionId: versions.find((item) => item.id === timetableIds.timetable)!
 						.deliveryVersionId,
 					latestDeliveryVersionId,
 					deliveryPublication: workspace().deliveryPublication,
@@ -671,7 +671,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			}
 			if (url.pathname.endsWith('/publish')) {
 				publicationRequests += 1;
-				const draft = versions.find((version) => version.id === timetableIds.draftVersion);
+				const draft = versions.find((version) => version.id === timetableIds.timetable);
 				if (!draft) throw new Error('draft missing');
 				const body = route.request().postDataJSON();
 				Object.assign(draft, {
@@ -688,11 +688,11 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 			if (url.pathname.endsWith('/delete-draft')) {
 				draftDeleteRequests += 1;
 				const deletedCount = blocks.length;
-				versions = versions.filter((version) => version.id !== timetableIds.draftVersion);
+				versions = versions.filter((version) => version.id !== timetableIds.timetable);
 				blocks = [];
 				await fulfill(route, {
-					id: timetableIds.draftVersion,
-					sourceVersionId: timetableIds.publishedVersion,
+					id: timetableIds.timetable,
+					sourceVersionId: timetableIds.timetable,
 					deletedBlockCount: deletedCount
 				});
 				return;
@@ -756,7 +756,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 				const group = workspace().learningGroups.find((item) => item.id === body.learningGroupId);
 				const created = {
 					...makeTimetableBlock(timetableIds.createdBlock, body.bellSchedulePeriodId, {
-						versionId: body.timetableVersionId,
+						timetableId: body.timetableId,
 						groupId: body.learningGroupId,
 						offeringId: group?.learningOfferingId,
 						code: group?.offeringCode,
@@ -975,7 +975,7 @@ export async function installTimetableMock(page: Page, options: TimetableMockOpt
 		publishWorkspace: (next: TimetableBlockWorkspace, publish = true) => {
 			blocks = structuredClone(next.blocks);
 			versions = versions.map((version) =>
-				version.id === next.version.id ? structuredClone(next.version) : version
+				version.id === next.timetable.id ? structuredClone(next.timetable) : version
 			);
 			latestDeliveryVersionId = next.latestDeliveryVersionId;
 			sourceIssues = structuredClone(next.sourceIssues);

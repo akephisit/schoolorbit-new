@@ -561,7 +561,7 @@ run_academic_context_smoke
 		assert.deepEqual(Object.fromEntries(url.searchParams), {
 			academicYearId: yearId,
 			academicTermId: termId,
-			timetableVersionId: versionId
+			timetableId: versionId
 		});
 		for (const parameter of workspace.parameters.filter(
 			(item) => item.in === 'query' && item.required

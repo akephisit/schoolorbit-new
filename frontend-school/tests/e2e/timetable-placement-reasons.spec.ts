@@ -11,7 +11,7 @@ function boardUrl(view: 'homeroom' | 'teacher' | 'learning_group' = 'homeroom'):
 			: view === 'learning_group'
 				? timetableIds.groupA
 				: timetableIds.homeroom;
-	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${timetableIds.draftVersion}&view=${view}&ownerId=${owner}`;
+	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=${view}&ownerId=${owner}`;
 }
 
 for (const layout of [

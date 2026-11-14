@@ -28,9 +28,9 @@ test('drafts require the exact latest pin while published history retains its or
 	assert.equal(timetableSourceIsCurrent(workspace), true);
 	workspace.latestDeliveryVersionId = timetableIds.newDeliveryVersion;
 	assert.equal(timetableSourceIsCurrent(workspace), false);
-	workspace.version.status = 'published';
+	workspace.timetable.status = 'published';
 	assert.equal(timetableSourceIsCurrent(workspace), true);
-	assert.equal(workspace.version.deliveryVersionId, timetableIds.deliveryVersion);
+	assert.equal(workspace.timetable.deliveryVersionId, timetableIds.deliveryVersion);
 });
 
 test('only dispatched writes without definitive rejection remain ambiguous', () => {

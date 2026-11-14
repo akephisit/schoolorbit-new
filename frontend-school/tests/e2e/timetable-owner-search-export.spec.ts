@@ -11,7 +11,7 @@ import {
 test.use({ serviceWorkers: 'block' });
 
 function url(status: 'draft' | 'published' = 'draft') {
-	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion}&view=homeroom&ownerId=${timetableIds.homeroom}`;
+	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${status === 'draft' ? timetableIds.timetable : timetableIds.timetable}&view=homeroom&ownerId=${timetableIds.homeroom}`;
 }
 
 for (const width of [1543, 390]) {
@@ -157,7 +157,7 @@ for (const status of ['draft', 'published'] as const) {
 		expect(courseA[10]).toBe('ห้องคณิตศาสตร์');
 		expect(detailRows.some((row) => row[11] === 'ประชุมครู')).toBe(true);
 		expect(metadata.getCell('B3').value).toBe(
-			status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion
+			status === 'draft' ? timetableIds.timetable : timetableIds.timetable
 		);
 		expect(metadata.getCell('B4').value).toBe(status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว');
 		expect(summary.getRow(1).height).toBeGreaterThanOrEqual(56);
@@ -195,7 +195,7 @@ test('keeps the requested report version while its lazy module loads', async ({ 
 	const workbook = new ExcelJS.Workbook();
 	await workbook.xlsx.readFile((await (await downloadPromise).path())!);
 	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B3').value).toBe(
-		timetableIds.draftVersion
+		timetableIds.timetable
 	);
 	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B4').value).toBe('แบบร่าง');
 });

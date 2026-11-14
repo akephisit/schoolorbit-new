@@ -48,12 +48,7 @@
 	let requestedKey = '';
 	let observedTracking: LearningGroupRosterTracking | null = null;
 	const unchanged = $derived(accepted !== null && draftMatches(accepted));
-	const editable = $derived(
-		canManage &&
-			group.status !== 'closed' &&
-			group.status !== 'cancelled' &&
-			group.rosterStatus !== 'closed'
-	);
+	const editable = $derived(canManage);
 	function draftMatches(config: LearningGroupRosterTracking): boolean {
 		return mode === config.mode && (mode === 'manual' || effectiveFrom === config.effectiveFrom);
 	}
@@ -175,7 +170,7 @@
 	function changeMode(value: string) {
 		mode = value === 'homeroom' ? 'homeroom' : 'manual';
 		if (mode === 'homeroom' && !effectiveFrom && tracking) {
-			effectiveFrom = defaultRosterTrackingDate(group.status, tracking.startsOn);
+			effectiveFrom = defaultRosterTrackingDate();
 		}
 		saved = '';
 	}
@@ -277,10 +272,7 @@
 			</form>
 			{#if mode === 'homeroom'}<p class="mt-3 text-xs text-muted-foreground">
 					สมาชิกใหม่เริ่มนับจากวันที่นี้ หรือวันที่เข้าห้องต้นทางหากเข้าภายหลัง
-					โดยเก็บประวัติและคะแนนเดิมไว้ กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง
-					ระบบจะตรวจข้อมูลเปิดสอนที่มีผลตามวันที่เลือก{group.rosterStatus !== 'published'
-						? ' และเริ่มปรับรายชื่ออัตโนมัติหลังเผยแพร่รายชื่อกลุ่ม'
-						: ''}
+					โดยเก็บประวัติและคะแนนเดิมไว้ ระบบใช้ห้องต้นทางปัจจุบันกับวันที่เริ่มติดตาม
 				</p>{/if}
 			{#if !group.homeroomIds.length}<p class="mt-2 text-sm text-muted-foreground">
 					กำหนดห้องต้นทางในกลุ่มเรียนก่อนเปิดติดตามอัตโนมัติ

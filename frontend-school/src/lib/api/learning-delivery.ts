@@ -9,25 +9,14 @@ import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 
-export type DeliveryVersion = Schemas['DeliveryVersionDetails'];
-export type DeliveryVersionSummary = Schemas['DeliveryVersionSummary'];
-export const listDeliveryVersions = (academicTermId: string, options: ApiRequestOptions = {}) =>
-	deliveryData(
-		apiClient.get<DeliveryVersionSummary[]>('/api/academic/delivery-versions', {
-			...options,
-			query: { academicTermId: selectedTerm(academicTermId) }
-		}),
-		'โหลดรุ่นเปิดสอนไม่สำเร็จ'
-	);
-export const getDeliveryVersion = (id: string, options: ApiRequestOptions = {}) =>
-	deliveryData(
-		apiClient.get<DeliveryVersion>(
-			`/api/academic/delivery-versions/${encodeURIComponent(id)}`,
-			options
-		),
-		'โหลดข้อมูลรุ่นเปิดสอนไม่สำเร็จ'
-	);
-
+export type DeliveryWorkspace = Schemas['DeliveryWorkspace'];
+export type DeliveryOffering = Schemas['DeliveryOffering'];
+export type DeliveryGroup = Schemas['DeliveryGroup'];
+export type DeliveryTeacher = Schemas['DeliveryTeacher'];
+export type DeliveryDeletionPreview = Schemas['DeliveryDeletionPreview'];
+export type DeleteDeliveryResourceRequest = Schemas['DeleteDeliveryResourceRequest'];
+export type DeletedDeliveryResource = Schemas['DeletedDeliveryResource'];
+export type UpdateWeeklyPeriodTargetRequest = Schemas['UpdateWeeklyPeriodTargetRequest'];
 export type LearningOffering = Schemas['LearningOffering'];
 export type LearningDeliveryOverview = Schemas['LearningDeliveryOverview'];
 export type LearningOfferingOverviewItem = Schemas['LearningOfferingOverviewItem'];
@@ -48,7 +37,6 @@ export type CurriculumGroupProposal = Schemas['CurriculumGroupProposal'];
 export type ApplyCurriculumOfferingsResult = Schemas['ApplyCurriculumOfferingsResult'];
 export type CreateLearningOfferingRequest = Schemas['CreateLearningOfferingRequest'];
 export type UpdateLearningOfferingRequest = Schemas['UpdateLearningOfferingRequest'];
-export type PublishLearningOfferingRequest = Schemas['PublishLearningOfferingRequest'];
 export type PreviewCurriculumOfferingsRequest = Schemas['PreviewCurriculumOfferingsRequest'];
 export type ApplyCurriculumOfferingsRequest = Schemas['ApplyCurriculumOfferingsRequest'];
 export type CreateLearningGroupRequest = Schemas['CreateLearningGroupRequest'];
@@ -56,24 +44,6 @@ export type UpdateLearningGroupRequest = Schemas['UpdateLearningGroupRequest'];
 export type ReplaceLearningGroupHomeroomsRequest = Schemas['ReplaceLearningGroupHomeroomsRequest'];
 export type ReplaceLearningGroupTeachersRequest = Schemas['ReplaceLearningGroupTeachersRequest'];
 export type ApplyRosterRequest = Schemas['ApplyRosterRequest'];
-export type PublishRosterRequest = Schemas['PublishRosterRequest'];
-export type AcademicTermChangeSet = Schemas['AcademicTermChangeSet'];
-export type AcademicTermChangeSetSummary = Schemas['AcademicTermChangeSetSummary'];
-export type AcademicTermChangeSetPreview = Schemas['AcademicTermChangeSetPreview'];
-export type AcademicChangeFinding = Schemas['AcademicChangeFinding'];
-export type AcademicChangeFindingCode = Schemas['AcademicChangeFindingCode'];
-export type CreateAcademicTermChangeSetRequest = Schemas['CreateAcademicTermChangeSetRequest'];
-export type UpdateAcademicTermChangeSetRequest = Schemas['UpdateAcademicTermChangeSetRequest'];
-export type DeleteDeliveryVersionRequest = Schemas['DeleteDeliveryVersionRequest'];
-export type DeletedDeliveryVersion = Schemas['DeletedDeliveryVersion'];
-export type UpsertAcademicTermChangeItemRequest = Schemas['UpsertAcademicTermChangeItemRequest'];
-export type DeleteAcademicTermChangeItemRequest = Schemas['DeleteAcademicTermChangeItemRequest'];
-export type PublishAcademicTermChangeSetRequest = Schemas['PublishAcademicTermChangeSetRequest'];
-export type TeacherHandoffMode = Schemas['TeacherHandoffMode'];
-export type PreviewTeacherHandoffRequest = Schemas['PreviewTeacherHandoffRequest'];
-export type ApplyTeacherHandoffRequest = Schemas['ApplyTeacherHandoffRequest'];
-export type TeacherHandoffPreview = Schemas['TeacherHandoffPreview'];
-export type ApplyTeacherHandoffResponse = Schemas['ApplyTeacherHandoffResponse'];
 export type DatedRosterMembership = Schemas['DatedRosterMembership'];
 export type AddDatedRosterMembershipRequest = Schemas['AddDatedRosterMembershipRequest'];
 export type RemoveDatedRosterMembershipRequest = Schemas['RemoveDatedRosterMembershipRequest'];
@@ -99,14 +69,11 @@ function selectedTerm(academicTermId: string): string {
 type ListLearningOfferingsQuery = NonNullable<
 	operations['listLearningOfferings']['parameters']['query']
 >;
-type CreateLearningOfferingQuery = NonNullable<
-	operations['createLearningOffering']['parameters']['query']
->;
 type ListLearningGroupsForTermQuery = NonNullable<
 	operations['listLearningGroupsForTerm']['parameters']['query']
 >;
 type DeliveryWorkspaceQuery = NonNullable<
-	operations['getLearningDeliveryOverview']['parameters']['query']
+	operations['getDeliveryWorkspace']['parameters']['query']
 >;
 type DeliveryManagementOptionsQuery = NonNullable<
 	operations['getLearningDeliveryManagementOptions']['parameters']['query']
@@ -114,69 +81,94 @@ type DeliveryManagementOptionsQuery = NonNullable<
 type HomeroomDeliveryWorkspaceQuery = NonNullable<
 	operations['getHomeroomDeliveryWorkspace']['parameters']['query']
 >;
-type HomeroomDeliveryRequestOptions = ApiRequestOptions & { deliveryVersionId?: string };
-type ListAcademicTermChangeSetsQuery = NonNullable<
-	operations['listAcademicTermChangeSets']['parameters']['query']
->;
-
-type CreateAcademicTermChangeSetOperation = operations['createAcademicTermChangeSet'];
-type GetAcademicTermChangeSetOperation = operations['getAcademicTermChangeSet'];
-type UpdateAcademicTermChangeSetOperation = operations['updateAcademicTermChangeSet'];
-type UpsertAcademicTermChangeItemOperation = operations['upsertAcademicTermChangeItem'];
-type DeleteAcademicTermChangeItemOperation = operations['deleteAcademicTermChangeItem'];
-type PreviewAcademicTermChangeSetOperation = operations['previewAcademicTermChangeSet'];
-type PublishAcademicTermChangeSetOperation = operations['publishAcademicTermChangeSet'];
-type PreviewTeacherHandoffOperation = operations['previewTeacherHandoff'];
-type ApplyTeacherHandoffOperation = operations['applyTeacherHandoff'];
 type ListDatedRosterMembershipsOperation = operations['listDatedRosterMemberships'];
 type AddDatedRosterMembershipOperation = operations['addDatedRosterMembership'];
 type EndDatedRosterMembershipOperation = operations['endDatedRosterMembership'];
 
 type OperationPath<T> = T extends { parameters: { path: infer Path } } ? Path : never;
 
-function changeSetPath(id: OperationPath<GetAcademicTermChangeSetOperation>['id']): string {
-	return `/api/academic/term-change-sets/${id}`;
-}
-
 export const getHomeroomDeliveryWorkspace = (
 	academicYearId: string,
 	academicTermId: string,
-	options: HomeroomDeliveryRequestOptions = {}
+	options: ApiRequestOptions = {}
 ) => {
 	const yearId = academicYearId.trim();
 	if (!yearId) throw new Error('กรุณาเลือกปีการศึกษาก่อน');
-	const deliveryVersionId = options.deliveryVersionId?.trim();
-	const { deliveryVersionId: _selectedVersion, ...requestOptions } = options;
 	const query = {
 		academicYearId: yearId,
-		academicTermId: selectedTerm(academicTermId),
-		...(deliveryVersionId ? { deliveryVersionId } : {})
+		academicTermId: selectedTerm(academicTermId)
 	} satisfies HomeroomDeliveryWorkspaceQuery;
 	return deliveryData(
 		apiClient.get<HomeroomDeliveryWorkspace>('/api/academic/delivery/homerooms', {
-			...requestOptions,
+			...options,
 			query
 		}),
 		'ไม่สามารถโหลดภาพรวมรายห้องประจำชั้นได้'
 	);
 };
 
-export const getLearningDeliveryOverview = (
+export const getDeliveryWorkspace = (
+	academicYearId: string,
 	academicTermId: string,
 	options: ApiRequestOptions = {}
 ) => {
 	const query = {
+		academicYearId,
 		academicTermId: selectedTerm(academicTermId)
 	} satisfies DeliveryWorkspaceQuery;
 	return deliveryData(
-		apiClient.get<LearningDeliveryOverview>('/api/academic/delivery/workspace', {
-			...options,
-			query
-		}),
-		'ไม่สามารถโหลดภาพรวมรายการเปิดสอนได้'
+		apiClient.get<DeliveryWorkspace>('/api/academic/delivery/workspace', { ...options, query }),
+		'โหลดรายการเปิดสอนไม่สำเร็จ'
 	);
 };
-
+export const updateWeeklyPeriodTarget = (id: string, body: UpdateWeeklyPeriodTargetRequest) =>
+	deliveryData(
+		apiClient.patch<LearningOffering>(
+			`/api/academic/offerings/${encodeURIComponent(id)}/weekly-period-target`,
+			body
+		),
+		'บันทึกจำนวนคาบไม่สำเร็จ'
+	);
+export const previewOfferingDeletion = (
+	id: string,
+	context: Schemas['DeliveryWorkspaceQuery'],
+	options: ApiRequestOptions = {}
+) =>
+	deliveryData(
+		apiClient.get<DeliveryDeletionPreview>(
+			`/api/academic/offerings/${encodeURIComponent(id)}/deletion-preview`,
+			{ ...options, query: context }
+		),
+		'ตรวจผลกระทบการลบไม่สำเร็จ'
+	);
+export const previewGroupDeletion = (
+	id: string,
+	context: Schemas['DeliveryWorkspaceQuery'],
+	options: ApiRequestOptions = {}
+) =>
+	deliveryData(
+		apiClient.get<DeliveryDeletionPreview>(
+			`/api/academic/learning-groups/${encodeURIComponent(id)}/deletion-preview`,
+			{ ...options, query: context }
+		),
+		'ตรวจผลกระทบการลบกลุ่มไม่สำเร็จ'
+	);
+export const deleteLearningOffering = (id: string, body: DeleteDeliveryResourceRequest) =>
+	deliveryData(
+		apiClient.deleteWithBody<DeletedDeliveryResource>(
+			`/api/academic/offerings/${encodeURIComponent(id)}`,
+			body
+		),
+		'ลบรายการเปิดสอนไม่สำเร็จ'
+	);
+export const deleteLearningGroup = (id: string, body: DeleteDeliveryResourceRequest) =>
+	deliveryData(
+		apiClient.deleteWithBody<DeletedDeliveryResource>(
+			`/api/academic/learning-groups/${encodeURIComponent(id)}`,
+			body
+		),
+		'ลบกลุ่มเรียนไม่สำเร็จ'
+	);
 export const getLearningDeliveryManagementOptions = (
 	academicTermId: string,
 	options: ApiRequestOptions = {}
@@ -207,27 +199,15 @@ export const getLearningOffering = (id: string, options: ApiRequestOptions = {})
 		apiClient.get<LearningOffering>(`/api/academic/offerings/${id}`, options),
 		'ไม่สามารถโหลดรายการเปิดสอนได้'
 	);
-export const createLearningOffering = (
-	body: CreateLearningOfferingRequest,
-	deliveryVersionId?: string | null
-) => {
-	const query = {
-		...(deliveryVersionId ? { deliveryVersionId } : {})
-	} satisfies CreateLearningOfferingQuery;
-	return deliveryData(
-		apiClient.post<LearningOffering>('/api/academic/offerings', body, { query }),
+export const createLearningOffering = (body: CreateLearningOfferingRequest) =>
+	deliveryData(
+		apiClient.post<LearningOffering>('/api/academic/offerings', body),
 		'สร้างรายการเปิดสอนไม่สำเร็จ'
 	);
-};
 export const updateLearningOffering = (id: string, body: UpdateLearningOfferingRequest) =>
 	deliveryData(
 		apiClient.patch<LearningOffering>(`/api/academic/offerings/${id}`, body),
 		'แก้ไขรายการเปิดสอนไม่สำเร็จ'
-	);
-export const publishLearningOffering = (id: string, body: PublishLearningOfferingRequest) =>
-	deliveryData(
-		apiClient.post<LearningOffering>(`/api/academic/offerings/${id}/publish`, body),
-		'เผยแพร่รายการเปิดสอนไม่สำเร็จ'
 	);
 export const previewLearningOfferingsFromCurriculum = (body: PreviewCurriculumOfferingsRequest) =>
 	deliveryData(
@@ -304,183 +284,6 @@ export const applyLearningGroupRoster = (id: string, body: ApplyRosterRequest) =
 		apiClient.put<LearningGroup>(`/api/academic/learning-groups/${id}/roster`, body),
 		'ยืนยันรายชื่อนักเรียนไม่สำเร็จ'
 	);
-export const publishLearningGroupRoster = (id: string, body: PublishRosterRequest) =>
-	deliveryData(
-		apiClient.post<LearningGroup>(`/api/academic/learning-groups/${id}/roster/publish`, body),
-		'เผยแพร่รายชื่อนักเรียนไม่สำเร็จ'
-	);
-
-export const listAcademicTermChangeSets = (
-	academicTermId: string,
-	options: ApiRequestOptions = {}
-) => {
-	const query = {
-		academicTermId: selectedTerm(academicTermId)
-	} satisfies ListAcademicTermChangeSetsQuery;
-	return deliveryData(
-		apiClient.get<AcademicTermChangeSetSummary[]>('/api/academic/term-change-sets', {
-			...options,
-			query
-		}),
-		'ไม่สามารถโหลดรายการเปลี่ยนแปลงกลางภาคได้'
-	);
-};
-
-export const createAcademicTermChangeSet = (
-	body: CreateAcademicTermChangeSetRequest &
-		CreateAcademicTermChangeSetOperation['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.post<AcademicTermChangeSet>('/api/academic/term-change-sets', body),
-		'สร้างแบบร่างการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
-	);
-
-export const getAcademicTermChangeSet = (
-	id: OperationPath<GetAcademicTermChangeSetOperation>['id'],
-	options: ApiRequestOptions = {}
-) =>
-	deliveryData(
-		apiClient.get<AcademicTermChangeSet>(changeSetPath(id), options),
-		'ไม่สามารถโหลดแบบร่างการเปลี่ยนแปลงกลางภาคได้'
-	);
-
-export const updateAcademicTermChangeSet = (
-	id: OperationPath<UpdateAcademicTermChangeSetOperation>['id'],
-	body: UpdateAcademicTermChangeSetRequest &
-		UpdateAcademicTermChangeSetOperation['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.patch<AcademicTermChangeSet>(changeSetPath(id), body),
-		'แก้ไขแบบร่างการเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
-	);
-
-export const deleteDeliveryVersion = (
-	id: string,
-	body: DeleteDeliveryVersionRequest &
-		operations['deleteDeliveryVersion']['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.deleteWithBody<DeletedDeliveryVersion>(
-			`/api/academic/delivery-versions/${encodeURIComponent(id)}`,
-			body
-		),
-		'ลบแบบร่างรุ่นเปิดสอนไม่สำเร็จ'
-	);
-
-export const removeDeliveryDraftOffering = (
-	id: OperationPath<operations['removeDeliveryDraftOffering']>['id'],
-	offeringId: OperationPath<operations['removeDeliveryDraftOffering']>['offeringId'],
-	body: operations['removeDeliveryDraftOffering']['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.deleteWithBody<AcademicTermChangeSet>(
-			`${changeSetPath(id)}/offerings/${encodeURIComponent(offeringId)}`,
-			body
-		),
-		'นำรายการเปิดสอนออกจากแบบร่างไม่สำเร็จ'
-	);
-
-export const removeDeliveryDraftOfferingHomeroom = (
-	id: OperationPath<operations['removeDeliveryDraftOfferingHomeroom']>['id'],
-	offeringId: OperationPath<operations['removeDeliveryDraftOfferingHomeroom']>['offeringId'],
-	homeroomId: OperationPath<operations['removeDeliveryDraftOfferingHomeroom']>['homeroomId'],
-	body: operations['removeDeliveryDraftOfferingHomeroom']['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.deleteWithBody<AcademicTermChangeSet>(
-			`${changeSetPath(id)}/offerings/${encodeURIComponent(offeringId)}/homerooms/${encodeURIComponent(homeroomId)}`,
-			body
-		),
-		'นำรายการเปิดสอนออกจากห้องนี้ไม่สำเร็จ'
-	);
-
-export const removeDeliveryDraftGroup = (
-	id: OperationPath<operations['removeDeliveryDraftGroup']>['id'],
-	groupId: OperationPath<operations['removeDeliveryDraftGroup']>['groupId'],
-	body: operations['removeDeliveryDraftGroup']['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.deleteWithBody<AcademicTermChangeSet>(
-			`${changeSetPath(id)}/groups/${encodeURIComponent(groupId)}`,
-			body
-		),
-		'นำกลุ่มเรียนออกจากแบบร่างไม่สำเร็จ'
-	);
-
-export const upsertAcademicTermChangeItem = (
-	id: OperationPath<UpsertAcademicTermChangeItemOperation>['id'],
-	body: UpsertAcademicTermChangeItemRequest &
-		UpsertAcademicTermChangeItemOperation['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.put<AcademicTermChangeSet>(`${changeSetPath(id)}/items`, body),
-		'บันทึกรายการเปลี่ยนแปลงไม่สำเร็จ'
-	);
-
-export const deleteAcademicTermChangeItem = (
-	id: OperationPath<DeleteAcademicTermChangeItemOperation>['id'],
-	itemId: OperationPath<DeleteAcademicTermChangeItemOperation>['itemId'],
-	body: DeleteAcademicTermChangeItemRequest &
-		DeleteAcademicTermChangeItemOperation['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.deleteWithBody<AcademicTermChangeSet>(`${changeSetPath(id)}/items/${itemId}`, body),
-		'ลบรายการเปลี่ยนแปลงไม่สำเร็จ'
-	);
-
-export const previewAcademicTermChangeSet = (
-	id: OperationPath<PreviewAcademicTermChangeSetOperation>['id'],
-	options: ApiRequestOptions = {},
-	effectiveFrom?: string
-) =>
-	deliveryData(
-		apiClient.get<AcademicTermChangeSetPreview>(`${changeSetPath(id)}/preview`, {
-			...options,
-			query: effectiveFrom ? { effectiveFrom } : {}
-		}),
-		'ตรวจความพร้อมของการเปลี่ยนแปลงไม่สำเร็จ'
-	);
-
-export const publishAcademicTermChangeSet = (
-	id: OperationPath<PublishAcademicTermChangeSetOperation>['id'],
-	body: PublishAcademicTermChangeSetRequest &
-		PublishAcademicTermChangeSetOperation['requestBody']['content']['application/json']
-) =>
-	deliveryData(
-		apiClient.post<AcademicTermChangeSet>(`${changeSetPath(id)}/publish`, body),
-		'เผยแพร่การเปลี่ยนแปลงกลางภาคไม่สำเร็จ'
-	);
-
-export const previewTeacherHandoff = (
-	id: OperationPath<PreviewTeacherHandoffOperation>['id'],
-	body: PreviewTeacherHandoffRequest &
-		PreviewTeacherHandoffOperation['requestBody']['content']['application/json'],
-	options: ApiRequestOptions = {}
-) =>
-	deliveryData(
-		apiClient.post<TeacherHandoffPreview>(
-			`/api/academic/teacher-handoffs/${encodeURIComponent(id)}/preview`,
-			body,
-			options
-		),
-		'ตรวจผลกระทบของการส่งต่อคาบไม่สำเร็จ'
-	);
-
-export const applyTeacherHandoff = (
-	id: OperationPath<ApplyTeacherHandoffOperation>['id'],
-	body: ApplyTeacherHandoffRequest &
-		ApplyTeacherHandoffOperation['requestBody']['content']['application/json'],
-	options: ApiRequestOptions = {}
-) =>
-	deliveryData(
-		apiClient.post<ApplyTeacherHandoffResponse>(
-			`/api/academic/teacher-handoffs/${encodeURIComponent(id)}/apply`,
-			body,
-			options
-		),
-		'ส่งต่อคาบให้ครูชุดใหม่ไม่สำเร็จ'
-	);
-
 export const listDatedRosterMemberships = (
 	id: OperationPath<ListDatedRosterMembershipsOperation>['id'],
 	options: ApiRequestOptions = {}

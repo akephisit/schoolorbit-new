@@ -1,5 +1,5 @@
 import type { PageLoad } from './$types';
-import { listTimetableTemplates, listTimetableVersions } from '#lib/api/timetable.js';
+import { listTimetableTemplates, getTimetable } from '#lib/api/timetable.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
 
@@ -17,22 +17,20 @@ export const _meta = {
 export const load: PageLoad = ({ fetch, url }) => {
 	const academicYearId = url.searchParams.get('academicYearId')?.trim() || null;
 	const academicTermId = url.searchParams.get('academicTermId')?.trim() || null;
-	const requestedVersionId = url.searchParams.get('timetableVersionId')?.trim() || null;
 	return {
 		title: TITLE,
 		academicYearId,
 		academicTermId,
-		requestedVersionId,
 		templates: academicTermId
 			? captureRouteLoad(
 					listTimetableTemplates({ requestFetch: fetch }),
 					'โหลดแม่แบบตารางสอนไม่สำเร็จ'
 				)
 			: null,
-		versions: academicTermId
+		timetable: academicTermId
 			? captureRouteLoad(
-					listTimetableVersions(academicTermId, { requestFetch: fetch }),
-					'โหลดรุ่นตารางสอนไม่สำเร็จ'
+					getTimetable(academicTermId, { requestFetch: fetch }),
+					'โหลดตารางสอนไม่สำเร็จ'
 				)
 			: null
 	};

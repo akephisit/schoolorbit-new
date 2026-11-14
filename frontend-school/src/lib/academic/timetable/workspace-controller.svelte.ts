@@ -45,8 +45,8 @@ class TimetableWorkspaceController {
 	}
 
 	setWorkspace = (workspace: TimetableBlockWorkspace) => {
-		const previous = this.workspace.version;
-		const next = workspace.version;
+		const previous = this.workspace.timetable;
+		const next = workspace.timetable;
 		if (
 			previous.id !== next.id ||
 			previous.academicYearId !== next.academicYearId ||

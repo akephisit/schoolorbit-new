@@ -5,18 +5,18 @@ import {
 	installTimetableMock,
 	makeDeliveryPublication,
 	makeTimetableBlock,
-	makeTimetableVersion,
+	makeTimetable,
 	timetableIds
 } from './timetable-test-harness';
 
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
 
-function timetableUrl(versionId: string): string {
+function timetableUrl(timetableId: string): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${versionId}` +
+		`&timetableId=${versionId}` +
 		`&view=homeroom&ownerId=${timetableIds.homeroom}`
 	);
 }
@@ -32,7 +32,7 @@ test('loads one bounded draft workspace and preserves exact attached teachers', 
 		eligibleInstructorIds: [timetableIds.teacherA]
 	});
 
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 
 	await expect(page.getByRole('heading', { name: 'ตารางสอน', exact: true })).toBeVisible();
 	await expect(page.getByText('แบบร่าง · โหมดดู')).toBeVisible();
@@ -45,11 +45,11 @@ test('loads one bounded draft workspace and preserves exact attached teachers', 
 
 test('renders a published timetable as the same read-only board', async ({ page }) => {
 	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1, {
-		versionId: timetableIds.publishedVersion
+		timetableId: timetableIds.timetable
 	});
 	await installTimetableMock(page, { status: 'published', blocks: [block] });
 
-	await page.goto(timetableUrl(timetableIds.publishedVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 
 	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
 	await expect(page.locator(`[data-block-id="${timetableIds.blockA}"]`)).toHaveAttribute(
@@ -69,7 +69,7 @@ test('starts with a full read-only board and exposes placement controls only aft
 }) => {
 	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	await installTimetableMock(page, { blocks: [block] });
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	await expect(page.locator('aside article')).toHaveCount(0);
 	await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable', 'false');
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
@@ -84,7 +84,7 @@ test('does not prompt a published timetable to update when opening data changes'
 	page
 }) => {
 	const mock = await installTimetableMock(page, { status: 'published' });
-	await page.goto(timetableUrl(timetableIds.publishedVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
 	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
 	expect(mock.workspaceRequestCount()).toBe(1);
@@ -93,7 +93,7 @@ test('does not prompt a published timetable to update when opening data changes'
 		const url = new URL(response.url());
 		return (
 			url.pathname === '/api/academic/timetable-blocks/workspace' &&
-			url.searchParams.get('timetableVersionId') === timetableIds.publishedVersion
+			url.searchParams.get('timetableId') === timetableIds.timetable
 		);
 	});
 	await revalidatePage(page);
@@ -105,14 +105,14 @@ test('does not prompt a published timetable to update when opening data changes'
 	await expect(page.getByRole('button', { name: 'อัปเดตข้อมูลเปิดสอน', exact: true })).toHaveCount(
 		0
 	);
-	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
+	await expect(page).toHaveURL(new RegExp(`timetableId=${timetableIds.timetable}`));
 	expect(mock.sourceUpdateRequestCount()).toBe(0);
 });
 
 test('keeps compact context filters in the top desktop header row', async ({ page }) => {
 	await page.setViewportSize({ width: 1543, height: 884 });
 	await installTimetableMock(page);
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	const header = page.locator('header[aria-label="บริบทตารางสอน"]');
 	for (const view of ['ชั้น', 'กลุ่มเรียน', 'ครู', 'โรงเรียน']) {
 		await header.getByRole('button', { name: view, exact: true }).click();
@@ -147,7 +147,7 @@ test('keeps compact context filters in the top desktop header row', async ({ pag
 test('aligns a newer opening during editing and keeps all review placements', async ({ page }) => {
 	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	const mock = await installTimetableMock(page, { blocks: [block] });
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	mock.setSourceIssues([
 		{
@@ -161,14 +161,14 @@ test('aligns a newer opening during editing and keeps all review placements', as
 	await expect(page.getByText(/มีคาบที่ต้องตรวจแก้ก่อนเผยแพร่/)).toBeVisible();
 	await expect(page.locator('article[data-block-id]')).toHaveCount(1);
 	expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
-	expect(mock.workspace().version.deliveryVersionId).toBe(timetableIds.newDeliveryVersion);
+	expect(mock.workspace().timetable.deliveryVersionId).toBe(timetableIds.newDeliveryVersion);
 	expect(mock.blocks()).toEqual([block]);
 });
 
 test('deletes only a confirmed draft then returns to its source', async ({ page }) => {
 	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
 	const mock = await installTimetableMock(page, { blocks: [block] });
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	await page.getByRole('button', { name: 'เพิ่มเติม', exact: true }).click();
 	await page.getByRole('menuitem', { name: 'ลบแบบร่าง' }).click();
 	const confirmation = page.getByRole('alertdialog');
@@ -181,7 +181,7 @@ test('deletes only a confirmed draft then returns to its source', async ({ page 
 		.getByRole('alertdialog')
 		.getByRole('button', { name: 'ลบแบบร่าง', exact: true })
 		.click();
-	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
+	await expect(page).toHaveURL(new RegExp(`timetableId=${timetableIds.timetable}`));
 	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
 	expect(mock.draftDeleteRequestCount()).toBe(1);
 });
@@ -190,7 +190,7 @@ test('publishes through the separate timetable readiness API', async ({ page }) 
 	const mock = await installTimetableMock(page, {
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
@@ -211,7 +211,7 @@ for (const action of ['เสร็จสิ้น', 'เผยแพร่เ�
 			blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)],
 			deleteGate
 		});
-		await page.goto(timetableUrl(timetableIds.draftVersion));
+		await page.goto(timetableUrl(timetableIds.timetable));
 		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 		await page
 			.locator('article[data-block-id]')
@@ -252,11 +252,11 @@ test('read-only permissions expose detail and export without lifecycle mutations
 		permissions: ['academic_timetable.read.school'],
 		blocks: [
 			makeTimetableBlock(timetableIds.blockA, timetableIds.period1, {
-				versionId: timetableIds.publishedVersion
+				timetableId: timetableIds.timetable
 			})
 		]
 	});
-	await page.goto(timetableUrl(timetableIds.publishedVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true })).toHaveCount(
 		0
@@ -281,7 +281,7 @@ for (const viewport of [
 			await installTimetableMock(page, {
 				blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 			});
-			await page.goto(timetableUrl(timetableIds.draftVersion));
+			await page.goto(timetableUrl(timetableIds.timetable));
 			await page.evaluate(
 				(isDark) => document.documentElement.classList.toggle('dark', isDark),
 				dark
@@ -317,7 +317,7 @@ test('Edit aligns an old source to latest, preserving blocks and defaulting to i
 			makeDeliveryPublication(timetableIds.newDeliveryVersion, 5, '2026-11-05')
 		]
 	});
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	expect(mock.sourceUpdateRequestCount()).toBe(0);
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'เสร็จสิ้น', exact: true })).toBeVisible();
@@ -355,7 +355,7 @@ test('same-day published versions retain distinct numbers and superseded history
 	page
 }) => {
 	const previous = {
-		...makeTimetableVersion('published'),
+		...makeTimetable(),
 		publicationNo: 5,
 		effectiveFrom: '2026-11-01',
 		effectiveUntil: '2026-10-31',
@@ -363,7 +363,7 @@ test('same-day published versions retain distinct numbers and superseded history
 	};
 	const replacement = {
 		...previous,
-		id: timetableIds.draftVersion,
+		id: timetableIds.timetable,
 		publicationNo: 6,
 		effectiveUntil: null,
 		displayState: 'current' as const,
@@ -385,7 +385,7 @@ test('changing the timetable date invalidates readiness without altering the sel
 	page
 }) => {
 	const mock = await installTimetableMock(page);
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
@@ -408,7 +408,7 @@ test('publication permission alone aligns latest on publication entry without ch
 			makeDeliveryPublication(timetableIds.newDeliveryVersion, 5, '2026-11-05')
 		]
 	});
-	await page.goto(timetableUrl(timetableIds.draftVersion));
+	await page.goto(timetableUrl(timetableIds.timetable));
 	expect(mock.sourceUpdateRequestCount()).toBe(0);
 	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();

@@ -9,7 +9,7 @@ const secondUser = '51000000-0000-4000-8000-000000000212';
 const errorToasts = (page: Page, message: string) =>
 	page.locator('[data-sonner-toast][data-type="error"]').filter({ hasText: message });
 function url() {
-	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${timetableIds.draftVersion}&view=homeroom&ownerId=${secondClass}`;
+	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=homeroom&ownerId=${secondClass}`;
 }
 async function fail(route: Route, message: string) {
 	await route.fulfill({ status: 500, json: { success: false, error: message } });
@@ -252,8 +252,8 @@ test('superseded streamed failure cannot toast or overwrite the newly selected v
 	});
 	await page.route('**/api/academic/timetable-blocks/workspace?**', async (route) => {
 		if (
-			new URL(route.request().url()).searchParams.get('timetableVersionId') !==
-			timetableIds.draftVersion
+			new URL(route.request().url()).searchParams.get('timetableId') !==
+			timetableIds.timetable
 		)
 			return route.fallback();
 		started = true;
@@ -279,14 +279,14 @@ test('superseded streamed failure cannot toast or overwrite the newly selected v
 				link.style.cssText = 'position:fixed;top:140px;right:20px;z-index:9999;background:white';
 				document.body.append(link);
 			},
-			url().replace(timetableIds.draftVersion, timetableIds.publishedVersion)
+			url().replace(timetableIds.timetable, timetableIds.timetable)
 		);
 		await page.locator('#test-supersede-workspace').click();
 		await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
 		const oldResponse = page.waitForResponse(
 			(response) =>
 				new URL(response.url()).pathname.endsWith('/timetable-blocks/workspace') &&
-				new URL(response.url()).searchParams.get('timetableVersionId') === timetableIds.draftVersion
+				new URL(response.url()).searchParams.get('timetableId') === timetableIds.timetable
 		);
 		release();
 		await completion;
@@ -294,7 +294,7 @@ test('superseded streamed failure cannot toast or overwrite the newly selected v
 		await page.evaluate(
 			() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 		);
-		await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
+		await expect(page).toHaveURL(new RegExp(`timetableId=${timetableIds.timetable}`));
 		await expect(errorToasts(page, 'synthetic-superseded-read')).toHaveCount(0);
 	} finally {
 		release();
@@ -334,7 +334,7 @@ test('accepted lifecycle HTTP scope loss repairs the owner URL before regrant an
 		join(
 			workspace,
 			(event) => {
-				if (event.type === 'DraftStateSync' || event.type === 'DraftPatched') workspaceFrames++;
+				if (event.type === 'TimetableStateSync' || event.type === 'TimetablePatched') workspaceFrames++;
 				output(event);
 			},
 			identity

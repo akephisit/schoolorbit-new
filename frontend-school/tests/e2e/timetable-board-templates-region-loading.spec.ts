@@ -9,7 +9,7 @@ function boardUrl(versionId?: string): string {
 		academicYearId: timetableIds.year,
 		academicTermId: timetableIds.term
 	});
-	if (versionId) params.set('timetableVersionId', versionId);
+	if (versionId) params.set('timetableId', versionId);
 	return `/staff/academic/timetable?${params}`;
 }
 
@@ -42,7 +42,7 @@ test('explicit board workspace paints before delayed versions without requesting
 		changeSets.push(route);
 	});
 
-	await page.goto(boardUrl(timetableIds.draftVersion));
+	await page.goto(boardUrl(timetableIds.timetable));
 	await expect.poll(() => versions.length).toBe(1);
 	await expect.poll(() => workspaces.length).toBe(1);
 	await expect(page.locator('[data-slot="skeleton"]').first()).toBeVisible();
@@ -92,7 +92,7 @@ test('an obsolete version deep link falls back to the first available board', as
 	let requestedReads = 0;
 	let fallbackReads = 0;
 	await page.route('**/api/academic/timetable-blocks/workspace?**', (route) => {
-		const versionId = new URL(route.request().url()).searchParams.get('timetableVersionId');
+		const versionId = new URL(route.request().url()).searchParams.get('timetableId');
 		if (versionId === missingVersion) {
 			requestedReads += 1;
 			return route.fulfill({
@@ -106,7 +106,7 @@ test('an obsolete version deep link falls back to the first available board', as
 	});
 	await page.goto(boardUrl(missingVersion));
 	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
-	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
+	await expect(page).toHaveURL(new RegExp(`timetableId=${timetableIds.timetable}`));
 	expect(requestedReads).toBe(1);
 	expect(fallbackReads).toBe(1);
 });
@@ -150,7 +150,7 @@ test('new board version clears the old board before the selected workspace respo
 	await page.route('**/api/academic/timetable-blocks/workspace?**', (route) => {
 		workspaces.push(route);
 	});
-	await page.goto(boardUrl(timetableIds.publishedVersion));
+	await page.goto(boardUrl(timetableIds.timetable));
 	await expect.poll(() => workspaces.length).toBe(1);
 	await workspaces[0].fallback();
 	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
@@ -161,7 +161,7 @@ test('new board version clears the old board before the selected workspace respo
 		link.textContent = 'เปิดรุ่นใหม่';
 		link.style.cssText = 'position:fixed;top:160px;left:500px;z-index:9999;background:white';
 		document.body.append(link);
-	}, boardUrl(timetableIds.draftVersion));
+	}, boardUrl(timetableIds.timetable));
 	await page.locator('#test-version-navigation').click();
 	await expect.poll(() => workspaces.length).toBe(2);
 	await expect(page.getByTestId('timetable-board-ready')).toHaveCount(0);
@@ -178,7 +178,7 @@ test('removing an explicit version URL does not retain that board while default 
 	await page.route('**/api/academic/timetable-blocks/workspace?**', (route) => {
 		workspaces.push(route);
 	});
-	await page.goto(boardUrl(timetableIds.publishedVersion));
+	await page.goto(boardUrl(timetableIds.timetable));
 	await expect.poll(() => workspaces.length).toBe(1);
 	await workspaces[0].fallback();
 	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();

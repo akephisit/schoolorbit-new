@@ -118,7 +118,7 @@ export async function mockStudentSchedules(
 					schedulingMode: null,
 					seriesId: null,
 					structuralKind: null,
-					timetableVersionId: id(413),
+					timetableId: id(413),
 					title: null,
 					note: null
 				}

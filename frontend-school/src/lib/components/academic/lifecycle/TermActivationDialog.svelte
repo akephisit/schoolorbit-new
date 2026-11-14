@@ -235,8 +235,8 @@
 				<p class="font-medium">เกณฑ์เสริมที่ใช้กับการตรวจครั้งนี้</p>
 				<p class="mt-1 text-muted-foreground">
 					ห้องประจำชั้น {workspace.policy.requireHomeroomPlacements ? 'ต้องครบ' : 'ไม่บังคับ'} · รายการเปิดสอน
-					{workspace.policy.requirePublishedOfferings ? 'ต้องมีที่เผยแพร่' : 'ไม่บังคับ'}
-					· ตารางสอน {workspace.policy.requirePublishedTimetable ? 'ต้องมีที่เผยแพร่' : 'ไม่บังคับ'}
+					{workspace.policy.requireOfferings ? 'ต้องมีข้อมูลปัจจุบัน' : 'ไม่บังคับ'}
+					· ตารางสอน {workspace.policy.requireTimetable ? 'ต้องมีข้อมูลปัจจุบัน' : 'ไม่บังคับ'}
 				</p>
 			</div>
 			<p class="text-xs text-muted-foreground">

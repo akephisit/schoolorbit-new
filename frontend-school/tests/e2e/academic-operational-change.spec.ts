@@ -172,7 +172,7 @@ async function mockWorkspace(
 				await fulfill(route, {
 					academicYearId: ids.year,
 					academicTermId: ids.term,
-					timetableVersionId: ids.baseVersion,
+					timetableId: ids.baseVersion,
 					timetableVersionStatus: 'published',
 					homerooms: [],
 					unlinked: []
@@ -236,7 +236,7 @@ async function mockWorkspace(
 						updatedAt: '2026-05-01T00:00:00Z',
 						targets: [
 							{
-								timetableVersionId: ids.baseVersion,
+								timetableId: ids.baseVersion,
 								learningOfferingId: ids.offering,
 								standardPeriodsPerWeek: 2,
 								weeklyPeriodTarget: 2

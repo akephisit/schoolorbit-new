@@ -19,7 +19,7 @@ import {
 
 test.use({ serviceWorkers: 'block' });
 const url = (view = 'homeroom', status = 'draft') =>
-	`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion}&view=${view}&ownerId=${view === 'teacher' ? timetableIds.teacherA : view === 'group' ? timetableIds.groupA : timetableIds.homeroom}`;
+	`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${status === 'draft' ? timetableIds.timetable : timetableIds.timetable}&view=${view}&ownerId=${view === 'teacher' ? timetableIds.teacherA : view === 'group' ? timetableIds.groupA : timetableIds.homeroom}`;
 
 async function pdfText(download: Download) {
 	const path = await download.path();

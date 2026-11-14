@@ -5,11 +5,11 @@ import { installTimetableMock, makeTimetableBlock, timetableIds } from './timeta
 test.use({ serviceWorkers: 'block' });
 test.describe.configure({ mode: 'serial' });
 
-function teacherUrl(teacherId: string, versionId: string = timetableIds.draftVersion): string {
+function teacherUrl(teacherId: string, timetableId: string = timetableIds.timetable): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${versionId}&view=teacher&ownerId=${teacherId}`
+		`&timetableId=${versionId}&view=teacher&ownerId=${teacherId}`
 	);
 }
 
@@ -92,12 +92,12 @@ test('keeps published teacher boards read-only', async ({ page }) => {
 		status: 'published',
 		blocks: [
 			makeTimetableBlock(timetableIds.blockA, timetableIds.period1, {
-				versionId: timetableIds.publishedVersion,
+				timetableId: timetableIds.timetable,
 				instructorIds: [timetableIds.teacherA]
 			})
 		]
 	});
-	await page.goto(teacherUrl(timetableIds.teacherA, timetableIds.publishedVersion));
+	await page.goto(teacherUrl(timetableIds.teacherA, timetableIds.timetable));
 
 	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
 	await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable', 'false');

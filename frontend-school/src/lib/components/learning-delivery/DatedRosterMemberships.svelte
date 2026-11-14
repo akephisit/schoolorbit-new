@@ -344,7 +344,7 @@
 			<PageState
 				variant="empty"
 				title="ยังไม่มีประวัติสมาชิก"
-				description="เผยแพร่รายชื่อเริ่มต้น หรือเพิ่มนักเรียนตามวันที่"
+				description="บันทึกรายชื่อเริ่มต้น หรือเพิ่มนักเรียนตามวันที่"
 			/>
 		{:else}
 			<div class="divide-y rounded-xl border">

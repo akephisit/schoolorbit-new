@@ -1488,7 +1488,7 @@ test('personal exam schedule pages use the published schedule APIs and shared vi
 	assert.match(staffPage, /listStaffExamSchedules/);
 	assert.doesNotMatch(staffPage, /listMyExamSchedules/);
 	assert.doesNotMatch(staffPage, /listChildExamSchedules/);
-	assert.match(staffPage, /type StaffPublishedExamScheduleRound/);
+	assert.match(staffPage, /type StaffExamScheduleRound/);
 	assert.match(staffPage, /StaffExamScheduleDashboard/);
 	assert.match(staffPage, /authStore/);
 	assert.doesNotMatch(staffPage, /PersonalExamScheduleView/);
@@ -1528,10 +1528,10 @@ test('staff exam schedule API uses a staff-only generated transport type', () =>
 
 	assert.match(
 		examScheduleApi,
-		/export type StaffPublishedExamScheduleRound = Schemas\['StaffPublishedExamScheduleRound'\]/
+		/export type StaffExamScheduleRound = Schemas\['StaffExamScheduleRound'\]/
 	);
-	assert.match(staffSource, /Promise<StaffPublishedExamScheduleRound\[\]>/);
-	assert.match(staffSource, /apiClient\.get<StaffPublishedExamScheduleRound\[\]>/);
+	assert.match(staffSource, /Promise<StaffExamScheduleRound\[\]>/);
+	assert.match(staffSource, /apiClient\.get<StaffExamScheduleRound\[\]>/);
 	assert.match(mySource, /Promise<PersonalExamScheduleRound\[\]>/);
 	assert.match(childSource, /Promise<PersonalExamScheduleRound\[\]>/);
 });

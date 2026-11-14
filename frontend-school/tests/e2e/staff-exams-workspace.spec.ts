@@ -2,9 +2,9 @@ import { sessionState } from './fixtures/session-state';
 import { mkdir } from 'node:fs/promises';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
-	StaffPublishedExamDay,
-	StaffPublishedExamScheduleRound,
-	StaffPublishedExamSession
+	StaffExamDay,
+	StaffExamScheduleRound,
+	StaffExamSession
 } from '../../src/lib/api/examSchedule.js';
 import {
 	DEFAULT_APPEARANCE,
@@ -24,11 +24,11 @@ const appearance: SchoolAppearanceResponse = {
 	revision: 4
 };
 
-function day(id: string, date: string, upper = false): StaffPublishedExamDay {
+function day(id: string, date: string, upper = false): StaffExamDay {
 	const homeroomId = `class-${upper ? 'upper' : 'lower'}`;
 	const homeroomName = upper ? 'ม.4/2' : 'ม.1/1';
 	const assignmentId = `assignment-${id}`;
-	const session = (index: number): StaffPublishedExamSession => ({
+	const session = (index: number): StaffExamSession => ({
 		sessionId: `${id}-session-${index}`,
 		dayRoomAssignmentId: assignmentId,
 		assessmentPhaseName: index === 1 ? 'สอบกลางภาค' : 'สอบเพิ่มเติม',
@@ -75,7 +75,7 @@ function day(id: string, date: string, upper = false): StaffPublishedExamDay {
 	};
 }
 
-function rounds(): StaffPublishedExamScheduleRound[] {
+function rounds(): StaffExamScheduleRound[] {
 	return [
 		{
 			roundId: 'round-main',

@@ -3,24 +3,27 @@
 		deliveryGroupCoverage,
 		type DeliveryGroupCoverage
 	} from '#lib/academic/learning-delivery-presentation.js';
-	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
 	import type {
-		AcademicTermChangeSet,
 		CreateLearningGroupRequest,
 		DeliveryManagementOptions,
-		LearningGroup
+		LearningGroup,
+		LearningOffering
 	} from '#lib/api/learning-delivery.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { ArrowRight, Plus, UsersRound } from '@lucide/svelte';
+	import { onDestroy } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
 	import DeliveryOptionCombobox from './DeliveryOptionCombobox.svelte';
 
 	let {
+		offering,
 		groups,
 		selectedGroups = null,
 		selectedGroupId = null,
@@ -28,12 +31,9 @@
 		onSelect,
 		onRequestManagementOptions,
 		onCreate,
-		createPending = false,
-		versionId,
-		offeringId,
-		changeSetId,
-		onDraftResourceRemoved
+		createPending = false
 	}: {
+		offering: LearningOffering;
 		groups: LearningGroup[];
 		selectedGroups?: readonly DeliveryGroupCoverage[] | null;
 		selectedGroupId?: string | null;
@@ -42,10 +42,6 @@
 		onRequestManagementOptions: () => Promise<DeliveryManagementOptions | null>;
 		onCreate: (request: CreateLearningGroupRequest) => Promise<void>;
 		createPending?: boolean;
-		versionId?: string;
-		offeringId: string;
-		changeSetId?: string | null;
-		onDraftResourceRemoved: (updated: AcademicTermChangeSet) => Promise<void>;
 	} = $props();
 
 	let createOpen = $state(false);
@@ -54,41 +50,69 @@
 	let saving = $state(false);
 	let errorMessage = $state('');
 	let preferredRoomId = $state('');
-	let draft = $state({ name: '', description: '', capacity: null as number | null });
+	let draft = $state({
+		name: '',
+		description: '',
+		capacity: null as number | null,
+		registrationOpen: false
+	});
+	let disposed = false;
+	const canOpenRegistration = $derived(
+		offering.kind === 'activity' &&
+			offering.snapshot.kind === 'activity' &&
+			offering.snapshot.registrationType === 'self'
+	);
+	function admission() {
+		const id = offering.id,
+			epoch = authStore.sessionEpoch;
+		return () => !disposed && canManage && offering.id === id && authStore.sessionEpoch === epoch;
+	}
+	onDestroy(() => {
+		disposed = true;
+	});
 
 	async function showCreate() {
+		if (!canManage || saving) return;
+		const current = admission();
 		createOpen = true;
 		errorMessage = '';
 		if (managementOptions || optionsLoading) return;
 		optionsLoading = true;
 		try {
-			managementOptions = await onRequestManagementOptions();
+			const loaded = await onRequestManagementOptions();
+			if (current()) managementOptions = loaded;
 		} catch (error) {
-			errorMessage =
-				error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับสร้างกลุ่มไม่สำเร็จ';
+			if (current())
+				errorMessage =
+					error instanceof Error ? error.message : 'โหลดตัวเลือกสำหรับสร้างกลุ่มไม่สำเร็จ';
 		} finally {
-			optionsLoading = false;
+			if (current()) optionsLoading = false;
 		}
 	}
 
 	async function createGroup(event: SubmitEvent) {
 		event.preventDefault();
+		if (!canManage || saving || !draft.name.trim()) return;
+		const current = admission();
 		saving = true;
 		errorMessage = '';
 		try {
 			await onCreate({
+				registrationOpen: canOpenRegistration && draft.registrationOpen,
 				name: draft.name.trim(),
 				description: draft.description.trim() || null,
 				capacity: draft.capacity,
 				preferredRoomIds: preferredRoomId ? [preferredRoomId] : []
 			});
-			draft = { name: '', description: '', capacity: null };
+			if (!current()) return;
+			draft = { name: '', description: '', capacity: null, registrationOpen: false };
 			preferredRoomId = '';
 			createOpen = false;
 		} catch (error) {
-			errorMessage = error instanceof Error ? error.message : 'สร้างกลุ่มเรียนไม่สำเร็จ';
+			if (current())
+				errorMessage = error instanceof Error ? error.message : 'สร้างกลุ่มเรียนไม่สำเร็จ';
 		} finally {
-			saving = false;
+			if (current()) saving = false;
 		}
 	}
 </script>
@@ -138,22 +162,11 @@
 									.length} ห้อง
 							</p>
 						</div>
-						<Badge variant={group.rosterStatus === 'published' ? 'default' : 'secondary'}
-							>{group.rosterStatus === 'published'
-								? 'รายชื่อเผยแพร่แล้ว'
-								: 'รายชื่อฉบับร่าง'}</Badge
+						<Badge variant="secondary"
+							>{group.registrationOpen ? 'เปิดรับสมัคร' : 'กลุ่มเรียนปัจจุบัน'}</Badge
 						><ArrowRight class="size-4 shrink-0 text-muted-foreground" />
 					</div>
 				</Button>
-				{#if canManage && versionId && changeSetId}<DeliveryDraftResourceRemoval
-						{changeSetId}
-						{versionId}
-						{offeringId}
-						groupId={group.id}
-						label={group.name}
-						{canManage}
-						onRemoved={onDraftResourceRemoved}
-					/>{/if}
 			</div>
 		{:else}
 			<div class="p-8 text-center text-sm text-muted-foreground">
@@ -164,7 +177,12 @@
 </section>
 
 <Dialog.Root bind:open={createOpen}>
-	<Dialog.Content class="sm:max-w-xl">
+	<Dialog.Content
+		class="sm:max-w-xl"
+		showCloseButton={!saving}
+		escapeKeydownBehavior={saving ? 'ignore' : 'close'}
+		interactOutsideBehavior={saving ? 'ignore' : 'close'}
+	>
 		<Dialog.Header
 			><Dialog.Title>เพิ่มกลุ่มเรียน</Dialog.Title><Dialog.Description
 				>ตั้งชื่อให้ครูค้นหาได้ง่าย จากนั้นค่อยกำหนดครู ห้องต้นทาง และรายชื่อ</Dialog.Description
@@ -175,6 +193,13 @@
 				<div class="h-24 animate-pulse rounded-md bg-muted"></div>
 			</div>{:else if managementOptions}
 			<form class="space-y-4" onsubmit={createGroup}>
+				{#if canOpenRegistration}<div class="flex items-center gap-2">
+						<Checkbox
+							id="delivery-group-registration-open"
+							bind:checked={draft.registrationOpen}
+							disabled={!canManage || saving}
+						/><Label for="delivery-group-registration-open">เปิดรับสมัครนักเรียน</Label>
+					</div>{/if}
 				<div class="space-y-2">
 					<Label for="delivery-group-capacity">ความจุ (ถ้ามี)</Label><Input
 						id="delivery-group-capacity"
@@ -212,8 +237,11 @@
 				</div>
 				{#if errorMessage}<p role="alert" class="text-sm text-destructive">{errorMessage}</p>{/if}
 				<Dialog.Footer
-					><Button type="button" variant="outline" onclick={() => (createOpen = false)}
-						>ยกเลิก</Button
+					><Button
+						type="button"
+						variant="outline"
+						disabled={saving}
+						onclick={() => (createOpen = false)}>ยกเลิก</Button
 					><LoadingButton
 						type="submit"
 						loading={saving}

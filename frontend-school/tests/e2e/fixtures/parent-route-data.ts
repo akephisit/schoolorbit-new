@@ -137,7 +137,7 @@ export async function mockParent(
 					schedulingMode: null,
 					seriesId: null,
 					structuralKind: null,
-					timetableVersionId: id(514),
+					timetableId: id(514),
 					title: null,
 					note: null
 				}

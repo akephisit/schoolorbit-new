@@ -62,17 +62,17 @@
 		{
 			id: 'timetable',
 			label: 'ตารางสอน',
-			description: 'สร้างแบบร่างจากตารางที่เผยแพร่ล่าสุดและตรวจการชนกันใหม่'
+			description: 'เตรียมตารางปัจจุบันและตรวจการชนกันใหม่'
 		},
 		{
 			id: 'exams',
 			label: 'ตารางสอบ',
-			description: 'สร้างรอบ วัน และคาบสอบแบบร่าง โดยไม่คัดลอกกรรมการหรือผลสอบ'
+			description: 'สร้างรอบ วัน และคาบสอบรายการที่เตรียม โดยไม่คัดลอกกรรมการหรือผลสอบ'
 		},
 		{
 			id: 'supervision',
 			label: 'นิเทศการสอน',
-			description: 'สร้างรอบและกลุ่มเป้าหมายแบบร่าง โดยไม่คัดลอกผลประเมิน'
+			description: 'สร้างรอบและกลุ่มเป้าหมายรายการที่เตรียม โดยไม่คัดลอกผลประเมิน'
 		}
 	];
 	const kindLabels: Record<TermPreparationMappingKind, string> = {
@@ -93,10 +93,8 @@
 	let modules = $state<TermPreparationModule[]>(['delivery']);
 	let mappings = $state<TermPreparationMappings>({
 		entities: [],
-		dates: [],
-		offeringStartsOn: null
+		dates: []
 	});
-	let offeringStartsOn = $state('');
 	let workspace = $state.raw<TermPreparationWorkspace | null>(null);
 	let previewStale = $state(false);
 	let errorMessage = $state('');
@@ -111,13 +109,7 @@
 		managementTerms.filter((term) => term.id !== sourceTermId && term.status === 'planning')
 	);
 	const canPreview = $derived(
-		canManage &&
-			!disabled &&
-			!loading &&
-			!busy &&
-			!!targetTermId &&
-			modules.length > 0 &&
-			(!modules.includes('delivery') || !!offeringStartsOn)
+		canManage && !disabled && !loading && !busy && !!targetTermId && modules.length > 0
 	);
 	const canApply = $derived(
 		canPreview && !previewStale && !!workspace?.canApply && workspace.sourceChecksum.length === 64
@@ -137,8 +129,7 @@
 		if (value) {
 			targetTermId = targetTerms[0]?.id ?? '';
 			modules = ['delivery'];
-			mappings = { entities: [], dates: [], offeringStartsOn: null };
-			offeringStartsOn = '';
+			mappings = { entities: [], dates: [] };
 			resetPreview();
 			void loadTargets();
 		} else {
@@ -171,8 +162,7 @@
 		modules = checked
 			? [...modules, module].filter((item, index, values) => values.indexOf(item) === index)
 			: modules.filter((item) => item !== module);
-		mappings = { entities: [], dates: [], offeringStartsOn: null };
-		offeringStartsOn = '';
+		mappings = { entities: [], dates: [] };
 		resetPreview();
 	}
 
@@ -187,7 +177,7 @@
 					sourceTermId,
 					targetTermId,
 					modules: [...modules],
-					mappings: { ...mappings, offeringStartsOn: offeringStartsOn || null }
+					mappings: mappings
 				},
 				{ signal }
 			);
@@ -257,7 +247,7 @@
 			sourceTermId,
 			targetTermId,
 			modules: [...modules],
-			mappings: { ...mappings, offeringStartsOn: offeringStartsOn || null }
+			mappings: mappings
 		};
 		const key = JSON.stringify(body);
 		if (pending?.key !== key) {
@@ -271,7 +261,7 @@
 			pending = null;
 			open = false;
 			const created = outcome.modules.reduce((total, item) => total + item.createdCount, 0);
-			toast.success(`สร้างแบบร่างสำหรับภาคเรียนถัดไปแล้ว ${created} รายการ`);
+			toast.success(`สร้างรายการที่เตรียมสำหรับภาคเรียนถัดไปแล้ว ${created} รายการ`);
 			await onapplied?.();
 		} catch (error) {
 			if (!alive) return;
@@ -316,7 +306,8 @@
 		<Dialog.Header class="border-b px-5 py-4">
 			<Dialog.Title>เตรียมข้อมูลสำหรับภาคเรียนถัดไป</Dialog.Title>
 			<Dialog.Description>
-				เลือกเฉพาะส่วนงานที่ต้องการ ระบบจะสร้างเป็นแบบร่างและไม่เปลี่ยนภาคเรียนที่กำลังใช้งาน
+				เลือกเฉพาะส่วนงานที่ต้องการ
+				ระบบจะสร้างเป็นรายการที่เตรียมและไม่เปลี่ยนภาคเรียนที่กำลังใช้งาน
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -337,8 +328,7 @@
 						disabled={busy || loading}
 						onValueChange={(value) => {
 							targetTermId = value;
-							mappings = { entities: [], dates: [], offeringStartsOn: null };
-							offeringStartsOn = '';
+							mappings = { entities: [], dates: [] };
 							resetPreview();
 						}}
 					>
@@ -354,25 +344,13 @@
 				</div>
 			</section>
 
-			{#if modules.includes('delivery')}
-				<div class="space-y-2">
-					<Label for="preparation-offerings-start">วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม</Label
-					><DatePicker
-						id="preparation-offerings-start"
-						bind:value={offeringStartsOn}
-						ariaLabel="วันที่เริ่มเปิดสอนจริงของรายการที่เตรียม"
-						required
-						disabled={busy}
-						onValueChange={() => resetPreview()}
-					/>
-				</div>
-			{/if}
-
 			<section aria-labelledby="term-preparation-modules">
 				<div class="mb-3 flex items-end justify-between gap-3">
 					<div>
 						<h3 id="term-preparation-modules" class="font-semibold">เลือกส่วนงาน</h3>
-						<p class="text-sm text-muted-foreground">แต่ละส่วนถูกตรวจและสร้างแบบร่างแยกกัน</p>
+						<p class="text-sm text-muted-foreground">
+							แต่ละส่วนถูกตรวจและสร้างรายการที่เตรียมแยกกัน
+						</p>
 					</div>
 					<span class="text-sm tabular-nums text-muted-foreground">{modules.length}/5 ส่วนงาน</span>
 				</div>
@@ -408,7 +386,7 @@
 			{:else if workspace}
 				<section class="space-y-3" aria-labelledby="preparation-summary">
 					<div>
-						<h3 id="preparation-summary" class="font-semibold">รายการแบบร่างที่จะสร้าง</h3>
+						<h3 id="preparation-summary" class="font-semibold">รายการรายการที่เตรียมที่จะสร้าง</h3>
 						<p class="text-sm text-muted-foreground">
 							{workspace.context.sourceLabel} → {workspace.context.targetLabel}
 						</p>
@@ -421,7 +399,7 @@
 										{moduleDefinitions.find((definition) => definition.id === item.module)?.label}
 									</p>
 									<span class="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary"
-										>{item.draftCount} แบบร่าง</span
+										>{item.proposedCount} รายการที่เตรียม</span
 									>
 								</div>
 								<p class="mt-2 text-xs leading-relaxed text-muted-foreground">{item.summary}</p>
@@ -495,7 +473,7 @@
 					<p
 						class="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900"
 					>
-						<CheckCircle2 class="size-5" />พร้อมสร้างแบบร่าง ข้อมูลต้นทางจะไม่ถูกแก้ไข
+						<CheckCircle2 class="size-5" />พร้อมสร้างรายการที่เตรียม ข้อมูลต้นทางจะไม่ถูกแก้ไข
 					</p>
 				{:else}
 					<ul class="divide-y rounded-lg border" aria-label="เงื่อนไขการเตรียมภาคเรียน">
@@ -519,7 +497,7 @@
 				<CalendarRange class="mt-0.5 size-4 shrink-0" />
 				<span
 					>การเตรียมนี้ไม่เปลี่ยนตัวเลือกปี/ภาคเรียนบนแถบด้านบน
-					และไม่มีแบบร่างใดเริ่มใช้งานจนกว่าจะเผยแพร่ในหน้าของส่วนนั้น</span
+					ตรวจรายการที่เตรียมก่อนยืนยันบันทึกในภาคเรียนปลายทาง</span
 				>
 			</div>
 		</div>
@@ -527,7 +505,7 @@
 		<Dialog.Footer class="border-t bg-background px-5 py-4">
 			<Button variant="outline" disabled={busy} onclick={() => changeOpen(false)}>ปิด</Button>
 			<LoadingButton loading={busy} disabled={!canApply} onclick={() => void applyPreparation()}>
-				สร้างแบบร่างที่เลือก
+				สร้างรายการที่เตรียมที่เลือก
 			</LoadingButton>
 		</Dialog.Footer>
 	</Dialog.Content>

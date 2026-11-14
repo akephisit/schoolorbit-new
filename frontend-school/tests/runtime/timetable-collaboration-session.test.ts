@@ -6,10 +6,10 @@ import {
 } from '../../src/lib/academic/timetable/collaboration-session.ts';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
 import type {
-	DraftClientMessage,
-	DraftCommandResult,
-	DraftEventEnvelope,
-	DraftPatch,
+	TimetableClientMessage,
+	TimetableCommandResult,
+	TimetableEventEnvelope,
+	TimetablePatch,
 	TimetableBlockPlacementCandidate,
 	TimetableBlockPlacementSource
 } from '../../src/lib/api/timetable.js';
@@ -34,8 +34,8 @@ const target = { dayOfWeek: 'MON', bellSchedulePeriodId: timetableIds.period1, b
 
 function harness() {
 	let serial = 0;
-	const sent: DraftClientMessage[] = [],
-		events: DraftEventEnvelope[] = [],
+	const sent: TimetableClientMessage[] = [],
+		events: TimetableEventEnvelope[] = [],
 		reconciles: string[] = [];
 	const timers = new Map<number, { callback(): void; delay: number }>();
 	const session = createDraftCollaborationSession({
@@ -61,7 +61,7 @@ function harness() {
 		session.apply({
 			epoch: 'epoch-one',
 			seq,
-			type: 'DraftStateSync',
+			type: 'TimetableStateSync',
 			payload: {
 				connectionId: 'tab-one',
 				workspace: collaborationWorkspace(),
@@ -69,7 +69,7 @@ function harness() {
 				reservations: []
 			}
 		});
-	const reply = (result: Partial<DraftCommandResult> = {}) => {
+	const reply = (result: Partial<TimetableCommandResult> = {}) => {
 		const request = sent.at(-1);
 		assert.ok(request && 'requestId' in request.payload);
 		const command =
@@ -83,7 +83,7 @@ function harness() {
 		session.apply({
 			epoch: 'epoch-one',
 			seq: session.state.seq,
-			type: 'DraftCommandResult',
+			type: 'TimetableCommandResult',
 			payload: {
 				requestId: request.payload.requestId,
 				command,
@@ -97,15 +97,15 @@ function harness() {
 			}
 		});
 	};
-	session.reset(timetableIds.draftVersion);
+	session.reset(timetableIds.timetable);
 	sync();
 	return { session, sent, events, reconciles, timers, reply, sync };
 }
 
-function patch(seq: number): DraftEventEnvelope {
+function patch(seq: number): TimetableEventEnvelope {
 	const workspace = collaborationWorkspace();
-	const payload: DraftPatch = {
-		timetableVersionId: timetableIds.draftVersion,
+	const payload: TimetablePatch = {
+		timetableId: timetableIds.timetable,
 		mutationId: `mutation-${seq}`,
 		originConnectionId: 'tab-two',
 		upsertedBlocks: [],
@@ -114,9 +114,9 @@ function patch(seq: number): DraftEventEnvelope {
 		synchronizedDemands: [],
 		summary: workspace.summary,
 		sourceIssues: [],
-		totalDraftBlockCount: 0
+		totalBlockCount: 0
 	};
-	return { epoch: 'epoch-one', seq, type: 'DraftPatched', payload };
+	return { epoch: 'epoch-one', seq, type: 'TimetablePatched', payload };
 }
 
 for (const accepted of [true, false]) {
@@ -189,10 +189,10 @@ test('release preserves its bounded timeout when no correlated response arrives'
 
 test('a decoded combined-null metadata baseline makes the session ready and admits an owned claim', async () => {
 	const h = harness();
-	h.session.reset(timetableIds.draftVersion);
+	h.session.reset(timetableIds.timetable);
 	assert.equal(h.session.state.ready, false);
 	const workspace = collaborationWorkspace();
-	workspace.version.createdBy = null;
+	workspace.timetable.createdBy = null;
 	workspace.homerooms[0].roomNumber = null;
 	workspace.rooms = [{ id: timetableIds.room, code: null, name: 'ห้องเรียน', status: 'ACTIVE' }];
 	const epoch = timetableIds.blockA;
@@ -200,7 +200,7 @@ test('a decoded combined-null metadata baseline makes the session ready and admi
 		JSON.stringify({
 			epoch,
 			seq: 0,
-			type: 'DraftStateSync',
+			type: 'TimetableStateSync',
 			payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
 		})
 	);
@@ -213,7 +213,7 @@ test('a decoded combined-null metadata baseline makes the session ready and admi
 	h.session.apply({
 		epoch,
 		seq: 0,
-		type: 'DraftCommandResult',
+		type: 'TimetableCommandResult',
 		payload: {
 			requestId: request.payload.requestId,
 			command: 'claim',
@@ -236,10 +236,10 @@ test('sequence gaps request one replay, apply patches in order and ignore stale 
 	h.session.apply(patch(2));
 	h.session.apply(patch(3));
 	assert.equal(h.sent.filter((message) => message.type === 'ClientReplay').length, 1);
-	assert.equal(h.events.filter((event) => event.type === 'DraftPatched').length, 0);
+	assert.equal(h.events.filter((event) => event.type === 'TimetablePatched').length, 0);
 	h.session.apply(patch(1));
 	assert.deepEqual(
-		h.events.filter((event) => event.type === 'DraftPatched').map((event) => event.seq),
+		h.events.filter((event) => event.type === 'TimetablePatched').map((event) => event.seq),
 		[1, 2, 3]
 	);
 	h.session.apply(patch(2));
@@ -314,7 +314,7 @@ test('two tabs of the same person survive presence updates and closing one tab r
 	h.session.apply({
 		epoch: 'epoch-one',
 		seq: 0,
-		type: 'DraftPresenceChanged',
+		type: 'TimetablePresenceChanged',
 		payload: {
 			userId: 'one-user',
 			name: 'Same user',
@@ -326,7 +326,7 @@ test('two tabs of the same person survive presence updates and closing one tab r
 	h.session.apply({
 		epoch: 'epoch-one',
 		seq: 0,
-		type: 'DraftPresenceLeft',
+		type: 'TimetablePresenceLeft',
 		payload: { connectionId: 'tab-two' }
 	});
 	assert.deepEqual(
@@ -349,12 +349,12 @@ test('presence-only updates retain existing participant order while joins append
 		connections: [{ connectionId: userId }]
 	}));
 	for (const user of users)
-		h.session.apply({ epoch: 'epoch-one', seq: 0, type: 'DraftPresenceChanged', payload: user });
+		h.session.apply({ epoch: 'epoch-one', seq: 0, type: 'TimetablePresenceChanged', payload: user });
 	for (const user of [users[0], users[3], users[1], users[2]]) {
 		h.session.apply({
 			epoch: 'epoch-one',
 			seq: 0,
-			type: 'DraftPresenceChanged',
+			type: 'TimetablePresenceChanged',
 			payload: { ...user, name: 'ชื่อที่ปรับปรุง', profileImageFileId: timetableIds.room }
 		});
 		assert.deepEqual(
@@ -367,7 +367,7 @@ test('presence-only updates retain existing participant order while joins append
 		userId: timetableIds.user,
 		connections: [{ connectionId: timetableIds.user }]
 	};
-	h.session.apply({ epoch: 'epoch-one', seq: 0, type: 'DraftPresenceChanged', payload: joined });
+	h.session.apply({ epoch: 'epoch-one', seq: 0, type: 'TimetablePresenceChanged', payload: joined });
 	assert.deepEqual(
 		h.session.state.users.map((value) => value.userId),
 		[...users.map((value) => value.userId), joined.userId]
@@ -375,7 +375,7 @@ test('presence-only updates retain existing participant order while joins append
 	h.session.apply({
 		epoch: 'epoch-one',
 		seq: 0,
-		type: 'DraftPresenceLeft',
+		type: 'TimetablePresenceLeft',
 		payload: { connectionId: users[1].connections[0].connectionId }
 	});
 	assert.deepEqual(

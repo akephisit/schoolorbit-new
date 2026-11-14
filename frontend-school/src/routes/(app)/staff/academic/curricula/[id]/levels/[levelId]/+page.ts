@@ -26,7 +26,7 @@ export const load: PageLoad = ({ fetch, params, url }) => {
 					getHomeroomDeliveryWorkspace(
 						alignmentContext.academicYearId,
 						alignmentContext.academicTermId,
-						{ deliveryVersionId: alignmentContext.deliveryVersionId, requestFetch: fetch }
+						{ requestFetch: fetch }
 					),
 					'โหลดข้อมูลเทียบการเปิดสอนไม่สำเร็จ'
 				)

@@ -31,7 +31,7 @@ async function enterEdit(
 const artifacts = '/workspace/artifacts/timetable-live-collaboration';
 const secondUser = '51000000-0000-4000-8000-000000000211';
 function url(view = 'homeroom', owner = timetableIds.homeroom as string) {
-	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${timetableIds.draftVersion}&view=${view}&ownerId=${owner}`;
+	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=${view}&ownerId=${owner}`;
 }
 async function redirectSocket(
 	context: BrowserContext,
@@ -47,7 +47,7 @@ async function redirectSocket(
 					const target = new URL(String(address), location.href);
 					if (
 						target.pathname === '/ws/timetable' &&
-						target.searchParams.has('timetableVersionId')
+						target.searchParams.has('timetableId')
 					) {
 						const redirected = new URL(relayUrl);
 						redirected.search = target.search;
@@ -193,10 +193,10 @@ test('native visible and hidden presence bursts keep four-peer roster avatars do
 		['b', b]
 	] as const)
 		page.on('websocket', (socket) => {
-			if (!new URL(socket.url()).searchParams.has('timetableVersionId')) return;
+			if (!new URL(socket.url()).searchParams.has('timetableId')) return;
 			socket.on('framereceived', ({ payload }) => {
 				const event = decodeDraftEvent(String(payload));
-				if (event?.type === 'DraftStateSync') {
+				if (event?.type === 'TimetableStateSync') {
 					browserBaselines.set(name, event.payload.connectionId);
 					lifecycle.push({
 						event: 'browser-baseline',
@@ -255,7 +255,7 @@ test('native visible and hidden presence bursts keep four-peer roster avatars do
 		for (let index = 0; index < 3; index++) {
 			const address = new URL(server.url);
 			address.searchParams.set('academicTermId', timetableIds.term);
-			address.searchParams.set('timetableVersionId', timetableIds.draftVersion);
+			address.searchParams.set('timetableId', timetableIds.timetable);
 			address.searchParams.set(
 				'fixtureUser',
 				`51000000-0000-4000-8000-${String(220 + index).padStart(12, '0')}`
@@ -274,7 +274,7 @@ test('native visible and hidden presence bursts keep four-peer roster avatars do
 			await new Promise<void>((resolve, reject) => {
 				socket.onmessage = (event) => {
 					const decoded = decodeDraftEvent(String(event.data));
-					if (decoded?.type === 'DraftStateSync') {
+					if (decoded?.type === 'TimetableStateSync') {
 						extraBaselines[index] = decoded.payload.connectionId;
 						lifecycle.push({
 							event: 'extra-baseline',
@@ -793,7 +793,7 @@ test('native draft joins, edits and patches preserve valid nullable metadata wit
 		userId: secondUser
 	});
 	const workspace = mockA.workspace();
-	workspace.version.createdBy = null;
+	workspace.timetable.createdBy = null;
 	workspace.homerooms[0].roomNumber = null;
 	workspace.rooms[0].code = null;
 	mockA.publishWorkspace(workspace, false);
@@ -801,11 +801,11 @@ test('native draft joins, edits and patches preserve valid nullable metadata wit
 	const draftSocketsA: string[] = [],
 		draftSocketsB: string[] = [];
 	a.on('websocket', (socket) => {
-		if (new URL(socket.url()).searchParams.has('timetableVersionId'))
+		if (new URL(socket.url()).searchParams.has('timetableId'))
 			draftSocketsA.push(socket.url());
 	});
 	b.on('websocket', (socket) => {
-		if (new URL(socket.url()).searchParams.has('timetableVersionId'))
+		if (new URL(socket.url()).searchParams.has('timetableId'))
 			draftSocketsB.push(socket.url());
 	});
 	const server = await startNativeDraftRelay(relay, mockA.workspace);
@@ -849,7 +849,7 @@ test('native draft joins, edits and patches preserve valid nullable metadata wit
 			.click();
 		await dialog.getByRole('combobox', { name: 'เลือกห้องเรียน', exact: true }).click();
 		await expect(a.getByRole('option', { name: 'ห้องคณิตศาสตร์ใหม่', exact: true })).toBeVisible();
-		expect(relay.workspace?.version.createdBy).toBeNull();
+		expect(relay.workspace?.timetable.createdBy).toBeNull();
 		expect(relay.workspace?.homerooms[0].roomNumber).toBeNull();
 		expect(relay.workspace?.rooms[0].code).toBeNull();
 		expect([...relay.peers.keys()].sort()).toEqual(connectionIds);
@@ -1365,7 +1365,7 @@ test('native sockets preserve semantic cursor geometry, stationary sender resamp
 		expect(mockA.workspaceRequestCount()).toBe(workspaceReadBaseline.get(mockA));
 		expect(mockB.workspaceRequestCount()).toBe(workspaceReadBaseline.get(mockB));
 		await expect(b.getByText('2/3', { exact: true })).toBeVisible();
-		await expect.poll(() => relay.workspace?.version.rowVersion).toBe(2);
+		await expect.poll(() => relay.workspace?.timetable.rowVersion).toBe(2);
 		await b.screenshot({ path: `${artifacts}/native-partial-commit.png` });
 		await b.setViewportSize({ width: 390, height: 844 });
 		const mobileBlock = b.locator(
@@ -1616,9 +1616,9 @@ test('a newer canonical patch supersedes an older in-flight recovery read and ke
 		expect(heldRequest && failedRequests.has(heldRequest)).toBe(false);
 		const workspace = structuredClone(mock.workspace());
 		workspace.blocks = [makeTimetableBlock(timetableIds.blockB, timetableIds.period2)];
-		workspace.version.rowVersion = 3;
+		workspace.timetable.rowVersion = 3;
 		workspace.summary.blockCount = 1;
-		workspace.totalDraftBlockCount = 1;
+		workspace.totalBlockCount = 1;
 		mock.publishWorkspace(workspace);
 		await expect.poll(() => heldRequest !== null && failedRequests.has(heldRequest)).toBe(true);
 		await expect(page.locator(`[data-block-id="${timetableIds.blockB}"]`)).toBeVisible();

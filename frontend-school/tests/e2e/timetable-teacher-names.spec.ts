@@ -81,7 +81,7 @@ for (const theme of ['light', 'dark'] as const)
 				]
 			});
 			await page.goto(
-				`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${timetableIds.draftVersion}&view=homeroom&ownerId=${timetableIds.homeroom}`
+				`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=homeroom&ownerId=${timetableIds.homeroom}`
 			);
 			await setTimetableTheme(page, theme);
 			const existingCard = page.locator(

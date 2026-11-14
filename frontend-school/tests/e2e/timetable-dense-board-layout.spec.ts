@@ -10,7 +10,7 @@ function boardUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}` +
+		`&timetableId=${timetableIds.timetable}` +
 		`&view=homeroom&ownerId=${timetableIds.homeroom}`
 	);
 }
@@ -19,7 +19,7 @@ function wholeSchoolUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}&view=wholeSchool`
+		`&timetableId=${timetableIds.timetable}&view=wholeSchool`
 	);
 }
 
@@ -27,7 +27,7 @@ function teacherBoardUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}` +
+		`&timetableId=${timetableIds.timetable}` +
 		`&view=teacher&ownerId=${timetableIds.teacherA}`
 	);
 }

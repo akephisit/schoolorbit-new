@@ -1,4 +1,4 @@
-import type { DraftPatch, TimetableBlockWorkspace } from '../../api/timetable.js';
+import type { TimetablePatch, TimetableBlockWorkspace } from '../../api/timetable.js';
 import { patchTimetableWorkspaceBlocks, setTimetableWorkspaceBlocks } from './board-state.ts';
 
 function mergeBy<T>(existing: readonly T[], changed: readonly T[], key: (value: T) => string): T[] {
@@ -44,11 +44,11 @@ function mergeLookup<T>(
 }
 
 /** Apply only after local pending operations have reconciled their temporary blocks. */
-export function applyDraftPatch(
+export function applyTimetablePatch(
 	workspace: TimetableBlockWorkspace,
-	patch: DraftPatch
+	patch: TimetablePatch
 ): TimetableBlockWorkspace {
-	if (workspace.version.id !== patch.timetableVersionId) return workspace;
+	if (workspace.timetable.id !== patch.timetableId) return workspace;
 	const lookups = patch.lookupChanges;
 	// Validate and assemble every lookup before exposing any part of the new workspace.
 	const lookupWorkspace = lookups
@@ -105,7 +105,7 @@ export function applyDraftPatch(
 	return {
 		...updated,
 		...lookupWorkspace,
-		version: patch.version ?? workspace.version,
+		timetable: patch.timetable ?? workspace.timetable,
 		ordinaryDemands: mergeBy(
 			workspace.ordinaryDemands,
 			patch.ordinaryDemands,
@@ -118,9 +118,7 @@ export function applyDraftPatch(
 		),
 		summary: patch.summary,
 		sourceIssues: patch.sourceIssues,
-		totalDraftBlockCount:
-			patch.totalDraftBlockCount === undefined
-				? workspace.totalDraftBlockCount
-				: patch.totalDraftBlockCount
+		totalBlockCount:
+			patch.totalBlockCount === undefined ? workspace.totalBlockCount : patch.totalBlockCount
 	};
 }

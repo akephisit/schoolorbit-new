@@ -3,12 +3,7 @@
 	import { deliveryOfferingStatuses } from '#lib/academic/homeroom-delivery.js';
 	import DeliveryAlignmentBadges from './DeliveryAlignmentBadges.svelte';
 	import type { DeliveryAlignmentFacts } from '#lib/academic/homeroom-delivery.js';
-	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
-	import type {
-		AcademicTermChangeSet,
-		DeliveryVersion,
-		HomeroomDeliveryWorkspace
-	} from '#lib/api/learning-delivery.js';
+	import type { DeliveryWorkspace, HomeroomDeliveryWorkspace } from '#lib/api/learning-delivery.js';
 	import {
 		deliveryOfferingHref,
 		type DeliveryOverviewState
@@ -23,33 +18,28 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	let {
-		version,
+		workspace,
 		filters,
 		returnTo,
 		onFiltersChange,
-		draftChangeSetId = null,
-		onDraftResourceRemoved,
 		alignmentFacts = null,
 		comparisonWorkspace = null
 	}: {
-		version: DeliveryVersion;
+		workspace: DeliveryWorkspace;
 		filters: Pick<DeliveryOverviewState, 'kind' | 'offeringSearch' | 'subjectGroupId'>;
 		returnTo: string;
 		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
-		draftChangeSetId?: string | null;
-		onDraftResourceRemoved?: (updated: AcademicTermChangeSet) => Promise<void>;
 		alignmentFacts?: DeliveryAlignmentFacts | null;
 		comparisonWorkspace?: HomeroomDeliveryWorkspace | null;
 	} = $props();
-	const groups = $derived(deliverySubjectGroupOptions(version));
-	const items = $derived(filterDeliveryOfferings(version, filters));
+	const groups = $derived(deliverySubjectGroupOptions(workspace));
+	const items = $derived(filterDeliveryOfferings(workspace, filters));
 	function detailUrl(id: string) {
 		return deliveryOfferingHref(
 			id,
 			{
-				academicYearId: version.academicYearId,
-				academicTermId: version.academicTermId,
-				deliveryVersionId: version.id
+				academicYearId: workspace.academicYearId,
+				academicTermId: workspace.academicTermId
 			},
 			returnTo
 		);
@@ -92,7 +82,7 @@
 			{filters.subjectGroupId === 'all'
 				? 'ทุกกลุ่มสาระ'
 				: (groups.find((group) => group.id === filters.subjectGroupId)?.name ??
-					'ไม่พบกลุ่มสาระที่เลือกในรุ่นนี้')}
+					'ไม่พบกลุ่มสาระที่เลือกในภาคเรียนนี้')}
 		</Select.Trigger>
 		<Select.Content>
 			<Select.Item value="all">ทุกกลุ่มสาระ</Select.Item>
@@ -148,14 +138,6 @@
 									href={detailUrl(item.id)}
 									data-sveltekit-preload-data="tap">รายละเอียด</Button
 								>
-								{#if version.status === 'draft' && draftChangeSetId && onDraftResourceRemoved}<DeliveryDraftResourceRemoval
-										changeSetId={draftChangeSetId}
-										versionId={version.id}
-										offeringId={item.id}
-										label={deliveryOfferingLabel(item)}
-										canManage={true}
-										onRemoved={onDraftResourceRemoved}
-									/>{/if}
 							</div></Table.Cell
 						>
 					</Table.Row>

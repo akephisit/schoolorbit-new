@@ -16,7 +16,7 @@ import { makeColorCohort } from './timetable-sorting-fixtures.js';
 test.use({ serviceWorkers: 'block', viewport: { width: 1920, height: 1080 } });
 
 function boardUrl(view = 'homeroom', ownerId: string = timetableIds.homeroom): string {
-	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${timetableIds.draftVersion}&view=${view}&ownerId=${ownerId}`;
+	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=${view}&ownerId=${ownerId}`;
 }
 
 function group(

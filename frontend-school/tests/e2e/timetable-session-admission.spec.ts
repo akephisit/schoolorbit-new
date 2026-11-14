@@ -5,13 +5,13 @@ import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration
 import {
 	installTimetableMock,
 	makeTimetableBlock,
-	makeTimetableVersion,
+	makeTimetable,
 	timetableIds
 } from './timetable-test-harness';
 
 type Mock = Awaited<ReturnType<typeof installTimetableMock>>;
-const url = (id: string = timetableIds.draftVersion) =>
-	`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${id}&view=homeroom&ownerId=${timetableIds.homeroom}`;
+const url = (id: string = timetableIds.timetable) =>
+	`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${id}&view=homeroom&ownerId=${timetableIds.homeroom}`;
 const card = (page: Page, id: string) => page.locator(`article[data-block-id="${id}"]`);
 const board = (page: Page) => page.getByTestId('timetable-board-ready');
 test.use({ serviceWorkers: 'block' });
@@ -138,7 +138,7 @@ for (const deferred of ['patch', 'snapshot'] as const) {
 						const target = new URL(String(address), location.href);
 						if (
 							target.pathname === '/ws/timetable' &&
-							target.searchParams.has('timetableVersionId')
+							target.searchParams.has('timetableId')
 						) {
 							const redirected = new URL(relayUrl);
 							redirected.search = target.search;
@@ -159,10 +159,10 @@ for (const deferred of ['patch', 'snapshot'] as const) {
 			socket.on('framereceived', (frame) => {
 				const message = decodeDraftEvent(String(frame.payload));
 				if (!message) return;
-				if (message.type === 'DraftStateSync')
+				if (message.type === 'TimetableStateSync')
 					lastStateSyncConnectionId = message.payload.connectionId;
 				if (
-					message.type === 'DraftPatched' &&
+					message.type === 'TimetablePatched' &&
 					message.payload.upsertedBlocks.some((block) => block.id === timetableIds.blockB)
 				)
 					queuedPatchSeen = true;
@@ -206,7 +206,7 @@ for (const deferred of ['patch', 'snapshot'] as const) {
 			queued.blocks = [initial, makeTimetableBlock(timetableIds.blockB, timetableIds.period2)];
 			queued.version.rowVersion = 3;
 			queued.summary.blockCount = 2;
-			queued.totalDraftBlockCount = 2;
+			queued.totalBlockCount = 2;
 			mock.publishWorkspace(queued);
 			await expect.poll(() => queuedPatchSeen).toBe(true);
 			await browserTurn(page);
@@ -264,8 +264,8 @@ test('replacement-session initial hydration uses fresh reads and ignores both or
 	const mock = await installTimetableMock(page, { blocks: [initial] });
 	const oldWorkspace = structuredClone(mock.workspace());
 	const oldVersions = [
-		{ ...makeTimetableVersion('published'), publicationNo: 99 },
-		makeTimetableVersion('draft')
+		{ ...makeTimetable(), publicationNo: 99 },
+		makeTimetable()
 	];
 	const held = gate();
 	let workspaceReads = 0,
@@ -333,9 +333,9 @@ test('a 404 recovery list loses fallback ownership when the user selects a diffe
 	page
 }) => {
 	const nextId = 'a1000000-0000-4000-8000-000000000299';
-	const nextVersion = { ...makeTimetableVersion('published'), id: nextId, publicationNo: 4 };
+	const nextVersion = { ...makeTimetable(), id: nextId, publicationNo: 4 };
 	await installTimetableMock(page, {
-		versions: [makeTimetableVersion('published'), makeTimetableVersion('draft'), nextVersion]
+		versions: [makeTimetable(), makeTimetable(), nextVersion]
 	});
 	await page.goto(url());
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
@@ -345,8 +345,8 @@ test('a 404 recovery list loses fallback ownership when the user selects a diffe
 	await page.route('**/api/academic/timetable-blocks/workspace?*', async (route) => {
 		if (
 			!heldRead &&
-			new URL(route.request().url()).searchParams.get('timetableVersionId') ===
-				timetableIds.draftVersion
+			new URL(route.request().url()).searchParams.get('timetableId') ===
+				timetableIds.timetable
 		) {
 			heldRead = true;
 			await route.fulfill({ status: 404, json: { success: false, error: 'missing draft' } });
@@ -358,7 +358,7 @@ test('a 404 recovery list loses fallback ownership when the user selects a diffe
 		listStarted = true;
 		await held.promise;
 		await route.fulfill({
-			json: { success: true, data: [makeTimetableVersion('published'), nextVersion] }
+			json: { success: true, data: [makeTimetable(), nextVersion] }
 		});
 	});
 	try {
@@ -372,11 +372,11 @@ test('a 404 recovery list loses fallback ownership when the user selects a diffe
 			document.body.append(link);
 		}, url(nextId));
 		await page.getByRole('link', { name: 'ดูประวัติรุ่นที่เลือก', exact: true }).click();
-		await expect(page).toHaveURL(new RegExp(`timetableVersionId=${nextId}`));
+		await expect(page).toHaveURL(new RegExp(`timetableId=${nextId}`));
 		await expect(page.locator('header[aria-label="บริบทตารางสอน"]')).toContainText('รุ่นที่ 4');
 		held.release();
 		await browserTurn(page);
-		await expect(page).toHaveURL(new RegExp(`timetableVersionId=${nextId}`));
+		await expect(page).toHaveURL(new RegExp(`timetableId=${nextId}`));
 		await expect(page.locator('header[aria-label="บริบทตารางสอน"]')).toContainText('รุ่นที่ 4');
 		await expect(
 			page.getByText('แบบร่างนี้ถูกลบแล้ว กลับไปดูตารางต้นทาง', { exact: true })

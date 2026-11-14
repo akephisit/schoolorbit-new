@@ -1,7 +1,7 @@
-import type { DraftLookupChanges, TimetableBlockWorkspace } from '../../src/lib/api/timetable.js';
+import type { TimetableLookupChanges, TimetableBlockWorkspace } from '../../src/lib/api/timetable.js';
 import {
 	makeDeliveryPublication,
-	makeTimetableVersion,
+	makeTimetable,
 	timetableIds
 } from '../e2e/timetable-test-harness.ts';
 
@@ -46,7 +46,7 @@ export function collaborationWorkspace(): TimetableBlockWorkspace {
 			eligibleInstructors: []
 		})),
 		synchronizedDemands: [],
-		version: makeTimetableVersion('draft'),
+		version: makeTimetable(),
 		blocks: [],
 		bellPeriods: [],
 		rooms: [],
@@ -57,7 +57,7 @@ export function collaborationWorkspace(): TimetableBlockWorkspace {
 		latestDeliveryPublication: makeDeliveryPublication(),
 		publicationDateRules: { today: '2026-11-01', minimumEffectiveFrom: '2026-11-01' },
 		sourceIssues: [],
-		totalDraftBlockCount: 0,
+		totalBlockCount: 0,
 		summary: {
 			blockCount: 0,
 			ordinaryDemandCount: 1,
@@ -70,7 +70,7 @@ export function collaborationWorkspace(): TimetableBlockWorkspace {
 	};
 }
 
-export function emptyLookupChanges(): DraftLookupChanges {
+export function emptyLookupChanges(): TimetableLookupChanges {
 	return {
 		upsertedStaff: [],
 		removedStaffIds: [],

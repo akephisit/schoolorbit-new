@@ -1,7 +1,5 @@
 <script lang="ts">
 	import DeliveryStatusBadges from './DeliveryStatusBadges.svelte';
-	import DeliveryDraftResourceRemoval from './DeliveryDraftResourceRemoval.svelte';
-	import type { AcademicTermChangeSet } from '#lib/api/learning-delivery.js';
 	import type { DeliveryOfferingAddKind } from '#lib/academic/learning-delivery-page.js';
 	import DeliveryOfferingAddActions from './DeliveryOfferingAddActions.svelte';
 	import type {
@@ -47,9 +45,7 @@
 		returnTo,
 		onFiltersChange,
 		onPrepareCurriculumRequirement,
-		onAddOffering,
-		draftChangeSetId = null,
-		onDraftResourceRemoved
+		onAddOffering
 	}: {
 		workspace: Workspace;
 		canManage?: boolean;
@@ -59,8 +55,6 @@
 		onFiltersChange: (patch: Partial<DeliveryOverviewState>) => void;
 		onPrepareCurriculumRequirement?: (focus: CurriculumPreparationFocus) => void;
 		onAddOffering?: (kind: DeliveryOfferingAddKind) => void;
-		draftChangeSetId?: string | null;
-		onDraftResourceRemoved?: (updated: AcademicTermChangeSet) => Promise<void>;
 	} = $props();
 	let summary = $derived(summarizeHomeroomDelivery(workspace.homerooms));
 	let rooms = $derived(
@@ -84,9 +78,7 @@
 
 	const offeringLabels = {
 		missing: 'ยังไม่เปิดสอน',
-		draft: 'ฉบับร่าง',
-		published: 'เผยแพร่แล้ว',
-		closed: 'ปิดแล้ว'
+		present: 'เปิดสอนแล้ว'
 	} as const;
 	const groupLabels = {
 		missing: 'ยังไม่จัดกลุ่ม',
@@ -103,9 +95,6 @@
 			academicTermId: workspace.academicTermId,
 			studyProgramId: room.studyProgram.id
 		});
-		if (workspace.deliveryVersionId) {
-			query.set('deliveryVersionId', workspace.deliveryVersionId);
-		}
 		return `/staff/academic/curricula/${room.studyProgram.editionId}/levels/${room.curriculumLevelId}?${query.toString()}`;
 	}
 
@@ -156,9 +145,7 @@
 
 	<section class="overflow-hidden rounded-2xl border bg-card shadow-sm">
 		<div class="border-b bg-muted/20 p-4">
-			{#if canManage && workspace.deliveryVersionStatus === 'draft' && onAddOffering}<div
-					class="mb-3"
-				>
+			{#if canManage && onAddOffering}<div class="mb-3">
 					<DeliveryOfferingAddActions onAdd={onAddOffering} disabled={activationBusy} />
 				</div>{/if}
 			<div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -374,19 +361,9 @@
 																>
 																	<ArrowUpRight class="size-4" />
 																</Button>
-																{#if canManage && workspace.deliveryVersionStatus === 'draft' && workspace.deliveryVersionId && draftChangeSetId && onDraftResourceRemoved}<DeliveryDraftResourceRemoval
-																		changeSetId={draftChangeSetId}
-																		versionId={workspace.deliveryVersionId}
-																		offeringId={item.offeringId}
-																		label={item.name}
-																		homeroomId={room.homeroom.id}
-																		homeroomName={room.homeroom.name}
-																		{canManage}
-																		onRemoved={onDraftResourceRemoved}
-																	/>{/if}
 															</div>
 														{:else if item.offeringId === null}
-															{#if canManage && workspace.deliveryVersionId && onPrepareCurriculumRequirement}
+															{#if canManage && onPrepareCurriculumRequirement}
 																<Button
 																	type="button"
 																	size="sm"
@@ -403,11 +380,7 @@
 																</Button>
 															{:else}
 																<span class="text-xs text-muted-foreground"
-																	>{canManage
-																		? !workspace.deliveryVersionId
-																			? 'สร้างรุ่นเปิดสอนก่อนเพิ่มรายการ'
-																			: 'รอตรวจข้อมูลหลักสูตร'
-																		: 'ต้องมีสิทธิ์จัดการ'}</span
+																	>{canManage ? 'รอตรวจข้อมูลหลักสูตร' : 'ต้องมีสิทธิ์จัดการ'}</span
 																>
 															{/if}
 														{/if}
@@ -457,16 +430,6 @@
 													>
 														<ArrowUpRight class="size-4" />
 													</Button>
-													{#if canManage && workspace.deliveryVersionStatus === 'draft' && workspace.deliveryVersionId && draftChangeSetId && onDraftResourceRemoved}<DeliveryDraftResourceRemoval
-															changeSetId={draftChangeSetId}
-															versionId={workspace.deliveryVersionId}
-															offeringId={item.offeringId}
-															label={item.name}
-															homeroomId={room.homeroom.id}
-															homeroomName={room.homeroom.name}
-															{canManage}
-															onRemoved={onDraftResourceRemoved}
-														/>{/if}
 												</div>
 											</div>
 										{/each}

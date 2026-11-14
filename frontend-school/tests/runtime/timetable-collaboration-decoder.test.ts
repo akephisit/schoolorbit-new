@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { decodeDraftEvent } from '../../src/lib/academic/timetable/collaboration-decoder.ts';
-import { applyDraftPatch } from '../../src/lib/academic/timetable/collaboration-patch.ts';
+import { applyTimetablePatch } from '../../src/lib/academic/timetable/collaboration-patch.ts';
 import { collaborationWorkspace, emptyLookupChanges } from './timetable-collaboration-fixture.ts';
 import { timetableIds } from '../e2e/timetable-test-harness.ts';
 import { makeTimetableBlock } from '../e2e/timetable-test-harness.ts';
@@ -15,7 +15,7 @@ const metadataCases = [
 		valid: timetableIds.user,
 		workspace(value: unknown) {
 			const workspace = collaborationWorkspace();
-			return { ...workspace, version: { ...workspace.version, createdBy: value } };
+			return { ...workspace, version: { ...workspace.timetable, createdBy: value } };
 		}
 	},
 	{
@@ -40,7 +40,7 @@ for (const field of metadataCases) {
 			const event = {
 				epoch,
 				seq: 0,
-				type: 'DraftStateSync',
+				type: 'TimetableStateSync',
 				payload: {
 					connectionId: timetableIds.teacherA,
 					workspace: field.workspace(value),
@@ -65,7 +65,7 @@ for (const field of metadataCases) {
 					JSON.stringify({
 						epoch,
 						seq: 0,
-						type: 'DraftStateSync',
+						type: 'TimetableStateSync',
 						payload: {
 							connectionId: timetableIds.teacherA,
 							workspace: field.workspace(value),
@@ -86,9 +86,9 @@ test('nullable lookup metadata and patch version decode and retain explicit null
 	const patch = {
 		epoch,
 		seq: 1,
-		type: 'DraftPatched',
+		type: 'TimetablePatched',
 		payload: {
-			timetableVersionId: workspace.version.id,
+			timetableId: workspace.timetable.id,
 			mutationId: timetableIds.blockA,
 			upsertedBlocks: [],
 			removedBlockIds: [],
@@ -96,7 +96,7 @@ test('nullable lookup metadata and patch version decode and retain explicit null
 			synchronizedDemands: [],
 			summary: workspace.summary,
 			sourceIssues: [],
-			version: { ...workspace.version, createdBy: null },
+			version: { ...workspace.timetable, createdBy: null },
 			lookupChanges: {
 				...emptyLookupChanges(),
 				upsertedRooms: [nullableRoom],
@@ -107,9 +107,9 @@ test('nullable lookup metadata and patch version decode and retain explicit null
 		}
 	};
 	const decoded = decodeDraftEvent(JSON.stringify(patch));
-	assert.equal(decoded?.type, 'DraftPatched');
-	if (decoded?.type !== 'DraftPatched') return;
-	const updated = applyDraftPatch(workspace, decoded.payload);
+	assert.equal(decoded?.type, 'TimetablePatched');
+	if (decoded?.type !== 'TimetablePatched') return;
+	const updated = applyTimetablePatch(workspace, decoded.payload);
 	assert.equal(updated.version.createdBy, null);
 	assert.equal(updated.homerooms[0].roomNumber, null);
 	assert.equal(updated.rooms[0].code, null);
@@ -137,7 +137,7 @@ test('decoder validates optional private room options and rejects invalid or dup
 			JSON.stringify({
 				epoch,
 				seq: 0,
-				type: 'DraftAvailability',
+				type: 'TimetableAvailability',
 				payload: { ...payload, roomOptions }
 			})
 		);
@@ -178,7 +178,7 @@ test('decoder accepts a typed authorized baseline and finite semantic presence',
 	const sync = {
 		epoch,
 		seq: 0,
-		type: 'DraftStateSync',
+		type: 'TimetableStateSync',
 		payload: {
 			connectionId: timetableIds.teacherA,
 			workspace: collaborationWorkspace(),
@@ -187,7 +187,7 @@ test('decoder accepts a typed authorized baseline and finite semantic presence',
 		}
 	};
 	assert.deepEqual(decodeDraftEvent(JSON.stringify(sync)), sync);
-	const presence = { epoch, seq: 0, type: 'DraftPresenceChanged', payload: participant };
+	const presence = { epoch, seq: 0, type: 'TimetablePresenceChanged', payload: participant };
 	assert.deepEqual(decodeDraftEvent(JSON.stringify(presence)), presence);
 });
 
@@ -201,18 +201,18 @@ test('a valid persisted note longer than sixteen thousand characters remains dec
 		JSON.stringify({
 			epoch,
 			seq: 0,
-			type: 'DraftStateSync',
+			type: 'TimetableStateSync',
 			payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
 		})
 	);
-	assert.equal(event?.type, 'DraftStateSync');
-	if (event?.type === 'DraftStateSync')
+	assert.equal(event?.type, 'TimetableStateSync');
+	if (event?.type === 'TimetableStateSync')
 		assert.equal(event.payload.workspace.blocks[0].note, block.note);
 });
 
 test('decoder rejects selector identities, nonfinite or outside anchors, unsafe colors and image URLs', () => {
 	const event = (payload: unknown) =>
-		JSON.stringify({ epoch, seq: 0, type: 'DraftPresenceChanged', payload });
+		JSON.stringify({ epoch, seq: 0, type: 'TimetablePresenceChanged', payload });
 	assert.equal(decodeDraftEvent(event({ ...participant, userId: '"] article' })), null);
 	assert.equal(
 		decodeDraftEvent(event({ ...participant, color: 'url(https://outside.invalid)' })),
@@ -243,7 +243,7 @@ test('decoder rejects selector identities, nonfinite or outside anchors, unsafe 
 			JSON.stringify({
 				epoch,
 				seq: -1,
-				type: 'DraftPresenceLeft',
+				type: 'TimetablePresenceLeft',
 				payload: { connectionId: timetableIds.user }
 			})
 		),
@@ -264,7 +264,7 @@ test('public reservation snapshots refuse accidentally disclosed private proof o
 		JSON.stringify({
 			epoch,
 			seq: 0,
-			type: 'DraftReservationsChanged',
+			type: 'TimetableReservationsChanged',
 			payload: { reservations: [value] }
 		});
 	assert.ok(decodeDraftEvent(event(reservation)));
@@ -284,14 +284,14 @@ test('the complete JSON event budget accepts exactly 64 MiB of UTF-8 and refuses
 	const sync = {
 		epoch,
 		seq: 0,
-		type: 'DraftStateSync',
+		type: 'TimetableStateSync',
 		payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
 	};
 	const overhead = Buffer.byteLength(JSON.stringify(sync), 'utf8');
 	block.note = 'x'.repeat(limit - overhead);
 	const exact = JSON.stringify(sync);
 	assert.equal(Buffer.byteLength(exact, 'utf8'), limit);
-	assert.equal(decodeDraftEvent(exact)?.type, 'DraftStateSync');
+	assert.equal(decodeDraftEvent(exact)?.type, 'TimetableStateSync');
 	assert.equal(decodeDraftEvent(exact + ' '), null);
 });
 
@@ -303,14 +303,14 @@ test('a valid Thai snapshot above sixteen MiB uses UTF-8 bytes and keeps complet
 	const serialized = JSON.stringify({
 		epoch,
 		seq: 0,
-		type: 'DraftStateSync',
+		type: 'TimetableStateSync',
 		payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
 	});
 	assert.ok(serialized.length < 16 * 1024 * 1024);
 	assert.ok(Buffer.byteLength(serialized, 'utf8') > 16 * 1024 * 1024);
 	const event = decodeDraftEvent(serialized);
-	assert.equal(event?.type, 'DraftStateSync');
-	if (event?.type === 'DraftStateSync')
+	assert.equal(event?.type, 'TimetableStateSync');
+	if (event?.type === 'TimetableStateSync')
 		assert.equal(event.payload.workspace.blocks[0].note, block.note);
 	block.note = 'ก'.repeat(Math.ceil((64 * 1024 * 1024) / 3));
 	assert.equal(
@@ -318,7 +318,7 @@ test('a valid Thai snapshot above sixteen MiB uses UTF-8 bytes and keeps complet
 			JSON.stringify({
 				epoch,
 				seq: 0,
-				type: 'DraftStateSync',
+				type: 'TimetableStateSync',
 				payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
 			})
 		),
@@ -338,9 +338,9 @@ test('workspace and lookup-delta rows share identity/metadata validation, includ
 	const patch = {
 		epoch,
 		seq: 1,
-		type: 'DraftPatched',
+		type: 'TimetablePatched',
 		payload: {
-			timetableVersionId: workspace.version.id,
+			timetableId: workspace.timetable.id,
 			mutationId: timetableIds.blockA,
 			upsertedBlocks: [],
 			removedBlockIds: [],
@@ -351,7 +351,7 @@ test('workspace and lookup-delta rows share identity/metadata validation, includ
 			lookupChanges: valid
 		}
 	};
-	assert.equal(decodeDraftEvent(JSON.stringify(patch))?.type, 'DraftPatched');
+	assert.equal(decodeDraftEvent(JSON.stringify(patch))?.type, 'TimetablePatched');
 	for (const changes of [
 		{ ...valid, staffOrder: [staff.id, staff.id] },
 		{ ...valid, removedStaffIds: ['invalid-selector'] },
@@ -379,7 +379,7 @@ test('workspace and lookup-delta rows share identity/metadata validation, includ
 			JSON.stringify({
 				epoch,
 				seq: 0,
-				type: 'DraftStateSync',
+				type: 'TimetableStateSync',
 				payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
 			})
 		),

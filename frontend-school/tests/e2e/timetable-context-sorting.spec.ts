@@ -14,7 +14,7 @@ for (const theme of ['light', 'dark'] as const)
 			const fixture = makeSortingFixture();
 			const mock = await installTimetableMock(page, fixture);
 			await page.goto(
-				`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${timetableIds.draftVersion}&view=homeroom&ownerId=${sortingIds.room2}`
+				`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=homeroom&ownerId=${sortingIds.room2}`
 			);
 			await setTimetableTheme(page, theme);
 			await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();

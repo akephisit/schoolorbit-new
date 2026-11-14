@@ -15,7 +15,7 @@ function wholeSchoolUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}&view=wholeSchool`
+		`&timetableId=${timetableIds.timetable}&view=wholeSchool`
 	);
 }
 

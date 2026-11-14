@@ -5,13 +5,13 @@
 		type BulkGroupSetupRequest,
 		type BulkGroupSetupResponse,
 		type DeliveryManagementOptions,
-		type DeliveryVersion,
+		getDeliveryWorkspace,
 		type LearningGroup,
 		type LearningOffering
 	} from '#lib/api/learning-delivery.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
-	import { deliveryChangePage } from '#lib/academic/learning-delivery-change-list.js';
+	import { deliveryChangePage } from '#lib/academic/delivery-pagination.js';
 	import { defaultRosterTrackingDate } from '#lib/academic/learning-delivery-page.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -25,7 +25,6 @@
 
 	let {
 		offering,
-		version,
 		groups,
 		trackingStartsOn = null,
 		canManage,
@@ -34,7 +33,6 @@
 		onReload
 	}: {
 		offering: LearningOffering;
-		version: DeliveryVersion;
 		groups: LearningGroup[];
 		trackingStartsOn?: string | null;
 		canManage: boolean;
@@ -68,7 +66,7 @@
 	let disposed = false;
 	const preparationRequest = new LatestRequest();
 	const busy = $derived(saving || reloading);
-	const context = $derived(`${offering.id}:${version.id}`);
+	const context = $derived(`${offering.academicYearId}:${offering.academicTermId}:${offering.id}`);
 	const filteredGroups = $derived(
 		targets.filter((group) =>
 			`${group.name} ${group.code}`
@@ -79,8 +77,7 @@
 	const visibleGroups = $derived(deliveryChangePage(filteredGroups, groupPage));
 	const eligibleGroups = $derived(targets.filter(eligible));
 	const request = $derived.by((): BulkGroupSetupRequest => ({
-		deliveryVersionId: version.id,
-		deliveryVersionRowVersion: versionRowVersion,
+		deliveryRowVersion: versionRowVersion,
 		groups: targets
 			.filter((group) => selectedIds.includes(group.id))
 			.map((group) => ({ learningGroupId: group.id, rowVersion: group.rowVersion })),
@@ -100,8 +97,8 @@
 			(!teacherEnabled || Boolean(teacherId)) &&
 			(!rosterEnabled || mode === 'manual' || Boolean(effectiveFrom))
 	);
-	function eligible(group: LearningGroup): boolean {
-		return group.status === 'draft' && group.rosterStatus === 'draft' && !group.teachersLocked;
+	function eligible(_group: LearningGroup): boolean {
+		return true;
 	}
 	function current(token: number, owner: string): boolean {
 		return !disposed && open && canManage && session === token && context === owner;
@@ -145,7 +142,12 @@
 			await tick();
 			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
 			targets = [...groups];
-			versionRowVersion = version.rowVersion;
+			const currentWorkspace = await getDeliveryWorkspace(
+				offering.academicYearId,
+				offering.academicTermId
+			);
+			if (!current(token, owner)) return;
+			versionRowVersion = currentWorkspace.rowVersion;
 			void loadOptions(token, owner);
 		} catch (error) {
 			if (!isAbortError(error) && current(token, owner))
@@ -175,11 +177,7 @@
 			: selectedIds.filter((selected) => selected !== id);
 	}
 	function initialTrackingDate(): string {
-		const startsOn =
-			trackingStartsOn && (!offering.startsOn || trackingStartsOn > offering.startsOn)
-				? trackingStartsOn
-				: offering.startsOn;
-		return defaultRosterTrackingDate(offering.status, startsOn);
+		return trackingStartsOn ?? defaultRosterTrackingDate();
 	}
 	function changeRosterMode(value: string) {
 		mode = value === 'homeroom' ? 'homeroom' : 'manual';
@@ -221,7 +219,12 @@
 			await tick();
 			if (!current(token, owner)) return;
 			targets = [...groups];
-			versionRowVersion = version.rowVersion;
+			const currentWorkspace = await getDeliveryWorkspace(
+				offering.academicYearId,
+				offering.academicTermId
+			);
+			if (!current(token, owner)) return;
+			versionRowVersion = currentWorkspace.rowVersion;
 			selectedIds = selectedIds.filter((id) =>
 				targets.some((group) => group.id === id && eligible(group))
 			);
@@ -438,7 +441,7 @@
 						</p>
 						{#if mode === 'homeroom'}<p class="text-xs text-muted-foreground">
 								สมาชิกใหม่เริ่มนับจากวันที่นี้ หรือวันที่เข้าห้องต้นทางหากเข้าภายหลัง
-								โดยเก็บประวัติและคะแนนเดิมไว้ กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง
+								โดยเก็บประวัติและคะแนนเดิมไว้
 								ระบบตรวจว่าวันที่อยู่ในช่วงเปิดสอนของทุกกลุ่มที่เลือกก่อนบันทึก
 							</p>{/if}
 					{/if}
