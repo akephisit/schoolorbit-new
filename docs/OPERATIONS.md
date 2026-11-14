@@ -2224,11 +2224,32 @@ the schema and are not compared against their pre-migration value at completion.
 
 The isolated PostgreSQL18.6 restore has no network egress, host ports, application process or
 scheduler. It preserves source ownership, ACLs and role markers, uses fresh local passwords, and
-must reproduce the full source dump fingerprint before applying the same canonical migrations.
+must prove restore fidelity before applying the same canonical migrations.
 Unknown roles, insufficient space, failed decryption, source drift, missing child exits or
 unproven controller/resource ownership stop the release. Only exact resources owned by a proven
 dead preparation controller may be cleaned up on retry. Actual receipts and runtime DML grants
 are checked after the rehearsal and again after production migration.
+
+The private schema2 proof records the actual source raw dump hash, restored raw hash before
+repair, and restored raw hash after repair and oracle rollback separately. Source raw hashes
+remain the drift fence; they are never replaced with an invented matching restored hash.
+The fixed policy **pg18.6-exact-expression-replay-nn-v1** permits only PostgreSQL-proven CHECK
+expression and simple partial-index predicate serialization differences. Source expressions are
+replayed on isolated temporary relations under the owner role and compared to the actual
+restored conbin/indpred byte for byte. Reference DDL rolls back before fingerprinting.
+Uniquely mapped NOT NULL names are reconciled only by ordinary constraint renames on the copy.
+Logical column mapping preserves current column order and types despite historical dropped slots.
+
+The [pure fidelity helper](../scripts/lib/pipeline-remote/academic_restore_fidelity.py) frames
+SQL and COPY streams without row files or whole-row buffers. Only uniquely bound, proven expression
+interiors receive independently computed tokens; names, wrappers, flags and every other byte stay
+compared. Unknown syntax, unmatched evidence and support-limit overflow refuse. Database metadata,
+ACLs, relevant settings, source role flags/comments and scoped membership recovery context are
+protected with the archive-bound catalog and NN mapping. Only the physical indcheckxmin index
+bookkeeping field is classified separately; it is never changed. The encrypted archive, key and
+metadata/map remain recovery dependencies and are checked on retry, before migration and before
+completion. Reviewed recovery must retain the source identity map and apply the same bounded NN
+reconciliation after stock restore, rather than assume generated names survived unchanged.
 
 Immediately before production migration, preparation rechecks the complete inventory, source
 fingerprints and actual Bangkok date. The production canonical runner installs a connection-local

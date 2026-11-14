@@ -23,6 +23,12 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+import importlib.util
+
+sys.dont_write_bytecode = True
+_fidelity_spec = importlib.util.spec_from_file_location('academic_restore_fidelity', Path(__file__).with_name('academic_restore_fidelity.py'))
+fidelity = importlib.util.module_from_spec(_fidelity_spec)
+_fidelity_spec.loader.exec_module(fidelity)
 
 PG_IMAGE = 'public.ecr.aws/docker/library/postgres:18.6-alpine@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66'
 CHECKS = sorted(['CURRENT_DELIVERY_GRAPH_RECONCILED', 'CURRENT_TEACHERS_RECONCILED', 'CURRENT_TIMETABLE_IDS_RECONCILED', 'CURRENT_FACTS_PRESERVED', 'CURRENT_SUPERVISION_PRESERVED', 'CURRENT_CATALOG_PINS_PRESERVED', 'CURRENT_LEGACY_SCHEMA_REMOVED', 'CURRENT_SCOPE_GUARDS_ENABLED'])
@@ -30,6 +36,89 @@ OPERATION = 'academic-current-156157'
 MAX_TENANTS = 10000
 MAX_JSON = 1024 * 1024
 MAX_SECONDS = 1800
+
+# Fixed PG18.6 catalog queries; no business rows or credentials are selected.
+CATALOG = r"""
+SET search_path=pg_catalog;
+SELECT jsonb_build_object(
+ 'relations',(SELECT jsonb_agg(jsonb_build_object(
+   'schema',n.nspname,'name',r.relname,'kind',r.relkind,'partition',r.relispartition,
+   'inheritance',(SELECT count(*) FROM pg_inherits i WHERE i.inhrelid=r.oid OR i.inhparent=r.oid),
+   'columns',(SELECT jsonb_agg(jsonb_build_object(
+     'num',a.attnum,'name',a.attname,'dropped',a.attisdropped,'notnull',a.attnotnull,
+     'typeSchema',tn.nspname,'typeName',t.typname,'typeKind',t.typtype,'typeCategory',t.typcategory,
+     'typeMod',a.atttypmod,'dimensions',a.attndims,'identity',a.attidentity,'generated',a.attgenerated,
+     'collationSchema',cn.nspname,'collationName',co.collname,
+     'collationEncoding',co.collencoding,'collationProvider',co.collprovider,
+     'collationDeterministic',co.collisdeterministic,'collationLocale',co.colllocale,
+     'collationCollate',co.collcollate,'collationCType',co.collctype,'collationRules',co.collicurules,
+     'collationVersion',co.collversion,
+     'elementSchema',en.nspname,'elementName',et.typname,'elementKind',et.typtype)
+     ORDER BY a.attnum) FROM pg_attribute a LEFT JOIN pg_type t ON t.oid=a.atttypid
+     LEFT JOIN pg_namespace tn ON tn.oid=t.typnamespace
+     LEFT JOIN pg_collation co ON co.oid=a.attcollation LEFT JOIN pg_namespace cn ON cn.oid=co.collnamespace
+     LEFT JOIN pg_type et ON et.oid=t.typelem LEFT JOIN pg_namespace en ON en.oid=et.typnamespace
+     WHERE a.attrelid=r.oid AND a.attnum>0)) ORDER BY n.nspname,r.relname)
+   FROM pg_class r JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname='public' AND r.relkind IN('r','p','f')),
+ 'constraints',(SELECT jsonb_agg(jsonb_build_object(
+   'schema',n.nspname,'table',r.relname,'name',c.conname,'kind',c.contype,
+   'domain',c.contypid<>0,'parent',c.conparentid<>0,'index',c.conindid<>0,
+   'foreignRelation',c.confrelid<>0,
+   'flags',to_jsonb(c)-ARRAY['oid','conname','connamespace','conrelid','contypid','conindid','conparentid','confrelid','conkey','confkey','conbin'],
+   'comment',obj_description(c.oid,'pg_constraint'),
+   'keys',(SELECT jsonb_agg(a.attname ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY k(num,ord) JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.num),
+   'rawKeys',c.conkey,'expr',pg_get_expr(c.conbin,c.conrelid,false),'definition',pg_get_constraintdef(c.oid,false),'tree',c.conbin::text,
+   'dependencies',(SELECT jsonb_agg(jsonb_build_object(
+      'kind',d.deptype,'class',cl.relname,
+      'object',CASE WHEN d.refclassid='pg_class'::regclass AND d.refobjid=c.conrelid THEN '<own-relation>' ELSE (pg_identify_object(d.refclassid,d.refobjid,d.refobjsubid)).identity END,
+      'column',CASE WHEN d.refclassid='pg_class'::regclass AND d.refobjid=c.conrelid AND d.refobjsubid<>0 THEN (SELECT a.attname FROM pg_attribute a WHERE a.attrelid=c.conrelid AND a.attnum=d.refobjsubid) ELSE NULL END)
+      ORDER BY d.deptype,cl.relname,CASE WHEN d.refclassid='pg_class'::regclass AND d.refobjid=c.conrelid THEN '<own-relation>' ELSE (pg_identify_object(d.refclassid,d.refobjid,d.refobjsubid)).identity END,
+      CASE WHEN d.refclassid='pg_class'::regclass AND d.refobjid=c.conrelid AND d.refobjsubid<>0 THEN (SELECT a.attname FROM pg_attribute a WHERE a.attrelid=c.conrelid AND a.attnum=d.refobjsubid) ELSE NULL END)
+     FROM pg_depend d JOIN pg_class cl ON cl.oid=d.refclassid WHERE d.classid='pg_constraint'::regclass AND d.objid=c.oid))
+    ORDER BY n.nspname,r.relname,c.conname)
+    FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace LEFT JOIN pg_class r ON r.oid=c.conrelid
+    WHERE n.nspname='public' AND c.contype IN('c','n')));
+"""
+
+DATABASE_SQL = r"""
+SET search_path=pg_catalog;
+SELECT jsonb_build_object('metadata',to_jsonb(d)-ARRAY['oid','datdba','datfrozenxid','datminmxid','dattablespace','datacl'],
+ 'owner',pg_get_userbyid(d.datdba),'tablespace',(SELECT spcname FROM pg_tablespace WHERE oid=d.dattablespace),
+ 'acl',(SELECT jsonb_agg(jsonb_build_array(CASE WHEN x.grantee=0 THEN '<PUBLIC>' ELSE pg_get_userbyid(x.grantee) END,pg_get_userbyid(x.grantor),x.privilege_type,x.is_grantable) ORDER BY CASE WHEN x.grantee=0 THEN '<PUBLIC>' ELSE pg_get_userbyid(x.grantee) END,pg_get_userbyid(x.grantor),x.privilege_type,x.is_grantable) FROM aclexplode(COALESCE(d.datacl,acldefault('d',d.datdba))) x),
+ 'settings',(SELECT jsonb_agg(jsonb_build_object('global',s.setdatabase=0,'role',CASE WHEN s.setrole=0 THEN '<ALL>' ELSE pg_get_userbyid(s.setrole) END,'config',s.setconfig) ORDER BY s.setdatabase=0,CASE WHEN s.setrole=0 THEN '<ALL>' ELSE pg_get_userbyid(s.setrole) END) FROM pg_db_role_setting s WHERE s.setdatabase=d.oid OR (s.setdatabase=0 AND (s.setrole=0 OR s.setrole IN (SELECT oid FROM pg_roles WHERE rolname IN(pg_get_userbyid(d.datdba),regexp_replace(pg_get_userbyid(d.datdba),'_owner$','_runtime'),'schoolorbit_provisioner'))))))
+FROM pg_database d WHERE d.datname=current_database();
+"""
+
+INDEX_SQL = r"""
+SET search_path=pg_catalog;
+SELECT COALESCE(jsonb_agg(jsonb_build_object(
+ 'schema',n.nspname,'table',t.relname,'name',r.relname,'definition',pg_get_indexdef(r.oid),
+ 'predicate',pg_get_expr(i.indpred,i.indrelid,false),'tree',i.indpred::text,'expression',i.indexprs IS NOT NULL,
+ 'flags',to_jsonb(i)-ARRAY['indexrelid','indrelid','indcollation','indclass','indkey','indexprs','indpred'],
+ 'owner',pg_get_userbyid(r.relowner),'method',am.amname,'kind',r.relkind,'partition',r.relispartition,
+ 'persistence',r.relpersistence,'options',r.reloptions,'tablespace',(SELECT spcname FROM pg_tablespace WHERE oid=r.reltablespace),
+ 'comment',obj_description(r.oid,'pg_class'),
+ 'keys',(SELECT jsonb_agg(jsonb_build_object('column',a.attname,'number',k.ord,
+   'opclassSchema',onsp.nspname,'opclassName',op.opcname,'opclassDefault',op.opcdefault,
+   'opclassInput',(pg_identify_object('pg_type'::regclass,op.opcintype,0)).identity,
+   'opclassFamily',(pg_identify_object('pg_opfamily'::regclass,op.opcfamily,0)).identity,
+   'collationSchema',cn.nspname,'collationName',co.collname,
+   'option',i.indoption[k.ord-1],
+   'attributeOptions',(SELECT aa.attoptions FROM pg_attribute aa WHERE aa.attrelid=r.oid AND aa.attnum=k.ord)) ORDER BY k.ord)
+   FROM unnest(i.indkey) WITH ORDINALITY k(num,ord)
+   LEFT JOIN pg_attribute a ON a.attrelid=t.oid AND a.attnum=k.num
+   LEFT JOIN pg_opclass op ON op.oid=i.indclass[k.ord-1] LEFT JOIN pg_namespace onsp ON onsp.oid=op.opcnamespace
+   LEFT JOIN pg_collation co ON co.oid=i.indcollation[k.ord-1] LEFT JOIN pg_namespace cn ON cn.oid=co.collnamespace),
+ 'dependencies',(SELECT jsonb_agg(jsonb_build_object('kind',x.deptype,'class',cl.relname,
+   'object',CASE WHEN x.refclassid='pg_class'::regclass AND x.refobjid=t.oid THEN '<own-relation>' ELSE (pg_identify_object(x.refclassid,x.refobjid,x.refobjsubid)).identity END,
+   'column',CASE WHEN x.refclassid='pg_class'::regclass AND x.refobjid=t.oid AND x.refobjsubid<>0 THEN (SELECT a.attname FROM pg_attribute a WHERE a.attrelid=t.oid AND a.attnum=x.refobjsubid) ELSE NULL END)
+   ORDER BY x.deptype,cl.relname,CASE WHEN x.refclassid='pg_class'::regclass AND x.refobjid=t.oid THEN '<own-relation>' ELSE (pg_identify_object(x.refclassid,x.refobjid,x.refobjsubid)).identity END,
+   CASE WHEN x.refclassid='pg_class'::regclass AND x.refobjid=t.oid AND x.refobjsubid<>0 THEN (SELECT a.attname FROM pg_attribute a WHERE a.attrelid=t.oid AND a.attnum=x.refobjsubid) ELSE NULL END)
+   FROM pg_depend x JOIN pg_class cl ON cl.oid=x.refclassid WHERE x.classid='pg_class'::regclass AND x.objid=r.oid))
+ ORDER BY n.nspname,t.relname,r.relname),'[]')
+FROM pg_index i JOIN pg_class r ON r.oid=i.indexrelid JOIN pg_class t ON t.oid=i.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace JOIN pg_am am ON am.oid=r.relam
+WHERE n.nspname='public';
+"""
 
 # Exact sanitized refusal codes exposed by the canonical runner, by migration.
 COPY_REFUSALS = {
@@ -91,14 +180,26 @@ def durable(path, value):
             os.unlink(temporary)
 
 
-def read_json(path):
+def read_json(path, limit=MAX_JSON):
     private(path)
-    if path.stat().st_size > MAX_JSON:
+    if path.stat().st_size > limit:
         refuse('private_evidence_too_large')
     try:
-        return json.loads(path.read_bytes())
+        return decode_json(path.read_bytes())
     except (ValueError, OSError):
         refuse('private_evidence_invalid')
+
+
+def decode_json(raw):
+    def object_pairs(pairs):
+        result={}
+        for key,value in pairs:
+            if key in result:refuse('private_evidence_invalid')
+            result[key]=value
+        return result
+    def nonfinite(_):
+        refuse('private_evidence_invalid')
+    return json.loads(raw,object_pairs_hook=object_pairs,parse_constant=nonfinite)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -355,7 +456,7 @@ class Controller:
         # Only known per-school and existing provisioner role dependencies are
         # supported. Unknown ownership/ACL never disappears via --no-owner.
         sql = "SELECT jsonb_build_object('user',current_user,'database',current_database(),'owner',r.rolname,'marker',shobj_description(r.oid,'pg_authid'),'super',r.rolsuper,'createDb',r.rolcreatedb,'createRole',r.rolcreaterole,'bypass',r.rolbypassrls,'ssl',(SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()),'server',current_setting('server_version_num'),'date',(clock_timestamp() AT TIME ZONE 'Asia/Bangkok')::date,'roles',(SELECT jsonb_agg(jsonb_build_object('name',rolname,'login',rolcanlogin,'super',rolsuper,'createDb',rolcreatedb,'createRole',rolcreaterole,'inherit',rolinherit,'replication',rolreplication,'bypass',rolbypassrls,'limit',rolconnlimit,'comment',shobj_description(oid,'pg_authid')) ORDER BY rolname) FROM pg_roles WHERE rolname IN(" + ','.join(literal(x) for x in [owner, runtime, 'schoolorbit_provisioner']) + ")),'otherConnections',(SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend'),'unknownRoles',(SELECT count(*) FROM pg_shdepend dependency JOIN pg_roles role ON role.oid=dependency.refobjid WHERE dependency.dbid=(SELECT oid FROM pg_database WHERE datname=current_database()) AND dependency.refclassid='pg_authid'::regclass AND role.rolname NOT IN(" + ','.join(literal(x) for x in [owner, runtime, 'schoolorbit_provisioner', 'pg_database_owner']) + "))) FROM pg_database d JOIN pg_roles r ON r.oid=d.datdba WHERE d.datname=current_database();"
-        raw = self.command(base + ['psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-c', sql], environment=environment)
+        raw = self.bounded_capture(base + ['psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-c', sql], environment=environment,limit=MAX_JSON)
         try:
             value = json.loads(raw)
         except ValueError:
@@ -364,6 +465,13 @@ class Controller:
         if any(value.get(k) != v for k, v in expected.items()) or not isinstance(value.get('roles'), list) or {r['name'] for r in value['roles']} != {owner, runtime, 'schoolorbit_provisioner'}:
             refuse('source_identity_invalid')
         value['version']=self.source_history(base,environment)
+        membership_sql="SET search_path=pg_catalog; SELECT COALESCE(jsonb_agg(jsonb_build_object('role',pg_get_userbyid(m.roleid),'member',pg_get_userbyid(m.member),'grantor',pg_get_userbyid(m.grantor),'admin',m.admin_option,'inherit',m.inherit_option,'set',m.set_option) ORDER BY pg_get_userbyid(m.roleid),pg_get_userbyid(m.member),pg_get_userbyid(m.grantor)),'[]') FROM pg_auth_members m WHERE m.roleid IN (SELECT oid FROM pg_roles WHERE rolname IN("+literal(owner)+","+literal(runtime)+")) OR m.member IN (SELECT oid FROM pg_roles WHERE rolname IN("+literal(owner)+","+literal(runtime)+"))"
+        value['memberships']=decode_json(self.bounded_capture(base+['psql','-XAtq','-v','ON_ERROR_STOP=1','-c',membership_sql],environment=environment,limit=MAX_JSON))
+        known={owner,runtime,'schoolorbit_provisioner'}
+        fidelity.require(isinstance(value['memberships'],list) and len(value['memberships'])<=fidelity.MAX_OBJECTS)
+        for membership in value['memberships']:
+            fidelity.require(set(membership)=={'role','member','grantor','admin','inherit','set'} and membership['role'] in known and membership['member'] in known and isinstance(membership['grantor'],str) and all(type(membership[x]) is bool for x in ['admin','inherit','set']))
+        fidelity.validate_profiles(value['roles'],value['memberships'])
         return value
 
     def age(self, *arguments):
@@ -407,40 +515,166 @@ class Controller:
                 a.kill()
                 a.wait()
 
-    def fingerprint(self, base, environment, nonce):
-        # pg_dump itself owns normalization. A fixed restrict key is the ONLY
-        # formatting input; ownership, ACL, comments and every data byte remain.
-        with contextlib.nullcontext():
-            child = subprocess.Popen(base + ['pg_dump', '--format=plain', '--no-password', '--restrict-key=' + nonce], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment)
-            value = hashlib.sha256()
-            try:
-                deadline=time.monotonic()+MAX_SECONDS
-                while True:
-                    if time.monotonic()>=deadline:
-                        child.kill()
-                        child.wait()
-                        durable(self.point/'last-fingerprint-exit.json',{'schemaVersion':1,'sequence':self.exits+1,'exitCode':child.returncode,'outcome':'unknown'})
-                        refuse('fingerprint_outcome_unknown')
-                    ready,_,_=select.select([child.stdout],[],[],min(1,deadline-time.monotonic()))
-                    if not ready: continue
-                    chunk=os.read(child.stdout.fileno(),1024*1024)
-                    if not chunk: break
-                    value.update(chunk)
-                code = child.wait(timeout=30)
-            finally:
-                child.stdout.close()
-                if child.poll() is None:
-                    child.kill()
-                    child.wait()
-            self.exits += 1
-            durable(self.point / 'last-fingerprint-exit.json', {'schemaVersion': 1, 'sequence': self.exits, 'exitCode': code})
-            if code:
-                refuse('fingerprint_failed')
-            return value.hexdigest()
+    def fingerprint(self, base, environment, nonce, evidence=None, side='source'):
+        # Raw SHA covers untouched pg_dump bytes (fixed restrict key only).
+        # Evidence mode separately frames proven expression spans for canonical
+        # SHA; it never changes the bytes contributing to the raw digest.
+        child=subprocess.Popen(base+['pg_dump','--format=plain','--no-password','--restrict-key='+nonce],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env=environment)
+        value=hashlib.sha256() if evidence is None else fidelity.DumpFingerprint(evidence,side)
+        completed=False
+        try:
+            deadline=time.monotonic()+MAX_SECONDS
+            while True:
+                if time.monotonic()>=deadline:refuse('fingerprint_outcome_unknown')
+                ready,_,_=select.select([child.stdout],[],[],min(1,deadline-time.monotonic()))
+                if not ready:continue
+                chunk=os.read(child.stdout.fileno(),1024*1024)
+                if not chunk:break
+                if evidence is None:value.update(chunk)
+                else:value.feed(chunk)
+            code=child.wait(timeout=30);completed=True
+            if code:refuse('fingerprint_failed')
+            return value.hexdigest() if evidence is None else value.finish()
+        finally:
+            child.stdout.close()
+            if child.poll() is None:child.kill();child.wait()
+            self.exits+=1
+            receipt={'schemaVersion':1,'sequence':self.exits,'exitCode':child.returncode}
+            if not completed:receipt['outcome']='unknown'
+            durable(self.point/'last-fingerprint-exit.json',receipt)
 
     def copy_sql(self, sql, database='postgres', user='postgres'):
         # The fixed owned container has no egress or production credentials.
         return self.command(['podman', 'exec', '-i', self.copy, 'psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database], data=sql.encode())
+
+    def bounded_capture(self, args, data=b'', environment=None, limit=fidelity.MAX_METADATA):
+        """Bound stdout while reading, and feed oracle SQL without pipe deadlock."""
+        child = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment)
+        output = bytearray()
+        position = 0
+        recorded = False
+        deadline = time.monotonic()+MAX_SECONDS
+        os.set_blocking(child.stdin.fileno(), False)
+        os.set_blocking(child.stdout.fileno(), False)
+        try:
+            while True:
+                if time.monotonic() >= deadline:
+                    refuse('child_outcome_unknown')
+                readable, writable, _ = select.select([child.stdout], [child.stdin] if not child.stdin.closed else [], [], 1)
+                if writable:
+                    if position == len(data):
+                        child.stdin.close()
+                    else:
+                        try:
+                            position += os.write(child.stdin.fileno(), data[position:position+65536])
+                        except BlockingIOError:
+                            pass
+                        except BrokenPipeError:
+                            child.stdin.close()
+                if readable:
+                    chunk = os.read(child.stdout.fileno(), 65536)
+                    if not chunk:
+                        break
+                    if len(output)+len(chunk) > limit:
+                        refuse('private_evidence_too_large')
+                    output.extend(chunk)
+            code = child.wait(timeout=30)
+            self.exits += 1
+            durable(self.point/'last-metadata-exit.json', {'schemaVersion':1,'sequence':self.exits,'exitCode':code,'stdoutSha256':digest(output)})
+            recorded = True
+            if code or position != len(data):
+                refuse('child_failed')
+            return bytes(output)
+        finally:
+            if not child.stdin.closed:
+                child.stdin.close()
+            child.stdout.close()
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+            if not recorded:
+                self.exits += 1
+                durable(self.point/'last-metadata-exit.json',{'schemaVersion':1,'sequence':self.exits,'exitCode':child.returncode,'outcome':'unknown'})
+
+    def catalog(self, base, environment=None):
+        # Count and expression-size preflight precede the larger fixed metadata
+        # queries. The bounded reader is an independent hard output ceiling.
+        preflight = "SET search_path=pg_catalog; SELECT jsonb_build_object('objects',(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public')+(SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='public')+(SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND a.attnum>0),'expressionBytes',greatest((SELECT COALESCE(max(octet_length(pg_get_expr(c.conbin,c.conrelid,false))),0) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='public'),(SELECT COALESCE(max(octet_length(pg_get_expr(i.indpred,i.indrelid,false))),0) FROM pg_index i JOIN pg_class c ON c.oid=i.indrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public')))"
+        def query(sql, limit=fidelity.MAX_METADATA):
+            raw=self.bounded_capture(base+['psql','-XAtq','-v','ON_ERROR_STOP=1','-c',sql],environment=environment,limit=limit)
+            return decode_json(raw)
+        size=query(preflight,4096)
+        fidelity.require(type(size['objects']) is int and size['objects']<=fidelity.MAX_OBJECTS and type(size['expressionBytes']) is int and size['expressionBytes']<=fidelity.MAX_EXPRESSION)
+        # Bound variable-width strings and dependency count before jsonb_agg
+        # materializes the full catalog. Sixfold accounts for JSON escaping;
+        # fixed property/flag overhead is bounded per catalog object/dependency.
+        budget_sql=r"""SET search_path=pg_catalog;
+WITH relations AS (SELECT c.oid FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public'),
+constraints AS (SELECT c.* FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='public'),
+dependencies AS (SELECT d.* FROM pg_depend d WHERE (d.classid='pg_constraint'::regclass AND d.objid IN(SELECT oid FROM constraints)) OR (d.classid='pg_class'::regclass AND d.objid IN(SELECT oid FROM relations)))
+SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'bytes',
+ (SELECT COALESCE(sum(octet_length(c::text)+COALESCE(octet_length(pg_get_expr(c.conbin,c.conrelid,false)),0)+octet_length(pg_get_constraintdef(c.oid,false))+COALESCE(octet_length(obj_description(c.oid,'pg_constraint')),0)),0) FROM constraints c)
+ +(SELECT COALESCE(sum(octet_length(i::text)+octet_length(pg_get_indexdef(i.indexrelid))+COALESCE(octet_length(pg_get_expr(i.indpred,i.indrelid,false)),0)+COALESCE(octet_length(obj_description(i.indexrelid,'pg_class')),0)),0) FROM pg_index i WHERE i.indrelid IN(SELECT oid FROM relations))
+ +(SELECT COALESCE(sum(octet_length(a.attname::text)+octet_length(t.typname::text)+octet_length(n.nspname::text)+COALESCE(octet_length(co::text),0)+COALESCE(octet_length(en.nspname::text),0)+COALESCE(octet_length(et.typname::text),0)),0) FROM pg_attribute a LEFT JOIN pg_type t ON t.oid=a.atttypid LEFT JOIN pg_namespace n ON n.oid=t.typnamespace LEFT JOIN pg_collation co ON co.oid=a.attcollation LEFT JOIN pg_type et ON et.oid=t.typelem LEFT JOIN pg_namespace en ON en.oid=et.typnamespace WHERE a.attrelid IN(SELECT oid FROM relations) AND a.attnum>0)
+ +(SELECT COALESCE(sum(octet_length((pg_identify_object(d.refclassid,d.refobjid,d.refobjsubid)).identity)),0) FROM dependencies d)
+ +(SELECT octet_length(d::text) FROM pg_database d WHERE datname=current_database()));"""
+        budget=query(budget_sql,4096)
+        fidelity.require(type(budget['dependencies']) is int and budget['dependencies']<=fidelity.MAX_OBJECTS and type(budget['bytes']) is int and budget['bytes']*6+size['objects']*1024+budget['dependencies']*256<=fidelity.MAX_METADATA)
+        result={'catalog':query(CATALOG),'database':query(DATABASE_SQL),'indexes':query(INDEX_SQL)}
+        result['catalog']['constraintNames']=query("SET search_path=pg_catalog; SELECT COALESCE(jsonb_agg(jsonb_build_object('schema',n.nspname,'table',r.relname,'name',c.conname,'kind',c.contype) ORDER BY n.nspname,r.relname,c.conname),'[]') FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace LEFT JOIN pg_class r ON r.oid=c.conrelid WHERE n.nspname='public'")
+        fidelity.require(len(fidelity.encoded(result))<=fidelity.MAX_METADATA)
+        return result
+
+    def copy_read_base(self, connection):
+        return ['podman','exec','--env','PGOPTIONS=-c default_transaction_read_only=on','--env','PGUSER='+connection['user'],'--env','PGDATABASE='+connection['database'],self.copy]
+
+    def copy_write(self, sql, connection):
+        fidelity.require(len(sql.encode())<=fidelity.MAX_METADATA)
+        raw=self.bounded_capture(['podman','exec','-i',self.copy,'psql','-XAtq','-v','ON_ERROR_STOP=1','-U',connection['user'],'-d',connection['database']],data=sql.encode())
+        return [decode_json(line) for line in raw.splitlines() if line]
+
+    def oracle(self, pairs, connection):
+        tables={}
+        statements=['BEGIN; SET LOCAL search_path=pg_catalog;']
+        for pair in pairs:
+            row=pair['source'];key=(row['schema'],row['table'])
+            if key not in tables:
+                name='academic_restore_reference_'+str(len(tables));tables[key]=name
+                statements.append('CREATE TEMP TABLE '+ident(name)+' (LIKE '+ident(key[0])+'.'+ident(key[1])+') ON COMMIT DROP;')
+        for number,pair in enumerate(pairs):
+            row=pair['source'];ref=tables[(row['schema'],row['table'])];name='academic_restore_expression_'+str(number)
+            if pair['kind']=='check':
+                statements.append('ALTER TABLE pg_temp.'+ident(ref)+' ADD CONSTRAINT '+ident(name)+' CHECK ('+row['expr']+')'+(' NO INHERIT' if row['flags']['connoinherit'] else '')+' NOT VALID;')
+                relation='c.conrelid';tree='c.conbin';object_id='c.oid';object_class='pg_constraint'
+                selection="pg_constraint c WHERE c.conrelid="+literal('pg_temp.'+ref)+"::regclass AND c.conname="+literal(name)
+            else:
+                keys=[]
+                for a in row['keys']:
+                    term=ident(a['column'])
+                    if a['collationName'] is not None:term+=' COLLATE '+ident(a['collationSchema'])+'.'+ident(a['collationName'])
+                    term+=' '+ident(a['opclassSchema'])+'.'+ident(a['opclassName'])
+                    term+=' DESC' if a['option']&1 else ' ASC'
+                    term+=' NULLS FIRST' if a['option']&2 else ' NULLS LAST'
+                    keys.append(term)
+                statements.append('CREATE INDEX '+ident(name)+' ON pg_temp.'+ident(ref)+' USING btree ('+', '.join(keys)+') WHERE ('+row['predicate']+');')
+                relation='i.indrelid';tree='i.indpred';object_id='i.indexrelid';object_class='pg_class'
+                selection='pg_index i WHERE i.indexrelid='+literal('pg_temp.'+name)+'::regclass'
+            actual=literal(ident(row['schema'])+'.'+ident(row['table']))+'::regclass'
+            columns=lambda rel:"(SELECT jsonb_agg(jsonb_build_array(a.attnum,a.attname,a.atttypid,a.atttypmod,a.attcollation) ORDER BY a.attnum) FROM pg_attribute a WHERE a.attrelid="+rel+" AND a.attnum>0 AND NOT a.attisdropped)"
+            dep_object="CASE WHEN x.refclassid='pg_class'::regclass AND x.refobjid="+relation+" THEN '<own-relation>' ELSE (pg_identify_object(x.refclassid,x.refobjid,x.refobjsubid)).identity END"
+            dep_column="CASE WHEN x.refclassid='pg_class'::regclass AND x.refobjid="+relation+" AND x.refobjsubid<>0 THEN (SELECT a.attname FROM pg_attribute a WHERE a.attrelid="+relation+" AND a.attnum=x.refobjsubid) ELSE NULL END"
+            dependencies="(SELECT jsonb_agg(jsonb_build_object('kind',x.deptype,'class',cl.relname,'object',"+dep_object+",'column',"+dep_column+") ORDER BY x.deptype,cl.relname,"+dep_object+","+dep_column+") FROM pg_depend x JOIN pg_class cl ON cl.oid=x.refclassid WHERE x.classid="+literal(object_class)+"::regclass AND x.objid="+object_id+")"
+            statements.append("SELECT jsonb_build_object('number',"+str(number)+",'tree',"+tree+"::text,'columns',"+columns(relation)+",'actualColumns',"+columns(actual)+",'dependencies',"+dependencies+") FROM "+selection+';')
+        statements.append('ROLLBACK;')
+        statements.append("SELECT jsonb_build_object('rollbackConfirmed',txid_current_if_assigned() IS NULL,'remainingReferences',(SELECT count(*) FROM pg_class WHERE relnamespace=pg_my_temp_schema() AND relname LIKE 'academic_restore_%'),'role',current_user);")
+        replies=self.copy_write('\n'.join(statements),connection)
+        fidelity.require(len(replies)==len(pairs)+1 and fidelity.exact(replies[-1],{'rollbackConfirmed':True,'remainingReferences':0,'role':connection['user']}))
+        evidence=[]
+        for number,(pair,reply) in enumerate(zip(pairs,replies[:-1])):
+            fidelity.require(set(reply)=={'number','tree','columns','actualColumns','dependencies'} and type(reply['number']) is int and reply['number']==number and fidelity.exact(reply['columns'],reply['actualColumns']) and fidelity.exact(reply['dependencies'],pair['restored']['dependencies']))
+            fidelity.require(isinstance(reply['tree'],str) and reply['tree']==pair['restored']['tree'])
+            evidence.append(dict(pair,sourceReplayTree=reply['tree'],sourceTreeSha256=digest(reply['tree'].encode()),restoredTreeSha256=digest(pair['restored']['tree'].encode())))
+        return evidence
 
     @contextlib.contextmanager
     def isolated(self, connection, identity):
@@ -454,7 +688,7 @@ class Controller:
             self.command(['podman', 'run', '--log-driver=none', '-d', '--name', self.copy, *self.labels(), '--network', 'none', '--env', 'POSTGRES_PASSWORD', '--mount', 'type=volume,source=' + self.volume + ',target=/var/lib/postgresql', PG_IMAGE], environment=environment)
             created = True
             for _ in range(60):
-                ready = subprocess.run(['podman', 'exec', self.copy, 'pg_isready', '-U', 'postgres'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=False)
+                ready = subprocess.run(['podman', 'exec', self.copy, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=False)
                 if ready.returncode == 0:
                     break
                 time.sleep(1)
@@ -475,16 +709,36 @@ class Controller:
                 self.command(['podman', 'rm', '-f', self.copy])
             self.command(['podman', 'volume', 'rm', self.volume])
 
-    def restored_fingerprint(self, connection, nonce):
-        base = ['podman', 'exec', '--env', 'PGOPTIONS=-c default_transaction_read_only=on', '--env', 'PGUSER='+connection['user'], '--env', 'PGDATABASE='+connection['database'], self.copy]
-        return self.fingerprint(base, os.environ.copy(), nonce)
+    def restored_fingerprint(self, connection, nonce, evidence=None):
+        return self.fingerprint(self.copy_read_base(connection), os.environ.copy(), nonce, evidence, 'restored')
 
     def restore_and_migrate(self, row, connection, identity, archive, nonce, source_hash):
+        with self.source(row) as (_,source_base,source_environment):
+            source_metadata=self.catalog(source_base,source_environment)
         with self.isolated(connection, identity):
             with archive.open('rb') as encrypted:
                 self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--exit-on-error', '--single-transaction', '--clean', '--if-exists', '-U', 'postgres', '-d', connection['database']], source=encrypted)
-            if self.restored_fingerprint(connection, nonce) != source_hash:
-                refuse('restored_source_mismatch')
+            before_hash=self.restored_fingerprint(connection,nonce)
+            before_metadata=self.catalog(self.copy_read_base(connection))
+            renames=fidelity.plan_nn(source_metadata,before_metadata)
+            if renames:
+                sql='BEGIN; SET LOCAL search_path=pg_catalog;\n'+'\n'.join('ALTER TABLE '+ident(x['schema'])+'.'+ident(x['table'])+' RENAME CONSTRAINT '+ident(x['from'])+' TO '+ident(x['to'])+';' for x in renames)+'\nCOMMIT;'
+                fidelity.require(self.copy_write(sql,connection)==[])
+            restored_metadata=self.catalog(self.copy_read_base(connection))
+            pairs,physical=fidelity.expression_pairs(source_metadata,restored_metadata)
+            evidence=self.oracle(pairs,connection)
+            restored=self.restored_fingerprint(connection,nonce,evidence)
+            with self.source(row) as (_,source_base,source_environment):
+                source=self.fingerprint(source_base,source_environment,nonce,evidence,'source')
+            fidelity.require(source['raw']==source_hash and source['canonical']==restored['canonical'])
+            name=uuid.UUID(row['id']).hex
+            metadata={'schemaVersion':2,'policy':fidelity.POLICY,'schoolId':row['id'],'archiveSha256':digest_file(archive),'roleMetadata':identity['roles'],'membershipMetadata':identity['memberships'],'source':source_metadata,'restoredBefore':before_metadata,'restored':restored_metadata,'oracle':evidence,'physicalIndexBookkeepingDifferenceCount':physical}
+            mapping={'schemaVersion':2,'policy':fidelity.POLICY,'schoolId':row['id'],'archiveSha256':digest_file(archive),'renames':renames}
+            fidelity.require(len(fidelity.encoded(metadata))<=fidelity.MAX_METADATA and len(fidelity.encoded(mapping))<=fidelity.MAX_METADATA)
+            metadata_path=self.point/(name+'.restore-metadata.json')
+            mapping_path=self.point/(name+'.nn-identities.json')
+            durable(metadata_path,metadata);durable(mapping_path,mapping)
+            restore={'restoredSourceFingerprint':before_hash,'restoredReconciledFingerprint':restored['raw'],'restoreFidelity':{'policy':fidelity.POLICY,'sourceCanonicalFingerprint':source['canonical'],'restoredCanonicalFingerprint':restored['canonical'],'metadataSha256':digest_file(metadata_path),'nnIdentityMapSha256':digest_file(mapping_path),'checkCount':sum(x['kind']=='check' for x in evidence),'partialIndexPredicateCount':sum(x['kind']=='index' for x in evidence),'nnRenameCount':len(renames),'unclassifiedDifferenceCount':0}}
             # Fresh local role password, never a source password. Only the copy's
             # loopback namespace is shared; it has no egress or host port.
             local_password = secrets.token_hex(32)
@@ -498,7 +752,7 @@ class Controller:
             runtime = connection['user'][:-6] + '_runtime'
             sql = "SELECT jsonb_build_object('version',(SELECT max(version) FROM _sqlx_migrations WHERE success),'passed',passed,'selectionFingerprint',source_fingerprint,'cutoverDate',cutover_date,'checks',checks,'runtimeGrants',has_table_privilege(" + literal(runtime) + ", '_sqlx_migrations','SELECT') AND NOT has_table_privilege(" + literal(runtime) + ", '_sqlx_migrations','INSERT,UPDATE,DELETE') AND NOT has_table_privilege(" + literal(runtime) + ", 'academic_result_removal_scope','SELECT,INSERT,UPDATE,DELETE') AND (SELECT bool_and(has_table_privilege(" + literal(runtime) + ", 'learning_offerings',privilege)) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) privilege) AND NOT has_database_privilege(" + literal(runtime) + ",current_database(),'TEMP')) FROM academic_current_operations_migration_audit WHERE migration_version=157;"
             try:
-                return verify_audit(json.loads(self.copy_sql(sql, connection['database'], runtime)))
+                return dict(verify_audit(decode_json(self.copy_sql(sql, connection['database'], runtime))),**restore)
             except ValueError:
                 refuse('copy_audit_unavailable')
 
@@ -528,7 +782,7 @@ class Controller:
                 if item_path.exists():
                     item = read_json(item_path)
                     nonce = item['restrictKey']
-                    if item.get('roleMetadata')!=identity['roles']: refuse('source_roles_changed')
+                    if not fidelity.exact(item.get('roleMetadata'),identity['roles']) or not fidelity.exact(item.get('membershipMetadata'),identity['memberships']): refuse('source_roles_changed')
                     source_hash = self.fingerprint(base, environment, nonce)
                     if source_hash != item['proof']['sourceFingerprint']:
                         refuse('prepared_source_changed')
@@ -555,7 +809,7 @@ class Controller:
                         output.flush()
                         os.fsync(output.fileno())
                     os.replace(partial,archive)
-                    durable(item_path, {'restrictKey': nonce, 'roleMetadata':identity['roles'], 'proof': {'sourceFingerprint': source_hash, 'archiveSha256': digest_file(archive)}})
+                    durable(item_path, {'restrictKey': nonce, 'roleMetadata':identity['roles'],'membershipMetadata':identity['memberships'], 'proof': {'sourceFingerprint': source_hash, 'archiveSha256': digest_file(archive)}})
                 # Complete decryption and the actual restore validate the entire
                 # encrypted custom archive, not merely its listing/header.
                 audit = self.restore_and_migrate(row, connection, identity, archive, nonce, source_hash)
@@ -563,11 +817,14 @@ class Controller:
                     refuse('cutover_date_changed')
                 if self.fingerprint(base, environment, nonce) != source_hash:
                     refuse('source_changed_during_copy')
-                proof = {'schoolId': row['id'], 'subdomain': row['subdomain'], 'databaseName': connection['database'], 'cutoverDate': audit['cutoverDate'], 'selectionFingerprint': audit['selectionFingerprint'], 'sourceFingerprint': source_hash, 'restoredSourceFingerprint': source_hash, 'archiveSha256': digest_file(archive), 'decryptionVerified': True, 'historyVersion': audit['version'], 'checks': audit['checks']}
-                durable(item_path, {'restrictKey': nonce, 'roleMetadata':identity['roles'], 'proof': proof})
+                proof = {'schoolId': row['id'], 'subdomain': row['subdomain'], 'databaseName': connection['database'], 'cutoverDate': audit['cutoverDate'], 'selectionFingerprint': audit['selectionFingerprint'], 'sourceFingerprint': source_hash, 'restoredSourceFingerprint':audit['restoredSourceFingerprint'],'restoredReconciledFingerprint':audit['restoredReconciledFingerprint'],'restoreFidelity':audit['restoreFidelity'], 'archiveSha256': digest_file(archive), 'decryptionVerified': True, 'historyVersion': audit['version'], 'checks': audit['checks']}
+                proof['restoreFidelity']['evidenceSha256']=fidelity.evidence_digest({'releaseSha':self.release,'imageDigest':self.image_digest,'inventoryFingerprint':self.inventory_hash},proof)
+                durable(item_path, {'restrictKey': nonce, 'roleMetadata':identity['roles'],'membershipMetadata':identity['memberships'], 'proof': proof})
                 tenants.append(proof)
             self.unchanged_inventory()
-        durable(self.proof, {'schemaVersion': 1, 'operation': OPERATION, 'releaseSha': self.release, 'imageDigest': self.image_digest, 'inventoryFingerprint': self.inventory_hash, 'tenants': tenants})
+        bundle={'schemaVersion':2,'operation':OPERATION,'releaseSha':self.release,'imageDigest':self.image_digest,'inventoryFingerprint':self.inventory_hash,'tenants':tenants}
+        fidelity.require(len(fidelity.encoded(bundle))<=MAX_JSON)
+        durable(self.proof,bundle)
         durable(self.state, {'schemaVersion': 1, 'state': 'prepared', 'completedAt': None, 'retainUntil': None})
         self.check()
 
@@ -575,8 +832,9 @@ class Controller:
         # Completion must revalidate the recovery bytes and key independently
         # of the now-intentionally-contracted live business source.
         private(self.key)
+        self._recovery_profiles={}
         proof = read_json(self.proof)
-        if proof.get('schemaVersion') != 1 or proof.get('operation') != OPERATION or proof.get('releaseSha') != self.release or proof.get('imageDigest') != self.image_digest or proof.get('inventoryFingerprint') != self.inventory_hash or not isinstance(proof.get('tenants'),list) or not 1<=len(proof['tenants'])<=len(self.rows):
+        if type(proof.get('schemaVersion')) is not int or proof.get('schemaVersion') != 2 or set(proof)!={'schemaVersion','operation','releaseSha','imageDigest','inventoryFingerprint','tenants'} or proof.get('operation') != OPERATION or proof.get('releaseSha') != self.release or proof.get('imageDigest') != self.image_digest or proof.get('inventoryFingerprint') != self.inventory_hash or not isinstance(proof.get('tenants'),list) or not 1<=len(proof['tenants'])<=len(self.rows):
             refuse('preparation_binding_changed')
         seen=set()
         for item in proof['tenants']:
@@ -584,6 +842,7 @@ class Controller:
             row=next((row for row in self.rows if row['id']==item.get('schoolId') and row['subdomain']==item.get('subdomain')),None)
             if row is None or row['id'] in seen: refuse('preparation_coverage_changed')
             seen.add(row['id'])
+            self.retained_fidelity(proof,item,row)
             archive = private(self.point / (uuid.UUID(row['id']).hex + '.dump.age'))
             if not valid_hash(item.get('archiveSha256')) or digest_file(archive) != item['archiveSha256']:
                 refuse('archive_changed')
@@ -591,6 +850,46 @@ class Controller:
             with archive.open('rb') as encrypted:
                 self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'run', '--log-driver=none', '--rm', '-i', '--name', self.verify, *self.labels(), '--network', 'none', '--read-only', PG_IMAGE, 'pg_restore', '--file=/dev/null'], source=encrypted)
         return proof
+
+    def retained_fidelity(self, bundle, item, row):
+        fields={'schoolId','subdomain','databaseName','cutoverDate','selectionFingerprint','sourceFingerprint','restoredSourceFingerprint','restoredReconciledFingerprint','restoreFidelity','archiveSha256','decryptionVerified','historyVersion','checks'}
+        fidelity.require(set(item)==fields and item['databaseName']==urllib.parse.urlsplit(row['url']).path[1:])
+        fidelity.require(type(item['historyVersion']) is int and item['historyVersion']==self.compiled[-1][0])
+        fidelity.require(isinstance(item['cutoverDate'],str) and dt.date.fromisoformat(item['cutoverDate']).isoformat()==item['cutoverDate'])
+        for key in ['selectionFingerprint','sourceFingerprint','restoredSourceFingerprint','restoredReconciledFingerprint','archiveSha256']:
+            fidelity.require(fidelity.valid_hash(item[key]))
+        f=item['restoreFidelity']
+        fidelity.require(isinstance(f,dict) and set(f)=={'policy','sourceCanonicalFingerprint','restoredCanonicalFingerprint','metadataSha256','nnIdentityMapSha256','evidenceSha256','checkCount','partialIndexPredicateCount','nnRenameCount','unclassifiedDifferenceCount'})
+        for key in ['sourceCanonicalFingerprint','restoredCanonicalFingerprint','metadataSha256','nnIdentityMapSha256','evidenceSha256']:
+            fidelity.require(fidelity.valid_hash(f[key]))
+        fidelity.require(f['sourceCanonicalFingerprint']==f['restoredCanonicalFingerprint'] and f['evidenceSha256']==fidelity.evidence_digest(bundle,item))
+        name=uuid.UUID(row['id']).hex
+        metadata_path=self.point/(name+'.restore-metadata.json');mapping_path=self.point/(name+'.nn-identities.json')
+        metadata=read_json(metadata_path,fidelity.MAX_METADATA);mapping=read_json(mapping_path,fidelity.MAX_METADATA)
+        fidelity.require(digest_file(metadata_path)==f['metadataSha256'] and digest_file(mapping_path)==f['nnIdentityMapSha256'])
+        fidelity.require(set(metadata)=={'schemaVersion','policy','schoolId','archiveSha256','roleMetadata','membershipMetadata','source','restoredBefore','restored','oracle','physicalIndexBookkeepingDifferenceCount'} and set(mapping)=={'schemaVersion','policy','schoolId','archiveSha256','renames'})
+        for document in [metadata,mapping]:
+            fidelity.require(type(document['schemaVersion']) is int and document['schemaVersion']==2 and document['policy']==fidelity.POLICY and document['schoolId']==row['id'] and document['archiveSha256']==item['archiveSha256'])
+        fidelity.validate_profiles(metadata['roleMetadata'],metadata['membershipMetadata'])
+        state=read_json(self.point/(name+'.json'))
+        fidelity.require(fidelity.exact(metadata['roleMetadata'],state['roleMetadata']) and fidelity.exact(metadata['membershipMetadata'],state['membershipMetadata']))
+        fidelity.require(fidelity.exact(fidelity.plan_nn(metadata['source'],metadata['restoredBefore']),mapping['renames']))
+        pairs,physical=fidelity.expression_pairs(metadata['source'],metadata['restored'])
+        fidelity.require(type(metadata['physicalIndexBookkeepingDifferenceCount']) is int and metadata['physicalIndexBookkeepingDifferenceCount']==physical)
+        oracle=metadata['oracle']
+        fidelity.require(isinstance(oracle,list) and len(oracle)==len(pairs))
+        for pair,entry in zip(pairs,oracle):
+            fidelity.require(set(entry)=={'kind','key','source','restored','sourceReplayTree','sourceTreeSha256','restoredTreeSha256'})
+            fidelity.require(fidelity.exact({k:entry[k] for k in pair},pair) and isinstance(entry['sourceReplayTree'],str) and entry['sourceReplayTree']==entry['restored']['tree'])
+            fidelity.require(digest(entry['sourceReplayTree'].encode())==entry['sourceTreeSha256'] and digest(entry['restored']['tree'].encode())==entry['restoredTreeSha256'])
+        fidelity.require(f['checkCount']==sum(x['kind']=='check' for x in pairs) and f['partialIndexPredicateCount']==sum(x['kind']=='index' for x in pairs) and f['nnRenameCount']==len(mapping['renames']))
+        self._recovery_profiles[row['id']]={'roles':metadata['roleMetadata'],'memberships':metadata['membershipMetadata'],'database':metadata['source']['database']}
+
+    def verify_source_profile(self,row,identity,base,environment):
+        expected=self._recovery_profiles[row['id']]
+        fidelity.require(fidelity.exact(identity['roles'],expected['roles']) and fidelity.exact(identity['memberships'],expected['memberships']))
+        current=decode_json(self.bounded_capture(base+['psql','-XAtq','-v','ON_ERROR_STOP=1','-c',DATABASE_SQL],environment=environment))
+        fidelity.require(fidelity.exact(current,expected['database']))
 
     def check(self):
         if self.state.exists() and read_json(self.state).get('state')=='already-current':
@@ -609,6 +908,7 @@ class Controller:
             state = read_json(self.point / (uuid.UUID(row['id']).hex + '.json'))
             with self.source(row) as (connection, base, environment):
                 identity = self.identity(connection, base, environment)
+                self.verify_source_profile(row,identity,base,environment)
                 if identity['version']>=157:
                     audit_sql="SELECT jsonb_build_object('date',cutover_date,'hash',source_fingerprint,'passed',passed,'checks',checks) FROM academic_current_operations_migration_audit WHERE migration_version=157"
                     audit=json.loads(self.command(base+['psql','-XAtq','-v','ON_ERROR_STOP=1','-c',audit_sql],environment=environment))
@@ -633,7 +933,8 @@ class Controller:
             row=next((row for row in self.rows if row['id']==item['schoolId'] and row['subdomain']==item['subdomain']),None)
             if row is None: refuse('completion_inventory_changed')
             with self.source(row) as (connection,base,environment):
-                self.identity(connection,base,environment)
+                identity=self.identity(connection,base,environment)
+                self.verify_source_profile(row,identity,base,environment)
                 sql="SELECT jsonb_build_object('version',(SELECT max(version) FROM _sqlx_migrations WHERE success),'passed',passed,'selectionFingerprint',source_fingerprint,'cutoverDate',cutover_date,'checks',checks,'runtimeGrants',(SELECT bool_and(has_table_privilege("+literal(connection['user'][:-6]+'_runtime')+",'learning_offerings',privilege)) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) privilege) AND NOT has_database_privilege("+literal(connection['user'][:-6]+'_runtime')+",current_database(),'TEMP') AND NOT has_table_privilege("+literal(connection['user'][:-6]+'_runtime')+",'academic_result_removal_scope','SELECT,INSERT,UPDATE,DELETE') AND NOT has_table_privilege("+literal(connection['user'][:-6]+'_runtime')+",'_sqlx_migrations','INSERT,UPDATE,DELETE')) FROM academic_current_operations_migration_audit WHERE migration_version=157"
                 audit=verify_audit(json.loads(self.command(base+['psql','-XAtq','-v','ON_ERROR_STOP=1','-c',sql],environment=environment)))
                 if audit['selectionFingerprint']!=item['selectionFingerprint'] or audit['cutoverDate']!=item['cutoverDate'] or audit['checks']!=item['checks']:
@@ -666,7 +967,7 @@ if __name__ == '__main__':
     try:
         main()
     except (Refusal, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        code = str(error) if isinstance(error, Refusal) else 'preparation_unavailable'
+        code = str(error) if isinstance(error, (Refusal,fidelity.FidelityError)) else 'preparation_unavailable'
         body={'schemaVersion':1,'error':code}
         if isinstance(error,Refusal) and getattr(error,'diagnostic',None): body['migrationRefusal']=error.diagnostic
         print(json.dumps(body),file=sys.stderr)

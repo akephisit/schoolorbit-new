@@ -12,18 +12,19 @@ const read = (name) =>
   readFileSync(new URL(`../../${name}`, import.meta.url), "utf8");
 
 test("fixed preparation controller has portable pure failure coverage without provider or crypto tooling", () => {
-  const result = spawnSync(
-    "python3",
+  for (const args of [
     ["scripts/tests/current-academic-preparation.test.py", "PreparationTests"],
-    {
+    ["scripts/tests/academic-restore-fidelity.test.py"],
+  ]) {
+    const result = spawnSync("python3", args, {
       cwd: root,
       env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
       encoding: "utf8",
       timeout: 60_000,
       maxBuffer: 500_000,
-    },
-  );
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  }
 });
 
 test("release image contains the exact existing canonical copy CLI and checksum-pinned age tools", () => {
@@ -49,6 +50,11 @@ test("release image contains the exact existing canonical copy CLI and checksum-
 });
 
 test("immutable bundle and existing headless cutover own preparation after writer removal and before live migration", () => {
+  assert.ok(
+    releaseBundleFiles(root).includes(
+      "scripts/lib/pipeline-remote/academic_restore_fidelity.py",
+    ),
+  );
   assert.ok(
     releaseBundleFiles(root).includes(
       "scripts/lib/pipeline-remote/current-academic-preparation.py",

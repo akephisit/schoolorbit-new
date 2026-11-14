@@ -592,6 +592,7 @@ exact eight checks and private proof-file boundary:
 ```bash
 ./scripts/test_backend_school.sh operations::current_preparation::tests -- --test-threads=1
 node --test scripts/tests/pipeline-current-academic-preparation.test.mjs
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/tests/academic-restore-fidelity.test.py
 ```
 
 The Node target belongs to the ordinary deployment suite and runs the controller's portable pure
@@ -603,10 +604,22 @@ in `AGE_BINARY` and `AGE_KEYGEN_BINARY`; it checks both versions and never skips
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/tests/current-academic-preparation.test.py CryptoTests
 ```
 
+The deployment Node target also runs the pure restore-fidelity fixtures. They exercise chunked
+SQL/COPY framing, long rows and fake SQL in data/strings, exact CHECK/predicate substitutions,
+outside-span mutations, NN ambiguity and target-name collisions, logical column mapping across
+dropped slots, ownership/ACL/type/collation/dependency/index-flag refusals, and the cross-language
+schema2 digest vector. Controller fixtures cover private metadata/map loss or tampering, relevant
+role/database-setting drift, bounded child output/real exits, and TCP readiness rather than the
+temporary PostgreSQL initialization socket. These are support-boundary regressions, not substitutes
+for the native owner-role oracle, rollback and real restored-schema acceptance below.
+
 Pure controller and crypto tests do not establish PostgreSQL restore correctness. Release-owner
 acceptance must additionally exercise the actual encrypted custom dump, full decryption and
-isolated PostgreSQL18.6 restore with ownership/ACL/role-marker and exact source-byte fingerprint
-preservation, then the candidate's canonical `migrate_tenant_schema` executable and all eight
+isolated PostgreSQL18.6 restore with ownership/ACL/role-marker preservation, untouched raw-source
+drift fingerprints, distinct actual pre/post-repair raw restore hashes, and independently equal
+framed fidelity hashes backed by exact PostgreSQL expression oracles. Every byte outside those
+uniquely proven expression spans must match. Then exercise the candidate's canonical
+`migrate_tenant_schema` executable and all eight
 zero-mismatch receipt/runtime-grant checks. Cover all-current and mixed inventories, canonical
 history holes/checksum drift, wrong date/selection hash, missing/wrong keys and corrupt archives,
 child failure/unknown exit, controller loss, exact owned cleanup, and retention without expiry

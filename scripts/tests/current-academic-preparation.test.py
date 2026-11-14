@@ -34,6 +34,8 @@ class Fake(m.Controller):
         self.rows=m.inventory({'schools':[row(ID),row(OTHER)],'total':2});self.inventory_hash=m.inventory_hash(self.rows)
         self.key=point/'identity.agekey';self.proof=point/'proof.json';self.state=point/'state.json'
         self.client='source';self.copy='copy';self.volume='volume';self.verify='verify';self.versions=versions;self.restored=[];self.checked=False;self.recovery_validations=0
+        self.compiled=[[157,True,'a'*96]]
+        self.source_database={'metadata':{},'owner':'synthetic','tablespace':'pg_default','acl':None,'settings':None}
     def labels(self):return []
     def exists(self,*args):return False
     def assert_quiesced(self):pass
@@ -41,18 +43,30 @@ class Fake(m.Controller):
     @contextlib.contextmanager
     def source(self,row):
         yield {'id':row['id'],'database':'tenant_'+row['id'].replace('-',''),'user':'so_'+row['id'].replace('-','')+'_owner'},['source'],{}
-    def identity(self,connection,*args):return {'date':'2026-11-14','version':self.versions[connection['id']],'roles':[]}
+    def identity(self,connection,*args):return {'date':'2026-11-14','version':self.versions[connection['id']],'roles':[],'memberships':[]}
     def age(self,*arguments):return ["synthetic-age",*arguments]
     def ensure_key(self):
         self.key.write_text('synthetic key');self.key.chmod(0o600);return 'synthetic recipient'
     def fingerprint(self,*args):return 'c'*64
     def command(self,*args,**kwargs):return b'1'
+    def bounded_capture(self,args,**kwargs):
+        if args[0]=='source':return json.dumps(self.source_database).encode()
+        return m.Controller.bounded_capture(self,args,**kwargs)
     def stream(self,*args,**kwargs):
         if 'destination' in kwargs:kwargs['destination'].write(b'synthetic encrypted archive')
         else:
             self.recovery_validations+=1
             if kwargs['source'].read()!=b'synthetic encrypted archive':m.refuse('stream_failed')
-    def restore_and_migrate(self,row,*args):self.restored.append(row['id']);return audit()
+    def restore_and_migrate(self,row,*args):
+        self.restored.append(row['id'])
+        archive=args[2]
+        metadata={'catalog':{'relations':[],'constraints':[],'constraintNames':[]},'database':copy.deepcopy(self.source_database),'indexes':[]}
+        name=row['id'].replace('-','');archive_hash=m.digest_file(archive)
+        md={'schemaVersion':2,'policy':m.fidelity.POLICY,'schoolId':row['id'],'archiveSha256':archive_hash,'roleMetadata':[],'membershipMetadata':[],'source':metadata,'restoredBefore':metadata,'restored':metadata,'oracle':[],'physicalIndexBookkeepingDifferenceCount':0}
+        nm={'schemaVersion':2,'policy':m.fidelity.POLICY,'schoolId':row['id'],'archiveSha256':archive_hash,'renames':[]}
+        md_path=self.point/(name+'.restore-metadata.json');nm_path=self.point/(name+'.nn-identities.json')
+        m.durable(md_path,md);m.durable(nm_path,nm)
+        return dict(audit(),restoredSourceFingerprint='f'*64,restoredReconciledFingerprint='d'*64,restoreFidelity={'policy':m.fidelity.POLICY,'sourceCanonicalFingerprint':'e'*64,'restoredCanonicalFingerprint':'e'*64,'metadataSha256':m.digest_file(md_path),'nnIdentityMapSha256':m.digest_file(nm_path),'checkCount':0,'partialIndexPredicateCount':0,'nnRenameCount':0,'unclassifiedDifferenceCount':0})
     def check(self):self.checked=True
 
 
@@ -61,14 +75,117 @@ def completion_fixture(point):
     fake.key.write_bytes(b'synthetic key');fake.key.chmod(0o600)
     archive=point/(ID.replace('-','')+'.dump.age')
     archive.write_bytes(b'synthetic encrypted archive');archive.chmod(0o600)
-    item={'schoolId':ID,'subdomain':'tenant-1','cutoverDate':'2026-11-14','selectionFingerprint':'a'*64,'checks':audit()['checks'],'archiveSha256':m.digest_file(archive),'sourceFingerprint':'c'*64}
-    m.durable(fake.proof,{'schemaVersion':1,'operation':m.OPERATION,'releaseSha':fake.release,'imageDigest':fake.image_digest,'inventoryFingerprint':fake.inventory_hash,'tenants':[item]})
+    restored=fake.restore_and_migrate(fake.rows[0],None,None,archive,None,'c'*64)
+    item={'schoolId':ID,'subdomain':'tenant-1','databaseName':'tenant_'+ID.replace('-',''),'cutoverDate':'2026-11-14','selectionFingerprint':'a'*64,'checks':audit()['checks'],'archiveSha256':m.digest_file(archive),'sourceFingerprint':'c'*64,'restoredSourceFingerprint':restored['restoredSourceFingerprint'],'restoredReconciledFingerprint':restored['restoredReconciledFingerprint'],'restoreFidelity':restored['restoreFidelity'],'decryptionVerified':True,'historyVersion':157}
+    bundle={'schemaVersion':2,'operation':m.OPERATION,'releaseSha':fake.release,'imageDigest':fake.image_digest,'inventoryFingerprint':fake.inventory_hash,'tenants':[item]}
+    item['restoreFidelity']['evidenceSha256']=m.fidelity.evidence_digest(bundle,item)
+    m.durable(fake.proof,bundle)
+    m.durable(point/(ID.replace('-','')+'.json'),{'roleMetadata':[],'membershipMetadata':[]})
     m.durable(fake.state,{'state':'prepared','retainUntil':None})
     fake.command=lambda *a,**k:json.dumps(audit()).encode()
     return fake,archive
 
 
+def refresh_archive_binding(fake,archive):
+    bundle=m.read_json(fake.proof);item=bundle['tenants'][0];item['archiveSha256']=m.digest_file(archive)
+    for suffix,field in [('.restore-metadata.json','metadataSha256'),('.nn-identities.json','nnIdentityMapSha256')]:
+        path=fake.point/(ID.replace('-','')+suffix)
+        document=m.read_json(path);document['archiveSha256']=item['archiveSha256'];m.durable(path,document)
+        item['restoreFidelity'][field]=m.digest_file(path)
+    item['restoreFidelity']['evidenceSha256']=m.fidelity.evidence_digest(bundle,item)
+    m.durable(fake.proof,bundle)
+
+
 class PreparationTests(unittest.TestCase):
+    def test_isolated_readiness_waits_for_final_tcp_server_not_temporary_socket(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake=Fake(Path(directory),{ID:155,OTHER:157})
+            fake.copy_sql=lambda *a,**k:b''
+            probes=[]
+            def ready(arguments,**kwargs):
+                probes.append(arguments)
+                self.assertEqual(arguments[arguments.index('-h')+1],'127.0.0.1')
+                return subprocess.CompletedProcess(arguments,1 if len(probes)==1 else 0)
+            with mock.patch.object(m.subprocess,'run',side_effect=ready),mock.patch.object(m.time,'sleep'):
+                with fake.isolated({'database':'tenant','user':'so_'+ID.replace('-','')+'_owner'},{'roles':[]}):
+                    self.assertEqual(len(probes),2)
+
+    def test_bounded_metadata_reader_limits_output_and_records_real_child_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake=Fake(Path(directory),{ID:155,OTHER:157});fake.exits=0
+            raw=fake.bounded_capture([sys.executable,'-c','import sys;sys.stdout.buffer.write(sys.stdin.buffer.read())'],data=b'x'*100000,limit=100001)
+            self.assertEqual(raw,b'x'*100000)
+            for code,limit in [('import sys;sys.stdout.buffer.write(b"x"*100001)',100000),('raise SystemExit(7)',100)]:
+                with self.assertRaises(m.Refusal):fake.bounded_capture([sys.executable,'-c',code],limit=limit)
+            self.assertEqual(m.read_json(fake.point/'last-metadata-exit.json')['exitCode'],7)
+
+    def test_retained_metadata_map_role_context_and_strict_schema_are_completion_dependencies(self):
+        for fault in ['missing_metadata','missing_map','tamper_metadata','tamper_roles','tamper_memberships','unknown_proof','unknown_fidelity','boolean_count','duplicate_json','nonfinite']:
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                fake,_=completion_fixture(Path(directory));before=fake.state.read_bytes()
+                metadata=fake.point/(ID.replace('-','')+'.restore-metadata.json')
+                mapping=fake.point/(ID.replace('-','')+'.nn-identities.json')
+                if fault=='missing_metadata':metadata.unlink()
+                elif fault=='missing_map':mapping.unlink()
+                elif fault=='tamper_metadata':metadata.write_bytes(metadata.read_bytes()+b' ')
+                elif fault in ['tamper_roles','tamper_memberships']:
+                    path=fake.point/(ID.replace('-','')+'.json');state=m.read_json(path)
+                    state['roleMetadata' if fault=='tamper_roles' else 'membershipMetadata']=[{'changed':True}];m.durable(path,state)
+                elif fault=='duplicate_json':fake.proof.write_text('{"schemaVersion":2,"schemaVersion":2}')
+                elif fault=='nonfinite':fake.proof.write_text('{"schemaVersion":NaN}')
+                else:
+                    proof=m.read_json(fake.proof)
+                    if fault=='unknown_proof':proof['tenants'][0]['skip']=True
+                    elif fault=='unknown_fidelity':proof['tenants'][0]['restoreFidelity']['ignored']=True
+                    else:proof['tenants'][0]['restoreFidelity']['checkCount']=False
+                    m.durable(fake.proof,proof)
+                with self.assertRaises((m.Refusal,m.fidelity.FidelityError)):fake.complete()
+                self.assertEqual(fake.state.read_bytes(),before)
+
+    def test_live_role_membership_or_relevant_database_setting_drift_blocks_completion(self):
+        for fault in ['roles','memberships','database']:
+            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory:
+                fake,_=completion_fixture(Path(directory));before=fake.state.read_bytes()
+                if fault=='database':fake.source_database['settings']=[{'global':True,'role':'synthetic','config':['search_path=unsafe']}]
+                else:
+                    previous=fake.identity
+                    def changed(*args):
+                        identity=previous(*args);identity[fault]=[{'changed':True}];return identity
+                    fake.identity=changed
+                with self.assertRaises(m.fidelity.FidelityError):fake.complete()
+                self.assertEqual(fake.state.read_bytes(),before)
+
+    def test_oracle_requires_exact_trees_logical_dependencies_and_completed_owner_rollback(self):
+        fake=Fake(Path('.'),{ID:155})
+        pair={'kind':'check','key':['public','t','valid_v'],'source':{'schema':'public','table':'t','expr':'(v > 0)','flags':{'connoinherit':False}},'restored':{'tree':'actual-tree','dependencies':[]}}
+        good={'number':0,'tree':'actual-tree','columns':[[1,'v',23,-1,0]],'actualColumns':[[1,'v',23,-1,0]],'dependencies':[]}
+        rollback={'rollbackConfirmed':True,'remainingReferences':0,'role':'owner'}
+        def reply(sql,connection):
+            self.assertIn('BEGIN; SET LOCAL search_path=pg_catalog;',sql)
+            self.assertIn('ROLLBACK;',sql)
+            return [copy.deepcopy(good),copy.deepcopy(rollback)]
+        fake.copy_write=reply
+        self.assertEqual(fake.oracle([pair],{'user':'owner'})[0]['sourceTreeSha256'],m.digest(b'actual-tree'))
+        for fault in ['tree','number','columns','dependencies','rollback','remaining']:
+            def bad(sql,connection):
+                rows=reply(sql,connection)
+                if fault=='tree':rows[0]['tree']='different-tree'
+                elif fault=='number':rows[0]['number']=False
+                elif fault=='columns':rows[0]['columns'][0][0]=True
+                elif fault=='dependencies':rows[0]['dependencies']=[{'changed':True}]
+                elif fault=='rollback':rows[-1]['rollbackConfirmed']=False
+                else:rows[-1]['remainingReferences']=1
+                return rows
+            fake.copy_write=bad
+            with self.assertRaises(m.fidelity.FidelityError):fake.oracle([pair],{'user':'owner'})
+
+    def test_database_settings_query_excludes_unrelated_global_roles_but_keeps_target_database_scope(self):
+        # Fixed SQL ownership guard: all settings for the exact DB, but only the
+        # owner/runtime/provisioner/<ALL> globals. Real SQL parity is native QA.
+        self.assertIn('s.setdatabase=d.oid OR (s.setdatabase=0 AND (s.setrole=0 OR s.setrole IN',m.DATABASE_SQL)
+        self.assertIn("regexp_replace(pg_get_userbyid(d.datdba),'_owner$','_runtime')",m.DATABASE_SQL)
+        self.assertNotIn('WHERE s.setdatabase IN(0,d.oid)',m.DATABASE_SQL)
+
     def test_inventory_is_complete_unique_and_bound_to_namespace(self):
         rows=m.inventory({'schools':[row(OTHER),row(ID)],'total':2})
         self.assertEqual([r['id'] for r in rows],[ID,OTHER])
@@ -160,7 +277,7 @@ class PreparationTests(unittest.TestCase):
                         if fault=='truncated_archive':
                             # Even a hash-valid private proof cannot bless a
                             # consumer refusing the complete retained stream.
-                            proof=m.read_json(fake.proof);proof['tenants'][0]['archiveSha256']=m.digest_file(archive);m.durable(fake.proof,proof)
+                            refresh_archive_binding(fake,archive)
                     before=fake.state.read_bytes()
                     with self.assertRaises(m.Refusal):getattr(m.Controller,operation)(fake)
                     self.assertEqual(fake.state.read_bytes(),before)
@@ -254,7 +371,7 @@ class CryptoTests(unittest.TestCase):
                 if fault=='truncated_archive':ciphertext=ciphertext[:-8]
                 elif fault=='corrupt_archive':ciphertext=ciphertext[:40]+b'corrupt'+ciphertext[47:]
                 archive.write_bytes(ciphertext)
-                proof=m.read_json(fake.proof);proof['tenants'][0]['archiveSha256']=m.digest_file(archive);m.durable(fake.proof,proof)
+                refresh_archive_binding(fake,archive)
                 if fault=='missing_key':fake.key.unlink()
                 elif fault=='wrong_key':fake.key.write_bytes(other_identity)
                 fake.exits=0
