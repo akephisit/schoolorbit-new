@@ -147,7 +147,6 @@ export async function mockParent(
 					roundId: id(515),
 					roundName: `รอบ${suffix}${label}`,
 					academicTermId: selected,
-					publishedAt: '2026-10-01T00:00:00Z',
 					sessions: [
 						{
 							examDate: '2026-10-01',

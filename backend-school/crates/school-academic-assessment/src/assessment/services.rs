@@ -1148,15 +1148,11 @@ async fn fetch_plan_detail(
     .bind(offering_id)
     .fetch_optional()
     .await?;
-    let learning_group_ids: Vec<Uuid> = DbSession::new(connection)
-        .scalar(
-            "academic_assessment.assessment.services.fetch_plan_detail",
-            r#"SELECT id FROM learning_groups
-           WHERE learning_offering_id = $1 AND status <> 'closed'
-           ORDER BY code, id"#,
+    let learning_group_ids =
+        school_academic_delivery::services::current::offering_group_ids_on_connection(
+            connection,
+            offering_id,
         )
-        .bind(offering_id)
-        .fetch_all()
         .await?;
     let candidates = load_coordinator_candidates(connection, &[offering_id])
         .await?
@@ -1604,8 +1600,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             AssessmentPhaseCode::ALL
         );
-        assert!(phases
-            .iter()
-            .all(|phase| phase.id.is_none() && phase.max_score == "0.00"));
+        assert!(
+            phases
+                .iter()
+                .all(|phase| phase.id.is_none() && phase.max_score == "0.00")
+        );
     }
 }

@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onDestroy, tick } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		applyBulkGroupSetup,
 		type BulkGroupSetupRequest,
@@ -38,7 +40,7 @@
 		canManage: boolean;
 		onRequestManagementOptions: () => Promise<DeliveryManagementOptions | null>;
 		onApplied: (response: BulkGroupSetupResponse) => void;
-		onReload: (signal?: AbortSignal) => Promise<void>;
+		onReload: (signal?: AbortSignal) => Promise<RouteLoadResult<LearningGroup[]> | null>;
 	} = $props();
 
 	let open = $state(false);
@@ -63,6 +65,8 @@
 	let needsReload = $state(false);
 	let errorMessage = $state('');
 	let session = 0;
+	let dialogEpoch: number | null = null;
+	let observedContext = '';
 	let disposed = false;
 	const preparationRequest = new LatestRequest();
 	const busy = $derived(saving || reloading);
@@ -101,7 +105,14 @@
 		return true;
 	}
 	function current(token: number, owner: string): boolean {
-		return !disposed && open && canManage && session === token && context === owner;
+		return (
+			!disposed &&
+			open &&
+			canManage &&
+			session === token &&
+			context === owner &&
+			dialogEpoch === authStore.sessionEpoch
+		);
 	}
 	function changeOpen(value: boolean) {
 		if (busy) return;
@@ -115,6 +126,7 @@
 	async function show() {
 		if (!canManage || busy || preparing) return;
 		const token = ++session;
+		dialogEpoch = authStore.sessionEpoch;
 		const owner = context;
 		targets = [];
 		versionRowVersion = 0;
@@ -138,15 +150,17 @@
 		preparing = true;
 		preparationError = '';
 		try {
-			await onReload(ticket.signal);
-			await tick();
+			const result = await onReload(ticket.signal);
 			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
-			targets = [...groups];
+			if (!result) throw new Error('ข้อมูลกลุ่มเปลี่ยนระหว่างเตรียม กรุณาลองเตรียมใหม่');
+			if (!result.ok) throw new Error(result.error);
+			targets = [...result.data];
 			const currentWorkspace = await getDeliveryWorkspace(
 				offering.academicYearId,
-				offering.academicTermId
+				offering.academicTermId,
+				{ signal: ticket.signal }
 			);
-			if (!current(token, owner)) return;
+			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
 			versionRowVersion = currentWorkspace.rowVersion;
 			void loadOptions(token, owner);
 		} catch (error) {
@@ -200,30 +214,35 @@
 			const result = await applyBulkGroupSetup(offering.id, submitted);
 			if (!current(token, owner)) return;
 			onApplied(result);
+			if (!current(token, owner)) return;
+			saving = false;
 			open = false;
 			session += 1;
 		} catch (error) {
 			if (current(token, owner)) fail(error, 'บันทึกการตั้งค่าหลายกลุ่มไม่สำเร็จ');
 		} finally {
-			if (!disposed && context === owner) saving = false;
+			if (current(token, owner)) saving = false;
 		}
 	}
 	async function reload() {
 		if (busy || !canManage) return;
 		const token = session,
-			owner = context;
+			owner = context,
+			ticket = preparationRequest.begin();
 		reloading = true;
 		errorMessage = '';
 		try {
-			await onReload();
-			await tick();
-			if (!current(token, owner)) return;
-			targets = [...groups];
+			const result = await onReload(ticket.signal);
+			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
+			if (!result) throw new Error('ข้อมูลกลุ่มเปลี่ยนระหว่างเตรียม กรุณาลองเตรียมใหม่');
+			if (!result.ok) throw new Error(result.error);
+			targets = [...result.data];
 			const currentWorkspace = await getDeliveryWorkspace(
 				offering.academicYearId,
-				offering.academicTermId
+				offering.academicTermId,
+				{ signal: ticket.signal }
 			);
-			if (!current(token, owner)) return;
+			if (!current(token, owner) || !preparationRequest.isCurrent(ticket.revision)) return;
 			versionRowVersion = currentWorkspace.rowVersion;
 			selectedIds = selectedIds.filter((id) =>
 				targets.some((group) => group.id === id && eligible(group))
@@ -236,12 +255,28 @@
 		}
 	}
 	$effect.pre(() => {
-		if (!canManage) {
+		void $authStore;
+		const epoch = authStore.sessionEpoch,
+			owner = context,
+			allowed = canManage;
+		if (dialogEpoch !== null && (!allowed || dialogEpoch !== epoch || observedContext !== owner)) {
 			open = false;
-			session += 1;
+			session++;
 			preparationRequest.abort();
+			preparing = false;
+			saving = false;
+			reloading = false;
+			optionsLoading = false;
+			targets = [];
+			options = null;
+			selectedIds = [];
+			errorMessage = '';
+			preparationError = '';
+			dialogEpoch = null;
 		}
+		observedContext = owner;
 	});
+
 	onDestroy(() => {
 		disposed = true;
 		session += 1;
@@ -264,13 +299,14 @@
 		interactOutsideBehavior={busy ? 'ignore' : 'close'}
 		onCloseAutoFocus={(event) => {
 			event.preventDefault();
-			if (!disposed && trigger?.isConnected) trigger.focus();
+			if (!disposed && dialogEpoch === authStore.sessionEpoch && trigger?.isConnected)
+				trigger.focus();
 		}}
 	>
 		<Dialog.Header>
 			<Dialog.Title>ตั้งค่าหลายกลุ่ม · {offering.nameSnapshot}</Dialog.Title>
 			<Dialog.Description
-				>เลือกกลุ่มในร่างนี้ กำหนดครูหลักหรือวิธีจัดรายชื่อพร้อมกัน แล้วบันทึกให้กลุ่มที่เลือก
+				>เลือกกลุ่มปัจจุบัน กำหนดครูหลักหรือวิธีจัดรายชื่อพร้อมกัน แล้วบันทึกให้กลุ่มที่เลือก
 				แก้ข้อยกเว้นในแต่ละกลุ่มได้ภายหลัง</Dialog.Description
 			>
 		</Dialog.Header>

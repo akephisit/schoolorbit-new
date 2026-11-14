@@ -43,9 +43,10 @@ test('learning delivery no longer calls offerings ชุดการเรีย
 test('delivery guidance uses the shared local prerequisite notice', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/delivery/+page.svelte');
 
-	assert.match(page, /AcademicPrerequisiteNotice/);
-	assert.match(page, /missingTermPrerequisite/);
-	assert.match(page, /noOfferingPrerequisite/);
+	assert.match(page,/เลือกปีการศึกษาและภาคเรียนก่อน/);
+	assert.match(page,/DeliveryMissingRequirements/);
+	assert.match(page,/prepare/);
+	assert.doesNotMatch(page,/globalReadiness|completionPercent/);
 });
 
 test('dependent academic pages provide local next actions without a global readiness center', async () => {

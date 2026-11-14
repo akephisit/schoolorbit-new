@@ -847,7 +847,13 @@
 				error.status === 404 &&
 				controller === targetController
 			) {
-				await refreshTimetable();
+				// Resolve this explicit term once. A missing current resource must not
+				// recurse through reload while the missing controller is still present.
+				targetController.setRefreshing(false);
+				controller = null;
+				boardRetryVersionId = '';
+				workspaceReadVersionId = '';
+				await loadContext(termId, yearId);
 				return;
 			}
 			if (controller === targetController) {

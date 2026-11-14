@@ -38,6 +38,41 @@ pub(super) async fn lesson_source_facts_on_connection(
     Ok(rows)
 }
 
+/// Past lesson occurrences are actual Attendance facts. Current Timetable has no
+/// historical pattern from which an unmaterialized old occurrence can be proven.
+pub(super) async fn materialized_lesson_seeds_on_connection(
+    connection: &mut sqlx::PgConnection,
+    term: Uuid,
+    date: NaiveDate,
+) -> Result<Vec<AttendanceSeed>, AppError> {
+    let sql = format!("SELECT {} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND kind='lesson' ORDER BY start_time,id LIMIT 2001", sessions::COLUMNS);
+    let saved: Vec<AttendanceSession> = DbSession::new(connection)
+        .query_as(
+            "attendance.application.materialized_lesson_seeds",
+            sqlx::AssertSqlSafe(sql),
+        )
+        .bind(term)
+        .bind(date)
+        .fetch_all()
+        .await?;
+    if saved.len() > 2000
+        || saved
+            .iter()
+            .map(|session| session.roster.len())
+            .sum::<usize>()
+            > 200_000
+    {
+        return Err(invalid("คาบที่บันทึกไว้เกินขนาดที่รองรับ"));
+    }
+    Ok(saved
+        .into_iter()
+        .map(|session| AttendanceSeed {
+            students: session.roster.clone(),
+            session,
+        })
+        .collect())
+}
+
 /// New occurrences use stable placement identity, so a move cannot create a second
 /// occurrence for that date. Legacy facts match only exact group/period identities.
 /// An unmatched legacy source proves that its old placement cannot be reconstructed;
@@ -169,6 +204,14 @@ async fn seeds_with_choices_on_connection(
             })
             .collect::<Vec<_>>();
         seeds.push(arrival_seed(term, date, room, roster, c.late_after));
+    }
+    if date
+        < Utc::now()
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive()
+    {
+        seeds.extend(materialized_lesson_seeds_on_connection(connection, term, date).await?);
+        return Ok((seeds, lesson_choices));
     }
     let blocks = school_academic_timetable::services::attendance::blocks_on_connection(
         connection, term, date,
@@ -485,6 +528,17 @@ pub(crate) async fn resolve_seed_on_connection(
                 }
             }
         }
+    }
+    if p.kind == AttendanceKind::Lesson
+        && p.date
+            < Utc::now()
+                .with_timezone(&chrono_tz::Asia::Bangkok)
+                .date_naive()
+    {
+        return Err(AppError::ConflictWithCode {
+            code: "ATTENDANCE_PAST_LESSON_NOT_MATERIALIZED",
+            message: "ไม่สามารถเปิดคาบย้อนหลังที่ยังไม่เคยบันทึกได้ กรุณาเลือกคาบเช็กชื่อที่มีอยู่".into(),
+        });
     }
     if p.kind == AttendanceKind::Arrival {
         let context = settings::AttendanceReadContext::load(connection, p.academic_term_id).await?;
@@ -1106,7 +1160,7 @@ async fn require_evidence_file_on_connection(
             .ok_or_else(|| AppError::NotFound("ไม่พบรอบเช็คชื่อ".into()))?;
         match policy::require_session_on_connection(connection, actor, &s, false).await {
             Ok(()) => return Ok(()),
-            Err(AppError::Forbidden(_)) => {},
+            Err(AppError::Forbidden(_)) => {}
             Err(error) => return Err(error),
         }
         if own_student_read_on_connection(connection, actor, student).await? {

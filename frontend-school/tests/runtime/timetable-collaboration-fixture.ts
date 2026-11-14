@@ -1,9 +1,5 @@
 import type { TimetableLookupChanges, TimetableBlockWorkspace } from '../../src/lib/api/timetable.js';
-import {
-	makeDeliveryPublication,
-	makeTimetable,
-	timetableIds
-} from '../e2e/timetable-test-harness.ts';
+import { makeTimetable, timetableIds } from '../e2e/timetable-test-harness.ts';
 
 export function collaborationWorkspace(): TimetableBlockWorkspace {
 	return {
@@ -24,8 +20,7 @@ export function collaborationWorkspace(): TimetableBlockWorkspace {
 			learningOfferingId: index ? timetableIds.offeringB : timetableIds.offeringA,
 			code: `GROUP-${index}`,
 			name: `กลุ่ม ${index + 1}`,
-			status: 'published',
-			rosterStatus: 'published',
+			registrationOpen: false,
 			offeringKind: 'course',
 			subjectType: 'BASIC',
 			offeringCode: `ค${index + 1}`,
@@ -46,16 +41,13 @@ export function collaborationWorkspace(): TimetableBlockWorkspace {
 			eligibleInstructors: []
 		})),
 		synchronizedDemands: [],
-		version: makeTimetable(),
+		timetable: makeTimetable(),
 		blocks: [],
 		bellPeriods: [],
 		rooms: [],
 		staff: [],
 		offeringSubjectGroups: [],
-		latestDeliveryVersionId: timetableIds.deliveryVersion,
-		deliveryPublication: makeDeliveryPublication(),
-		latestDeliveryPublication: makeDeliveryPublication(),
-		publicationDateRules: { today: '2026-11-01', minimumEffectiveFrom: '2026-11-01' },
+		deliveryRowVersion: 1,
 		sourceIssues: [],
 		totalBlockCount: 0,
 		summary: {

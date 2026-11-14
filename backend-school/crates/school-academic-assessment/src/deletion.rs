@@ -41,7 +41,10 @@ pub async fn preview_on_connection(
             .fetch_one()
             .await?;
         if count > 200_000 {
-            return Err(AppError::Conflict("ASSESSMENT_DELETION_TOO_LARGE".into()));
+            return Err(AppError::ConflictWithCode {
+                code: "ASSESSMENT_DELETION_TOO_LARGE",
+                message: "ข้อมูลคะแนนและการประเมินที่เลือกมากเกินขอบเขตที่ตรวจสอบได้ กรุณาติดต่อผู้ดูแล".into(),
+            });
         }
         if matches!(
             table,

@@ -31,7 +31,7 @@ test('a partial patch changes only affected blocks/demands and preserves server 
 		summary: { ...workspace.summary, blockCount: 17 },
 		sourceIssues: [],
 		totalBlockCount: 17,
-		version: { ...workspace.timetable, rowVersion: 4 }
+		timetable: { ...workspace.timetable, rowVersion: 4 }
 	};
 	const next = applyTimetablePatch(workspace, patch);
 	assert.deepEqual(next.blocks, [moved]);

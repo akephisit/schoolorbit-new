@@ -1,4 +1,4 @@
-use chrono::{Days, NaiveDate};
+use chrono::Days;
 use uuid::Uuid;
 
 use super::timetable_block_service;

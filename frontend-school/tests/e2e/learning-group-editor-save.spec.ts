@@ -2,8 +2,6 @@ import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
 	DeliveryManagementOptions,
-	DeliveryVersion,
-	DeliveryVersionSummary,
 	LearningGroup,
 	LearningOffering,
 	ReplaceLearningGroupHomeroomsRequest,
@@ -38,8 +36,7 @@ function readAssignments(teachers: TeacherAssignment[], revision: number) {
 		teacherId,
 		role,
 		displayName: teacherId === ids.teacherA ? 'ครูสมใจ ทดสอบ' : 'ครูสมชาย ทดสอบ',
-		startsOn: '2026-05-01',
-		endsOn: null,
+		isActive: true,
 		rowVersion: revision + 10
 	}));
 }
@@ -72,8 +69,9 @@ async function mockEditor(
 	page: Page,
 	options: {
 		permissions?: string[];
-		publishedVersion?: boolean;
-		teachersLocked?: boolean;
+		activity?: 'self' | 'assigned';
+		closed?: boolean;
+		failDetails?: boolean;
 		firstTeacherFailure?: 'network' | 'conflict';
 		teacherSaveGate?: Promise<void>;
 	} = {}
@@ -87,10 +85,7 @@ async function mockEditor(
 		name: 'กลุ่ม ก',
 		description: 'กลุ่มทดสอบ',
 		capacity: 40,
-		status: 'draft',
-		rosterStatus: 'draft',
-		rosterPublishedAt: null,
-		teachersLocked: options.teachersLocked ?? false,
+		registrationOpen: false,
 		teacherAssignments: readAssignments([openingTeacher], 3),
 		homeroomIds: [ids.homeroomA],
 		preferredRoomIds: [],
@@ -108,11 +103,8 @@ async function mockEditor(
 		codeSnapshot: 'ค21101',
 		nameSnapshot: 'คณิตศาสตร์พื้นฐาน',
 		owningOrganizationUnitId: ids.offering,
-		status: 'published',
 		rowVersion: 1,
-		startsOn: '2026-05-01',
-		endsOn: null,
-		stopReason: null,
+		weeklyPeriodTarget: 2,
 		targets: [],
 		migrated: false,
 		createdAt: timestamp,
@@ -128,75 +120,10 @@ async function mockEditor(
 			assessmentTotalScore: '100.00'
 		}
 	};
-	const version: DeliveryVersion = {
-		id: ids.version,
-		academicTermId: ids.term,
-		academicYearId: ids.year,
-		status: options.publishedVersion ? 'published' : 'draft',
-		publicationNo: options.publishedVersion ? 1 : null,
-		isSuperseded: false,
-		publishedAt: options.publishedVersion ? timestamp : null,
-		publishedBy: null,
-		sourceVersionId: null,
-		effectiveFrom: '2026-05-01',
-		effectiveUntil: null,
-		referenceDate: '2026-05-01',
-		rowVersion: 1,
-		createdAt: timestamp,
-		updatedAt: timestamp,
-		courseMetadata: [],
-		snapshot: {
-			offerings: [
-				{
-					id: ids.offering,
-					kind: 'course',
-					code: offering.codeSnapshot,
-					name: offering.nameSnapshot,
-					owningOrganizationUnitId: ids.offering,
-					weeklyPeriodTarget: 2,
-					catalog: offering.snapshot,
-					targets: [],
-					homeroomIds: [ids.homeroomA],
-					groups: [
-						{
-							id: ids.group,
-							code: stored.code,
-							name: stored.name,
-							capacity: stored.capacity,
-							homeroomIds: stored.homeroomIds,
-							preferredRoomIds: [],
-							teachers: stored.teacherAssignments.map((teacher) => ({
-								assignmentId: teacher.id,
-								teacherId: teacher.teacherId,
-								role: teacher.role,
-								displayName: teacher.displayName
-							}))
-						}
-					]
-				}
-			]
-		}
-	};
-	const summary: DeliveryVersionSummary = {
-		publicationNo: version.publicationNo,
-		publishedAt: version.publishedAt ?? null,
-		publishedBy: version.publishedBy ?? null,
-		isSuperseded: version.isSuperseded,
-		id: version.id,
-		academicTermId: ids.term,
-		academicYearId: ids.year,
-		status: version.status,
-		sourceVersionId: null,
-		changeSetId: null,
-		effectiveFrom: version.effectiveFrom,
-		effectiveUntil: null,
-		referenceDate: version.referenceDate,
-		rowVersion: 1,
-		updatedAt: timestamp,
-		offeringCount: 1,
-		groupCount: 1,
-		teacherAssignmentCount: 1
-	};
+	if (options.activity) {
+		offering.kind = 'activity';
+		offering.snapshot = {kind:'activity',activityId:ids.offering,activityVersionId:ids.offering,registrationType:options.activity,schedulingMode:'independent',hours:'20',attendanceRequirement:{},passCriteria:{requireAttendance:true,requireTeacherConfirmation:true,outcomes:['pass','fail']}};
+	}
 	const management: DeliveryManagementOptions = {
 		academicTermId: ids.term,
 		academicYearId: ids.year,
@@ -257,7 +184,7 @@ async function mockEditor(
 							code: '1',
 							sequence: 1,
 							termType: 'regular',
-							status: 'active'
+							status: options.closed ? 'closed' : 'active'
 						}
 					]
 				});
@@ -291,6 +218,7 @@ async function mockEditor(
 			if (path === groupPath && method === 'PATCH') {
 				const body: UpdateLearningGroupRequest = route.request().postDataJSON();
 				detailRequests.push(body);
+				if (options.failDetails && detailRequests.length === 1) { stored={...stored,rowVersion:stored.rowVersion+1}; return reject(route,409,'กลุ่มนี้เปลี่ยนแล้ว กรุณาโหลดใหม่'); }
 				if (body.rowVersion !== stored.rowVersion)
 					return reject(route, 409, 'รุ่นข้อมูลกลุ่มไม่ตรงกัน');
 				stored = { ...stored, ...body, rowVersion: stored.rowVersion + 1 };
@@ -307,16 +235,14 @@ async function mockEditor(
 			if (path === `/api/academic/offerings/${ids.offering}`) return fulfill(route, offering);
 			if (path === `/api/academic/offerings/${ids.offering}/groups`)
 				return fulfill(route, [stored]);
-			if (path === '/api/academic/delivery-versions') return fulfill(route, [summary]);
-			if (path === `/api/academic/delivery-versions/${ids.version}`) return fulfill(route, version);
 			if (path === groupPath) return fulfill(route, stored);
+			if (path === `${groupPath}/memberships`) return fulfill(route, []);
 			if (path === `${groupPath}/roster-tracking`)
 				return fulfill(route, {
 					mode: 'manual',
 					effectiveFrom: null,
 					groupRowVersion: stored.rowVersion,
-					startsOn: '2026-05-01',
-					endsOn: '2027-04-30'
+
 				});
 			if (path === '/api/academic/delivery/management-options') return fulfill(route, management);
 			if (path.startsWith('/api/academic/')) return reject(route, 404, `Unexpected API: ${path}`);
@@ -330,8 +256,8 @@ async function openEditor(page: Page) {
 	await page.goto(
 		`/staff/academic/delivery/${ids.offering}?academicYearId=${ids.year}&academicTermId=${ids.term}&groupId=${ids.group}`
 	);
-	await expect(page.getByTestId('delivery-selected-group-ready')).toBeVisible();
-	await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
+	await expect(page.getByRole('heading', {name:'กลุ่ม ก',exact:true})).toBeVisible();
+	await page.getByRole('button', { name: 'แก้ไขกลุ่มและครู', exact: true }).click();
 	await expect(page.getByRole('heading', { name: /จัดการกลุ่ม ·/ })).toBeVisible();
 }
 
@@ -400,7 +326,7 @@ for (const width of [390, 1280]) {
 				rowVersion: 6
 			});
 			await page.reload();
-			await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
+			await page.getByRole('button', { name: 'แก้ไขกลุ่มและครู', exact: true }).click();
 			await expect(editor(page)).toContainText('ครูสมชาย ทดสอบ');
 			await expect(editor(page)).not.toContainText('ครูสมใจ ทดสอบ');
 			await saveTeachers(page);
@@ -428,6 +354,7 @@ test('details and homerooms save independently and preserve stored teachers', as
 			description: 'รายละเอียดใหม่',
 			capacity: 35,
 			preferredRoomIds: [],
+			registrationOpen: false,
 			rowVersion: 3
 		}
 	]);
@@ -473,63 +400,48 @@ for (const failure of ['network', 'conflict'] as const) {
 		} finally {
 			gate.release();
 		}
-		await expect(editor(page).getByRole('alert')).toBeVisible();
+		await expect(editor(page).getByRole('alert')).toHaveCount(2);
+		await expect(editor(page).getByRole('alert').filter({hasText:'ข้อมูลที่คุณแก้ไขยังอยู่ โหลดข้อมูลกลุ่มล่าสุดก่อนลองบันทึกอีกครั้ง'})).toBeVisible();
 		if (failure === 'conflict')
-			await expect(editor(page).getByRole('alert')).toHaveText(
+			await expect(editor(page).getByRole('alert').filter({hasText:'กลุ่มนี้เปลี่ยนแล้ว กรุณาโหลดใหม่'})).toHaveText(
 				'กลุ่มนี้เปลี่ยนแล้ว กรุณาโหลดใหม่ กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
 			);
 		await expect(editor(page)).toContainText('ครูสมชาย ทดสอบ');
 		expect(fixture.stored().teacherAssignments).toEqual(readAssignments([openingTeacher], 3));
 		expect(fixture.stored().rowVersion).toBe(failure === 'conflict' ? 4 : 3);
 		expect(fixture.teacherRequests).toHaveLength(1);
-		await saveTeachers(page, failure === 'conflict' ? 409 : 200);
-		const expected: ReplaceLearningGroupTeachersRequest = {
-			teachers: [openingTeacher, { teacherId: ids.teacherB, role: 'assistant' }],
-			rowVersion: 3
-		};
-		expect(fixture.teacherRequests).toEqual([expected, expected]);
-		if (failure === 'conflict') {
-			await expect(editor(page).getByRole('alert')).toHaveText(
-				'รุ่นข้อมูลกลุ่มไม่ตรงกัน กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
-			);
-			await expect(editor(page)).toContainText('ครูสมชาย ทดสอบ');
-			expect(fixture.stored().rowVersion).toBe(4);
-			expect(fixture.stored().teacherAssignments).toEqual(readAssignments([openingTeacher], 3));
-		} else {
-			await expect(editor(page).getByRole('alert')).toHaveCount(0);
-			expect(fixture.stored().rowVersion).toBe(4);
-			expect(fixture.stored().teacherAssignments).toEqual(readAssignments(expected.teachers, 4));
-		}
+		await page.getByRole('button',{name:'ใช้ข้อมูลกลุ่มล่าสุด',exact:true}).click();
+		await expect(editor(page).getByRole('alert')).toHaveCount(0);
+		await addTeacher(page,'ครูสมชาย ทดสอบ','ผู้ช่วยสอน');
+		await saveTeachers(page);
+		const revision=failure==='conflict'?4:3;
+		expect(fixture.teacherRequests).toEqual([
+			{teachers:[openingTeacher,{teacherId:ids.teacherB,role:'assistant'}],rowVersion:3},
+			{teachers:[openingTeacher,{teacherId:ids.teacherB,role:'assistant'}],rowVersion:revision}
+		]);
+		expect(fixture.stored().rowVersion).toBe(revision+1);
+
 	});
 }
 
-for (const mode of ['reader', 'published', 'locked'] as const) {
-	test(`${mode} cannot write teacher assignments`, async ({ page }) => {
-		const fixture = await mockEditor(page, {
-			permissions: mode === 'reader' ? ['learning_offering.read.school'] : ['*'],
-			publishedVersion: mode === 'published',
-			teachersLocked: mode === 'locked'
-		});
-		await page.goto(
-			`/staff/academic/delivery/${ids.offering}?academicYearId=${ids.year}&academicTermId=${ids.term}&groupId=${ids.group}`
-		);
-		if (mode === 'published') {
-			await expect(page.getByTestId('delivery-version-offering')).toBeVisible();
-			await expect(page.getByTestId('delivery-version-selector')).toContainText('เผยแพร่แล้ว');
-		} else {
-			await expect(page.getByTestId('delivery-selected-group-ready')).toBeVisible();
-			await expect(page.getByTestId('delivery-versions-ready')).toBeVisible();
-		}
-		if (mode === 'locked') {
-			await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
-			await expect(editor(page)).toContainText(
-				'เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้'
-			);
-			await expect(page.getByRole('combobox', { name: 'เลือกครูผู้สอน' })).toHaveCount(0);
-		} else {
-			await expect(page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true })).toHaveCount(0);
-		}
-		await expect(page.getByRole('button', { name: 'บันทึกครูผู้สอน', exact: true })).toHaveCount(0);
-		expect(fixture.teacherRequests).toEqual([]);
-	});
+for (const mode of ['reader','closed'] as const) {
+ test(`${mode} cannot change current teachers`,async({page})=>{
+  const fixture=await mockEditor(page,{permissions:mode==='reader'?['learning_offering.read.school']:['*'],closed:mode==='closed'});
+  await page.goto(`/staff/academic/delivery/${ids.offering}?academicYearId=${ids.year}&academicTermId=${ids.term}&groupId=${ids.group}`);
+  await expect(page.getByRole('heading', {name:'กลุ่ม ก',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'จัดการกลุ่ม',exact:true})).toHaveCount(0);
+  expect(fixture.teacherRequests).toEqual([]);
+ });
 }
+for(const registrationType of ['self','assigned'] as const) test(`${registrationType} activity registration uses the real current group field`,async({page})=>{
+ const fixture=await mockEditor(page,{activity:registrationType,failDetails:registrationType==='self'});
+ await openEditor(page);const checkbox=page.getByRole('checkbox',{name:'เปิดรับสมัครนักเรียน',exact:true});
+ if(registrationType==='assigned'){await expect(checkbox).toHaveCount(0);return;}
+ await checkbox.check();await page.getByRole('button',{name:'บันทึกข้อมูลกลุ่ม',exact:true}).click();
+ await expect(page.getByRole('button',{name:'ใช้ข้อมูลกลุ่มล่าสุด',exact:true})).toBeVisible();
+ await expect(checkbox).toBeChecked();expect(fixture.detailRequests[0].registrationOpen).toBe(true);
+ await page.getByRole('button',{name:'ใช้ข้อมูลกลุ่มล่าสุด',exact:true}).click();await expect(checkbox).not.toBeChecked();
+ await checkbox.check();await page.getByRole('button',{name:'บันทึกข้อมูลกลุ่ม',exact:true}).click();
+ await expect.poll(()=>fixture.stored().registrationOpen).toBe(true);
+ expect(fixture.detailRequests[1]).toMatchObject({registrationOpen:true,rowVersion:4});
+});

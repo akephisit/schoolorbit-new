@@ -238,7 +238,7 @@ test('lifecycle nested read failure reports once, retains editing and inserts no
 test('superseded streamed failure cannot toast or overwrite the newly selected version', async ({
 	page
 }) => {
-	await installTimetableMock(page, { requestedWorkspaceVersion: true });
+	await installTimetableMock(page, {  });
 	await page.goto(url());
 	await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
 	let release!: () => void;

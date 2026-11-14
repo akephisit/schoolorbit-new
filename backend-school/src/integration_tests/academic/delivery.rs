@@ -8,8 +8,8 @@ pub(crate) mod services;
 
 #[cfg(test)]
 mod services_tests;
-#[cfg(test)]
-pub(crate) use services_tests::fill_change_set_target_deficits;
 
 #[cfg(test)]
-pub(crate) use services_tests::draft_removal_tests::academic_router as authenticated_academic_router;
+mod http_fixture;
+#[cfg(test)]
+pub(crate) use http_fixture::academic_router as authenticated_academic_router;

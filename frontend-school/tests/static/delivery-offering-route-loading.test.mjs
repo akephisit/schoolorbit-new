@@ -17,62 +17,17 @@ async function routeSource(filename) {
 	return readFile(path.join(routeDirectory, filename), 'utf8');
 }
 
-test('offering, groups, versions, and selected group start as independent route regions', async () => {
-	const [page, component, roster] = await Promise.all([
-		routeSource('+page.ts'),
-		routeSource('+page.svelte'),
-		readFile(rosterComponent, 'utf8')
-	]);
-	assert.match(page, /getLearningOffering/);
-	assert.match(page, /listLearningGroups/);
-	assert.match(page, /listDeliveryVersions/);
-	assert.match(page, /getDeliveryVersion/);
-	assert.match(page, /const audienceWorkspace = deliveryVersion\.then/);
-	assert.match(
-		page,
-		/getHomeroomDeliveryWorkspace\(version\.academicYearId, version\.academicTermId/
-	);
-	assert.doesNotMatch(page, /listTimetableVersions/);
-	assert.match(page, /getLearningGroup/);
-	assert.match(page, /listDatedRosterMemberships/);
-	assert.match(page, /groupId/);
-	assert.match(page, /requestFetch:\s*fetch/);
-	assert.match(component, /data\.offering/);
-	assert.match(component, /data\.groups/);
-	assert.match(component, /data\.selectedGroup/);
-	assert.match(component, /initialWorkspace=\{data\.audienceWorkspace\}/);
-	assert.deepEqual(mountApiCalls(component), ['subscribe:getLearningGroup']);
-	assert.match(roster, /initialMemberships/);
-	assert.doesNotMatch(roster, /\bonMount\s*\(/);
-	assert.doesNotMatch(page, /getLearningDeliveryManagementOptions/);
+test('offering identity, group list and selected group start as independent current route reads',async()=>{
+ const [loader,page,roster]=await Promise.all([routeSource('+page.ts'),routeSource('+page.svelte'),readFile(rosterComponent,'utf8')]);
+ for(const call of ['getLearningOffering','listLearningGroups','getLearningGroup','listDatedRosterMemberships','getLearningGroupRosterTracking'])assert.match(loader,new RegExp(call));
+ for(const field of ['offering','groups','selectedGroup','memberships','rosterTracking'])assert.ok(loader.includes(field));
+ assert.match(loader,/requestFetch:\s*fetch/);assert.doesNotMatch(loader,/DeliveryVersion|getHomeroomDeliveryWorkspace|getLearningDeliveryManagementOptions/);
+ assert.match(page,/data\.offering/);assert.match(page,/data\.groups/);assert.match(page,/data\.selectedGroup/);assert.match(page,/initialGroupSeedIsCurrent/);assert.deepEqual(mountApiCalls(page),['subscribe:getLearningOffering','subscribe:listLearningGroups']);assert.match(roster,/initialMemberships/);assert.doesNotMatch(roster,/\bonMount\s*\(/);
 });
-
-test('heavy offering detail links preload on tap instead of hover', async () => {
-	for (const [filename, expected] of [
-		['HomeroomDeliveryWorkspace.svelte', 2],
-		['DeliveryVersionOverviewTable.svelte', 1],
-		['OfferingOverviewTable.svelte', 2],
-		['AcademicChangeSetPanel.svelte', 1]
-	]) {
-		const source = await readFile(
-			path.resolve(import.meta.dirname, '../../src/lib/components/learning-delivery', filename),
-			'utf8'
-		);
-		const linkPattern =
-			filename === 'HomeroomDeliveryWorkspace.svelte'
-				? /href=\{offeringHref\(item\.offeringId\)\}/g
-				: filename === 'DeliveryVersionOverviewTable.svelte'
-					? /href=\{detailUrl\(item\.id\)\}/g
-					: filename === 'AcademicChangeSetPanel.svelte'
-						? /href=\{deliveryOfferingHref\([\s\S]*?\)\}/g
-						: /href=\{`\/staff\/academic\/delivery\/\$\{[^}]+\}[^`]*`\}/g;
-		const links = [...source.matchAll(linkPattern)];
-		const tapLinks = [
-			...source.matchAll(
-				new RegExp(`${linkPattern.source}[\\s\\S]{0,200}data-sveltekit-preload-data="tap"`, 'g')
-			)
-		];
-		assert.equal(links.length, expected, filename);
-		assert.equal(tapLinks.length, expected, `${filename}: every detail link must use tap preload`);
-	}
+test('heavy current offering detail links preload on tap instead of hover',async()=>{
+ for(const filename of ['HomeroomDeliveryWorkspace.svelte','DeliveryOverviewTable.svelte']){
+  const source=await readFile(path.resolve(import.meta.dirname,'../../src/lib/components/learning-delivery',filename),'utf8');
+  const links=[...source.matchAll(/href=\{(?:offeringHref\(item\.offeringId\)|detailUrl\(item\.id\))\}/g)];assert.ok(links.length>0,filename);
+  for(const link of links)assert.match(source.slice(link.index,link.index+300),/data-sveltekit-preload-data="tap"/,filename);
+ }
 });

@@ -410,7 +410,7 @@ test('headless migration failure reports safe aggregate diagnostics without priv
 	assert.doesNotMatch(rollout, /\{\{json \.Config\}\}/);
 });
 
-test('Release 2 deployment remains in maintenance until the Gradebook/results cutover passes', async () => {
+test('School deployment remains in maintenance until exact current157 and retained owner cutovers pass', async () => {
 	const deployment = await readRepo('.github/workflows/deploy-school-release.yml');
 	const compatibility = await readRepo('scripts/test_postgres_compatibility.sh');
 	const migrationHandler = await readRepo('backend-school/src/system/handlers/migration.rs');
@@ -439,12 +439,17 @@ test('Release 2 deployment remains in maintenance until the Gradebook/results cu
 	assert.match(verification, /\.gradebookResultsCutover\.status == "cutoverCompleted"/);
 	assert.match(verification, /\.gradebookResultsCutover\.passed == true/);
 	assert.match(verification, /all\(\.gradebookResultsCutover\.checks\[\]; \.passed == true\)/);
-	assert.match(migrationHandler, /deliveryTimetableCutover/);
-	assert.match(verification, /\.deliveryTimetableCutover\.migrationVersion == 88/);
-	assert.match(verification, /\.deliveryTimetableCutover\.status == "cutoverCompleted"/);
-	assert.match(verification, /\.deliveryTimetableCutover\.passed == true/);
-	assert.match(verification, /\(\.deliveryTimetableCutover\.checks \| length\) == 30/);
-	assert.match(verification, /all\(\.deliveryTimetableCutover\.checks\[\]; \.passed == true\)/);
+ assert.match(migrationHandler,/currentOperationsCutover/);
+ assert.match(verification,/\.currentOperationsCutover\.migrationVersion == 157/);
+ assert.match(verification,/\.currentOperationsCutover\.status == "cutoverCompleted"/);
+ assert.match(verification,/\.currentOperationsCutover\.passed == true/);
+ assert.match(verification,/\.currentOperationsCutover\.checks \| type == "array" and length == 8/);
+ assert.match(verification,/all\(\.currentOperationsCutover\.checks\[\]; \.passed == true and \.mismatchCount == 0\)/);
+ assert.deepEqual([...verification.matchAll(/"(CURRENT_[A-Z_]+)"/g)].map(match=>match[1]),[
+  'CURRENT_CATALOG_PINS_PRESERVED','CURRENT_DELIVERY_GRAPH_RECONCILED','CURRENT_FACTS_PRESERVED','CURRENT_LEGACY_SCHEMA_REMOVED','CURRENT_SCOPE_GUARDS_ENABLED','CURRENT_SUPERVISION_PRESERVED','CURRENT_TEACHERS_RECONCILED','CURRENT_TIMETABLE_IDS_RECONCILED'
+ ]);
+ assert.doesNotMatch(verification,/deliveryTimetableCutover|assessmentCurrentCutover|migrationVersion == (?:88|151)/);
+
 	assert.match(verification, /maintenance remains enabled/);
 
 	for (const endpoint of [

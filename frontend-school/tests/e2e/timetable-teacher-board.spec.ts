@@ -9,7 +9,7 @@ function teacherUrl(teacherId: string, timetableId: string = timetableIds.timeta
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableId=${versionId}&view=teacher&ownerId=${teacherId}`
+		`&timetableId=${timetableId}&view=teacher&ownerId=${teacherId}`
 	);
 }
 
@@ -89,7 +89,7 @@ test('preselects the board teacher before creating an exact-instructor period', 
 
 test('keeps published teacher boards read-only', async ({ page }) => {
 	await installTimetableMock(page, {
-		status: 'published',
+		permissions: ['academic_timetable.read.school'],
 		blocks: [
 			makeTimetableBlock(timetableIds.blockA, timetableIds.period1, {
 				timetableId: timetableIds.timetable,

@@ -103,8 +103,8 @@ for (const status of ['draft', 'published'] as const) {
 			[timetableIds.teacherA]
 		);
 		await installTimetableMock(page, {
-			status,
-			requestedWorkspaceVersion: true,
+			permissions: status === 'published' ? ['academic_timetable.read.school'] : ['*'],
+
 			blocks: [course, sync, special],
 			staff: [
 				{
@@ -167,7 +167,6 @@ for (const status of ['draft', 'published'] as const) {
 
 test('keeps the requested report version while its lazy module loads', async ({ page }) => {
 	await installTimetableMock(page, {
-		requestedWorkspaceVersion: true,
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	await page.goto(url());
@@ -194,9 +193,7 @@ test('keeps the requested report version while its lazy module loads', async ({ 
 	release();
 	const workbook = new ExcelJS.Workbook();
 	await workbook.xlsx.readFile((await (await downloadPromise).path())!);
-	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B3').value).toBe(
-		timetableIds.timetable
-	);
+	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B3').value).toBe(timetableIds.timetable);
 	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B4').value).toBe('แบบร่าง');
 });
 

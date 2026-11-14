@@ -196,16 +196,6 @@ test('academic exam schedule API client maps functions to backend routes and met
 				'/api/academic/exam-schedules/${encodeURIComponent(roundId)}/invigilator-staff-options'
 		},
 		{
-			functionName: 'previewExamSources',
-			method: 'get',
-			routeFragment: '/source-preview'
-		},
-		{
-			functionName: 'syncExamSources',
-			method: 'post',
-			routeFragment: '/source-sync'
-		},
-		{
 			functionName: 'upsertExamDay',
 			method: 'post',
 			routeFragment: '/${encodeURIComponent(roundId)}/days'
@@ -251,11 +241,6 @@ test('academic exam schedule API client maps functions to backend routes and met
 			routeFragment: '/sessions/${encodeURIComponent(sessionId)}'
 		},
 		{
-			functionName: 'publishExamRound',
-			method: 'post',
-			routeFragment: '/${encodeURIComponent(roundId)}/publish'
-		},
-		{
 			functionName: 'listMyExamSchedules',
 			method: 'get',
 			routeFragment: '/api/me/exam-schedules'
@@ -299,8 +284,8 @@ test('academic exam schedule API client maps functions to backend routes and met
 test('exam round list deletes only authorized rounds through destructive confirmation', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/exam-schedules/+page.svelte');
 
-	assert.match(page, /PERMISSIONS\.ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL/);
-	assert.match(page, /round\.status === 'draft' \|\| canPublishExamSchedules/);
+	assert.match(page, /PERMISSIONS\.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL/);
+	assert.doesNotMatch(page,/round\.status|canPublishExamSchedules/);
 	assert.match(page, /await deleteExamRound\(target\.id\)/);
 	assert.match(page, /rounds = rounds\.filter\(\(round\) => round\.id !== target\.id\)/);
 	assert.match(page, /<AlertDialog\.Title>ลบรอบสอบ/);
@@ -320,40 +305,10 @@ test('exam schedule API exposes staff-level invigilator drag actions', () => {
 	assert.match(api, /apiClient\.delete<ExamInvigilatorWorkspace>/);
 });
 
-test('exam rounds expose exam kind and refresh the source diff when it changes', () => {
-	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
-	const listPage = readFileSync(
-		projectPath('src/routes/(app)/staff/academic/exam-schedules/+page.svelte'),
-		'utf8'
-	);
-	const roundDialog = readFileSync(
-		projectPath('src/lib/components/academic/exam-schedule/ExamRoundDialog.svelte'),
-		'utf8'
-	);
-	const detailPage = readFileSync(
-		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
-		'utf8'
-	);
-	const sourcePanel = readFileSync(
-		projectPath('src/lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte'),
-		'utf8'
-	);
-
-	assert.match(api, /export type ExamRoundKind = 'midterm' \| 'final'/);
-	assert.match(api, /examKind: ExamRoundKind/);
-	assert.match(api, /examKind: ExamRoundKind/);
-	assert.match(roundDialog, /let examKind = \$state<ExamRoundKind>\('midterm'\)/);
-	assert.match(roundDialog, /<Select\.Item value="midterm">กลางภาค<\/Select\.Item>/);
-	assert.match(roundDialog, /<Select\.Item value="final">ปลายภาค<\/Select\.Item>/);
-	assert.match(roundDialog, /examKind/);
-	assert.match(listPage, /function examRoundKindLabel\(kind: ExamRoundKind\): string/);
-	assert.match(listPage, /examRoundKindLabel\(round\.examKind\)/);
-	assert.match(detailPage, /examRoundKindLabel\(workspace\.round\.examKind\)/);
-	assert.match(detailPage, /await refreshWorkspace\(true\)/);
-	assert.match(detailPage, /<ExamSourceSyncPanel/);
-	assert.match(sourcePanel, /preview\.newCount/);
-	assert.match(sourcePanel, /preview\.durationChangedCount/);
-	assert.match(sourcePanel, /preview\.noLongerEligibleCount/);
+test('current exam kind saves its accepted round revision and refreshes live eligibility',()=>{
+ const api=readFileSync(projectPath('src/lib/api/examSchedule.ts'),'utf8'),page=readFileSync(projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),'utf8'),dialog=readFileSync(projectPath('src/lib/components/academic/exam-schedule/ExamRoundDialog.svelte'),'utf8');
+ assert.match(api,/Schemas\['CreateExamRoundRequest'\]\['examKind'\]/);assert.match(dialog,/<Select\.Item value="midterm">กลางภาค<\/Select\.Item>/);assert.match(dialog,/<Select\.Item value="final">ปลายภาค<\/Select\.Item>/);
+ const save=localFunctionSource(page,'saveExamKind');assert.match(save,/updateExamRound/);assert.match(save,/rowVersion: workspace\.round\.rowVersion/);assert.match(save,/refreshWorkspace\(true\)/);assert.doesNotMatch(api+page,/previewExamSources|syncExamSources|publishExamRound/);
 });
 
 test('exam schedule shows only real source changes and uses permission-safe lookup options', async () => {
@@ -378,34 +333,11 @@ test('exam schedule shows only real source changes and uses permission-safe look
 	assert.doesNotMatch(listPage + detailPage, /getLearningDeliveryManagementOptions/);
 });
 
-test('staff workspace previews source changes and only removes explicitly selected snapshots', () => {
-	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8');
-	const detailPage = readFileSync(
-		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
-		'utf8'
-	);
-	const sourcePanel = readFileSync(
-		projectPath('src/lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte'),
-		'utf8'
-	);
-	const recommendedSourceIds = localFunctionSource(detailPage, 'recommendedSourceIds');
-	const handleSyncSources = localFunctionSource(detailPage, 'handleSyncSources');
-	const resetWorkspaceForRound = localFunctionSource(detailPage, 'resetWorkspaceForRound');
-
-	assert.match(api, /export type ExamSourcePreview = Schemas\['ExamSourcePreview'\]/);
-	assert.match(api, /export async function previewExamSources/);
-	assert.match(api, /export async function syncExamSources/);
-	assert.match(api, /\/source-preview/);
-	assert.match(api, /\/source-sync/);
-	assert.match(detailPage, /let selectedSourceIds = \$state<string\[\]>\(\[\]\)/);
-	assert.match(resetWorkspaceForRound, /selectedSourceIds = \[\]/);
-	assert.match(recommendedSourceIds, /change\.changeKind !== 'no_longer_eligible'/);
-	assert.match(handleSyncSources, /sourceIds: selectedSourceIds/);
-	assert.match(handleSyncSources, /roundRowVersion: workspace\.sourcePreview\.roundRowVersion/);
-	assert.match(detailPage, /onToggle=\{toggleSourceSelection\}/);
-	assert.match(sourcePanel, /เลือกเมื่อต้องการนำ snapshot นี้ออกจากรอบสอบ/);
-	assert.match(sourcePanel, /disabled=\{readonly \|\| syncing\}/);
-	assert.doesNotMatch(api + detailPage, /clearMismatchedExamItems|importExamItems/);
+test('exam current workspace exposes live sources without any source-sync writer or publication fallback',async()=>{
+ const contract=JSON.parse(await readFile(path.resolve(projectRoot,'../contracts/openapi/school-api.json'),'utf8'));const workspace=contract.components.schemas.ExamScheduleWorkspace,round=contract.components.schemas.ExamRound;
+ assert.ok(workspace.required.includes('unscheduledItems'));assert.ok(workspace.required.includes('scheduledSessions'));assert.equal(workspace.properties.sourcePreview,undefined);assert.ok(round.required.includes('rowVersion'));for(const field of ['status','publishedAt','publishedBy'])assert.equal(round.properties[field],undefined);
+ assert.ok(contract.components.schemas.ExamScheduleReadiness.required.includes('complete'));assert.ok(contract.components.schemas.ExamScheduleReadinessCode.enum.includes('invalid_current_sources'));
+ for(const route of Object.keys(contract.paths))if(route.startsWith('/api/academic/exam-schedules'))assert.doesNotMatch(route,/source-preview|source-sync|publish/);
 });
 
 test('exam schedule workspace tabs inherit app content height instead of recalculating viewport height', () => {
@@ -652,7 +584,6 @@ test('staff workspace refreshes or invalidates invigilator workspace after sourc
 	assert.match(refreshOrInvalidateInvigilators, /invigilatorWorkspace = null/);
 
 	for (const handlerName of [
-		'handleSyncSources',
 		'handleSaveDay',
 		'handleDeleteDay',
 		'handleSaveAssignment'
@@ -889,7 +820,7 @@ test('invigilator staff filtering is local to the drag board', () => {
 	assert.doesNotMatch(panel, /staffSearchRequestToken|onSearchStaff|bind:open={editorOpen}/);
 });
 
-test('staff workspace wires setup, source sync, room assignment, and publish actions', () => {
+test('staff workspace wires direct current setup, placement, room assignment and management actions', () => {
 	const page = readFileSync(
 		projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
 		'utf8'
@@ -899,17 +830,13 @@ test('staff workspace wires setup, source sync, room assignment, and publish act
 		'ExamDaySetupPanel',
 		'ExamRoomAssignmentPanel',
 		'ExamScheduleTimeline',
-		'ExamSourceSyncPanel',
 		'CompactExamScheduleStatus',
 		'getExamScheduleWorkspace',
 		'placeExamSession',
 		'upsertExamDay',
 		'deleteExamDay',
 		'upsertDayRoomAssignment',
-		'syncExamSources',
-		'publishExamRound',
 		'ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL',
-		'ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL'
 	];
 
 	for (const expected of expectedWorkspaceWiring) {
@@ -967,7 +894,7 @@ test('compact exam schedule status derives invigilator counts from room assignme
 	assert.match(statusComponent, /invigilatorAssignmentCount \?\? invigilatorAssignmentFallback/);
 	assert.doesNotMatch(statusComponent, /<section/);
 	assert.match(statusComponent, /<Sheet\.Root>/);
-	assert.match(statusComponent, /ยังไม่พร้อม \{readiness\.findings\.length\}/);
+	assert.match(statusComponent, /มีรายการที่ควรตรวจ \{readiness\.findings\.length\}/);
 });
 
 test('staff timeline wires drag drop placement and accessible schedule dialog', () => {
@@ -1285,7 +1212,7 @@ test('scheduled exam sessions can be removed through dialog and tray drop', () =
 	assert.doesNotMatch(handleUnscheduleExamSession, /refreshWorkspace\(true\)/);
 	assert.match(handleUnscheduleExamSession, /applyRemovedExamSession\(session\)/);
 	assert.match(handleUnscheduleExamSession, /!canManageExamSchedules/);
-	assert.match(handleUnscheduleExamSession, /workspace\.round\.status === 'published'/);
+	assert.doesNotMatch(handleUnscheduleExamSession,/workspace\.round\.status/);
 });
 
 test('staff workspace reloads by route round id and keeps form input on failed saves', () => {
@@ -1609,7 +1536,7 @@ test('staff exam route composes the four-tab dashboard without exposing private 
 	assert.match(dashboard, /activeTab = 'schedule'/);
 	assert.match(dashboard, /selectedDayId = examDayId/);
 	assert.match(dashboard, /aria-label=/);
-	assert.match(dashboard, /ยังไม่มีตารางสอบที่เผยแพร่/);
+	assert.match(dashboard, /ยังไม่มีตารางสอบ/);
 	assert.match(myView, /ยังไม่มีงานคุมสอบของฉัน/);
 
 	for (const forbidden of ['nationalId', 'national_id', 'username', 'phone', 'email']) {
@@ -1620,7 +1547,7 @@ test('staff exam route composes the four-tab dashboard without exposing private 
 	}
 });
 
-test('personal exam schedule view groups published sessions and hides staff supervision data', () => {
+test('personal exam schedule view groups current sessions and hides staff supervision data', () => {
 	const personalViewPath =
 		'src/lib/components/academic/exam-schedule/PersonalExamScheduleView.svelte';
 	const personalView = readFileSync(projectPath(personalViewPath), 'utf8');
@@ -1650,7 +1577,7 @@ test('personal exam schedule view groups published sessions and hides staff supe
 		'session.roomName',
 		'session.seatNumber',
 		'showSeatNumber',
-		'ไม่มีตารางสอบที่เผยแพร่'
+		'ยังไม่มีตารางสอบ'
 	]) {
 		assert.match(
 			personalView,
@@ -1732,7 +1659,6 @@ test('exam scheduling uses generated term and homeroom contracts end to end', ()
 		'upsertExamDay',
 		'upsertExamDayRoomAssignment',
 		'placeExamSession',
-		'publishExamRound'
 	]) {
 		assert.match(handlers, new RegExp(`operation_id = "${operationId}"`));
 	}

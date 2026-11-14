@@ -63,7 +63,7 @@ function block(
 	} as unknown as TimetableBlock;
 }
 
-function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorkspace {
+function workspace(): TimetableBlockWorkspace {
 	const blocks = [
 		block(
 			'block-1',
@@ -77,22 +77,11 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorks
 		block('block-2', 'group-2', 'TUE', 'period-1', ['teacher-2'], ['homeroom-2'], 'room-2'),
 		block('block-3', 'group-2', 'WED', 'period-2', ['teacher-1', 'teacher-2'], ['homeroom-2'])
 	];
-	const deliveryPublication: TimetableBlockWorkspace['deliveryPublication'] = {
-		id: 'delivery-1',
-		publicationNo: 1,
-		effectiveFrom: '2026-05-01',
-		effectiveUntil: null,
-		publishedAt: '2026-05-01T00:00:00Z',
-		isSuperseded: false
-	};
 	return {
-		deliveryPublication,
-		latestDeliveryPublication: deliveryPublication,
-		publicationDateRules: { today: '2026-11-01', minimumEffectiveFrom: '2026-11-01' },
-		latestDeliveryVersionId: 'delivery-1',
+		deliveryRowVersion: 1,
 		sourceIssues: [],
-		totalDraftBlockCount: null,
-		version: { id: 'version-1', status } as TimetableBlockWorkspace['version'],
+		totalBlockCount: blocks.length,
+		timetable: {id: 'timetable-1', academicTermId: 'term-1', academicYearId: 'year-1', bellScheduleId: 'schedule-1', rowVersion: 1, createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z'},
 		bellPeriods: [
 			{ id: 'period-1', orderIndex: 1 },
 			{ id: 'period-2', orderIndex: 2 }
@@ -103,8 +92,7 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorks
 				learningOfferingId: 'offering-1',
 				code: 'ค21101-รวม',
 				name: 'คณิตศาสตร์ ม.1 เรียนร่วม',
-				status: 'published',
-				rosterStatus: 'published',
+				registrationOpen: false,
 				offeringCode: 'ค21101',
 				offeringKind: 'course',
 				subjectType: 'BASIC',
@@ -118,8 +106,7 @@ function workspace(status: 'draft' | 'published' = 'draft'): TimetableBlockWorks
 				learningOfferingId: 'offering-2',
 				code: 'อ21101-ม.1/2',
 				name: 'ภาษาอังกฤษ ม.1/2',
-				status: 'published',
-				rosterStatus: 'published',
+				registrationOpen: false,
 				offeringCode: 'อ21101',
 				offeringKind: 'course',
 				subjectType: 'BASIC',
@@ -207,12 +194,12 @@ test('local swap removes source and target reservations and uses persisted sourc
 	assert.deepEqual(preview.conflicts, []);
 });
 
-test('demand accounting follows canonical block membership and published versions are read-only', () => {
+test('demand accounting follows current block membership without changing the current timetable identity', () => {
 	const state = createTimetableBoardState(workspace());
 	assert.equal(remainingDemandForGroup(state, 'group-1'), 2);
 	const removed = replaceTimetableBlocks(state, []);
 	assert.equal(remainingDemandForGroup(removed, 'group-1'), 3);
-	assert.equal(createTimetableBoardState(workspace('published')).canEdit, false);
+	assert.equal(removed.workspace.timetable.id, state.workspace.timetable.id);
 });
 
 test('keeps confirmed group instructors separate from provisional teacher targets', () => {

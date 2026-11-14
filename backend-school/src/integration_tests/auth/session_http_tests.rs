@@ -1,11 +1,11 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    body::{to_bytes, Body},
-    http::{header, HeaderMap, HeaderValue, Request, StatusCode},
+    Extension, Router,
+    body::{Body, to_bytes},
+    http::{HeaderMap, HeaderValue, Request, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
-    Extension, Router,
 };
 use chrono::{Duration, Utc};
 use school_authorization::PermissionCache;
@@ -16,7 +16,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use school_auth_http::origin::{
-    parse_realtime_tenant_hint, TenantOriginPolicy, SCHOOL_SUBDOMAIN_HEADER,
+    SCHOOL_SUBDOMAIN_HEADER, TenantOriginPolicy, parse_realtime_tenant_hint,
 };
 use school_test_db::{create_named_test_pool, run_test_migrations};
 
@@ -24,7 +24,7 @@ use school_auth::{
     config::SessionConfig,
     models::{CurrentUserResponse, LoginRequest, SessionState},
     runtime::AuthRuntime,
-    session_crypto::{identifier_bucket, session_csrf_token, RawSessionToken, SessionHmacKey},
+    session_crypto::{RawSessionToken, SessionHmacKey, identifier_bucket, session_csrf_token},
     session_policy::normalize_login_identifier,
     session_service::AuthenticatedSession,
 };
@@ -335,9 +335,11 @@ fn session_cookie_parser_rejects_duplicate_identity_and_ignores_legacy_identity(
         header::COOKIE,
         HeaderValue::from_static("broken; also-broken=; auth_token=legacy.jwt"),
     )]);
-    assert!(presented_session_token(&malformed)
-        .expect("malformed unrelated pairs must not panic")
-        .is_none());
+    assert!(
+        presented_session_token(&malformed)
+            .expect("malformed unrelated pairs must not panic")
+            .is_none()
+    );
 
     let malformed_identity = HeaderMap::from_iter([(
         header::COOKIE,
@@ -347,9 +349,11 @@ fn session_cookie_parser_rejects_duplicate_identity_and_ignores_legacy_identity(
         ))
         .expect("malformed cookie fixture must be representable"),
     )]);
-    assert!(presented_session_token(&malformed_identity)
-        .expect("one malformed identity cookie must be treated as absent")
-        .is_none());
+    assert!(
+        presented_session_token(&malformed_identity)
+            .expect("one malformed identity cookie must be treated as absent")
+            .is_none()
+    );
 
     let mut mixed = valid.clone();
     mixed.append(
@@ -605,14 +609,16 @@ async fn logout_expires_credentials_only_after_revocation_can_commit() {
     );
     assert_eq!(success.status(), StatusCode::OK);
     assert_eq!(set_cookie_count(&success), 2);
-    assert!(success
-        .headers()
-        .get_all(header::SET_COOKIE)
-        .iter()
-        .all(|value| value
-            .to_str()
-            .expect("expiry must be ASCII")
-            .contains("Max-Age=0")));
+    assert!(
+        success
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .all(|value| value
+                .to_str()
+                .expect("expiry must be ASCII")
+                .contains("Max-Age=0"))
+    );
 
     let unavailable_session_id = Uuid::new_v4();
     let unavailable_token = fixture
@@ -879,19 +885,19 @@ pub(crate) mod protected_router {
     use std::{
         collections::HashMap,
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         },
     };
 
     use axum::{
-        body::{to_bytes, Body, Bytes},
-        extract::{rejection::JsonRejection, DefaultBodyLimit, Extension, FromRef, Path, State},
-        http::{header, HeaderValue, Method, Request, StatusCode},
+        Json, Router,
+        body::{Body, Bytes, to_bytes},
+        extract::{DefaultBodyLimit, Extension, FromRef, Path, State, rejection::JsonRejection},
+        http::{HeaderValue, Method, Request, StatusCode, header},
         middleware::from_fn_with_state,
         response::{IntoResponse, Response},
         routing::{delete, get, patch, post, put},
-        Json, Router,
     };
     use chrono::{Duration, Utc};
     use school_authorization::PermissionCache;
@@ -906,7 +912,7 @@ pub(crate) mod protected_router {
     use school_auth::{
         config::SessionConfig,
         runtime::AuthRuntime,
-        session_crypto::{session_csrf_token, RawSessionToken, SessionHmacKey},
+        session_crypto::{RawSessionToken, SessionHmacKey, session_csrf_token},
         session_service::AuthenticatedSession,
     };
     use school_auth_http::http::routes::AUTH_JSON_BODY_LIMIT;
@@ -1075,7 +1081,7 @@ pub(crate) mod protected_router {
                 .expose_for_header()
         }
 
-        fn application_state(&self) -> crate::AppState {
+        pub(crate) fn application_state(&self) -> crate::AppState {
             crate::AppState {
                 admin_client: self.runtime.admin_client.clone(),
                 pool_manager: self.runtime.pool_manager.clone(),
@@ -1165,7 +1171,7 @@ pub(crate) mod protected_router {
             .route_layer(from_fn_with_state(runtime, session_middleware))
     }
 
-    fn request(
+    pub(crate) fn request(
         method: Method,
         uri: &str,
         origin: Option<&str>,
@@ -1641,10 +1647,7 @@ pub(crate) mod protected_router {
             },
             services::catalog,
         };
-        use school_academic_delivery::{
-            models::CreateAcademicTermChangeSetRequest,
-            services::{change_sets, groups, versions},
-        };
+        use school_academic_delivery::services::{current, groups};
         use school_academic_delivery_http::state::AcademicDeliveryHttpState;
 
         let fixture = ProtectedFixture::new("bulk_group_setup_http_success").await;
@@ -1715,37 +1718,34 @@ pub(crate) mod protected_router {
                 .bind(year).fetch_one(&mut *tx).await.unwrap();
             let term: Uuid = sqlx::query_scalar("INSERT INTO academic_terms(school_days, academic_year_id,sequence_no,code,name,term_type,bell_schedule_id,status,included_in_year_result,blocks_year_closure) VALUES( 'MON,TUE,WED,THU,FRI',$1,1,'BULK_HTTP','Bulk HTTP','regular',$2,'planning',true,true) RETURNING id")
                 .bind(year).bind(bell).fetch_one(&mut *tx).await.unwrap();
-            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on) SELECT $1,$2,$3,'course','BULK-HTTP-SUCCESS','Bulk HTTP success','draft',owning_organization_unit_id,$5 FROM subjects WHERE id=$4")
-                .bind(offering_id).bind(term).bind(year).bind(source.id).bind(today).execute(&mut *tx).await.unwrap();
+            sqlx::query("INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,code_snapshot,name_snapshot,owning_organization_unit_id,weekly_period_target) SELECT $1,$2,$3,'course','BULK-HTTP-SUCCESS','Bulk HTTP success',owning_organization_unit_id,1 FROM subjects WHERE id=$4")
+                .bind(offering_id).bind(term).bind(year).bind(source.id).execute(&mut *tx).await.unwrap();
             sqlx::query("INSERT INTO course_offering_details(learning_offering_id,academic_term_id,academic_year_id,subject_version_id,subject_id,credit,hours) VALUES($1,$2,$3,$4,$5,1,40)")
                 .bind(offering_id).bind(term).bind(year).bind(source_version.id).bind(source.id).execute(&mut *tx).await.unwrap();
             for (index, id) in group_ids.iter().enumerate() {
-                sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,status,roster_status) VALUES($1,$2,$3,$4,$5,$6,'draft','draft')")
+                sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name,registration_open) VALUES($1,$2,$3,$4,$5,$6,false)")
                     .bind(id).bind(offering_id).bind(term).bind(year).bind(format!("HTTP-{index}")).bind(format!("HTTP group {index}")).execute(&mut *tx).await.unwrap();
             }
             tx.commit().await.unwrap();
             term
         };
-        let opening = change_sets::create_change_set(
-            &fixture.tenant_a_pool,
-            user_id,
-            CreateAcademicTermChangeSetRequest {
-                academic_term_id: term_id,
-                reason: "Prepare bulk HTTP draft".into(),
-                idempotency_key: Uuid::now_v7(),
-            },
-        )
-        .await
-        .unwrap();
-        let version =
-            versions::get_version(&fixture.tenant_a_pool, opening.target_delivery_version_id)
+        let year_id: Uuid =
+            sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
+                .bind(term_id)
+                .fetch_one(&fixture.tenant_a_pool)
                 .await
                 .unwrap();
-        assert!(version
-            .snapshot
-            .offerings
-            .iter()
-            .any(|offering| offering.id == offering_id && offering.groups.len() == 3));
+        let mut conn = fixture.tenant_a_pool.acquire().await.unwrap();
+        let version = current::workspace_on_connection(&mut conn, year_id, term_id)
+            .await
+            .unwrap();
+        drop(conn);
+        assert!(
+            version
+                .offerings
+                .iter()
+                .any(|o| o.id == offering_id && o.groups.len() == 3)
+        );
         let unselected_before = serde_json::to_value(
             groups::get(&fixture.tenant_a_pool, group_ids[2])
                 .await
@@ -1759,7 +1759,11 @@ pub(crate) mod protected_router {
             websocket_manager: websocket_manager.clone(),
 
             assessment_current: &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
-            delivery_deletion: Arc::new(crate::adapters::delivery_deletion::ApplicationDeliveryDeletion{collaboration:websocket_manager.collaboration()}),
+            delivery_deletion: Arc::new(
+                crate::adapters::delivery_deletion::ApplicationDeliveryDeletion {
+                    collaboration: websocket_manager.collaboration(),
+                },
+            ),
         };
         let app = Router::new()
             .nest(
@@ -1773,7 +1777,7 @@ pub(crate) mod protected_router {
         let base = format!("/api/academic/offerings/{offering_id}/groups/bulk-setup");
         let csrf = fixture.csrf(session_id);
         let payload = serde_json::json!({
-            "deliveryVersionId":version.id,"deliveryVersionRowVersion":version.row_version,
+            "deliveryRowVersion":version.row_version,
             "groups":[{"learningGroupId":group_ids[0],"rowVersion":1},{"learningGroupId":group_ids[1],"rowVersion":1}],
             "primaryTeacher":{"teacherId":user_id,"replaceExistingPrimary":false},"rosterTracking":null,
         });
@@ -1792,11 +1796,11 @@ pub(crate) mod protected_router {
             *req.body_mut() = Body::from(payload.to_string());
             req
         };
-        async fn facts(pool: &sqlx::PgPool, offering_id: Uuid, version_id: Uuid) -> String {
-            sqlx::query_scalar("SELECT jsonb_build_object('groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM learning_groups g WHERE learning_offering_id=$1),'teachers',(SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM learning_group_teachers t JOIN learning_groups g ON g.id=t.learning_group_id WHERE g.learning_offering_id=$1),'version',(SELECT to_jsonb(v) FROM academic_delivery_versions v WHERE id=$2))::text")
-                .bind(offering_id).bind(version_id).fetch_one(pool).await.unwrap()
+        async fn facts(pool: &sqlx::PgPool, offering_id: Uuid, term_id: Uuid) -> String {
+            sqlx::query_scalar("SELECT jsonb_build_object('groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM learning_groups g WHERE learning_offering_id=$1),'teachers',(SELECT jsonb_agg(to_jsonb(t) ORDER BY t.id) FROM learning_group_teachers t JOIN learning_groups g ON g.id=t.learning_group_id WHERE g.learning_offering_id=$1),'version',(SELECT to_jsonb(v) FROM academic_delivery_state v WHERE academic_term_id=$2))::text")
+                .bind(offering_id).bind(term_id).fetch_one(pool).await.unwrap()
         }
-        let before = facts(&fixture.tenant_a_pool, offering_id, version.id).await;
+        let before = facts(&fixture.tenant_a_pool, offering_id, term_id).await;
         let preview = app
             .clone()
             .oneshot(make_request(Method::POST, &format!("{base}/preview")))
@@ -1814,7 +1818,7 @@ pub(crate) mod protected_router {
         assert_eq!(preview["data"]["blockedCount"], 0);
         assert_eq!(preview["data"]["targets"].as_array().unwrap().len(), 2);
         assert_eq!(
-            facts(&fixture.tenant_a_pool, offering_id, version.id).await,
+            facts(&fixture.tenant_a_pool, offering_id, term_id).await,
             before,
             "canonical POST preview is read-only"
         );
@@ -1829,7 +1833,7 @@ pub(crate) mod protected_router {
             "the mutation base path accepts PUT, not POST preview"
         );
         assert_eq!(
-            facts(&fixture.tenant_a_pool, offering_id, version.id).await,
+            facts(&fixture.tenant_a_pool, offering_id, term_id).await,
             before
         );
         let applied = app
@@ -1871,17 +1875,14 @@ pub(crate) mod protected_router {
                 .unwrap(),
             unselected_before
         );
-        let fresh_version = versions::get_version(&completion.pool, version.id)
+        let mut conn = completion.pool.acquire().await.unwrap();
+        let fresh_version = current::workspace_on_connection(&mut conn, year_id, term_id)
             .await
             .unwrap();
         assert!(fresh_version.row_version > version.row_version);
         assert_eq!(
-            applied["data"]["deliveryVersionRowVersion"],
+            applied["data"]["deliveryRowVersion"],
             fresh_version.row_version
-        );
-        assert_eq!(
-            fresh_version.status,
-            school_academic_delivery::models::versions::DeliveryVersionStatus::Draft
         );
     }
 

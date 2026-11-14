@@ -201,7 +201,7 @@ test('only accepted draft or validated legacy state sync acknowledges the runtim
 				...snapshot.payload,
 				workspace: {
 					...workspace,
-					version: { ...workspace.timetable, id: timetableIds.timetable }
+					timetable: { ...workspace.timetable, id: 'a1000000-0000-4000-8000-000000000999' }
 				}
 			}
 		})

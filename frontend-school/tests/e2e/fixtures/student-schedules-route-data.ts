@@ -128,7 +128,6 @@ export async function mockStudentSchedules(
 					roundId: id(414),
 					roundName: `รอบ${label}`,
 					academicTermId: selected,
-					publishedAt: '2026-10-01T00:00:00Z',
 					sessions: [
 						{
 							examDate: '2026-10-01',

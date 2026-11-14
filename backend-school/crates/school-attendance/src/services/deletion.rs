@@ -20,6 +20,12 @@ pub struct AttendanceDeletionStudent {
     pub date: NaiveDate,
     pub student_id: Uuid,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AttendanceDeletionSessionStudent {
+    pub session_id: Uuid,
+    pub date: NaiveDate,
+    pub student_id: Uuid,
+}
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct DeletionRosterStudent {
@@ -32,6 +38,7 @@ struct DeletionRosterStudent {
 pub struct AttendanceDeletionSources {
     pub generation: Uuid,
     pub affected_students: Vec<AttendanceDeletionStudent>,
+    pub session_students: Vec<AttendanceDeletionSessionStudent>,
     pub archived_student_ids: Vec<Uuid>,
     pub archived_summary_rows: i64,
     pub session_ids: Vec<Uuid>,
@@ -62,9 +69,10 @@ async fn require_bounded_scope_on_connection(
       FROM selected
     "#).bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).fetch_one().await?;
     if oversized {
-        return Err(AppError::Conflict(
-            "ATTENDANCE_DELETION_SOURCE_TOO_LARGE_OR_UNMAPPABLE".into(),
-        ));
+        return Err(AppError::ConflictWithCode {
+            code: "ATTENDANCE_DELETION_SOURCE_TOO_LARGE_OR_UNMAPPABLE",
+            message: "ข้อมูลเช็กชื่อที่เกี่ยวข้องมีมากเกินขอบเขตที่ตรวจสอบเพื่อลบได้ กรุณาติดต่อผู้ดูแล".into(),
+        });
     }
     Ok(())
 }
@@ -74,9 +82,9 @@ pub async fn deletion_sources_on_connection(
     scope: &DeliveryDeletionScope,
 ) -> Result<AttendanceDeletionSources, AppError> {
     require_bounded_scope_on_connection(connection, scope).await?;
-    let rows: Vec<(Uuid,NaiveDate,Json<Vec<DeletionRosterStudent>>)> = DbSession::new(connection).query_as("attendance.deletion.sources", "SELECT id,date,roster FROM attendance_sessions WHERE academic_term_id=$1 AND kind='lesson' AND offering_id=$2 AND ($4 OR learning_group_id=ANY($3)) ORDER BY date,id LIMIT 200001").bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).fetch_all().await.map_err(|error| match error { sqlx::Error::ColumnDecode {..} => AppError::Conflict("ATTENDANCE_DELETION_ROSTER_UNMAPPABLE".into()), error => AppError::DbError(error) })?;
-    let mut affected_students = std::collections::BTreeSet::new();
-    for (_, date, roster) in &rows {
+    let rows: Vec<(Uuid,NaiveDate,Json<Vec<DeletionRosterStudent>>)> = DbSession::new(connection).query_as("attendance.deletion.sources", "SELECT id,date,roster FROM attendance_sessions WHERE academic_term_id=$1 AND kind='lesson' AND offering_id=$2 AND ($4 OR learning_group_id=ANY($3)) ORDER BY date,id LIMIT 200001").bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).fetch_all().await.map_err(|error| match error { sqlx::Error::ColumnDecode {..} => AppError::ConflictWithCode {code: "ATTENDANCE_DELETION_ROSTER_UNMAPPABLE", message: "ข้อมูลรายชื่อเช็กชื่อที่เกี่ยวข้องไม่สมบูรณ์ จึงยังลบรายการนี้ไม่ได้".into()}, error => AppError::DbError(error) })?;
+    let mut session_students = std::collections::BTreeSet::new();
+    for (session_id, date, roster) in &rows {
         let mut seen = std::collections::HashSet::new();
         for student in &roster.0 {
             if student.student_id.is_nil()
@@ -84,33 +92,52 @@ pub async fn deletion_sources_on_connection(
                 || !seen.insert(student.student_id)
                 || student.class_number.is_some_and(|number| number < 0)
             {
-                return Err(AppError::Conflict(
-                    "ATTENDANCE_DELETION_ROSTER_UNMAPPABLE".into(),
-                ));
+                return Err(AppError::ConflictWithCode {
+                    code: "ATTENDANCE_DELETION_ROSTER_UNMAPPABLE",
+                    message: "ข้อมูลรายชื่อเช็กชื่อที่เกี่ยวข้องไม่สมบูรณ์ จึงยังลบรายการนี้ไม่ได้".into(),
+                });
             }
-            affected_students.insert(AttendanceDeletionStudent {
+            session_students.insert(AttendanceDeletionSessionStudent {
+                session_id: *session_id,
                 date: *date,
                 student_id: student.student_id,
             });
         }
     }
     let session_ids = rows.iter().map(|row| row.0).collect::<Vec<_>>();
-    let records:Vec<(NaiveDate,Uuid)>=DbSession::new(connection).query_as("attendance.deletion.record_students", "SELECT DISTINCT session.date,record.student_id FROM attendance_records record JOIN attendance_sessions session ON session.id=record.session_id WHERE session.id=ANY($1) ORDER BY session.date,record.student_id LIMIT 200001").bind(&session_ids).fetch_all().await?;
+    let records:Vec<(Uuid,NaiveDate,Uuid)>=DbSession::new(connection).query_as("attendance.deletion.record_students", "SELECT DISTINCT session.id,session.date,record.student_id FROM attendance_records record JOIN attendance_sessions session ON session.id=record.session_id WHERE session.id=ANY($1) ORDER BY session.id,session.date,record.student_id LIMIT 200001").bind(&session_ids).fetch_all().await?;
     if records.len() > 200000 {
-        return Err(AppError::Conflict(
-            "ATTENDANCE_DELETION_SOURCE_TOO_LARGE_OR_UNMAPPABLE".into(),
-        ));
+        return Err(AppError::ConflictWithCode {
+            code: "ATTENDANCE_DELETION_SOURCE_TOO_LARGE_OR_UNMAPPABLE",
+            message: "ข้อมูลเช็กชื่อที่เกี่ยวข้องมีมากเกินขอบเขตที่ตรวจสอบเพื่อลบได้ กรุณาติดต่อผู้ดูแล".into(),
+        });
     }
-    affected_students.extend(
-        records
-            .into_iter()
-            .map(|(date, student_id)| AttendanceDeletionStudent { date, student_id }),
-    );
+    session_students.extend(records.into_iter().map(|(session_id, date, student_id)| {
+        AttendanceDeletionSessionStudent {
+            session_id,
+            date,
+            student_id,
+        }
+    }));
+    if session_students.len() > 200_000 {
+        return Err(AppError::ConflictWithCode {
+            code: "ATTENDANCE_DELETION_SOURCE_TOO_LARGE_OR_UNMAPPABLE",
+            message: "ข้อมูลเช็กชื่อที่เกี่ยวข้องมีมากเกินขอบเขตที่ตรวจสอบเพื่อลบได้ กรุณาติดต่อผู้ดูแล".into(),
+        });
+    }
+    let affected_students = session_students
+        .iter()
+        .map(|source| AttendanceDeletionStudent {
+            date: source.date,
+            student_id: source.student_id,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
     let archived:Vec<Uuid>=DbSession::new(connection).scalar("attendance.deletion.archived_students", "SELECT student_id FROM attendance_term_summaries WHERE academic_term_id=$1 AND category='lesson' AND scope_key=$2 UNION SELECT student_id FROM attendance_term_teacher_summaries WHERE academic_term_id=$1 AND category='lesson' AND scope_key=$2 ORDER BY student_id LIMIT 200001").bind(scope.academic_term_id).bind(scope.learning_offering_id.to_string()).fetch_all().await?;
     if archived.len() > 200000 {
-        return Err(AppError::Conflict(
-            "ATTENDANCE_DELETION_SOURCE_TOO_LARGE_OR_UNMAPPABLE".into(),
-        ));
+        return Err(AppError::ConflictWithCode {
+            code: "ATTENDANCE_DELETION_SOURCE_TOO_LARGE_OR_UNMAPPABLE",
+            message: "ข้อมูลเช็กชื่อที่เกี่ยวข้องมีมากเกินขอบเขตที่ตรวจสอบเพื่อลบได้ กรุณาติดต่อผู้ดูแล".into(),
+        });
     }
     let archived_summary_rows:i64=DbSession::new(connection).scalar("attendance.deletion.archived_summary_count", "SELECT (SELECT count(*) FROM attendance_term_summaries WHERE academic_term_id=$1 AND category='lesson' AND scope_key=$2)+(SELECT count(*) FROM attendance_term_teacher_summaries WHERE academic_term_id=$1 AND category='lesson' AND scope_key=$2)").bind(scope.academic_term_id).bind(scope.learning_offering_id.to_string()).fetch_one().await?;
     let generation = super::sessions::module_generation_on_connection(connection).await?;
@@ -121,6 +148,7 @@ pub async fn deletion_sources_on_connection(
     Ok(AttendanceDeletionSources {
         generation,
         affected_students: affected_students.into_iter().collect(),
+        session_students: session_students.into_iter().collect(),
         archived_student_ids: archived,
         archived_summary_rows,
         session_ids,
@@ -190,9 +218,10 @@ fn lesson_notice_matches(
 }
 fn require_mappable_summaries(whole_offering: bool, summaries: i64) -> Result<(), AppError> {
     if !whole_offering && summaries > 0 {
-        return Err(AppError::Conflict(
-            "ATTENDANCE_GROUP_ARCHIVE_SCOPE_UNMAPPABLE".into(),
-        ));
+        return Err(AppError::ConflictWithCode {
+            code: "ATTENDANCE_GROUP_ARCHIVE_SCOPE_UNMAPPABLE",
+            message: "สรุปเช็กชื่อที่เก็บไว้ยังแยกขอบเขตของกลุ่มนี้ไม่ได้ จึงยังลบกลุ่มนี้ไม่ได้".into(),
+        });
     }
     Ok(())
 }
@@ -222,9 +251,10 @@ pub async fn delete_in_transaction(
         .iter()
         .map(|notice| {
             if !lesson_notice_matches(notice, &selected) {
-                return Err(AppError::Conflict(
-                    "ATTENDANCE_NOTIFICATION_SOURCE_UNMAPPABLE".into(),
-                ));
+                return Err(AppError::ConflictWithCode {
+                    code: "ATTENDANCE_NOTIFICATION_SOURCE_UNMAPPABLE",
+                    message: "ข้อมูลแจ้งเตือนเช็กชื่อที่เกี่ยวข้องไม่ครบถ้วน จึงยังลบรายการนี้ไม่ได้".into(),
+                });
             }
             Ok(
                 school_notifications::dispatch::PendingCancellationIdentity {

@@ -388,7 +388,7 @@ export function createDraftRelay() {
 			summary: workspace.summary,
 			sourceIssues: workspace.sourceIssues,
 			totalBlockCount: workspace.totalBlockCount,
-			version: workspace.timetable,
+			timetable: workspace.timetable,
 			lookupChanges: previous ? lookupChanges(previous, workspace) : undefined
 		};
 		const event: TimetableEventEnvelope = { type: 'TimetablePatched', payload: patch, epoch, seq: ++seq };
@@ -461,7 +461,7 @@ export type DraftRelay = ReturnType<typeof createDraftRelay>;
 export async function installRoutedDraftSocket(
 	page: Page,
 	relay: DraftRelay,
-	workspace: (versionId?: string) => TimetableBlockWorkspace,
+	workspace: (timetableId?: string) => TimetableBlockWorkspace,
 	identity: { userId: string; name: string }
 ) {
 	const rooms = new Map<string, DraftRelay>([[workspace().timetable.id, relay]]);
@@ -470,8 +470,8 @@ export async function installRoutedDraftSocket(
 			socket.send(JSON.stringify({ type: 'StateSync', payload: { users: [], current_seq: 0 } }));
 			return;
 		}
-		const versionId = new URL(socket.url()).searchParams.get('timetableId') ?? undefined;
-		const selectedWorkspace = workspace(versionId);
+		const timetableId = new URL(socket.url()).searchParams.get('timetableId') ?? undefined;
+		const selectedWorkspace = workspace(timetableId);
 		let scopedRelay = rooms.get(selectedWorkspace.timetable.id);
 		if (!scopedRelay) {
 			scopedRelay = createDraftRelay();

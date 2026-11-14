@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
 	import {
 		previewOfferingDeletion,
 		previewGroupDeletion,
@@ -35,21 +36,34 @@
 		saving = $state(false),
 		error = $state(''),
 		preview = $state.raw<DeliveryDeletionPreview | null>(null);
+	let previewEpoch = $state<number | null>(null),
+		dialogEpoch = $state<number | null>(null),
+		dialogContext = $state('');
 	const request = new LatestRequest();
 	let disposed = false,
 		session = 0;
 	const context = $derived(`${academicYearId}:${academicTermId}:${offeringId}:${groupId ?? ''}`);
-	function current(owner: string, token: number) {
-		return !disposed && open && canManage && context === owner && session === token;
+	function current(owner: string, token: number, epoch: number) {
+		return (
+			!disposed &&
+			open &&
+			canManage &&
+			context === owner &&
+			session === token &&
+			authStore.sessionEpoch === epoch &&
+			dialogEpoch === epoch
+		);
 	}
 	async function load() {
 		if (!canManage) return;
 		const owner = context,
 			token = session,
+			epoch = authStore.sessionEpoch,
 			ticket = request.begin();
 		loading = true;
 		error = '';
 		preview = null;
+		previewEpoch = null;
 		try {
 			const result = await (groupId
 				? previewGroupDeletion(
@@ -62,17 +76,26 @@
 						{ academicYearId, academicTermId },
 						{ signal: ticket.signal }
 					));
-			if (current(owner, token) && request.isCurrent(ticket.revision)) preview = result;
+			if (current(owner, token, epoch) && request.isCurrent(ticket.revision)) {
+				preview = result;
+				previewEpoch = epoch;
+			}
 		} catch (failure) {
-			if (current(owner, token) && request.isCurrent(ticket.revision) && !isAbortError(failure))
+			if (
+				current(owner, token, epoch) &&
+				request.isCurrent(ticket.revision) &&
+				!isAbortError(failure)
+			)
 				error = failure instanceof Error ? failure.message : 'ตรวจผลกระทบไม่สำเร็จ';
 		} finally {
-			if (current(owner, token) && request.isCurrent(ticket.revision)) loading = false;
+			if (current(owner, token, epoch) && request.isCurrent(ticket.revision)) loading = false;
 		}
 	}
 	function show() {
 		if (!canManage || saving) return;
 		session++;
+		dialogEpoch = authStore.sessionEpoch;
+		dialogContext = context;
 		open = true;
 		void load();
 	}
@@ -83,13 +106,25 @@
 			session++;
 			request.abort();
 			loading = false;
+			preview = null;
+			previewEpoch = null;
+			dialogEpoch = null;
 		}
 	}
 	async function remove() {
-		if (!preview || saving || loading || !canManage) return;
+		if (
+			!preview ||
+			saving ||
+			loading ||
+			!canManage ||
+			previewEpoch !== authStore.sessionEpoch ||
+			dialogEpoch !== authStore.sessionEpoch
+		)
+			return;
 		const accepted = preview,
 			owner = context,
-			token = session;
+			token = session,
+			epoch = authStore.sessionEpoch;
 		const callback = onDeleted;
 		saving = true;
 		error = '';
@@ -103,32 +138,37 @@
 			const result = await (groupId
 				? deleteLearningGroup(groupId, body)
 				: deleteLearningOffering(offeringId, body));
-			if (!current(owner, token)) return;
+			if (!current(owner, token, epoch)) return;
 			await callback(result);
-			if (current(owner, token)) {
-				open = false;
-				session++;
-			}
+			if (current(owner, token, epoch)) invalidateDialog();
 		} catch (failure) {
-			if (current(owner, token)) {
+			if (current(owner, token, epoch)) {
 				error = failure instanceof Error ? failure.message : 'ลบไม่สำเร็จ';
 				preview = null;
+				previewEpoch = null;
 			}
 		} finally {
-			if (!disposed && context === owner && session === token) saving = false;
-			else if (!disposed && !open) saving = false;
+			if (current(owner, token, epoch)) saving = false;
 		}
 	}
+	function invalidateDialog() {
+		request.abort();
+		session++;
+		open = false;
+		preview = null;
+		previewEpoch = null;
+		dialogEpoch = null;
+		loading = false;
+		saving = false;
+		error = '';
+	}
 	$effect(() => {
-		void context;
-		if (!open) return;
-		return () => {
-			request.abort();
-			session++;
-			preview = null;
-			loading = false;
-		};
+		void $authStore;
+		const epoch = authStore.sessionEpoch;
+		if (dialogEpoch !== null && (dialogEpoch !== epoch || dialogContext !== context || !canManage))
+			invalidateDialog();
 	});
+
 	onDestroy(() => {
 		disposed = true;
 		request.abort();

@@ -81,21 +81,18 @@ function rounds(): StaffExamScheduleRound[] {
 			roundId: 'round-main',
 			roundName: 'กลางภาค · รอบหลัก',
 			academicTermId: term,
-			publishedAt: '2026-10-01T00:00:00Z',
 			days: [day('past', '2026-10-19'), day('next', '2026-10-21'), day('upper', '2026-10-22', true)]
 		},
 		{
 			roundId: 'round-other',
 			roundName: 'รอบไม่มีงานคุมของฉัน',
 			academicTermId: term,
-			publishedAt: '2026-10-01T00:00:00Z',
 			days: [{ ...day('other', '2026-10-23'), roomAssignments: [] }]
 		},
 		{
 			roundId: 'round-empty',
 			roundName: 'รอบที่ยังไม่มีรายการ',
 			academicTermId: term,
-			publishedAt: '2026-10-01T00:00:00Z',
 			days: []
 		}
 	];

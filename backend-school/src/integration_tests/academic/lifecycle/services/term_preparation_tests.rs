@@ -17,11 +17,6 @@ use school_permissions::registry::codes;
 
 fn preparation_mappings() -> TermPreparationMappings {
     TermPreparationMappings {
-        offering_starts_on: Some(
-            chrono::Utc::now()
-                .with_timezone(&chrono_tz::Asia::Bangkok)
-                .date_naive(),
-        ),
         entities: vec![],
         dates: vec![],
     }
@@ -29,33 +24,36 @@ fn preparation_mappings() -> TermPreparationMappings {
 
 #[test]
 fn preparation_input_requires_unique_modules_and_bounded_unambiguous_mappings() {
-    assert!(normalize_input(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        &[TermPreparationModule::Delivery],
-        &preparation_mappings(),
-    )
-    .is_ok());
+    assert!(
+        normalize_input(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            &[TermPreparationModule::Delivery],
+            &preparation_mappings(),
+        )
+        .is_ok()
+    );
 
     assert!(
         normalize_input(Uuid::new_v4(), Uuid::new_v4(), &[], &preparation_mappings(),).is_err()
     );
-    assert!(normalize_input(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        &[
-            TermPreparationModule::Delivery,
-            TermPreparationModule::Delivery,
-        ],
-        &preparation_mappings(),
-    )
-    .is_err());
+    assert!(
+        normalize_input(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            &[
+                TermPreparationModule::Delivery,
+                TermPreparationModule::Delivery,
+            ],
+            &preparation_mappings(),
+        )
+        .is_err()
+    );
 
     let source = Uuid::new_v4();
     let target_a = Uuid::new_v4();
     let target_b = Uuid::new_v4();
     let mappings = TermPreparationMappings {
-        offering_starts_on: preparation_mappings().offering_starts_on,
         entities: vec![
             TermPreparationEntityMapping {
                 kind: TermPreparationMappingKind::Teacher,
@@ -70,13 +68,15 @@ fn preparation_input_requires_unique_modules_and_bounded_unambiguous_mappings() 
         ],
         dates: Vec::new(),
     };
-    assert!(normalize_input(
-        Uuid::new_v4(),
-        Uuid::new_v4(),
-        &[TermPreparationModule::Timetable],
-        &mappings,
-    )
-    .is_err());
+    assert!(
+        normalize_input(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            &[TermPreparationModule::Timetable],
+            &mappings,
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -84,7 +84,6 @@ fn preparation_normalization_is_deterministic() {
     let first = Uuid::from_u128(1);
     let second = Uuid::from_u128(2);
     let mappings = TermPreparationMappings {
-        offering_starts_on: preparation_mappings().offering_starts_on,
         entities: vec![
             TermPreparationEntityMapping {
                 kind: TermPreparationMappingKind::Room,
@@ -270,195 +269,77 @@ async fn preparation_requires_a_future_term_in_an_open_target_year() {
 }
 
 #[tokio::test]
-async fn delivery_preparation_preview_is_read_only_and_apply_creates_only_target_drafts() {
+async fn delivery_preparation_preview_is_read_only_and_apply_saves_only_current_target_configuration()
+ {
     let (pool, actor, source_term_id, target_term_id) =
-        delivery_preparation_fixture("term_preparation_delivery").await;
-    let source_before: (i64, i64) = sqlx::query_as(
-        r#"SELECT
-               (SELECT count(*) FROM learning_offerings WHERE academic_term_id=$1),
-               (SELECT count(*) FROM learning_group_students student
-                JOIN learning_groups learning_group ON learning_group.id=student.learning_group_id
-                WHERE learning_group.academic_term_id=$1)"#,
-    )
-    .bind(source_term_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let offering_date =
-        preparation_mappings().offering_starts_on.unwrap() + chrono::Duration::days(7);
-    let request = PreviewTermPreparationInput {
+        delivery_preparation_fixture("term_preparation_current_delivery").await;
+    let facts = |term| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_,serde_json::Value>("SELECT jsonb_build_object('offerings',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM learning_offerings o WHERE academic_term_id=$1),'memberships',(SELECT jsonb_agg(to_jsonb(m) ORDER BY m.id) FROM learning_group_students m JOIN learning_groups g ON g.id=m.learning_group_id WHERE g.academic_term_id=$1))").bind(term).fetch_one(&pool).await.unwrap()
+        }
+    };
+    let source_before = facts(source_term_id).await;
+    let target_before = facts(target_term_id).await;
+    let input = PreviewTermPreparationInput {
         source_term_id,
         target_term_id,
         modules: vec![TermPreparationModule::Delivery],
-        mappings: TermPreparationMappings {
-            offering_starts_on: Some(offering_date),
-            ..preparation_mappings()
-        },
+        mappings: preparation_mappings(),
     };
-    let workspace = preview(&pool, &actor, request.clone()).await.unwrap();
+    let workspace = preview(&pool, &actor, input.clone()).await.unwrap();
     assert!(workspace.can_apply, "{:?}", workspace.findings);
-    assert!(workspace.modules[0].draft_count > 0);
-    let preview_writes: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM learning_offerings WHERE academic_term_id=$1")
-            .bind(target_term_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(preview_writes, 0);
-
-    let apply_request = ApplyTermPreparationInput {
+    assert!(workspace.modules[0].proposed_count > 0);
+    assert_eq!(target_before, facts(target_term_id).await);
+    let request = ApplyTermPreparationInput {
         request_id: Uuid::new_v4(),
         source_checksum: workspace.source_checksum,
         source_term_id,
         target_term_id,
-        modules: request.modules.clone(),
-        mappings: request.mappings.clone(),
+        modules: input.modules,
+        mappings: input.mappings,
     };
-    let outcome = apply(&pool, &actor, apply_request.clone()).await.unwrap();
-    let mut changed_date = apply_request;
-    changed_date.mappings.offering_starts_on = Some(offering_date + chrono::Duration::days(1));
-    assert!(matches!(
-        apply(&pool, &actor, changed_date).await,
-        Err(school_errors::AppError::Conflict(_))
-    ));
-    let first_intent: Option<chrono::NaiveDate> = sqlx::query_scalar(
-        "SELECT offering_starts_on FROM academic_term_preparation_runs WHERE id=$1",
-    )
-    .bind(outcome.run_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(first_intent, Some(offering_date));
-    assert_eq!(outcome.modules.len(), 1);
+    let outcome = apply(&pool, &actor, request.clone()).await.unwrap();
     assert!(outcome.modules[0].created_count > 0);
-    let target_state: (i64, i64, i64) = sqlx::query_as(
-        r#"SELECT
-               (SELECT count(*) FROM learning_offerings WHERE academic_term_id=$1 AND status='draft'),
-               (SELECT count(*) FROM learning_groups WHERE academic_term_id=$1 AND status='draft'),
-               (SELECT count(*) FROM learning_group_students student
-                JOIN learning_groups learning_group ON learning_group.id=student.learning_group_id
-                WHERE learning_group.academic_term_id=$1)"#,
-    )
-    .bind(target_term_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(target_state.0 > 0 && target_state.1 > 0);
-    assert_eq!(target_state.2, 0);
-    let revision: Uuid =
-        sqlx::query_scalar("SELECT id FROM academic_term_change_sets WHERE id=ANY($1)")
-            .bind(&outcome.modules[0].target_ids)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let applied_ids: Vec<Uuid> =
-        sqlx::query_scalar("SELECT id FROM learning_offerings WHERE id=ANY($1) ORDER BY id")
-            .bind(&outcome.modules[0].target_ids)
-            .fetch_all(&pool)
-            .await
-            .unwrap();
-    let frozen_ids: Vec<Uuid> = sqlx::query_scalar(
-        "SELECT initial_offering_ids FROM academic_term_change_sets WHERE id=$1",
-    )
-    .bind(revision)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(frozen_ids,applied_ids,"exact applied future resources become initial intent even though the constructor defaults to today");
-    let earlier = school_academic_delivery::services::change_sets::preview_change_set_at(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
+    let current = facts(target_term_id).await;
+    assert!(current["offerings"].as_array().unwrap().len() > 0);
+    assert!(current["memberships"].is_null());
+    let replay = apply(&pool, &actor, request).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(replay).unwrap(),
+        serde_json::to_value(&outcome).unwrap()
+    );
+    assert_eq!(current, facts(target_term_id).await);
+    assert_eq!(source_before, facts(source_term_id).await);
+    let retained = preview(
         &pool,
-        revision,
-        Some(offering_date.pred_opt().unwrap()),
+        &actor,
+        PreviewTermPreparationInput {
+            source_term_id,
+            target_term_id,
+            modules: vec![TermPreparationModule::Delivery],
+            mappings: preparation_mappings(),
+        },
     )
     .await
     .unwrap();
-    assert!(!earlier.findings.iter().any(|finding| finding.code
-        == school_academic_delivery::models::AcademicChangeFindingCode::ChangeSetNoItems));
-    let selected:Vec<Uuid>=sqlx::query_scalar("SELECT ARRAY(SELECT (o->>'id')::uuid FROM jsonb_array_elements(academic_delivery_revision_snapshot($1,$2)->'offerings') o ORDER BY (o->>'id')::uuid)")
-        .bind(revision).bind(offering_date.pred_opt().unwrap()).fetch_one(&pool).await.unwrap();
-    assert_eq!(
-        selected, applied_ids,
-        "earlier planning keeps every explicit future output"
-    );
-    let retained_workspace = preview(&pool, &actor, request.clone()).await.unwrap();
-    assert!(
-        retained_workspace.can_apply,
-        "{:?}",
-        retained_workspace.findings
-    );
-    let retained_request = ApplyTermPreparationInput {
-        request_id: Uuid::new_v4(),
-        source_checksum: retained_workspace.source_checksum,
-        source_term_id,
-        target_term_id,
-        modules: request.modules,
-        mappings: request.mappings,
-    };
-    let retained = apply(&pool, &actor, retained_request.clone())
-        .await
-        .unwrap();
-    assert_eq!(
-        retained.modules[0].created_count, 1,
-        "retained offerings still create a distinct Delivery revision"
-    );
-    assert_ne!(retained.run_id, outcome.run_id);
-    let retained_intent: Option<chrono::NaiveDate> = sqlx::query_scalar(
-        "SELECT offering_starts_on FROM academic_term_preparation_runs WHERE id=$1",
+    assert!(retained.can_apply, "{:?}", retained.findings);
+    let retained = apply(
+        &pool,
+        &actor,
+        ApplyTermPreparationInput {
+            request_id: Uuid::new_v4(),
+            source_checksum: retained.source_checksum,
+            source_term_id,
+            target_term_id,
+            modules: vec![TermPreparationModule::Delivery],
+            mappings: preparation_mappings(),
+        },
     )
-    .bind(retained.run_id)
-    .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(
-        retained_intent, None,
-        "the date binds only a newly created offering effect"
-    );
-    let facts_sql = r#"SELECT jsonb_build_object(
-        'offerings',(SELECT jsonb_agg(to_jsonb(offering) ORDER BY offering.id) FROM learning_offerings offering WHERE academic_term_id=$1),
-        'revisions',(SELECT jsonb_agg(to_jsonb(revision) ORDER BY revision.id) FROM academic_term_change_sets revision WHERE academic_term_id=$1),
-        'versions',(SELECT jsonb_agg(to_jsonb(version) ORDER BY version.id) FROM academic_delivery_versions version WHERE academic_term_id=$1),
-        'audits',(SELECT jsonb_agg(to_jsonb(audit) ORDER BY audit.id) FROM academic_audit_events audit WHERE academic_term_id=$1))"#;
-    let before_replay: serde_json::Value = sqlx::query_scalar(facts_sql)
-        .bind(target_term_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let distinct_dates: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM academic_term_change_sets revision JOIN academic_delivery_versions version ON version.id=revision.target_delivery_version_id WHERE revision.id=ANY($1) AND revision.reference_date=version.reference_date AND revision.reference_date<>$2)",
-    )
-    .bind(&retained.modules[0].target_ids).bind(offering_date).fetch_one(&pool).await.unwrap();
-    assert!(
-        distinct_dates,
-        "the retained run preserves its independent dated Delivery revision"
-    );
-    let mut retained_changed_date = retained_request;
-    retained_changed_date.mappings.offering_starts_on =
-        Some(offering_date + chrono::Duration::days(30));
-    let replay = apply(&pool, &actor, retained_changed_date).await.unwrap();
-    assert_eq!(
-        serde_json::to_value(&replay).unwrap(),
-        serde_json::to_value(&retained).unwrap()
-    );
-    let after_replay: serde_json::Value = sqlx::query_scalar(facts_sql)
-        .bind(target_term_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(after_replay, before_replay, "replay preserves exact offering dates, revision/version IDs and dates, and original audits");
-
-    let source_after: (i64, i64) = sqlx::query_as(
-        r#"SELECT
-               (SELECT count(*) FROM learning_offerings WHERE academic_term_id=$1),
-               (SELECT count(*) FROM learning_group_students student
-                JOIN learning_groups learning_group ON learning_group.id=student.learning_group_id
-                WHERE learning_group.academic_term_id=$1)"#,
-    )
-    .bind(source_term_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(source_after, source_before);
+    assert_eq!(retained.modules[0].created_count, 0);
+    assert_eq!(current, facts(target_term_id).await);
     assert!(
         sqlx::query("DELETE FROM academic_term_preparation_runs WHERE id=$1")
             .bind(outcome.run_id)
@@ -473,7 +354,9 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     let (pool, actor, source_term_id, target_term_id) =
         delivery_preparation_fixture("term_preparation_all_modules").await;
     let base_mappings = preparation_mappings();
-    let offering_date = base_mappings.offering_starts_on.unwrap();
+    let offering_date = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Bangkok)
+        .date_naive();
     let date_mappings = vec![
         TermPreparationDateMapping {
             source_date: chrono::NaiveDate::from_ymd_opt(2025, 5, 1).unwrap(),
@@ -493,7 +376,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         'groups',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_groups r WHERE academic_term_id=$1),
         'plans',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM course_assessment_plans r WHERE academic_term_id=$1),
         'phases',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM course_assessment_phases r JOIN course_assessment_plans p ON p.id=r.plan_id WHERE p.academic_term_id=$1),
-        'timetables',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_timetable_versions r WHERE academic_term_id=$1),
+        'timetables',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_timetables r WHERE academic_term_id=$1),
         'examRounds',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_exam_rounds r WHERE academic_term_id=$1),
         'examDays',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_exam_days r WHERE academic_term_id=$1),
         'cycles',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM supervision_cycles r WHERE academic_term_id=$1))"#;
@@ -524,10 +407,12 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         initial_workspace.modules
     );
     assert!(!initial_workspace.can_apply);
-    assert!(initial_workspace
-        .findings
-        .iter()
-        .any(|finding| finding.code == "timetable.delivery_not_published"));
+    assert!(
+        initial_workspace
+            .findings
+            .iter()
+            .any(|finding| finding.code == "timetable.target_delivery_missing")
+    );
     let opening_preparation = preview(
         &pool,
         &actor,
@@ -561,10 +446,12 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     };
     let opening_outcome = apply(&pool, &actor, opening_request.clone()).await.unwrap();
     assert_eq!(opening_outcome.modules.len(), 2);
-    assert!(opening_outcome
-        .modules
-        .iter()
-        .all(|module| module.created_count > 0));
+    assert!(
+        opening_outcome
+            .modules
+            .iter()
+            .all(|module| module.created_count > 0)
+    );
     let assessment_facts_sql = r#"SELECT jsonb_build_object(
         'plans',(SELECT jsonb_agg(to_jsonb(plan) ORDER BY plan.id) FROM course_assessment_plans plan WHERE academic_term_id=$1),
         'phases',(SELECT jsonb_agg(to_jsonb(phase) ORDER BY phase.id) FROM course_assessment_phases phase JOIN course_assessment_plans plan ON plan.id=phase.plan_id WHERE plan.academic_term_id=$1))"#;
@@ -573,11 +460,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         .fetch_one(&pool)
         .await
         .unwrap();
-    let opening_revision_id:Uuid=sqlx::query_scalar("SELECT id FROM academic_term_change_sets WHERE academic_term_id=$1 AND status='draft' ORDER BY created_at DESC LIMIT 1").bind(target_term_id).fetch_one(&pool).await.unwrap();
-    use school_academic_delivery::{
-        models as delivery_models,
-        services::{change_sets, groups},
-    };
+    use school_academic_delivery::{models as delivery_models, services::groups};
     let target_groups: Vec<(Uuid, i64)> = sqlx::query_as(
         "SELECT id,row_version FROM learning_groups WHERE academic_term_id=$1 ORDER BY id",
     )
@@ -587,6 +470,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     .unwrap();
     for (group_id, row_version) in target_groups {
         groups::replace_teachers(
+            &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
             &pool,
             actor.user_id,
             group_id,
@@ -601,46 +485,16 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         .await
         .unwrap();
     }
-    let opening_readiness = publication_preview(&pool, opening_revision_id)
-        .await
-        .unwrap();
-    assert!(
-        !opening_readiness
-            .findings
-            .iter()
-            .any(|finding| finding.severity
-                == delivery_models::AcademicChangeFindingSeverity::Blocking),
-        "{:?}",
-        opening_readiness.findings
-    );
-    change_sets::publish_change_set(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        &pool,
-        actor.user_id,
-        opening_revision_id,
-        delivery_models::PublishAcademicTermChangeSetRequest {
-            effective_from: offering_date,
-            row_version: opening_readiness.change_set_row_version,
-            target_delivery_version_row_version: opening_readiness
-                .target_delivery_version_row_version,
-            preview_hash: opening_readiness.preview_hash,
-            acknowledged_warning_codes: Vec::new(),
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    let published_assessments: serde_json::Value = sqlx::query_scalar(assessment_facts_sql)
+    let current_assessments: serde_json::Value = sqlx::query_scalar(assessment_facts_sql)
         .bind(target_term_id)
         .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(
-        published_assessments["phases"], prepared_assessments["phases"],
-        "publication preserves every prepared phase fact and identity"
+        current_assessments["phases"], prepared_assessments["phases"],
+        "current teacher save preserves every prepared phase fact and identity"
     );
-    let mut retained_assessments = published_assessments.clone();
+    let mut retained_assessments = current_assessments.clone();
     let before_plans = prepared_assessments["plans"].as_array().unwrap();
     let after_plans = retained_assessments["plans"].as_array_mut().unwrap();
     assert_eq!(after_plans.len(), before_plans.len());
@@ -670,7 +524,7 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         }
         assert_eq!(
             after, before,
-            "publication preserves all other plan facts, including existing owners"
+            "current teacher save preserves all other plan facts, including existing owners"
         );
     }
     assert_eq!(retained_assessments, prepared_assessments);
@@ -679,8 +533,6 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         serde_json::to_value(&opening_replay).unwrap(),
         serde_json::to_value(&opening_outcome).unwrap()
     );
-    let actual_offering_dates:Vec<chrono::NaiveDate>=sqlx::query_scalar("SELECT DISTINCT starts_on FROM learning_offerings WHERE academic_term_id=$1 ORDER BY starts_on").bind(target_term_id).fetch_all(&pool).await.unwrap();
-    assert_eq!(actual_offering_dates, vec![offering_date]);
     let modules = TermPreparationModule::ALL
         .into_iter()
         .filter(|module| {
@@ -691,10 +543,9 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         })
         .collect::<Vec<_>>();
     let mut tx = pool.begin().await.unwrap();
-    let delivery_preview =
-        offerings::preview_term_preparation(&mut tx, target_term_id, offering_date)
-            .await
-            .unwrap();
+    let delivery_preview = offerings::preview_term_preparation(&mut tx, target_term_id)
+        .await
+        .unwrap();
     tx.rollback().await.unwrap();
     let mut entity_mappings = Vec::new();
     for requirement in &initial_workspace.mapping_requirements {
@@ -741,7 +592,6 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         });
     }
     let mappings = TermPreparationMappings {
-        offering_starts_on: Some(offering_date),
         entities: entity_mappings,
         dates: date_mappings.clone(),
     };
@@ -758,14 +608,18 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     .await
     .unwrap();
     assert!(workspace.can_apply, "{:?}", workspace.findings);
-    assert!(workspace
-        .mapping_requirements
-        .iter()
-        .all(|requirement| requirement.selected_target_id.is_some()));
-    assert!(workspace
-        .date_requirements
-        .iter()
-        .all(|requirement| requirement.selected_target_date.is_some()));
+    assert!(
+        workspace
+            .mapping_requirements
+            .iter()
+            .all(|requirement| requirement.selected_target_id.is_some())
+    );
+    assert!(
+        workspace
+            .date_requirements
+            .iter()
+            .all(|requirement| requirement.selected_target_date.is_some())
+    );
     let request = ApplyTermPreparationInput {
         request_id: Uuid::new_v4(),
         source_checksum: workspace.source_checksum.clone(),
@@ -779,10 +633,12 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     assert_eq!(replay.run_id, outcome.run_id);
     assert_eq!(outcome.modules.len(), TermPreparationModule::ALL.len() - 2);
     assert_ne!(outcome.run_id, opening_outcome.run_id);
-    assert!(outcome
-        .modules
-        .iter()
-        .all(|module| module.created_count > 0));
+    assert!(
+        outcome
+            .modules
+            .iter()
+            .all(|module| module.created_count > 0)
+    );
     let reviewed_dates = date_mappings
         .iter()
         .map(|mapping| (mapping.source_date, mapping.target_date))
@@ -835,8 +691,8 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
     let target_drafts: (i64, i64, i64, i64, i64) = sqlx::query_as(
         r#"SELECT
                (SELECT count(*) FROM course_assessment_plans WHERE academic_term_id=$1),
-               (SELECT count(*) FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='draft'),
-               (SELECT count(*) FROM academic_exam_rounds WHERE academic_term_id=$1 AND status='draft'),
+               (SELECT count(*) FROM academic_timetables WHERE academic_term_id=$1),
+               (SELECT count(*) FROM academic_exam_rounds WHERE academic_term_id=$1),
                (SELECT count(*) FROM supervision_cycles WHERE academic_term_id=$1 AND status='draft'),
                (SELECT count(*) FROM academic_term_preparation_runs WHERE target_academic_term_id=$1)"#,
     )
@@ -993,22 +849,6 @@ async fn preparation_preview_requires_school_manage_permission() {
     assert!(matches!(denied, Err(school_errors::AppError::Forbidden(_))));
 }
 
-async fn publication_preview(
-    pool: &sqlx::PgPool,
-    id: uuid::Uuid,
-) -> Result<school_academic_delivery::models::AcademicTermChangeSetPreview, school_errors::AppError>
-{
-    let revision =
-        school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
-    school_academic_delivery::services::change_sets::preview_change_set_at(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        pool,
-        id,
-        Some(revision.reference_date),
-    )
-    .await
-}
-
 #[tokio::test]
 async fn delivery_preparation_preview_preserves_managed_one_connection_read_only_snapshot() {
     use school_database::DbSession;
@@ -1050,11 +890,7 @@ async fn delivery_preparation_preview_preserves_managed_one_connection_read_only
         .unwrap();
     let preview = tokio::time::timeout(
         Duration::from_secs(5),
-        offerings::preview_term_preparation(
-            &mut tx,
-            target_term_id,
-            preparation_mappings().offering_starts_on.unwrap(),
-        ),
+        offerings::preview_term_preparation(&mut tx, target_term_id),
     )
     .await
     .expect("preview must reuse the transaction's only connection")
@@ -1176,8 +1012,8 @@ async fn preparation_database_failures_preserve_cause_and_release_managed_connec
 #[tokio::test]
 async fn legacy_offering_receipts_replay_unbound_dates_after_publication() {
     use school_test_db::academic_context_receipt_fixture::{
-        legacy_offering_receipt_facts, retime_legacy_created_offerings,
-        seed_legacy_curriculum_receipt, seed_legacy_preparation_receipt, ACTOR,
+        ACTOR, legacy_offering_receipt_facts, retime_legacy_created_offerings,
+        seed_legacy_curriculum_receipt, seed_legacy_preparation_receipt,
     };
     for preparation in [false, true] {
         for created in [1, 2] {
@@ -1197,11 +1033,12 @@ async fn legacy_offering_receipts_replay_unbound_dates_after_publication() {
                 assert_eq!(dates.len(), created);
                 school_test_db::run_test_migrations(&pool).await;
                 let before = legacy_offering_receipt_facts(&pool, target).await;
+                let mut mappings = mappings;
+                mappings.as_object_mut().unwrap().remove("offeringStartsOn");
                 let original_mappings: TermPreparationMappings =
                     serde_json::from_value(mappings).unwrap();
-                for year in [2030, 2040] {
-                    let mut mappings = original_mappings.clone();
-                    mappings.offering_starts_on = chrono::NaiveDate::from_ymd_opt(year, 2, 1);
+                for _ in 0..2 {
+                    let mappings = original_mappings.clone();
                     let replay = apply(
                         &pool,
                         &actor,
@@ -1231,12 +1068,10 @@ async fn legacy_offering_receipts_replay_unbound_dates_after_publication() {
                 assert_eq!(dates.len(), created);
                 school_test_db::run_test_migrations(&pool).await;
                 let before = legacy_offering_receipt_facts(&pool, receipt.target_term_id).await;
-                for year in [2030, 2040] {
+                for _ in 0..2 {
                     let mut body = receipt.request_body.clone();
-                    body.as_object_mut().unwrap().insert(
-                        "startsOn".into(),
-                        serde_json::json!(chrono::NaiveDate::from_ymd_opt(year, 2, 1).unwrap()),
-                    );
+                    body.as_object_mut().unwrap().remove("startsOn");
+                    body.as_object_mut().unwrap().remove("deliveryVersionId");
                     let request: school_academic_delivery::models::ApplyCurriculumOfferingsRequest =
                         serde_json::from_value(body).unwrap();
                     let replay = offerings::apply_from_curriculum(&pool, ACTOR, request)
@@ -1254,4 +1089,103 @@ async fn legacy_offering_receipts_replay_unbound_dates_after_publication() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn preparation_teacher_options_use_canonical_current_names_and_only_active_staff() {
+    let (pool, actor, source_term_id, target_term_id) =
+        delivery_preparation_fixture("term_prep_staff_names").await;
+    let teacher:Uuid=sqlx::query_scalar("SELECT teacher_id FROM learning_group_teachers WHERE academic_term_id=$1 ORDER BY id LIMIT 1").bind(source_term_id).fetch_one(&pool).await.unwrap();
+    sqlx::query(
+        "UPDATE course_assessment_plans SET assessment_coordinator_id=$2 WHERE academic_term_id=$1",
+    )
+    .bind(source_term_id)
+    .bind(teacher)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE users SET title='',first_name='',last_name='',title_en='Dr.',first_name_en='Ada',last_name_en='Rivers' WHERE id=$1").bind(teacher).execute(&pool).await.unwrap();
+    let mut nonstaff = Vec::new();
+    for kind in ["student", "parent"] {
+        nonstaff.push(sqlx::query_scalar::<_,Uuid>("INSERT INTO users(username,password_hash,first_name,last_name,user_type,status) VALUES('prep-nonstaff-'||uuidv7()::text,'not-login','Nonstaff','Target',$1,'active') RETURNING id").bind(kind).fetch_one(&pool).await.unwrap());
+    }
+    let input = PreviewTermPreparationInput {
+        source_term_id,
+        target_term_id,
+        modules: vec![TermPreparationModule::Assessments],
+        mappings: preparation_mappings(),
+    };
+    let first = preview(&pool, &actor, input.clone()).await.unwrap();
+    let requirement = first
+        .mapping_requirements
+        .iter()
+        .find(|r| r.kind == TermPreparationMappingKind::Teacher && r.source_id == teacher)
+        .unwrap();
+    assert_eq!(requirement.source_label, "Dr. Ada Rivers");
+    assert!(
+        requirement
+            .target_options
+            .iter()
+            .any(|option| option.id == teacher && option.label == "Dr. Ada Rivers")
+    );
+    assert!(
+        requirement
+            .target_options
+            .iter()
+            .all(|option| !nonstaff.contains(&option.id))
+    );
+    let mut invalid = input.clone();
+    invalid
+        .mappings
+        .entities
+        .push(TermPreparationEntityMapping {
+            kind: TermPreparationMappingKind::Teacher,
+            source_id: teacher,
+            target_id: nonstaff[0],
+        });
+    let denied = preview(&pool, &actor, invalid).await.unwrap();
+    assert!(
+        denied
+            .findings
+            .iter()
+            .any(|f| f.code == format!("mapping.teacher.{teacher}.invalid"))
+    );
+    sqlx::query("UPDATE users SET last_name_en='Changed' WHERE id=$1")
+        .bind(teacher)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let renamed = preview(&pool, &actor, input.clone()).await.unwrap();
+    assert_ne!(first.source_checksum, renamed.source_checksum);
+    assert_eq!(
+        renamed
+            .mapping_requirements
+            .iter()
+            .find(|r| r.kind == TermPreparationMappingKind::Teacher && r.source_id == teacher)
+            .unwrap()
+            .source_label,
+        "Dr. Ada Changed"
+    );
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(teacher)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let inactive = preview(&pool, &actor, input).await.unwrap();
+    let retained = inactive
+        .mapping_requirements
+        .iter()
+        .find(|r| r.kind == TermPreparationMappingKind::Teacher && r.source_id == teacher)
+        .unwrap();
+    assert_eq!(
+        retained.source_label, "Dr. Ada Changed",
+        "saved source identity remains visible"
+    );
+    assert_eq!(retained.suggested_target_id, None);
+    assert!(
+        retained
+            .target_options
+            .iter()
+            .all(|option| option.id != teacher)
+    );
 }

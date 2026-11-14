@@ -59,7 +59,7 @@ for (const width of [1543, 390]) {
 			special.homerooms[0].roomName = 'ห้องคณิตศาสตร์';
 			await installTimetableMock(page, {
 				permissions: ['academic_timetable.read.school'],
-				requestedWorkspaceVersion: true,
+
 				staff: [timetableIds.teacherA, timetableIds.teacherB].map((id) => ({
 					id,
 					displayName: teacherName(id),
@@ -223,8 +223,8 @@ for (const width of [1543, 390]) {
 
 test('PDF failure preserves the table and permits retry', async ({ page }) => {
 	await installTimetableMock(page, {
-		status: 'published',
-		requestedWorkspaceVersion: true,
+		permissions: ['academic_timetable.read.school'],
+
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	let attempts = 0;
@@ -260,7 +260,6 @@ test('PDF captures the requested owner and version before its lazy renderer load
 	page
 }) => {
 	await installTimetableMock(page, {
-		requestedWorkspaceVersion: true,
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	await page.route('**/api/school/public', (route) =>
@@ -463,7 +462,6 @@ for (const [shape, width, height] of [
 		const fixture = await PDFDocument.create();
 		// Generate an opaque, distinctive crest in the browser without another image dependency.
 		await installTimetableMock(page, {
-			requestedWorkspaceVersion: true,
 			permissions: ['academic_timetable.read.school'],
 			periodCount: 10,
 			staff: Array.from({ length: 6 }, (_, i) => ({
@@ -569,7 +567,6 @@ test('exports 31 selected teachers as 31 complete pages with an external crest a
 		status: 'active'
 	}));
 	await installTimetableMock(page, {
-		requestedWorkspaceVersion: true,
 		permissions: ['academic_timetable.read.school'],
 		periodCount: 10,
 		staff,
@@ -628,7 +625,6 @@ test('wraps school and owner using their loaded bold measurement face within the
 	const schoolName = `โรงเรียน${'พัฒนา'.repeat(13)}วิทยาคม`;
 	const ownerName = `นาย${'พัฒนา'.repeat(13)}วิทยาคม`;
 	await installTimetableMock(page, {
-		requestedWorkspaceVersion: true,
 		permissions: ['academic_timetable.read.school'],
 		periodCount: 10,
 		staff: [

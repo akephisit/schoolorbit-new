@@ -4,7 +4,7 @@ use school_academic_delivery::ports::{
     DeliveryDeletionAuthorizationPort, DeliveryDeletionCommandContext,
 };
 use school_auth::{runtime::AuthRuntime, session_service::AuthenticatedSession};
-use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
+use school_auth_http::context::{ActorTenantContext, actor_tenant_context_from_session};
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use std::sync::Arc;
@@ -26,13 +26,13 @@ impl DeliveryDeletionAuthorizationPort for SessionDeletionAuthorization {
             != self.permission_revision
         {
             return Err(AppError::Forbidden(
-                "Authorization scope changed while the Delivery operation was queued".into(),
+                "สิทธิ์จัดการเปลี่ยนไประหว่างรอดำเนินการ กรุณาตรวจสอบสิทธิ์แล้วลองใหม่".into(),
             ));
         }
         if !school_auth_http::tenant::revalidate_realtime_session(&self.runtime, &self.session)
             .await?
         {
-            return Err(AppError::AuthError("Session is no longer active".into()));
+            return Err(AppError::AuthError("เซสชันนี้สิ้นสุดแล้ว กรุณาเข้าสู่ระบบใหม่".into()));
         }
         let current = actor_tenant_context_from_session(&self.runtime, &self.session).await?;
         let mut accepted = accepted_actor.permissions.clone();
@@ -45,7 +45,7 @@ impl DeliveryDeletionAuthorizationPort for SessionDeletionAuthorization {
             || accepted != permissions
         {
             return Err(AppError::Forbidden(
-                "Authorization changed while the Delivery operation was queued".into(),
+                "สิทธิ์หรือข้อมูลผู้ใช้งานเปลี่ยนไประหว่างรอดำเนินการ กรุณาลองใหม่".into(),
             ));
         }
         Ok(())

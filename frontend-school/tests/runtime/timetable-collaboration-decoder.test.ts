@@ -11,14 +11,6 @@ const epoch = 'f1000000-0000-4000-8000-000000000999';
 const nullableRoom = { id: timetableIds.room, code: null, name: 'ห้องเรียน', status: 'ACTIVE' };
 const metadataCases = [
 	{
-		name: 'version.createdBy',
-		valid: timetableIds.user,
-		workspace(value: unknown) {
-			const workspace = collaborationWorkspace();
-			return { ...workspace, version: { ...workspace.timetable, createdBy: value } };
-		}
-	},
-	{
 		name: 'homeroom.roomNumber',
 		valid: '1',
 		workspace(value: unknown) {
@@ -57,8 +49,7 @@ for (const field of metadataCases) {
 			1,
 			false,
 			{},
-			[],
-			...(field.name === 'version.createdBy' ? ['not-a-uuid'] : [])
+			[]
 		]) {
 			assert.equal(
 				decodeDraftEvent(
@@ -80,7 +71,7 @@ for (const field of metadataCases) {
 	});
 }
 
-test('nullable lookup metadata and patch version decode and retain explicit nulls through the shared patch consumer', () => {
+test('nullable lookup metadata and patch timetable decode and retain explicit nulls through the shared patch consumer', () => {
 	const workspace = collaborationWorkspace();
 	const homeroom = { ...workspace.homerooms[0], roomNumber: null };
 	const patch = {
@@ -96,7 +87,7 @@ test('nullable lookup metadata and patch version decode and retain explicit null
 			synchronizedDemands: [],
 			summary: workspace.summary,
 			sourceIssues: [],
-			version: { ...workspace.timetable, createdBy: null },
+			timetable: null,
 			lookupChanges: {
 				...emptyLookupChanges(),
 				upsertedRooms: [nullableRoom],
@@ -110,7 +101,7 @@ test('nullable lookup metadata and patch version decode and retain explicit null
 	assert.equal(decoded?.type, 'TimetablePatched');
 	if (decoded?.type !== 'TimetablePatched') return;
 	const updated = applyTimetablePatch(workspace, decoded.payload);
-	assert.equal(updated.version.createdBy, null);
+	assert.equal(updated.timetable, workspace.timetable);
 	assert.equal(updated.homerooms[0].roomNumber, null);
 	assert.equal(updated.rooms[0].code, null);
 	for (const lookupChanges of [

@@ -159,16 +159,12 @@ WHERE session.kind='lesson' AND (
 -- Persisted session evidence, never today's group membership, bounds the
 -- learners whose day totals can contain a deleted lesson contribution.
 CREATE TEMP TABLE academic157_removed_lesson_students ON COMMIT DROP AS
-SELECT lesson.id,lesson.academic_term_id,lesson.date,record.student_id
+SELECT lesson.id session_id,lesson.academic_term_id,lesson.date,record.student_id
 FROM academic157_removed_lessons lesson JOIN attendance_records record ON record.session_id=lesson.id
 UNION
 SELECT lesson.id,lesson.academic_term_id,lesson.date,(student->>'studentId')::uuid
 FROM academic157_removed_lessons lesson CROSS JOIN LATERAL jsonb_array_elements(lesson.roster) student
-WHERE pg_input_is_valid(student->>'studentId','uuid')
-UNION
-SELECT lesson.id,lesson.academic_term_id,lesson.date,effect.student_id
-FROM academic157_removed_lessons lesson JOIN behavior_source_effect_snapshots effect
-    ON effect.academic_term_id=lesson.academic_term_id AND effect.date=lesson.date AND effect.kind='lesson' AND effect.source_key=lesson.id::text;
+WHERE pg_input_is_valid(student->>'studentId','uuid');
 CREATE TEMP TABLE academic157_removed_notices ON COMMIT DROP AS
 SELECT notice.id,notice.notification_id,notice.recipient_id,notice.student_id,notice.academic_term_id,
     string_to_array(notice.dedup_key,':') components
@@ -194,12 +190,25 @@ DO $$ BEGIN
         CROSS JOIN attendance_module_state module
         LEFT JOIN behavior_cycles current_cycle ON current_cycle.side=total.side AND current_cycle.state='current'
         WHERE entry.cancelled_at IS NULL AND (total.source<>'lesson' OR total.academic_term_id<>lesson.academic_term_id
-            OR total.date<>lesson.date OR entry.source_key<>lesson.id::text OR (entry.source_session_id IS NOT NULL AND entry.source_session_id<>lesson.id) OR entry.source_generation<>module.generation
+            OR total.date<>lesson.date OR entry.source_key IS DISTINCT FROM lesson.id::text OR entry.source_session_id IS DISTINCT FROM lesson.id OR entry.source_generation<>module.generation
+            OR NOT EXISTS(SELECT 1 FROM academic157_removed_lesson_students learner WHERE learner.session_id=lesson.id
+                AND learner.student_id=total.student_id AND learner.academic_term_id=total.academic_term_id AND learner.date=total.date)
             OR current_cycle.id IS NULL OR total.cycle_id<>current_cycle.id OR lesson.date<current_cycle.starts_on
             OR EXISTS(SELECT 1 FROM behavior_suppressions suppression WHERE suppression.side=total.side AND suppression.source='lesson'
                 AND (suppression.start_date IS NULL OR lesson.date BETWEEN suppression.start_date AND suppression.end_date)
                 AND (suppression.academic_term_id IS NULL OR suppression.academic_term_id=lesson.academic_term_id)
                 AND (suppression.academic_year_id IS NULL OR suppression.academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=lesson.academic_term_id))))) THEN
+        RAISE EXCEPTION 'ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED'; END IF;
+    -- A source checkpoint cannot attest its own learner/context. Candidate
+    -- detection is global by the selected source key; proof is independent
+    -- persisted Attendance roster/record evidence, including zero-point rows.
+    IF EXISTS(SELECT 1 FROM behavior_source_effect_snapshots effect
+        JOIN academic157_removed_lessons lesson ON effect.source_key=lesson.id::text
+        CROSS JOIN attendance_module_state module
+        WHERE effect.kind<>'lesson' OR effect.academic_term_id<>lesson.academic_term_id OR effect.date<>lesson.date
+            OR effect.generation<>module.generation OR NOT EXISTS(SELECT 1 FROM academic157_removed_lesson_students learner
+                WHERE learner.session_id=lesson.id AND learner.student_id=effect.student_id
+                    AND learner.academic_term_id=effect.academic_term_id AND learner.date=effect.date)) THEN
         RAISE EXCEPTION 'ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED'; END IF;
     -- details_only cleanup intentionally removes entries while retaining
     -- totals and suppression evidence. The day provider cannot subtract a

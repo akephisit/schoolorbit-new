@@ -1,6 +1,6 @@
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
-import type { AcademicTermChangeSet } from '../../src/lib/api/learning-delivery.js';
+import type {DeliveryWorkspace,LearningOffering,LearningGroup} from '../../src/lib/api/learning-delivery.js';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -32,115 +32,10 @@ function deferred() {
 	return { promise, release };
 }
 
-function offering() {
-	return {
-		canManage: true,
-		id: ids.offering,
-		academicYearId: ids.year,
-		academicTermId: ids.term,
-		kind: 'course',
-		codeSnapshot: 'ค21101',
-		nameSnapshot: 'คณิตศาสตร์พื้นฐาน',
-		status: 'published',
-		rowVersion: 1,
-		startsOn: '2026-05-01',
-		endsOn: null,
-		stopReason: null,
-		targets: [],
-		snapshot: {
-			kind: 'course',
-			subjectId: ids.offering,
-			subjectVersionId: ids.offering,
-			credit: '1.0',
-			hours: '40',
-			standardPeriodsPerWeek: 2,
-			curriculumCourseRequirementId: null,
-			assessmentTotalScore: '100.00'
-		}
-	};
-}
-
-function group(id: string, published = false) {
-	return {
-		id,
-		learningOfferingId: ids.offering,
-		academicTermId: ids.term,
-		academicYearId: ids.year,
-		code: id === ids.groupA ? 'A' : 'B',
-		name: id === ids.groupA ? 'กลุ่ม ก' : 'กลุ่ม ข',
-		description: null,
-		capacity: 40,
-		status: published ? 'published' : 'draft',
-		rosterStatus: published ? 'published' : 'draft',
-		rosterPublishedAt: published ? '2026-05-01T00:00:00Z' : null,
-		teachersLocked: published,
-		teacherAssignments: [],
-		homeroomIds: [ids.year],
-		preferredRoomIds: [],
-		rowVersion: 1
-	};
-}
-
-function version(published = false) {
-	return {
-		id: ids.version,
-		academicTermId: ids.term,
-		academicYearId: ids.year,
-		status: published ? 'published' : 'draft',
-		publicationNo: published ? 1 : null,
-		isSuperseded: false,
-		publishedAt: published ? '2026-05-01T00:00:00Z' : null,
-		publishedBy: null,
-		sourceVersionId: null,
-		changeSetId: null,
-		effectiveFrom: '2026-05-01',
-		effectiveUntil: null,
-		rowVersion: 1,
-		offeringCount: 1,
-		groupCount: 2,
-		teacherAssignmentCount: 0,
-		updatedAt: '2026-05-01T00:00:00Z'
-	};
-}
-function versionGraph(published = false) {
-	const catalog = offering().snapshot;
-	return {
-		...version(published),
-		createdBy: null,
-		publishedBy: null,
-		publishedAt: null,
-		createdAt: '2026-05-01T00:00:00Z',
-		courseMetadata: [],
-		snapshot: {
-			offerings: [
-				{
-					id: ids.offering,
-					kind: 'course',
-					code: 'ค21101',
-					name: 'คณิตศาสตร์พื้นฐาน',
-					owningOrganizationUnitId: ids.offering,
-					sourceRequirementId: null,
-					sourceRequirementKind: null,
-					weeklyPeriodTarget: 2,
-					catalog,
-					targets: [],
-					homeroomIds: [],
-					groups: [group(ids.groupA, published), group(ids.groupB)].map((row) => ({
-						id: row.id,
-						code: row.code,
-						name: row.name,
-						description: null,
-						capacity: 40,
-						homeroomIds: [],
-						preferredRoomIds: [],
-						teachers: []
-					}))
-				}
-			]
-		}
-	};
-}
-
+const stamp='2026-05-01T00:00:00Z';
+function offering():LearningOffering{return{canManage:true,id:ids.offering,academicYearId:ids.year,academicTermId:ids.term,kind:'course',codeSnapshot:'ค21101',nameSnapshot:'คณิตศาสตร์พื้นฐาน',rowVersion:1,weeklyPeriodTarget:2,owningOrganizationUnitId:ids.offering,migrated:false,createdAt:stamp,updatedAt:stamp,targets:[],snapshot:{kind:'course',subjectId:ids.offering,subjectVersionId:ids.offering,credit:'1.0',hours:'40',standardPeriodsPerWeek:2,assessmentTotalScore:'100.00'}};}
+function group(id:string):LearningGroup{return{id,learningOfferingId:ids.offering,academicTermId:ids.term,academicYearId:ids.year,code:id===ids.groupA?'A':'B',name:id===ids.groupA?'กลุ่ม ก':'กลุ่ม ข',description:null,capacity:40,registrationOpen:false,teacherAssignments:[],homeroomIds:[ids.year],preferredRoomIds:[],rowVersion:1,migrated:false,createdAt:stamp,updatedAt:stamp};}
+function currentWorkspace():DeliveryWorkspace{return{academicYearId:ids.year,academicTermId:ids.term,rowVersion:1,courseMetadata:[],offerings:[{id:ids.offering,kind:'course',code:'ค21101',name:'คณิตศาสตร์พื้นฐาน',rowVersion:1,owningOrganizationUnitId:ids.offering,weeklyPeriodTarget:2,catalog:offering().snapshot,targets:[],homeroomIds:[],groups:[group(ids.groupA),group(ids.groupB)].map(row=>({id:row.id,code:row.code,name:row.name,description:null,capacity:40,rowVersion:row.rowVersion,registrationOpen:row.registrationOpen,homeroomIds:[],preferredRoomIds:[],teachers:[]}))}]};}
 async function fulfill(route: Route, data: unknown) {
 	await route.fulfill({
 		contentType: 'application/json',
@@ -256,19 +151,16 @@ async function mockOffering(
 				return void (await fulfill(route, {
 					...offering(),
 					canManage: options.canManage ?? true,
-					status: options.resourceDraft ? 'draft' : 'published'
 				}));
 			if (path === paths.groups)
 				return void (await fulfill(route, [
-					group(ids.groupA, options.published),
+					{...group(ids.groupA),rowVersion:tracking.groupRowVersion},
 					group(ids.groupB)
 				]));
-			if (path === paths.versions) return void (await fulfill(route, [version(options.published)]));
-			if (path === paths.version)
-				return void (await fulfill(route, versionGraph(options.published)));
+			if(path==='/api/academic/delivery/workspace')return void(await fulfill(route,currentWorkspace()));
 			if (path === paths.groupA)
 				return void (await fulfill(route, {
-					...group(ids.groupA, options.published),
+					...group(ids.groupA),
 					rowVersion: tracking.groupRowVersion
 				}));
 			if (path === paths.groupB) return void (await fulfill(route, group(ids.groupB)));
@@ -296,30 +188,30 @@ test('starts independent group reads while the opening identity is delayed', asy
 		await page.goto(url());
 		await expect.poll(() => count(paths.groups)).toBe(1);
 		await expect.poll(() => count(paths.groupA)).toBe(1);
-		await expect(page.getByTestId('delivery-offering-ready')).toHaveCount(0);
+		await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toHaveCount(0);
 		expect(count(paths.versions)).toBe(0);
 	} finally {
 		gate.release();
 	}
-	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
-	await expect(page.getByTestId('delivery-versions-ready')).toBeVisible();
+	await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toBeVisible();
+	expect(count(paths.versions)).toBe(0);
 	expect(count(paths.offering)).toBe(1);
 	expect(count(paths.groups)).toBe(1);
 	expect(count(paths.groupA)).toBe(1);
-	expect(count(paths.versions)).toBe(1);
+	expect(count(paths.versions)).toBe(0);
 	expect(count(paths.management)).toBe(0);
 });
 
-test('offering, version, and direct group detail paint while the group list is delayed', async ({
+test('offering and direct group detail paint while the group list is delayed', async ({
 	page
 }) => {
 	const gate = deferred();
 	const count = await mockOffering(page, { gate: { path: paths.groups, promise: gate.promise } });
 	try {
 		await page.goto(url());
-		await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
-		await expect(page.getByTestId('delivery-versions-ready')).toBeVisible();
-		await expect(page.getByTestId('delivery-selected-group-ready')).toBeVisible();
+		await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toBeVisible();
+		expect(count(paths.versions)).toBe(0);
+		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toBeVisible();
 		await expect(page.getByTestId('delivery-groups-ready')).toHaveCount(0);
 		expect(count(paths.groups)).toBe(1);
 	} finally {
@@ -333,13 +225,13 @@ test('default group reuses the complete group list row without another GET', asy
 	const count = await mockOffering(page, { gate: { path: paths.groups, promise: gate.promise } });
 	try {
 		await page.goto(url(null));
-		await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
-		await expect(page.getByTestId('delivery-selected-group-ready')).toHaveCount(0);
+		await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toBeVisible();
+		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toHaveCount(0);
 		expect(count(paths.groupA)).toBe(0);
 	} finally {
 		gate.release();
 	}
-	await expect(page.getByTestId('delivery-selected-group-ready')).toBeVisible();
+	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toBeVisible();
 	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
 	expect(count(paths.groupA)).toBe(0);
 });
@@ -348,16 +240,16 @@ test('group selection and Back load only the selected group', async ({ page }) =
 	const count = await mockOffering(page);
 	await page.goto(url());
 	await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
-	await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('กลุ่ม ก');
+	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ก');
 	await page.getByRole('button', { name: /กลุ่ม ข/ }).click();
 	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupB}`));
-	await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('กลุ่ม ข');
+	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ข');
 	await page.goBack();
 	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
-	await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('กลุ่ม ก');
+	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ก');
 	expect(count(paths.offering)).toBe(1);
 	expect(count(paths.groups)).toBe(1);
-	expect(count(paths.versions)).toBe(1);
+	expect(count(paths.versions)).toBe(0);
 	expect(count(paths.groupB)).toBe(0);
 });
 
@@ -369,7 +261,7 @@ test('a late old selected group never replaces the newly selected group', async 
 		await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
 		await expect.poll(() => count(paths.groupA)).toBe(1);
 		await page.getByRole('button', { name: /กลุ่ม ข/ }).click();
-		await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('กลุ่ม ข');
+		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ข');
 	} finally {
 		gate.release();
 	}
@@ -379,7 +271,7 @@ test('a late old selected group never replaces the newly selected group', async 
 				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
 			)
 	);
-	await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('กลุ่ม ข');
+	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ข');
 });
 
 test('late management options do not open the editor for a different group', async ({ page }) => {
@@ -390,18 +282,18 @@ test('late management options do not open the editor for a different group', asy
 	});
 	try {
 		await page.goto(url());
-		await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('กลุ่ม ก');
-		await page.getByRole('button', { name: 'จัดการกลุ่ม' }).click();
+		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ก');
+		await page.getByRole('button', { name: 'แก้ไขกลุ่มและครู' }).click();
 		await expect.poll(() => count(paths.management)).toBe(1);
 		await page.getByRole('button', { name: /กลุ่ม ข/ }).click();
-		await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('กลุ่ม ข');
+		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('กลุ่ม ข');
 	} finally {
 		gate.release();
 	}
 	await expect(page.getByRole('heading', { name: /จัดการกลุ่ม ·/ })).toHaveCount(0);
 });
 
-test('published membership history starts from the route without management options', async ({
+test('dated membership history starts from the route without management options', async ({
 	page
 }) => {
 	const count = await mockOffering(page, { published: true });
@@ -412,7 +304,7 @@ test('published membership history starts from the route without management opti
 	expect(count(`${paths.groupA}/roster`)).toBe(0);
 });
 
-test('published history has its own first skeleton and ready state', async ({ page }) => {
+test('dated history has its own first skeleton and ready state', async ({ page }) => {
 	const gate = deferred();
 	const count = await mockOffering(page, {
 		published: true,
@@ -420,7 +312,7 @@ test('published history has its own first skeleton and ready state', async ({ pa
 	});
 	try {
 		await page.goto(url());
-		await expect(page.getByTestId('delivery-version-roster')).toBeVisible();
+		await expect(page.getByTestId('roster-tracking')).toBeVisible();
 		await expect.poll(() => count(paths.membershipsA)).toBe(1);
 		await expect(page.getByLabel('กำลังโหลดประวัติสมาชิก')).toBeVisible();
 		await expect(page.getByTestId('delivery-memberships-ready')).toHaveCount(0);
@@ -430,19 +322,11 @@ test('published history has its own first skeleton and ready state', async ({ pa
 	await expect(page.getByTestId('delivery-memberships-ready')).toBeVisible();
 });
 
-test('a failed versions region retries without rerunning offering or groups', async ({ page }) => {
-	const count = await mockOffering(page, { failOnce: paths.versions });
-	await page.goto(url());
-	await expect(page.getByRole('button', { name: 'ลองอีกครั้ง' })).toBeVisible();
-	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
-	await expect(page.getByTestId('delivery-versions-ready')).toBeVisible();
-	expect(count(paths.versions)).toBe(2);
-	expect(count(paths.offering)).toBe(1);
-	expect(count(paths.groups)).toBe(1);
+test('a failed offering identity retries only its own region while current groups remain visible',async({page})=>{
+ const count=await mockOffering(page,{failOnce:paths.offering});await page.goto(url());await expect.poll(()=>count(paths.groups)).toBe(1);await expect.poll(()=>count(paths.groupA)).toBe(1);await page.getByRole('button',{name:'ลองอีกครั้ง',exact:true}).click();await expect(page.getByRole('heading',{name:'คณิตศาสตร์พื้นฐาน',level:1,exact:true})).toBeVisible();expect(count(paths.offering)).toBe(2);expect(count(paths.groups)).toBe(1);expect(count(paths.groupA)).toBe(1);expect(count(paths.versions)).toBe(0);
 });
-
 for (const width of [375, 1280]) {
-	test(`automatic roster mode is editable on published versions at ${width}px`, async ({
+	test(`automatic roster mode is editable for current groups at ${width}px`, async ({
 		page
 	}) => {
 		await page.setViewportSize({ width, height: 900 });
@@ -526,7 +410,8 @@ test('automatic roster focus refresh retains draft and updates only changed grou
 	await mode.click();
 	await page.getByRole('option', { name: 'จัดรายชื่อเอง', exact: true }).click();
 	await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-	await expect.poll(() => count(paths.groupA)).toBe(2);
+	await expect.poll(() => count(paths.groups)).toBe(2);
+	expect(count(paths.groupA)).toBe(1);
 	await expect(mode).toContainText('จัดรายชื่อเอง');
 	expect(count(`${paths.groupA}/roster-tracking`)).toBe(1);
 	count.bumpTrackingRevision();
@@ -537,8 +422,8 @@ test('automatic roster focus refresh retains draft and updates only changed grou
 	await expect(
 		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
 	).toBeEnabled();
-	expect(count(paths.offering)).toBe(1);
-	expect(count(paths.groups)).toBe(1);
+	expect(count(paths.offering)).toBe(3);
+	expect(count(paths.groups)).toBe(3);
 });
 
 const bulkTeacherId = '90000000-0000-4000-8000-000000000220';
@@ -550,8 +435,7 @@ function bulkTeacher(teacherId: string, role: 'primary' | 'secondary' | 'assista
 		displayName: name,
 		role,
 		rowVersion: 1,
-		startsOn: '2026-05-01',
-		endsOn: null
+		isActive:true
 	};
 }
 async function mockBulkSetup(
@@ -578,12 +462,12 @@ async function mockBulkSetup(
 	});
 	let rows = [
 		{
-			...group(ids.groupA, options.resourceDraft === false),
+			...group(ids.groupA),
 			name: 'ม.1/1',
 			teacherAssignments: [bulkTeacher('assistant', 'assistant', 'ครูผู้ช่วยเดิม')]
 		},
 		{
-			...group(ids.groupB, options.resourceDraft === false),
+			...group(ids.groupB),
 			name: 'ม.1/2',
 			teacherAssignments: [
 				bulkTeacher(existingPrimaryId, 'primary', 'ครูหลักเดิม'),
@@ -616,8 +500,7 @@ async function mockBulkSetup(
 		groups: Array<{ learningGroupId: string; rowVersion: number }>;
 		primaryTeacher?: { teacherId: string; replaceExistingPrimary: boolean };
 		rosterTracking?: { mode: 'manual' | 'homeroom'; effectiveFrom: string | null };
-		deliveryVersionId: string;
-		deliveryVersionRowVersion: number;
+		deliveryRowVersion: number;
 	}> = [];
 	const applyRequests: typeof previewRequests = [];
 	await page.route(`**${paths.groups}`, async (route) => {
@@ -671,8 +554,8 @@ async function mockBulkSetup(
 			return fulfill(route, snapshot);
 		}
 	);
-	await page.route(`**${paths.version}`, (route) =>
-		fulfill(route, { ...versionGraph(), rowVersion: currentVersion })
+	await page.route(`**/api/academic/delivery/workspace?*`, (route) =>
+		fulfill(route, { ...currentWorkspace(), rowVersion: currentVersion })
 	);
 	await page.route('**/api/academic/delivery/management-options?**', async (route) => {
 		if (options.optionsGate) await options.optionsGate;
@@ -745,7 +628,7 @@ async function mockBulkSetup(
 							target.rosterTrackingChanged)
 				).length;
 				return fulfill(route, {
-					deliveryVersionRowVersion: currentVersion,
+					deliveryRowVersion: currentVersion,
 					targets,
 					changedCount,
 					skippedCount: options.blocked ? 0 : targets.length - changedCount,
@@ -809,7 +692,7 @@ async function mockBulkSetup(
 			}
 			currentVersion += 1;
 			return fulfill(route, {
-				deliveryVersionRowVersion: currentVersion,
+				deliveryRowVersion: currentVersion,
 				groups: rows.filter((row) =>
 					body.groups.some(
 						(target: { learningGroupId: string }) => target.learningGroupId === row.id
@@ -913,8 +796,7 @@ for (const width of [1280, 390]) {
 				.toBeGreaterThan(0);
 			expect(fixture.applyRequests).toEqual([
 				{
-					deliveryVersionId: ids.version,
-					deliveryVersionRowVersion: 1,
+					deliveryRowVersion: 1,
 					groups: [
 						{ learningGroupId: ids.groupA, rowVersion: 1 },
 						{ learningGroupId: ids.groupB, rowVersion: 1 }
@@ -931,7 +813,7 @@ for (const width of [1280, 390]) {
 			).toBeEnabled();
 			await reopened.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 			await page.getByRole('button', { name: /ม.1\/2/ }).click();
-			await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
+			await page.getByRole('button', { name: 'แก้ไขกลุ่มและครู', exact: true }).click();
 			await expect(
 				page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/2', exact: true })
 			).toBeVisible();
@@ -999,7 +881,7 @@ test('bulk conflict preserves choices, requires explicit latest read and sends f
 	await expect(dialog).toHaveCount(0);
 	expect(fixture.applyRequests).toHaveLength(2);
 	expect(fixture.applyRequests[1]).toMatchObject({
-		deliveryVersionRowVersion: 2,
+		deliveryRowVersion: 2,
 		groups: [{ learningGroupId: ids.groupA, rowVersion: 2 }]
 	});
 });
@@ -1138,7 +1020,7 @@ test('opening bulk setup reads the fresh offering frame after a successful indiv
 	await page.goto(url());
 	expect(fixture.previewRequests).toHaveLength(0);
 	expect(fixture.count(paths.management)).toBe(0);
-	await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
+	await page.getByRole('button', { name: 'แก้ไขกลุ่มและครู', exact: true }).click();
 	await page
 		.getByRole('textbox', { name: 'ชื่อกลุ่ม', exact: true })
 		.fill('ม.1/1 ชื่อที่บันทึกใหม่');
@@ -1155,7 +1037,7 @@ test('opening bulk setup reads the fresh offering frame after a successful indiv
 	expect(fixture.previewRequests).toHaveLength(0);
 	expect(fixture.applyRequests).toHaveLength(1);
 	expect(fixture.applyRequests[0]).toMatchObject({
-		deliveryVersionRowVersion: 2,
+		deliveryRowVersion: 2,
 		groups: [{ learningGroupId: ids.groupA, rowVersion: 2 }]
 	});
 	await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
@@ -1199,13 +1081,13 @@ test('a fresh bulk opening resolves the selected group while an older direct rea
 	});
 	await page.goto(url());
 	await expect(page.getByTestId('delivery-groups-ready')).toBeVisible();
-	await expect(page.getByTestId('delivery-selected-group-ready')).toHaveCount(0);
+	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toHaveCount(0);
 	try {
 		await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 		const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
 		await expect(dialog).toContainText('เลือก 0/2 กลุ่ม');
 		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
-		await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('ม.1/1');
+		await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('ม.1/1');
 		await expect(page).toHaveURL(new RegExp(`groupId=${ids.groupA}`));
 	} finally {
 		gate.release();
@@ -1216,7 +1098,7 @@ test('a fresh bulk opening resolves the selected group while an older direct rea
 				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
 			)
 	);
-	await expect(page.getByTestId('delivery-selected-group-ready')).toContainText('ม.1/1');
+	await expect(page.getByRole('heading',{level:2,name:/^(กลุ่ม [กข]|ม\.1\/)/})).toContainText('ม.1/1');
 	await expect(page.getByText('ข้อมูลเก่าที่มาช้า', { exact: true })).toHaveCount(0);
 });
 
@@ -1441,7 +1323,7 @@ test('bulk dialog offers direct save and releases underlying actions with real t
 		await page.screenshot({ path: testInfo.outputPath('bulk-touch-preview.png') });
 		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).tap();
 		await expect(dialog).toHaveCount(0);
-		await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).tap();
+		await page.getByRole('button', { name: 'แก้ไขกลุ่มและครู', exact: true }).tap();
 		await expect(
 			page.getByRole('heading', { name: 'จัดการกลุ่ม · ม.1/1', exact: true })
 		).toBeVisible();
@@ -1451,534 +1333,6 @@ test('bulk dialog offers direct save and releases underlying actions with real t
 		await context.close();
 	}
 });
-
-const periodChangeSetId = '60000000-0000-4000-8000-000000000201';
-const periodChangeSetPath = `/api/academic/term-change-sets/${periodChangeSetId}`;
-
-async function mockWeeklyPeriods(
-	page: Page,
-	options: {
-		activityMode?: 'independent' | 'synchronized';
-		permissions?: string[];
-		published?: boolean;
-		conflictOnce?: boolean;
-		failSaveOnce?: boolean;
-		failRefreshOnce?: boolean;
-		saveGate?: Promise<void>;
-		readGate?: Promise<void>;
-	} = {}
-) {
-	const count = await mockOffering(page, {
-		permissions: options.permissions ?? ['*'],
-		published: options.published
-	});
-	const initialGraph = versionGraph(options.published);
-	const teacher = {
-		id: '80000000-0000-4000-8000-000000000201',
-		teacherId: '90000000-0000-4000-8000-000000000202',
-		displayName: 'ครูกิจกรรมที่คงไว้',
-		role: 'primary' as const,
-		startsOn: '2026-05-01',
-		endsOn: null,
-		rowVersion: 3
-	};
-	const activityCatalog = {
-		kind: 'activity' as const,
-		activityId: ids.offering,
-		activityVersionId: ids.offering,
-		hours: '40',
-		registrationType: 'assigned',
-		schedulingMode: options.activityMode ?? 'independent',
-		attendanceRequirement: { minimumPercent: '80' },
-		passCriteria: {
-			requireAttendance: true,
-			requireTeacherConfirmation: true,
-			outcomes: ['pass', 'fail']
-		}
-	};
-	let graph = {
-		...initialGraph,
-		effectiveFrom: options.published ? '2026-05-01' : null,
-		referenceDate: '2026-05-01',
-		snapshot: {
-			offerings: initialGraph.snapshot.offerings.map((row) =>
-				options.activityMode
-					? {
-							...row,
-							kind: 'activity',
-							name: 'กิจกรรมจิตอาสา',
-							weeklyPeriodTarget: 1,
-							catalog: activityCatalog,
-							groups: row.groups.map((source) => ({
-								...source,
-								teachers: [{ ...teacher, assignmentId: teacher.id }]
-							}))
-						}
-					: row
-			)
-		}
-	};
-	if (options.activityMode) {
-		await page.route(`**${paths.offering}`, (route) =>
-			fulfill(route, {
-				...offering(),
-				kind: 'activity',
-				nameSnapshot: 'กิจกรรมจิตอาสา',
-				snapshot: activityCatalog
-			})
-		);
-		const activityGroups = [group(ids.groupA), group(ids.groupB)].map((row) => ({
-			...row,
-			teacherAssignments: [teacher]
-		}));
-		await page.route(`**${paths.groups}`, (route) => fulfill(route, activityGroups));
-		for (const row of activityGroups) {
-			await page.route(`**/api/academic/learning-groups/${row.id}`, (route) => fulfill(route, row));
-		}
-		await page.route(`**${paths.management}*`, (route) =>
-			fulfill(route, {
-				rooms: [],
-				homerooms: [],
-				teachers: [{ id: teacher.teacherId, name: teacher.displayName }]
-			})
-		);
-	}
-	const timestamp = '2026-10-27T00:00:00Z';
-	const item = {
-		id: '70000000-0000-4000-8000-000000000201',
-		actionKind: 'adjust_weekly_period_target' as const,
-		learningOfferingId: ids.offering,
-		weeklyPeriodTarget: options.activityMode ? 1 : 2,
-		rowVersion: 5,
-		createdAt: timestamp,
-		updatedAt: timestamp,
-		createdBy: ids.year
-	};
-	let changeSet: AcademicTermChangeSet = {
-		baseTeacherAssignments: [],
-		publicationNo: null,
-		publishedAt: null,
-		publishedBy: null,
-		publicationDateRules: { today: '2026-05-01', minimumEffectiveFrom: null },
-		id: periodChangeSetId,
-		academicYearId: ids.year,
-		academicTermId: ids.term,
-		status: 'draft',
-		reason: 'ปรับจำนวนคาบ',
-		effectiveFrom: null,
-		referenceDate: '2026-05-01',
-		targetDeliveryVersionId: ids.version,
-		rowVersion: 7,
-		changes: [],
-		offeringLabels: [],
-		createdAt: timestamp,
-		updatedAt: timestamp,
-		createdBy: ids.year,
-		items: [
-			{ ...item, id: 'unrelated-item', learningOfferingId: 'other-offering', rowVersion: 19 },
-			item
-		]
-	};
-	const reads: string[] = [];
-	const writes: Array<{ method: string; path: string; body: Record<string, unknown> }> = [];
-	let failSave = options.failSaveOnce ?? false;
-	let conflict = options.conflictOnce ?? false;
-	let failRefresh = options.failRefreshOnce ?? false;
-	let saved = false;
-	await page.route(`**${paths.versions}*`, (route) =>
-		fulfill(route, [
-			{
-				...version(options.published),
-				changeSetId: periodChangeSetId,
-				effectiveFrom: graph.effectiveFrom
-			}
-		])
-	);
-	await page.route(`**${paths.version}`, async (route) => {
-		reads.push(paths.version);
-		if (saved && failRefresh) {
-			failRefresh = false;
-			await route.fulfill({
-				status: 503,
-				contentType: 'application/json',
-				body: JSON.stringify({ success: false, error: 'โหลดรุ่นล่าสุดไม่สำเร็จ' })
-			});
-			return;
-		}
-		await fulfill(route, graph);
-	});
-	await page.route(`**${periodChangeSetPath}`, async (route) => {
-		expect(route.request().method()).toBe('GET');
-		reads.push(periodChangeSetPath);
-		if (options.readGate) await options.readGate;
-		await fulfill(route, changeSet);
-	});
-	await page.route(`**${periodChangeSetPath}/items`, async (route) => {
-		const body = route.request().postDataJSON();
-		writes.push({
-			method: route.request().method(),
-			path: new URL(route.request().url()).pathname,
-			body
-		});
-		if (options.saveGate) await options.saveGate;
-		if (conflict || failSave) {
-			const status = conflict ? 409 : 503;
-			if (conflict) {
-				changeSet = {
-					...changeSet,
-					rowVersion: 8,
-					items: changeSet.items.map((row) =>
-						row.id === item.id ? { ...row, rowVersion: 6 } : row
-					)
-				};
-			}
-			conflict = false;
-			failSave = false;
-			await route.fulfill({
-				status,
-				contentType: 'application/json',
-				body: JSON.stringify({
-					success: false,
-					error: status === 409 ? 'แบบร่างถูกแก้ไขจากที่อื่น' : 'บันทึกยังไม่สำเร็จ'
-				})
-			});
-			return;
-		}
-		expect(route.request().method()).toBe('PUT');
-		expect(body.action).toBe('adjust_weekly_period_target');
-		expect(body.changeSetRowVersion).toBe(changeSet.rowVersion);
-		const existing = changeSet.items.find((row) => row.id === item.id)!;
-		expect(body.itemRowVersion).toBe(existing.rowVersion);
-		expect(body.learningOfferingId).toBe(ids.offering);
-		changeSet = {
-			...changeSet,
-			rowVersion: changeSet.rowVersion + 1,
-			items: changeSet.items.map((row) =>
-				row.id === item.id
-					? { ...item, rowVersion: row.rowVersion + 1, weeklyPeriodTarget: body.weeklyPeriodTarget }
-					: row
-			)
-		};
-		graph = {
-			...graph,
-			rowVersion: graph.rowVersion + 1,
-			snapshot: {
-				offerings: graph.snapshot.offerings.map((row) => ({
-					...row,
-					weeklyPeriodTarget: body.weeklyPeriodTarget
-				}))
-			}
-		};
-		saved = true;
-		await fulfill(route, changeSet);
-	});
-	return { count, reads, writes, changeSet: () => changeSet, graph: () => graph };
-}
-
-for (const mode of ['independent', 'synchronized'] as const) {
-	for (const scenario of [
-		{ width: 1280, dark: false, conflict: false },
-		{ width: 390, dark: true, conflict: true }
-	]) {
-		test(`zero weekly periods keep ${mode} activity open through ${scenario.conflict ? 'conflict' : 'failed save'} at ${scenario.width}px ${scenario.dark ? 'dark' : 'light'}`, async ({
-			page
-		}, testInfo) => {
-			await page.setViewportSize({ width: scenario.width, height: 900 });
-			const gate = deferred();
-			const fixture = await mockWeeklyPeriods(page, {
-				activityMode: mode,
-				conflictOnce: scenario.conflict,
-				failSaveOnce: !scenario.conflict,
-				failRefreshOnce: true
-			});
-			const initial = structuredClone(fixture.graph().snapshot.offerings[0]);
-			await page.goto(url());
-			if (scenario.dark) {
-				await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
-				await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-			}
-			const groups = page.getByTestId('delivery-groups-ready');
-			await expect(groups.getByRole('button', { name: /^กลุ่ม ก ครู / })).toBeVisible();
-			await expect(groups.getByRole('button', { name: /^กลุ่ม ข ครู / })).toBeVisible();
-			const trigger = page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true });
-			await trigger.focus();
-			await page.keyboard.press('Enter');
-			const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
-			const input = dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true });
-			await expect(input).toHaveValue('1');
-			await expect(input).toHaveAttribute('min', '0');
-			await expect(dialog).toContainText('0 คาบ = เปิดกิจกรรมโดยไม่จัดคาบประจำสัปดาห์ในตารางสอน');
-			await expect(dialog).toContainText('ยังประเมินผ่าน/ไม่ผ่านตามปกติ');
-			await input.fill('-1');
-			const save = dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true });
-			await expect(save).toBeDisabled();
-			await input.fill('0.5');
-			await expect(save).toBeDisabled();
-			await input.fill('0');
-			await input.press('Enter');
-			await expect(dialog.getByRole('alert')).toHaveText(
-				scenario.conflict
-					? 'แบบร่างถูกแก้ไขจากที่อื่น กรุณาโหลดข้อมูลล่าสุดหรือสร้างตัวอย่างใหม่ก่อนดำเนินการ'
-					: 'บันทึกยังไม่สำเร็จ'
-			);
-			await expect(input).toHaveValue('0');
-			expect(fixture.writes).toHaveLength(1);
-			expect(fixture.writes[0].body).toEqual({
-				action: 'adjust_weekly_period_target',
-				changeSetRowVersion: 7,
-				itemRowVersion: 5,
-				learningOfferingId: ids.offering,
-				weeklyPeriodTarget: 0
-			});
-			if (scenario.conflict) {
-				await expect(save).toBeDisabled();
-				await dialog
-					.getByRole('button', { name: 'โหลดข้อมูลล่าสุดก่อนบันทึก', exact: true })
-					.click();
-				await expect(dialog.getByRole('alert')).toHaveCount(0);
-				await expect(input).toHaveValue('0');
-				expect(fixture.writes).toHaveLength(1);
-			}
-			await page.route(`**${periodChangeSetPath}/items`, async (route) => {
-				await gate.promise;
-				await route.fallback();
-			});
-			try {
-				await save.click();
-				await expect(
-					dialog.getByRole('button', { name: 'กำลังบันทึก', exact: true })
-				).toBeDisabled();
-				await expect(input).toBeDisabled();
-				await page.keyboard.press('Enter');
-				await page.keyboard.press('Escape');
-				await expect(dialog).toBeVisible();
-				expect(fixture.writes).toHaveLength(1);
-			} finally {
-				gate.release();
-			}
-			await expect(dialog.getByRole('status')).toContainText('บันทึกจำนวนคาบแล้ว');
-			await expect(dialog.getByRole('alert')).toHaveText('โหลดรุ่นล่าสุดไม่สำเร็จ');
-			await expect(input).toHaveValue('0');
-			await expect(save).toBeDisabled();
-			expect(fixture.writes).toHaveLength(2);
-			expect(fixture.writes[1].body).toEqual({
-				action: 'adjust_weekly_period_target',
-				changeSetRowVersion: scenario.conflict ? 8 : 7,
-				itemRowVersion: scenario.conflict ? 6 : 5,
-				learningOfferingId: ids.offering,
-				weeklyPeriodTarget: 0
-			});
-			await dialog.getByRole('button', { name: 'โหลดจำนวนคาบที่บันทึกแล้ว', exact: true }).click();
-			await expect(dialog).toHaveCount(0);
-			await expect(trigger).toBeFocused();
-			await expect(page.getByTestId('delivery-versions-ready')).toContainText('0 คาบ/สัปดาห์');
-			expect(fixture.graph().snapshot.offerings[0]).toEqual({ ...initial, weeklyPeriodTarget: 0 });
-			await expect(groups.getByRole('button', { name: /^กลุ่ม ก ครู / })).toContainText('ครู 1 คน');
-			await expect(groups.getByRole('button', { name: /^กลุ่ม ข ครู / })).toContainText('ครู 1 คน');
-			await page.getByRole('button', { name: 'จัดการกลุ่ม', exact: true }).click();
-			await expect(page.getByText('ครูกิจกรรมที่คงไว้', { exact: true })).toBeVisible();
-			expect(fixture.writes).toHaveLength(2);
-			await page.screenshot({
-				path: testInfo.outputPath('activity-zero-weekly-periods.png'),
-				animations: 'disabled'
-			});
-		});
-	}
-}
-
-for (const width of [390, 1280]) {
-	for (const dark of [false, true]) {
-		test(`offering period dialog edits the selected draft and restores focus and native scrolling at ${width}px ${dark ? 'dark' : 'light'}`, async ({
-			page
-		}, testInfo) => {
-			await page.setViewportSize({ width, height: 900 });
-			const fixture = await mockWeeklyPeriods(page);
-			await page.goto(url());
-			if (dark) await page.getByRole('button', { name: 'Toggle Dark Mode', exact: true }).click();
-			if (dark) await expect(page.locator('html')).toHaveClass(/\bdark\b/);
-			else await expect(page.locator('html')).not.toHaveClass(/\bdark\b/);
-			const card = page.getByTestId('delivery-versions-ready');
-			await expect(card).toContainText('เลือกวันเริ่มใช้ตอนเผยแพร่');
-			await expect(card).not.toContainText('null');
-			await expect(page.getByTestId('delivery-version-selector')).not.toContainText('null');
-			expect(fixture.reads.filter((path) => path === periodChangeSetPath)).toHaveLength(0);
-			const trigger = card.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true });
-			await trigger.focus();
-			await page.keyboard.press('Enter');
-			const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
-			await expect(dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true })).toHaveValue('2');
-			await expect(dialog).toHaveCSS('opacity', '1');
-			expect(fixture.writes).toHaveLength(0);
-			await page.screenshot({
-				path: testInfo.outputPath(`offering-periods-${width}-${dark ? 'dark' : 'light'}.png`),
-				animations: 'disabled'
-			});
-			const bounds = await dialog.boundingBox();
-			expect(bounds!.x).toBeGreaterThanOrEqual(0);
-			expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
-			expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(900);
-			await page.keyboard.press('Escape');
-			await expect(dialog).toHaveCount(0);
-			await expect(trigger).toBeFocused();
-			const main = page.locator('main');
-			await main.evaluate((element) => {
-				element.scrollTop = 0;
-			});
-			await page.mouse.move(width - 20, 500);
-			await page.mouse.wheel(0, 500);
-			await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-			await trigger.click();
-			await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('0');
-			await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
-			await expect(dialog).toHaveCount(0);
-			await expect(card).toContainText('0 คาบ/สัปดาห์');
-			await expect(trigger).toBeFocused();
-			expect(fixture.writes).toEqual([
-				{
-					method: 'PUT',
-					path: `${periodChangeSetPath}/items`,
-					body: {
-						action: 'adjust_weekly_period_target',
-						changeSetRowVersion: 7,
-						itemRowVersion: 5,
-						learningOfferingId: ids.offering,
-						weeklyPeriodTarget: 0
-					}
-				}
-			]);
-			expect(fixture.changeSet().items[0].rowVersion).toBe(19);
-			expect(fixture.count(paths.offering)).toBe(1);
-			expect(fixture.count(paths.groups)).toBe(1);
-			await trigger.click();
-			await expect(dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true })).toHaveValue('0');
-			await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('4');
-			await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
-			await expect(card).toContainText('4 คาบ/สัปดาห์');
-			expect(fixture.writes[1].body).toMatchObject({
-				changeSetRowVersion: 8,
-				itemRowVersion: 6,
-				weeklyPeriodTarget: 4
-			});
-		});
-	}
-}
-
-for (const conflict of [false, true]) {
-	test(`offering period ${conflict ? 'conflict' : 'network failure'} retains input and saves only after explicit retry`, async ({
-		page
-	}) => {
-		const fixture = await mockWeeklyPeriods(page, {
-			conflictOnce: conflict,
-			failSaveOnce: !conflict
-		});
-		await page.goto(url());
-		await page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true }).click();
-		const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
-		const input = dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true });
-		await input.fill('6');
-		await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
-		await expect(dialog.getByRole('alert')).toBeVisible();
-		await expect(input).toHaveValue('6');
-		expect(fixture.writes).toHaveLength(1);
-		if (conflict) {
-			await expect(
-				dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true })
-			).toBeDisabled();
-			await dialog.getByRole('button', { name: 'โหลดข้อมูลล่าสุดก่อนบันทึก', exact: true }).click();
-			await expect(dialog.getByRole('alert')).toHaveCount(0);
-			await expect(input).toHaveValue('6');
-		}
-		await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
-		await expect(dialog).toHaveCount(0);
-		await expect(page.getByTestId('delivery-versions-ready')).toContainText('6 คาบ/สัปดาห์');
-		expect(fixture.writes[1].body).toMatchObject({
-			changeSetRowVersion: conflict ? 8 : 7,
-			itemRowVersion: conflict ? 6 : 5,
-			weeklyPeriodTarget: 6
-		});
-	});
-}
-
-test('a saved period change with a failed refresh retries only the read', async ({ page }) => {
-	const fixture = await mockWeeklyPeriods(page, { failRefreshOnce: true });
-	await page.goto(url());
-	await page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true }).click();
-	const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
-	await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('3');
-	await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
-	await expect(dialog.getByRole('status')).toContainText('บันทึกจำนวนคาบแล้ว');
-	await expect(dialog.getByRole('alert')).toContainText('โหลดรุ่นล่าสุดไม่สำเร็จ');
-	await expect(dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true })).toBeDisabled();
-	await dialog.getByRole('button', { name: 'โหลดจำนวนคาบที่บันทึกแล้ว', exact: true }).click();
-	await expect(dialog).toHaveCount(0);
-	await expect(page.getByTestId('delivery-versions-ready')).toContainText('3 คาบ/สัปดาห์');
-	expect(fixture.writes).toHaveLength(1);
-});
-
-test('cancelling a pending period read prevents late responses from reopening the dialog', async ({
-	page
-}) => {
-	const gate = deferred();
-	const fixture = await mockWeeklyPeriods(page, { readGate: gate.promise });
-	await page.goto(url());
-	const trigger = page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true });
-	try {
-		await trigger.click();
-		const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
-		await expect
-			.poll(() => fixture.reads.filter((path) => path === periodChangeSetPath).length)
-			.toBe(1);
-		await expect(dialog).toBeVisible();
-		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
-		await expect(dialog).toHaveCount(0);
-		await expect(trigger).toBeFocused();
-	} finally {
-		gate.release();
-	}
-	await expect(page.getByRole('dialog')).toHaveCount(0);
-	expect(fixture.writes).toHaveLength(0);
-	await trigger.click();
-	await expect(
-		page.getByRole('dialog').getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true })
-	).toHaveValue('2');
-});
-
-test('pending period save prevents dismissal and duplicate writes', async ({ page }) => {
-	const gate = deferred();
-	const fixture = await mockWeeklyPeriods(page, { saveGate: gate.promise });
-	try {
-		await page.goto(url());
-		await page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true }).click();
-		const dialog = page.getByRole('dialog', { name: 'แก้ไขจำนวนคาบต่อสัปดาห์', exact: true });
-		await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์', { exact: true }).fill('3');
-		await dialog.getByRole('button', { name: 'บันทึกจำนวนคาบ', exact: true }).click();
-		await expect(dialog.getByRole('button', { name: 'กำลังบันทึก', exact: true })).toBeDisabled();
-		await page.keyboard.press('Escape');
-		await expect(dialog).toBeVisible();
-		expect(fixture.writes).toHaveLength(1);
-	} finally {
-		gate.release();
-	}
-	await expect(page.getByRole('dialog')).toHaveCount(0);
-});
-
-for (const published of [false, true]) {
-	test(`period editing stays hidden for ${published ? 'published snapshots' : 'read-only users'}`, async ({
-		page
-	}) => {
-		const fixture = await mockWeeklyPeriods(page, {
-			published,
-			permissions: published ? ['*'] : ['learning_offering.read.school']
-		});
-		await page.goto(url());
-		await expect(
-			page.getByTestId(published ? 'delivery-version-offering' : 'delivery-offering-ready')
-		).toBeVisible();
-		await expect(page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true })).toHaveCount(0);
-		expect(fixture.reads.filter((path) => path === periodChangeSetPath)).toHaveLength(0);
-		expect(fixture.writes).toHaveLength(0);
-	});
-}
 
 test('bulk tracking dates retain custom choices through mode flips and refresh each fresh opening', async ({
 	page
@@ -2030,14 +1384,14 @@ for (const resourceDraft of [false, true])
 		await page.getByRole('option', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).click();
 		await expect(
 			panel.getByRole('button', { name: 'วันที่เริ่มติดตาม', exact: true })
-		).toContainText(resourceDraft ? '1 พ.ย. 2569' : '27 ต.ค. 2569');
+		).toContainText('27 ต.ค. 2569');
 		await page.getByRole('button', { name: 'ตั้งค่าหลายกลุ่ม', exact: true }).click();
 		const dialog = page.getByRole('dialog', { name: /ตั้งค่าหลายกลุ่ม/ });
 		await dialog.getByRole('checkbox', { name: 'กำหนดวิธีจัดรายชื่อ', exact: true }).check();
 		await dialog.getByRole('radio', { name: 'ติดตามห้องอัตโนมัติ', exact: true }).check();
 		await expect(
 			dialog.getByRole('button', { name: 'วันที่เริ่มติดตามสำหรับกลุ่มเป้าหมาย', exact: true })
-		).toContainText(resourceDraft ? '1 พ.ย. 2569' : '27 ต.ค. 2569');
+		).toContainText('27 ต.ค. 2569');
 	});
 
 test('rendering an existing past tracking date preserves the saved configuration', async ({
@@ -2058,7 +1412,7 @@ test('rendering an existing past tracking date preserves the saved configuration
 		panel.getByRole('button', { name: 'บันทึกวิธีจัดรายชื่อ', exact: true })
 	).toBeDisabled();
 	await expect(panel).toContainText('สมาชิกใหม่เริ่มนับจากวันที่นี้');
-	await expect(panel).toContainText('กลุ่มร่างต้องเตรียมและเผยแพร่รายชื่อก่อนติดตามจริง');
+	await expect(panel).not.toContainText('เผยแพร่รายชื่อ');
 	expect(writes).toEqual([]);
 });
 

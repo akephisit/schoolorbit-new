@@ -45,6 +45,17 @@ fn behavior_scope(
             )
             .collect(),
         archived_student_ids: sources.archived_student_ids.clone(),
+        session_students: sources
+            .session_students
+            .iter()
+            .map(|source| {
+                school_behavior::services::lesson_deletion::LessonDeletionSessionStudent {
+                    session_id: source.session_id,
+                    date: source.date,
+                    student_id: source.student_id,
+                }
+            })
+            .collect(),
     }
 }
 #[async_trait]
@@ -209,9 +220,10 @@ impl DeliveryDeletionAdmission for Admission {
                 .await?
             {
                 if change.reset {
-                    return Err(AppError::Conflict(
-                        "Attendance reset must finish before deleting lessons".into(),
-                    ));
+                    return Err(AppError::ConflictWithCode {
+                        code: "ACADEMIC_DELIVERY_ATTENDANCE_RESET_PENDING",
+                        message: "กำลังล้างข้อมูลเช็กชื่อ กรุณารอให้เสร็จก่อนลบรายการเปิดสอน".into(),
+                    });
                 }
                 let facts = school_attendance::services::score_changes::day_facts_on_connection(
                     &mut **tx,
@@ -234,9 +246,10 @@ impl DeliveryDeletionAdmission for Admission {
                 )
                 .await?;
                 if !school_attendance::services::score_changes::acknowledge(tx, &change).await? {
-                    return Err(AppError::Conflict(
-                        "Attendance day changed during deletion".into(),
-                    ));
+                    return Err(AppError::ConflictWithCode {
+                        code: "ACADEMIC_DELIVERY_ATTENDANCE_CHANGED",
+                        message: "ข้อมูลเช็กชื่อเปลี่ยนไประหว่างการลบ กรุณาตรวจสอบผลกระทบใหม่".into(),
+                    });
                 }
             }
         }

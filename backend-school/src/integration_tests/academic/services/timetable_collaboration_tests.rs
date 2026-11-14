@@ -1,7 +1,7 @@
 //! Real session middleware, native socket transport and HTTP share one domain authority.
 use std::{sync::Arc, time::Duration};
 
-use axum::{middleware::from_fn_with_state, routing::get, Router};
+use axum::{extract::FromRef, middleware::from_fn_with_state, routing::get, Router};
 use futures::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -132,11 +132,15 @@ impl Fixture {
             auth_runtime: auth.runtime.clone(),
             file_platform: files,
         };
+        let mut application = auth.application_state();
+        application.websocket_manager = manager.clone();
+        let delivery =
+            school_academic_delivery_http::state::AcademicDeliveryHttpState::from_ref(&application);
+        let academic = school_academic_timetable_http::routes::academic_routes()
+            .with_state(http)
+            .merge(school_academic_delivery_http::routes::academic_routes().with_state(delivery));
         let app = Router::new()
-            .nest(
-                "/api/academic",
-                school_academic_timetable_http::routes::academic_routes().with_state(http),
-            )
+            .nest("/api/academic", academic)
             .nest(
                 "/api/facilities",
                 school_administration::facility::http::routes::facility_routes()
@@ -3096,4 +3100,214 @@ async fn actual_release_after_http_commit_is_terminal_for_the_frontend_session()
         completed,
         "real frontend session must accept the actual consumed-reservation release response"
     );
+}
+
+#[tokio::test]
+async fn actual_delivery_http_reconciles_native_demand_and_revokes_removed_current_teacher() {
+    let mut fixture = Fixture::new("collaboration_live_delivery_http").await;
+    let pool = &fixture.auth.tenant_a_pool;
+    let old = fixture
+        .auth
+        .insert_user(pool, "live-delivery-old", "active")
+        .await;
+    let new = fixture
+        .auth
+        .insert_user(pool, "live-delivery-new", "active")
+        .await;
+    for teacher in [old, new] {
+        grant(
+            pool,
+            teacher,
+            &[
+                "academic_timetable.read.assigned",
+                "academic_timetable.manage.assigned",
+            ],
+        )
+        .await;
+    }
+    let (offering, year): (Uuid, Uuid) = sqlx::query_as("SELECT id,academic_year_id FROM learning_offerings WHERE academic_term_id=$1 AND kind='course' ORDER BY id LIMIT 1")
+        .bind(fixture.term).fetch_one(pool).await.unwrap();
+    let group = Uuid::new_v4();
+    sqlx::query("INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,academic_year_id,code,name) VALUES($1,$2,$3,$4,$5,'Live current teacher scope')")
+        .bind(group).bind(offering).bind(fixture.term).bind(year).bind(format!("LIVE-{group}")).execute(pool).await.unwrap();
+    sqlx::query("INSERT INTO learning_group_teachers(learning_group_id,academic_term_id,academic_year_id,teacher_id,role,created_by,updated_by) VALUES($1,$2,$3,$4,'primary',$5,$5)")
+        .bind(group).bind(fixture.term).bind(year).bind(old).bind(Uuid::parse_str(ACTOR).unwrap()).execute(pool).await.unwrap();
+    fixture.block = timetable_block_service::create_ordinary_block(
+        pool,
+        &TimetableMutationContext::for_tests(pool, Uuid::parse_str(ACTOR).unwrap()),
+        CreateOrdinaryTimetableBlockRequest {
+            timetable_id: fixture.timetable,
+            academic_term_id: fixture.term,
+            learning_group_id: group,
+            day_of_week: "WED".into(),
+            bell_schedule_period_id: fixture.block.bell_schedule_period_id,
+            room_id: None,
+            instructor_ids: vec![old],
+            note: None,
+        },
+    )
+    .await
+    .unwrap();
+    let mut teacher_sessions = Vec::new();
+    for (index, teacher) in [old, new].into_iter().enumerate() {
+        let (session, token) = fixture
+            .auth
+            .insert_session(pool, teacher, 230 + index as u8, false)
+            .await;
+        teacher_sessions.push((
+            session,
+            format!(
+                "__Host-schoolorbit_session={}",
+                token.encode().expose_for_cookie()
+            ),
+        ));
+    }
+    let old_cookie = &teacher_sessions[0].1;
+    let new_cookie = &teacher_sessions[1].1;
+    let (mut manager, initial) = fixture.socket().await;
+    let (mut scoped, old_initial) = fixture.socket_with_cookie(old_cookie).await;
+    let demands = |frame: &Value| {
+        frame["payload"]["workspace"]["ordinaryDemands"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["learningGroupId"] == group.to_string())
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(demands(&old_initial)["eligibleInstructorIds"], json!([old]));
+    assert!(old_initial["payload"]["workspace"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|block| block["id"] == fixture.block.id.to_string()));
+    let (offering_revision, weekly): (i64, i32) = sqlx::query_as(
+        "SELECT row_version,weekly_period_target FROM learning_offerings WHERE id=$1",
+    )
+    .bind(offering)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let response = fixture
+        .request(
+            reqwest::Method::PATCH,
+            &format!("/api/academic/offerings/{offering}/weekly-period-target"),
+        )
+        .json(&json!({"rowVersion":offering_revision,"weeklyPeriodTarget":weekly+1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    for socket in [&mut manager, &mut scoped] {
+        let reconcile = event(socket, "TimetableReconcileRequired").await;
+        assert_eq!(reconcile["payload"]["reason"], "draft_invalidated");
+        expect_native_disconnect(socket).await;
+    }
+    let (mut manager, after_weekly) = fixture.socket().await;
+    let (mut scoped, teacher_after_weekly) = fixture.socket_with_cookie(old_cookie).await;
+    assert_eq!(
+        after_weekly["payload"]["workspace"]["timetable"]["id"],
+        json!(fixture.timetable)
+    );
+    assert!(
+        after_weekly["payload"]["workspace"]["deliveryRowVersion"]
+            .as_i64()
+            .unwrap()
+            > initial["payload"]["workspace"]["deliveryRowVersion"]
+                .as_i64()
+                .unwrap()
+    );
+    assert_eq!(
+        demands(&teacher_after_weekly)["requiredPeriods"],
+        json!(weekly + 1)
+    );
+    let group_revision: i64 =
+        sqlx::query_scalar("SELECT row_version FROM learning_groups WHERE id=$1")
+            .bind(group)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let response = fixture
+        .request(
+            reqwest::Method::PUT,
+            &format!("/api/academic/learning-groups/{group}/teachers"),
+        )
+        .json(&json!({"rowVersion":group_revision,"teachers":[{"teacherId":new,"role":"primary"}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
+    for socket in [&mut manager, &mut scoped] {
+        event(socket, "TimetableReconcileRequired").await;
+        expect_native_disconnect(socket).await;
+    }
+    let (mut removed, removed_sync) = fixture.socket_with_cookie(old_cookie).await;
+    assert!(
+        removed_sync["payload"]["workspace"]["blocks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|block| block["id"] != fixture.block.id.to_string()),
+        "saved instructor facts cannot preserve revoked current group access"
+    );
+    assert!(removed_sync["payload"]["workspace"]["ordinaryDemands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|row| row["learningGroupId"] != group.to_string()));
+    let denied = command(
+        &mut removed,
+        "ClientClaim",
+        json!({"requestId":Uuid::new_v4(),"source":fixture.source(),"purpose":"edit"}),
+    )
+    .await;
+    assert_eq!(denied["payload"]["accepted"], false);
+    let request = fixture
+        .update(
+            None,
+            "removed teacher cannot save frozen instructor authority",
+        )
+        .header("cookie", old_cookie)
+        .header("x-csrf-token", fixture.auth.csrf(teacher_sessions[0].0));
+    let response = request.send().await.unwrap();
+    assert_eq!(response.status(), 403, "{}", response.text().await.unwrap());
+    let (mut assigned, new_sync) = fixture.socket_with_cookie(new_cookie).await;
+    assert_eq!(demands(&new_sync)["eligibleInstructorIds"], json!([new]));
+    assert_eq!(demands(&new_sync)["requiredPeriods"], json!(weekly + 1));
+    let claim = command(&mut assigned, "ClientClaim", json!({"requestId":Uuid::new_v4(),"source":{"kind":"ordinary_demand","learningGroupId":group,"learningOfferingId":offering},"purpose":"drag","candidate":{"blockKind":"course","learningGroupId":group,"learningOfferingId":offering,"roomId":null,"homeroomIds":[],"teacherIds":[],"instructorIds":[new]}})).await;
+    assert_eq!(
+        claim["payload"]["accepted"], true,
+        "new current teacher receives current demand authority: {claim}"
+    );
+    let preserved: Vec<Uuid> = sqlx::query_scalar("SELECT instructor_id FROM academic_timetable_block_group_instructors i JOIN academic_timetable_block_groups g ON g.id=i.block_group_id WHERE g.block_id=$1 ORDER BY instructor_id").bind(fixture.block.id).fetch_all(pool).await.unwrap();
+    assert_eq!(
+        preserved,
+        vec![old],
+        "ordinary Delivery edits preserve saved placement facts"
+    );
+    removed.close(None).await.unwrap();
+    assigned.close(None).await.unwrap();
+}
+
+async fn expect_native_disconnect(socket: &mut Socket) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(frame) = socket.next().await {
+            match frame {
+                Ok(Message::Close(_)) => return,
+                Ok(Message::Ping(payload)) => socket.send(Message::Pong(payload)).await.unwrap(),
+                Ok(Message::Text(wire)) => {
+                    let event: Value = serde_json::from_str(&wire).unwrap();
+                    assert_ne!(
+                        event["type"], "TimetablePatched",
+                        "dependency invalidation cannot masquerade as an incomplete board patch"
+                    );
+                }
+                Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed) => return,
+                Err(error) => panic!("unexpected close error: {error}"),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("invalidated native room disconnects before accepting more commands");
 }

@@ -267,17 +267,19 @@ async fn manual_group_scope_union_locked_points_and_creator_cancellation() {
         .iter()
         .find(|e| e.student_id == f.b && e.created_by == Some(f.admin.actor_id))
         .unwrap();
-    assert!(manual::cancel_entries(
-        &f.pool,
-        f.teacher,
-        CancelBehaviorEntries {
-            request_id: Uuid::new_v4(),
-            entry_ids: vec![others.id],
-            reason: "wrong selection".into()
-        }
-    )
-    .await
-    .is_err());
+    assert!(
+        manual::cancel_entries(
+            &f.pool,
+            f.teacher,
+            CancelBehaviorEntries {
+                request_id: Uuid::new_v4(),
+                entry_ids: vec![others.id],
+                reason: "wrong selection".into()
+            }
+        )
+        .await
+        .is_err()
+    );
     let p = CancelBehaviorEntries {
         request_id: Uuid::new_v4(),
         entry_ids: vec![own.id],
@@ -468,20 +470,22 @@ async fn purge_modes_stale_preview_and_history_adjustment() {
     .unwrap();
     let p = payload(&f, f.admin, &merit, vec![f.b]).await;
     manual::create_batch(&f.pool, f.admin, p).await.unwrap();
-    assert!(cleanup::execute(
-        &f.pool,
-        f.admin.actor_id,
-        ExecuteBehaviorCleanup {
-            request_id: Uuid::new_v4(),
-            token: preview.token,
-            revision: preview.revision,
-            scope: scope.clone(),
-            mode: BehaviorCleanupMode::DetailsOnly,
-            reason: "retention".into()
-        }
-    )
-    .await
-    .is_err());
+    assert!(
+        cleanup::execute(
+            &f.pool,
+            f.admin.actor_id,
+            ExecuteBehaviorCleanup {
+                request_id: Uuid::new_v4(),
+                token: preview.token,
+                revision: preview.revision,
+                scope: scope.clone(),
+                mode: BehaviorCleanupMode::DetailsOnly,
+                reason: "retention".into()
+            }
+        )
+        .await
+        .is_err()
+    );
     let preview = cleanup::preview(
         &f.pool,
         f.admin.actor_id,
@@ -1196,12 +1200,14 @@ async fn manual_selector_keeps_unassigned_students_without_optional_profile() {
     let student = page.items.iter().find(|s| s.id == f.unassigned).unwrap();
     assert_eq!(student.student_code, None);
     assert_eq!(student.homeroom_id, None);
-    assert!(manual::students(&f.pool, f.teacher, query(&f))
-        .await
-        .unwrap()
-        .items
-        .iter()
-        .all(|s| s.id != f.unassigned));
+    assert!(
+        manual::students(&f.pool, f.teacher, query(&f))
+            .await
+            .unwrap()
+            .items
+            .iter()
+            .all(|s| s.id != f.unassigned)
+    );
 }
 
 #[tokio::test]
@@ -1340,11 +1346,13 @@ async fn summaries_retain_other_term_history_and_resets_require_explicit_inclusi
         .find(|cycle| cycle.side == BehaviorSide::Deduction && cycle.state == "current")
         .unwrap();
     assert_eq!(current.starts_on, now);
-    assert!(cycles
-        .iter()
-        .any(|cycle| cycle.side == BehaviorSide::Deduction
-            && cycle.state == "history"
-            && cycle.ends_on == Some(closed_on)));
+    assert!(
+        cycles
+            .iter()
+            .any(|cycle| cycle.side == BehaviorSide::Deduction
+                && cycle.state == "history"
+                && cycle.ends_on == Some(closed_on))
+    );
     let after_reset = summary(&f, f.a).await;
     assert_eq!(
         (
@@ -1373,6 +1381,13 @@ fn lesson_deletion_scope(
             },
         ],
         archived_student_ids: vec![],
+        session_students: vec![
+            school_behavior::services::lesson_deletion::LessonDeletionSessionStudent {
+                session_id: session,
+                date: today(),
+                student_id: f.a,
+            },
+        ],
     }
 }
 async fn lesson_deletion_day(f: &Fixture, points: i32) -> (BehaviorAttendanceDay, Uuid) {
@@ -1494,9 +1509,30 @@ async fn current_lesson_deletion_redistributes_cap_and_preserves_manual_facts() 
         .await
         .unwrap();
     tx.commit().await.unwrap();
-    assert_eq!(day.facts.len(),1);
-    let remaining=&day.facts[0];
-    assert_eq!((&remaining.source_key,remaining.source_session_id,remaining.kind,remaining.student_id,&remaining.status,remaining.counted,remaining.grade_level_id,remaining.homeroom_id),(&survivor.source_key,survivor.source_session_id,survivor.kind,survivor.student_id,&survivor.status,survivor.counted,survivor.grade_level_id,survivor.homeroom_id));
+    assert_eq!(day.facts.len(), 1);
+    let remaining = &day.facts[0];
+    assert_eq!(
+        (
+            &remaining.source_key,
+            remaining.source_session_id,
+            remaining.kind,
+            remaining.student_id,
+            &remaining.status,
+            remaining.counted,
+            remaining.grade_level_id,
+            remaining.homeroom_id
+        ),
+        (
+            &survivor.source_key,
+            survivor.source_session_id,
+            survivor.kind,
+            survivor.student_id,
+            &survivor.status,
+            survivor.counted,
+            survivor.grade_level_id,
+            survivor.homeroom_id
+        )
+    );
     assert!(remaining.overrides.is_none());
     assert_eq!(
         summary(&f, f.a).await.current.deduction,
@@ -1514,7 +1550,7 @@ async fn current_lesson_deletion_refuses_purged_totals_with_live_roster() {
     clean_lesson_details(&f, BehaviorCleanupMode::DetailsOnly).await;
     let mut conn = f.pool.acquire().await.unwrap();
     assert!(
-        matches!(school_behavior::services::lesson_deletion::preview_on_connection(&mut conn,&lesson_deletion_scope(&f,day.generation,selected)).await,Err(AppError::Conflict(message)) if message=="BEHAVIOR_LESSON_DELETION_PROTECTED_OR_UNATTRIBUTABLE")
+        matches!(school_behavior::services::lesson_deletion::preview_on_connection(&mut conn,&lesson_deletion_scope(&f,day.generation,selected)).await,Err(AppError::ConflictWithCode{code:"BEHAVIOR_LESSON_DELETION_PROTECTED_OR_UNATTRIBUTABLE",message}) if message.contains("จึงยังลบรายการนี้ไม่ได้"))
     );
     drop(conn);
     assert_eq!(
@@ -1546,4 +1582,207 @@ async fn current_lesson_deletion_digest_changes_after_safe_zero_effect_cleanup()
         before.source_digest, after.source_digest,
         "a still-safe zero-count cleanup must invalidate a prior confirmation"
     );
+}
+
+#[tokio::test]
+async fn current_lesson_deletion_rejects_inconsistent_saved_source_attribution_atomically() {
+    for corruption in [
+        "date",
+        "key",
+        "student",
+        "term",
+        "kind",
+        "generation",
+        "session",
+        "decision_date",
+        "decision_student",
+    ] {
+        let f = fixture(&format!("behavior_lesson_bad_{corruption}")).await;
+        let (day, selected) = lesson_deletion_day(&f, 4).await;
+        let scope = lesson_deletion_scope(&f, day.generation, selected);
+        match corruption {
+            "date" => {
+                sqlx::query("UPDATE behavior_daily_totals SET date=date-1 WHERE source='lesson'")
+                    .execute(&f.pool)
+                    .await
+                    .unwrap();
+            }
+            "student" => {
+                sqlx::query("UPDATE behavior_daily_totals SET student_id=$1 WHERE source='lesson'")
+                    .bind(f.b)
+                    .execute(&f.pool)
+                    .await
+                    .unwrap();
+            }
+            "key" => {
+                sqlx::query("UPDATE behavior_entries SET source_key=$2 WHERE source_session_id=$1")
+                    .bind(selected)
+                    .bind(Uuid::new_v4().to_string())
+                    .execute(&f.pool)
+                    .await
+                    .unwrap();
+            }
+            "term" => {
+                let other:Uuid=sqlx::query_scalar("INSERT INTO academic_terms SELECT (jsonb_populate_record(NULL::academic_terms,to_jsonb(t)||jsonb_build_object('id',gen_random_uuid(),'sequence_no',100,'code','BAD-ATTRIBUTION','name','Other saved context','status','planning'))).* FROM academic_terms t WHERE id=$1 RETURNING id").bind(f.term).fetch_one(&f.pool).await.unwrap();
+                sqlx::query(
+                    "UPDATE behavior_daily_totals SET academic_term_id=$1 WHERE source='lesson'",
+                )
+                .bind(other)
+                .execute(&f.pool)
+                .await
+                .unwrap();
+            }
+            "kind" => {
+                sqlx::query(
+                    "UPDATE behavior_daily_totals SET source='manual' WHERE source='lesson'",
+                )
+                .execute(&f.pool)
+                .await
+                .unwrap();
+            }
+            "generation" => {
+                sqlx::query(
+                    "UPDATE behavior_entries SET source_generation=$2 WHERE source_session_id=$1",
+                )
+                .bind(selected)
+                .bind(Uuid::new_v4())
+                .execute(&f.pool)
+                .await
+                .unwrap();
+            }
+            "session" => {
+                sqlx::query("UPDATE behavior_entries SET source_session_id=$2 WHERE source_key=$1")
+                    .bind(selected.to_string())
+                    .bind(Uuid::new_v4())
+                    .execute(&f.pool)
+                    .await
+                    .unwrap();
+            }
+            "decision_date" => {
+                sqlx::query(
+                    "UPDATE behavior_source_effect_snapshots SET date=date-1 WHERE source_key=$1",
+                )
+                .bind(selected.to_string())
+                .execute(&f.pool)
+                .await
+                .unwrap();
+            }
+            "decision_student" => {
+                sqlx::query(
+                    "UPDATE behavior_source_effect_snapshots SET student_id=$2 WHERE source_key=$1",
+                )
+                .bind(selected.to_string())
+                .bind(f.b)
+                .execute(&f.pool)
+                .await
+                .unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_object('totals',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM behavior_daily_totals t),'entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM behavior_entries e),'snapshots',(SELECT jsonb_agg(to_jsonb(s) ORDER BY source_key,student_id,date) FROM behavior_source_effect_snapshots s))").fetch_one(&f.pool).await.unwrap();
+        let mut tx = f.pool.begin().await.unwrap();
+        assert!(
+            matches!(school_behavior::services::lesson_deletion::require_removal_in_transaction(&mut tx,&scope).await,Err(AppError::ConflictWithCode{code:"BEHAVIOR_LESSON_DELETION_PROTECTED_OR_UNATTRIBUTABLE",message}) if message.contains("จึงยังลบรายการนี้ไม่ได้")),
+            "{corruption}"
+        );
+        tx.rollback().await.unwrap();
+        let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_object('totals',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM behavior_daily_totals t),'entries',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM behavior_entries e),'snapshots',(SELECT jsonb_agg(to_jsonb(s) ORDER BY source_key,student_id,date) FROM behavior_source_effect_snapshots s))").fetch_one(&f.pool).await.unwrap();
+        assert_eq!(
+            before, after,
+            "{corruption}: bounded refusal must preserve every saved point and source checkpoint"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cleanup_reference_locks_preserve_closed_context_eligibility_and_reject_mismatch_atomically()
+ {
+    use school_behavior::models::{
+        BehaviorCleanupMode, BehaviorCleanupScope, BehaviorSide, BehaviorSource,
+        ExecuteBehaviorCleanup, PreviewBehaviorCleanup,
+    };
+    let f = fixture("behavior_cleanup_closed_references").await;
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
+        .bind(f.term)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let year: Uuid = sqlx::query_scalar("SELECT academic_year_id FROM academic_terms WHERE id=$1")
+        .bind(f.term)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_years SET status='closed' WHERE id=$1")
+        .bind(year)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    for (academic_term_id, academic_year_id) in
+        [(Some(f.term), None), (None, Some(year)), (None, None)]
+    {
+        let scope = BehaviorCleanupScope {
+            start: Some(today()),
+            end: Some(today()),
+            academic_year_id,
+            academic_term_id,
+            sides: vec![BehaviorSide::Deduction],
+            sources: vec![BehaviorSource::Lesson],
+        };
+        let preview = cleanup::preview(
+            &f.pool,
+            f.admin.actor_id,
+            PreviewBehaviorCleanup {
+                scope: scope.clone(),
+                mode: BehaviorCleanupMode::DeleteEffects,
+            },
+        )
+        .await
+        .unwrap();
+        let result = cleanup::execute(
+            &f.pool,
+            f.admin.actor_id,
+            ExecuteBehaviorCleanup {
+                request_id: Uuid::new_v4(),
+                token: preview.token,
+                revision: preview.revision,
+                scope,
+                mode: BehaviorCleanupMode::DeleteEffects,
+                reason: "Cleanup is allowed for retained closed contexts".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.status, "completed");
+    }
+    let facts = |pool: sqlx::PgPool| async move {
+        sqlx::query_scalar::<_,serde_json::Value>("SELECT jsonb_build_object('state',(SELECT to_jsonb(s) FROM behavior_state s WHERE singleton),'suppressions',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM behavior_suppressions s),'previews',(SELECT jsonb_agg(to_jsonb(p) ORDER BY token) FROM behavior_cleanup_previews p),'audit',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM behavior_cleanup_audits a))").fetch_one(&pool).await.unwrap()
+    };
+    let before = facts(f.pool.clone()).await;
+    for (academic_year_id, academic_term_id) in [
+        (Some(Uuid::new_v4()), Some(f.term)),
+        (Some(Uuid::new_v4()), None),
+        (None, Some(Uuid::new_v4())),
+    ] {
+        let scope = BehaviorCleanupScope {
+            start: Some(today()),
+            end: Some(today()),
+            academic_year_id,
+            academic_term_id,
+            sides: vec![BehaviorSide::Deduction],
+            sources: vec![BehaviorSource::Lesson],
+        };
+        assert!(matches!(
+            cleanup::preview(
+                &f.pool,
+                f.admin.actor_id,
+                PreviewBehaviorCleanup {
+                    scope,
+                    mode: BehaviorCleanupMode::DeleteEffects
+                }
+            )
+            .await,
+            Err(AppError::ValidationError(_) | AppError::NotFound(_))
+        ));
+        assert_eq!(before, facts(f.pool.clone()).await);
+    }
 }

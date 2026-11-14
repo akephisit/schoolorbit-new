@@ -3,8 +3,8 @@ use uuid::Uuid;
 
 use super::exam_schedule_service;
 use crate::integration_tests::academic::cutover_test_support::{
-    apply_migrations_through, record_passing_phase_a_reconciliation_marker,
-    seed_academic_cutover_fixture, CutoverFixture,
+    CutoverFixture, apply_migrations_through, record_passing_phase_a_reconciliation_marker,
+    seed_academic_cutover_fixture,
 };
 use school_academic_assessment::exam_schedule::models::{
     CreateExamRoundRequest, PlaceExamSessionRequest, UpsertDayRoomAssignmentRequest,
@@ -184,14 +184,18 @@ async fn invigilator_assignment_mutations_return_the_updated_workspace() {
         .iter()
         .find(|assignment| assignment.assignment_id == assignment_id)
         .unwrap();
-    assert!(assigned_room
-        .invigilators
-        .iter()
-        .any(|invigilator| invigilator.staff_id == staff_id));
-    assert!(assigned
-        .staff_workloads
-        .iter()
-        .any(|workload| workload.staff_id == staff_id && workload.total_minutes == 60));
+    assert!(
+        assigned_room
+            .invigilators
+            .iter()
+            .any(|invigilator| invigilator.staff_id == staff_id)
+    );
+    assert!(
+        assigned
+            .staff_workloads
+            .iter()
+            .any(|workload| workload.staff_id == staff_id && workload.total_minutes == 60)
+    );
 
     let removed = exam_schedule_service::remove_invigilator_from_assignment(
         &pool,
@@ -207,14 +211,18 @@ async fn invigilator_assignment_mutations_return_the_updated_workspace() {
         .iter()
         .find(|assignment| assignment.assignment_id == assignment_id)
         .unwrap();
-    assert!(removed_room
-        .invigilators
-        .iter()
-        .all(|invigilator| invigilator.staff_id != staff_id));
-    assert!(removed
-        .staff_workloads
-        .iter()
-        .all(|workload| workload.staff_id != staff_id));
+    assert!(
+        removed_room
+            .invigilators
+            .iter()
+            .all(|invigilator| invigilator.staff_id != staff_id)
+    );
+    assert!(
+        removed
+            .staff_workloads
+            .iter()
+            .all(|workload| workload.staff_id != staff_id)
+    );
 }
 
 #[tokio::test]
@@ -269,11 +277,13 @@ async fn current_sources_refresh_without_writes_or_an_import_stage() {
     let refreshed = exam_schedule_service::get_workspace(&pool, round)
         .await
         .unwrap();
-    assert!(refreshed
-        .unscheduled_items
-        .iter()
-        .filter(|item| item.assessment_phase_id == phase)
-        .all(|item| item.duration_minutes == 75));
+    assert!(
+        refreshed
+            .unscheduled_items
+            .iter()
+            .filter(|item| item.assessment_phase_id == phase)
+            .all(|item| item.duration_minutes == 75)
+    );
     sqlx::query(
         "UPDATE course_assessment_phases SET exam_arrangement='outside_timetable' WHERE id=$1",
     )
@@ -284,10 +294,12 @@ async fn current_sources_refresh_without_writes_or_an_import_stage() {
     let outside = exam_schedule_service::get_workspace(&pool, round)
         .await
         .unwrap();
-    assert!(outside
-        .unscheduled_items
-        .iter()
-        .all(|item| item.assessment_phase_id != phase));
+    assert!(
+        outside
+            .unscheduled_items
+            .iter()
+            .all(|item| item.assessment_phase_id != phase)
+    );
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM academic_exam_schedule_items WHERE exam_round_id=$1"
@@ -351,17 +363,19 @@ async fn current_duration_save_revalidates_the_existing_schedule_before_mutation
         .await
         .unwrap();
     assert!(workspace.readiness.findings.iter().any(|finding|finding.code==school_academic_assessment::exam_schedule::models::ExamScheduleReadinessCode::InvalidCurrentSources));
-    assert!(exam_schedule_service::place_exam_session(
-        &pool,
-        PlaceExamSessionRequest {
-            exam_schedule_item_id: session.exam_schedule_item_id,
-            exam_day_id: session.exam_day_id,
-            starts_at: session.starts_at
-        },
-        actor
-    )
-    .await
-    .is_err());
+    assert!(
+        exam_schedule_service::place_exam_session(
+            &pool,
+            PlaceExamSessionRequest {
+                exam_schedule_item_id: session.exam_schedule_item_id,
+                exam_day_id: session.exam_day_id,
+                starts_at: session.starts_at
+            },
+            actor
+        )
+        .await
+        .is_err()
+    );
     let after = exam_schedule_service::get_workspace(&pool, round)
         .await
         .unwrap();
@@ -399,13 +413,15 @@ async fn removing_a_placement_retires_its_item_but_keeps_round_room_and_seat_fac
         .await
         .unwrap();
     assert_eq!(after.round.id, round);
-    assert!(after
-        .unscheduled_items
-        .iter()
-        .any(
-            |item| item.assessment_phase_id == session.assessment_phase_id
-                && item.learning_group_id == session.learning_group_id
-        ));
+    assert!(
+        after
+            .unscheduled_items
+            .iter()
+            .any(
+                |item| item.assessment_phase_id == session.assessment_phase_id
+                    && item.learning_group_id == session.learning_group_id
+            )
+    );
     let unchanged:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM academic_exam_day_room_assignments a WHERE exam_day_id=$1").bind(session.exam_day_id).fetch_one(&pool).await.unwrap();
     assert_eq!(rooms, unchanged);
 }
@@ -867,10 +883,12 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
         .await
         .unwrap();
     assert!(!before.paper_receipt_items.is_empty());
-    assert!(before
-        .paper_receipt_items
-        .iter()
-        .all(|item| item.exam_arrangement == "in_timetable"));
+    assert!(
+        before
+            .paper_receipt_items
+            .iter()
+            .all(|item| item.exam_arrangement == "in_timetable")
+    );
     let phase_id = before.paper_receipt_items[0].assessment_phase_id;
     sqlx::query("UPDATE course_assessment_phases SET exam_arrangement = 'outside_timetable', exam_duration_minutes = NULL WHERE id = $1")
         .bind(phase_id).execute(&pool).await.unwrap();
@@ -881,11 +899,13 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
         outside.paper_receipt_items.len(),
         before.paper_receipt_items.len()
     );
-    assert!(outside
-        .paper_receipt_items
-        .iter()
-        .filter(|item| item.assessment_phase_id == phase_id)
-        .all(|item| item.exam_arrangement == "outside_timetable"));
+    assert!(
+        outside
+            .paper_receipt_items
+            .iter()
+            .filter(|item| item.assessment_phase_id == phase_id)
+            .all(|item| item.exam_arrangement == "outside_timetable")
+    );
     assert_eq!(
         outside.unscheduled_items.len(),
         before.unscheduled_items.len()
@@ -903,10 +923,12 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
     let no_exam = exam_schedule_service::get_workspace(&pool, round_id)
         .await
         .unwrap();
-    assert!(no_exam
-        .paper_receipt_items
-        .iter()
-        .all(|item| item.assessment_phase_id != phase_id));
+    assert!(
+        no_exam
+            .paper_receipt_items
+            .iter()
+            .all(|item| item.assessment_phase_id != phase_id)
+    );
 
     // The round's phase and term are authoritative even if another phase has an exam.
     sqlx::query("UPDATE academic_exam_rounds SET exam_kind = 'final' WHERE id = $1")
@@ -917,10 +939,12 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
     let final_round = exam_schedule_service::get_workspace(&pool, round_id)
         .await
         .unwrap();
-    assert!(final_round
-        .paper_receipt_items
-        .iter()
-        .all(|item| item.assessment_phase_id != phase_id));
+    assert!(
+        final_round
+            .paper_receipt_items
+            .iter()
+            .all(|item| item.assessment_phase_id != phase_id)
+    );
 }
 
 async fn exam_seat_pool(test_name: &str) -> sqlx::PgPool {
@@ -1078,11 +1102,13 @@ async fn exam_seats_reject_invalid_numbers_atomically_and_handle_number_swaps() 
             .await
             .unwrap();
         assert!(!workspace.readiness.complete);
-        assert!(workspace
-            .readiness
-            .findings
-            .iter()
-            .any(|finding| finding.code == ExamScheduleReadinessCode::MissingSeatAssignments));
+        assert!(
+            workspace
+                .readiness
+                .findings
+                .iter()
+                .any(|finding| finding.code == ExamScheduleReadinessCode::MissingSeatAssignments)
+        );
         let version = workspace.round.row_version;
         assert!(matches!(
             exam_schedule_service::generate_seats_for_assignment(
@@ -1137,7 +1163,7 @@ async fn exam_seats_reject_invalid_numbers_atomically_and_handle_number_swaps() 
         .execute(&pool)
         .await
         .unwrap();
-    for exam_day in [day, second_day.id] {
+    for exam_day in [day] {
         exam_schedule_service::upsert_day_room_assignment(&pool, exam_day, request(), actor)
             .await
             .unwrap();

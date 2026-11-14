@@ -15,7 +15,7 @@ function statusItem(patch: Partial<HomeroomDeliveryItem> = {}): HomeroomDelivery
 	return {
 		...comparisonWorkspace().homerooms[0].items[0],
 		offeringId: 'opened',
-		offeringState: 'draft',
+		offeringState: 'present',
 		groupMode: 'normal',
 		teacherState: 'assigned',
 		weeklyPeriodTarget: 2,
@@ -25,9 +25,6 @@ function statusItem(patch: Partial<HomeroomDeliveryItem> = {}): HomeroomDelivery
 				id: 'group',
 				code: 'INTERNAL',
 				name: 'กลุ่มเรียน',
-				status: 'draft',
-				rosterStatus: 'draft',
-				teachersLocked: false,
 				homeroomIds: ['room-a'],
 				homeroomNames: ['ม.1/1'],
 				primaryTeacherCount: 1
@@ -150,8 +147,6 @@ function comparisonWorkspace(): HomeroomDeliveryWorkspace {
 		resourceKind: 'course' as const,
 		code: 'ว30104',
 		name: 'วิทยาศาสตร์*',
-		startsOn: null,
-		endsOn: null,
 		weeklyPeriodTarget: 2,
 		alignmentStates: ['extra_offering' as const]
 	};
@@ -186,9 +181,7 @@ function comparisonWorkspace(): HomeroomDeliveryWorkspace {
 	return {
 		academicYearId: 'year',
 		academicTermId: 'term',
-		deliveryVersionId: 'version',
-		deliveryVersionStatus: 'draft',
-		deliveryVersionEffectiveFrom: null,
+		rowVersion: 1,
 		homerooms: [room('room-a'), room('room-b')],
 		unlinked: [
 			{
@@ -231,7 +224,7 @@ test('comparison preserves mixed room states and unlinked-only unknown evidence 
 			...workspace.homerooms[1].items[0],
 			catalogVersionId: 'old-version',
 			offeringId: 'old-offering',
-			offeringState: 'draft',
+			offeringState: 'present',
 			alignmentStates: ['matches_curriculum']
 		}
 	];
@@ -383,6 +376,7 @@ test('missing offerings and unknown structures never fabricate teacher defects o
 function statusOffering(): Parameters<typeof deliveryOfferingStatuses>[0] {
 	return {
 		id: 'opened',
+		rowVersion: 1,
 		kind: 'activity',
 		code: 'ACT',
 		name: 'กิจกรรม',
@@ -407,6 +401,8 @@ function statusOffering(): Parameters<typeof deliveryOfferingStatuses>[0] {
 		groups: [
 			{
 				id: 'group',
+				rowVersion: 1,
+				registrationOpen: false,
 				code: 'INTERNAL',
 				name: 'กลุ่มเรียน',
 				homeroomIds: ['room-a'],
@@ -420,7 +416,7 @@ function statusOffering(): Parameters<typeof deliveryOfferingStatuses>[0] {
 test('offering statuses use only selected real groups and retain missing target-room grouping evidence alongside known teacher completeness', () => {
 	const offering = statusOffering();
 	offering.groups[0].teachers = [
-		{ assignmentId: 'assignment', teacherId: 'teacher', displayName: 'ครูหลัก', role: 'primary' }
+		{ assignmentId: 'assignment', teacherId: 'teacher', displayName: 'ครูหลัก', role: 'primary', rowVersion: 1, isActive: true }
 	];
 	const workspace = comparisonWorkspace();
 	workspace.homerooms[0] = statusRoom([statusItem()]);
@@ -490,8 +486,7 @@ test('alignment badge review filtering suppresses only known normal evidence and
 	for (const state of [
 		'curriculum_requirement_not_offered',
 		'operational_periods_differ',
-		'extra_offering',
-		'ended_early'
+		'extra_offering'
 	] as const)
 		assert.equal(deliveryAlignmentNeedsReview(state), true);
 });

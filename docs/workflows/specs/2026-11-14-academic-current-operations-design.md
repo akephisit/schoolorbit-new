@@ -34,6 +34,7 @@ public typed provider ของ Delivery ให้ข้อมูล live offeri
 
 การเพิ่มหรือแก้ข้อมูลบันทึกลง registry ปัจจุบันภายใต้ transaction และ revision check
 การเปลี่ยนครู เวลา หรือห้องคง Attendance facts และคะแนนที่มีอยู่ตามปกติ
+คาบย้อนหลังอ่านจาก Attendance session และ roster/context ที่ materialize จริงเท่านั้น ไม่สร้างคาบอดีตจากตารางปัจจุบัน; คาบปัจจุบันที่ยังไม่บันทึกแสดงได้เฉพาะวันนี้ตาม Bangkok และการเปิดคาบอดีตที่ไม่เคยมี session ต้องปฏิเสธ หลังเที่ยงคืนยัง auto-absent สมาชิกที่ unchecked ใน counted saved lesson rounds ตามจริง โดยคง explicit results และกติกา arrival/special เดิม ความคืบหน้า catch-up ยืนยันการประมวลผล known materialized facts ไม่ใช่การสร้างหลักฐานครบตามตารางรายสัปดาห์ย้อนหลัง
 หากข้อมูลขัดกันให้คืนข้อผิดพลาดที่แก้ได้ ไม่ใช้การลบคะแนนเป็นผลข้างเคียงของการแก้
 ตรวจความสอดคล้องกับหลักสูตรที่จุด integration โดยไม่แก้ฉบับหลักสูตร
 

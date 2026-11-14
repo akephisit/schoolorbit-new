@@ -148,11 +148,14 @@ async fn project(
             core::placement_spans(connection, term, start, end).await?
         };
         let rooms = core::rooms_on_connection(connection, term).await?;
-        let blocks =
+        let blocks = if start <= now.date_naive() && end >= now.date_naive() {
             school_academic_timetable::services::attendance::current_pattern_on_connection(
                 connection, term,
             )
-            .await?;
+            .await?
+        } else {
+            Vec::new()
+        };
         (placements, rooms, blocks)
     } else {
         (Vec::new(), Vec::new(), Vec::new())
@@ -237,7 +240,7 @@ async fn project(
                     }
                 }
             }
-            {
+            if date == now.date_naive() {
                 let sources = lesson_sources_for_date(
                     &blocks,
                     sources_by_date.get(&date).map_or(&[], Vec::as_slice),
@@ -248,7 +251,7 @@ async fn project(
                 for block in blocks.iter().filter(|b| {
                     b.day_of_week == day
                         && b.block_kind != TimetableBlockKind::Structural
-                        && (date < now.date_naive() || b.start_time <= now.time())
+                        && b.start_time <= now.time()
                 }) {
                     for group in block.groups.iter().filter(|g| g.is_active) {
                         let Some(source) = sources.get(&group.id) else {

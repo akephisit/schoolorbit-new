@@ -70,7 +70,7 @@ function homeroomWorkspace() {
 						weeklyPeriodTarget: 2,
 						alignmentStates: ['operational_periods_differ'],
 						offeringId: ids.offering,
-						offeringState: 'published',
+						offeringState: 'present',
 						groupMode: 'normal',
 						teacherState: 'assigned',
 						timetableState: 'scheduled',
@@ -98,8 +98,6 @@ function homeroomWorkspace() {
 						code: 'ว20299',
 						name: 'วิทยาศาสตร์เสริม',
 						weeklyPeriodTarget: 1,
-						startsOn: null,
-						endsOn: null,
 						alignmentStates: ['extra_offering']
 					}
 				]
@@ -287,7 +285,6 @@ async function mockShell(page: Page, options: MockOptions = {}) {
 					{
 						...curriculumStructure().programs[0],
 						...programBody,
-						status: 'draft',
 						curriculumLevelId: ids.clonedVersion
 					},
 					201
@@ -692,7 +689,7 @@ import {
 	mockDeliveryNavigation,
 	navigationIds as navIds,
 	navigationOfferingIds as navOfferings,
-	navigationVersion,
+	navigationDelivery,
 	navigationWorkspace
 } from './fixtures/delivery-navigation-route-data';
 import type {
@@ -716,11 +713,11 @@ async function mockSharedComparison(
 ) {
 	await mockDeliveryNavigation(page, { manager: options.manager, readiness: 'course' });
 	const workspace = navigationWorkspace(),
-		version = navigationVersion();
+		version = navigationDelivery();
 	const kind = options.kind ?? 'course',
 		schedulingMode = kind === 'activity' ? (options.schedulingMode ?? 'independent') : null;
 	const oldId = kind === 'course' ? navOfferings.basic21 : navOfferings.club;
-	const old = version.snapshot.offerings.find((item) => item.id === oldId)!;
+	const old = version.offerings.find((item) => item.id === oldId)!;
 	old.code = kind === 'course' ? 'ว30104' : 'ACT-OLD';
 	old.name = kind === 'course' ? 'วิทยาศาสตร์*' : 'กิจกรรมเดิม';
 	for (const [index, room] of workspace.homerooms.entries()) {
@@ -754,8 +751,6 @@ async function mockSharedComparison(
 				code: old.code,
 				name: old.name,
 				resourceKind: kind,
-				startsOn: null,
-				endsOn: null,
 				weeklyPeriodTarget: 2,
 				alignmentStates: ['extra_offering']
 			}
@@ -774,8 +769,6 @@ async function mockSharedComparison(
 		}
 	];
 	if (options.noVersion) {
-		workspace.deliveryVersionId = null;
-		workspace.deliveryVersionStatus = null;
 	}
 	let failWorkspace = options.failWorkspace ?? false,
 		wrongContext = options.wrongContext ?? false,
@@ -812,7 +805,6 @@ async function mockSharedComparison(
 		if (options.failPreview && previewAttempts === 1)
 			return fulfill(route, 'ฉบับทะเบียนนี้เริ่มใช้หลังวันที่เริ่มเปิดสอนที่เลือก', 409);
 		return fulfill(route, {
-			startsOn: offeringStartsOn,
 			academicTermId: navIds.term,
 			curriculumSources: [],
 			sourceHash: 'e'.repeat(64),
@@ -844,7 +836,7 @@ async function mockSharedComparison(
 		for (const room of workspace.homerooms)
 			for (const item of room.items) {
 				item.offeringId = comparisonOffering;
-				item.offeringState = 'draft';
+				item.offeringState = 'present';
 				item.alignmentStates = ['matches_curriculum'];
 			}
 		return fulfill(route, {
@@ -1029,7 +1021,6 @@ for (const mode of ['course', 'independent', 'synchronized'] as const)
 		)!;
 		expect(apply.body).toMatchObject({
 			academicTermId: navIds.term,
-			startsOn: offeringStartsOn,
 			studyProgramIds: [navIds.program],
 			deliveryVersionId: navIds.version,
 			choices: [
@@ -1046,7 +1037,7 @@ for (const mode of ['course', 'independent', 'synchronized'] as const)
 			fixture.academicWrites.every((write) => !write.path.includes('/term-change-sets/'))
 		).toBe(true);
 		expect(
-			fixture.version.snapshot.offerings.some(
+			fixture.version.offerings.some(
 				(item) => item.id === fixture.old.id && item.name === fixture.old.name
 			)
 		).toBe(true);
@@ -1145,7 +1136,7 @@ for (const mode of ['course', 'independent', 'synchronized'] as const) {
 				]
 			});
 			await expect(page).toHaveURL(origin);
-			expect(fixture.version.snapshot.offerings).toContainEqual(fixture.old);
+			expect(fixture.version.offerings).toContainEqual(fixture.old);
 		});
 	}
 }
@@ -1154,7 +1145,7 @@ test('inline missing requirements paginate in the URL even with no actual offeri
 	page
 }) => {
 	const fixture = await mockSharedComparison(page, { manager: true });
-	fixture.version.snapshot.offerings = [];
+	fixture.version.offerings = [];
 	fixture.workspace.unlinked = [];
 	for (const room of fixture.workspace.homerooms) {
 		room.expectedCount = 10;
@@ -1316,7 +1307,7 @@ test('a partially offered exact course version opens pending program B for provi
 	fixture.workspace.homerooms[0].items[0] = {
 		...fixture.workspace.homerooms[0].items[0],
 		offeringId: fixture.old.id,
-		offeringState: 'draft',
+		offeringState: 'present',
 		alignmentStates: ['matches_curriculum']
 	};
 	fixture.workspace.homerooms[1].studyProgram = {
@@ -1351,7 +1342,6 @@ test('a partially offered exact course version opens pending program B for provi
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) => {
 		previewBody = route.request().postDataJSON();
 		return fulfill(route, {
-			startsOn: offeringStartsOn,
 			academicTermId: navIds.term,
 			sourceHash: 'f'.repeat(64),
 			curriculumSources: [],
@@ -1402,11 +1392,8 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 	const draftB = 'c0000000-0000-4000-8000-000000000041',
 		changeSetB = 'c0000000-0000-4000-8000-000000000042';
 	const workspaceA = fixture.workspace;
-	workspaceA.deliveryVersionStatus = 'published';
 	const workspaceB = structuredClone(workspaceA);
 	workspaceB.academicTermId = navIds.activeTerm;
-	workspaceB.deliveryVersionId = draftB;
-	workspaceB.deliveryVersionStatus = 'draft';
 	for (const room of workspaceB.homerooms)
 		for (const item of room.items) item.name = 'วิทยาศาสตร์ภาคใหม่';
 	let oldLookups = 0,
@@ -1480,7 +1467,6 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 					{
 						...base,
 						id: draftB,
-						status: 'draft',
 						changeSetId: changeSetB,
 						sourceVersionId: navIds.version
 					}
@@ -1518,7 +1504,6 @@ test('a superseded parent draft lookup cannot block a new term or clear its pend
 			academicTermId: navIds.activeTerm,
 			baseTeacherAssignments: [],
 			targetDeliveryVersionId: draftB,
-			status: 'draft',
 			rowVersion: 1,
 			effectiveFrom: null,
 			referenceDate: '2027-05-01',
@@ -1608,6 +1593,7 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 		fixture.old.catalog.subjectVersionId = comparisonCatalog;
 	fixture.old.groups = fixture.workspace.homerooms.map((room, index) => ({
 		id: groupIds[index],
+		rowVersion: 1, registrationOpen: false,
 		code: `MANUAL-${index + 1}`,
 		name: `กลุ่มที่จัดเอง ${index + 1}`,
 		description: null,
@@ -1631,7 +1617,6 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 	}));
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 		fulfill(route, {
-			startsOn: offeringStartsOn,
 			academicTermId: navIds.term,
 			curriculumSources: [],
 			sourceHash: 'c'.repeat(64),
@@ -1665,7 +1650,7 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 		for (const room of fixture.workspace.homerooms) {
 			const item = room.items[0];
 			item.offeringId = fixture.old.id;
-			item.offeringState = 'draft';
+			item.offeringState = 'present';
 			item.alignmentStates = ['matches_curriculum'];
 			item.groups = fixture.old.groups
 				.filter((group) => group.homeroomIds.includes(room.homeroom.id))
@@ -1675,10 +1660,7 @@ test('inline curriculum preparation retains repeated conflict categories for dis
 					name: group.name,
 					homeroomIds: group.homeroomIds,
 					homeroomNames: [room.homeroom.name],
-					primaryTeacherCount: 0,
-					status: 'draft',
-					rosterStatus: 'draft',
-					teachersLocked: false
+					primaryTeacherCount: 0
 				}));
 			item.groupMode = 'normal';
 			room.readyCount = 1;
@@ -1755,7 +1737,7 @@ test('a focused offering-level provider conflict blocks save without offering ap
 	fixture.workspace.homerooms[0].items[0] = {
 		...fixture.workspace.homerooms[0].items[0],
 		offeringId: fixture.old.id,
-		offeringState: 'published',
+		offeringState: 'present',
 		alignmentStates: ['matches_curriculum']
 	};
 	fixture.workspace.homerooms[1].studyProgram = {
@@ -1772,7 +1754,6 @@ test('a focused offering-level provider conflict blocks save without offering ap
 		'รายการ ว30104 เผยแพร่แล้วและยังไม่ครอบคลุมห้องเป้าหมายที่เลือก ไม่สามารถเพิ่มเป้าหมายจากการเตรียมเปิดสอนได้';
 	await page.route('**/api/academic/offerings/preview-from-curriculum', (route) =>
 		fulfill(route, {
-			startsOn: offeringStartsOn,
 			academicTermId: navIds.term,
 			sourceHash: 'a'.repeat(64),
 			curriculumSources: [],
@@ -1844,7 +1825,6 @@ test('batch preparation can explicitly skip an offering conflict while deferring
 }) => {
 	const fixture = await mockSharedComparison(page, { manager: true });
 	const preview: CurriculumOfferingPreview = {
-		startsOn: offeringStartsOn,
 		academicTermId: navIds.term,
 		sourceHash: 'b'.repeat(64),
 		curriculumSources: [],
@@ -1972,14 +1952,9 @@ test('same-term history Back cancels a pending version A lookup before version B
 		draftC = 'c0000000-0000-4000-8000-000000000062',
 		changeSetB = 'c0000000-0000-4000-8000-000000000063';
 	const workspaceA = fixture.workspace;
-	workspaceA.deliveryVersionStatus = 'published';
 	const workspaceB = structuredClone(workspaceA);
-	workspaceB.deliveryVersionId = draftB;
-	workspaceB.deliveryVersionStatus = 'draft';
 	for (const room of workspaceB.homerooms)
 		for (const item of room.items) item.name = 'วิทยาศาสตร์รุ่นบี';
-	fixture.version.status = 'published';
-	fixture.version.effectiveFrom = '2027-05-01';
 	const summaryBase = {
 		academicYearId: navIds.year,
 		academicTermId: navIds.term,
@@ -2004,14 +1979,12 @@ test('same-term history Back cancels a pending version A lookup before version B
 		{
 			...summaryBase,
 			id: draftB,
-			status: 'draft',
 			changeSetId: changeSetB,
 			sourceVersionId: navIds.version
 		},
 		{
 			...summaryBase,
 			id: draftC,
-			status: 'draft',
 			changeSetId: null,
 			sourceVersionId: navIds.version
 		}
@@ -2043,7 +2016,6 @@ test('same-term history Back cancels a pending version A lookup before version B
 		fulfill(route, {
 			...fixture.version,
 			id: draftB,
-			status: 'draft',
 			effectiveFrom: null,
 			sourceVersionId: navIds.version
 		})
@@ -2055,7 +2027,6 @@ test('same-term history Back cancels a pending version A lookup before version B
 			academicTermId: navIds.term,
 			baseTeacherAssignments: [],
 			targetDeliveryVersionId: draftB,
-			status: 'draft',
 			rowVersion: 1,
 			effectiveFrom: null,
 			referenceDate: '2027-05-01',
@@ -2143,10 +2114,10 @@ test('same-term history Back cancels a pending version A lookup before version B
 async function mockReviewStatuses(page: Page, wrongContext = false) {
 	await mockDeliveryNavigation(page);
 	const workspace = navigationWorkspace(),
-		version = navigationVersion();
-	const course = version.snapshot.offerings.find((item) => item.id === navOfferings.basic21)!;
-	const central = version.snapshot.offerings.find((item) => item.id === navOfferings.club)!;
-	const extra = version.snapshot.offerings.find((item) => item.id === navOfferings.guidance)!;
+		version = navigationDelivery();
+	const course = version.offerings.find((item) => item.id === navOfferings.basic21)!;
+	const central = version.offerings.find((item) => item.id === navOfferings.club)!;
+	const extra = version.offerings.find((item) => item.id === navOfferings.guidance)!;
 	if (extra.catalog.kind !== 'activity')
 		throw new Error('Expected the additional activity fixture');
 	const extraCatalogVersionId = extra.catalog.activityVersionId;
@@ -2156,6 +2127,7 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 	course.groups = [
 		{
 			id: groupId,
+			rowVersion: 1, registrationOpen: false,
 			code: 'MANUAL',
 			name: 'กลุ่มที่ยังขาดครู',
 			homeroomIds: [navIds.roomA],
@@ -2168,6 +2140,7 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 	extra.groups = [
 		{
 			id: extraGroupId,
+			rowVersion:1,registrationOpen:false,
 			code: 'EXTRA',
 			name: 'กลุ่มนอกหลักสูตร',
 			homeroomIds: [navIds.roomA],
@@ -2175,6 +2148,7 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 			teachers: [
 				{
 					assignmentId: 'd0000000-0000-4000-8000-000000000113',
+					rowVersion: 1, isActive: true,
 					teacherId: navIds.actor,
 					displayName: 'ครูหลักกิจกรรมเพิ่มเติม',
 					role: 'primary'
@@ -2182,7 +2156,7 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 			]
 		}
 	];
-	version.snapshot.offerings = [course, central, extra];
+	version.offerings = [course, central, extra];
 	const courseSource = workspace.homerooms[0].items.find((item) => item.offeringId === course.id)!;
 	workspace.homerooms[0].items = [
 		{
@@ -2198,10 +2172,7 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 					name: 'กลุ่มที่ยังขาดครู',
 					homeroomIds: [navIds.roomA],
 					homeroomNames: ['ม.1/1'],
-					primaryTeacherCount: 0,
-					status: 'draft',
-					rosterStatus: 'draft',
-					teachersLocked: false
+					primaryTeacherCount: 0
 				}
 			]
 		}
@@ -2216,8 +2187,6 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 			code: extra.code,
 			name: extra.name,
 			weeklyPeriodTarget: extra.weeklyPeriodTarget,
-			startsOn: null,
-			endsOn: null,
 			alignmentStates: ['extra_offering']
 		}
 	];
@@ -2254,7 +2223,7 @@ async function mockReviewStatuses(page: Page, wrongContext = false) {
 			standardPeriodsPerWeek: null,
 			weeklyPeriodTarget: 0,
 			offeringId: central.id,
-			offeringState: 'draft',
+			offeringState: 'present',
 			groupMode: 'central',
 			teacherState: 'deferred',
 			groups: [],
@@ -2488,7 +2457,7 @@ test('an opened course without real groups waits for grouping instead of claimin
 }) => {
 	const fixture = await mockReviewStatuses(page);
 	const item = fixture.workspace.homerooms[1].items[0];
-	const course = fixture.version.snapshot.offerings.find(
+	const course = fixture.version.offerings.find(
 		(source) => source.id === navOfferings.basic21
 	)!;
 	item.offeringId = course.id;
@@ -2496,7 +2465,7 @@ test('an opened course without real groups waits for grouping instead of claimin
 	item.name = course.name;
 	item.code = course.code;
 	item.requirementKind = 'required';
-	item.offeringState = 'draft';
+	item.offeringState = 'present';
 	item.weeklyPeriodTarget = 0;
 	item.alignmentStates = ['matches_curriculum'];
 	const target = new URL(fixture.origin, 'http://schoolorbit.test');
@@ -2516,13 +2485,14 @@ test('healthy course and supported central activity have no review badges or emp
 	page
 }) => {
 	const fixture = await mockReviewStatuses(page);
-	const course = fixture.version.snapshot.offerings.find(
+	const course = fixture.version.offerings.find(
 		(item) => item.id === navOfferings.basic21
 	)!;
 	course.weeklyPeriodTarget = 2;
 	course.groups[0].teachers = [
 		{
 			assignmentId: 'd0000000-0000-4000-8000-000000000121',
+					rowVersion: 1, isActive: true,
 			teacherId: navIds.actor,
 			displayName: 'ครูหลัก',
 			role: 'primary'

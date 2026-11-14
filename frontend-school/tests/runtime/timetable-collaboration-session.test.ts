@@ -192,7 +192,6 @@ test('a decoded combined-null metadata baseline makes the session ready and admi
 	h.session.reset(timetableIds.timetable);
 	assert.equal(h.session.state.ready, false);
 	const workspace = collaborationWorkspace();
-	workspace.timetable.createdBy = null;
 	workspace.homerooms[0].roomNumber = null;
 	workspace.rooms = [{ id: timetableIds.room, code: null, name: 'ห้องเรียน', status: 'ACTIVE' }];
 	const epoch = timetableIds.blockA;
@@ -384,7 +383,7 @@ test('presence-only updates retain existing participant order while joins append
 	);
 });
 
-for (const code of ['delivery_source_outdated', 'reserved', null]) {
+for (const code of ['stale', 'reserved', null]) {
 	test(`claim rejection preserves typed code ${String(code)} for deliberate recovery`, async () => {
 		const h = harness();
 		const pending = h.session.claim(source, candidate, 'edit');

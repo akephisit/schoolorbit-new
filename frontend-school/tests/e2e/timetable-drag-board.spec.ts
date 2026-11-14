@@ -50,7 +50,7 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await expect(page.getByText('3/3', { exact: true })).toBeVisible();
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 	const trayCard = page.locator('aside article').first();
 	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
@@ -76,7 +76,7 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await expect(page.getByText('2/3', { exact: true })).toBeVisible();
 	expect(mock.previewRequestCount()).toBe(1);
 	expect(mock.createRequestCount()).toBe(1);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 	expect(mock.blocks()).toHaveLength(1);
 
 	await page.getByRole('button', { name: 'กลุ่มเรียน' }).click();
@@ -477,7 +477,7 @@ test('places immediately and keeps other timetable cards editable while saves ru
 	await expect(page.getByLabel(/^กำลังบันทึกคาบ /)).toHaveCount(0, { timeout: 4000 });
 	expect(mock.createRequestCount()).toBe(1);
 	expect(mock.updateRequestCount()).toBe(1);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 });
 
 test('saves edited room in the background while another lesson can still be dragged', async ({
@@ -525,7 +525,7 @@ test('saves edited room in the background while another lesson can still be drag
 	});
 	await expect(page.getByLabel(/^กำลังบันทึกคาบ /)).toHaveCount(0, { timeout: 4000 });
 	expect(mock.updateRequestCount()).toBe(2);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 });
 
 test('restores the previous room when a background detail save fails', async ({ page }) => {
@@ -554,7 +554,7 @@ test('restores the previous room when a background detail save fails', async ({ 
 			.filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
 	).toBeVisible();
 	expect(mock.updateRequestCount()).toBe(1);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 });
 
 test('rolls an optimistic placement back when background validation rejects it', async ({
@@ -624,7 +624,7 @@ test('removes immediately and restores the card when the background delete fails
 			.filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
 	).toBeVisible();
 	expect(mock.deleteRequestCount()).toBe(1);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 });
 
 test('keeps timetable row geometry stable while drag feedback is active', async ({ page }) => {

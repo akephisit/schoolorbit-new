@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack, onDestroy } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
 	import {
 		getLearningGroupRosterTracking,
 		updateLearningGroupRosterTracking,
@@ -37,6 +38,17 @@
 	let effectiveFrom = $state<string | undefined>();
 	const request = new LatestRequest();
 	let disposed = false;
+	const groupId = $derived(group.id),
+		groupRevision = $derived(group.rowVersion);
+	const identityEpoch = $derived.by(() => {
+		void $authStore;
+		return authStore.sessionEpoch;
+	});
+	function admission() {
+		const id = groupId,
+			epoch = authStore.sessionEpoch;
+		return () => !disposed && groupId === id && authStore.sessionEpoch === epoch;
+	}
 	onDestroy(() => {
 		disposed = true;
 		request.abort();
@@ -45,6 +57,7 @@
 	let pendingConfig = $state.raw<LearningGroupRosterTracking | null>(null);
 	let conflict = $state(false);
 	let ownerId = '';
+	let ownerEpoch = -1;
 	let requestedKey = '';
 	let observedTracking: LearningGroupRosterTracking | null = null;
 	const unchanged = $derived(accepted !== null && draftMatches(accepted));
@@ -102,7 +115,8 @@
 		preserveDraft = false,
 		initial: Promise<RouteLoadResult<LearningGroupRosterTracking | null>> | null = null
 	) {
-		const id = group.id;
+		const id = groupId,
+			current = admission();
 		const ticket = request.begin();
 		requestedKey = `${id}:${group.rowVersion}`;
 		loading = true;
@@ -114,22 +128,26 @@
 				if (!result.ok) throw new Error(result.error);
 				config = result.data;
 			} else config = await getLearningGroupRosterTracking(id, { signal: ticket.signal });
-			if (request.isCurrent(ticket.revision) && group.id === id) reconcile(config, preserveDraft);
+			if (current() && request.isCurrent(ticket.revision)) reconcile(config, preserveDraft);
 		} catch (failure) {
-			if (!isAbortError(failure) && request.isCurrent(ticket.revision) && group.id === id)
+			if (!isAbortError(failure) && current() && request.isCurrent(ticket.revision))
 				error = failure instanceof Error ? failure.message : 'โหลดวิธีจัดรายชื่อไม่สำเร็จ';
 		} finally {
-			if (request.isCurrent(ticket.revision) && group.id === id) loading = false;
+			if (current() && request.isCurrent(ticket.revision)) loading = false;
 		}
 	}
 	$effect.pre(() => {
-		const id = group.id;
-		const rowVersion = group.rowVersion;
-		const provided = tracking;
+		const id = groupId;
+		const rowVersion = groupRevision;
+		const epoch = identityEpoch;
+		const provided = ownerEpoch === -1 || ownerEpoch === epoch ? tracking : null;
 		untrack(() => {
-			if (ownerId !== id) {
+			if (ownerId !== id || ownerEpoch !== epoch) {
 				request.abort();
 				ownerId = id;
+				ownerEpoch = epoch;
+				saving = false;
+				tracking = null;
 				requestedKey = '';
 				observedTracking = null;
 				accepted = null;
@@ -181,7 +199,9 @@
 			error = 'เลือกวันที่เริ่มติดตาม';
 			return;
 		}
-		const id = group.id;
+		const id = groupId,
+			current = admission(),
+			updated = onUpdated;
 		const submittedRevision = accepted.groupRowVersion;
 		saving = true;
 		error = '';
@@ -192,19 +212,16 @@
 				effectiveFrom: mode === 'homeroom' ? effectiveFrom : null,
 				rowVersion: submittedRevision
 			});
-			if (disposed || group.id !== id) return;
+			if (!current()) return;
 			if (!reconcile(config, false)) return;
-			onUpdated(id, config);
+			updated(id, config);
+			if (!current()) return;
 			saved = 'บันทึกวิธีจัดรายชื่อแล้ว';
 		} catch (failure) {
-			if (
-				!disposed &&
-				group.id === id &&
-				(!observedTracking || observedTracking.groupRowVersion <= submittedRevision)
-			)
+			if (current() && (!observedTracking || observedTracking.groupRowVersion <= submittedRevision))
 				error = failure instanceof Error ? failure.message : 'บันทึกวิธีจัดรายชื่อไม่สำเร็จ';
 		} finally {
-			if (!disposed && group.id === id) saving = false;
+			if (current()) saving = false;
 		}
 	}
 </script>

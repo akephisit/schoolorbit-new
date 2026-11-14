@@ -208,183 +208,107 @@ async fn lifecycle_exam_readiness_changes_when_child_assignments_change() {
         .find(|row| row.id == round)
         .unwrap()
         .revision;
-    for (sql,id) in [
-        ("UPDATE academic_exam_day_blocked_windows SET label='พักกลางวัน' WHERE exam_day_id=$1",day),
-        ("UPDATE academic_exam_day_room_assignments SET capacity_override=25 WHERE id=$1",assignment),
-        ("UPDATE academic_exam_day_invigilators SET role_label='หัวหน้าห้องสอบ' WHERE exam_day_id=$1",day),
-        ("UPDATE academic_exam_seat_assignments SET seat_number='2' WHERE day_room_assignment_id=$1",assignment),
-        ("DELETE FROM academic_exam_day_grade_levels WHERE exam_day_id=$1",day),
+    for (sql, id) in [
+        (
+            "UPDATE academic_exam_day_blocked_windows SET label='พักกลางวัน' WHERE exam_day_id=$1",
+            day,
+        ),
+        (
+            "UPDATE academic_exam_day_room_assignments SET capacity_override=25 WHERE id=$1",
+            assignment,
+        ),
+        (
+            "UPDATE academic_exam_day_invigilators SET role_label='หัวหน้าห้องสอบ' WHERE exam_day_id=$1",
+            day,
+        ),
+        (
+            "UPDATE academic_exam_seat_assignments SET seat_number='2' WHERE day_room_assignment_id=$1",
+            assignment,
+        ),
+        (
+            "DELETE FROM academic_exam_day_grade_levels WHERE exam_day_id=$1",
+            day,
+        ),
     ] {
-        assert_eq!(sqlx::query(sql).bind(id).execute(&mut *tx).await.unwrap().rows_affected(),1);
-        let after=exam_schedule_service::pending_term_work(&mut tx,year,term).await.unwrap().into_iter().find(|row|row.id==round).unwrap().revision;
-        assert_ne!(before,after,"changed exam child data must invalidate readiness: {sql}");
-        before=after;
+        assert_eq!(
+            sqlx::query(sql)
+                .bind(id)
+                .execute(&mut *tx)
+                .await
+                .unwrap()
+                .rows_affected(),
+            1
+        );
+        let after = exam_schedule_service::pending_term_work(&mut tx, year, term)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|row| row.id == round)
+            .unwrap()
+            .revision;
+        assert_ne!(
+            before, after,
+            "changed exam child data must invalidate readiness: {sql}"
+        );
+        before = after;
     }
 }
 
 #[tokio::test]
-async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_delivery_items() {
-    let pool = core::services_tests::prepare_core_fixture("lifecycle_operational_providers").await;
-    let (year,term,bell,start):(Uuid,Uuid,Uuid,chrono::NaiveDate) = sqlx::query_as(
-        "SELECT academic_year_id,id,bell_schedule_id,(now() AT TIME ZONE 'Asia/Bangkok')::date FROM academic_terms WHERE status='active'"
-    ).fetch_one(&pool).await.unwrap();
-    let actor: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE user_type='staff' LIMIT 1")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let offering:Uuid = sqlx::query_scalar("SELECT id FROM learning_offerings WHERE academic_term_id=$1 AND status='published' LIMIT 1").bind(term).fetch_one(&pool).await.unwrap();
-    let exam:Uuid = sqlx::query_scalar("INSERT INTO academic_exam_rounds(academic_year_id,academic_term_id,name,status) VALUES($1,$2,'E2E-LIFECYCLE-exam','draft') RETURNING id")
-        .bind(year).bind(term).fetch_one(&pool).await.unwrap();
-    let delivery: Uuid = sqlx::query_scalar("SELECT id FROM academic_delivery_versions WHERE academic_year_id=$1 AND academic_term_id=$2 AND status='published' ORDER BY effective_from DESC,id DESC LIMIT 1")
-        .bind(year).bind(term).fetch_one(&pool).await.unwrap();
-    let timetable:Uuid = sqlx::query_scalar("INSERT INTO academic_timetable_versions(academic_year_id,academic_term_id,bell_schedule_id,effective_from,status,delivery_version_id) VALUES($1,$2,$3,$4,'draft',$5) RETURNING id")
-        .bind(year).bind(term).bind(bell).bind(start.succ_opt().unwrap()).bind(delivery).fetch_one(&pool).await.unwrap();
-    let change = school_academic_delivery::services::change_sets::create_change_set(
-        &pool,
-        actor,
-        school_academic_delivery::models::CreateAcademicTermChangeSetRequest {
-            academic_term_id: term,
-            reason: "E2E-LIFECYCLE-change".into(),
-            idempotency_key: Uuid::new_v4(),
-        },
+async fn lifecycle_current_delivery_has_no_pending_publication_or_change_set_work() {
+    let pool = core::services_tests::prepare_core_fixture("lifecycle_current_providers").await;
+    let (year, term): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT academic_year_id,id FROM academic_terms WHERE status='active' ORDER BY id LIMIT 1",
     )
+    .fetch_one(&pool)
     .await
-    .unwrap()
-    .id;
+    .unwrap();
     let mut tx = pool.begin().await.unwrap();
-    let pending = school_academic_delivery::services::pending_term_work(&mut tx, year, term)
+    let actor = school_authorization::ActorContext {
+        user_id: sqlx::query_scalar(
+            "SELECT id FROM users WHERE user_type='staff' ORDER BY id LIMIT 1",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap(),
+        permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+    };
+    let workspace = super::workspace_in_transaction(&mut tx, &actor, year, term)
         .await
         .unwrap();
-    let before = pending
-        .iter()
-        .find(|row| row.id == change)
-        .expect("draft change is visible");
-    assert!(!before.blocks_closure);
-    let before_revision = before.revision.clone();
-    sqlx::query("INSERT INTO academic_term_change_items(change_set_id,academic_year_id,academic_term_id,action_kind,learning_offering_id,created_by) VALUES($1,$2,$3,'stop_offering',$4,$5)")
-        .bind(change).bind(year).bind(term).bind(offering).bind(actor).execute(&mut *tx).await.unwrap();
-    let pending = school_academic_delivery::services::pending_term_work(&mut tx, year, term)
-        .await
-        .unwrap();
-    let after = pending.iter().find(|row| row.id == change).unwrap();
-    assert!(after.blocks_closure);
-    assert_ne!(before_revision, after.revision);
     assert!(
-        exam_schedule_service::pending_term_work(&mut tx, year, term)
+        workspace
+            .findings
+            .iter()
+            .all(|finding| !finding.code.starts_with("delivery."))
+    );
+
+    assert!(
+        school_academic_delivery::services::pending_term_work(&mut tx, year, term)
             .await
             .unwrap()
-            .iter()
-            .any(|row| row.id == exam && !row.blocks_closure)
+            .is_empty()
     );
-    assert!(timetable_service::pending_term_work(&mut tx, year, term)
-        .await
-        .unwrap()
-        .iter()
-        .any(|row| row.id == timetable && !row.blocks_closure));
     assert!(
         school_academic_delivery::services::pending_term_work(&mut tx, Uuid::new_v4(), term)
             .await
             .unwrap()
             .is_empty()
     );
+    let pending = exam_schedule_service::pending_term_work(&mut tx, year, term)
+        .await
+        .unwrap();
+    assert!(pending.iter().all(|row| !row.blocks_closure));
     assert!(
         exam_schedule_service::pending_term_work(&mut tx, year, Uuid::new_v4())
             .await
             .unwrap()
             .is_empty()
     );
-    assert!(
-        timetable_service::pending_term_work(&mut tx, Uuid::new_v4(), term)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    let reader = school_authorization::ActorContext {
-        user_id: actor,
-        permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
-    };
-    let workspace = super::workspace_in_transaction(&mut tx, &reader, year, term)
+    let tables = timetable_service::pending_term_work(&mut tx, year, term)
         .await
         .unwrap();
-    let supervision = workspace
-        .findings
-        .iter()
-        .find(|finding| finding.code == "supervision.warning")
-        .unwrap();
-    assert_eq!(
-        supervision.resolution_url.as_deref(),
-        Some(
-            format!("/staff/academic/supervision?academicYearId={year}&academicTermId={term}")
-                .as_str()
-        )
-    );
-    for (code, path) in [
-        ("delivery.blocking", "/staff/academic/delivery"),
-        ("exams.warning", "/staff/academic/exam-schedules"),
-        ("timetable.warning", "/staff/academic/timetable"),
-    ] {
-        let finding = workspace
-            .findings
-            .iter()
-            .find(|finding| finding.code == code)
-            .expect("the fixture must produce each operational finding");
-        assert!(finding.count > 0, "{code}");
-        assert_eq!(
-            finding.resolution_url.as_deref(),
-            Some(format!("{path}?academicYearId={year}&academicTermId={term}").as_str()),
-            "{code} links to the exact academic context"
-        );
-    }
-    assert!(workspace
-        .findings
-        .iter()
-        .all(|finding| !finding.code.starts_with("results.")));
-    let partial_reader = school_authorization::ActorContext {
-        user_id: actor,
-        permissions: vec![
-            school_permissions::registry::codes::ACADEMIC_LIFECYCLE_READ_SCHOOL.into(),
-            school_permissions::registry::codes::ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL.into(),
-        ],
-    };
-    let partial = super::workspace_in_transaction(&mut tx, &partial_reader, year, term)
-        .await
-        .unwrap();
-    for code in [
-        "delivery.blocking",
-        "timetable.warning",
-        "supervision.warning",
-    ] {
-        let finding = partial
-            .findings
-            .iter()
-            .find(|finding| finding.code == code)
-            .expect("missing read permission must not hide an operational finding");
-        let full = workspace
-            .findings
-            .iter()
-            .find(|finding| finding.code == code)
-            .unwrap();
-        assert_eq!(finding.count, full.count, "{code}");
-        assert!(finding.count > 0, "{code}");
-        assert!(finding.resolution_url.is_none(), "{code}");
-    }
-    let exam_finding = partial
-        .findings
-        .iter()
-        .find(|finding| finding.code == "exams.warning")
-        .expect("the granted exam finding remains visible");
-    assert!(exam_finding.count > 0);
-    assert_eq!(
-        exam_finding.resolution_url.as_deref(),
-        Some(
-            format!("/staff/academic/exam-schedules?academicYearId={year}&academicTermId={term}")
-                .as_str()
-        )
-    );
-    assert!(partial
-        .findings
-        .iter()
-        .all(|finding| !finding.code.starts_with("results.")));
+    assert!(tables.iter().all(|row| !row.blocks_closure));
 }
 
 #[tokio::test]
@@ -403,7 +327,9 @@ async fn lifecycle_permission_defaults_only_grant_verified_system_administrators
     for permission in expected {
         assert!(grants.iter().any(|(_, _, code)| code == permission));
     }
-    assert!(grants
-        .iter()
-        .all(|(role, system, _)| role == "ADMIN" && *system));
+    assert!(
+        grants
+            .iter()
+            .all(|(role, system, _)| role == "ADMIN" && *system)
+    );
 }

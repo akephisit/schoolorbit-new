@@ -1,9 +1,9 @@
 //! Live Delivery projections. Normalized rows are the sole authority.
 use crate::models::{
-    current::*, LearningOfferingQuery, LearningOfferingSnapshot, LearningTeacherRole,
+    LearningOfferingQuery, LearningOfferingSnapshot, LearningTeacherRole, current::*,
 };
 use school_authorization::{
-    academic_resource_access_for, AcademicResourceAccess, AcademicResourceListFilter,
+    AcademicResourceAccess, AcademicResourceListFilter, academic_resource_access_for,
 };
 use school_database::DbSession;
 use school_errors::AppError;
@@ -252,4 +252,16 @@ pub async fn term_revision_on_connection(
     term: Uuid,
 ) -> Result<i64, AppError> {
     DbSession::new(connection).scalar("academic_delivery.current.term_revision", "SELECT COALESCE(state.row_version,1) FROM academic_terms term LEFT JOIN academic_delivery_state state ON state.academic_term_id=term.id WHERE term.id=$1 AND term.academic_year_id=$2").bind(term).bind(year).fetch_optional().await?.ok_or_else(|| AppError::NotFound("ไม่พบปีและภาคเรียนที่เลือก".into()))
+}
+
+/// Current registry groups for an exact offering; no publication or date selection.
+pub async fn offering_group_ids_on_connection(
+    conn: &mut PgConnection,
+    offering_id: Uuid,
+) -> Result<Vec<Uuid>, AppError> {
+    let rows:Vec<Uuid>=DbSession::new(conn).scalar("academic_delivery.current.offering_groups","SELECT g.id FROM learning_groups g JOIN learning_offerings o ON o.id=g.learning_offering_id AND o.academic_year_id=g.academic_year_id AND o.academic_term_id=g.academic_term_id WHERE o.id=$1 ORDER BY g.code,g.id LIMIT 20001").bind(offering_id).fetch_all().await?;
+    if rows.len() > 20000 {
+        return Err(AppError::ValidationError("กลุ่มเรียนเกินขนาดที่รองรับ".into()));
+    }
+    Ok(rows)
 }

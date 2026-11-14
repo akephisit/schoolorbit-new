@@ -4717,7 +4717,7 @@ async fn attendance_lifecycle_delivery_gate_waits_for_finalization_scores_and_cl
         .execute(&f.pool)
         .await
         .unwrap();
-    let provider = crate::adapters::academic_lifecycle::ApplicationLifecycleProviders;
+    let provider = crate::integration_tests::academic::lifecycle::services::providers();
     let mut tx = f.pool.begin().await.unwrap();
     assert!(matches!(
         provider
@@ -6149,7 +6149,7 @@ async fn attendance_closure_complete(pool: &PgPool, date: NaiveDate) -> Result<(
     use school_academic_lifecycle::ports::ExternalLifecyclePort;
     let mut tx = pool.begin().await.unwrap();
     school_attendance::services::lock_term(&mut tx, TERM, true, true).await?;
-    let result = crate::adapters::academic_lifecycle::LIFECYCLE_PROVIDERS
+    let result = crate::integration_tests::academic::lifecycle::services::providers()
         .require_attendance_delivery_complete(&mut tx, TERM, date)
         .await;
     tx.rollback().await.unwrap();

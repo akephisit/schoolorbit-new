@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {readFile} from 'node:fs/promises';
 
 const deliveryModule =
 	await import('../../src/lib/academic/synchronized-activity-delivery.ts').catch(() => ({}));
@@ -193,31 +194,10 @@ test('synchronized activities default to central activation but retain reviewed 
 	);
 });
 
-test('only drafts from the latest published opening are candidates, regardless of current historical view', () => {
-	const old = { id: 'old', status: 'published', effectiveFrom: '2026-05-01' };
-	const latest = { id: 'new', status: 'published', effectiveFrom: '2026-09-01' };
-	const oldDraft = { id: 'old-draft', status: 'draft', sourceVersionId: old.id };
-	const draft = { id: 'draft', status: 'draft', sourceVersionId: latest.id };
-	assert.deepEqual(
-		deliveryModule.deliveryPreparationDraftCandidates([oldDraft, old, latest, draft]),
-		{
-			source: latest,
-			drafts: [draft]
-		}
-	);
-	assert.deepEqual(deliveryModule.deliveryPreparationDraftCandidates([old, latest]), {
-		source: latest,
-		drafts: []
-	});
-	assert.equal(
-		deliveryModule.deliveryPreparationDraftCandidates([
-			old,
-			latest,
-			draft,
-			{ ...draft, id: 'other' }
-		]).drafts.length,
-		2
-	);
+test('current curriculum helpers expose no operational-version candidate or date winner',async()=>{
+ assert.equal(deliveryModule.deliveryPreparationDraftCandidates,undefined);
+ const source=await readFile(new URL('../../src/lib/academic/synchronized-activity-delivery.ts',import.meta.url),'utf8');
+ assert.doesNotMatch(source,/DeliveryVersion|sourceVersionId|effectiveFrom|latestPublished/);
 });
 
 test('focused curriculum preparation supports exact course and independent activity versions without pairing same-code records', () => {
@@ -273,7 +253,7 @@ test('a partially opened exact version prepares only the still-missing room and 
 		catalogVersionId: 'same-version',
 		schedulingMode: null,
 		offeringId: 'offering-a',
-		offeringState: 'draft'
+		offeringState: 'present'
 	};
 	const pending = { ...offered, offeringId: null, offeringState: 'missing' };
 	const target = deliveryModule.buildCurriculumPreparationTarget(

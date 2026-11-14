@@ -1,4 +1,4 @@
-//! Application adapter: academic providers resolve historical rosters, Attendance
+//! Application adapter: dated providers resolve arrival/special rosters, Attendance
 //! owns facts and durable progress. All reads share the finalization transaction.
 use super::*;
 use chrono::{DateTime, Utc};
@@ -60,71 +60,10 @@ pub(crate) async fn expected_rounds_with_context(
                 settings.configuration.late_after,
             ));
         }
-        let mut blocks = school_academic_timetable::services::attendance::blocks_on_connection(
-            connection, term, date,
-        )
-        .await?
-        .into_iter()
-        .filter(|block| block.block_kind != TimetableBlockKind::Structural)
-        .collect::<Vec<_>>();
-        blocks.sort_by_key(|b| (b.bell_schedule_period_id, b.id));
-        let groups = blocks
-            .iter()
-            .flat_map(|b| b.groups.iter())
-            .filter(|g| g.is_active)
-            .map(|g| g.learning_group_id)
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        let memberships =
-            school_academic_delivery::services::attendance_roster::students_on_connection(
-                connection, &groups, date,
-            )
-            .await?;
-        let saved_sources = lesson_source_facts_on_connection(connection, term, date, date).await?;
-        let sources = lesson_sources_for_date(&blocks, &saved_sources, date);
-        let by_student: HashMap<_, _> = students.iter().map(|s| (s.student_id, s)).collect();
-        for block in blocks {
-            for group in block.groups.into_iter().filter(|g| g.is_active) {
-                let Some(source) = sources.get(&group.id).cloned() else {
-                    continue;
-                };
-                let roster = memberships
-                    .iter()
-                    .filter(|m| m.learning_group_id == group.learning_group_id)
-                    .map(|m| AttendanceRosterStudent {
-                        student_id: m.student_id,
-                        student_academic_year_id: m.student_academic_year_id,
-                        class_number: by_student.get(&m.student_id).and_then(|s| s.class_number),
-                    })
-                    .collect();
-                let title = format!(
-                    "{} · {} · {}",
-                    block.offering_name.as_deref().unwrap_or("คาบเรียน"),
-                    group.name,
-                    block.period_name
-                );
-                let mut session = seed_session(
-                    term,
-                    date,
-                    AttendanceKind::Lesson,
-                    source,
-                    title,
-                    group.instructors.iter().map(|i| i.teacher_id).collect(),
-                    None,
-                    Some(group.learning_group_id),
-                    block.learning_offering_id,
-                    block.start_time,
-                    block.end_time,
-                );
-                session.id = lesson_occurrence_id(term, date, &session.source_key, &saved_sources);
-                seeds.push(AttendanceSeed {
-                    session,
-                    students: roster,
-                });
-            }
-        }
     }
+    // A current weekly pattern cannot prove an overdue lesson. Materialized
+    // sessions retain their actual identities, times, teachers and frozen rosters.
+    seeds.extend(materialized_lesson_seeds_on_connection(connection, term, date).await?);
     let rounds: Vec<(Uuid,Json<Vec<SpecialRoundParticipants>>)> = DbSession::new(&mut *connection).query_as("attendance.application.finalization.expected_rounds_with_context", "SELECT r.id,r.participants FROM attendance_special_rounds r JOIN attendance_special_templates t ON t.id=r.template_id WHERE t.academic_term_id=$1 AND r.date=$2 ORDER BY r.id")
         .bind(term).bind(date).fetch_all().await?;
     for (round, Json(groups)) in rounds {

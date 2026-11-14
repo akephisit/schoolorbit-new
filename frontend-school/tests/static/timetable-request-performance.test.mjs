@@ -14,7 +14,7 @@ test('timetable workspace uses one cancellable set-based board load', async () =
 
 	assert.match(page, /getTimetableBlockWorkspace/);
 	assert.equal((page.match(/getTimetableBlockWorkspace\(/g) ?? []).length, 3);
-	assert.match(page, /listTimetableVersions/);
+	assert.match(page, /getTimetable/);
 	assert.match(page, /LatestRequest/);
 	assert.match(page, /isAbortError/);
 	assert.match(page, /request\.begin\(\)/);
@@ -33,8 +33,8 @@ test('academic delivery workspace uses one bounded overview request', async () =
 		'utf8'
 	);
 
-	assert.match(page, /getDeliveryVersion/);
-	assert.match(page, /overview\?\.snapshot.offerings/);
+	assert.match(page, /getDeliveryWorkspace/);
+	assert.match(page, /workspace=\{overview\}/);
 	assert.doesNotMatch(page, /listLearningGroupsForTerm/);
 	assert.doesNotMatch(page, /listLearningOfferings/);
 	assert.doesNotMatch(page, /listLearningGroups\(offering\.id\)/);

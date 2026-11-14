@@ -1,104 +1,33 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import {access,readFile} from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
+const root=path.resolve(import.meta.dirname,'../..'),read=file=>readFile(path.join(root,file),'utf8');
 
-const projectRoot = path.resolve(import.meta.dirname, '../..');
-const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
-
-test('teacher changes use generated typed item and handoff contracts', async () => {
-	const api = await readProjectFile('src/lib/api/learning-delivery.ts');
-
-	for (const operation of ['previewTeacherHandoff', 'applyTeacherHandoff']) {
-		assert.match(api, new RegExp(`operations\\['${operation}'\\]`));
-	}
-	for (const schema of [
-		'PreviewTeacherHandoffRequest',
-		'ApplyTeacherHandoffRequest',
-		'TeacherHandoffPreview',
-		'ApplyTeacherHandoffResponse'
-	]) {
-		assert.match(api, new RegExp(`Schemas\\['${schema}'\\]`));
-	}
-	assert.doesNotMatch(api, /ApiResponse<unknown>|Record<string, unknown>|academic_term_id/);
+test('teacher replacement is a direct typed complete group command with optimistic revision',async()=>{
+ const api=await read('src/lib/api/learning-delivery.ts');
+ assert.match(api,/Schemas\['ReplaceLearningGroupTeachersRequest'\]/);assert.match(api,/export const replaceLearningGroupTeachers/);assert.match(api,/apiClient\.put<LearningGroup>/);
+ assert.doesNotMatch(api,/TeacherHandoff|AcademicTeacherChange|\/handoff/);
 });
-
-test('teacher change form uses the bounded management option response', async () => {
-	const form = await readProjectFile(
-		'src/lib/components/learning-delivery/AcademicTeacherChangeForm.svelte'
-	);
-
-	assert.match(form, /managementOptions\.learningGroups/);
-	assert.match(form, /managementOptions\.teachers/);
-	assert.match(form, /add_group_teacher/);
-	assert.match(form, /adjust_group_teacher_role/);
-	assert.match(form, /stop_group_teacher/);
-	assert.match(form, /หลังเผยแพร่เท่านั้น/);
-	assert.doesNotMatch(form, /listLearningGroups|lookupStaff|<select(?:\s|>)/i);
+test('teacher editor uses bounded management options and projects only teacher IDs and roles',async()=>{
+ const source=await read('src/lib/components/learning-delivery/LearningGroupEditor.svelte');
+ assert.match(source,/managementOptions\.teachers/);assert.match(source,/group\.teacherAssignments\.map\(\(\{ teacherId, role \}\)/);assert.match(source,/onReplaceTeachers/);assert.match(source,/rowVersion: acceptedRowVersion/);
+ assert.doesNotMatch(source,/startsOn|endsOn|referenceDate|lookupStaff|listLearningGroups|<select(?:\s|>)/i);
 });
-
-test('handoff stays explicit, previews conflicts, and never applies manual mode', async () => {
-	const panel = await readProjectFile(
-		'src/lib/components/learning-delivery/TeacherHandoffPanel.svelte'
-	);
-
-	assert.match(panel, /assign_one/);
-	assert.match(panel, /assign_coteachers/);
-	assert.match(panel, /manual/);
-	assert.match(panel, /previewTeacherHandoff/);
-	assert.match(panel, /applyTeacherHandoff/);
-	assert.match(panel, /preview\.conflicts\.length/);
-	assert.match(panel, /preview\?\.canApply/);
-	assert.match(panel, /preview\.timetableRoute/);
-	assert.match(panel, /mode === 'manual'/);
-	assert.doesNotMatch(panel, /<select(?:\s|>)/i);
-
-	const manualBranch = panel.slice(panel.indexOf("mode === 'manual'"));
-	assert.doesNotMatch(manualBranch.slice(0, 800), /applyTeacherHandoff\(/);
+test('accepted teacher save revision comes from the actual response and failures require explicit baseline review',async()=>{
+ const source=await read('src/lib/components/learning-delivery/LearningGroupEditor.svelte');
+ assert.match(source,/const accepted = await action\(\)/);assert.match(source,/acceptedRowVersion = accepted\.rowVersion/);assert.match(source,/needsReload = true/);assert.match(source,/ใช้ข้อมูลกลุ่มล่าสุด/);
+ assert.doesNotMatch(source,/acceptedRowVersion = group\.rowVersion/);
 });
-
-test('change set and readiness panels expose teacher handoff without reviving direct teacher edits', async () => {
-	const changePanel = await readProjectFile(
-		'src/lib/components/learning-delivery/AcademicChangeSetPanel.svelte'
-	);
-	const readiness = await readProjectFile(
-		'src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'
-	);
-
-	const teacherDialog = await readProjectFile(
-		'src/lib/components/learning-delivery/OfferingTeacherChangeDialog.svelte'
-	);
-	assert.match(teacherDialog, /AcademicTeacherChangeForm/);
-	assert.match(teacherDialog, /managementOptions=\{options\}/);
-	assert.doesNotMatch(teacherDialog, /replaceLearningGroupTeachers/);
-	assert.match(changePanel, /TeacherHandoffPanel/);
-	assert.match(changePanel, /จัดการคาบที่ได้รับผลกระทบ/);
-	assert.doesNotMatch(changePanel, /replaceLearningGroupTeachers/);
-	assert.match(readiness, /preview\?\.findings\.filter/);
-	assert.match(readiness, /finding\.title/);
-	assert.match(readiness, /finding\.learningGroupId/);
+test('retired teacher change and handoff implementations cannot remain as hidden workflow fallback',async()=>{
+ for(const file of ['src/lib/components/learning-delivery/AcademicTeacherChangeForm.svelte','src/lib/components/learning-delivery/TeacherHandoffPanel.svelte','src/lib/academic/teacher-change-selection.ts'])await assert.rejects(access(path.join(root,file)),error=>error.code==='ENOENT');
 });
-
-test('teacher opening readiness and placement checks have separate owners', async () => {
-	const readiness = await readProjectFile(
-		'src/lib/components/learning-delivery/AcademicChangeReadiness.svelte'
-	);
-	const page = await readProjectFile('src/routes/(app)/staff/academic/timetable/+page.svelte');
-
-	assert.match(readiness, /finding\.title/);
-	assert.match(readiness, /finding\.learningGroupId/);
-	assert.match(page, /blockInstructorIds/);
-	assert.match(page, /blockTargetTeacherIds/);
-	assert.match(page, /updateTimetableBlock/);
+test('saved placed instructors remain distinct from current teacher targets and direct placement validation',async()=>{
+ const source=await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+ assert.match(source,/blockInstructorIds/);assert.match(source,/blockTargetTeacherIds/);assert.match(source,/updateTimetableBlock/);assert.match(source,/previewTimetableBlockPlacement/);
 });
-
-test('teacher action eligibility uses the exact source publication without raw date inference', async () => {
-	const form = await readProjectFile(
-		'src/lib/components/learning-delivery/AcademicTeacherChangeForm.svelte'
-	);
-	const selection = await readProjectFile('src/lib/academic/teacher-change-selection.ts');
-	assert.match(form, /teacherChangeSelection\(changeSet, learningGroupId\)/);
-	assert.doesNotMatch(form, /assignment\.startsOn|assignment\.endsOn|referenceDate/);
-	assert.match(selection, /changeSet\.baseTeacherAssignments/);
-	assert.match(selection, /member\.assignmentId/);
+test('teacher metadata has stable assignment identity, activity state and no operational effective dates',async()=>{
+ const contract=JSON.parse(await read('../contracts/openapi/school-api.json'));const teacher=contract.components.schemas.DeliveryTeacher;
+ for(const field of ['assignmentId','teacherId','role','rowVersion','isActive'])assert.ok(teacher.required.includes(field));
+ for(const field of ['startsOn','endsOn','status'])assert.equal(teacher.properties[field],undefined);
 });

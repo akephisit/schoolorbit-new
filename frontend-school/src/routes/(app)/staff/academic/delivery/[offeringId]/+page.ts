@@ -11,8 +11,6 @@ import {
 } from '#lib/api/learning-delivery.js';
 import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
-import { redirect } from '@sveltejs/kit';
-import { repairedDeliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
 export const _meta = {
 	academicContext: 'term_required' as const,
 	access: { user_type: 'staff', permission: PERMISSION_MODULES.LEARNING_OFFERING }
@@ -61,13 +59,7 @@ export const load: PageLoad = async ({ fetch, params, url, depends }) => {
 					)
 				: ({ ok: true, data: null, error: null } as const)
 	);
-	if (!url.searchParams.get('academicYearId') || !url.searchParams.get('academicTermId')) {
-		const identity = await offering;
-		if (identity.ok) {
-			const repaired = repairedDeliveryOfferingHref(url, identity.data);
-			if (repaired) redirect(307, repaired);
-		}
-	}
+
 	return {
 		title: 'รายละเอียดรายการเปิดสอน',
 		offeringId,

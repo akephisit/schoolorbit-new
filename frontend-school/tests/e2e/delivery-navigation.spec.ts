@@ -12,8 +12,7 @@ async function expectRequestedContext(page: Page) {
 	await expect(page).toHaveURL(
 		(url) =>
 			url.searchParams.get('academicYearId') === ids.year &&
-			url.searchParams.get('academicTermId') === ids.term &&
-			url.searchParams.get('deliveryVersionId') === ids.version
+			url.searchParams.get('academicTermId') === ids.term
 	);
 	// AcademicContextSwitcher uses Tailwind's lg breakpoint for its desktop controls.
 	if (!(await page.evaluate(() => matchMedia('(min-width: 64rem)').matches))) {
@@ -115,7 +114,7 @@ for (const width of [390, 1280]) {
 		const target = new URL(href!, page.url());
 		expect(target.searchParams.get('academicYearId')).toBe(ids.year);
 		expect(target.searchParams.get('academicTermId')).toBe(ids.term);
-		expect(target.searchParams.get('deliveryVersionId')).toBe(ids.version);
+		expect(target.searchParams.get('deliveryVersionId')).toBeNull();
 		expect(
 			new URL(target.searchParams.get('returnTo')!, page.url()).searchParams.get('expandedRooms')
 		).toBe(ids.roomB);
@@ -124,13 +123,13 @@ for (const width of [390, 1280]) {
 			animations: 'disabled'
 		});
 		await link.click();
-		await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+		await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
 		await expectRequestedContext(page);
 		await expect(page.getByRole('button', { name: 'แก้ไขจำนวนคาบ', exact: true })).toHaveCount(0);
 		await page.goBack();
 		await expectRoomContext(page);
 		await link.click();
-		await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
+		await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
 		await expectRoomContext(page);
 		await page.reload();
 		await expectRoomContext(page);
@@ -140,7 +139,7 @@ for (const width of [390, 1280]) {
 	});
 }
 
-test('offering filters use the authorized snapshot and preserve natural order and exact view through a new tab', async ({
+test('offering filters use the authorized current projection and preserve natural order and exact view through a new tab', async ({
 	page,
 	context
 }, testInfo) => {
@@ -158,7 +157,7 @@ test('offering filters use the authorized snapshot and preserve natural order an
 		'แนะแนว'
 	]);
 	await expect(region).not.toContainText('ACT-TECHNICAL');
-	const versionReads = api.count(`/api/academic/delivery-versions/${ids.version}`);
+	const workspaceReads = api.count('/api/academic/delivery/workspace');
 	const roomReads = api.count('/api/academic/delivery/homerooms');
 	await choose(page, 'กรองกลุ่มสาระรายการเปิดสอน', 'ภาษาไทย');
 	await expect(region.locator('tbody tr')).toHaveCount(1);
@@ -171,7 +170,7 @@ test('offering filters use the authorized snapshot and preserve natural order an
 	await expect(search).toBeFocused();
 	await expect(region.locator('tbody tr')).toHaveCount(1);
 	await expect(region).toContainText('ค21101 · คณิตศาสตร์ต้น');
-	expect(api.count(`/api/academic/delivery-versions/${ids.version}`)).toBe(versionReads);
+	expect(api.count('/api/academic/delivery/workspace')).toBe(workspaceReads);
 	expect(api.count('/api/academic/delivery/homerooms')).toBe(roomReads);
 	const link = region.getByRole('link', { name: 'รายละเอียด', exact: true });
 	const target = new URL((await link.getAttribute('href'))!, page.url());
@@ -214,7 +213,7 @@ test('offering filters use the authorized snapshot and preserve natural order an
 	expect(api.writes).toEqual([]);
 });
 
-test('activity details and labels hide technical activity codes while retaining the selected version', async ({
+test('activity details and labels hide technical activity codes while retaining the explicit term', async ({
 	page
 }) => {
 	await mockDeliveryNavigation(page);
@@ -226,10 +225,10 @@ test('activity details and labels hide technical activity codes while retaining 
 		.filter({ hasText: 'ชุมนุม' })
 		.getByRole('link', { name: 'รายละเอียด', exact: true })
 		.click();
-	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+	await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
 	await expectRequestedContext(page);
 	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
-	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
+	await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
 	await expect(
 		page.getByRole('combobox', { name: 'กรองประเภทรายการเปิดสอน', exact: true })
 	).toHaveText('กิจกรรม');
@@ -242,7 +241,6 @@ for (const missing of [true, false]) {
 	}) => {
 		const api = await mockDeliveryNavigation(page);
 		const query = new URLSearchParams({
-			deliveryVersionId: ids.version,
 			returnTo: 'https://outside.invalid/staff/academic/delivery'
 		});
 		if (!missing) {
@@ -251,14 +249,14 @@ for (const missing of [true, false]) {
 		}
 		await page.goto(`/staff/academic/delivery/${offerings.basic21}?${query}`);
 		await expectRequestedContext(page);
-		await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
-		const back = page.getByRole('link', { name: 'กลับภาพรวม', exact: true });
+		await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
+		const back = page.getByRole('link', { name: 'ย้อนกลับ', exact: true });
 		const target = new URL((await back.getAttribute('href'))!, page.url());
 		expect(target.origin).toBe(new URL(page.url()).origin);
 		expect(target.pathname).toBe('/staff/academic/delivery');
 		expect(target.searchParams.get('academicYearId')).toBe(ids.year);
 		expect(target.searchParams.get('academicTermId')).toBe(ids.term);
-		expect(target.searchParams.get('deliveryVersionId')).toBe(ids.version);
+		expect(target.searchParams.get('deliveryVersionId')).toBeNull();
 		expect(api.writes).toEqual([]);
 	});
 }
@@ -339,9 +337,9 @@ test('touch users can filter offerings and return from detail with their group s
 			animations: 'disabled'
 		});
 		await region.getByRole('link', { name: 'รายละเอียด', exact: true }).tap();
-		await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+		await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
 		await expectRequestedContext(page);
-		await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).tap();
+		await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).tap();
 		await expect(group).toHaveText('ภาษาไทย');
 		await expect(
 			page.getByRole('tab', { name: 'มุมมองรายวิชา/กิจกรรม', exact: true })
@@ -356,11 +354,9 @@ test('touch users can filter offerings and return from detail with their group s
 
 function managerOrigin(
 	view: 'homerooms' | 'offerings',
-	versionId = ids.version,
 	course = false
 ): string {
 	const url = new URL(navigationOverviewPath(), 'https://schoolorbit.invalid');
-	url.searchParams.set('deliveryVersionId', versionId);
 	url.searchParams.set('view', view);
 	url.searchParams.set('homeroomSearch', 'ม.1/2');
 	url.searchParams.set('readiness', 'attention');
@@ -388,27 +384,8 @@ async function expectManagerOrigin(page: Page, view: 'homerooms' | 'offerings', 
 	if (course) expect(current.searchParams.get('subjectGroupId')).toBe(ids.math);
 }
 
-test('continuing an already-open activity in a draft preserves the originating filters and expanded room', async ({
-	page
-}) => {
-	const api = await mockDeliveryNavigation(page, { manager: true, continuation: true });
-	await page.goto(managerOrigin('homerooms', ids.sourceVersion));
-	await page.getByRole('button', { name: 'เพิ่มการจัดการเรียนการสอน', exact: true }).click();
-	await expect(page).toHaveURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
-	await expectRequestedContext(page);
-	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
-	expect(api.count(`/api/academic/offerings/${offerings.club}`)).toBe(1);
-	const back = page.getByRole('link', { name: 'กลับภาพรวม', exact: true });
-	const destination = new URL((await back.getAttribute('href'))!, page.url());
-	expect(destination.searchParams.get('expandedRooms')).toBe(ids.roomB);
-	await back.click();
-	await expectManagerOrigin(page, 'homerooms');
-	await expect(
-		page
-			.locator('details')
-			.filter({ has: page.getByRole('heading', { name: 'ม.1/2', exact: true }) })
-	).toHaveAttribute('open', '');
-	expect(api.writes).toEqual([]);
+test('an existing current activity detail restores its originating room filters without preparing a duplicate',async({page})=>{
+ const api=await mockDeliveryNavigation(page,{manager:true});await page.goto(managerOrigin('homerooms'));const room=page.locator('details').filter({has:page.getByRole('heading',{name:'ม.1/2',exact:true})});await expect(room).toHaveAttribute('open','');await room.locator('tr').filter({hasText:'ชุมนุม'}).getByRole('link',{name:'รายละเอียด',exact:true}).click();await expect(page.getByRole('heading',{name:'ชุมนุม',level:1,exact:true})).toBeVisible();await expectRequestedContext(page);await page.getByRole('link',{name:'ย้อนกลับ',exact:true}).click();await expectManagerOrigin(page,'homerooms');expect(api.creations).toEqual([]);expect(api.reads.filter(url=>/delivery-versions|term-change-sets/.test(url.pathname))).toEqual([]);
 });
 
 test('creating an activity with groups navigates with the created offering context and restores the originating offering view', async ({
@@ -434,16 +411,12 @@ test('creating an activity with groups navigates with the created offering conte
 		await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
 		await visibleOption.click();
 	}
-	await dialog.getByRole('button', { name: 'วันที่เริ่มเปิดสอนจริง', exact: true }).click();
-	await page
-		.locator('[data-calendar-day]:not([data-outside-month])')
-		.filter({ hasText: /^15$/ })
-		.click();
+	await dialog.getByLabel('คาบที่จัดจริงต่อสัปดาห์',{exact:true}).fill('2');
 	await choose(page, 'รูปแบบการเปิด', 'เปิดพร้อมจัดกลุ่ม');
-	await dialog.getByRole('button', { name: 'สร้างฉบับร่าง', exact: true }).click();
+	await dialog.getByRole('button', { name: 'สร้างข้อมูลปัจจุบัน', exact: true }).click();
 	await expect(page).toHaveURL((url) => url.pathname.endsWith(`/delivery/${offerings.club}`));
 	await expectRequestedContext(page);
-	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
+	await expect(page.getByRole('heading',{name:/คณิตศาสตร์ต้น|ชุมนุม/,level:1})).toBeVisible();
 	expect(api.count(`/api/academic/offerings/${offerings.club}`)).toBe(1);
 	expect(api.creations).toHaveLength(1);
 	expect(api.creations[0]).toMatchObject({
@@ -451,115 +424,14 @@ test('creating an activity with groups navigates with the created offering conte
 		academicTermId: ids.term,
 		activityVersionId: offerings.club,
 		createHomeroomGroups: true,
-		startsOn: expect.stringMatching(/^\d{4}-\d{2}-15$/)
+		weeklyPeriodTarget: 2
 	});
-	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
+	await page.getByRole('link', { name: 'ย้อนกลับ', exact: true }).click();
 	await expectManagerOrigin(page, 'offerings');
 	await expect(page.getByTestId('delivery-offerings-ready').locator('tbody tr')).toHaveCount(1);
 	await expect(page.getByTestId('delivery-offerings-ready')).toContainText('ชุมนุม');
 });
 
-test('readiness repair links preserve the selected version and all originating view filters', async ({
-	page
-}) => {
-	await mockDeliveryNavigation(page, { manager: true, readiness: 'course' });
-	await page.goto(managerOrigin('offerings', ids.version, true));
-	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(
-		page.getByText('ค21101 — คณิตศาสตร์ต้น: ยังไม่มีกลุ่มเรียน', { exact: true })
-	).toBeVisible();
-	const link = page.getByRole('link', { name: 'ไปแก้ไข', exact: true });
-	await expect(link).toBeVisible();
-	const target = new URL((await link.getAttribute('href'))!, page.url());
-	expect(target.searchParams.get('academicYearId')).toBe(ids.year);
-	expect(target.searchParams.get('academicTermId')).toBe(ids.term);
-	expect(target.searchParams.get('deliveryVersionId')).toBe(ids.version);
-	const origin = new URL(target.searchParams.get('returnTo')!, page.url());
-	expect(origin.searchParams.get('subjectGroupId')).toBe(ids.math);
-	expect(origin.searchParams.get('offeringSearch')).toBe('ค21');
-	expect(origin.searchParams.get('expandedRooms')).toBe(ids.roomB);
-	await link.click();
-	await expectRequestedContext(page);
-	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
-	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
-	await expectManagerOrigin(page, 'offerings', true);
-});
-
-test('activity readiness uses the producer name without technical codes and restores activity filters after repair', async ({
-	page
-}) => {
-	await page.clock.setFixedTime(new Date('2027-05-01T05:00:00Z'));
-	const api = await mockDeliveryNavigation(page, { manager: true, readiness: 'activity' });
-	await page.goto(managerOrigin('offerings'));
-	await page.getByRole('button', { name: 'ดูรายละเอียดการเปลี่ยนแปลง', exact: true }).click();
-	const changeGroups = page.getByTestId('delivery-change-offering');
-	await expect(changeGroups).toHaveCount(2);
-	for (const [groupLabel, rowTitle] of [
-		['ชุมนุม', 'เปลี่ยน ชุมนุม'],
-		['ค21101 · คณิตศาสตร์ต้น', 'เปลี่ยน ค21101 — คณิตศาสตร์ต้น']
-	]) {
-		const group = changeGroups.filter({ has: page.getByText(groupLabel, { exact: true }) });
-		await group.getByRole('button', { name: /ดูรายละเอียด/ }).click();
-		await expect(group.getByText(rowTitle, { exact: true })).toBeVisible();
-	}
-	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
-	await page.getByRole('button', { name: 'ปิดรายละเอียด', exact: true }).click();
-	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(page.getByText('ชุมนุม: ยังไม่มีกลุ่มเรียน', { exact: true })).toBeVisible();
-	await expect(page.getByText('ผลตรวจเบื้องต้น', { exact: false })).toBeVisible();
-	await page
-		.getByRole('dialog', { name: 'ตรวจผลกระทบและความพร้อม', exact: true })
-		.getByRole('button', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true })
-		.click();
-	const publication = page.getByRole('dialog', { name: 'เผยแพร่รุ่นเปิดสอน', exact: true });
-	await publication.getByRole('button', { name: 'วันที่เริ่มใช้รุ่นเปิดสอน', exact: true }).click();
-	await page.getByRole('button', { name: 'วันจันทร์ที่ 3 พฤษภาคม 2570', exact: true }).click();
-	await expect(
-		publication.getByRole('button', { name: 'วันที่เริ่มใช้รุ่นเปิดสอน', exact: true })
-	).toHaveText('3 พ.ค. 2570');
-	await publication
-		.getByRole('button', { name: 'ตรวจความพร้อมตามวันที่เลือก', exact: true })
-		.click();
-	const datedChanges = publication.locator('[aria-label="การเปลี่ยนแปลงตามวันเริ่มใช้"]');
-	await expect(
-		datedChanges.getByText(
-			'ชุมนุม · รายการเปิดสอน: เปิดสอน 2 คาบ/สัปดาห์ → เปิดสอน 3 คาบ/สัปดาห์',
-			{ exact: true }
-		)
-	).toBeVisible();
-	await expect(
-		datedChanges.getByText(
-			'ค21101 — คณิตศาสตร์ต้น · รายการเปิดสอน: เปิดสอน 2 คาบ/สัปดาห์ → เปิดสอน 4 คาบ/สัปดาห์',
-			{ exact: true }
-		)
-	).toBeVisible();
-	await expect(publication.getByText('ผลตรวจเบื้องต้น', { exact: false })).toHaveCount(0);
-	await expect(
-		publication.getByRole('button', { name: 'ยืนยันเผยแพร่', exact: true })
-	).toBeDisabled();
-	expect(
-		api.reads
-			.filter((url) => url.pathname === `/api/academic/term-change-sets/${ids.changeSet}/preview`)
-			.map((url) => url.searchParams.get('effectiveFrom'))
-	).toEqual([null, '2027-05-03']);
-	await expect(publication).not.toContainText('ACT-TECHNICAL');
-	await publication.getByRole('button', { name: 'กลับไปแก้ไข', exact: true }).click();
-	await page.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(page.getByText('ชุมนุม: ยังไม่มีกลุ่มเรียน', { exact: true })).toBeVisible();
-	await expectRequestedContext(page);
-	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
-	const link = page.getByRole('link', { name: 'ไปแก้ไข', exact: true });
-	const target = new URL((await link.getAttribute('href'))!, page.url());
-	expect(target.pathname).toBe(`/staff/academic/delivery/${offerings.club}`);
-	expect(target.searchParams.get('academicYearId')).toBe(ids.year);
-	expect(target.searchParams.get('academicTermId')).toBe(ids.term);
-	expect(target.searchParams.get('deliveryVersionId')).toBe(ids.version);
-	await link.click();
-	await expect(page.getByTestId('delivery-offering-ready')).toBeVisible();
-	await expect(page.getByRole('heading', { name: 'ชุมนุม', level: 1, exact: true })).toBeVisible();
-	await expect(page.locator('body')).not.toContainText('ACT-TECHNICAL');
-	await page.getByRole('link', { name: 'กลับภาพรวม', exact: true }).click();
-	await expectManagerOrigin(page, 'offerings');
-	await expect(page.getByTestId('delivery-offerings-ready').locator('tbody tr')).toHaveCount(1);
-	expect(api.writes).toEqual([]);
+for(const kind of ['course','activity'] as const)test(`${kind} current comparison detail keeps exact context and originating filters without a publication workflow`,async({page})=>{
+ const api=await mockDeliveryNavigation(page,{manager:true});await page.goto(managerOrigin('offerings',kind==='course'));await expect(page.getByTestId('delivery-offerings-ready')).toBeVisible();const row=page.getByTestId('delivery-offerings-ready').locator('tbody tr').filter({hasText:kind==='course'?'คณิตศาสตร์ต้น':'ชุมนุม'});const link=row.getByRole('link',{name:'รายละเอียด',exact:true});const target=new URL((await link.getAttribute('href'))!,page.url());expect(target.searchParams.get('academicYearId')).toBe(ids.year);expect(target.searchParams.get('academicTermId')).toBe(ids.term);expect(target.searchParams.has('deliveryVersionId')).toBe(false);const origin=new URL(target.searchParams.get('returnTo')!,page.url());expect(origin.searchParams.get('expandedRooms')).toBe(ids.roomB);expect(origin.searchParams.get('kind')).toBe(kind);await link.click();await expectRequestedContext(page);await page.getByRole('link',{name:'ย้อนกลับ',exact:true}).click();await expectManagerOrigin(page,'offerings',kind==='course');expect(api.writes).toEqual([]);expect(api.reads.filter(url=>/delivery-versions|term-change-sets/.test(url.pathname))).toEqual([]);
 });

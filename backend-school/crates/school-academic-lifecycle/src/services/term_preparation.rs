@@ -337,9 +337,19 @@ async fn module_source_fingerprint(
                 )
                 .await?,
             ));
-            let year: Uuid = DbSession::new(&mut **tx).scalar("academic_lifecycle.preparation.current_delivery_year", "SELECT academic_year_id FROM academic_terms WHERE id=$1").bind(term_id).fetch_one().await?;
-            let current = school_academic_delivery::services::current::workspace_on_connection(&mut **tx,year,term_id).await?;
-            tables.push(("currentDelivery",vec![super::checksum(&current)?]));
+            let year: Uuid = DbSession::new(&mut **tx)
+                .scalar(
+                    "academic_lifecycle.preparation.current_delivery_year",
+                    "SELECT academic_year_id FROM academic_terms WHERE id=$1",
+                )
+                .bind(term_id)
+                .fetch_one()
+                .await?;
+            let current = school_academic_delivery::services::current::workspace_on_connection(
+                &mut **tx, year, term_id,
+            )
+            .await?;
+            tables.push(("currentDelivery", vec![super::checksum(&current)?]));
             for (name, sql) in [
                 (
                     "blocks",
@@ -1019,10 +1029,10 @@ async fn module_mapping_seeds(
             ).bind(context.source_term_id).bind(context.target_term_id).fetch_all().await?));
             result.push((TermPreparationMappingKind::Teacher, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.module_mapping_seeds",
                 r#"SELECT DISTINCT coordinator.id AS source_id,
-                          coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(coordinator.title,''),coordinator.first_name),''), nullif(coordinator.last_name,'')),''), coordinator.username) AS source_label,
-                          CASE WHEN coordinator.status='active' THEN coordinator.id END AS suggested_target_id
+                          coordinator_display.display_name AS source_label,
+                          CASE WHEN coordinator.status='active' AND coordinator.user_type='staff' THEN coordinator.id END AS suggested_target_id
                    FROM course_assessment_plans plan
-                   JOIN users coordinator ON coordinator.id=plan.assessment_coordinator_id
+                   JOIN users coordinator ON coordinator.id=plan.assessment_coordinator_id JOIN user_display_names coordinator_display ON coordinator_display.id=coordinator.id
                    WHERE plan.academic_term_id=$1 ORDER BY source_id"#,
             ).bind(context.source_term_id).fetch_all().await?));
         }
@@ -1035,11 +1045,11 @@ async fn module_mapping_seeds(
         TermPreparationModule::Supervision => {
             result.push((TermPreparationMappingKind::Teacher, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.module_mapping_seeds",
                 r#"SELECT DISTINCT staff.id AS source_id,
-                          coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(staff.title,''),staff.first_name),''), nullif(staff.last_name,'')),''), staff.username) AS source_label,
-                          CASE WHEN staff.status='active' THEN staff.id END AS suggested_target_id
+                          staff_display.display_name AS source_label,
+                          CASE WHEN staff.status='active' AND staff.user_type='staff' THEN staff.id END AS suggested_target_id
                    FROM supervision_cycles cycle
                    JOIN supervision_cycle_targets target ON target.cycle_id=cycle.id AND target.target_type='staff'
-                   JOIN users staff ON staff.id=target.target_id
+                   JOIN users staff ON staff.id=target.target_id JOIN user_display_names staff_display ON staff_display.id=staff.id
                    WHERE cycle.academic_term_id=$1 ORDER BY source_id"#,
             ).bind(context.source_term_id).fetch_all().await?));
         }
@@ -1062,8 +1072,7 @@ async fn add_timetable_mapping_seeds(
     .into_iter()
     .map(|offering| offering.id)
     .collect::<Vec<_>>();
-    let source_cte =
-        "WITH source_timetable AS (SELECT (SELECT id FROM academic_timetables WHERE academic_term_id=$1) AS id) ";
+    let source_cte = "WITH source_timetable AS (SELECT (SELECT id FROM academic_timetables WHERE academic_term_id=$1) AS id) ";
     result.push((TermPreparationMappingKind::LearningOffering, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT offering.id AS source_id, offering.code_snapshot || ' · ' || offering.name_snapshot AS source_label,
                   (SELECT target.id FROM learning_offerings target
@@ -1085,8 +1094,8 @@ async fn add_timetable_mapping_seeds(
         .bind(context.source_term_id).fetch_all().await?));
     result.push((TermPreparationMappingKind::Teacher, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT teacher.id AS source_id,
-                  coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(teacher.title,''),teacher.first_name),''), nullif(teacher.last_name,'')),''), teacher.username) AS source_label,
-                  CASE WHEN teacher.status='active' THEN teacher.id END AS suggested_target_id
+                  teacher_display.display_name AS source_label,
+                  CASE WHEN teacher.status='active' AND teacher.user_type='staff' THEN teacher.id END AS suggested_target_id
            FROM source_timetable JOIN (
                SELECT block.timetable_id,instructor.instructor_id AS teacher_id
                FROM academic_timetable_blocks block JOIN academic_timetable_block_groups bg ON bg.block_id=block.id
@@ -1095,7 +1104,7 @@ async fn add_timetable_mapping_seeds(
                SELECT block.timetable_id,target.teacher_id FROM academic_timetable_blocks block
                JOIN academic_timetable_block_teachers target ON target.block_id=block.id WHERE target.is_active
            ) used ON used.timetable_id=source_timetable.id
-           JOIN users teacher ON teacher.id=used.teacher_id ORDER BY source_id"#))
+           JOIN users teacher ON teacher.id=used.teacher_id JOIN user_display_names teacher_display ON teacher_display.id=teacher.id ORDER BY source_id"#))
         .bind(context.source_term_id).fetch_all().await?));
     result.push((TermPreparationMappingKind::Room, DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.add_timetable_mapping_seeds", sqlx::AssertSqlSafe(source_cte.to_owned() +
         r#"SELECT DISTINCT room.id AS source_id, room.name_th AS source_label,
@@ -1176,14 +1185,18 @@ async fn load_target_options(
     kind: TermPreparationMappingKind,
 ) -> Result<Vec<TermPreparationMappingOption>, AppError> {
     let rows: Vec<(Uuid, String)> = match kind {
-        TermPreparationMappingKind::LearningOffering => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
-            "SELECT id,code_snapshot || ' · ' || name_snapshot FROM learning_offerings WHERE academic_term_id=$1 AND status <> 'closed' ORDER BY 2,id LIMIT 500",
-        ).bind(context.target_term_id).fetch_all().await?,
-        TermPreparationMappingKind::LearningGroup => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
-            "SELECT id,name FROM learning_groups WHERE academic_term_id=$1 AND status <> 'closed' ORDER BY name,id LIMIT 2000",
-        ).bind(context.target_term_id).fetch_all().await?,
+        TermPreparationMappingKind::LearningOffering => {
+            let current=school_academic_delivery::services::current::workspace_on_connection(&mut **tx,context.target_year_id,context.target_term_id).await?;
+            let mut options:Vec<_>=current.offerings.into_iter().map(|o|(o.id,format!("{} · {}",o.code,o.name))).collect();
+            options.sort_by(|a,b|a.1.cmp(&b.1).then(a.0.cmp(&b.0)));options.truncate(500);options
+        },
+        TermPreparationMappingKind::LearningGroup => {
+            let current=school_academic_delivery::services::current::workspace_on_connection(&mut **tx,context.target_year_id,context.target_term_id).await?;
+            let mut options:Vec<_>=current.offerings.into_iter().flat_map(|o|o.groups).map(|g|(g.id,g.name)).collect();
+            options.sort_by(|a,b|a.1.cmp(&b.1).then(a.0.cmp(&b.0)));options.truncate(2000);options
+        },
         TermPreparationMappingKind::Teacher => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
-            r#"SELECT id,coalesce(nullif(concat_ws(' ', nullif(concat(coalesce(title,''),first_name),''), nullif(last_name,'')),''),username) FROM users WHERE status='active' ORDER BY 2,id LIMIT 2000"#,
+            r#"SELECT staff.id,names.display_name FROM users staff JOIN user_display_names names ON names.id=staff.id WHERE staff.status='active' AND staff.user_type='staff' ORDER BY 2,staff.id LIMIT 2000"#,
         ).fetch_all().await?,
         TermPreparationMappingKind::Homeroom => DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.load_target_options",
             "SELECT id,name FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY name,id LIMIT 500",

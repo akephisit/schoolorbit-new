@@ -31,7 +31,8 @@
 		onSaveGroup,
 		onReplaceTeachers,
 		onReplaceHomerooms,
-		onReload
+		onReload,
+		onBusyChange = () => {}
 	}: {
 		offering: LearningOffering;
 		group: LearningGroup;
@@ -40,6 +41,7 @@
 		coverageEditingBlocked?: boolean;
 		selectedHomeroomIds?: string[] | null;
 		onReload: () => Promise<LearningGroup>;
+		onBusyChange?: (busy: boolean) => void;
 		onSaveGroup: (request: UpdateLearningGroupRequest) => Promise<LearningGroup>;
 		onReplaceTeachers: (request: ReplaceLearningGroupTeachersRequest) => Promise<LearningGroup>;
 		onReplaceHomerooms: (request: ReplaceLearningGroupHomeroomsRequest) => Promise<LearningGroup>;
@@ -162,12 +164,14 @@
 		fallback: string
 	) {
 		if (!canManage || busySection || reloading || needsReload) return;
-		const current = admission();
+		const current = admission(),
+			busy = onBusyChange;
 		if (section === 'homerooms' && coverageEditingBlocked) {
 			errorMessage = 'ห้องต้นทางเปลี่ยนไป กรุณาโหลดข้อมูลล่าสุดก่อนแก้ไข';
 			return;
 		}
 		busySection = section;
+		busy(true);
 		errorMessage = '';
 		try {
 			const accepted = await action();
@@ -177,7 +181,10 @@
 			errorMessage = error instanceof Error ? error.message : fallback;
 			needsReload = true;
 		} finally {
-			if (current()) busySection = null;
+			if (current()) {
+				busySection = null;
+				busy(false);
+			}
 		}
 	}
 
@@ -199,8 +206,10 @@
 	}
 	async function reloadBaseline() {
 		if (busySection || reloading || !canManage) return;
-		const current = admission();
+		const current = admission(),
+			busy = onBusyChange;
 		reloading = true;
+		busy(true);
 		try {
 			const latest = await onReload();
 			if (!current()) return;
@@ -220,7 +229,10 @@
 			if (current())
 				errorMessage = error instanceof Error ? error.message : 'โหลดข้อมูลกลุ่มล่าสุดไม่สำเร็จ';
 		} finally {
-			if (current()) reloading = false;
+			if (current()) {
+				reloading = false;
+				busy(false);
+			}
 		}
 	}
 </script>
