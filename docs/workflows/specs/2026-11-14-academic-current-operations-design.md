@@ -117,6 +117,11 @@ UI ที่เลือก draft เป็นค่าเริ่มต้น�
 ผลนิเทศที่ snapshot ว่างและต้องตัด FK เก่ารักษาข้อเท็จจริง source UUID กับ observedAt ที่พิสูจน์ได้ใน snapshot เดิม ไม่แต่งชื่อหรือเหตุผล manual
 teacher assignment ปัจจุบันคง UUID ที่เลือกและ unique(group,teacher); registration_open เป็นค่าปัจจุบันรายกลุ่ม
 การลบกลุ่มจาก archived Attendance ที่รวมไว้ระดับ offering และไม่มีหลักฐานแบ่งกลุ่ม หรือผลรวมรายวิชาที่ไม่มี resultId ระบุกลุ่ม ต้องปฏิเสธเฉพาะกรณีที่แปลงไม่ได้จริง
+ก่อนลบ lesson ที่ระบุ UUID แน่นอน migration consume เฉพาะ pending notices แบบ session/correction ของ UUID นั้นเป็น skipped โดยรักษา receipt/inbox/dedup และไม่แตะ arrival/special/digest
+queue term/date ที่ได้รับผลด้วย generation ปัจจุบันและ reset=false ให้ Behavior provider เดิมกลับผลที่ถูกลบ โดยไม่แก้ manual หรือกลับทั้งวันแบบ reset
+ถ้า archived lesson totals ไม่มี session attribution แต่ยังมี derived Behavior totals หรือผลที่เลือกอยู่ใน cycle/suppression ที่ provider เดิมคุ้มครอง ต้องปฏิเสธด้วย bounded finding แทนการเดาหรือรายงานว่ากลับผลแล้ว
+กรณีล้าง Behavior แบบ details_only แต่ Attendance session ยังอยู่ ต้องตรวจจาก roster/records/source snapshot ที่บันทึกจริง: nonzero lesson total ที่ details_purged หรือรายละเอียดที่เหลืออธิบายยอดไม่ได้ต้องปฏิเสธอย่าง atomic แม้ไม่มี Attendance archive; ไม่ใช้สมาชิกกลุ่มปัจจุบันอนุมานผลเดิม
+การพิสูจน์ว่าข้อมูลคงอยู่ต้องเลือกตาม retained group สำหรับคะแนน/ผล และ retained session สำหรับ Attendance รวม session ที่ไม่มี group แต่ระบุ retained offering ชัดเจน; facts ของ omitted group ไม่เป็นส่วนของ preservation fingerprint
 ถ้าสถานะกำกวมหรือ Delivery/Timetable source graphs เข้ากันไม่ได้ ให้หยุดด้วย bounded finding counts ไม่เดาข้อมูลหรือเผยแถวส่วนตัว
 
 ย้าย offerings/groups/teachers/students/targets ที่เลือกลง normalized current structure ก่อน purge

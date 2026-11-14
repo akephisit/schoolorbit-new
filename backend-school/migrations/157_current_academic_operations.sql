@@ -12,6 +12,7 @@ LOCK TABLE academic_terms,learning_offerings,course_offering_details,activity_of
     academic_delivery_revision_audience_rooms,academic_delivery_teacher_cutoffs,
     academic_delivery_offering_effectivity,attendance_sessions,attendance_records,
     attendance_scan_events,files,file_versions,file_derivatives,file_operations,file_storage_cleanup_watches,
+    attendance_notifications,notification_receipts,notification_presentations,attendance_score_changes,attendance_module_state,
     supervision_observations IN ACCESS EXCLUSIVE MODE;
 SET CONSTRAINTS ALL IMMEDIATE;
 
@@ -141,26 +142,135 @@ END $$;
 CREATE TEMP TABLE academic157_supervision ON COMMIT DROP AS
 SELECT id,lesson_snapshot,timetable_block_group_id,observed_at FROM supervision_observations;
 
+CREATE TEMP TABLE academic157_removed_lessons ON COMMIT DROP AS
+SELECT session.id,session.academic_term_id,session.date,session.roster FROM attendance_sessions session
+WHERE session.kind='lesson' AND (
+    EXISTS(SELECT 1 FROM learning_offerings o WHERE o.id=session.offering_id AND NOT EXISTS(SELECT 1 FROM academic157_offerings kept WHERE kept.id=o.id))
+    OR EXISTS(SELECT 1 FROM learning_groups g WHERE g.id=session.learning_group_id AND NOT EXISTS(SELECT 1 FROM academic157_groups kept WHERE kept.id=g.id)));
+-- These are the producer's exact component-delimited identities. A digest,
+-- arrival or special notice never enters this selected source set.
+-- Persisted session evidence, never today's group membership, bounds the
+-- learners whose day totals can contain a deleted lesson contribution.
+CREATE TEMP TABLE academic157_removed_lesson_students ON COMMIT DROP AS
+SELECT lesson.id,lesson.academic_term_id,lesson.date,record.student_id
+FROM academic157_removed_lessons lesson JOIN attendance_records record ON record.session_id=lesson.id
+UNION
+SELECT lesson.id,lesson.academic_term_id,lesson.date,(student->>'studentId')::uuid
+FROM academic157_removed_lessons lesson CROSS JOIN LATERAL jsonb_array_elements(lesson.roster) student
+WHERE pg_input_is_valid(student->>'studentId','uuid')
+UNION
+SELECT lesson.id,lesson.academic_term_id,lesson.date,effect.student_id
+FROM academic157_removed_lessons lesson JOIN behavior_source_effect_snapshots effect
+    ON effect.academic_term_id=lesson.academic_term_id AND effect.date=lesson.date AND effect.kind='lesson' AND effect.source_key=lesson.id::text;
+CREATE TEMP TABLE academic157_removed_notices ON COMMIT DROP AS
+SELECT notice.id,notice.notification_id,notice.recipient_id,notice.student_id,notice.academic_term_id,
+    string_to_array(notice.dedup_key,':') components
+FROM attendance_notifications notice JOIN academic157_removed_lessons lesson
+    ON split_part(notice.dedup_key,':',2)=lesson.id::text
+WHERE split_part(notice.dedup_key,':',1) IN('session','correction');
+DO $$ BEGIN
+    IF EXISTS(SELECT 1 FROM academic157_removed_notices notice
+        JOIN academic157_removed_lessons lesson ON notice.components[2]=lesson.id::text
+        WHERE notice.academic_term_id<>lesson.academic_term_id OR notice.student_id IS NULL
+            OR notice.components[3] IS DISTINCT FROM notice.student_id::text
+            OR NOT((notice.components[1]='session' AND cardinality(notice.components)=3)
+                OR (notice.components[1]='correction' AND cardinality(notice.components)=4
+                    AND CASE WHEN pg_input_is_valid(notice.components[4],'bigint') THEN notice.components[4]::bigint>0 ELSE false END)))
+       OR EXISTS(SELECT 1 FROM notification_receipts receipt JOIN academic157_removed_notices notice ON receipt.source_id=notice.id
+            WHERE receipt.source_kind='attendance' AND (receipt.notification_id<>notice.notification_id OR receipt.recipient_id<>notice.recipient_id)) THEN
+        RAISE EXCEPTION 'ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE'; END IF;
+    -- The existing day provider deliberately protects closed cycles and
+    -- suppressions. Refuse those exact selected effects instead of claiming
+    -- that ordinary queued reconciliation would reverse them.
+    IF EXISTS(SELECT 1 FROM behavior_entries entry JOIN behavior_daily_totals total ON total.id=entry.total_id
+        JOIN academic157_removed_lessons lesson ON (entry.source_session_id=lesson.id OR entry.source_key=lesson.id::text)
+        CROSS JOIN attendance_module_state module
+        LEFT JOIN behavior_cycles current_cycle ON current_cycle.side=total.side AND current_cycle.state='current'
+        WHERE entry.cancelled_at IS NULL AND (total.source<>'lesson' OR total.academic_term_id<>lesson.academic_term_id
+            OR total.date<>lesson.date OR entry.source_key<>lesson.id::text OR (entry.source_session_id IS NOT NULL AND entry.source_session_id<>lesson.id) OR entry.source_generation<>module.generation
+            OR current_cycle.id IS NULL OR total.cycle_id<>current_cycle.id OR lesson.date<current_cycle.starts_on
+            OR EXISTS(SELECT 1 FROM behavior_suppressions suppression WHERE suppression.side=total.side AND suppression.source='lesson'
+                AND (suppression.start_date IS NULL OR lesson.date BETWEEN suppression.start_date AND suppression.end_date)
+                AND (suppression.academic_term_id IS NULL OR suppression.academic_term_id=lesson.academic_term_id)
+                AND (suppression.academic_year_id IS NULL OR suppression.academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=lesson.academic_term_id))))) THEN
+        RAISE EXCEPTION 'ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED'; END IF;
+    -- details_only cleanup intentionally removes entries while retaining
+    -- totals and suppression evidence. The day provider cannot subtract a
+    -- missing contribution; refuse such exact affected learner/day/side
+    -- totals independently of Attendance archival state.
+    IF EXISTS(SELECT 1 FROM behavior_daily_totals total
+        JOIN academic157_removed_lesson_students learner ON learner.student_id=total.student_id
+            AND learner.academic_term_id=total.academic_term_id AND learner.date=total.date
+        LEFT JOIN behavior_cycles current_cycle ON current_cycle.side=total.side AND current_cycle.state='current'
+        WHERE total.source='lesson' AND total.points>0 AND
+            (total.details_purged OR total.points<>(SELECT COALESCE(sum(entry.points),0) FROM behavior_entries entry
+                WHERE entry.total_id=total.id AND entry.cancelled_at IS NULL)
+            OR current_cycle.id IS NULL OR total.cycle_id<>current_cycle.id OR total.date<current_cycle.starts_on
+            OR EXISTS(SELECT 1 FROM behavior_suppressions suppression WHERE suppression.side=total.side AND suppression.source='lesson'
+                AND (suppression.start_date IS NULL OR total.date BETWEEN suppression.start_date AND suppression.end_date)
+                AND (suppression.academic_term_id IS NULL OR suppression.academic_term_id=total.academic_term_id)
+                AND (suppression.academic_year_id IS NULL OR suppression.academic_year_id=(SELECT academic_year_id FROM academic_terms WHERE id=total.academic_term_id)))))
+       OR EXISTS(SELECT 1 FROM behavior_source_effect_snapshots effect JOIN academic157_removed_lessons lesson
+            ON effect.academic_term_id=lesson.academic_term_id AND effect.date=lesson.date AND effect.kind='lesson' AND effect.source_key=lesson.id::text
+            WHERE effect.suppressed AND effect.action IN('merit','deduction') AND effect.raw_points>0) THEN
+        RAISE EXCEPTION 'ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED'; END IF;
+    -- Archived offering totals do not identify individual lesson sessions.
+    -- Existing derived totals cannot be allocated by today's roster or used
+    -- to enqueue a whole archived day, which would also erase other sources.
+    IF EXISTS(SELECT 1 FROM attendance_term_summaries summary JOIN learning_offerings offering ON summary.scope_key=offering.id::text
+        WHERE summary.category='lesson' AND summary.expected>0 AND NOT EXISTS(SELECT 1 FROM academic157_offerings kept WHERE kept.id=offering.id)
+            AND EXISTS(SELECT 1 FROM behavior_daily_totals total WHERE total.academic_term_id=offering.academic_term_id
+                AND total.source='lesson' AND total.points>0)) THEN
+        RAISE EXCEPTION 'ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE'; END IF;
+END $$;
+CREATE TEMP TABLE academic157_cancelled_receipts ON COMMIT DROP AS
+SELECT receipt.id FROM notification_receipts receipt JOIN academic157_removed_notices notice
+    ON receipt.source_kind='attendance' AND receipt.source_id=notice.id
+    AND receipt.notification_id=notice.notification_id AND receipt.recipient_id=notice.recipient_id;
+CREATE TEMP TABLE academic157_original_receipts ON COMMIT DROP AS SELECT id,to_jsonb(receipt) fact FROM notification_receipts receipt;
+CREATE TEMP TABLE academic157_unrelated_presentations ON COMMIT DROP AS
+SELECT receipt_id,to_jsonb(presentation) fact FROM notification_presentations presentation
+WHERE NOT EXISTS(SELECT 1 FROM academic157_cancelled_receipts selected WHERE selected.id=presentation.receipt_id);
+
+-- Preserve explicit ownership, including saved group-less sessions whose
+-- offering is retained. Omitted groups are authorized deletion scope even
+-- when another group in their offering remains current.
+CREATE TEMP TABLE academic157_retained_sessions ON COMMIT DROP AS
+SELECT session.id FROM attendance_sessions session JOIN academic157_offerings offering ON offering.id=session.offering_id
+WHERE session.learning_group_id IS NULL OR EXISTS(SELECT 1 FROM academic157_groups kept WHERE kept.id=session.learning_group_id);
 -- Capture only retained facts. The temporary JSON never survives this transaction.
 CREATE TEMP TABLE academic157_preserved ON COMMIT DROP AS
 SELECT 'memberships'::text resource,count(*) row_count,encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex') fingerprint
 FROM learning_group_students r JOIN academic157_groups g ON g.id=r.learning_group_id
 UNION ALL SELECT 'attendance',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'source_key' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM attendance_sessions r JOIN academic157_offerings o ON o.id=r.offering_id
+FROM attendance_sessions r JOIN academic157_retained_sessions kept ON kept.id=r.id
 UNION ALL SELECT 'scores',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM learning_group_student_scores r JOIN academic157_offerings o ON o.id=r.learning_offering_id
+FROM learning_group_student_scores r JOIN academic157_groups g ON g.id=r.learning_group_id
 UNION ALL SELECT 'course_results',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM academic_course_results r JOIN academic157_offerings o ON o.id=r.learning_offering_id
+FROM academic_course_results r JOIN academic157_groups g ON g.id=r.learning_group_id
 UNION ALL SELECT 'activity_results',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM academic_activity_results r JOIN academic157_offerings o ON o.id=r.learning_offering_id
+FROM academic_activity_results r JOIN academic157_groups g ON g.id=r.learning_group_id
 UNION ALL SELECT 'attendance_records',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.session_id,r.student_id),'[]')::text,'UTF8')),'hex')
-FROM attendance_records r JOIN attendance_sessions session ON session.id=r.session_id JOIN academic157_offerings o ON o.id=session.offering_id
+FROM attendance_records r JOIN academic157_retained_sessions kept ON kept.id=r.session_id
 UNION ALL SELECT 'supervision',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'updated_at'-'timetable_block_group_id'-'learning_group_id'-'lesson_snapshot' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
 FROM supervision_observations r
 UNION ALL SELECT 'blocks',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'timetable_version_id'-'timetable_id' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
 FROM academic_timetable_blocks r JOIN academic157_sources selected ON selected.timetable_id=r.timetable_version_id;
 CREATE TEMP TABLE academic157_original_coverage ON COMMIT DROP AS SELECT * FROM learning_group_homerooms;
 CREATE TEMP TABLE academic157_original_preferences ON COMMIT DROP AS SELECT * FROM learning_group_preferred_rooms;
+
+-- Match Notifications' irreversible consume-before-presentation protocol while
+-- retaining receipt, inbox and Attendance dedup identities. A prefetched worker
+-- must re-lock this terminal receipt and can never reopen its presentation.
+UPDATE notification_receipts receipt SET presentation_consumed_at=clock_timestamp(),presentation_outcome='skipped'
+FROM academic157_cancelled_receipts selected WHERE selected.id=receipt.id AND receipt.presentation_consumed_at IS NULL;
+DELETE FROM notification_presentations presentation USING academic157_cancelled_receipts selected WHERE selected.id=presentation.receipt_id;
+-- Ordinary dirty-day delivery preserves current arrival/special/manual facts.
+-- It never changes a pre-existing reset intent or invents a new generation.
+INSERT INTO attendance_score_changes(generation,academic_term_id,date,reset)
+SELECT module.generation,lesson.academic_term_id,lesson.date,false FROM attendance_module_state module
+CROSS JOIN (SELECT DISTINCT academic_term_id,date FROM academic157_removed_lessons) lesson
+ON CONFLICT(generation,academic_term_id,date) DO UPDATE SET row_version=nextval('attendance_score_revision_seq'),queued_at=now();
 
 -- Remove only the retired mutability mechanisms, explicitly by owned name.
 DROP TRIGGER learning_offerings_published_immutable ON learning_offerings;
@@ -712,15 +822,15 @@ CREATE TEMP TABLE academic157_after ON COMMIT DROP AS
 SELECT 'memberships'::text resource,count(*) row_count,encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex') fingerprint
 FROM learning_group_students r JOIN academic157_groups g ON g.id=r.learning_group_id
 UNION ALL SELECT 'attendance',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'source_key' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM attendance_sessions r JOIN academic157_offerings o ON o.id=r.offering_id
+FROM attendance_sessions r JOIN academic157_retained_sessions kept ON kept.id=r.id
 UNION ALL SELECT 'scores',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM learning_group_student_scores r JOIN academic157_offerings o ON o.id=r.learning_offering_id
+FROM learning_group_student_scores r JOIN academic157_groups g ON g.id=r.learning_group_id
 UNION ALL SELECT 'course_results',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM academic_course_results r JOIN academic157_offerings o ON o.id=r.learning_offering_id
+FROM academic_course_results r JOIN academic157_groups g ON g.id=r.learning_group_id
 UNION ALL SELECT 'activity_results',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.id),'[]')::text,'UTF8')),'hex')
-FROM academic_activity_results r JOIN academic157_offerings o ON o.id=r.learning_offering_id
+FROM academic_activity_results r JOIN academic157_groups g ON g.id=r.learning_group_id
 UNION ALL SELECT 'attendance_records',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.session_id,r.student_id),'[]')::text,'UTF8')),'hex')
-FROM attendance_records r JOIN attendance_sessions session ON session.id=r.session_id JOIN academic157_offerings o ON o.id=session.offering_id
+FROM attendance_records r JOIN academic157_retained_sessions kept ON kept.id=r.session_id
 UNION ALL SELECT 'supervision',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'updated_at'-'timetable_block_group_id'-'learning_group_id'-'lesson_snapshot' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
 FROM supervision_observations r
 UNION ALL SELECT 'blocks',count(*),encode(sha256(convert_to(COALESCE(jsonb_agg(to_jsonb(r)-'timetable_version_id'-'timetable_id' ORDER BY r.id),'[]')::text,'UTF8')),'hex')
@@ -749,6 +859,23 @@ DO $$ BEGIN
             'academic_result_corrections','academic_term_aggregate_revisions','academic_annual_result_revisions','academic_annual_result_term_sources']::regclass[])
           AND NOT t.tgisinternal AND t.tgenabled='O' AND p.proname='academic_guard_result_removal')<>10
     OR EXISTS(SELECT 1 FROM academic_result_removal_scope)
+    OR EXISTS(SELECT 1 FROM academic157_original_receipts original FULL JOIN notification_receipts actual ON actual.id=original.id
+        LEFT JOIN academic157_cancelled_receipts selected ON selected.id=original.id
+        WHERE original.id IS NULL OR actual.id IS NULL
+            OR (selected.id IS NULL AND to_jsonb(actual) IS DISTINCT FROM original.fact)
+            OR (selected.id IS NOT NULL AND ((to_jsonb(actual)-'presentation_consumed_at'-'presentation_outcome')
+                IS DISTINCT FROM (original.fact-'presentation_consumed_at'-'presentation_outcome')
+                OR (original.fact->>'presentation_consumed_at' IS NULL AND
+                    (actual.presentation_consumed_at IS NULL OR actual.presentation_outcome<>'skipped'))
+                OR (original.fact->>'presentation_consumed_at' IS NOT NULL AND to_jsonb(actual) IS DISTINCT FROM original.fact))))
+    OR EXISTS(SELECT 1 FROM academic157_unrelated_presentations original FULL JOIN
+        (SELECT receipt_id,to_jsonb(presentation) fact FROM notification_presentations presentation
+            WHERE NOT EXISTS(SELECT 1 FROM academic157_cancelled_receipts selected WHERE selected.id=presentation.receipt_id)) actual USING(receipt_id)
+        WHERE original.fact IS DISTINCT FROM actual.fact)
+    OR EXISTS(SELECT 1 FROM notification_presentations presentation JOIN academic157_cancelled_receipts selected ON selected.id=presentation.receipt_id)
+    OR EXISTS(SELECT 1 FROM academic157_removed_lessons lesson CROSS JOIN attendance_module_state module
+        WHERE NOT EXISTS(SELECT 1 FROM attendance_score_changes change WHERE change.generation=module.generation
+            AND change.academic_term_id=lesson.academic_term_id AND change.date=lesson.date))
     THEN RAISE EXCEPTION 'ACADEMIC_CURRENT_RECONCILIATION_FAILED'; END IF;
 END $$;
 INSERT INTO academic_current_operations_migration_audit(migration_version,cutover_date,passed,source_fingerprint,checks)

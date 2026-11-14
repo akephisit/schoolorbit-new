@@ -6,6 +6,12 @@ use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+#[path = "current_academic_operations/source_fences.rs"]
+mod source_fences;
+
+#[path = "current_academic_operations/group_cutover.rs"]
+mod group_cutover;
+
 async fn predecessor(name: &str) -> PgPool {
     let pool = school_test_db::create_named_test_pool(name).await;
     seed_release_two_predecessor(&pool).await.unwrap();

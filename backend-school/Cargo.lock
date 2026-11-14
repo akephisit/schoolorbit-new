@@ -4694,7 +4694,9 @@ dependencies = [
 name = "school-migrations"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dashmap",
+ "school-behavior",
  "school-database",
  "school-permissions",
  "school-test-db",

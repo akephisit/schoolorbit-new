@@ -12,6 +12,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
+school-behavior = { workspace = true }
 school-test-db = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }

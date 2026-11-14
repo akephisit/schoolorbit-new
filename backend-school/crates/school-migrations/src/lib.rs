@@ -176,6 +176,15 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         return "unclassified";
     };
     match (version, database.message()) {
+        (Some(157), "ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE"
+        }
+        (Some(157), "ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED") => {
+            "ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED"
+        }
+        (Some(157), "ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE") => {
+            "ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE"
+        }
         (Some(157), "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS") => {
             "ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS"
         }
