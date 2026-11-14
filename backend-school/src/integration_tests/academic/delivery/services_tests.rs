@@ -2135,12 +2135,21 @@ async fn academic_term_change_set_summary_omits_hydrated_detail() {
             "effectiveFrom".to_string(),
             "referenceDate".to_string(),
             "id".to_string(),
+            "publicationNo".to_string(),
+            "publishedAt".to_string(),
+            "publishedBy".to_string(),
             "reason".to_string(),
             "status".to_string(),
             "targetDeliveryVersionId".to_string(),
             "updatedAt".to_string(),
         ])
     );
+    assert!(summary.publication_no.is_none());
+    assert!(summary.published_at.is_none());
+    assert!(summary.published_by.is_none());
+    for field in ["publicationNo", "publishedAt", "publishedBy"] {
+        assert!(value[field].is_null(), "draft {field} is explicitly null");
+    }
     assert_eq!(
         summary.target_delivery_version_id,
         detailed.target_delivery_version_id
@@ -6584,6 +6593,38 @@ async fn homeroom_delivery_classification_is_pinned_and_independent_of_requireme
     .execute(&pool)
     .await
     .unwrap();
+    async fn pinned_classifications(pool: &PgPool, program: Uuid) -> serde_json::Value {
+        sqlx::query_scalar(
+            "SELECT jsonb_agg(fact ORDER BY fact::text) FROM (
+                SELECT jsonb_build_object('requirementId',requirement.id,'kind','course',
+                    'catalogVersionId',version.id,'subjectType',version.type,
+                    'requirementKind',requirement.requirement_kind) AS fact
+                FROM published_curriculum_course_requirements requirement
+                JOIN subject_versions version ON version.id=requirement.subject_version_id
+                WHERE requirement.study_program_id=$1
+                UNION ALL
+                SELECT jsonb_build_object('requirementId',requirement.id,'kind','activity',
+                    'catalogVersionId',requirement.activity_version_id,'subjectType',NULL,
+                    'requirementKind',requirement.requirement_kind)
+                FROM published_curriculum_activity_requirements requirement
+                WHERE requirement.study_program_id=$1
+            ) pinned",
+        )
+        .bind(program)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+    let pinned_before = pinned_classifications(&pool, context.study_program_id).await;
+    // Current workspace readers require the supported current schema, including 151.
+    school_migrations::run_tenant_migrations(&pool)
+        .await
+        .expect("the canonical upgrade must preserve historical classification input");
+    assert_eq!(
+        pinned_classifications(&pool, context.study_program_id).await,
+        pinned_before,
+        "published requirement identities, catalog pins and classifications survive upgrade"
+    );
     let workspace = workspaces::homeroom_delivery_workspace_for_version(
         &pool,
         context.year_id,

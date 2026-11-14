@@ -474,6 +474,13 @@ mod tests {
 
     #[tokio::test]
     async fn parent_academic_context_contains_only_linked_student_years() {
+        use school_academic_core::{
+            models::{AcademicContextVisibilityInput, UpdateAcademicContextSettingsRequest},
+            services::context_settings,
+        };
+        use school_authorization::ActorContext;
+        use school_permissions::registry::codes;
+
         let pool = create_named_test_pool("parent_academic_context").await;
         apply_migrations_through(&pool, 40).await.unwrap();
         seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
@@ -502,10 +509,10 @@ mod tests {
         .await
         .unwrap();
 
-        let options = get_parent_academic_context_options(&pool, parent_id)
-            .await
-            .unwrap();
-        let expected_years: Vec<i32> = sqlx::query_scalar(
+        // The parent relationship is historical fixture data; discovery uses
+        // the current visibility and term contracts after the canonical upgrade.
+        school_test_db::run_test_migrations(&pool).await;
+        let linked_years: Vec<i32> = sqlx::query_scalar(
             r#"
             SELECT year.year
             FROM student_academic_years student_year
@@ -518,13 +525,96 @@ mod tests {
         .fetch_all(&pool)
         .await
         .unwrap();
+        assert_eq!(linked_years, vec![2026, 2025, 2024]);
+
+        let id = |value: &str| Uuid::parse_str(value).unwrap();
+        let unrelated_year = id("10000000-0000-0000-0000-000000000023");
+        let visible_year_2024 = id("10000000-0000-0000-0000-000000000024");
+        let visible_year_2025 = id("10000000-0000-0000-0000-000000000025");
+        let hidden_year = id("10000000-0000-0000-0000-000000000026");
+        let hidden_term = id("11000000-0000-0000-0000-000000000242");
+        let hidden_parent_term = id("11000000-0000-0000-0000-000000000261");
+        let term_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM academic_terms ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(term_ids.contains(&hidden_term));
+        assert!(term_ids.contains(&hidden_parent_term));
+        let revision =
+            sqlx::query_scalar("SELECT row_version FROM academic_context_settings WHERE singleton")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let configured = context_settings::update(
+            &pool,
+            &ActorContext {
+                user_id: id("50000000-0000-0000-0000-000000000002"),
+                permissions: vec![
+                    codes::ACADEMIC_YEAR_MANAGE_SCHOOL.into(),
+                    codes::ACADEMIC_TERM_MANAGE_SCHOOL.into(),
+                ],
+            },
+            UpdateAcademicContextSettingsRequest {
+                row_version: revision,
+                default_academic_year_id: Some(visible_year_2025),
+                default_academic_term_id: Some(id("11000000-0000-0000-0000-000000000251")),
+                years: [
+                    unrelated_year,
+                    visible_year_2024,
+                    visible_year_2025,
+                    hidden_year,
+                ]
+                .into_iter()
+                .map(|id| AcademicContextVisibilityInput {
+                    id,
+                    is_visible: id != hidden_year,
+                })
+                .collect(),
+                terms: term_ids
+                    .into_iter()
+                    .map(|id| AcademicContextVisibilityInput {
+                        id,
+                        is_visible: id != hidden_term,
+                    })
+                    .collect(),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(configured
+            .context_options
+            .years
+            .iter()
+            .any(|year| year.id == unrelated_year));
+        assert!(configured
+            .terms
+            .iter()
+            .any(|term| term.id == hidden_parent_term && term.is_visible));
+        assert!(!configured
+            .context_options
+            .terms
+            .iter()
+            .any(|term| term.id == hidden_parent_term));
+
+        let options = get_parent_academic_context_options(&pool, parent_id)
+            .await
+            .unwrap();
         assert_eq!(
             options
                 .years
                 .iter()
-                .map(|year| year.year)
+                .map(|year| (year.id, year.year))
                 .collect::<Vec<_>>(),
-            expected_years
+            vec![(visible_year_2025, 2025), (visible_year_2024, 2024)]
+        );
+        assert_eq!(
+            options.terms.iter().map(|term| term.id).collect::<Vec<_>>(),
+            vec![
+                id("11000000-0000-0000-0000-000000000251"),
+                id("11000000-0000-0000-0000-000000000252"),
+                id("11000000-0000-0000-0000-000000000253"),
+                id("11000000-0000-0000-0000-000000000241"),
+            ]
         );
         assert!(options.terms.iter().all(|term| options
             .years

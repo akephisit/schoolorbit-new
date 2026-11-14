@@ -80,6 +80,9 @@ echo "school_compiler_cache phase=$phase mode=$cache_mode enabled=$cache_enabled
 compile_started=$(date +%s%N)
 if [[ "$phase" == dependencies ]]; then
     cargo chef cook --release --recipe-path recipe.json
+    # Rust 1.100 changes build artifact paths that cargo-chef's cleanup assumes.
+    # Rerun both real migration-tracking build scripts after copying the sources.
+    cargo clean --release --package backend-school --package school-migrations
 else
     mkdir -p "$metrics_dir"
     export SCHOOLORBIT_LINK_METRICS="$PWD/$metrics_dir/link-nanoseconds.txt"

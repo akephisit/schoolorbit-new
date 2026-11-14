@@ -310,35 +310,73 @@ async fn lifecycle_providers_report_only_selected_term_drafts_and_consequential_
                 .as_str()
         )
     );
-    let results = workspace
+    for (code, path) in [
+        ("delivery.blocking", "/staff/academic/delivery"),
+        ("exams.warning", "/staff/academic/exam-schedules"),
+        ("timetable.warning", "/staff/academic/timetable"),
+    ] {
+        let finding = workspace
+            .findings
+            .iter()
+            .find(|finding| finding.code == code)
+            .expect("the fixture must produce each operational finding");
+        assert!(finding.count > 0, "{code}");
+        assert_eq!(
+            finding.resolution_url.as_deref(),
+            Some(format!("{path}?academicYearId={year}&academicTermId={term}").as_str()),
+            "{code} links to the exact academic context"
+        );
+    }
+    assert!(workspace
         .findings
         .iter()
-        .find(|finding| finding.code == "results.incomplete")
-        .unwrap();
-    assert_eq!(
-        results.resolution_url.as_deref(),
-        Some(
-            format!(
-                "/staff/academic/results/aggregates?academicYearId={year}&academicTermId={term}"
-            )
-            .as_str()
-        )
-    );
+        .all(|finding| !finding.code.starts_with("results.")));
     let partial_reader = school_authorization::ActorContext {
         user_id: actor,
         permissions: vec![
             school_permissions::registry::codes::ACADEMIC_LIFECYCLE_READ_SCHOOL.into(),
-            school_permissions::registry::codes::ACADEMIC_RESULT_READ_SCHOOL.into(),
+            school_permissions::registry::codes::ACADEMIC_EXAM_SCHEDULE_READ_SCHOOL.into(),
         ],
     };
     let partial = super::workspace_in_transaction(&mut tx, &partial_reader, year, term)
         .await
         .unwrap();
+    for code in [
+        "delivery.blocking",
+        "timetable.warning",
+        "supervision.warning",
+    ] {
+        let finding = partial
+            .findings
+            .iter()
+            .find(|finding| finding.code == code)
+            .expect("missing read permission must not hide an operational finding");
+        let full = workspace
+            .findings
+            .iter()
+            .find(|finding| finding.code == code)
+            .unwrap();
+        assert_eq!(finding.count, full.count, "{code}");
+        assert!(finding.count > 0, "{code}");
+        assert!(finding.resolution_url.is_none(), "{code}");
+    }
+    let exam_finding = partial
+        .findings
+        .iter()
+        .find(|finding| finding.code == "exams.warning")
+        .expect("the granted exam finding remains visible");
+    assert!(exam_finding.count > 0);
+    assert_eq!(
+        exam_finding.resolution_url.as_deref(),
+        Some(
+            format!("/staff/academic/exam-schedules?academicYearId={year}&academicTermId={term}")
+                .as_str()
+        )
+    );
     assert!(partial
         .findings
         .iter()
-        .filter(|finding| finding.code.starts_with("results."))
-        .all(|finding| finding.resolution_url.is_none()));
+        .all(|finding| !finding.code.starts_with("results.")));
 }
 
 #[tokio::test]

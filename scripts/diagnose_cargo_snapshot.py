@@ -65,8 +65,7 @@ def main():
                           and record['target']['name'] == 'snapshot-freshness-fixture'
                           and record['target']['kind'] == ['bin']
                           and record['message']['level'] == 'error'
-                          and "couldn't read" in record['message']['message']
-                          and 'src/value.rs' in record['message']['message']]
+                          and record['message']['message'] == "couldn't find file `src/value.rs`"]
                 artifacts = [record for record in messages if record.get('reason') == 'compiler-artifact']
                 if (process.returncode != 101 or finished != [False] or not errors
                         or any(record['target']['kind'] == ['bin'] for record in artifacts)):

@@ -45,6 +45,19 @@ owning application's locked npm dependencies. Deployment/static checks need Shel
 Bats, envsubst and jq. Local test profiles use no debug information or Cargo incremental data;
 production release optimization is unchanged. Keep incomplete or failing work in a draft PR.
 
+The root [`rust-toolchain.toml`](../rust-toolchain.toml) selects the exact stable Rust release
+for local Cargo commands, with the minimal profile plus rustfmt and Clippy. Use rustup from this
+checkout without a competing directory override; `rustup show active-toolchain` identifies the
+selected toolchain. Keep both backend Docker builder versions aligned with this pin and their
+published immutable image digest. Pipeline verification classifies pin changes for deployment,
+contracts and both backends. Backend artifact identities hash the pin's committed blob at the
+planned revision; frontend identities do not include Rust. Verify pin/hash isolation and Docker
+alignment with:
+
+```bash
+node --test scripts/tests/pipeline-policy.test.mjs frontend-school/tests/static/deployment-installer.test.mjs
+```
+
 School performs workspace checking, architecture/unit checks, generated OpenAPI and clean-environment
 export, then database consumers with one Docker PostgreSQL server and a fresh owned database per
 invocation. Admin applies migrations only to its disposable Docker fixture before SQLx all-target
@@ -179,8 +192,14 @@ The fixtures exercise nested/peer dependencies, stale and partial caches, worksp
 bounded summaries and compiler failure propagation. Rehearse a clean install of the extracted lock
 outside the checkout and launch its locked Wrangler/browser tools before shipping cache changes.
 School build fixtures exercise both dependency cooking and application compilation with compiler
-caching disabled, local caching, GitHub caching and missing cache credentials. Compiler failures
-must propagate even when optional cache statistics fail. Dockerfile changes also require the
+caching disabled, local caching, GitHub caching and missing cache credentials. After dependency
+cooking, Cargo's public package cleanup removes dummy release artifacts for `backend-school` and
+`school-migrations` before real sources are copied. Both own migration-tracking build scripts;
+Rust 1.100 changed artifact paths that cargo-chef 0.1.78's internal cleanup assumes. Admin likewise
+cleans only `backend-admin`. Preserve external dependency artifacts and validate that the real
+build scripts rerun, an unchanged rebuild stays fresh, and a tracked input change rebuilds its
+owner. The compiler-evidence fixtures assert cook/clean order and propagate cleanup failures as
+well as compiler failures, even when optional cache statistics fail. Dockerfile changes also require the
 runtime-target build and image-config inspection described below; cache-hit counts alone do not
 prove the release binary or its API export is correct.
 Compare repeated installs and restores on one toolchain/host; setup-only measurements are not total
@@ -2140,7 +2159,7 @@ weekday/weekend range values, retained notes, serialized edits, conflict recover
 
 The Attendance browser suite checks seven visible single-selection status buttons plus explicit unchecked clearing, one-tap changes, repeated-tap retention, keyboard focus/activation, disabled read-only access and per-person note absence. Exercise narrow mobile and desktop light/dark layouts against a ready production build, together with sparse saves, correction reasons, same-day arrival context, special-round score overrides and overlapping scan conflicts. No browser fixture mutates a real tenant.
 
-Run `cargo test -p school-attendance` from `backend-school` for result validation, calendar rules and ambiguous-face rejection. From the repository root, run `ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh attendance -- --test-threads=4` against the script-owned Docker PostgreSQL fixture. These synthetic cases exercise actual dated academic providers, read-only workspace loading, first-save calendar defaults with stale-revision refusal, read-only previews and kiosk preparation, sparse first saves and unchecked coverage, all-guardian notification deduplication, digest deduplication, holiday/cancelled-round exclusion, special-round overlap, encrypted templates with stale-gallery rejection after withdrawal/re-enrollment, mixed own/assigned history and private-evidence isolation, school-writer configuration access, accepted evidence and bounded expiry/reconciliation across multiple batches, and verified term purge with retained teacher-scoped summaries, migration 103→104→105 preservation/refusal/retry, and module reset with stale-token refusal and Attendance-only evidence cleanup. Never use a tenant database for this suite. For focused concurrency checks, run `./scripts/test_backend_school.sh attendance_history_snapshot -- --test-threads=1` and `./scripts/test_backend_school.sh attendance_report_snapshot -- --test-threads=1` from the repository root; these verify parallel readers and first-save progress without mixed snapshot facts, snapshots queued behind reset, and exclusion against reset, purge and lifecycle changes. Central notification transport checks belong to `school-notifications`; the Attendance suite retains domain recipient/deduplication, history scope, reset and purge coverage. These fixture checks do not establish production capacity or browser/WebPush receipt.
+From the repository root, run `./scripts/test_backend_school.sh --package school-attendance -- --test-threads=4` for the whole Attendance package, including result validation, calendar rules, ambiguous-face rejection and database-backed retention guards. From the repository root, run `ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh attendance -- --test-threads=4` against the script-owned Docker PostgreSQL fixture. These synthetic cases exercise actual dated academic providers, read-only workspace loading, first-save calendar defaults with stale-revision refusal, read-only previews and kiosk preparation, sparse first saves and unchecked coverage, all-guardian notification deduplication, digest deduplication, holiday/cancelled-round exclusion, special-round overlap, encrypted templates with stale-gallery rejection after withdrawal/re-enrollment, mixed own/assigned history and private-evidence isolation, school-writer configuration access, accepted evidence and bounded expiry/reconciliation across multiple batches, and verified term purge with retained teacher-scoped summaries, migration 103→104→105 preservation/refusal/retry, and module reset with stale-token refusal and Attendance-only evidence cleanup. Never use a tenant database for this suite. For focused concurrency checks, run `./scripts/test_backend_school.sh attendance_history_snapshot -- --test-threads=1` and `./scripts/test_backend_school.sh attendance_report_snapshot -- --test-threads=1` from the repository root; these verify parallel readers and first-save progress without mixed snapshot facts, snapshots queued behind reset, and exclusion against reset, purge and lifecycle changes. Central notification transport checks belong to `school-notifications`; the Attendance suite retains domain recipient/deduplication, history scope, reset and purge coverage. These fixture checks do not establish production capacity or browser/WebPush receipt.
 
 Run `./scripts/test_backend_school.sh attendance_history_student_scope -- --test-threads=1 --nocapture` for dated Core/Delivery provider equivalence and frozen-roster exclusion before and after cancellation. Its disposable 100-room, 3,000-pupil fixture reports full versus selected-student row counts and median snapshot hold time without asserting machine-dependent timings; these measurements cover provider work rather than production request capacity. Keep the existing transfer, history/report snapshot, virtual coverage and mixed-permission cases when changing this path.
 
@@ -2734,8 +2753,8 @@ application-owned CLI implementation. Obtain it from the exact approved checkout
 lockfile using the existing selected target/cache:
 
 ```bash
-cargo +1.98.1 build --manifest-path backend-school/Cargo.toml --locked --release --bin file_storage_namespace
-namespace_target_dir="$(cargo +1.98.1 metadata --manifest-path backend-school/Cargo.toml --locked --format-version 1 --no-deps | jq -er '.target_directory')"
+cargo build --manifest-path backend-school/Cargo.toml --locked --release --bin file_storage_namespace
+namespace_target_dir="$(cargo metadata --manifest-path backend-school/Cargo.toml --locked --format-version 1 --no-deps | jq -er '.target_directory')"
 namespace_tool="$namespace_target_dir/release/file_storage_namespace"
 git rev-parse HEAD
 sha256sum backend-school/Cargo.lock "$namespace_tool"
