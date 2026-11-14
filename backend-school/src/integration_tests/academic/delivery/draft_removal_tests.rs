@@ -2043,156 +2043,235 @@ async fn open_activity_with_catalog_target_at(
 
 #[tokio::test]
 async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_and_revisions() {
+    // Historical rows are read without current providers, which require schema 151+.
+    async fn records(pool: &PgPool, revision: Uuid) -> (Value, Value) {
+        sqlx::query_as(
+            "SELECT to_jsonb(revision),to_jsonb(version)
+             FROM academic_term_change_sets revision
+             JOIN academic_delivery_versions version ON version.id=revision.target_delivery_version_id
+             WHERE revision.id=$1",
+        )
+        .bind(revision)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn seed_added_activity(
+        pool: &PgPool,
+        context: &RuntimeContext,
+        revision: &super::room_scope_tests::HistoricalRevision,
+        mode: ActivitySchedulingMode,
+        target: i32,
+        create_group: bool,
+    ) -> Uuid {
+        let (catalog, initial_target): (Uuid, i32) = sqlx::query_as(
+            "SELECT id,periods_per_week FROM activity_versions
+             WHERE status='published' AND scheduling_mode=$1 AND effective_from<=$2
+             ORDER BY id LIMIT 1",
+        )
+        .bind(mode)
+        .bind(revision.reference_date)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            initial_target, 1,
+            "the predecessor catalog supplies the ignored target"
+        );
+        let offering = Uuid::new_v4();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query(
+            "INSERT INTO learning_offerings(id,academic_term_id,academic_year_id,kind,
+                code_snapshot,name_snapshot,status,owning_organization_unit_id,starts_on)
+             SELECT $1,$2,$3,'activity',stable.code,version.name,'draft',
+                stable.owning_organization_unit_id,$4
+             FROM activity_versions version JOIN activities stable ON stable.id=version.activity_id
+             WHERE version.id=$5",
+        )
+        .bind(offering)
+        .bind(context.term_id)
+        .bind(context.year_id)
+        .bind(revision.reference_date)
+        .bind(catalog)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO activity_offering_details(learning_offering_id,academic_term_id,
+                academic_year_id,activity_version_id,activity_id,registration_type,
+                scheduling_mode,hours,attendance_requirement,pass_criteria)
+             SELECT $1,$2,$3,id,activity_id,'assigned',scheduling_mode,hours_per_week,
+                '{\"minimumPercent\":null,\"requiredSessions\":null}'::jsonb,
+                '{\"requireAttendance\":false,\"requireTeacherConfirmation\":true,\"outcomes\":[\"pass\",\"fail\"]}'::jsonb
+             FROM activity_versions WHERE id=$4",
+        )
+        .bind(offering).bind(context.term_id).bind(context.year_id).bind(catalog)
+        .execute(&mut *tx).await.unwrap();
+        sqlx::query(
+            "INSERT INTO learning_offering_targets(id,learning_offering_id,academic_term_id,
+                academic_year_id,target_kind,homeroom_id,grade_level_id,study_program_id)
+             VALUES(gen_random_uuid(),$1,$2,$3,'homeroom',$4,$5,$6)",
+        )
+        .bind(offering)
+        .bind(context.term_id)
+        .bind(context.year_id)
+        .bind(context.homeroom_id)
+        .bind(context.grade_level_id)
+        .bind(context.study_program_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        if create_group {
+            let group = Uuid::new_v4();
+            sqlx::query(
+                "INSERT INTO learning_groups(id,learning_offering_id,academic_term_id,
+                    academic_year_id,code,name,status,roster_status)
+                 VALUES($1,$2,$3,$4,$1::text,'Historical activity group','draft','draft')",
+            )
+            .bind(group)
+            .bind(offering)
+            .bind(context.term_id)
+            .bind(context.year_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO learning_group_homerooms(id,learning_group_id,academic_term_id,
+                    academic_year_id,homeroom_id,coverage_source)
+                 VALUES(gen_random_uuid(),$1,$2,$3,$4,'manual')",
+            )
+            .bind(group)
+            .bind(context.term_id)
+            .bind(context.year_id)
+            .bind(context.homeroom_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,
+                    academic_year_id,teacher_id,role,starts_on)
+                 VALUES(gen_random_uuid(),$1,$2,$3,$4,'primary',$5)",
+            )
+            .bind(group)
+            .bind(context.term_id)
+            .bind(context.year_id)
+            .bind(context.teacher_id)
+            .bind(revision.reference_date)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        }
+        // These are genuine predecessor commands; its installed projection ignores the adjustment.
+        sqlx::query(
+            "INSERT INTO academic_term_change_items(id,change_set_id,academic_year_id,
+                academic_term_id,action_kind,learning_offering_id,weekly_period_target,created_by)
+             VALUES(gen_random_uuid(),$1,$2,$3,'add_offering',$4,$5,$6),
+                   (gen_random_uuid(),$1,$2,$3,'adjust_weekly_period_target',$4,$7,$6)",
+        )
+        .bind(revision.id)
+        .bind(context.year_id)
+        .bind(context.term_id)
+        .bind(offering)
+        .bind(initial_target)
+        .bind(context.teacher_id)
+        .bind(target)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE academic_delivery_versions SET snapshot=academic_delivery_revision_snapshot($1),
+                row_version=row_version+1,updated_at=now() WHERE id=$2",
+        )
+        .bind(revision.id).bind(revision.target_delivery_version_id)
+        .execute(&mut *tx).await.unwrap();
+        sqlx::query("UPDATE academic_term_change_sets SET row_version=row_version+1,updated_at=now() WHERE id=$1")
+            .bind(revision.id).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+        offering
+    }
+
     let pool = prepare_delivery_runtime_fixture_through("activity_target_migration", 142).await;
     let context = historical_operational_change_runtime_context(&pool).await;
     let revision = super::room_scope_tests::historical_revision(&pool, &context, 12).await;
     let sibling = super::room_scope_tests::historical_revision(&pool, &context, 13).await;
-    let initial = draft_version(&pool, revision.id).await;
-    let excluded_group_id = initial
-        .snapshot
-        .offerings
-        .iter()
-        .flat_map(|offering| &offering.groups)
-        .next()
-        .unwrap()
-        .id;
-    // Seed the schema 142 exclusion directly; the current removal provider also owns audiences added in 144.
+    let (_, initial) = records(&pool, revision.id).await;
+    let excluded_group_id: Uuid = serde_json::from_value(
+        initial["snapshot"]["offerings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|offering| offering["groups"].as_array().unwrap())
+            .next()
+            .unwrap()["id"]
+            .clone(),
+    )
+    .unwrap();
+    // Keep schema-142 exclusion ownership; current removal providers also require later audiences.
     let mut transaction = pool.begin().await.unwrap();
     sqlx::query("UPDATE academic_term_change_sets SET excluded_group_ids=ARRAY[$2]::uuid[],row_version=row_version+1,updated_at=now() WHERE id=$1")
         .bind(revision.id).bind(excluded_group_id).execute(&mut *transaction).await.unwrap();
     sqlx::query("UPDATE academic_delivery_versions SET snapshot=academic_delivery_revision_snapshot($1),row_version=row_version+1,updated_at=now() WHERE id=$2")
         .bind(revision.id).bind(revision.target_delivery_version_id).execute(&mut *transaction).await.unwrap();
     transaction.commit().await.unwrap();
-    assert!(!draft_version(&pool, revision.id)
-        .await
-        .snapshot
-        .offerings
+    let (_, excluded) = records(&pool, revision.id).await;
+    assert!(!excluded["snapshot"]["offerings"]
+        .as_array()
+        .unwrap()
         .iter()
-        .flat_map(|offering| &offering.groups)
-        .any(|group| group.id == excluded_group_id));
+        .flat_map(|offering| offering["groups"].as_array().unwrap())
+        .any(|group| group["id"] == json!(excluded_group_id)));
     let mut targets = Vec::new();
     for mode in [
         ActivitySchedulingMode::Independent,
         ActivitySchedulingMode::Synchronized,
     ] {
         for target in [0, 2] {
-            let opened = open_activity_with_catalog_target_at(
-                &pool,
-                &context,
-                revision.target_delivery_version_id,
-                mode,
-                true,
-                revision.reference_date,
-            )
-            .await;
-            for group in groups::list(&pool, opened.id).await.unwrap() {
-                groups::replace_teachers(
-                    &pool,
-                    context.teacher_id,
-                    group.id,
-                    ReplaceLearningGroupTeachersRequest {
-                        row_version: group.row_version,
-                        teachers: vec![TeacherAssignmentInput {
-                            teacher_id: context.teacher_id,
-                            role: LearningTeacherRole::Primary,
-                        }],
-                    },
-                )
-                .await
-                .unwrap();
-            }
-            let current = change_sets::get_change_set(&pool, revision.id)
-                .await
-                .unwrap();
-            change_sets::upsert_change_item(
-                &pool,
-                context.teacher_id,
-                revision.id,
-                UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-                    change_set_row_version: current.row_version,
-                    item_row_version: None,
-                    learning_offering_id: opened.id,
-                    weekly_period_target: target,
-                },
-            )
-            .await
-            .unwrap();
-            targets.push((opened.id, target));
+            let offering =
+                seed_added_activity(&pool, &context, &revision, mode, target, true).await;
+            targets.push((offering, target));
         }
     }
-    // A terminal revision can contain the same old ignored command; never repair its recorded graph.
+    assert_eq!(targets.len(), 4);
+    // A terminal revision can record the same ignored command without authorizing graph repair.
     let cancelled = super::room_scope_tests::historical_revision(&pool, &context, 14).await;
-    let terminal_activity = open_activity_with_catalog_target_at(
+    seed_added_activity(
         &pool,
         &context,
-        cancelled.target_delivery_version_id,
+        &cancelled,
         ActivitySchedulingMode::Synchronized,
+        2,
         false,
-        cancelled.reference_date,
     )
     .await;
-    let terminal_current = change_sets::get_change_set(&pool, cancelled.id)
-        .await
-        .unwrap();
-    change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        cancelled.id,
-        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: terminal_current.row_version,
-            item_row_version: None,
-            learning_offering_id: terminal_activity.id,
-            weekly_period_target: 2,
-        },
-    )
-    .await
-    .unwrap();
     sqlx::query("UPDATE academic_delivery_versions SET status='cancelled' WHERE id=$1")
         .bind(cancelled.target_delivery_version_id)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE academic_term_change_sets SET status='cancelled',cancelled_by=$2,cancelled_at=now() WHERE id=$1").bind(cancelled.id).bind(context.teacher_id).execute(&pool).await.unwrap();
-    let terminal_before:Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(version) ORDER BY id) FROM academic_delivery_versions version WHERE status<>'draft'").fetch_one(&pool).await.unwrap();
-    let parent_before: Value = sqlx::query_scalar(
-        "SELECT to_jsonb(revision) FROM academic_term_change_sets revision WHERE id=$1",
-    )
-    .bind(revision.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let cached = draft_version(&pool, revision.id).await;
+    sqlx::query("UPDATE academic_term_change_sets SET status='cancelled',cancelled_by=$2,cancelled_at=now() WHERE id=$1")
+        .bind(cancelled.id).bind(context.teacher_id).execute(&pool).await.unwrap();
+    let terminal_before: Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(version) ORDER BY id) FROM academic_delivery_versions version WHERE status<>'draft'")
+        .fetch_one(&pool).await.unwrap();
+    let (parent_before, cached_record) = records(&pool, revision.id).await;
     for (id, _) in &targets {
+        let offering = cached_record["snapshot"]["offerings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|offering| offering["id"] == json!(id))
+            .unwrap();
         assert_eq!(
-            cached
-                .snapshot
-                .offerings
-                .iter()
-                .find(|row| row.id == *id)
-                .unwrap()
-                .weekly_period_target,
-            1,
+            offering["weeklyPeriodTarget"],
+            json!(1),
             "pre143 reproduces ignored adjustments"
         );
     }
-    let revision_before = change_sets::get_change_set(&pool, revision.id)
-        .await
-        .unwrap();
-    let sibling_before = draft_version(&pool, sibling.id).await;
-    let sibling_revision_before = change_sets::get_change_set(&pool, sibling.id)
-        .await
-        .unwrap();
+    let sibling_before = records(&pool, sibling.id).await;
     let history_before = preserved_facts(&pool).await;
     let journal_before: Value = sqlx::query_scalar(
         "SELECT jsonb_agg(to_jsonb(item) ORDER BY id) FROM academic_term_change_items item",
     )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let cached_record: Value = sqlx::query_scalar(
-        "SELECT to_jsonb(version) FROM academic_delivery_versions version WHERE id=$1",
-    )
-    .bind(cached.id)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -2205,25 +2284,19 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
         }
     }
     apply_migrations_through(&pool, 143).await.unwrap();
-    let repaired = draft_version(&pool, revision.id).await;
-    let current = change_sets::get_change_set(&pool, revision.id)
-        .await
-        .unwrap();
+    let (parent_after, repaired_record) = records(&pool, revision.id).await;
     assert_eq!(
-        serde_json::to_value(&repaired.snapshot).unwrap(),
-        expected,
-        "only weekly scalars change; all ordered graph facts and exclusions remain"
+        repaired_record["snapshot"], expected,
+        "only four weekly scalars change; ordered graph facts and exclusions remain"
     );
-    assert_eq!(repaired.row_version, cached.row_version + 1);
-    assert_eq!(current.row_version, revision_before.row_version + 1);
+    let old_target_revision = cached_record["row_version"].as_i64().unwrap();
+    let old_parent_revision = parent_before["row_version"].as_i64().unwrap();
+    assert_eq!(
+        repaired_record["row_version"],
+        json!(old_target_revision + 1)
+    );
+    assert_eq!(parent_after["row_version"], json!(old_parent_revision + 1));
     let mut expected_version = cached_record;
-    let repaired_record: Value = sqlx::query_scalar(
-        "SELECT to_jsonb(version) FROM academic_delivery_versions version WHERE id=$1",
-    )
-    .bind(cached.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
     for field in ["row_version", "updated_at"] {
         expected_version[field] = repaired_record[field].clone();
     }
@@ -2232,13 +2305,6 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
         expected_version, repaired_record,
         "only the exact raw weekly fields and revision guard/timestamp change"
     );
-    let parent_after: Value = sqlx::query_scalar(
-        "SELECT to_jsonb(revision) FROM academic_term_change_sets revision WHERE id=$1",
-    )
-    .bind(revision.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
     let mut expected_parent = parent_before;
     for field in ["row_version", "updated_at"] {
         expected_parent[field] = parent_after[field].clone();
@@ -2247,20 +2313,9 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
         expected_parent, parent_after,
         "no parent metadata changes beyond the revision guard and timestamp"
     );
-    assert_eq!(terminal_before,sqlx::query_scalar::<_,Value>("SELECT jsonb_agg(to_jsonb(version) ORDER BY id) FROM academic_delivery_versions version WHERE status<>'draft'").fetch_one(&pool).await.unwrap());
-    assert_eq!(
-        serde_json::to_value(sibling_before).unwrap(),
-        serde_json::to_value(draft_version(&pool, sibling.id).await).unwrap()
-    );
-    assert_eq!(
-        serde_json::to_value(sibling_revision_before).unwrap(),
-        serde_json::to_value(
-            change_sets::get_change_set(&pool, sibling.id)
-                .await
-                .unwrap()
-        )
-        .unwrap()
-    );
+    assert_eq!(terminal_before, sqlx::query_scalar::<_,Value>("SELECT jsonb_agg(to_jsonb(version) ORDER BY id) FROM academic_delivery_versions version WHERE status<>'draft'")
+        .fetch_one(&pool).await.unwrap());
+    assert_eq!(sibling_before, records(&pool, sibling.id).await);
     assert_eq!(
         history_before,
         preserved_facts(&pool).await,
@@ -2277,11 +2332,40 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
     );
     let projection: Value = sqlx::query_scalar("SELECT academic_delivery_revision_snapshot($1,$2)")
         .bind(revision.id)
-        .bind(current.reference_date)
+        .bind(revision.reference_date)
         .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(projection, expected);
+
+    // Rehearse the exact 143 reconciliation retry while its own schema/function contract is active.
+    sqlx::raw_sql(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/migrations/143_delivery_added_target_adjustments.sql"
+    )))
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (parent_after, repaired_record),
+        records(&pool, revision.id).await,
+        "reconciliation retry is a no-op for complete raw parent and target rows"
+    );
+    assert_eq!(history_before, preserved_facts(&pool).await);
+
+    // Current providers run only after the canonical 149 transition and all later migrations.
+    school_migrations::run_tenant_migrations(&pool)
+        .await
+        .unwrap();
+    let current = change_sets::get_change_set(&pool, revision.id)
+        .await
+        .unwrap();
+    let current_target = versions::get_version(&pool, revision.target_delivery_version_id)
+        .await
+        .unwrap();
+    assert!(current.row_version > old_parent_revision);
+    assert!(current_target.row_version > old_target_revision);
+    let accepted = records(&pool, revision.id).await;
     let preview = publication_preview(&pool, revision.id).await.unwrap();
     assert!(
         !preview
@@ -2292,7 +2376,8 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
         preview.findings
     );
     use tower::ServiceExt;
-    let stale = json!({"action":"adjust_weekly_period_target","changeSetRowVersion":revision_before.row_version,"itemRowVersion":1,"learningOfferingId":targets[0].0,"weeklyPeriodTarget":2});
+    let stale = json!({"action":"adjust_weekly_period_target","changeSetRowVersion":old_parent_revision,
+        "itemRowVersion":1,"learningOfferingId":targets[0].0,"weeklyPeriodTarget":2});
     let response = delivery_router(
         &pool,
         context.teacher_id,
@@ -2319,34 +2404,17 @@ async fn added_activity_target_migration_reconciles_only_cached_weekly_fields_an
         targets[0].0,
         RemoveDeliveryDraftResourceRequest {
             change_set_row_version: current.row_version,
-            target_delivery_version_row_version: cached.row_version,
+            target_delivery_version_row_version: old_target_revision,
         },
     )
     .await
     .unwrap_err();
     assert!(matches!(stale_target, AppError::Conflict(_)));
-    sqlx::raw_sql(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/migrations/143_delivery_added_target_adjustments.sql"
-    )))
-    .execute(&pool)
-    .await
-    .unwrap();
     assert_eq!(
-        serde_json::to_value(&repaired).unwrap(),
-        serde_json::to_value(draft_version(&pool, revision.id).await).unwrap(),
-        "reconciliation retry is a no-op"
+        accepted,
+        records(&pool, revision.id).await,
+        "current preview and stale guards preserve the upgraded parent and target"
     );
-    assert_eq!(
-        serde_json::to_value(&current).unwrap(),
-        serde_json::to_value(
-            change_sets::get_change_set(&pool, revision.id)
-                .await
-                .unwrap()
-        )
-        .unwrap()
-    );
-    assert_eq!(history_before, preserved_facts(&pool).await);
 }
 
 async fn pending_removal_facts(pool: &PgPool) -> Value {
