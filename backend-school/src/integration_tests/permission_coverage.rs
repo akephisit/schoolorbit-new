@@ -995,15 +995,44 @@ async fn permission_coverage_retired_publication_grants_do_not_reach_active_cata
             .fetch_one(&f.tenant_a_pool)
             .await
             .unwrap();
-    for actor in [&role_actor, &organization_actor, &delegation_actor] {
-        let effective = school_authorization::load_actor_context(
-            actor.id,
-            "retired-publication",
-            &f.tenant_a_pool,
-            &school_authorization::PermissionCache::new(),
-        )
+    // Direct providers share the same admitted operation as the real HTTP
+    // requests below. Keep its lease alive across every grant-origin assertion.
+    let admitted_pool = f
+        .runtime
+        .pool_manager
+        .get_pool("test-pool://session-router-tenant-a", "tenant-a")
         .await
         .unwrap();
+    for actor in [&role_actor, &organization_actor, &delegation_actor] {
+        let cache = school_authorization::PermissionCache::new();
+        let effective = match school_authorization::load_actor_context(
+            actor.id,
+            "tenant-a",
+            &admitted_pool,
+            &cache,
+        )
+        .await
+        {
+            Ok(effective) => effective,
+            Err(error) => {
+                // A diagnostic read never substitutes for a failed resolver.
+                let native = school_authorization::get_cached_user_permissions(
+                    "tenant-a",
+                    actor.id,
+                    &admitted_pool,
+                    &cache,
+                )
+                .await;
+                match native {
+                    Err(native) => panic!(
+                        "actual actor resolver failed: {error:?}; class={}; sqlstate={:?}",
+                        school_database::error_class(&native),
+                        native.as_database_error().and_then(|error| error.code())
+                    ),
+                    Ok(_) => panic!("actual actor resolver failed: {error:?}; diagnostic read subsequently succeeded"),
+                }
+            }
+        };
         assert!(effective.has_permission(codes::ACADEMIC_CURRICULUM_MANAGE_SCHOOL));
         for code in [
             LEGACY[0],
@@ -1110,16 +1139,46 @@ async fn permission_coverage_offering_capability_matches_current_resource_manage
                 "current resource decides capabilities"
             );
             if index == 1 {
+                let before: Value = sqlx::query_scalar("SELECT jsonb_build_object('offering',to_jsonb(o),'targets',(SELECT jsonb_agg(to_jsonb(target) ORDER BY id) FROM learning_offering_targets target WHERE target.learning_offering_id=o.id)) FROM learning_offerings o WHERE id=$1")
+                    .bind(offering).fetch_one(&f.tenant_a_pool).await.unwrap();
+                let targets: Vec<Value> = body["data"]["targets"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|target| {
+                        json!({
+                            "targetKind": target["targetKind"],
+                            "homeroomId": target["homeroomId"],
+                            "gradeLevelId": target["gradeLevelId"],
+                            "studyProgramId": target["studyProgramId"],
+                        })
+                    })
+                    .collect();
+                let payload = json!({
+                    "rowVersion": body["data"]["rowVersion"],
+                    "weeklyPeriodTarget": body["data"]["weeklyPeriodTarget"],
+                    "targets": targets,
+                });
+                serde_json::from_value::<
+                    school_academic_delivery::models::UpdateLearningOfferingRequest,
+                >(payload.clone())
+                .unwrap();
                 let (status, body) = coverage_request(
                     &app,
                     &f,
                     actor,
                     Method::PATCH,
                     &format!("/api/academic/offerings/{offering}"),
-                    json!({"rowVersion":1,"targets":[]}),
+                    payload,
                 )
                 .await;
                 assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+                let after: Value = sqlx::query_scalar("SELECT jsonb_build_object('offering',to_jsonb(o),'targets',(SELECT jsonb_agg(to_jsonb(target) ORDER BY id) FROM learning_offering_targets target WHERE target.learning_offering_id=o.id)) FROM learning_offerings o WHERE id=$1")
+                    .bind(offering).fetch_one(&f.tenant_a_pool).await.unwrap();
+                assert_eq!(
+                    before, after,
+                    "denied current offering writes preserve the entire aggregate and targets"
+                );
             }
         }
     }
