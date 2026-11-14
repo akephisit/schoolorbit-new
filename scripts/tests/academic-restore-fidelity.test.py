@@ -53,6 +53,20 @@ def metadata(number=1):
 
 
 class FidelityTests(unittest.TestCase):
+    def test_database_locale_preserves_only_both_proven_profiles_and_exact_binding(self):
+        owner='so_11111111111141118111111111111111_owner';database='tenant'
+        baseline={'metadata':{'datname':database,'encoding':6,'datlocprovider':'b','datlocale':'C.UTF-8','datcollate':'C','datctype':'C.UTF-8'},'owner':owner,'tablespace':'pg_default','acl':None,'settings':None}
+        self.assertEqual(f.database_locale(owner,database,baseline),('C','C.UTF-8'))
+        fixture=copy.deepcopy(baseline);fixture['metadata'].update(datcollate='en_US.utf8',datctype='en_US.utf8')
+        self.assertEqual(f.database_locale(owner,database,fixture),('en_US.utf8','en_US.utf8'))
+        for field,value in [('datname','wrong'),('encoding',8),('encoding',True),('datlocprovider','c'),('datlocale','C'),('datcollate','C.UTF-8'),('datcollate',"C'; DROP DATABASE tenant;--"),('datctype','en_US.utf8')]:
+            changed=copy.deepcopy(baseline);changed['metadata'][field]=value
+            with self.assertRaises(f.FidelityError):f.database_locale(owner,database,changed)
+        changed=copy.deepcopy(baseline);changed['owner']='foreign'
+        with self.assertRaises(f.FidelityError):f.database_locale(owner,database,changed)
+        with self.assertRaises(f.FidelityError):f.database_locale(owner,"tenant';DROP",baseline)
+        with self.assertRaises(f.FidelityError):f.database_locale('other',database,baseline)
+
     def test_role_profiles_reject_structurally_valid_graph_and_capability_deviations(self):
         owner='so_11111111111141118111111111111111_owner';runtime=owner[:-6]+'_runtime';prov='schoolorbit_provisioner'
         roles=[{'name':name,'login':True,'super':False,'createDb':name==prov,'createRole':name==prov,'inherit':True,'replication':False,'bypass':False,'limit':-1,'comment':None} for name in [prov,owner,runtime]]

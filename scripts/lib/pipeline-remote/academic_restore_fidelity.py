@@ -75,6 +75,20 @@ def supported_profile(owner, roles, memberships):
     return 'postgresFixture1'
 
 
+def database_locale(owner, database, source):
+    """Only the two observed PG18.6 builtin-C.UTF-8 locale profiles."""
+    require(isinstance(owner,str) and re.fullmatch('so_[0-9a-f]{32}_owner',owner) is not None)
+    require(isinstance(database,str) and re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,62}',database) is not None)
+    require(isinstance(source,dict) and set(source)=={'metadata','owner','tablespace','acl','settings'})
+    require(source['owner']==owner and isinstance(source['metadata'],dict))
+    metadata=source['metadata']
+    require(metadata.get('datname')==database and type(metadata.get('encoding')) is int and metadata['encoding']==6)
+    require(metadata.get('datlocprovider')=='b' and metadata.get('datlocale')=='C.UTF-8')
+    pair=(metadata.get('datcollate'),metadata.get('datctype'))
+    require(pair in [('C','C.UTF-8'),('en_US.utf8','en_US.utf8')])
+    return pair
+
+
 def validate_metadata(document):
     require(isinstance(document,dict) and set(document)=={'catalog','database','indexes'})
     require(isinstance(document['catalog'],dict) and set(document['catalog'])=={'relations','constraints','constraintNames'})

@@ -699,8 +699,9 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         return evidence
 
     @contextlib.contextmanager
-    def isolated(self, connection, identity):
+    def isolated(self, connection, identity, source_database):
         profile=fidelity.supported_profile(connection['user'],identity['roles'],identity['memberships'])
+        collate,ctype=fidelity.database_locale(connection['user'],connection['database'],source_database)
         if self.exists('container', self.copy) or self.exists('volume', self.volume):
             refuse('copy_resource_unresolved')
         self.command(['podman', 'volume', 'create', *self.labels(), self.volume])
@@ -730,7 +731,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
                 tenant_sql='SET ROLE schoolorbit_provisioner;\n'+tenant_sql+'\nRESET ROLE;'
             self.copy_sql(tenant_sql)
             self.verify_copy_profile(connection,identity)
-            self.copy_sql('CREATE DATABASE '+ident(connection['database'])+' OWNER '+ident(connection['user'])+" TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8';")
+            self.copy_sql('CREATE DATABASE '+ident(connection['database'])+' OWNER '+ident(connection['user'])+" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE "+literal(collate)+' LC_CTYPE '+literal(ctype)+" LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8';")
             self.copy_sql('REVOKE ALL ON DATABASE '+ident(connection['database'])+' FROM PUBLIC; GRANT CONNECT ON DATABASE '+ident(connection['database'])+' TO '+ident(connection['user'])+','+ident(connection['user'][:-6]+'_runtime')+';')
             yield
         finally:
@@ -745,7 +746,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
     def restore_and_migrate(self, row, connection, identity, archive, nonce, source_hash):
         with self.source(row) as (_,source_base,source_environment):
             source_metadata=self.catalog(source_base,source_environment)
-        with self.isolated(connection, identity):
+        with self.isolated(connection, identity, source_metadata['database']):
             with archive.open('rb') as encrypted:
                 self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--exit-on-error', '--single-transaction', '--clean', '--if-exists', '-U', 'postgres', '-d', connection['database']], source=encrypted)
             before_hash=self.restored_fingerprint(connection,nonce)

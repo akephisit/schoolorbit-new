@@ -39,6 +39,10 @@ def role_profile(identifier=ID,kind='postgresFixture1'):
     return {'roles':sorted(roles,key=lambda x:x['name']),'memberships':memberships}
 
 
+def database_profile(owner,database,pair=('en_US.utf8','en_US.utf8')):
+    return {'metadata':{'datname':database,'encoding':6,'datlocprovider':'b','datlocale':'C.UTF-8','datcollate':pair[0],'datctype':pair[1]},'owner':owner,'tablespace':'pg_default','acl':None,'settings':None}
+
+
 class Fake(m.Controller):
     def __init__(self,point,versions):
         self.point=point;self.root=point;self.release='a'*40;self.image_digest='sha256:'+'b'*64
@@ -46,7 +50,7 @@ class Fake(m.Controller):
         self.key=point/'identity.agekey';self.proof=point/'proof.json';self.state=point/'state.json'
         self.client='source';self.copy='copy';self.volume='volume';self.verify='verify';self.versions=versions;self.restored=[];self.checked=False;self.recovery_validations=0
         self.compiled=[[157,True,'a'*96]]
-        self.source_database={'metadata':{},'owner':'so_'+ID.replace('-','')+'_owner','tablespace':'pg_default','acl':None,'settings':None}
+        self.source_database=database_profile('so_'+ID.replace('-','')+'_owner','tenant_'+ID.replace('-',''))
     def labels(self):return []
     def exists(self,*args):return False
     def assert_quiesced(self):pass
@@ -143,12 +147,15 @@ class PreparationTests(unittest.TestCase):
                 fake.copy_sql=lambda sql,*a,**k:calls.append(sql) or b''
                 fake.copy_role_profile=lambda *a:copy.deepcopy(profile)
                 with mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
-                    with fake.isolated({'user':owner,'database':'tenant'},profile):
+                    pair=('C','C.UTF-8') if kind=='provider3' else ('en_US.utf8','en_US.utf8')
+                    with fake.isolated({'user':owner,'database':'tenant'},profile,database_profile(owner,'tenant',pair)):
                         pass
                 self.assertIn('CREATE ROLE "schoolorbit_provisioner"',calls[0])
                 self.assertEqual('SET ROLE schoolorbit_provisioner;' in calls[1],kind=='provider3')
                 self.assertIn('RESET ROLE;',calls[1]) if kind=='provider3' else None
                 self.assertIn('NOLOGIN',calls[0])
+                created=next(sql for sql in calls if sql.startswith('CREATE DATABASE '))
+                self.assertIn("LC_COLLATE '"+pair[0]+"' LC_CTYPE '"+pair[1]+"'",created)
                 self.assertFalse(any('GRANTED BY' in x or 'pg_auth_members' in x for x in calls))
 
     def test_final_copy_profile_readback_blocks_cli_after_valid_initial_creation(self):
@@ -193,7 +200,8 @@ class PreparationTests(unittest.TestCase):
                 self.assertEqual(arguments[arguments.index('-h')+1],'127.0.0.1')
                 return subprocess.CompletedProcess(arguments,1 if len(probes)==1 else 0)
             with mock.patch.object(m.subprocess,'run',side_effect=ready),mock.patch.object(m.time,'sleep'):
-                with fake.isolated({'database':'tenant','user':'so_'+ID.replace('-','')+'_owner'},role_profile()):
+                owner='so_'+ID.replace('-','')+'_owner'
+                with fake.isolated({'database':'tenant','user':owner},role_profile(),database_profile(owner,'tenant')):
                     self.assertEqual(len(probes),2)
 
     def test_bounded_metadata_reader_limits_output_and_records_real_child_failures(self):
