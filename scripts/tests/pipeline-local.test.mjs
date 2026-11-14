@@ -77,7 +77,7 @@ test('local School verification executes tests and database fixtures rather than
  const queryApi=tests.find(args=>args.includes('school-database')&&args.includes('school-errors')&&args.includes('school-http'));
  assert.ok(queryApi,'bound query API, safe errors and HTTP mappings execute');
  assert.ok(!queryApi.includes('--lib')&&!queryApi.includes('--test')&&!queryApi.includes('--doc'),'full packages include positive integration probes and compile-fail doctests');
- assert.ok(!tests.some(args=>args.includes('school-behavior')),'DB-backed Behavior unit suite belongs exclusively to the owned fixture stage');
+ for(const owner of ['school-behavior','school-attendance'])assert.ok(!tests.some(args=>args.includes(owner)),`${owner} belongs exclusively to the owned fixture stage`);
  const httpBatch=tests.find(args=>args.includes('school-auth-http')&&args.includes('--lib'));
  assert.ok(httpBatch,'HTTP memory-only unit batch executes directly');
  for(const owner of ['core','delivery','assessment','timetable','results','lifecycle'])assert.ok(httpBatch.includes('school-academic-'+owner+'-http'),owner);
@@ -141,7 +141,7 @@ fs.appendFileSync(process.env.DB_COMMAND_LOG,JSON.stringify({args:process.argv.s
  const otherDomains=new Set(['integration_tests::students','integration_tests::staff','integration_tests::calendar','integration_tests::supervision','integration_tests::question_bank']);
  assert.ok(commands.filter(({args})=>otherDomains.has(args[0])).every(({validEncryptionKey,validBlindIndexKey})=>!validEncryptionKey&&!validBlindIndexKey),
   'Admission keys do not leak into other root domain invocations');
- for(const owner of ['school-behavior','school-academic-delivery','school-academic-assessment','school-academic-results','school-academic-lifecycle','school-budget','school-student-care','school-academic-timetable','school-certificates']) {
+ for(const owner of ['school-behavior','school-attendance','school-academic-delivery','school-academic-assessment','school-academic-results','school-academic-lifecycle','school-budget','school-student-care','school-academic-timetable','school-certificates']) {
   assert.ok(commands.some(({args})=>args[0]==='--package'&&args[1]===owner&&args[2]==='--'),`${owner} executes its whole fixture-backed package`);
  }
  for(const filter of ['integration_tests::database','integration_tests::notification_dispatch','services::cleaner::phase_tests','integration_tests::policies','integration_tests::academic::services','integration_tests::academic::gradebook','integration_tests::academic::learner_evaluation','integration_tests::academic::results','integration_tests::certificates','integration_tests::attendance','integration_tests::supply_catalog','integration_tests::auth::session_http_tests','integration_tests::auth::profile_integration_tests','integration_tests::auth::staff_integration_tests']) {
