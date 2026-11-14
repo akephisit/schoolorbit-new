@@ -192,8 +192,14 @@ The fixtures exercise nested/peer dependencies, stale and partial caches, worksp
 bounded summaries and compiler failure propagation. Rehearse a clean install of the extracted lock
 outside the checkout and launch its locked Wrangler/browser tools before shipping cache changes.
 School build fixtures exercise both dependency cooking and application compilation with compiler
-caching disabled, local caching, GitHub caching and missing cache credentials. Compiler failures
-must propagate even when optional cache statistics fail. Dockerfile changes also require the
+caching disabled, local caching, GitHub caching and missing cache credentials. After dependency
+cooking, Cargo's public package cleanup removes dummy release artifacts for `backend-school` and
+`school-migrations` before real sources are copied. Both own migration-tracking build scripts;
+Rust 1.100 changed artifact paths that cargo-chef 0.1.78's internal cleanup assumes. Admin likewise
+cleans only `backend-admin`. Preserve external dependency artifacts and validate that the real
+build scripts rerun, an unchanged rebuild stays fresh, and a tracked input change rebuilds its
+owner. The compiler-evidence fixtures assert cook/clean order and propagate cleanup failures as
+well as compiler failures, even when optional cache statistics fail. Dockerfile changes also require the
 runtime-target build and image-config inspection described below; cache-hit counts alone do not
 prove the release binary or its API export is correct.
 Compare repeated installs and restores on one toolchain/host; setup-only measurements are not total

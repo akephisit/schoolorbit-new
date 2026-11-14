@@ -907,6 +907,11 @@ test('backend runtime images use deterministic builders without ownership copy-u
 		}
 		assert.match(dockerfile, /cargo install cargo-chef --version 0\.1\.78 --locked/);
 		if (binary === 'backend-admin') {
+			assert.match(
+				dockerfile,
+				/RUN cargo chef cook --release --recipe-path recipe\.json \\\n\s+&& cargo clean --release --package backend-admin\nCOPY \. \./,
+				'clean dummy package artifacts before copying and building the real application'
+			);
 			assert.match(dockerfile, /sccache-v0\.17\.0-x86_64-unknown-linux-musl\.tar\.gz/);
 			assert.match(
 				dockerfile,
@@ -939,6 +944,11 @@ test('backend runtime images use deterministic builders without ownership copy-u
 		} else {
 			const release = await readRepo('backend-school/scripts/build_release.sh');
 			assert.match(dockerfile, /bash scripts\/build_release\.sh dependencies/);
+			assert.match(
+				dockerfile,
+				/bash scripts\/build_release\.sh dependencies\n\nFROM dependencies AS fresh-builder\nCOPY \. \.[\s\S]*?bash scripts\/build_release\.sh\n/,
+				'complete dependency preparation before copying and compiling the real application'
+			);
 			assert.match(release, /cargo chef cook --release --recipe-path recipe.json/);
 			assert.match(
 				dockerfile,

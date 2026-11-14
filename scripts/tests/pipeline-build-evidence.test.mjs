@@ -176,23 +176,25 @@ for (const phase of ["application", "dependencies"])
       if (mode === "gha")
         for (const name of ["sccache_gha_url", "sccache_gha_token"])
           writeFileSync(path.join(secrets, name), "private-cache-fixture-sentinel");
-      writeFileSync(path.join(bin, "cargo"), '#!/bin/bash\nprintf "%s\\n" "$@" > "$CARGO_ARGS"\nprintf "%s\\n" "${RUSTC_WRAPPER:-off}" "${ACTIONS_CACHE_SERVICE_V2:-off}" "${SCCACHE_GHA_VERSION:-off}" > "$CACHE_ENV"\nexit "$CARGO_EXIT"\n', {mode: 0o755});
+      writeFileSync(path.join(bin, "cargo"), '#!/bin/bash\nprintf "%s\\n" "$@" >> "$CARGO_ARGS"\nprintf "%s\\n" "${RUSTC_WRAPPER:-off}" "${ACTIONS_CACHE_SERVICE_V2:-off}" "${SCCACHE_GHA_VERSION:-off}" > "$CACHE_ENV"\nif [[ "$1" == clean ]]; then exit "$CARGO_CLEAN_EXIT"; fi\nexit "$CARGO_EXIT"\n', {mode: 0o755});
       writeFileSync(path.join(bin, "sccache"), '#!/bin/bash\nexit 9\n', {mode: 0o755});
       const script = readFileSync(path.join(repo, "backend-school/scripts/build_release.sh"), "utf8")
         .replaceAll("/run/secrets", secrets).replaceAll("/usr/local/bin/sccache", path.join(bin, "sccache"))
         .replaceAll("/usr/local/bin/rustc-cache", path.join(bin, "rustc-cache"));
-      for (const status of [42, 0]) {
+      const outcomes = [[42, 0, 42], [0, 0, 0]];
+      if (phase === "dependencies") outcomes.push([0, 43, 43]);
+      for (const [compileStatus, cleanStatus, status] of outcomes) {
         const runRoot = path.join(root, String(status));
         mkdirSync(runRoot);
         const result = spawnSync("bash", ["-c", script, "build_release.sh", phase], {
           cwd: runRoot,
-          env: {...process.env, PATH: bin + ":" + process.env.PATH, RUSTC_WRAPPER: "must-be-cleared", SCHOOL_COMPILER_CACHE: mode === "missing-secrets" ? "gha" : mode, CARGO_EXIT: String(status), CARGO_ARGS: path.join(root, "args"), CACHE_ENV: path.join(root, "cache-env")},
+          env: {...process.env, PATH: bin + ":" + process.env.PATH, RUSTC_WRAPPER: "must-be-cleared", SCHOOL_COMPILER_CACHE: mode === "missing-secrets" ? "gha" : mode, CARGO_EXIT: String(compileStatus), CARGO_CLEAN_EXIT: String(cleanStatus), CARGO_ARGS: path.join(runRoot, "args"), CACHE_ENV: path.join(root, "cache-env")},
           encoding: "utf8"
         });
         assert.equal(result.status, status, result.stderr);
-        const args = readFileSync(path.join(root, "args"), "utf8");
+        const args = readFileSync(path.join(runRoot, "args"), "utf8");
         assert.equal(args, phase === "dependencies"
-          ? "chef\ncook\n--release\n--recipe-path\nrecipe.json\n"
+          ? "chef\ncook\n--release\n--recipe-path\nrecipe.json\n" + (compileStatus === 0 ? "clean\n--release\n--package\nbackend-school\n--package\nschool-migrations\n" : "")
           : `rustc\n--release\n--locked\n--bin\nbackend-school\n--timings\n--message-format=json-render-diagnostics\n--\n-C\nlto=off\n-C\nlinker=${runRoot}/scripts/release_linker.sh\n`);
         const cacheEnv = readFileSync(path.join(root, "cache-env"), "utf8").split("\n");
         assert.equal(cacheEnv[0], ["gha", "local"].includes(mode) ? path.join(bin, "rustc-cache") : "off");
