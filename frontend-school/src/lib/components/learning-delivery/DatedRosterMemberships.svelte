@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { authStore } from '#lib/stores/auth.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import {
 		addDatedRosterMembership,
@@ -46,6 +47,25 @@
 	let errorMessage = $state('');
 	let candidateError = $state('');
 	const historyRequest = new LatestRequest();
+	const candidatesRequest = new LatestRequest();
+	let disposed = false;
+	const groupId = $derived(group.id),
+		groupRevision = $derived(group.rowVersion),
+		historySeed = $derived(initialMemberships);
+	const identityEpoch = $derived.by(() => {
+		void $authStore;
+		return authStore.sessionEpoch;
+	});
+	function admission() {
+		const id = groupId,
+			epoch = authStore.sessionEpoch;
+		return () => !disposed && groupId === id && authStore.sessionEpoch === epoch;
+	}
+	onDestroy(() => {
+		disposed = true;
+		historyRequest.abort();
+		candidatesRequest.abort();
+	});
 
 	let activeStudentYearIds = $derived(
 		new Set(
@@ -101,69 +121,85 @@
 		return 'border-muted-foreground/25 bg-muted text-muted-foreground';
 	}
 
-	async function loadHistory() {
-		const groupId = group.id;
-		const { revision, signal } = historyRequest.begin();
+	async function loadHistory(
+		initial: Promise<RouteLoadResult<DatedRosterMembership[] | null>> | null = null
+	) {
+		const id = groupId,
+			current = admission(),
+			ticket = historyRequest.begin();
 		loading = true;
 		errorMessage = '';
 		try {
-			const loaded = await listDatedRosterMemberships(groupId, { signal });
-			if (historyRequest.isCurrent(revision) && group.id === groupId) {
+			let loaded: DatedRosterMembership[];
+			if (initial) {
+				const result = await initial;
+				if (!result.ok) throw new Error(result.error);
+				loaded = result.data ?? [];
+			} else loaded = await listDatedRosterMemberships(id, { signal: ticket.signal });
+			if (current() && historyRequest.isCurrent(ticket.revision)) {
 				memberships = loaded;
 				hasHistory = true;
 			}
 		} catch (error) {
-			if (isAbortError(error)) return;
-			if (historyRequest.isCurrent(revision))
+			if (current() && historyRequest.isCurrent(ticket.revision) && !isAbortError(error))
 				errorMessage =
 					error instanceof Error ? error.message : 'โหลดประวัติรายชื่อนักเรียนไม่สำเร็จ';
 		} finally {
-			if (historyRequest.isCurrent(revision)) loading = false;
+			if (current() && historyRequest.isCurrent(ticket.revision)) loading = false;
 		}
 	}
-
 	async function showAddForm() {
 		if (!canManage) return;
 		addFormOpen = true;
 		if (rosterPreview || loadingCandidates) return;
+		const id = groupId,
+			current = admission(),
+			ticket = candidatesRequest.begin();
 		loadingCandidates = true;
 		candidateError = '';
 		try {
-			rosterPreview = await previewLearningGroupRoster(group.id);
+			const loaded = await previewLearningGroupRoster(id);
+			if (current() && candidatesRequest.isCurrent(ticket.revision)) rosterPreview = loaded;
 		} catch (error) {
-			candidateError =
-				error instanceof Error ? error.message : 'โหลดรายชื่อนักเรียนให้เลือกไม่สำเร็จ';
+			if (current() && candidatesRequest.isCurrent(ticket.revision) && !isAbortError(error))
+				candidateError =
+					error instanceof Error ? error.message : 'โหลดรายชื่อนักเรียนให้เลือกไม่สำเร็จ';
 		} finally {
-			loadingCandidates = false;
+			if (current() && candidatesRequest.isCurrent(ticket.revision)) loadingCandidates = false;
 		}
 	}
-
-	async function recoverFromConflict() {
+	async function recoverFromConflict(current: () => boolean, changed: () => void | Promise<void>) {
+		if (!current()) return;
 		try {
-			await onGroupChanged();
+			await changed();
+			if (!current()) return;
 			await loadHistory();
-			errorMessage =
-				'ข้อมูลกลุ่มถูกแก้ไขจากที่อื่น ระบบโหลดข้อมูลล่าสุดแล้ว กรุณาตรวจสอบและลองใหม่';
+			if (current())
+				errorMessage =
+					'ข้อมูลกลุ่มถูกแก้ไขจากที่อื่น ระบบโหลดข้อมูลล่าสุดแล้ว กรุณาตรวจสอบและลองใหม่';
 		} catch (error) {
-			errorMessage =
-				error instanceof Error
-					? `ข้อมูลกลุ่มเปลี่ยน และโหลดข้อมูลล่าสุดไม่สำเร็จ (${error.message})`
-					: 'ข้อมูลกลุ่มเปลี่ยน และโหลดข้อมูลล่าสุดไม่สำเร็จ';
+			if (current())
+				errorMessage =
+					error instanceof Error
+						? `ข้อมูลกลุ่มเปลี่ยน และโหลดข้อมูลล่าสุดไม่สำเร็จ (${error.message})`
+						: 'ข้อมูลกลุ่มเปลี่ยน และโหลดข้อมูลล่าสุดไม่สำเร็จ';
 		}
 	}
-
 	async function addMembership(event: SubmitEvent) {
 		event.preventDefault();
-		if (!canManage) return;
-		if (!studentAcademicYearId || !joinedAt) return;
+		if (!canManage || saving || !studentAcademicYearId || !joinedAt) return;
+		const id = groupId,
+			current = admission(),
+			changed = onGroupChanged;
 		saving = true;
 		errorMessage = '';
 		try {
-			const created = await addDatedRosterMembership(group.id, {
+			const created = await addDatedRosterMembership(id, {
 				groupRowVersion: group.rowVersion,
 				studentAcademicYearId,
 				joinedAt
 			});
+			if (!current()) return;
 			memberships = [...memberships, created].sort((left, right) =>
 				`${left.displayName}:${left.joinedAt}`.localeCompare(
 					`${right.displayName}:${right.joinedAt}`,
@@ -174,76 +210,78 @@
 			studentAcademicYearId = '';
 			joinedAt = '';
 			addFormOpen = false;
-			await onGroupChanged();
+			await changed();
 		} catch (error) {
+			if (!current()) return;
 			if (error instanceof ApiClientError && error.status === 409) {
-				await recoverFromConflict();
+				await recoverFromConflict(current, changed);
 				return;
 			}
 			errorMessage = error instanceof Error ? error.message : 'เพิ่มนักเรียนเข้ากลุ่มไม่สำเร็จ';
 		} finally {
-			saving = false;
+			if (current()) saving = false;
 		}
 	}
-
 	async function endMembership(membership: DatedRosterMembership) {
-		if (!canManage) return;
-		if (!leftAt) return;
+		if (!canManage || saving || !leftAt) return;
+		const id = groupId,
+			current = admission(),
+			changed = onGroupChanged;
 		saving = true;
 		errorMessage = '';
 		try {
-			const updated = await endDatedRosterMembership(group.id, membership.id, {
+			const updated = await endDatedRosterMembership(id, membership.id, {
 				groupRowVersion: group.rowVersion,
 				membershipRowVersion: membership.rowVersion,
 				leftAt
 			});
+			if (!current()) return;
 			memberships = memberships.map((item) => (item.id === updated.id ? updated : item));
 			endingMembershipId = '';
 			leftAt = '';
-			await onGroupChanged();
+			await changed();
 		} catch (error) {
+			if (!current()) return;
 			if (error instanceof ApiClientError && error.status === 409) {
-				await recoverFromConflict();
+				await recoverFromConflict(current, changed);
 				return;
 			}
 			errorMessage = error instanceof Error ? error.message : 'กำหนดวันสิ้นสุดไม่สำเร็จ';
 		} finally {
-			saving = false;
+			if (current()) saving = false;
 		}
 	}
-
-	let lastHistoryKey = '';
+	let historyOwner = '';
+	let usedInitial: Promise<RouteLoadResult<DatedRosterMembership[] | null>> | null = null;
 	$effect.pre(() => {
-		const key = `${group.id}:${group.rowVersion}`;
-		if (key === lastHistoryKey) return;
-		const first = !lastHistoryKey;
-		const initial = untrack(() => (first ? initialMemberships : null));
-		lastHistoryKey = key;
-		let current = true;
+		const id = groupId,
+			revision = groupRevision,
+			epoch = identityEpoch,
+			initial = historySeed;
 		untrack(() => {
-			if (first) {
+			const owner = `${id}:${epoch}`;
+			if (historyOwner !== owner) {
+				historyOwner = owner;
+				usedInitial = null;
 				memberships = [];
 				hasHistory = false;
+				rosterPreview = null;
+				loadingCandidates = false;
+				saving = false;
+				addFormOpen = false;
+				studentAcademicYearId = '';
+				joinedAt = '';
+				endingMembershipId = '';
+				leftAt = '';
+				candidateError = '';
+				candidatesRequest.abort();
 			}
-			loading = true;
-			errorMessage = '';
+			void revision;
+			const seed = initial !== usedInitial ? initial : null;
+			if (initial) usedInitial = initial;
+			void loadHistory(seed);
 		});
-		if (initial) {
-			void initial.then((result) => {
-				if (!current) return;
-				untrack(() => {
-					if (result.ok) {
-						memberships = result.data ?? [];
-						hasHistory = true;
-					} else errorMessage = result.error;
-					loading = false;
-				});
-			});
-		} else untrack(() => void loadHistory());
-		return () => {
-			current = false;
-			historyRequest.abort();
-		};
+		return () => historyRequest.abort();
 	});
 </script>
 
@@ -344,7 +382,7 @@
 			<PageState
 				variant="empty"
 				title="ยังไม่มีประวัติสมาชิก"
-				description="เผยแพร่รายชื่อเริ่มต้น หรือเพิ่มนักเรียนตามวันที่"
+				description="บันทึกรายชื่อเริ่มต้น หรือเพิ่มนักเรียนตามวันที่"
 			/>
 		{:else}
 			<div class="divide-y rounded-xl border">
@@ -420,8 +458,10 @@
 				role="alert"
 				class="mt-3 flex items-center gap-2 text-sm text-destructive"
 			>
-				<span>{errorMessage}</span><Button size="sm" variant="outline" onclick={loadHistory}
-					>ลองอีกครั้ง</Button
+				<span>{errorMessage}</span><Button
+					size="sm"
+					variant="outline"
+					onclick={() => void loadHistory()}>ลองอีกครั้ง</Button
 				>
 			</div>{/if}
 	</div>

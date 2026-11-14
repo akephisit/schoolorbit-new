@@ -23,9 +23,9 @@ use crate::models::timetable_block::{
 use crate::policy::{TimetableAccessFilter, TimetableVisibility};
 
 pub use authority::{CommitPermit, MutationScope};
-pub(crate) use mutation::LifecycleOutcome;
 pub use mutation::{
-    CreationPermit, MutationAuthorizationPort, TimetableMutationContext, VersionMutationPermit,
+    CreationPermit, MutationAuthorizationPort, TimetableDeletionGuard, TimetableMutationContext,
+    TimetableMutationPermit, TimetablePreparationGuard,
 };
 
 pub const LEASE_TTL: Duration = Duration::from_secs(10);
@@ -35,14 +35,14 @@ const MAX_ACCEPTED_WRITES: usize = 64;
 const ROOM_IDLE_TTL: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DraftKey {
+pub struct TimetableKey {
     pub tenant_id: Uuid,
     pub academic_term_id: Uuid,
-    pub timetable_version_id: Uuid,
+    pub timetable_id: Uuid,
 }
 
 #[derive(Debug, Clone)]
-pub enum DraftSignal {
+pub enum TimetableSignal {
     Presence(Uuid),
     Left(Uuid),
     Reservations,
@@ -51,7 +51,7 @@ pub enum DraftSignal {
 }
 
 #[derive(Clone)]
-pub struct DraftMember {
+pub struct TimetableMember {
     pub connection_id: Uuid,
     pub actor: ActorContext,
     pub session_id: Uuid,
@@ -62,8 +62,8 @@ pub struct DraftMember {
     pub resource_access: Arc<crate::policy::TimetableResourceAccessSnapshot>,
     /// Already authorized for this viewer by the Staff provider at join.
     pub portraits: BTreeMap<Uuid, Uuid>,
-    pub context: Option<DraftContext>,
-    pub anchor: Option<DraftAnchor>,
+    pub context: Option<TimetableContext>,
+    pub anchor: Option<TimetableAnchor>,
 }
 
 #[derive(Default)]
@@ -119,7 +119,7 @@ struct MemberVisibility {
 fn member_visibility(
     workspace: &TimetableBlockWorkspace,
     visibility: &TimetableVisibility,
-    member: &DraftMember,
+    member: &TimetableMember,
     read_workspace: &TimetableBlockWorkspace,
 ) -> MemberVisibility {
     MemberVisibility {
@@ -141,7 +141,7 @@ fn member_visibility(
 }
 
 struct Lease {
-    public: DraftReservation,
+    public: TimetableReservation,
     token: Uuid,
     candidate: Option<TimetableBlockPlacementCandidate>,
     footprint: authority::Footprint,
@@ -151,7 +151,7 @@ struct Lease {
 struct RoomState {
     workspace: Arc<TimetableBlockWorkspace>,
     visibility: Arc<TimetableVisibility>,
-    members: BTreeMap<Uuid, DraftMember>,
+    members: BTreeMap<Uuid, TimetableMember>,
     member_visibility: BTreeMap<Uuid, MemberVisibility>,
     projection_rebuilds: u64,
     leases: BTreeMap<Uuid, Lease>,
@@ -165,14 +165,14 @@ struct RoomState {
     empty_since: Option<Instant>,
 }
 
-pub struct DraftRoom {
-    pub key: DraftKey,
+pub struct TimetableRoom {
+    pub key: TimetableKey,
     state: Mutex<RoomState>,
     gate: Arc<tokio::sync::Mutex<()>>,
-    signals: broadcast::Sender<DraftSignal>,
+    signals: broadcast::Sender<TimetableSignal>,
 }
 
-impl DraftRoom {
+impl TimetableRoom {
     fn lock(&self) -> Result<MutexGuard<'_, RoomState>, AppError> {
         self.state.lock().map_err(|_| {
             AppError::InternalServerError("Draft collaboration state unavailable".into())
@@ -184,7 +184,7 @@ impl DraftRoom {
         self.signals.receiver_count()
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<DraftSignal> {
+    pub fn subscribe(&self) -> broadcast::Receiver<TimetableSignal> {
         self.signals.subscribe()
     }
 
@@ -192,7 +192,7 @@ impl DraftRoom {
         let state = self.lock()?;
         let workspace = &state.workspace;
         let mut resources = crate::policy::TimetableResourceSet {
-            timetable_version_ids: vec![workspace.version.id],
+            timetable_ids: vec![workspace.timetable.id],
             learning_offering_ids: state
                 .visibility
                 .source
@@ -216,7 +216,7 @@ impl DraftRoom {
         Ok(resources)
     }
 
-    pub fn members(&self) -> Result<Vec<DraftMember>, AppError> {
+    pub fn members(&self) -> Result<Vec<TimetableMember>, AppError> {
         Ok(self.lock()?.members.values().cloned().collect())
     }
 
@@ -235,7 +235,7 @@ impl DraftRoom {
         self.gate.clone().lock_owned().await
     }
 
-    pub fn join(&self, member: DraftMember) -> Result<DraftEventEnvelope, AppError> {
+    pub fn join(&self, member: TimetableMember) -> Result<TimetableEventEnvelope, AppError> {
         let mut state = self.lock()?;
         if !state.valid {
             return Err(stale());
@@ -254,7 +254,7 @@ impl DraftRoom {
         state.empty_since = None;
         let event = state_sync(&state, connection_id, projected)?;
         drop(state);
-        let _ = self.signals.send(DraftSignal::Presence(connection_id));
+        let _ = self.signals.send(TimetableSignal::Presence(connection_id));
         Ok(event)
     }
 
@@ -276,8 +276,8 @@ impl DraftRoom {
                 state.empty_since = Some(Instant::now());
             }
         }
-        let _ = self.signals.send(DraftSignal::Left(connection_id));
-        let _ = self.signals.send(DraftSignal::Reservations);
+        let _ = self.signals.send(TimetableSignal::Left(connection_id));
+        let _ = self.signals.send(TimetableSignal::Reservations);
     }
 
     pub fn invalidate(&self) {
@@ -285,13 +285,13 @@ impl DraftRoom {
             state.valid = false;
             state.leases.clear();
         }
-        let _ = self.signals.send(DraftSignal::Invalidated);
+        let _ = self.signals.send(TimetableSignal::Invalidated);
     }
 
     pub fn update_presence(
         &self,
         connection_id: Uuid,
-        update: DraftPresenceUpdate,
+        update: TimetablePresenceUpdate,
     ) -> Result<(), AppError> {
         let mut state = self.lock()?;
         if !state.valid {
@@ -313,7 +313,7 @@ impl DraftRoom {
         member.context = context;
         member.anchor = anchor;
         drop(state);
-        let _ = self.signals.send(DraftSignal::Presence(connection_id));
+        let _ = self.signals.send(TimetableSignal::Presence(connection_id));
         Ok(())
     }
 
@@ -338,46 +338,54 @@ impl DraftRoom {
             })
             .unwrap_or(false);
         if changed {
-            let _ = self.signals.send(DraftSignal::Reservations);
+            let _ = self.signals.send(TimetableSignal::Reservations);
         }
     }
 
     pub fn signal_events(
         &self,
         viewer: Uuid,
-        signal: DraftSignal,
-    ) -> Result<Vec<DraftEventEnvelope>, AppError> {
+        signal: TimetableSignal,
+    ) -> Result<Vec<TimetableEventEnvelope>, AppError> {
         let state = self.lock()?;
         let member = state.members.get(&viewer).ok_or_else(stale)?;
-        let event = |event| DraftEventEnvelope {
+        let event = |event| TimetableEventEnvelope {
             epoch: state.epoch,
             seq: state.seq,
             event,
         };
         match signal {
-            DraftSignal::Presence(connection_id) => {
+            TimetableSignal::Presence(connection_id) => {
                 let Some(changed) = state.members.get(&connection_id) else {
                     return Ok(Vec::new());
                 };
-                Ok(vec![event(DraftServerMessage::DraftPresenceChanged(
-                    participant(&state, member, changed.actor.user_id),
-                ))])
+                Ok(vec![event(
+                    TimetableServerMessage::TimetablePresenceChanged(participant(
+                        &state,
+                        member,
+                        changed.actor.user_id,
+                    )),
+                )])
             }
-            DraftSignal::Left(connection_id) => {
-                Ok(vec![event(DraftServerMessage::DraftPresenceLeft {
+            TimetableSignal::Left(connection_id) => {
+                Ok(vec![event(TimetableServerMessage::TimetablePresenceLeft {
                     connection_id,
                 })])
             }
-            DraftSignal::Reservations => {
-                let mut events = vec![event(DraftServerMessage::DraftReservationsChanged {
-                    reservations: reservations(&state, member),
-                })];
+            TimetableSignal::Reservations => {
+                let mut events = vec![event(
+                    TimetableServerMessage::TimetableReservationsChanged {
+                        reservations: reservations(&state, member),
+                    },
+                )];
                 if let Some(availability) = authority::availability(&state, member) {
-                    events.push(event(DraftServerMessage::DraftAvailability(availability)));
+                    events.push(event(TimetableServerMessage::TimetableAvailability(
+                        availability,
+                    )));
                 }
                 Ok(events)
             }
-            DraftSignal::Committed(seq) => {
+            TimetableSignal::Committed(seq) => {
                 let mut events = journal::events_after(
                     &state,
                     member,
@@ -386,47 +394,49 @@ impl DraftRoom {
                     Some(seq),
                 )?;
                 if let Some(availability) = authority::availability(&state, member) {
-                    events.push(event(DraftServerMessage::DraftAvailability(availability)));
+                    events.push(event(TimetableServerMessage::TimetableAvailability(
+                        availability,
+                    )));
                 }
                 Ok(events)
             }
-            DraftSignal::Invalidated => {
-                Ok(vec![event(DraftServerMessage::DraftReconcileRequired {
+            TimetableSignal::Invalidated => Ok(vec![event(
+                TimetableServerMessage::TimetableReconcileRequired {
                     reason: "draft_invalidated".into(),
-                })])
-            }
+                },
+            )]),
         }
     }
 
     pub fn command(
         &self,
         connection_id: Uuid,
-        command: DraftClientMessage,
-    ) -> Result<Vec<DraftEventEnvelope>, AppError> {
+        command: TimetableClientMessage,
+    ) -> Result<Vec<TimetableEventEnvelope>, AppError> {
         self.expire(Instant::now());
         match command {
-            DraftClientMessage::ClientPresenceUpdate(update) => {
+            TimetableClientMessage::ClientPresenceUpdate(update) => {
                 self.update_presence(connection_id, update)?;
                 Ok(Vec::new())
             }
-            DraftClientMessage::ClientReplay(replay) => {
+            TimetableClientMessage::ClientReplay(replay) => {
                 let state = self.lock()?;
                 let member = state.members.get(&connection_id).ok_or_else(stale)?;
                 journal::events_after(&state, member, replay.epoch, replay.after_seq, None)
             }
             command => {
                 let (request_id, kind) = match &command {
-                    DraftClientMessage::ClientClaim(value) => {
-                        (value.request_id, DraftCommandKind::Claim)
+                    TimetableClientMessage::ClientClaim(value) => {
+                        (value.request_id, TimetableCommandKind::Claim)
                     }
-                    DraftClientMessage::ClientTarget(value) => {
-                        (value.request_id, DraftCommandKind::Target)
+                    TimetableClientMessage::ClientTarget(value) => {
+                        (value.request_id, TimetableCommandKind::Target)
                     }
-                    DraftClientMessage::ClientRenew(value) => {
-                        (value.request_id, DraftCommandKind::Renew)
+                    TimetableClientMessage::ClientRenew(value) => {
+                        (value.request_id, TimetableCommandKind::Renew)
                     }
-                    DraftClientMessage::ClientRelease(value) => {
-                        (value.request_id, DraftCommandKind::Release)
+                    TimetableClientMessage::ClientRelease(value) => {
+                        (value.request_id, TimetableCommandKind::Release)
                     }
                     _ => return Err(stale()),
                 };
@@ -443,29 +453,31 @@ impl DraftRoom {
                             AppError::Conflict(_) | AppError::NotFound(_) => "stale_reservation",
                             _ => return Err(error),
                         };
-                        let mut events = vec![DraftEventEnvelope {
+                        let mut events = vec![TimetableEventEnvelope {
                             epoch: state.epoch,
                             seq: state.seq,
-                            event: DraftServerMessage::DraftCommandResult(DraftCommandResult {
-                                request_id,
-                                command: kind,
-                                accepted: false,
-                                code: Some(code.into()),
-                                source: None,
-                                target: None,
-                                reservation_id: None,
-                                lease_token: None,
-                                expires_at: None,
-                            }),
+                            event: TimetableServerMessage::TimetableCommandResult(
+                                TimetableCommandResult {
+                                    request_id,
+                                    command: kind,
+                                    accepted: false,
+                                    code: Some(code.into()),
+                                    source: None,
+                                    target: None,
+                                    reservation_id: None,
+                                    lease_token: None,
+                                    expires_at: None,
+                                },
+                            ),
                         }];
                         // A rejected picker candidate must not strand an existing edit lease.
                         if let Some(availability) =
                             authority::availability(&state, &state.members[&connection_id])
                         {
-                            events.push(DraftEventEnvelope {
+                            events.push(TimetableEventEnvelope {
                                 epoch: state.epoch,
                                 seq: state.seq,
-                                event: DraftServerMessage::DraftAvailability(availability),
+                                event: TimetableServerMessage::TimetableAvailability(availability),
                             });
                         }
                         Ok(events)
@@ -477,8 +489,9 @@ impl DraftRoom {
 }
 
 pub struct TimetableCollaborationRuntime {
-    rooms: Mutex<BTreeMap<DraftKey, Arc<DraftRoom>>>,
+    rooms: Mutex<BTreeMap<TimetableKey, Arc<TimetableRoom>>>,
     writes: Arc<Semaphore>,
+    identity_gates: Mutex<BTreeMap<(Uuid, Uuid), std::sync::Weak<tokio::sync::Mutex<()>>>>,
     cold_load: tokio::sync::Mutex<()>,
     cold_generation: AtomicU64,
 }
@@ -494,9 +507,37 @@ impl TimetableCollaborationRuntime {
         Self {
             rooms: Mutex::new(BTreeMap::new()),
             writes: Arc::new(Semaphore::new(MAX_ACCEPTED_WRITES)),
+            identity_gates: Mutex::new(BTreeMap::new()),
             cold_load: tokio::sync::Mutex::new(()),
             cold_generation: AtomicU64::new(0),
         }
+    }
+
+    async fn identity_gate(
+        &self,
+        tenant: Uuid,
+        term: Uuid,
+    ) -> Result<OwnedMutexGuard<()>, AppError> {
+        let gate = {
+            let mut gates = self.identity_gates.lock().map_err(|_| stale())?;
+            gates.retain(|_, gate| gate.strong_count() > 0);
+            if let Some(gate) = gates
+                .get(&(tenant, term))
+                .and_then(std::sync::Weak::upgrade)
+            {
+                gate
+            } else {
+                if gates.len() >= MAX_ROOMS {
+                    return Err(AppError::ServiceUnavailable(
+                        "Timetable admission limit reached".into(),
+                    ));
+                }
+                let gate = Arc::new(tokio::sync::Mutex::new(()));
+                gates.insert((tenant, term), Arc::downgrade(&gate));
+                gate
+            }
+        };
+        Ok(gate.lock_owned().await)
     }
 
     pub fn has_tenant_rooms(&self, tenant_id: Uuid) -> bool {
@@ -515,7 +556,7 @@ impl TimetableCollaborationRuntime {
         }
     }
 
-    pub fn room(&self, key: DraftKey) -> Result<Option<Arc<DraftRoom>>, AppError> {
+    pub fn room(&self, key: TimetableKey) -> Result<Option<Arc<TimetableRoom>>, AppError> {
         Ok(self.rooms.lock().map_err(|_| stale())?.get(&key).cloned())
     }
 
@@ -526,14 +567,14 @@ impl TimetableCollaborationRuntime {
         pool: &sqlx::PgPool,
         version_id: Uuid,
         staff_directory: &dyn crate::ports::StaffDirectoryPort,
-    ) -> Result<Arc<DraftRoom>, AppError> {
+    ) -> Result<Arc<TimetableRoom>, AppError> {
         let _load = self.cold_load.lock().await;
         if let Some(room) = self
             .rooms
             .lock()
             .map_err(|_| stale())?
             .iter()
-            .find(|(key, _)| key.tenant_id == tenant_id && key.timetable_version_id == version_id)
+            .find(|(key, _)| key.tenant_id == tenant_id && key.timetable_id == version_id)
             .map(|(_, room)| room.clone())
         {
             if room.lock()?.valid {
@@ -551,27 +592,26 @@ impl TimetableCollaborationRuntime {
         school_database::DbSession::new(&mut *connection)
             .scalar::<Uuid>(
                 "academic_timetable.collaboration.load_room.version_fence",
-                "SELECT id FROM academic_timetable_versions WHERE id=$1 FOR SHARE",
+                "SELECT id FROM academic_timetables WHERE id=$1 FOR SHARE",
             )
             .bind(version_id)
             .fetch_optional()
             .await?
-            .ok_or_else(|| AppError::NotFound("Timetable version not found".into()))?;
-        let version = crate::services::timetable_version_service::get_version_on_connection(
+            .ok_or_else(|| AppError::NotFound("Timetable not found".into()))?;
+        let version = crate::services::timetable_service::get_by_id_on_connection(
             &mut connection,
             version_id,
-            Utc::now().date_naive(),
         )
         .await?;
-        let key = DraftKey {
+        let key = TimetableKey {
             tenant_id,
             academic_term_id: version.academic_term_id,
-            timetable_version_id: version_id,
+            timetable_id: version_id,
         };
         let query = crate::models::timetable_block::TimetableBlockWorkspaceQuery {
             academic_year_id: version.academic_year_id,
             academic_term_id: version.academic_term_id,
-            timetable_version_id: version_id,
+            timetable_id: version_id,
         };
         let (workspace, visibility) =
             crate::services::timetable_block_queries::get_canonical_workspace(
@@ -586,22 +626,22 @@ impl TimetableCollaborationRuntime {
 
     pub fn install(
         &self,
-        key: DraftKey,
+        key: TimetableKey,
         workspace: TimetableBlockWorkspace,
         visibility: TimetableVisibility,
-    ) -> Result<Arc<DraftRoom>, AppError> {
+    ) -> Result<Arc<TimetableRoom>, AppError> {
         self.install_fenced(key, workspace, visibility, None)
     }
 
     fn install_fenced(
         &self,
-        key: DraftKey,
+        key: TimetableKey,
         workspace: TimetableBlockWorkspace,
         visibility: TimetableVisibility,
         generation: Option<u64>,
-    ) -> Result<Arc<DraftRoom>, AppError> {
-        if workspace.version.id != key.timetable_version_id
-            || workspace.version.academic_term_id != key.academic_term_id
+    ) -> Result<Arc<TimetableRoom>, AppError> {
+        if workspace.timetable.id != key.timetable_id
+            || workspace.timetable.academic_term_id != key.academic_term_id
         {
             return Err(stale());
         }
@@ -632,7 +672,7 @@ impl TimetableCollaborationRuntime {
                 state.valid = false;
                 state.leases.clear();
                 state.active_leases.clear();
-                let _ = room.signals.send(DraftSignal::Invalidated);
+                let _ = room.signals.send(TimetableSignal::Invalidated);
             }
             retained
         });
@@ -648,7 +688,7 @@ impl TimetableCollaborationRuntime {
             return Err(AppError::Conflict("Draft cache limit reached".into()));
         }
         let (signals, _) = broadcast::channel(256);
-        let room = Arc::new(DraftRoom {
+        let room = Arc::new(TimetableRoom {
             key,
             gate: Arc::new(tokio::sync::Mutex::new(())),
             signals,
@@ -711,7 +751,7 @@ fn state_sync(
     state: &RoomState,
     connection_id: Uuid,
     workspace: TimetableBlockWorkspace,
-) -> Result<DraftEventEnvelope, AppError> {
+) -> Result<TimetableEventEnvelope, AppError> {
     let member = state.members.get(&connection_id).ok_or_else(stale)?;
     let users = state
         .members
@@ -721,10 +761,10 @@ fn state_sync(
         .into_iter()
         .map(|user| participant(state, member, user))
         .collect();
-    Ok(DraftEventEnvelope {
+    Ok(TimetableEventEnvelope {
         epoch: state.epoch,
         seq: state.seq,
-        event: DraftServerMessage::DraftStateSync(DraftStateSync {
+        event: TimetableServerMessage::TimetableStateSync(TimetableStateSync {
             connection_id,
             workspace,
             users,
@@ -733,7 +773,7 @@ fn state_sync(
     })
 }
 
-fn participant(state: &RoomState, viewer: &DraftMember, user_id: Uuid) -> DraftParticipant {
+fn participant(state: &RoomState, viewer: &TimetableMember, user_id: Uuid) -> TimetableParticipant {
     let members = state
         .members
         .values()
@@ -741,7 +781,7 @@ fn participant(state: &RoomState, viewer: &DraftMember, user_id: Uuid) -> DraftP
         .collect::<Vec<_>>();
     let projected = &state.member_visibility[&viewer.connection_id].read;
     let first = members[0];
-    DraftParticipant {
+    TimetableParticipant {
         user_id,
         name: first.name.clone(),
         color: first.color.clone(),
@@ -759,7 +799,7 @@ fn participant(state: &RoomState, viewer: &DraftMember, user_id: Uuid) -> DraftP
                     .as_ref()
                     .filter(|anchor| context.is_some() && anchor_visible(&projected, anchor))
                     .cloned();
-                DraftConnectionPresence {
+                TimetableConnectionPresence {
                     connection_id: member.connection_id,
                     active_reservation_id: state
                         .active_leases
@@ -783,7 +823,7 @@ fn participant(state: &RoomState, viewer: &DraftMember, user_id: Uuid) -> DraftP
     }
 }
 
-fn reservations(state: &RoomState, viewer: &DraftMember) -> Vec<DraftReservation> {
+fn reservations(state: &RoomState, viewer: &TimetableMember) -> Vec<TimetableReservation> {
     let projected = &state.member_visibility[&viewer.connection_id].read;
     state
         .leases
@@ -818,7 +858,7 @@ fn source_visible(index: &VisibilityIndex, source: &TimetableBlockPlacementSourc
     }
 }
 
-fn context_visible(index: &VisibilityIndex, context: &DraftContext) -> bool {
+fn context_visible(index: &VisibilityIndex, context: &TimetableContext) -> bool {
     if context
         .day_of_week
         .as_ref()
@@ -827,31 +867,31 @@ fn context_visible(index: &VisibilityIndex, context: &DraftContext) -> bool {
         return false;
     }
     match context.view_mode {
-        DraftViewMode::WholeSchool => context
+        TimetableViewMode::WholeSchool => context
             .view_id
             .is_none_or(|id| index.homerooms.contains(&id)),
-        DraftViewMode::Homeroom => context
+        TimetableViewMode::Homeroom => context
             .view_id
             .is_some_and(|id| index.homerooms.contains(&id)),
-        DraftViewMode::Teacher => context.view_id.is_some_and(|id| index.staff.contains(&id)),
-        DraftViewMode::LearningGroup => {
+        TimetableViewMode::Teacher => context.view_id.is_some_and(|id| index.staff.contains(&id)),
+        TimetableViewMode::LearningGroup => {
             context.view_id.is_some_and(|id| index.groups.contains(&id))
         }
     }
 }
 
-fn anchor_visible(index: &VisibilityIndex, anchor: &DraftAnchor) -> bool {
+fn anchor_visible(index: &VisibilityIndex, anchor: &TimetableAnchor) -> bool {
     anchor.has_valid_coordinates()
         && match anchor {
-            DraftAnchor::Cell {
+            TimetableAnchor::Cell {
                 day_of_week,
                 bell_schedule_period_id,
                 ..
             } => {
                 authority::valid_day(day_of_week) && index.periods.contains(bell_schedule_period_id)
             }
-            DraftAnchor::Block { block_id, .. } => index.blocks.contains(block_id),
-            DraftAnchor::Tray { source, .. } => source_visible(index, source),
+            TimetableAnchor::Block { block_id, .. } => index.blocks.contains(block_id),
+            TimetableAnchor::Tray { source, .. } => source_visible(index, source),
         }
 }
 

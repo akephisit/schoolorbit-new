@@ -13,9 +13,7 @@
 		getExamScheduleWorkspace,
 		listExamInvigilatorStaffOptions,
 		placeExamSession,
-		publishExamRound,
 		removeExamAssignmentInvigilator,
-		syncExamSources,
 		updateExamDay,
 		updateExamRound,
 		upsertDayRoomAssignment,
@@ -24,11 +22,9 @@
 		type ExamInvigilatorStaffOption,
 		type ExamInvigilatorWorkspace,
 		type ExamRoundKind,
-		type ExamRoundStatus,
 		type ExamScheduleItem,
 		type ExamScheduleWorkspace,
 		type ExamSession,
-		type ExamSourceSyncItemResult,
 		type PlaceExamSessionInput,
 		type UpsertDayRoomAssignmentInput,
 		type UpsertExamDayInput
@@ -44,7 +40,6 @@
 	import ExamInvigilatorPanel from '#lib/components/academic/exam-schedule/ExamInvigilatorPanel.svelte';
 	import ExamRoomAssignmentPanel from '#lib/components/academic/exam-schedule/ExamRoomAssignmentPanel.svelte';
 	import ExamScheduleTimeline from '#lib/components/academic/exam-schedule/ExamScheduleTimeline.svelte';
-	import ExamSourceSyncPanel from '#lib/components/academic/exam-schedule/ExamSourceSyncPanel.svelte';
 	import MobileDragDropPolyfill from '#lib/components/MobileDragDropPolyfill.svelte';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
@@ -66,7 +61,7 @@
 		type ExamScheduleExportSheet
 	} from '#lib/utils/exam-schedule-export.js';
 	import { addMinutes } from '#lib/utils/examScheduleTime.js';
-	import { Download, Send } from '@lucide/svelte';
+	import { Download } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 
@@ -92,10 +87,6 @@
 	let optionsLoading = $state(false);
 	let optionsRequested = $state(false);
 	let optionsError = $state('');
-	let syncingSources = $state(false);
-	let selectedSourceIds = $state<string[]>([]);
-	let sourceSyncResults = $state.raw<ExamSourceSyncItemResult[]>([]);
-	let publishing = $state(false);
 	let exportingExamSchedule = $state(false);
 	let savingDay = $state(false);
 	let deletingDayId = $state<string | null>(null);
@@ -115,9 +106,6 @@
 
 	const canManageExamSchedules = $derived(
 		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL)
-	);
-	const canPublishExamSchedules = $derived(
-		$can.has(PERMISSIONS.ACADEMIC_EXAM_SCHEDULE_PUBLISH_SCHOOL)
 	);
 	const pageTitle = $derived(workspace?.round.name ?? data.title);
 	const backHref = $derived.by(() => {
@@ -150,12 +138,6 @@
 		pendingSessionId: string;
 	};
 
-	function recommendedSourceIds(sourceWorkspace: ExamScheduleWorkspace): string[] {
-		return sourceWorkspace.sourcePreview.changes
-			.filter((change) => change.changeKind !== 'no_longer_eligible')
-			.map((change) => change.sourceId);
-	}
-
 	function isCurrentRound(roundId: string): boolean {
 		return activeRouteRoundId === roundId && workspace?.round.id === roundId;
 	}
@@ -186,10 +168,6 @@
 		optionsRequested = false;
 		optionsLoading = false;
 		optionsError = '';
-		syncingSources = false;
-		selectedSourceIds = [];
-		sourceSyncResults = [];
-		publishing = false;
 		exportingExamSchedule = false;
 		savingDay = false;
 		deletingDayId = null;
@@ -215,11 +193,7 @@
 		try {
 			const workspaceData = await getExamScheduleWorkspace(roundId);
 			if (requestToken !== workspaceRequestToken) return;
-
-			const previewChanged =
-				workspace?.sourcePreview.previewToken !== workspaceData.sourcePreview.previewToken;
 			workspace = workspaceData;
-			if (previewChanged) selectedSourceIds = recommendedSourceIds(workspaceData);
 			loadedRoundId = roundId;
 		} catch (loadError) {
 			if (requestToken !== workspaceRequestToken) return;
@@ -485,14 +459,7 @@
 	}
 
 	async function loadManagementOptions() {
-		if (
-			!workspace ||
-			!canManageExamSchedules ||
-			workspace.round.status === 'published' ||
-			optionsLoading ||
-			optionsRequested
-		)
-			return;
+		if (!workspace || !canManageExamSchedules || optionsLoading || optionsRequested) return;
 
 		const requestToken = ++managementOptionsRequestToken;
 		const roundId = workspace.round.id;
@@ -913,58 +880,12 @@
 		}
 	}
 
-	function toggleSourceSelection(sourceId: string, checked: boolean) {
-		selectedSourceIds = checked
-			? Array.from(new Set([...selectedSourceIds, sourceId]))
-			: selectedSourceIds.filter((id) => id !== sourceId);
-	}
-
-	function selectRecommendedSources() {
-		if (!workspace) return;
-		selectedSourceIds = recommendedSourceIds(workspace);
-	}
-
-	async function handleSyncSources() {
-		if (!workspace || selectedSourceIds.length === 0) return;
-
-		const roundId = workspace.round.id;
-		syncingSources = true;
-		try {
-			const result = await syncExamSources(roundId, {
-				roundRowVersion: workspace.sourcePreview.roundRowVersion,
-				previewToken: workspace.sourcePreview.previewToken,
-				sourceIds: selectedSourceIds
-			});
-			if (!isCurrentRound(roundId)) return;
-			sourceSyncResults = result.results;
-			const conflictCount = result.results.filter((item) => item.status === 'conflict').length;
-			const appliedCount = result.insertedCount + result.updatedDurationCount + result.removedCount;
-			if (conflictCount > 0) {
-				toast.warning(
-					`อัปเดต ${appliedCount} รายการ และมี ${conflictCount} รายการที่ต้องแก้การชนก่อน`
-				);
-			} else {
-				toast.success(`ซิงก์รายการสอบแล้ว ${appliedCount} รายการ`);
-			}
-			await refreshWorkspace(true);
-		} catch (syncError) {
-			toast.error(syncError instanceof Error ? syncError.message : 'ซิงก์รายการสอบไม่สำเร็จ');
-		} finally {
-			syncingSources = false;
-		}
-	}
-
 	function isExamRoundKind(value: string): value is ExamRoundKind {
 		return value === 'midterm' || value === 'final';
 	}
 
 	async function handleUpdateExamKind(value: string) {
-		if (
-			!workspace ||
-			!isExamRoundKind(value) ||
-			value === workspace.round.examKind ||
-			workspace.round.status === 'published'
-		) {
+		if (!workspace || !isExamRoundKind(value) || value === workspace.round.examKind) {
 			return;
 		}
 
@@ -983,7 +904,10 @@
 		const roundId = workspace.round.id;
 		savingRoundKind = true;
 		try {
-			const round = await updateExamRound(roundId, { examKind: value });
+			const round = await updateExamRound(roundId, {
+				rowVersion: workspace.round.rowVersion,
+				examKind: value
+			});
 			if (!isCurrentRound(roundId)) return;
 			workspace = { ...workspace, round };
 			toast.success(`เปลี่ยนชนิดรอบสอบเป็น${examRoundKindLabel(round.examKind)}แล้ว`);
@@ -1006,25 +930,6 @@
 
 	function cancelExamKindChange() {
 		pendingExamKind = null;
-	}
-
-	async function handlePublish() {
-		if (!workspace) return;
-
-		const roundId = workspace.round.id;
-		publishing = true;
-		try {
-			const round = await publishExamRound(roundId);
-			if (!isCurrentRound(roundId)) return;
-			workspace = { ...workspace, round };
-			toast.success('เผยแพร่ตารางสอบแล้ว');
-		} catch (publishError) {
-			toast.error(
-				publishError instanceof Error ? publishError.message : 'เผยแพร่ตารางสอบไม่สำเร็จ'
-			);
-		} finally {
-			publishing = false;
-		}
 	}
 
 	async function handleSaveDay(
@@ -1163,12 +1068,7 @@
 
 	async function handleUnscheduleExamSession(sessionId: string): Promise<boolean> {
 		const session = workspace?.scheduledSessions.find((item) => item.id === sessionId);
-		if (
-			!session ||
-			!workspace ||
-			!canManageExamSchedules ||
-			workspace.round.status === 'published'
-		) {
+		if (!session || !workspace || !canManageExamSchedules) {
 			return false;
 		}
 		if (!addUnschedulingSessionId(sessionId)) return false;
@@ -1195,14 +1095,6 @@
 		}
 	}
 
-	function statusLabel(status: ExamRoundStatus): string {
-		return status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง';
-	}
-
-	function statusVariant(status: ExamRoundStatus): 'default' | 'secondary' {
-		return status === 'published' ? 'default' : 'secondary';
-	}
-
 	function examRoundKindLabel(kind: ExamRoundKind): string {
 		return kind === 'final' ? 'ปลายภาค' : 'กลางภาค';
 	}
@@ -1212,7 +1104,6 @@
 			activeTab === 'rooms' &&
 			canManageExamSchedules &&
 			workspace &&
-			workspace.round.status !== 'published' &&
 			!optionsRequested &&
 			!optionsLoading &&
 			!optionsError
@@ -1238,7 +1129,6 @@
 		if (
 			activeTab === 'invigilators' &&
 			canManageExamSchedules &&
-			workspace?.round.status !== 'published' &&
 			!staffRequested &&
 			!staffLoading &&
 			!staffLoadError
@@ -1273,10 +1163,7 @@
 			if (!current || workspaceToken !== workspaceRequestToken) return;
 			untrack(() => {
 				if (result.ok) {
-					const previewChanged =
-						workspace?.sourcePreview.previewToken !== result.data.sourcePreview.previewToken;
 					workspace = result.data;
-					if (previewChanged) selectedSourceIds = recommendedSourceIds(result.data);
 					loadedRoundId = roundId;
 				} else error = result.error;
 				loading = false;
@@ -1312,9 +1199,7 @@
 	{#snippet meta()}
 		{#if workspace}
 			<Badge variant="outline">{examRoundKindLabel(workspace.round.examKind)}</Badge>
-			<Badge variant={statusVariant(workspace.round.status)}
-				>{statusLabel(workspace.round.status)}</Badge
-			>
+			<Badge variant="secondary">ตารางปัจจุบัน</Badge>
 		{/if}
 	{/snippet}
 
@@ -1332,7 +1217,6 @@
 					ส่งออก
 				</LoadingButton>
 				<CompactExamScheduleStatus
-					status={workspace.round.status}
 					readiness={workspace.readiness}
 					days={workspace.days}
 					unscheduledItems={workspace.unscheduledItems}
@@ -1348,10 +1232,7 @@
 						value={workspace.round.examKind}
 						onValueChange={handleUpdateExamKind}
 					>
-						<Select.Trigger
-							class="h-9 w-36"
-							disabled={workspace.round.status === 'published' || savingRoundKind}
-						>
+						<Select.Trigger class="h-9 w-36" disabled={savingRoundKind}>
 							{savingRoundKind ? 'กำลังบันทึก...' : examRoundKindLabel(workspace.round.examKind)}
 						</Select.Trigger>
 						<Select.Content>
@@ -1359,18 +1240,6 @@
 							<Select.Item value="final">ปลายภาค</Select.Item>
 						</Select.Content>
 					</Select.Root>
-				{/if}
-				{#if canPublishExamSchedules}
-					<LoadingButton
-						size="sm"
-						loading={publishing}
-						loadingLabel="กำลังเผยแพร่..."
-						onclick={handlePublish}
-						disabled={!workspace.readiness.canPublish || workspace.round.status === 'published'}
-					>
-						<Send class="h-4 w-4" />
-						เผยแพร่
-					</LoadingButton>
 				{/if}
 			</div>
 		{/if}
@@ -1405,19 +1274,7 @@
 					>
 				</div>
 			{/if}
-			<div class="mb-4">
-				<ExamSourceSyncPanel
-					preview={workspace.sourcePreview}
-					{selectedSourceIds}
-					results={sourceSyncResults}
-					readonly={!canManageExamSchedules || workspace.round.status === 'published'}
-					syncing={syncingSources}
-					onToggle={toggleSourceSelection}
-					onSelectRecommended={selectRecommendedSources}
-					onSync={handleSyncSources}
-				/>
-			</div>
-			{#if examScheduleItemCount === 0 && workspace.sourcePreview.changes.length === 0}
+			{#if examScheduleItemCount === 0}
 				<div class="mb-4">
 					<AcademicPrerequisiteNotice prerequisite={noExamItemsPrerequisite} />
 				</div>
@@ -1461,7 +1318,7 @@
 							<ExamDaySetupPanel
 								days={workspace.days}
 								{gradeLevels}
-								readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+								readonly={!canManageExamSchedules}
 								saving={savingDay}
 								{deletingDayId}
 								onSaveDay={handleSaveDay}
@@ -1487,7 +1344,7 @@
 							days={workspace.days}
 							{homerooms}
 							{rooms}
-							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+							readonly={!canManageExamSchedules}
 							saving={savingAssignment}
 							onSaveAssignment={handleSaveAssignment}
 						/>
@@ -1497,7 +1354,7 @@
 				<Tabs.Content value="schedule" class="min-h-0 flex-1">
 					<ExamScheduleTimeline
 						{workspace}
-						readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+						readonly={!canManageExamSchedules}
 						{placingItemIds}
 						{unschedulingSessionIds}
 						onPlaceSession={handlePlaceExamSession}
@@ -1526,7 +1383,7 @@
 							{staffLoadError}
 							loading={loadingInvigilators}
 							loadError={invigilatorLoadError}
-							readonly={!canManageExamSchedules || workspace.round.status === 'published'}
+							readonly={!canManageExamSchedules}
 							onAssignInvigilator={handleAssignInvigilator}
 							onRemoveInvigilator={handleRemoveInvigilator}
 							onRetry={() => loadInvigilators()}

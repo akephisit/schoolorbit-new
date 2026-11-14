@@ -810,7 +810,7 @@ change accepted inbox/receipt rows or alter source-owned business snapshots.
 
 Migration [101](../backend-school/migrations/101_attendance.sql) introduces the attendance owner; [104](../backend-school/migrations/104_attendance_rosters_expand.sql) and [105](../backend-school/migrations/105_attendance_sparse_results_cutover.sql) establish its sparse-result model. Deploy the backend, generated contracts and School frontend through the coordinated maintenance and all-tenant migration gates described below. In the selected academic term, save the central attendance settings, choose counted weekdays/calendar overrides, and assign device operators. Calendar selection controls reports and teacher digests; captures and individual notices remain available on unselected days. Opening a round is read-only. Save persists only explicit changed results; missing results stay unchecked, and absence always requires an explicit check. A saved round retains its compact participant roster so later academic changes cannot rewrite that round's expected coverage.
 
-History and reports use one `REPEATABLE READ READ ONLY` snapshot with shared module, lifecycle and term guards, allowing parallel readers and ordinary saves while retaining exclusion against reset, purge and lifecycle transitions. The [Attendance runtime](../backend-school/crates/school-attendance/src/runtime.rs) owns scheduled teacher digests, finalization and domain work; it does not backfill result placeholders or dispatch transport. Attendance resolves active students/recipients and guardian relationships once in the business save transaction, freezing recipients in the inbox and retaining its thin term/student notification ledger. Result and digest transactions call central `create_in_transaction`, so business facts, ledger, all inboxes and canonical receipts commit atomically. Later account deactivation or guardian unlink does not change that accepted recipient snapshot. Dated academic providers supply unchecked coverage when reports or digests are read. Arrival notices deduplicate per recipient/day; corrections have revision keys, and student notifications include active linked guardians resolved at that save. The operational kinds remain arrival, lesson and special; times use Asia/Bangkok.
+History and reports use one `REPEATABLE READ READ ONLY` snapshot with shared module, lifecycle and term guards, allowing parallel readers and ordinary saves while retaining exclusion against reset, purge and lifecycle transitions. The [Attendance runtime](../backend-school/crates/school-attendance/src/runtime.rs) owns scheduled teacher digests, finalization and domain work; it does not backfill result placeholders or dispatch transport. Attendance resolves active students/recipients and guardian relationships once in the business save transaction, freezing recipients in the inbox and retaining its thin term/student notification ledger. Result and digest transactions call central `create_in_transaction`, so business facts, ledger, all inboxes and canonical receipts commit atomically. Later account deactivation or guardian unlink does not change that accepted recipient snapshot. Arrival and special retain their dated-source unchecked coverage. Current Timetable supplies unsaved lesson previews only for Bangkok today; past lesson reports and choices use actual materialized sessions with their saved immutable roster/context. Arrival notices deduplicate per recipient/day; corrections have revision keys, and student notifications include active linked guardians resolved at that save. The operational kinds remain arrival, lesson and special; times use Asia/Bangkok.
 
 Use the [inbox-first cutover](#notification-inbox-first-cutover) for the current notification runtime, migration and recovery contract. Source/module guards precede the central receipt lock, including exact Attendance ledger notification/recipient identity. Reset removes only resolved owned receipt/inbox identities before deleting source rows, so prefetched work cannot recreate an inbox. Purge requires accepted inbox or explicit terminal progress and retains source ledgers needed by never-consumed presentation; it does not wait for external delivery. Stable receipts preserve original IDs/read state and prevent resurrection of a missing inbox. Cancellation can prevent an unconsumed attempt but cannot retract in-flight SSE, Push or an OS notification.
 
@@ -2009,32 +2009,30 @@ These counts do not authorize guessed data repair or changes to applied migratio
 
 Deploy migrations [147](../backend-school/migrations/147_academic_context_visibility_defaults.sql), [148](../backend-school/migrations/148_academic_context_boundary_cleanup.sql) and [149](../backend-school/migrations/149_academic_receipt_recovery.sql) with the matching backend, generated API and frontend through the existing universal-maintenance and all-tenant migration gates. The exact compiled migration count/version/checksum fence prohibits prior binaries against the new schema. Recovery rolls forward with a compatible release; never recreate academic boundary dates, alter SQLx history or restore an older writer.
 
-[Migration150](../backend-school/migrations/150_assessment_coordinator_delivery_versions.sql) shares
-Delivery's latest published allocation projection with Assessment and exam eligibility. Deploy its
-matching binary through the same maintenance and all-tenant migration gates; the schema fence
-rejects the older today-based binary. Recovery rolls forward. The migration changes read
-projections only: preserve stored coordinators, teacher intervals, allocation graphs and exam
-snapshots, and never edit applied migrations or backfill guessed allocation coverage.
-
-Gradebook, Learner Evaluation and Results teacher responsibility also consume the same published
-allocation IDs, including readiness, locking and retained-confirmation checks. This extension uses
-the existing150 schema and changes no stored interval or official result snapshot. Deploy the
-matching application release through the normal maintenance/acceptance gates; missing allocation
-coverage must be resolved through its ordinary publication workflow, without guessed data repair.
-This extension retains schema150, so that schema fence does not reject every preceding150 binary.
-After activation, recover forward to an ID-provider-compatible release: the preceding Learner
-Evaluation reader can persist an incorrect invalidation when another valid primary has a lower
-assignment ID. Do not restore that reader to recover the new responsibility policy.
+[Migration150](../backend-school/migrations/150_assessment_coordinator_delivery_versions.sql)
+was the historical allocation-projection transition. Its migration assertions remain at that exact
+schema boundary. Current157 retires those Delivery publication tables and projections. Assessment,
+exam eligibility, Gradebook, Learner Evaluation and Results now consume typed current Delivery
+providers in the exact term/year context. Repair responsibility through authorized current teacher
+saves; never recreate a publication source or deploy an old version writer to recover access.
+Saved coordinators, actual scores and roster dates, unrelated official Results history and technical
+schema fences retain their owning safeguards. Deployment and recovery use the normal maintenance,
+all-tenant migration and current157 acceptance gates, with forward recovery to a compatible release.
 
 Academic Core owns visibility and the school default context independently of lifecycle. New years/terms are hidden. The one-time legacy mapping hides planning years and planning/cancelled terms to preserve the old public endpoint's unpublished intent; management reads retain those records. Other legacy contexts are visible, and the prior unique active/closing context seeds the school default once. Later lifecycle transitions never change visibility/defaults. Default replacement or hiding is one revision-protected transaction. Navigation selection never changes school settings.
 
 Migration148 preserves existing explicit context links and actual dated facts. Only missing scoped Calendar target years are mapped: a homeroom supplies its authoritative year, otherwise the event's original date must identify exactly one year. Global targets remain legitimately yearless. Zero or multiple candidates, room/year conflicts, unknown date-dependent functions/constraints/indexes/views, excessive calendar materialization, changed retained facts or mismatched transformed intent refuse cleanup atomically. Keep maintenance active, investigate the bounded failure and prepare explicit reviewed data remediation before rerunning; never guess a year, retime an event or delete history to force success.
 
-Attendance owns explicit dated counting decisions after cutover. Migration materializes the old weekday/default/override meaning across the old term range and finite persisted Attendance fact dates into `attendance_days`, retaining original override notes and saved rosters. Future counted dates are explicitly saved in the Attendance calendar; saved weekdays are a preset for explicit range generation. A missing date is uncounted, with explicit session overrides retaining precedence and captures remaining independently available. Behavior's old term/year reset intent becomes explicit inclusive cycle-end dates under its own scheduled policy; the following cycle starts on the next date after existing readiness gates. Empty scheduled lists create no invented resets. Promotion retains its intended placement date; new Admission/Promotion/Delivery commands supply actual placement/offering dates. Timetable/publication/membership intervals and official result snapshot dates remain with their existing owners.
+Attendance owns explicit dated counting decisions after cutover. Migration materializes the old weekday/default/override meaning across the old term range and finite persisted Attendance fact dates into `attendance_days`, retaining original override notes and saved rosters. Future counted dates are explicitly saved in the Attendance calendar; saved weekdays are a preset for explicit range generation. A missing date is uncounted, with explicit session overrides retaining precedence and captures remaining independently available. Behavior's old term/year reset intent becomes explicit inclusive cycle-end dates under its own scheduled policy; the following cycle starts on the next date after existing readiness gates. Empty scheduled lists create no invented resets. Promotion and Admission retain actual placement dates. Current Delivery saves target an explicit term without an offering effective-date stage. Actual membership intervals and official result snapshot dates remain with their existing owners;157 removes the retired operational publication intervals.
 
 Original lifecycle audit payloads, accepted readiness and request checksums remain unchanged. Migration verifies the original ordered request identity before normalizing only the active replay projection. Historical operation days come from each receipt's Bangkok creation day. Promotion's run date is a default for new or pending work; executed items retain the dates of their exact placement receipts, including mixed dates and legitimate decisions with no placement. Approval and execution bind the per-item date.
 
-Curriculum and preparation receipts preserve an accepted explicit offering-date constraint only for new requests that create offerings. Legacy requests predate that input and migrate with a null constraint independently of their created counts, as do new retained-only results; publication can legitimately change an offering's actual date later. The source-confirmed historical draft delete/reapply path could recreate the same offering UUID, so current timestamps do not necessarily prove the original created subset. The cause of the three observed production mismatches remains unknown; a lower timestamp-matched count does not establish that an accepted historical count is wrong. Preparation may also create a separately dated Delivery revision/version. Actual offering/reference dates, links and original creation audits remain intact. Preparation verifies its original normalized module/mapping request and checksum; unrelated malformed, altered or unprovable history still refuses cutover without retiming or rewriting it.
+The historical147–149 receipt transition preserved accepted identities and normalized only its
+verified replay projection. Current157 removes Delivery business versions and edit journals; it
+retains necessary technical request identities/counts without introducing an operational history
+archive. Current curriculum preparation has no offering-date input. Preparation still verifies its
+normalized module/mapping identity and checksum, refuses altered or unprovable receipts, and
+preserves independently owned Catalog/Curriculum provenance and actual roster facts.
 
 Migration 149 owns a finite correction of that transition premise. On an exact verified, locked
 147 cohort, the canonical runner retains ordinary mask-0 receipts. Among violating receipts it
@@ -2196,136 +2194,46 @@ Rank milestone reads use the canonical current history and existing profile scop
 
 After a tenant applies 085, binaries writing position/rank directly into `staff_info` are prohibited. Deploy migration, backend, generated API contracts and frontend as one coordinated full release under maintenance. Rehearse the central runner on every affected active-tenant copy, preserve a current recovery point using the seven-day procedure above, and require actual SQLx-version equality before opening the proxy. Keep maintenance active on failure and repair forward with reviewed artifacts. Never bypass the guards, modify an applied migration or SQLx history, or assume an old binary is a safe rollback. Recovery must account for writes after the retained point. This release records career facts; it does not calculate eligibility or a next submission date.
 
-### Publication revision chronology and recovery
+### Current academic operational cutover
 
-Deploy [migration 151](../backend-school/migrations/151_publication_revisions.sql) with matching
-School backend, generated API contracts and frontend under the existing maintenance and all-tenant
-readiness gates. It preserves original UUIDs, effective dates, timestamps, snapshots, receipts,
-episodes and downstream evidence while adding independent per-term publication numbers.
-The old `deliveryTimetableCutover` 87/88 evidence remains unchanged. The separate
-`publicationRevisionsCutover` status must report version 151, `cutoverCompleted`, `passed: true`
-and the exact eight successful zero-mismatch checks owned by the
-[Delivery audit reader](../backend-school/crates/school-academic-delivery/src/services/publication.rs).
-Owner and runtime startup/rollout verification both require this protected receipt.
+Deploy the matching School backend, generated API contracts and frontend with
+[migration 156](../backend-school/migrations/156_scoped_offering_result_removal.sql)
+and [migration 157](../backend-school/migrations/157_current_academic_operations.sql)
+under the existing maintenance and all-tenant gates. The actual migration filenames and
+central runner remain authoritative. Rehearse protected active-tenant copies, retain the
+current recovery point for seven days, and keep maintenance active on refusal.
 
-Migration refusal codes identify bounded source, assignment, preservation or reconciliation
-failures. Keep maintenance active, preserve the recovery point and original migration checksums,
-inspect an owned protected copy and repair with reviewed forward evidence. Do not fabricate the
-audit, grant TEMP/DDL to runtime, edit applied SQL or infer intended dates from a screenshot.
-Initial-source refusal codes require inspecting exact draft cache/command identities and any
-uniquely matched preparation receipt. An unproven hidden teacher selection needs an evidenced
-source correction before retrying; dates, group names or partial teacher commands cannot supply
-that proof. Existing published/cancelled sources and original command/receipt bytes remain intact.
-Existing November 1–5 dates remain unchanged. Before consumption, an authorized new revision can
-explicitly choose November 1 while inheriting the latest graph; its higher number supersedes the
-old future plans without deleting or retargeting their records. An unchanged graph or timetable
-can use this strictly earlier activation without artificial content edits; the same or later date
-with unchanged content remains a no-op. Persisted lesson sessions or a
-current-generation finalized day at/after the selected date refuse that correction. Historical
-pinned timetable and grade/result facts remain accessible.
+The cutover selects the applicable Delivery and Timetable source using one explicit Bangkok
+operation date for every term, including closed terms. Unopened terms may use only the
+uniquely proven saved preparation permitted by the migration. Ambiguous or unmappable
+sources refuse atomically. It materializes normalized current rows, preserves retained UUIDs,
+actual membership dates, saved Attendance, scores and independent Results history, and
+removes retired operational versions and reconstructable Delivery edit payloads. Inactive
+placements are physically removed; saved Supervision keeps its context and evaluations while
+its exact removed-placement reference is detached. Catalog and Curriculum publications remain
+independent.
 
-After any new revision/effectivity semantics are accepted, recover with a compatible forward
-runtime. Older date-ranked writers cannot preserve these guarantees. Active timetable create,
-clone, resume, Edit and Publish workflows align drafts with the latest opening through the
-authorized lifecycle owner. Opening publication remains independent and never directly rewrites
-timetable pointers or children. Alignment preserves placed lessons, teachers and origin links;
-remaining mismatches need review. Published timetable source pins remain immutable, while dormant
-or read-only GETs retain stored draft pointers until an authorized active workflow aligns them.
+The owner and runtime readiness checks now require `currentOperationsCutover` at migration
+157, `cutoverCompleted`, `passed: true`, and all eight exact zero-mismatch reconciliation
+checks from the sealed migration receipt. The previous operational publication/version gates
+and cancelled-version cleanup command are retired. Other domain cutover gates remain required.
+Use [the deployment filter](../scripts/lib/pipeline-remote/school-deploy-backend.sh) and
+[server-free receipt reader](../backend-school/src/operations/current_academic.rs) as the
+executable contract.
 
-### Delivery and timetable version cutover
+A refusal is a bounded diagnostic, not authorization to alter source dates, fabricate receipts,
+disable guards or modify SQLx history. Inspect a protected copy and repair forward with reviewed
+artifacts. After 157, old binaries expecting operational version tables cannot safely run.
+Recovery must account for writes after the retained recovery point.
 
-The coordinated school release applies migrations
-[`086`](../backend-school/migrations/086_academic_delivery_versions_expand.sql),
-[`087`](../backend-school/migrations/087_academic_delivery_versions_backfill.sql), and
-[`088`](../backend-school/migrations/088_academic_delivery_timetable_cutover.sql) with the new backend,
-generated contract and matching frontend while school-api remains in maintenance.
-Rehearse the central runner on protected copies of every affected active tenant before consumer
-cutover, retain the current recovery point, and use the disposable fixture recipe in `TESTING.md`.
-
-086 only expands the schema. 087 locks and captures immutable opening graphs, maps exact source IDs,
-and records fifteen identity/relationship fingerprints. Consecutive equal opening graphs share a
-source; an A/B/A transition retains three dated opening versions. Pure placement drafts remain
-independent; mixed revisions retain their pending opening commands and the separately pinned
-placement draft. 088 requires fresh passing evidence before removing joint lifecycle columns,
-migrates persisted placement coverage, and independently reconciles the canonical result.
-Recorded direct inclusions without edit items become deterministic opening commands only when
-the journal and draft agree on the published source, retain every original target, and provide
-explicit added offering IDs and weekly targets. Early publication captures groups existing by
-the recorded Bangkok effective boundary. Later imports require exact active placement IDs and
-one dated assignment for every placed instructor, matching teacher ID, group ID and role at the
-effective date across all placements. All historical instructors are reconciled against captured
-episodes. Missing or overlapping episodes, changed targets without commands, missing journals,
-and conflicting sources still stop reconciliation.
-Missing, conflicting or ambiguous source evidence stops the migration without partial writes.
-Repair evidence through a reviewed operation on protected data; never infer relationships from
-names, discard a draft, weaken a guard, edit an applied migration, or change SQLx history.
-
-`/internal/migration-status` reports `deliveryTimetableCutover` using the delivery-owned aggregate
-audit reader. The full release keeps maintenance active until every tenant has the exact repository
-SQLx version, `migrationVersion: 88`, `status: cutoverCompleted`, `passed: true`, and all thirty
-checks from migrations 087/088 passing. It returns bounded codes/counts, without snapshot rows or
-teacher/student data. Once 087 captures reconciliation, legacy writes invalidate that evidence;
-keep traffic closed until 088 and coordinated backend/frontend acceptance complete. After 088,
-older binaries using the joint opening/table lifecycle are prohibited. Recover by rolling forward
-with a reviewed migration/application artifact; an old binary rollback is unsafe.
-
-Acceptance verifies existing table/block/resource IDs, pinned historical opening facts, independent
-opening publication, editing with the latest published source, review-marked retained placements,
-autosave errors, standalone table publication, and deletion limited to an unreferenced draft.
-Check read-only and scoped users through the deployed proxy and retain the feature branch and
-recovery artifacts until migration, authenticated smoke, menu registration and acceptance pass.
-
-### Selected opening room scope
-
-[Migration 144](../backend-school/migrations/144_delivery_revision_audiences.sql) adds explicit
-revision-owned audience parents and allowed rooms. An absent parent preserves legacy registry
-semantics; an empty parent intentionally omits the offering and denies new intake after its
-published effective date. Removal never deletes established roster memberships or scores.
-Retained combined groups keep their identities and settings while the selected graph narrows
-coverage. Next drafts inherit both nonempty and empty scope intent. No old removal is guessed
-or backfilled.
-
-Deploy the backend, generated contracts and matched frontend together under the ordinary
-maintenance/all-tenant migration procedure. Rehearse room removal, reviewed curriculum reopening,
-and inherited scope only on owned disposable fixtures or protected copies. Production acceptance
-uses the existing read-only schema/provider smoke gates; it does not delete or reopen live courses
-or groups. Published timetable attendance retains its exact pinned Delivery source. Active drafts
-align automatically at authorized workflow boundaries; changing the operational source requires
-an explicit new timetable publication under the existing date and history guards. No roster or
-timetable is automatically published. After any audience intent is written, old binaries
-are unsafe because they do not enforce it: keep maintenance active on failure and recover by
-rolling forward with 144-compatible providers. Do not erase scope parents, rewrite a published
-snapshot, or restore raw registry coverage as recovery.
-
-### Opening draft dates and permanent deletion
-
-[Migration 089](../backend-school/migrations/089_delivery_draft_publication_and_deletion.sql)
-separates a draft's internal reference date from its nullable publication date. Published graphs,
-identities and effective dates remain unchanged. The matched backend and frontend must deploy
-under the coordinated school release, with the centralized all-tenant runner and exact schema-head
-checks. Binaries expecting a non-null draft publication date are prohibited after 089. Rehearse on
-protected copies of every affected active tenant and retain the current recovery point for seven
-days; recover forward after cutover, accounting for subsequent writes.
-
-Ordinary DELETE operations require existing resource-management scopes, current revisions and
-confirmed child counts. Drafts and cancelled versions may be deleted together with exclusively owned,
-unreferenced children. Published versions and historical references are protected. A foreign-key
-conflict rolls back the whole operation; never detach references or disable immutability guards.
-
-The application-owned [cancelled-version cleanup CLI](../backend-school/src/bin/cleanup_cancelled_academic_versions/main.rs)
-is a separate, explicitly scoped operation after migration, authenticated smoke and browser acceptance.
-It resolves one school through backend-admin, verifies its stable tenant identity and term/year,
-requires an active staff actor with both school-wide management capabilities, and preflights every
-cancelled opening/table version before deleting anything. Active drafts are outside this operation.
-Set `ACADEMIC_CLEANUP_SUBDOMAIN`, `ACADEMIC_CLEANUP_TENANT_ID`,
-`ACADEMIC_CLEANUP_ACADEMIC_YEAR_ID`, `ACADEMIC_CLEANUP_ACADEMIC_TERM_ID` and
-`ACADEMIC_CLEANUP_ACTOR_ID` from the reviewed scope; supply `BACKEND_ADMIN_URL` and the existing
-caller secret through private environment configuration. Do not print connection URLs, secrets or
-staff records. Without `ACADEMIC_CLEANUP_PREVIEW_HASH` the CLI preflights and rolls back. Applying
-requires the exact returned hash; changed revisions/counts or any protected reference stop the
-entire batch. Audit entries and deletes commit together, and the report verifies that published
-fingerprints remain unchanged. Verify actual cancelled-row disappearance, active draft preservation,
-source selection and the deployed version lists afterward. Do not broaden a failed cleanup scope.
+Ordinary current offering/group deletion requires school-wide offering management, an explicit
+year/term, the current resource revision and a confirmed impact digest. The application retains
+accepted identity, dependency gates and tenant lease through the actual database commit and
+cache invalidation. The exact cascade removes only selected contributions through each owner's
+provider. Unattributable archived or purged Behavior effects refuse before source deletion;
+manual effects and unrelated saved Attendance facts remain. Remaining derived effects follow
+the existing daily cap calculation. Files enter the existing durable deletion lifecycle in the
+same transaction; physical provider cleanup remains bounded worker work after commit.
 
 ### Gradebook and results cutover
 
@@ -2549,7 +2457,7 @@ The reset requests all Attendance evidence deletions through File Platform, incl
 
 Deploy migrations [108](../backend-school/migrations/108_attendance_behavior_statuses.sql) and [109](../backend-school/migrations/109_student_behavior.sql), backend, permission/API contracts and frontend together under the coordinated maintenance gate. The approved rollout has no existing student behavior data and provides no legacy runtime bridge. The shared status contract replaces generic leave with sick/personal leave and adds skipped; migration 108 refuses ambiguous generic-leave facts rather than guessing their meaning. After migration, an older Attendance binary is prohibited. Keep maintenance active on failure and recover with a compatible forward release through the standard tenant migration runner; never alter applied migrations.
 
-Attendance settings own the finalizer activation date. After the next Asia/Bangkok midnight, the background runtime persists absence for unchecked members of expected counted arrival, lesson and special rounds using their dated roster. Cancelled and uncounted rounds do not produce automatic absence. Skipped is explicit. Generation/date progress supports bounded catch-up after downtime. Opening a page never finalizes a day. Monitor bounded `behavior_background_retry` events and queue/progress counts without exposing student data. Term closure waits for finalization through its actual closing date, source-score delivery and pending Behavior cleanup completion.
+Attendance settings own the finalizer activation date. After the next Asia/Bangkok midnight, the background runtime persists absence for unchecked members of expected counted arrival, lesson and special rounds using their dated roster. Cancelled and uncounted rounds do not produce automatic absence. Skipped is explicit. For lessons, expected past rounds are only actual materialized sessions: current placements never synthesize missing historical sessions or alter old rosters/times. Explicitly opening an unmaterialized past lesson refuses. Known counted saved rounds still auto-record absence for missing saved-roster members after midnight. Generation/date progress supports bounded catch-up after downtime and confirms finite known facts were processed, rather than claiming reconstructed weekly coverage. Arrival and special dated sources retain their existing rules. Opening a page never finalizes a day. Monitor bounded `behavior_background_retry` events and queue/progress counts without exposing student data. Term closure waits for finalization through its actual closing date, source-score delivery and pending Behavior cleanup completion.
 
 Behavior scoring is disabled until its settings are enabled and criteria configured. Attendance changes enter a durable monotonic-revision queue; the application adapter applies frozen source policies and acknowledges delivery in one transaction. Corrections reverse and replace the affected effects without duplicate awards. Correct Attendance-derived points at the source round, not in the Behavior manual cancellation flow. Attendance retention preserves Behavior aggregates.
 

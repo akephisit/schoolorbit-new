@@ -15,7 +15,7 @@ use super::invigilation::{
     replace_assignment_invigilators_in_tx, validate_invigilator_time_conflicts,
     validate_unique_invigilator_staff_ids,
 };
-use super::rounds_and_days::{fetch_exam_day_context_for_update, mark_round_draft_after_mutation};
+use super::rounds_and_days::{bump_round_revision, fetch_exam_day_context_for_update};
 use super::sessions_and_conflicts::validate_day_allows_grade_level;
 use super::shared::{require_exam_write, ExamWriteTarget};
 
@@ -252,8 +252,7 @@ pub async fn upsert_day_room_assignment(
     }
 
     synchronize_assignment_seats_in_tx(&mut tx, &[assignment_id]).await?;
-    mark_round_draft_after_mutation(&mut tx, day_context.exam_round_id, Some(actor_user_id))
-        .await?;
+    bump_round_revision(&mut tx, day_context.exam_round_id, Some(actor_user_id)).await?;
     tx.commit().await?;
 
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -284,7 +283,7 @@ pub async fn generate_seats_for_assignment(
     }
 
     synchronize_assignment_seats_in_tx(&mut tx, &[assignment_id]).await?;
-    mark_round_draft_after_mutation(
+    bump_round_revision(
         &mut tx,
         assignment_context.exam_round_id,
         Some(actor_user_id),

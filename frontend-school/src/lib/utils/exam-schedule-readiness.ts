@@ -5,7 +5,7 @@ export function examScheduleReadinessLabel(finding: ExamScheduleReadinessFinding
 		case 'missing_exam_day':
 			return 'ยังไม่ได้เพิ่มวันสอบ';
 		case 'missing_exam_items':
-			return 'ยังไม่มีรายการสอบที่พร้อมนำเข้า';
+			return 'ยังไม่มีรายการสอบจากโครงสร้างคะแนนปัจจุบัน';
 		case 'unscheduled_exam_items':
 			return `ยังไม่ได้จัดเวลา ${finding.count} รายการ`;
 		case 'missing_room_assignments':
@@ -16,8 +16,8 @@ export function examScheduleReadinessLabel(finding: ExamScheduleReadinessFinding
 			return `กรุณาตรวจห้องเรียนและเลขที่นักเรียน ${finding.count} รายการ: เลขที่ต้องครบและไม่ซ้ำ`;
 		case 'invigilator_conflicts':
 			return `กรรมการคุมสอบมีเวลาชนกัน ${finding.count} จุด`;
-		case 'pending_source_changes':
-			return `ยังไม่ได้ซิงก์การเปลี่ยนแปลงโครงสร้างคะแนน ${finding.count} รายการ`;
+		case 'invalid_current_sources':
+			return `ข้อมูลเปิดสอนหรือโครงสร้างคะแนนเปลี่ยนไป ${finding.count} รายการ`;
 		default:
 			return `มีรายการที่ต้องตรวจสอบ ${finding.count} รายการ`;
 	}

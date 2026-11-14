@@ -1,22 +1,17 @@
 <script lang="ts">
-	import { timetablePublicationLabel } from '#lib/academic/publication-presentation.js';
-	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { registerAcademicContextDirtySource } from '#lib/academic-context/store.js';
 	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
-	import { selectPreferredTemplateVersion } from '#lib/academic/timetable/version-selection.js';
 	import {
 		applyTimetableTemplate,
 		clearTimetable,
 		createTimetableTemplateFromCurrent,
 		deleteTimetableTemplate,
 		listTimetableTemplates,
-		listTimetableVersions,
+		getTimetable,
 		type TimetableTemplate,
-		type TimetableVersion
+		type Timetable
 	} from '#lib/api/timetable.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -35,9 +30,7 @@
 	let { data }: PageProps = $props();
 	const academicTermId = $derived(data.academicTermId);
 	let templates = $state<TimetableTemplate[]>([]);
-	let versions = $state<TimetableVersion[]>([]);
-	let selectedVersion = $state.raw<TimetableVersion | null>(null);
-	let versionSelectValue = $state('');
+	let timetable = $state.raw<Timetable | null>(null);
 	let templatesLoading = $state(true);
 	let versionsLoading = $state(true);
 	let templatesError = $state('');
@@ -65,41 +58,10 @@
 
 	const canRead = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_READ_SCHOOL));
 	const canManage = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL));
-	const canEditSelected = $derived(canManage && selectedVersion?.status === 'draft');
+	const canEditSelected = $derived(canManage && timetable !== null);
 	const hasDirtyDraft = $derived(
 		showCreateDialog && Boolean(createName.trim() || createDescription.trim())
 	);
-
-	const versionLabel = timetablePublicationLabel;
-
-	function syncVersionUrl(versionId: string): void {
-		if (page.url.searchParams.get('timetableVersionId') === versionId) return;
-		const nextUrl = new URL(page.url.href);
-		nextUrl.searchParams.set('timetableVersionId', versionId);
-		goto(resolve(`staff/academic/timetable/templates?${nextUrl.searchParams.toString()}`), {
-			shallow: true,
-			replace: true,
-			state: page.state
-		});
-	}
-
-	function changeVersion(versionId: string): void {
-		const version = versions.find((item) => item.id === versionId);
-		if (!version) return;
-		selectedVersion = version;
-		versionSelectValue = version.id;
-		syncVersionUrl(version.id);
-	}
-
-	function applyVersions(loaded: TimetableVersion[]): void {
-		versions = loaded;
-		selectedVersion = selectPreferredTemplateVersion(
-			loaded,
-			versionSelectValue || data.requestedVersionId
-		);
-		versionSelectValue = selectedVersion?.id ?? '';
-		if (selectedVersion) syncVersionUrl(selectedVersion.id);
-	}
 
 	async function loadTemplates(): Promise<void> {
 		if (!academicTermId) return;
@@ -127,23 +89,23 @@
 		versionsLoading = true;
 		versionsError = '';
 		try {
-			const loaded = await listTimetableVersions(termId, { signal });
-			if (versionsRequest.isCurrent(revision) && academicTermId === termId) applyVersions(loaded);
+			const loaded = await getTimetable(termId, { signal });
+			if (versionsRequest.isCurrent(revision) && academicTermId === termId) timetable = loaded;
 		} catch (error) {
 			if (!isAbortError(error) && versionsRequest.isCurrent(revision))
-				versionsError = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
+				versionsError = error instanceof Error ? error.message : 'โหลดตารางสอนไม่สำเร็จ';
 		} finally {
 			if (versionsRequest.isCurrent(revision)) versionsLoading = false;
 		}
 	}
 
 	async function handleCreate(): Promise<void> {
-		if (!academicTermId || !selectedVersion || !createName.trim()) return;
+		if (!academicTermId || !timetable || !createName.trim()) return;
 		creating = true;
 		try {
 			const created = await createTimetableTemplateFromCurrent({
 				academicTermId,
-				timetableVersionId: selectedVersion.id,
+				timetableId: timetable.id,
 				name: createName.trim(),
 				description: createDescription.trim() || null,
 				entryTypes: null
@@ -183,12 +145,12 @@
 	}
 
 	async function handleApply(): Promise<void> {
-		if (!academicTermId || !selectedVersion || !canEditSelected || !applyTarget) return;
+		if (!academicTermId || !timetable || !canEditSelected || !applyTarget) return;
 		applying = true;
 		try {
 			const result = await applyTimetableTemplate(applyTarget.id, {
 				academicTermId,
-				timetableVersionId: selectedVersion.id
+				timetableId: timetable.id
 			});
 			showApplyDialog = false;
 			applyTarget = null;
@@ -201,7 +163,7 @@
 	}
 
 	async function handleClear(): Promise<void> {
-		if (!academicTermId || !selectedVersion || !canEditSelected) return;
+		if (!academicTermId || !timetable || !canEditSelected) return;
 		const entryTypes =
 			clearMode === 'all'
 				? ['BREAK', 'HOMEROOM', 'ACTIVITY', 'ACADEMIC', 'COURSE']
@@ -212,7 +174,7 @@
 		try {
 			const removed = await clearTimetable({
 				academicTermId,
-				timetableVersionId: selectedVersion.id,
+				timetableId: timetable.id,
 				entryTypes
 			});
 			showClearDialog = false;
@@ -231,7 +193,7 @@
 	$effect.pre(() => {
 		const termId = data.academicTermId;
 		const routeTemplates = data.templates;
-		const routeVersions = data.versions;
+		const routeVersions = data.timetable;
 		const initialTemplatesRevision = templatesRevision;
 		const initialVersionsRevision = versionsRevision;
 		let current = true;
@@ -239,9 +201,7 @@
 			if (activeTermId !== termId) {
 				activeTermId = termId;
 				templates = [];
-				versions = [];
-				selectedVersion = null;
-				versionSelectValue = '';
+				timetable = null;
 				showCreateDialog = false;
 				showApplyDialog = false;
 				showClearDialog = false;
@@ -271,7 +231,7 @@
 				if (!current) return;
 				untrack(() => {
 					if (versionsRevision === initialVersionsRevision) {
-						if (result.ok) applyVersions(result.data);
+						if (result.ok) timetable = result.data;
 						else versionsError = result.error;
 						versionsLoading = false;
 					}
@@ -299,7 +259,7 @@
 	backPreload="tap"
 >
 	{#snippet actions()}
-		{#if canManage && academicTermId && selectedVersion}
+		{#if canManage && academicTermId && timetable}
 			<div class="flex flex-wrap gap-2">
 				<Button
 					variant="outline"
@@ -325,64 +285,22 @@
 		/>
 	{:else}
 		<div class="space-y-4">
-			{#if versionsLoading && versions.length === 0}
+			{#if versionsLoading && !timetable}
 				<PageSkeleton variant="cards" rows={1} />
-			{:else if versionsError && versions.length === 0}
+			{:else if versionsError && !timetable}
 				<PageState
 					variant="error"
-					title="โหลดรุ่นตารางสอนไม่สำเร็จ"
+					title="โหลดตารางสอนไม่สำเร็จ"
 					description={versionsError}
 					actionLabel="ลองอีกครั้ง"
 					onaction={loadVersions}
 				/>
-			{:else if versions.length === 0}
+			{:else if !timetable}
 				<PageState
 					variant="empty"
-					title="ยังไม่มีรุ่นตารางสอน"
-					description="สร้างรุ่นตารางสอนของภาคเรียนนี้ก่อนใช้แม่แบบ"
+					title="ยังไม่มีตารางสอน"
+					description="สร้างตารางสอนของภาคเรียนนี้ก่อนใช้แม่แบบ"
 				/>
-			{:else}
-				<div
-					class="relative"
-					aria-busy={versionsLoading}
-					data-testid="timetable-template-versions-ready"
-				>
-					{#if versionsError}
-						<div
-							role="alert"
-							class="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-destructive/40 p-3 text-sm"
-						>
-							<span>{versionsError}</span>
-							<Button variant="outline" size="sm" onclick={loadVersions}>ลองอีกครั้ง</Button>
-						</div>
-					{/if}
-					<Card.Root class="gap-0 py-0">
-						<Card.Content class="grid gap-3 p-4 sm:grid-cols-[1fr_20rem] sm:items-center">
-							<div>
-								<p class="font-medium">รุ่นตารางเป้าหมาย</p>
-								<p class="mt-1 text-xs text-muted-foreground">
-									{selectedVersion?.status === 'draft'
-										? 'แบบร่างนี้รับการนำแม่แบบไปใช้และล้างตารางได้'
-										: 'รุ่นที่เผยแพร่แล้วใช้สร้างแม่แบบได้ แต่แก้ไขตารางไม่ได้'}
-								</p>
-							</div>
-							<Select.Root
-								type="single"
-								bind:value={versionSelectValue}
-								onValueChange={changeVersion}
-							>
-								<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางเป้าหมาย">
-									{selectedVersion ? versionLabel(selectedVersion) : 'เลือกรุ่นตาราง'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each versions as version (version.id)}
-										<Select.Item value={version.id}>{versionLabel(version)}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</Card.Content>
-					</Card.Root>
-				</div>
 			{/if}
 			{#if templatesLoading && templates.length === 0}
 				<PageSkeleton variant="cards" rows={3} />
@@ -398,8 +316,8 @@
 				<PageState
 					title="ยังไม่มีแม่แบบ"
 					description="สร้างแม่แบบจากตารางของภาคเรียนที่เลือกเพื่อใช้เป็นจุดเริ่มต้นในภาคถัดไป"
-					actionLabel={canManage && selectedVersion ? 'สร้างจากภาคนี้' : undefined}
-					onaction={canManage && selectedVersion ? () => (showCreateDialog = true) : undefined}
+					actionLabel={canManage && timetable ? 'สร้างจากภาคนี้' : undefined}
+					onaction={canManage && timetable ? () => (showCreateDialog = true) : undefined}
 				/>
 			{:else}
 				<div class="relative" aria-busy={templatesLoading} data-testid="timetable-templates-ready">

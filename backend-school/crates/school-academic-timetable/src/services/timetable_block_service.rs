@@ -18,15 +18,13 @@ use school_errors::AppError;
 use super::timetable_block_conflicts::{canonical_ids, map_write_error, normalize_day};
 use super::timetable_block_queries;
 use super::timetable_block_sync;
-use super::timetable_version_service::require_current_draft_write;
+use super::timetable_service::require_current_write;
 
 #[derive(Debug, FromRow)]
-struct VersionContext {
+struct TimetableContext {
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     bell_schedule_id: Uuid,
-    delivery_version_id: Uuid,
-    status: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -37,7 +35,7 @@ struct InstructorAssignment {
 
 #[derive(Debug, FromRow)]
 struct LockedBlock {
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
     bell_schedule_id: Uuid,
@@ -66,7 +64,7 @@ pub async fn get_block_on_connection(
 
 pub async fn list_student_blocks(
     pool: &PgPool,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     academic_term_id: Uuid,
     student_id: Uuid,
     on_date: chrono::NaiveDate,
@@ -78,7 +76,7 @@ pub async fn list_student_blocks(
     .await?;
     list_student_blocks_on_connection(
         &mut connection,
-        timetable_version_id,
+        timetable_id,
         academic_term_id,
         student_id,
         on_date,
@@ -88,7 +86,7 @@ pub async fn list_student_blocks(
 
 pub async fn list_student_blocks_on_connection(
     connection: &mut sqlx::PgConnection,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     academic_term_id: Uuid,
     student_id: Uuid,
     on_date: chrono::NaiveDate,
@@ -102,7 +100,7 @@ pub async fn list_student_blocks_on_connection(
              ON block_group.block_id = block.id AND block_group.is_active
            LEFT JOIN academic_timetable_block_homerooms homeroom_target
              ON homeroom_target.block_id = block.id AND homeroom_target.is_active
-           WHERE block.timetable_version_id = $1
+           WHERE block.timetable_id = $1
              AND block.academic_term_id = $2
              AND block.is_active
              AND (
@@ -115,10 +113,8 @@ pub async fn list_student_blocks_on_connection(
                        ON roster_group.id = membership.learning_group_id
                      WHERE membership.learning_group_id = block_group.learning_group_id
                        AND student_year.student_id = $3
-                       AND membership.published_at IS NOT NULL
                        AND membership.joined_at <= $4
                        AND (membership.left_at IS NULL OR membership.left_at >= $4)
-                       AND roster_group.roster_status IN ('published', 'closed')
                  )
                  OR EXISTS (
                      SELECT 1
@@ -133,7 +129,7 @@ pub async fn list_student_blocks_on_connection(
              )
            ORDER BY block.id"#,
         )
-        .bind(timetable_version_id)
+        .bind(timetable_id)
         .bind(academic_term_id)
         .bind(student_id)
         .bind(on_date)
@@ -144,7 +140,7 @@ pub async fn list_student_blocks_on_connection(
 
 pub async fn list_instructor_blocks(
     pool: &PgPool,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     academic_term_id: Uuid,
     instructor_id: Uuid,
 ) -> Result<Vec<TimetableBlock>, AppError> {
@@ -155,7 +151,7 @@ pub async fn list_instructor_blocks(
     .await?;
     list_instructor_blocks_on_connection(
         &mut connection,
-        timetable_version_id,
+        timetable_id,
         academic_term_id,
         instructor_id,
     )
@@ -164,10 +160,22 @@ pub async fn list_instructor_blocks(
 
 pub async fn list_instructor_blocks_on_connection(
     connection: &mut sqlx::PgConnection,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     academic_term_id: Uuid,
     instructor_id: Uuid,
 ) -> Result<Vec<TimetableBlock>, AppError> {
+    let timetable =
+        super::timetable_service::get_by_id_on_connection(connection, timetable_id).await?;
+    if timetable.academic_term_id != academic_term_id {
+        return Err(AppError::NotFound("ไม่พบตารางเรียนในภาคเรียนที่เลือก".into()));
+    }
+    let assigned = school_academic_delivery::services::current::assigned_group_ids_on_connection(
+        connection,
+        timetable.academic_year_id,
+        academic_term_id,
+        instructor_id,
+    )
+    .await?;
     let ids: Vec<Uuid> = DbSession::new(connection).scalar("academic_timetable.services.timetable_block_service.list_instructor_blocks_on_connection",
         r#"SELECT DISTINCT block.id
            FROM academic_timetable_blocks block
@@ -177,15 +185,16 @@ pub async fn list_instructor_blocks_on_connection(
              ON instructor.block_group_id = block_group.id
            LEFT JOIN academic_timetable_block_teachers teacher_target
              ON teacher_target.block_id = block.id AND teacher_target.is_active
-           WHERE block.timetable_version_id = $1
+           WHERE block.timetable_id = $1
              AND block.academic_term_id = $2
              AND block.is_active
-             AND (instructor.instructor_id = $3 OR teacher_target.teacher_id = $3)
+             AND ((block.block_kind<>'STRUCTURAL' AND block_group.learning_group_id=ANY($4)) OR (block.block_kind='STRUCTURAL' AND teacher_target.teacher_id = $3))
            ORDER BY block.id"#,
     )
-    .bind(timetable_version_id)
+    .bind(timetable_id)
     .bind(academic_term_id)
     .bind(instructor_id)
+    .bind(&assigned.learning_group_ids)
     .fetch_all()
     .await?;
     timetable_block_queries::get_blocks_on_connection(connection, &ids).await
@@ -241,7 +250,7 @@ pub async fn create_ordinary_block(
     context
         .execute(
             pool,
-            request.timetable_version_id,
+            request.timetable_id,
             MutationScope::Ordinary(request.clone()),
             move |pool, permit| async move {
                 let value = create_ordinary_block_in_permit(&pool, permit, request).await?;
@@ -270,21 +279,20 @@ async fn create_ordinary_block_in_permit(
         "academic_timetable.services.timetable_block_service.create_ordinary_block",
     )
     .await?;
-    let version = lock_draft_version(
+    let version = lock_current_timetable(
         &mut transaction,
-        request.timetable_version_id,
+        request.timetable_id,
         request.academic_term_id,
         request.bell_schedule_period_id,
     )
     .await?;
-    let source = school_academic_delivery::services::versions::published_source(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         &mut transaction,
-        version.delivery_version_id,
+        version.academic_year_id,
         version.academic_term_id,
     )
     .await?;
     let (offering, group) = source
-        .snapshot
         .offerings
         .iter()
         .find_map(|offering| {
@@ -333,7 +341,7 @@ async fn create_ordinary_block_in_permit(
         &mut transaction,
         block_id,
         &version,
-        request.timetable_version_id,
+        request.timetable_id,
         request.bell_schedule_period_id,
         &day,
         block_kind,
@@ -400,7 +408,7 @@ pub async fn create_synchronized_block(
     context
         .execute(
             pool,
-            request.timetable_version_id,
+            request.timetable_id,
             MutationScope::Synchronized(request.clone()),
             move |pool, permit| async move {
                 let value = create_synchronized_block_in_permit(&pool, permit, request).await?;
@@ -430,21 +438,20 @@ async fn create_synchronized_block_in_permit(
         "academic_timetable.services.timetable_block_service.create_synchronized_block",
     )
     .await?;
-    let version = lock_draft_version(
+    let version = lock_current_timetable(
         &mut transaction,
-        request.timetable_version_id,
+        request.timetable_id,
         request.academic_term_id,
         request.bell_schedule_period_id,
     )
     .await?;
-    let source = school_academic_delivery::services::versions::published_source(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         &mut transaction,
-        version.delivery_version_id,
+        version.academic_year_id,
         version.academic_term_id,
     )
     .await?;
     let offering = source
-        .snapshot
         .offerings
         .iter()
         .find(|offering| offering.id == request.learning_offering_id)
@@ -477,7 +484,7 @@ async fn create_synchronized_block_in_permit(
         &mut transaction,
         block_id,
         &version,
-        request.timetable_version_id,
+        request.timetable_id,
         request.bell_schedule_period_id,
         &day,
         "ACTIVITY",
@@ -527,7 +534,8 @@ async fn create_synchronized_block_in_permit(
             .await
             .map_err(map_write_error)?;
     }
-    timetable_block_sync::sync_offering_groups_in_tx(&mut transaction, block_id, actor_id).await?;
+    timetable_block_sync::sync_offering_groups_in_tx(&mut transaction, &permit, block_id, actor_id)
+        .await?;
     let result = get_block_on_connection(&mut transaction, block_id).await?;
     permit.commit(transaction).await?;
     Ok(result)
@@ -542,7 +550,7 @@ pub async fn create_structural_blocks(
     context
         .execute(
             pool,
-            request.timetable_version_id,
+            request.timetable_id,
             MutationScope::Structural(request.clone()),
             move |pool, permit| async move {
                 let value = create_structural_blocks_in_permit(&pool, permit, request).await?;
@@ -582,9 +590,9 @@ async fn create_structural_blocks_in_permit(
         "academic_timetable.services.timetable_block_service.create_structural_blocks",
     )
     .await?;
-    let version = lock_draft_version(
+    let version = lock_current_timetable(
         &mut transaction,
-        request.timetable_version_id,
+        request.timetable_id,
         request.academic_term_id,
         first_slot.bell_schedule_period_id,
     )
@@ -634,7 +642,7 @@ async fn create_structural_blocks_in_permit(
             &mut transaction,
             block_id,
             &version,
-            request.timetable_version_id,
+            request.timetable_id,
             slot.bell_schedule_period_id,
             &day,
             "STRUCTURAL",
@@ -701,7 +709,7 @@ pub async fn remove_target(
     context
         .execute(
             pool,
-            request.timetable_version_id,
+            request.timetable_id,
             MutationScope::Blocks(vec![block_id]),
             move |pool, permit| async move {
                 let value = remove_target_in_permit(&pool, permit, block_id, request).await?;
@@ -724,42 +732,36 @@ async fn remove_target_in_permit(
         "academic_timetable.services.timetable_block_service.remove_target",
     )
     .await?;
-    ensure_draft_version_id(&mut transaction, request.timetable_version_id).await?;
+    ensure_current_timetable(&mut transaction, request.timetable_id).await?;
     let (block_kind, scheduling_mode): (String, Option<String>) = DbSession::new(&mut *transaction)
         .query_as(
             "academic_timetable.services.timetable_block_service.remove_target",
             r#"SELECT block.block_kind, block.scheduling_mode
            FROM academic_timetable_blocks block
-           JOIN academic_timetable_versions version ON version.id = block.timetable_version_id
+           JOIN academic_timetables version ON version.id = block.timetable_id
            WHERE block.id = $1
-             AND block.timetable_version_id = $2
+             AND block.timetable_id = $2
              AND block.row_version = $3
-             AND version.status = 'draft'
            FOR UPDATE OF block, version"#,
         )
         .bind(block_id)
-        .bind(request.timetable_version_id)
+        .bind(request.timetable_id)
         .bind(request.block_row_version)
         .fetch_optional()
         .await?
         .ok_or_else(stale_block)?;
 
-    let mut increment_parent_revision = true;
+    let mut removed = None;
     match request.target_kind {
         TimetableTargetKind::Group if scheduling_mode.as_deref() == Some("synchronized") => {
             let learning_group_id: Uuid = DbSession::new(&mut *transaction)
                 .scalar(
                     "academic_timetable.services.timetable_block_service.remove_target",
-                    r#"UPDATE academic_timetable_block_groups
-                   SET is_active = false, row_version = row_version + 1,
-                       updated_by = $4, updated_at = now()
-                   WHERE id = $1 AND block_id = $2 AND row_version = $3 AND is_active
-                   RETURNING learning_group_id"#,
+                    "SELECT learning_group_id FROM academic_timetable_block_groups WHERE id=$1 AND block_id=$2 AND row_version=$3 AND is_active FOR UPDATE",
                 )
                 .bind(request.target_id)
                 .bind(block_id)
                 .bind(request.target_row_version)
-                .bind(actor_id)
                 .fetch_optional()
                 .await?
                 .ok_or_else(stale_block)?;
@@ -777,24 +779,26 @@ async fn remove_target_in_permit(
                 .bind(actor_id)
                 .execute()
                 .await?;
+            super::deletion::remove_groups_in_transaction(
+                &mut transaction,
+                &permit,
+                &[request.target_id],
+            )
+            .await?;
         }
         TimetableTargetKind::Group => {
-            let changed = DbSession::new(&mut *transaction)
-                .query(
-                    "academic_timetable.services.timetable_block_service.remove_target",
-                    r#"UPDATE academic_timetable_blocks
-                   SET is_active = false, row_version = row_version + 1,
-                       updated_by = $2, updated_at = now()
-                   WHERE id = $1 AND is_active"#,
-                )
-                .bind(block_id)
-                .bind(actor_id)
-                .execute()
-                .await?;
-            if changed.rows_affected() != 1 {
+            let target:Option<Uuid>=DbSession::new(&mut *transaction).scalar("academic_timetable.removal.require_group_target", "SELECT id FROM academic_timetable_block_groups WHERE id=$1 AND block_id=$2 AND row_version=$3 AND is_active FOR UPDATE").bind(request.target_id).bind(block_id).bind(request.target_row_version).fetch_optional().await?;
+            if target.is_none() {
                 return Err(stale_block());
             }
-            increment_parent_revision = false;
+            removed = super::deletion::remove_blocks_in_transaction(
+                &mut transaction,
+                &permit,
+                &[block_id],
+            )
+            .await?
+            .into_iter()
+            .next();
         }
         TimetableTargetKind::Homeroom => {
             deactivate_child(
@@ -858,20 +862,23 @@ async fn remove_target_in_permit(
             .fetch_one()
             .await?;
         if target_count == 0 {
-            DbSession::new(&mut *transaction)
-                .query(
-                    "academic_timetable.services.timetable_block_service.remove_target",
-                    "UPDATE academic_timetable_blocks SET is_active = false WHERE id = $1",
-                )
-                .bind(block_id)
-                .execute()
-                .await?;
+            removed = super::deletion::remove_blocks_in_transaction(
+                &mut transaction,
+                &permit,
+                &[block_id],
+            )
+            .await?
+            .into_iter()
+            .next();
         }
     }
-    if increment_parent_revision {
+    if removed.is_none() {
         increment_block_revision(&mut transaction, block_id, actor_id).await?;
     }
-    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    let result = match removed {
+        Some(block) => block,
+        None => get_block_on_connection(&mut transaction, block_id).await?,
+    };
     permit.commit(transaction).await?;
     Ok(result)
 }
@@ -885,7 +892,7 @@ pub async fn update_block(
     context
         .execute(
             pool,
-            request.timetable_version_id,
+            request.timetable_id,
             MutationScope::Update {
                 block_id,
                 request: request.clone(),
@@ -922,7 +929,7 @@ async fn update_block_in_permit(
     let block = lock_block(
         &mut transaction,
         block_id,
-        request.timetable_version_id,
+        request.timetable_id,
         request.row_version,
     )
     .await?;
@@ -980,7 +987,7 @@ async fn update_block_in_permit(
         replace_group_instructors(
             &mut transaction,
             block_group_id,
-            request.timetable_version_id,
+            request.timetable_id,
             &instructor_ids,
         )
         .await?;
@@ -1087,8 +1094,13 @@ async fn update_block_in_permit(
         return Err(stale_block());
     }
     if block.scheduling_mode.as_deref() == Some("synchronized") {
-        timetable_block_sync::sync_offering_groups_in_tx(&mut transaction, block_id, actor_id)
-            .await?;
+        timetable_block_sync::sync_offering_groups_in_tx(
+            &mut transaction,
+            &permit,
+            block_id,
+            actor_id,
+        )
+        .await?;
     }
     let result = get_block_on_connection(&mut transaction, block_id).await?;
     permit.commit(transaction).await?;
@@ -1103,7 +1115,7 @@ pub async fn swap_blocks(
     context
         .execute(
             pool,
-            request.timetable_version_id,
+            request.timetable_id,
             MutationScope::Swap(request.clone()),
             move |pool, permit| async move {
                 let value = swap_blocks_in_permit(&pool, permit, request).await?;
@@ -1130,37 +1142,29 @@ async fn swap_blocks_in_permit(
         "academic_timetable.services.timetable_block_service.swap_blocks",
     )
     .await?;
-    ensure_draft_version_id(&mut transaction, request.timetable_version_id).await?;
+    ensure_current_timetable(&mut transaction, request.timetable_id).await?;
     let mut ids = [request.block_a_id, request.block_b_id];
     ids.sort_unstable();
     let locked = DbSession::new(&mut *transaction)
         .query(
             "academic_timetable.services.timetable_block_service.swap_blocks",
             r#"SELECT id FROM academic_timetable_blocks
-           WHERE id = ANY($1) AND timetable_version_id=$2 AND is_active
+           WHERE id = ANY($1) AND timetable_id=$2 AND is_active
            ORDER BY id FOR UPDATE"#,
         )
         .bind(&ids[..])
-        .bind(request.timetable_version_id)
+        .bind(request.timetable_id)
         .fetch_all()
         .await?;
     if locked.len() != 2 {
         return Err(stale_block());
     }
-    let block_a = load_locked_block(
-        &mut transaction,
-        request.block_a_id,
-        request.timetable_version_id,
-    )
-    .await?;
-    let block_b = load_locked_block(
-        &mut transaction,
-        request.block_b_id,
-        request.timetable_version_id,
-    )
-    .await?;
-    if block_a.timetable_version_id != request.timetable_version_id
-        || block_b.timetable_version_id != request.timetable_version_id
+    let block_a =
+        load_locked_block(&mut transaction, request.block_a_id, request.timetable_id).await?;
+    let block_b =
+        load_locked_block(&mut transaction, request.block_b_id, request.timetable_id).await?;
+    if block_a.timetable_id != request.timetable_id
+        || block_b.timetable_id != request.timetable_id
         || block_a.row_version != request.block_a_row_version
         || block_b.row_version != request.block_b_row_version
     {
@@ -1225,8 +1229,8 @@ pub async fn retry_sync(
     context
         .execute(
             pool,
-            request.timetable_version_id,
-            MutationScope::WholeDraft,
+            request.timetable_id,
+            MutationScope::WholeTimetable,
             move |pool, permit| async move {
                 let value = retry_sync_in_permit(&pool, permit, block_id, request).await?;
                 let blocks = vec![value.clone()];
@@ -1251,7 +1255,7 @@ async fn retry_sync_in_permit(
     let block = lock_block(
         &mut transaction,
         block_id,
-        request.timetable_version_id,
+        request.timetable_id,
         request.block_row_version,
     )
     .await?;
@@ -1262,6 +1266,7 @@ async fn retry_sync_in_permit(
     }
     timetable_block_sync::retry_groups_in_tx(
         &mut transaction,
+        &permit,
         block_id,
         actor_id,
         &canonical_ids(&request.learning_group_ids),
@@ -1282,8 +1287,8 @@ pub async fn restore_group(
     context
         .execute(
             pool,
-            request.timetable_version_id,
-            MutationScope::WholeDraft,
+            request.timetable_id,
+            MutationScope::WholeTimetable,
             move |pool, permit| async move {
                 let value = restore_group_in_permit(&pool, permit, block_id, request).await?;
                 let blocks = vec![value.clone()];
@@ -1308,7 +1313,7 @@ async fn restore_group_in_permit(
     let block = lock_block(
         &mut transaction,
         block_id,
-        request.timetable_version_id,
+        request.timetable_id,
         request.block_row_version,
     )
     .await?;
@@ -1319,6 +1324,7 @@ async fn restore_group_in_permit(
     }
     timetable_block_sync::restore_group_in_tx(
         &mut transaction,
+        &permit,
         block_id,
         actor_id,
         request.learning_group_id,
@@ -1334,23 +1340,18 @@ pub async fn deactivate_block(
     pool: &PgPool,
     context: &TimetableMutationContext,
     block_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     row_version: i64,
 ) -> Result<TimetableBlock, AppError> {
     context
         .execute(
             pool,
-            timetable_version_id,
+            timetable_id,
             MutationScope::Blocks(vec![block_id]),
             move |pool, permit| async move {
-                let value = deactivate_block_in_permit(
-                    &pool,
-                    permit,
-                    block_id,
-                    timetable_version_id,
-                    row_version,
-                )
-                .await?;
+                let value =
+                    deactivate_block_in_permit(&pool, permit, block_id, timetable_id, row_version)
+                        .await?;
                 let blocks = vec![value.clone()];
                 Ok((value, blocks))
             },
@@ -1362,41 +1363,21 @@ async fn deactivate_block_in_permit(
     pool: &PgPool,
     permit: Arc<CommitPermit>,
     block_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     row_version: i64,
 ) -> Result<TimetableBlock, AppError> {
-    let actor_id = permit.actor_id;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
-        "academic_timetable.services.timetable_block_service.deactivate_block",
+        "academic_timetable.services.timetable_block_service.delete_block",
     )
     .await?;
-    let _ = lock_block(
-        &mut transaction,
-        block_id,
-        timetable_version_id,
-        row_version,
-    )
-    .await?;
-    let changed = DbSession::new(&mut *transaction)
-        .query(
-            "academic_timetable.services.timetable_block_service.deactivate_block",
-            r#"UPDATE academic_timetable_blocks
-           SET is_active = false, row_version = row_version + 1,
-               updated_by = $4, updated_at = now()
-           WHERE id = $1 AND timetable_version_id = $2
-             AND row_version = $3 AND is_active"#,
-        )
-        .bind(block_id)
-        .bind(timetable_version_id)
-        .bind(row_version)
-        .bind(actor_id)
-        .execute()
-        .await?;
-    if changed.rows_affected() != 1 {
-        return Err(stale_block());
-    }
-    let result = get_block_on_connection(&mut transaction, block_id).await?;
+    lock_block(&mut transaction, block_id, timetable_id, row_version).await?;
+    let result =
+        super::deletion::remove_blocks_in_transaction(&mut transaction, &permit, &[block_id])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(stale_block)?;
     permit.commit(transaction).await?;
     Ok(result)
 }
@@ -1405,17 +1386,16 @@ pub async fn deactivate_series(
     pool: &PgPool,
     context: &TimetableMutationContext,
     series_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
 ) -> Result<Vec<TimetableBlock>, AppError> {
     context
         .execute(
             pool,
-            timetable_version_id,
+            timetable_id,
             MutationScope::Series(series_id),
             move |pool, permit| async move {
                 let value =
-                    deactivate_series_in_permit(&pool, permit, series_id, timetable_version_id)
-                        .await?;
+                    deactivate_series_in_permit(&pool, permit, series_id, timetable_id).await?;
                 let blocks = value.clone();
                 Ok((value, blocks))
             },
@@ -1427,44 +1407,31 @@ async fn deactivate_series_in_permit(
     pool: &PgPool,
     permit: Arc<CommitPermit>,
     series_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
 ) -> Result<Vec<TimetableBlock>, AppError> {
-    let actor_id = permit.actor_id;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_block_service.deactivate_series",
     )
     .await?;
-    ensure_draft_version_id(&mut transaction, timetable_version_id).await?;
+    ensure_current_timetable(&mut transaction, timetable_id).await?;
     let block_ids: Vec<Uuid> = DbSession::new(&mut *transaction)
         .scalar(
             "academic_timetable.services.timetable_block_service.deactivate_series",
             r#"SELECT id FROM academic_timetable_blocks
-           WHERE timetable_version_id = $1 AND series_id = $2 AND is_active
+           WHERE timetable_id = $1 AND series_id = $2 AND is_active
            ORDER BY id FOR UPDATE"#,
         )
-        .bind(timetable_version_id)
+        .bind(timetable_id)
         .bind(series_id)
         .fetch_all()
         .await?;
     if block_ids.is_empty() {
         return Err(AppError::NotFound("ไม่พบชุดคาบพิเศษ".to_string()));
     }
-    DbSession::new(&mut *transaction)
-        .query(
-            "academic_timetable.services.timetable_block_service.deactivate_series",
-            r#"UPDATE academic_timetable_blocks
-           SET is_active = false, row_version = row_version + 1,
-               updated_by = $3, updated_at = now()
-           WHERE timetable_version_id = $1 AND series_id = $2 AND is_active"#,
-        )
-        .bind(timetable_version_id)
-        .bind(series_id)
-        .bind(actor_id)
-        .execute()
-        .await?;
     let result =
-        timetable_block_queries::get_blocks_on_connection(&mut transaction, &block_ids).await?;
+        super::deletion::remove_blocks_in_transaction(&mut transaction, &permit, &block_ids)
+            .await?;
     permit.commit(transaction).await?;
     Ok(result)
 }
@@ -1472,12 +1439,12 @@ async fn deactivate_series_in_permit(
 async fn lock_block(
     transaction: &mut Transaction<'_, Postgres>,
     block_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     row_version: i64,
 ) -> Result<LockedBlock, AppError> {
-    ensure_draft_version_id(transaction, timetable_version_id).await?;
-    let block = load_locked_block(transaction, block_id, timetable_version_id).await?;
-    if block.timetable_version_id != timetable_version_id || block.row_version != row_version {
+    ensure_current_timetable(transaction, timetable_id).await?;
+    let block = load_locked_block(transaction, block_id, timetable_id).await?;
+    if block.timetable_id != timetable_id || block.row_version != row_version {
         return Err(stale_block());
     }
     Ok(block)
@@ -1491,11 +1458,11 @@ async fn load_locked_block(
     DbSession::new(&mut **transaction)
         .query_as(
             "academic_timetable.services.timetable_block_service.load_locked_block",
-            r#"SELECT timetable_version_id, academic_term_id, academic_year_id, bell_schedule_id,
+            r#"SELECT timetable_id, academic_term_id, academic_year_id, bell_schedule_id,
                   bell_schedule_period_id, day_of_week, block_kind,
                   scheduling_mode, row_version
            FROM academic_timetable_blocks
-           WHERE id = $1 AND timetable_version_id=$2 AND is_active FOR UPDATE"#,
+           WHERE id = $1 AND timetable_id=$2 AND is_active FOR UPDATE"#,
         )
         .bind(block_id)
         .bind(version_id)
@@ -1504,47 +1471,28 @@ async fn load_locked_block(
         .ok_or_else(stale_block)
 }
 
-async fn ensure_draft_version_id(
+async fn ensure_current_timetable(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
 ) -> Result<(), AppError> {
-    require_current_draft_write(transaction, version_id).await?;
-    let editable: bool = DbSession::new(&mut **transaction)
-        .scalar(
-            "academic_timetable.services.timetable_block_service.ensure_draft_version_id",
-            r#"SELECT version.status = 'draft'
-           FROM academic_timetable_versions version
-           WHERE version.id = $1 FOR UPDATE OF version"#,
-        )
-        .bind(version_id)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอน".to_string()))?;
-    if editable {
-        Ok(())
-    } else {
-        Err(AppError::Conflict(
-            "แก้ไขได้เฉพาะรุ่นตารางสอนแบบร่างในภาคเรียนที่ยังเปิดอยู่".to_string(),
-        ))
-    }
+    require_current_write(transaction, version_id).await
 }
 
 async fn replace_group_instructors(
     transaction: &mut Transaction<'_, Postgres>,
     block_group_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     instructor_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    let (delivery_id,term_id,group_id): (Uuid,Uuid,Uuid)=DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_block_service.replace_group_instructors", "SELECT version.delivery_version_id,version.academic_term_id,placed.learning_group_id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetable_versions version ON version.id=block.timetable_version_id WHERE placed.id=$1 AND version.id=$2")
-        .bind(block_group_id).bind(timetable_version_id).fetch_one().await?;
-    let source = school_academic_delivery::services::versions::published_source(
+    let (year_id,term_id,group_id): (Uuid,Uuid,Uuid)=DbSession::new(&mut **transaction).query_as("academic_timetable.services.timetable_block_service.replace_group_instructors", "SELECT version.academic_year_id,version.academic_term_id,placed.learning_group_id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetables version ON version.id=block.timetable_id WHERE placed.id=$1 AND version.id=$2")
+        .bind(block_group_id).bind(timetable_id).fetch_one().await?;
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         transaction,
-        delivery_id,
+        year_id,
         term_id,
     )
     .await?;
     let group = source
-        .snapshot
         .offerings
         .iter()
         .flat_map(|offering| offering.groups.iter())
@@ -1631,19 +1579,19 @@ async fn increment_block_revision(
     Ok(())
 }
 
-async fn lock_draft_version(
+async fn lock_current_timetable(
     transaction: &mut Transaction<'_, Postgres>,
     version_id: Uuid,
     academic_term_id: Uuid,
     period_id: Uuid,
-) -> Result<VersionContext, AppError> {
-    require_current_draft_write(transaction, version_id).await?;
-    let version: VersionContext = DbSession::new(&mut **transaction)
+) -> Result<TimetableContext, AppError> {
+    require_current_write(transaction, version_id).await?;
+    let version: TimetableContext = DbSession::new(&mut **transaction)
         .query_as(
-            "academic_timetable.services.timetable_block_service.lock_draft_version",
+            "academic_timetable.services.timetable_block_service.lock_current_timetable",
             r#"SELECT version.academic_term_id, version.academic_year_id,
-                  version.bell_schedule_id, version.delivery_version_id, version.status
-           FROM academic_timetable_versions version
+                  version.bell_schedule_id
+           FROM academic_timetables version
            WHERE version.id = $1 AND version.academic_term_id = $2
            FOR UPDATE OF version"#,
         )
@@ -1651,12 +1599,7 @@ async fn lock_draft_version(
         .bind(academic_term_id)
         .fetch_optional()
         .await?
-        .ok_or_else(|| AppError::NotFound("ไม่พบรุ่นตารางสอนในภาคเรียนที่เลือก".to_string()))?;
-    if version.status != "draft" {
-        return Err(AppError::Conflict(
-            "แก้ไขได้เฉพาะรุ่นตารางสอนแบบร่าง".to_string(),
-        ));
-    }
+        .ok_or_else(|| AppError::NotFound("ไม่พบตารางเรียนในภาคเรียนที่เลือก".to_string()))?;
     ensure_period(transaction, version.bell_schedule_id, period_id).await?;
     Ok(version)
 }
@@ -1688,13 +1631,13 @@ async fn ensure_period(
 }
 
 fn source_assignments(
-    group: &school_academic_delivery::models::versions::DeliveryVersionGroup,
+    group: &school_academic_delivery::models::current::DeliveryGroup,
     ids: &[Uuid],
 ) -> Result<Vec<InstructorAssignment>, AppError> {
     let assignments = group
         .teachers
         .iter()
-        .filter(|teacher| ids.contains(&teacher.teacher_id))
+        .filter(|teacher| teacher.is_active && ids.contains(&teacher.teacher_id))
         .map(|teacher| InstructorAssignment {
             teacher_id: teacher.teacher_id,
             role: super::timetable_source::role_text(teacher.role).into(),
@@ -1702,7 +1645,7 @@ fn source_assignments(
         .collect::<Vec<_>>();
     if assignments.len() != ids.len() || ids.is_empty() {
         return Err(AppError::ValidationError(
-            "ครูที่เลือกต้องเป็นครูของกลุ่มตามรุ่นเปิดสอนที่ตารางอ้างอิง".into(),
+            "ครูที่เลือกต้องเป็นครูของกลุ่มตามข้อมูลเปิดสอนปัจจุบัน".into(),
         ));
     }
     Ok(assignments)
@@ -1788,21 +1731,7 @@ async fn replace_block_teacher_targets(
         ));
     }
 
-    DbSession::new(&mut **transaction)
-        .query(
-            "academic_timetable.services.timetable_block_service.replace_block_teacher_targets",
-            r#"UPDATE academic_timetable_block_teachers
-           SET is_active = false, row_version = row_version + 1,
-               updated_by = $3, updated_at = now()
-           WHERE block_id = $1
-             AND is_active
-             AND NOT (teacher_id = ANY($2))"#,
-        )
-        .bind(block_id)
-        .bind(teacher_ids)
-        .bind(actor_id)
-        .execute()
-        .await?;
+    DbSession::new(&mut **transaction).query("academic_timetable.services.timetable_block_service.replace_block_teacher_targets", "DELETE FROM academic_timetable_block_teachers WHERE block_id=$1 AND NOT(teacher_id=ANY($2))").bind(block_id).bind(teacher_ids).execute().await?;
 
     for teacher_id in teacher_ids {
         DbSession::new(&mut **transaction)
@@ -1835,8 +1764,8 @@ async fn replace_block_teacher_targets(
 async fn insert_block(
     transaction: &mut Transaction<'_, Postgres>,
     block_id: Uuid,
-    version: &VersionContext,
-    timetable_version_id: Uuid,
+    version: &TimetableContext,
+    timetable_id: Uuid,
     bell_schedule_period_id: Uuid,
     day_of_week: &str,
     block_kind: &str,
@@ -1860,7 +1789,7 @@ async fn insert_block(
         .query(
             "academic_timetable.services.timetable_block_service.insert_block",
             r#"INSERT INTO academic_timetable_blocks (
-               id, timetable_version_id, academic_term_id, academic_year_id,
+               id, timetable_id, academic_term_id, academic_year_id,
                bell_schedule_id, bell_schedule_period_id, day_of_week,
                block_kind, scheduling_mode, learning_offering_id, structural_kind,
                title, note, series_id, created_by, updated_by
@@ -1870,7 +1799,7 @@ async fn insert_block(
            )"#,
         )
         .bind(block_id)
-        .bind(timetable_version_id)
+        .bind(timetable_id)
         .bind(version.academic_term_id)
         .bind(version.academic_year_id)
         .bind(version.bell_schedule_id)
@@ -1896,13 +1825,10 @@ async fn deactivate_child(
     target_id: Uuid,
     block_id: Uuid,
     row_version: i64,
-    actor_id: Uuid,
+    _actor_id: Uuid,
 ) -> Result<(), AppError> {
-    let query = format!(
-        "UPDATE {table} SET is_active = false, row_version = row_version + 1, \
-         updated_by = $4, updated_at = now() \
-         WHERE id = $1 AND block_id = $2 AND row_version = $3 AND is_active"
-    );
+    let query =
+        format!("DELETE FROM {table} WHERE id=$1 AND block_id=$2 AND row_version=$3 AND is_active");
     let changed = DbSession::new(&mut **transaction)
         .query(
             "academic_timetable.services.timetable_block_service.deactivate_child",
@@ -1911,7 +1837,6 @@ async fn deactivate_child(
         .bind(target_id)
         .bind(block_id)
         .bind(row_version)
-        .bind(actor_id)
         .execute()
         .await?;
     if changed.rows_affected() == 1 {
@@ -1950,7 +1875,7 @@ mod tests {
             &pool,
             &TimetableMutationContext::for_tests(&pool, Uuid::new_v4()),
             CreateStructuralTimetableBlocksRequest {
-                timetable_version_id: Uuid::new_v4(),
+                timetable_id: Uuid::new_v4(),
                 academic_term_id: Uuid::new_v4(),
                 structural_kind: TimetableStructuralKind::Break,
                 title: "Synthetic break".into(),

@@ -2,3 +2,5 @@
 pub mod cli_output;
 pub mod storage_namespace;
 pub mod tenant_rollout;
+
+pub mod current_academic;

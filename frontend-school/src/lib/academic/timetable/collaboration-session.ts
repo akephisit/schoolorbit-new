@@ -1,43 +1,43 @@
 import type {
-	DraftAvailability,
-	DraftClientMessage,
-	DraftCommandResult,
-	DraftContext,
-	DraftEventEnvelope,
-	DraftMutationIdentity,
-	DraftParticipant,
-	DraftReservation,
-	DraftReservationPurpose,
-	DraftTarget,
+	TimetableAvailability,
+	TimetableClientMessage,
+	TimetableCommandResult,
+	TimetableContext,
+	TimetableEventEnvelope,
+	TimetableMutationIdentity,
+	TimetableParticipant,
+	TimetableReservation,
+	TimetableReservationPurpose,
+	TimetableTarget,
 	TimetableBlockPlacementCandidate,
 	TimetableBlockPlacementSource
 } from '../../api/timetable.js';
 
 export interface DraftSessionState {
-	versionId: string | null;
+	timetableId: string | null;
 	connectionId: string | null;
 	epoch: string | null;
 	seq: number;
 	ready: boolean;
-	users: DraftParticipant[];
-	reservations: DraftReservation[];
-	availability: DraftAvailability | null;
+	users: TimetableParticipant[];
+	reservations: TimetableReservation[];
+	availability: TimetableAvailability | null;
 	leaseRevision: number;
 }
 
 /** A local owned interaction. Its proof is never part of a public reservation. */
 export interface OwnedDraftLease {
-	proof: Omit<DraftMutationIdentity, 'mutationId'>;
+	proof: Omit<TimetableMutationIdentity, 'mutationId'>;
 	reservationId: string;
 	source: TimetableBlockPlacementSource;
-	purpose: DraftReservationPurpose;
-	target: DraftTarget | null;
+	purpose: TimetableReservationPurpose;
+	target: TimetableTarget | null;
 	expiresAt: string;
 	valid: boolean;
 }
 
 type CommandMessage = Extract<
-	DraftClientMessage,
+	TimetableClientMessage,
 	{ type: 'ClientClaim' | 'ClientTarget' | 'ClientRenew' | 'ClientRelease' }
 >;
 
@@ -60,9 +60,9 @@ export function sameDraftSource(
 	);
 }
 
-export function sameDraftTarget(
-	left: DraftTarget | null | undefined,
-	right: DraftTarget | null | undefined
+export function sameTimetableTarget(
+	left: TimetableTarget | null | undefined,
+	right: TimetableTarget | null | undefined
 ): boolean {
 	return !left || !right
 		? !left && !right
@@ -72,52 +72,50 @@ export function sameDraftTarget(
 }
 
 export class DraftLeaseError extends Error {
-	readonly code: DraftCommandResult['code'];
-	constructor(code?: DraftCommandResult['code']) {
+	readonly code: TimetableCommandResult['code'];
+	constructor(code?: TimetableCommandResult['code']) {
 		super(
 			code === 'reserved'
 				? 'มีผู้อื่นกำลังใช้คาบหรือช่องเวลานี้ กรุณาเลือกตำแหน่งอื่น'
-				: code === 'delivery_source_outdated'
-					? 'แบบร่างยังไม่ได้ใช้ข้อมูลเปิดสอนล่าสุด'
-					: 'สิทธิ์จัดคาบหมดอายุหรือการเชื่อมต่อเปลี่ยนไป กรุณาลองใหม่'
+				: 'สิทธิ์จัดคาบหมดอายุหรือการเชื่อมต่อเปลี่ยนไป กรุณาลองใหม่'
 		);
 		this.name = 'DraftLeaseError';
 		this.code = code;
 	}
 }
-function leaseError(code?: DraftCommandResult['code']): DraftLeaseError {
+function leaseError(code?: TimetableCommandResult['code']): DraftLeaseError {
 	return new DraftLeaseError(code);
 }
 
 export function createDraftCollaborationSession<Timer>(dependencies: {
-	send(message: DraftClientMessage): boolean;
+	send(message: TimetableClientMessage): boolean;
 	uuid(): string;
 	setTimer(callback: () => void, delay: number): Timer;
 	clearTimer(timer: Timer): void;
 	onState(state: DraftSessionState): void;
-	onEvent(event: DraftEventEnvelope): void;
+	onEvent(event: TimetableEventEnvelope): void;
 	onReconcile(reason: string): void;
 	onLeaseLost(lease: OwnedDraftLease, error: Error): void;
 }) {
 	let state: DraftSessionState = initialState(null);
 	let generation = 0;
 	let replayTimer: Timer | null = null;
-	const buffered = new Map<number, DraftEventEnvelope>();
+	const buffered = new Map<number, TimetableEventEnvelope>();
 	const leases = new Map<string, { lease: OwnedDraftLease; timer: Timer | null }>();
 	const pending = new Map<
 		string,
 		{
 			message: CommandMessage;
-			resolve(result: DraftCommandResult): void;
+			resolve(result: TimetableCommandResult): void;
 			reject(error: Error): void;
 			timer: Timer;
 			dispose(): void;
 		}
 	>();
 
-	function initialState(versionId: string | null): DraftSessionState {
+	function initialState(timetableId: string | null): DraftSessionState {
 		return {
-			versionId,
+			timetableId,
 			connectionId: null,
 			epoch: null,
 			seq: 0,
@@ -143,7 +141,7 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 		lease.valid = false;
 		publish({ leaseRevision: state.leaseRevision + 1 });
 	}
-	function reset(versionId: string | null = null) {
+	function reset(timetableId: string | null = null) {
 		generation++;
 		clearReplay();
 		buffered.clear();
@@ -158,7 +156,7 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 			if (timer !== null) dependencies.clearTimer(timer);
 		}
 		leases.clear();
-		state = initialState(versionId);
+		state = initialState(timetableId);
 		dependencies.onState(state);
 	}
 	function replay() {
@@ -173,14 +171,14 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 			if (current === generation) dependencies.onReconcile('journal_gap');
 		}, 3000);
 	}
-	function emitPatch(event: DraftEventEnvelope) {
+	function emitPatch(event: TimetableEventEnvelope) {
 		publish({ seq: event.seq });
 		dependencies.onEvent(event);
 	}
-	function apply(event: DraftEventEnvelope) {
-		if (!state.versionId) return;
-		if (event.type === 'DraftStateSync') {
-			if (event.payload.workspace.version.id !== state.versionId) return;
+	function apply(event: TimetableEventEnvelope) {
+		if (!state.timetableId) return;
+		if (event.type === 'TimetableStateSync') {
+			if (event.payload.workspace.timetable.id !== state.timetableId) return;
 			if (state.connectionId && event.payload.connectionId !== state.connectionId) return;
 			if (state.ready && event.epoch === state.epoch && event.seq < state.seq) return;
 			clearReplay();
@@ -202,8 +200,8 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 			dependencies.onReconcile('epoch_changed');
 			return;
 		}
-		if (event.type === 'DraftPatched') {
-			if (event.payload.timetableVersionId !== state.versionId || event.seq <= state.seq) return;
+		if (event.type === 'TimetablePatched') {
+			if (event.payload.timetableId !== state.timetableId || event.seq <= state.seq) return;
 			if (event.seq > state.seq + 1) {
 				if (buffered.size >= 128) dependencies.onReconcile('journal_gap');
 				else {
@@ -222,7 +220,7 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 			return;
 		}
 		switch (event.type) {
-			case 'DraftPresenceChanged':
+			case 'TimetablePresenceChanged':
 				publish({
 					users: state.users.some((user) => user.userId === event.payload.userId)
 						? state.users.map((user) =>
@@ -231,7 +229,7 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 						: [...state.users, event.payload]
 				});
 				break;
-			case 'DraftPresenceLeft':
+			case 'TimetablePresenceLeft':
 				publish({
 					users: state.users
 						.map((user) => ({
@@ -243,13 +241,13 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 						.filter((user) => user.connections.length > 0)
 				});
 				break;
-			case 'DraftReservationsChanged':
+			case 'TimetableReservationsChanged':
 				publish({ reservations: event.payload.reservations });
 				break;
-			case 'DraftAvailability':
+			case 'TimetableAvailability':
 				publish({ availability: event.payload });
 				break;
-			case 'DraftCommandResult': {
+			case 'TimetableCommandResult': {
 				const command = pending.get(event.payload.requestId);
 				if (!command) {
 					if (
@@ -288,14 +286,14 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 				command.resolve(event.payload);
 				break;
 			}
-			case 'DraftReconcileRequired':
+			case 'TimetableReconcileRequired':
 				dependencies.onReconcile(event.payload.reason);
 				break;
 		}
-		if (event.seq > state.seq && event.type !== 'DraftReconcileRequired') replay();
+		if (event.seq > state.seq && event.type !== 'TimetableReconcileRequired') replay();
 	}
 
-	function command(message: CommandMessage, signal?: AbortSignal): Promise<DraftCommandResult> {
+	function command(message: CommandMessage, signal?: AbortSignal): Promise<TimetableCommandResult> {
 		if (!state.ready || !state.connectionId || signal?.aborted) return Promise.reject(leaseError());
 		return new Promise((resolve, reject) => {
 			const id = message.payload.requestId;
@@ -352,7 +350,7 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 	async function claim(
 		source: TimetableBlockPlacementSource,
 		candidate: TimetableBlockPlacementCandidate,
-		purpose: DraftReservationPurpose,
+		purpose: TimetableReservationPurpose,
 		signal?: AbortSignal
 	): Promise<OwnedDraftLease> {
 		const current = generation;
@@ -397,7 +395,7 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 	}
 	async function target(
 		lease: OwnedDraftLease,
-		selected: DraftTarget | null,
+		selected: TimetableTarget | null,
 		candidate: TimetableBlockPlacementCandidate,
 		signal?: AbortSignal
 	): Promise<void> {
@@ -421,7 +419,7 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 			result.leaseToken !== lease.proof.leaseToken ||
 			!result.source ||
 			!sameDraftSource(result.source, lease.source) ||
-			!sameDraftTarget(result.target, selected)
+			!sameTimetableTarget(result.target, selected)
 		)
 			throw leaseError(result.code);
 		lease.target = selected;
@@ -437,15 +435,15 @@ export function createDraftCollaborationSession<Timer>(dependencies: {
 		if (!result.accepted && result.code !== 'stale_reservation') throw leaseError(result.code);
 	}
 	function presence(
-		context: DraftContext,
-		anchor: import('../../api/timetable.js').DraftAnchor | null
+		context: TimetableContext,
+		anchor: import('../../api/timetable.js').TimetableAnchor | null
 	) {
 		return (
 			state.ready &&
 			dependencies.send({ type: 'ClientPresenceUpdate', payload: { context, anchor } })
 		);
 	}
-	function mutation(lease: OwnedDraftLease): DraftMutationIdentity {
+	function mutation(lease: OwnedDraftLease): TimetableMutationIdentity {
 		if (!owns(lease)) throw leaseError();
 		return { ...lease.proof, mutationId: dependencies.uuid() };
 	}

@@ -10,13 +10,14 @@ import {
 } from './timetable-test-harness';
 
 test.use({ serviceWorkers: 'block' });
-test.describe.configure({ mode: 'serial' });
+// Each case owns its page, mock registry and collaboration room. A failure must not suppress later persistence checks.
+test.describe.configure({ mode: 'default' });
 
 function timetableUrl(): string {
 	return (
 		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
 		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${timetableIds.draftVersion}` +
+		`&timetableId=${timetableIds.timetable}` +
 		`&view=homeroom&ownerId=${timetableIds.homeroom}`
 	);
 }
@@ -50,7 +51,7 @@ test('places exactly one unscheduled period and projects it into both editable v
 	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
 
 	await expect(page.getByText('3/3', { exact: true })).toBeVisible();
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 	const trayCard = page.locator('aside article').first();
 	await expect(trayCard).toHaveAttribute('draggable', 'true');
 	const firstPeriod = page.locator('td[aria-label^="วันจันทร์ คาบ 1"]').first();
@@ -75,8 +76,8 @@ test('places exactly one unscheduled period and projects it into both editable v
 
 	await expect(page.getByText('2/3', { exact: true })).toBeVisible();
 	expect(mock.previewRequestCount()).toBe(1);
-	expect(mock.createRequestCount()).toBe(1);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	await expect.poll(mock.createRequestCount).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 	expect(mock.blocks()).toHaveLength(1);
 
 	await page.getByRole('button', { name: 'กลุ่มเรียน' }).click();
@@ -103,7 +104,7 @@ test('hovering multiple cells and cancelling never requests validation or saves 
 	await expect(page.getByLabel('บริบทตารางสอน')).not.toContainText('กำลังบันทึก');
 	await trayCard.dispatchEvent('dragend', { dataTransfer });
 	await expect(page.locator('[data-timetable-placement-preview]')).toHaveCount(0);
-	await expect(page.getByLabel('บริบทตารางสอน')).toContainText('บันทึกอัตโนมัติแล้ว');
+	await expect(page.getByLabel('บริบทตารางสอน')).toContainText('บันทึกแล้ว');
 	await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
 	expect(mock.createRequestCount()).toBe(0);
 	expect(mock.synchronizedCreateRequestCount()).toBe(0);
@@ -130,7 +131,14 @@ test('does not mutate when the dropped placement preview fails', async ({ page }
 	await expect(page.locator('[data-sonner-toast][data-type="error"]')).toHaveText(
 		'ตรวจตำแหน่งไม่สำเร็จ'
 	);
-	await expect(page.locator('main [role="alert"]')).toHaveCount(0);
+	await expect(
+		page.getByText(
+			'ยังไม่ได้ส่งรายการนี้ไปบันทึก กรุณาทบทวนกับข้อมูลล่าสุดก่อนลองบันทึกด้วยตนเอง',
+			{ exact: true }
+		)
+	).toBeVisible();
+	await expect(page.getByText(/ยังยืนยันผลการบันทึกไม่ได้ การละทิ้ง/)).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'ทบทวนรายการ', exact: true })).toBeEnabled();
 	await expect(page.locator('[data-timetable-lesson-card]')).toHaveCount(0);
 	await expect(page.getByLabel('บริบทตารางสอน')).not.toContainText('กำลังบันทึก');
 	expect(mock.createRequestCount()).toBe(0);
@@ -315,7 +323,7 @@ test('keeps all room and teacher choices visible and submits all except the unch
 	await expect
 		.poll(() => submitted)
 		.toMatchObject({
-			timetableVersionId: timetableIds.draftVersion,
+			timetableId: timetableIds.timetable,
 			title: 'กิจกรรมทดสอบ',
 			allHomerooms: false,
 			allTeachers: false,
@@ -475,9 +483,9 @@ test('places immediately and keeps other timetable cards editable while saves ru
 		timeout: 300
 	});
 	await expect(page.getByLabel(/^กำลังบันทึกคาบ /)).toHaveCount(0, { timeout: 4000 });
-	expect(mock.createRequestCount()).toBe(1);
+	await expect.poll(mock.createRequestCount).toBe(1);
 	expect(mock.updateRequestCount()).toBe(1);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 });
 
 test('saves edited room in the background while another lesson can still be dragged', async ({
@@ -525,7 +533,7 @@ test('saves edited room in the background while another lesson can still be drag
 	});
 	await expect(page.getByLabel(/^กำลังบันทึกคาบ /)).toHaveCount(0, { timeout: 4000 });
 	expect(mock.updateRequestCount()).toBe(2);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 });
 
 test('restores the previous room when a background detail save fails', async ({ page }) => {
@@ -554,7 +562,7 @@ test('restores the previous room when a background detail save fails', async ({ 
 			.filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
 	).toBeVisible();
 	expect(mock.updateRequestCount()).toBe(1);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 });
 
 test('rolls an optimistic placement back when background validation rejects it', async ({
@@ -624,7 +632,7 @@ test('removes immediately and restores the card when the background delete fails
 			.filter({ hasText: /ข้อมูลคาบเปลี่ยนแปลงแล้ว/ })
 	).toBeVisible();
 	expect(mock.deleteRequestCount()).toBe(1);
-	expect(mock.workspaceRequestCount()).toBe(1);
+	expect(mock.workspaceRequestCount()).toBe(2);
 });
 
 test('keeps timetable row geometry stable while drag feedback is active', async ({ page }) => {
@@ -710,7 +718,7 @@ test('keeps a quick drop alive while its placement preview is still loading', as
 	await firstPeriod.dispatchEvent('drop', { dataTransfer });
 
 	await expect(page.getByText('บันทึกตำแหน่งคาบแล้ว', { exact: true })).toBeVisible();
-	expect(mock.createRequestCount()).toBe(1);
+	await expect.poll(mock.createRequestCount).toBe(1);
 	expect(mock.blocks()).toHaveLength(1);
 });
 
@@ -891,7 +899,7 @@ test('requires an exact teacher choice when a group has several eligible teacher
 	await page.getByRole('button', { name: 'วางคาบที่นี่' }).first().click();
 	await expect(page.getByText('2/3', { exact: true })).toBeVisible();
 
-	expect(mock.createRequestCount()).toBe(1);
+	await expect.poll(mock.createRequestCount).toBe(1);
 	expect(mock.blocks()[0]?.groups[0]?.instructors.map((teacher) => teacher.teacherId)).toEqual([
 		timetableIds.teacherB
 	]);

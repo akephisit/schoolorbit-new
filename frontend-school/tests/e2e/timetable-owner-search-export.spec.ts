@@ -10,8 +10,8 @@ import {
 
 test.use({ serviceWorkers: 'block' });
 
-function url(status: 'draft' | 'published' = 'draft') {
-	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion}&view=homeroom&ownerId=${timetableIds.homeroom}`;
+function url() {
+	return `/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=homeroom&ownerId=${timetableIds.homeroom}`;
 }
 
 for (const width of [1543, 390]) {
@@ -73,8 +73,8 @@ for (const width of [1543, 390]) {
 	}
 }
 
-for (const status of ['draft', 'published'] as const) {
-	test(`downloads correct subject groups and teacher totals from the selected ${status} version`, async ({
+for (const profile of ['manager', 'reader'] as const) {
+	test(`downloads correct subject groups and teacher totals from the current timetable as ${profile}`, async ({
 		page
 	}) => {
 		const math = {
@@ -103,8 +103,8 @@ for (const status of ['draft', 'published'] as const) {
 			[timetableIds.teacherA]
 		);
 		await installTimetableMock(page, {
-			status,
-			requestedWorkspaceVersion: true,
+			permissions: profile === 'reader' ? ['academic_timetable.read.school'] : ['*'],
+
 			blocks: [course, sync, special],
 			staff: [
 				{
@@ -122,7 +122,7 @@ for (const status of ['draft', 'published'] as const) {
 			],
 			offeringSubjectGroups: [{ learningOfferingId: timetableIds.offeringA, subjectGroup: math }]
 		});
-		await page.goto(url(status));
+		await page.goto(url());
 		await page.getByRole('button', { name: 'ครู', exact: true }).click();
 		const downloadPromise = page.waitForEvent('download');
 		await page.getByRole('button', { name: 'สรุปคาบ XLSX', exact: true }).click();
@@ -157,17 +157,17 @@ for (const status of ['draft', 'published'] as const) {
 		expect(courseA[10]).toBe('ห้องคณิตศาสตร์');
 		expect(detailRows.some((row) => row[11] === 'ประชุมครู')).toBe(true);
 		expect(metadata.getCell('B3').value).toBe(
-			status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion
+			timetableIds.timetable
 		);
-		expect(metadata.getCell('B4').value).toBe(status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว');
+		expect(Number.isFinite(Date.parse(String(metadata.getCell('B4').value)))).toBe(true);
+  expect(metadata.getCell('B5').value).toContain('ตารางปัจจุบัน');
 		expect(summary.getRow(1).height).toBeGreaterThanOrEqual(56);
 		expect(summary.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
 	});
 }
 
-test('keeps the requested report version while its lazy module loads', async ({ page }) => {
-	await installTimetableMock(page, {
-		requestedWorkspaceVersion: true,
+test('captures accepted current responsibilities before a newer live patch arrives during lazy report loading', async ({ page }) => {
+	const mock=await installTimetableMock(page, {
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	await page.goto(url());
@@ -188,16 +188,15 @@ test('keeps the requested report version while its lazy module loads', async ({ 
 	const downloadPromise = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'สรุปคาบ XLSX', exact: true }).click();
 	await started;
-	await page.getByRole('combobox', { name: 'เลือกรุ่นตารางสอน', exact: true }).click();
-	await page.getByRole('option', { name: /เผยแพร่/ }).click();
-	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
+ const next=structuredClone(mock.workspace());next.timetable.rowVersion++;next.blocks=[makeTimetableBlock(timetableIds.blockA,timetableIds.period2,{instructorIds:[timetableIds.teacherB],name:'บทเรียนที่แก้หลังเริ่มส่งออก'})];mock.publishWorkspace(next);
+ await expect(page.locator(`[data-block-id="${timetableIds.blockA}"]`)).toContainText('บทเรียนที่แก้หลังเริ่มส่งออก');
+
 	release();
 	const workbook = new ExcelJS.Workbook();
 	await workbook.xlsx.readFile((await (await downloadPromise).path())!);
-	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B3').value).toBe(
-		timetableIds.draftVersion
-	);
-	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B4').value).toBe('แบบร่าง');
+	expect(workbook.getWorksheet('ข้อมูลรายงาน')!.getCell('B3').value).toBe(timetableIds.timetable);
+	const rows=workbook.getWorksheet('สรุปต่อครู')!.getSheetValues().filter(Array.isArray) as ExcelJS.CellValue[][];
+ expect(rows.some(row=>row[2]==='ครูคณิตศาสตร์ A')).toBe(true);expect(rows.some(row=>row[2]==='ครูคณิตศาสตร์ B')).toBe(false);
 });
 
 test('keeps a long teacher name within its fixed-width control and searchable list', async ({

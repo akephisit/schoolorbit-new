@@ -25,7 +25,7 @@ export function collaboratorInitials(name: string): string {
 }
 import type { RelativePoint } from './collaboration-geometry.js';
 import type {
-	DraftAvailability,
+	TimetableAvailability,
 	TimetableBlockPlacementSource,
 	TimetableBlockWorkspaceRoom
 } from '../../api/timetable.js';
@@ -36,7 +36,7 @@ export function timetableEditRoomOptions(
 	rooms: TimetableBlockWorkspaceRoom[],
 	source: TimetableBlockPlacementSource | null,
 	lease: OwnedDraftLease | null,
-	availability: DraftAvailability | null,
+	availability: TimetableAvailability | null,
 	originalRoomId: string | null = null
 ): { ready: boolean; rooms: TimetableBlockWorkspaceRoom[]; retainedRoomId: string | null } {
 	if (

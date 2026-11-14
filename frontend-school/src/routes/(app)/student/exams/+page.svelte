@@ -193,7 +193,7 @@
 	}
 </script>
 
-<PageShell title={data.title} description="ตารางสอบที่ประกาศแล้วสำหรับฉัน">
+<PageShell title={data.title} description="ตารางสอบปัจจุบันสำหรับฉัน">
 	<div class="flex flex-wrap gap-3 rounded-xl border bg-card p-4">
 		<div class="min-w-52 space-y-2">
 			<Label for="student-exam-year">ปีการศึกษา</Label>

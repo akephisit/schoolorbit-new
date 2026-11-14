@@ -1,7 +1,7 @@
 use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
-use chrono::{Datelike, Local, NaiveDate, NaiveTime, Weekday};
+use chrono::{Datelike, NaiveDate, NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 #[cfg(feature = "api-docs")]
@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use school_academic_delivery::models::ActivitySchedulingMode;
 
-use super::timetable_version_service;
+use super::timetable_service;
 use school_errors::AppError;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -163,21 +163,20 @@ pub async fn get_daily_teaching_overview_on_connection(
     connection: &mut sqlx::PgConnection,
     query: DailyTeachingQuery,
 ) -> Result<DailyTeachingOverview, AppError> {
-    let date = query.date.unwrap_or_else(|| Local::now().date_naive());
+    let date = query
+        .date
+        .unwrap_or_else(super::timetable_service::bangkok_today);
     let day = day_code_from_date(date).to_string();
-    let version = timetable_version_service::resolve_for_date_on_connection(
+    let version = timetable_service::get_for_term_on_connection(connection, query.academic_term_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("ไม่พบตารางเรียนในภาคเรียนที่เลือก".into()))?;
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         connection,
-        query.academic_term_id,
-        date,
-    )
-    .await?;
-    let source = school_academic_delivery::services::versions::get_version_on_connection(
-        connection,
-        version.delivery_version_id,
+        version.academic_year_id,
+        version.academic_term_id,
     )
     .await?;
     let eligible_ids = source
-        .snapshot
         .offerings
         .iter()
         .flat_map(|offering| offering.groups.iter())
@@ -216,7 +215,7 @@ pub async fn get_daily_teaching_overview_on_connection(
                  WHERE (instructor.instructor_id = user_account.id
                     OR block_teacher.teacher_id = user_account.id)
                    AND block.academic_term_id = $1
-                   AND block.timetable_version_id = $2
+                   AND block.timetable_id = $2
                    AND block.is_active
              )
              OR ($3 AND user_account.status='active' AND user_account.id=ANY($4)))
@@ -320,7 +319,7 @@ pub async fn get_daily_teaching_overview_on_connection(
              ON activity_version.id = activity_detail.activity_version_id
            LEFT JOIN rooms room ON room.id = allocation.room_id
            WHERE block.academic_term_id = $1
-             AND block.timetable_version_id = $3
+             AND block.timetable_id = $3
              AND block.day_of_week = $2
              AND block.is_active
            ORDER BY allocation.teacher_id, period.order_index, allocation.allocation_id"#,
@@ -332,13 +331,10 @@ pub async fn get_daily_teaching_overview_on_connection(
     .await?;
 
     for entry in &mut entries {
-        if let Some(offering) = entry.offering_id.and_then(|id| {
-            source
-                .snapshot
-                .offerings
-                .iter()
-                .find(|offering| offering.id == id)
-        }) {
+        if let Some(offering) = entry
+            .offering_id
+            .and_then(|id| source.offerings.iter().find(|offering| offering.id == id))
+        {
             entry.offering_code = Some(offering.code.clone());
             entry.offering_name = Some(offering.name.clone());
             if let Some(group) = entry

@@ -3,7 +3,7 @@ import type {
 	HomeroomDeliveryWorkspace,
 	HomeroomDeliveryRoom,
 	CurriculumDeliveryAlignmentState,
-	DeliveryVersion
+	DeliveryWorkspace
 } from '#lib/api/learning-delivery.js';
 
 export type HomeroomReadinessFilter = 'all' | 'ready' | 'attention';
@@ -89,12 +89,6 @@ const statusDefinitions: Record<DeliveryReviewStatusKey, StatusDefinition> = {
 		tone: 'info',
 		review: true
 	},
-	ended_early: {
-		label: 'หยุดสอนก่อนรุ่นเปิดสอนนี้มีผล',
-		unit: 'รายการ',
-		tone: 'warning',
-		review: true
-	},
 	closed_offering: { label: 'รายการเปิดสอนปิดแล้ว', unit: 'รายการ', tone: 'warning', review: true },
 	missing_period_target: {
 		label: 'ยังไม่กำหนดคาบที่จัดจริง',
@@ -177,7 +171,6 @@ function itemStatusEvidence(item: HomeroomDeliveryItem, evidence: StatusEvidence
 		return;
 	}
 	if (!item.alignmentStates.length) addStatus(evidence, 'comparison_unknown', id);
-	if (item.offeringState === 'closed') addStatus(evidence, 'closed_offering', id);
 	if (item.weeklyPeriodTarget === null) addStatus(evidence, 'missing_period_target', id);
 	if (item.weeklyPeriodTarget === 0) addStatus(evidence, 'zero_weekly_periods', id);
 	if (item.groupMode === 'missing') addStatus(evidence, 'groups_missing', id);
@@ -240,7 +233,7 @@ export function deliveryRoomStatus(room: DeliveryRoomShape) {
 
 /** Only the selected version's real groups prove group/teacher facts; they do not prove target-room coverage. */
 export function deliveryOfferingStatuses(
-	offering: DeliveryVersion['snapshot']['offerings'][number],
+	offering: DeliveryWorkspace['offerings'][number],
 	workspace: HomeroomDeliveryWorkspace | null = null
 ): DeliveryReviewStatus[] {
 	const evidence: StatusEvidence = new Map();
@@ -332,7 +325,6 @@ export const deliveryAlignmentLabels: Record<CurriculumDeliveryAlignmentState, s
 	matches_curriculum: statusDefinitions.matches_curriculum.label,
 	curriculum_requirement_not_offered: statusDefinitions.curriculum_requirement_not_offered.label,
 	extra_offering: statusDefinitions.extra_offering.label,
-	ended_early: statusDefinitions.ended_early.label,
 	operational_periods_differ: statusDefinitions.operational_periods_differ.label
 };
 

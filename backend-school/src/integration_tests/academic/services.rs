@@ -4,9 +4,7 @@ mod assessment_service_tests;
 pub use school_academic_assessment::exam_schedule::services as exam_schedule_service;
 
 #[cfg(test)]
-pub use school_academic_timetable::services::{
-    timetable_block_service, timetable_template_service, timetable_version_service,
-};
+pub use school_academic_timetable::services::{timetable_block_service, timetable_service};
 
 #[cfg(test)]
 mod exam_schedule_service_tests;

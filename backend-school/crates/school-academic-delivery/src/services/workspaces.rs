@@ -19,8 +19,7 @@ use super::super::models::{
     HomeroomDeliveryGroupSummary, HomeroomDeliveryItem, HomeroomDeliveryRoom,
     HomeroomDeliveryWorkspace, HomeroomGroupMode, HomeroomOfferingState, HomeroomTeacherState,
     LearningDeliveryOverview, LearningOfferingKind, LearningOfferingOverviewItem,
-    LearningOfferingQuery, LearningOfferingStatus, Room, RosterStatus, StaffLookupItem,
-    UnlinkedDeliveryItem,
+    LearningOfferingQuery, Room, StaffLookupItem, UnlinkedDeliveryItem,
 };
 use super::{groups, offerings};
 
@@ -59,15 +58,11 @@ struct OfferingAggregateRow {
     group_count: i64,
     teacher_assignment_count: i64,
     groups_without_primary_teacher: i64,
-    published_roster_count: i64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
 struct OverviewGroupRow {
-    id: Uuid,
     learning_offering_id: Uuid,
-    status: LearningOfferingStatus,
-    roster_status: RosterStatus,
     registry_teacher_count: i64,
     registry_has_primary: bool,
 }
@@ -122,12 +117,9 @@ struct OfferingTargetRow {
     offering_id: Uuid,
     resource_kind: LearningOfferingKind,
     catalog_version_id: Uuid,
-    status: LearningOfferingStatus,
     code: String,
     name: String,
     weekly_period_target: Option<i32>,
-    starts_on: Option<chrono::NaiveDate>,
-    ends_on: Option<chrono::NaiveDate>,
     target_kind: String,
     homeroom_id: Option<Uuid>,
     grade_level_id: Uuid,
@@ -140,27 +132,16 @@ struct DeliveryGroupRow {
     learning_offering_id: Uuid,
     code: String,
     name: String,
-    status: LearningOfferingStatus,
-    roster_status: RosterStatus,
     homeroom_ids: Vec<Uuid>,
     homeroom_names: Vec<String>,
     primary_teacher_count: i64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
-struct WorkspaceDeliveryVersionRow {
-    id: Uuid,
-    status: super::super::models::versions::DeliveryVersionStatus,
-    effective_from: chrono::NaiveDate,
-}
-
-#[derive(Debug, sqlx::FromRow)]
 struct WorkspaceContextRow {
     term_type: String,
     type_occurrence: i64,
-    delivery_version_id: Option<Uuid>,
-    delivery_version_status: Option<super::super::models::versions::DeliveryVersionStatus>,
-    delivery_version_effective_from: Option<chrono::NaiveDate>,
+    row_version: i64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -201,40 +182,36 @@ where
     futures::try_join!(expected_rows, offering_rows, group_rows)
 }
 
-pub async fn homeroom_delivery_workspace_for_version(
+pub async fn homeroom_delivery_workspace(
     pool: &PgPool,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
-    requested_delivery_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
 ) -> Result<HomeroomDeliveryWorkspace, AppError> {
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
-        "academic_delivery.services.workspaces.homeroom_delivery_workspace_for_version",
+        "academic_delivery.services.workspaces.homeroom_delivery_workspace",
     )
     .await?;
-    homeroom_delivery_workspace_for_version_on_connection(
+    homeroom_delivery_workspace_on_connection(
         &mut connection,
         academic_year_id,
         academic_term_id,
-        requested_delivery_version_id,
         filter,
     )
     .await
 }
 
-pub async fn homeroom_delivery_workspace_for_version_on_connection(
+pub async fn homeroom_delivery_workspace_on_connection(
     connection: &mut sqlx::PgConnection,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
-    requested_delivery_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
 ) -> Result<HomeroomDeliveryWorkspace, AppError> {
     Ok(homeroom_delivery_workspace_with_timing_on_connection(
         connection,
         academic_year_id,
         academic_term_id,
-        requested_delivery_version_id,
         filter,
     )
     .await?
@@ -245,7 +222,6 @@ pub async fn homeroom_delivery_workspace_with_timing(
     pool: &PgPool,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
-    requested_delivery_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
 ) -> Result<(HomeroomDeliveryWorkspace, HomeroomDeliveryTiming), AppError> {
     let started = Instant::now();
@@ -257,13 +233,7 @@ pub async fn homeroom_delivery_workspace_with_timing(
                 "academic_delivery.workspaces.context",
             )
             .await?;
-            load_workspace_context(
-                &mut connection,
-                academic_year_id,
-                academic_term_id,
-                requested_delivery_version_id,
-            )
-            .await
+            load_workspace_context(&mut connection, academic_year_id, academic_term_id).await
         },
         async {
             let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -285,7 +255,6 @@ pub async fn homeroom_delivery_workspace_with_timing(
         &mut connection,
         academic_year_id,
         academic_term_id,
-        requested_delivery_version_id,
         filter,
         context,
         homerooms,
@@ -298,23 +267,15 @@ pub async fn homeroom_delivery_workspace_with_timing_on_connection(
     connection: &mut sqlx::PgConnection,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
-    requested_delivery_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
 ) -> Result<(HomeroomDeliveryWorkspace, HomeroomDeliveryTiming), AppError> {
     let started = Instant::now();
-    let context = load_workspace_context(
-        connection,
-        academic_year_id,
-        academic_term_id,
-        requested_delivery_version_id,
-    )
-    .await?;
+    let context = load_workspace_context(connection, academic_year_id, academic_term_id).await?;
     let homerooms = load_workspace_homeroom_rows(connection, academic_year_id).await?;
     finish_homeroom_delivery_workspace(
         connection,
         academic_year_id,
         academic_term_id,
-        requested_delivery_version_id,
         filter,
         context,
         homerooms,
@@ -327,49 +288,8 @@ async fn load_workspace_context(
     connection: &mut sqlx::PgConnection,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
-    requested_delivery_version_id: Option<Uuid>,
 ) -> Result<Option<WorkspaceContextRow>, sqlx::Error> {
-    DbSession::new(connection).query_as("academic_delivery.services.workspaces.homeroom_delivery_workspace_with_timing_on_connection",
-        r#"WITH selected_term AS (
-               SELECT selected.id,
-                      selected.academic_year_id,
-                      selected.term_type,
-                      count(sibling.id)::bigint AS type_occurrence,
-                      selected.status AS term_status
-               FROM academic_terms selected
-               JOIN academic_terms sibling
-                 ON sibling.academic_year_id = selected.academic_year_id
-                AND sibling.term_type = selected.term_type
-                AND sibling.sequence_no <= selected.sequence_no
-               WHERE selected.id = $1
-                 AND selected.academic_year_id = $2
-               GROUP BY selected.id, selected.academic_year_id,
-                        selected.term_type, selected.status
-           )
-           SELECT term.term_type,
-                  term.type_occurrence,
-                  version.id AS delivery_version_id,
-                  version.status AS delivery_version_status,
-                  COALESCE(version.effective_from,version.reference_date) AS delivery_version_effective_from
-           FROM selected_term term
-           LEFT JOIN LATERAL (
-               SELECT candidate.id, candidate.status, candidate.effective_from,candidate.reference_date
-               FROM academic_delivery_versions candidate
-               WHERE candidate.academic_term_id = term.id
-                 AND candidate.academic_year_id = term.academic_year_id
-                 AND (
-                     ($3::uuid IS NOT NULL AND candidate.id = $3)
-                     OR ($3::uuid IS NULL AND candidate.status IN ('draft', 'published'))
-                 )
-               ORDER BY CASE WHEN candidate.status='draft' THEN 0 ELSE 1 END,
-                   candidate.publication_no DESC NULLS FIRST,candidate.created_at DESC,candidate.id
-               LIMIT 1
-           ) version ON TRUE"#,
-    )
-    .bind(academic_term_id)
-    .bind(academic_year_id)
-    .bind(requested_delivery_version_id)
-    .fetch_optional().await
+    DbSession::new(connection).query_as("academic_delivery.workspaces.context", "SELECT term.term_type,(SELECT count(*) FROM academic_terms sibling WHERE sibling.academic_year_id=term.academic_year_id AND sibling.term_type=term.term_type AND sibling.sequence_no<=term.sequence_no) AS type_occurrence,COALESCE(state.row_version,1) AS row_version FROM academic_terms term LEFT JOIN academic_delivery_state state ON state.academic_term_id=term.id WHERE term.id=$1 AND term.academic_year_id=$2").bind(academic_term_id).bind(academic_year_id).fetch_optional().await
 }
 
 async fn load_workspace_homeroom_rows(
@@ -487,7 +407,6 @@ async fn finish_homeroom_delivery_workspace(
     connection: &mut sqlx::PgConnection,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
-    requested_delivery_version_id: Option<Uuid>,
     filter: &AcademicResourceListFilter,
     context: Option<WorkspaceContextRow>,
     homeroom_rows: Vec<HomeroomDeliveryBaseRow>,
@@ -495,31 +414,9 @@ async fn finish_homeroom_delivery_workspace(
 ) -> Result<(HomeroomDeliveryWorkspace, HomeroomDeliveryTiming), AppError> {
     let context =
         context.ok_or_else(|| AppError::NotFound("ไม่พบภาคเรียนในปีการศึกษาที่เลือก".to_string()))?;
-    if requested_delivery_version_id.is_some() && context.delivery_version_id.is_none() {
-        return Err(AppError::ValidationError(
-            "รุ่นเปิดสอนที่เลือกไม่ได้อยู่ในปีการศึกษาและภาคเรียนนี้".to_string(),
-        ));
-    }
-    let delivery_version = match context.delivery_version_id {
-        Some(id) => Some(WorkspaceDeliveryVersionRow {
-            id,
-            status: context
-                .delivery_version_status
-                .ok_or_else(|| AppError::InternalServerError("สถานะรุ่นเปิดสอนไม่สมบูรณ์".to_string()))?,
-            effective_from: context.delivery_version_effective_from.ok_or_else(|| {
-                AppError::InternalServerError("วันที่มีผลของรุ่นเปิดสอนไม่สมบูรณ์".to_string())
-            })?,
-        }),
-        None => None,
-    };
     let term_type = context.term_type;
     let type_occurrence = context.type_occurrence;
-    let delivery_version_id = delivery_version.as_ref().map(|version| version.id);
-    let delivery_version_effective_from = delivery_version.as_ref().and_then(|version| {
-        (version.status == crate::models::versions::DeliveryVersionStatus::Published)
-            .then_some(version.effective_from)
-    });
-
+    let row_version = context.row_version;
     ensure_option_size(
         homeroom_rows.len(),
         MAX_WORKSPACE_HOMEROOMS,
@@ -532,46 +429,21 @@ async fn finish_homeroom_delivery_workspace(
 
     let resources_started_at = Instant::now();
 
-    let source = match delivery_version_id {
-        Some(id) => {
-            Some(super::versions::visible_version_on_connection(connection, id, filter).await?)
-        }
-        None => None,
-    };
-    let source_group_ids = source
-        .as_ref()
-        .map(|source| {
-            source
-                .snapshot
-                .offerings
-                .iter()
-                .flat_map(|offering| offering.groups.iter().map(|group| group.id))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let roster_statuses =
-        super::versions::roster_statuses_on_connection(connection, &source_group_ids).await?;
-    let source_status = source.as_ref().map(|source| match source.status {
-        super::super::models::versions::DeliveryVersionStatus::Draft => {
-            LearningOfferingStatus::Draft
-        }
-        super::super::models::versions::DeliveryVersionStatus::Published => {
-            LearningOfferingStatus::Published
-        }
-        super::super::models::versions::DeliveryVersionStatus::Cancelled => {
-            LearningOfferingStatus::Cancelled
-        }
-    });
+    let source = super::current::visible_workspace_on_connection(
+        connection,
+        academic_year_id,
+        academic_term_id,
+        filter,
+    )
+    .await?;
     let mut source_offerings = Vec::new();
     let mut source_groups = Vec::new();
     let homeroom_names = homeroom_rows
         .iter()
         .map(|room| (room.homeroom_id, room.homeroom_name.clone()))
         .collect::<HashMap<_, _>>();
-    if let Some(source) = &source {
-        let status = source_status
-            .ok_or_else(|| AppError::InternalServerError("สถานะรุ่นเปิดสอนไม่ครบ".into()))?;
-        for offering in &source.snapshot.offerings {
+    {
+        for offering in &source.offerings {
             let catalog_version_id = match &offering.catalog {
                 super::super::models::LearningOfferingSnapshot::Course(course) => {
                     course.subject_version_id
@@ -585,12 +457,9 @@ async fn finish_homeroom_delivery_workspace(
                     offering_id: offering.id,
                     resource_kind: offering.kind,
                     catalog_version_id,
-                    status,
                     code: offering.code.clone(),
                     name: offering.name.clone(),
                     weekly_period_target: Some(offering.weekly_period_target),
-                    starts_on: source.effective_from,
-                    ends_on: source.effective_until,
                     target_kind: match target.target_kind {
                         super::super::models::OfferingTargetKind::Homeroom => "homeroom",
                         super::super::models::OfferingTargetKind::GradeProgram => "grade_program",
@@ -607,10 +476,6 @@ async fn finish_homeroom_delivery_workspace(
                     learning_offering_id: offering.id,
                     code: group.code.clone(),
                     name: group.name.clone(),
-                    status,
-                    roster_status: *roster_statuses
-                        .get(&group.id)
-                        .ok_or_else(|| AppError::Conflict("ไม่พบทะเบียนกลุ่มเรียนของรุ่นเปิดสอน".into()))?,
                     homeroom_ids: group.homeroom_ids.clone(),
                     homeroom_names: group
                         .homeroom_ids
@@ -622,6 +487,7 @@ async fn finish_homeroom_delivery_workspace(
                         .iter()
                         .filter(|teacher| {
                             teacher.role == super::super::models::LearningTeacherRole::Primary
+                                && teacher.is_active
                         })
                         .count() as i64,
                 });
@@ -713,17 +579,17 @@ async fn finish_homeroom_delivery_workspace(
             .map(|expected| (expected.resource_kind, expected.catalog_version_id))
             .collect::<HashSet<_>>();
         for expected in expected_rows_for_room {
-            let applicable_offering = offerings_by_resource
+            let applicable_offering = match offerings_by_resource
                 .get(&(expected.resource_kind, expected.catalog_version_id))
-                .and_then(|candidates| {
-                    select_applicable_offering(
-                        candidates,
-                        homeroom.id,
-                        grade_level.id,
-                        study_program.id,
-                        delivery_version_effective_from,
-                    )
-                });
+            {
+                Some(candidates) => select_applicable_offering(
+                    candidates,
+                    homeroom.id,
+                    grade_level.id,
+                    study_program.id,
+                )?,
+                None => None,
+            };
             let offering_id = applicable_offering.map(|offering| offering.offering_id);
             if let Some(id) = offering_id {
                 matched_offering_ids.insert(id);
@@ -757,7 +623,7 @@ async fn finish_homeroom_delivery_workspace(
                 scheduling_mode: expected.scheduling_mode,
                 offering_id,
                 offering_state: applicable_offering
-                    .map(|offering| offering_state(offering.status))
+                    .map(|_| HomeroomOfferingState::Present)
                     .unwrap_or(HomeroomOfferingState::Missing),
                 group_mode: classify_opening_group_mode(
                     offering_id.is_some(),
@@ -773,7 +639,6 @@ async fn finish_homeroom_delivery_workspace(
                 alignment_states: classify_expected_alignment(
                     applicable_offering,
                     expected.standard_periods_per_week,
-                    delivery_version_effective_from,
                 ),
                 groups: applicable_groups
                     .into_iter()
@@ -786,7 +651,6 @@ async fn finish_homeroom_delivery_workspace(
         for offering in &offering_rows {
             if expected_resources.contains(&(offering.resource_kind, offering.catalog_version_id))
                 || !target_applies_to_room(offering, homeroom.id, grade_level.id, study_program.id)
-                || !offering_has_started(offering, delivery_version_effective_from)
                 || !extra_offering_ids.insert(offering.offering_id)
             {
                 continue;
@@ -798,12 +662,7 @@ async fn finish_homeroom_delivery_workspace(
                 code: offering.code.clone(),
                 name: offering.name.clone(),
                 weekly_period_target: offering.weekly_period_target,
-                starts_on: offering.starts_on,
-                ends_on: offering.ends_on,
-                alignment_states: classify_extra_alignment(
-                    offering,
-                    delivery_version_effective_from,
-                ),
+                alignment_states: classify_extra_alignment(offering),
             });
         }
         extra_offerings.sort_by(|left, right| {
@@ -880,9 +739,7 @@ async fn finish_homeroom_delivery_workspace(
     let workspace = HomeroomDeliveryWorkspace {
         academic_term_id,
         academic_year_id,
-        delivery_version_id,
-        delivery_version_status: delivery_version.map(|version| version.status),
-        delivery_version_effective_from,
+        row_version,
         homerooms: rooms,
         unlinked,
     };
@@ -909,85 +766,50 @@ fn target_applies_to_room(
             && offering.study_program_id == study_program_id)
 }
 
-fn offering_has_started(
-    offering: &OfferingTargetRow,
-    effective_from: Option<chrono::NaiveDate>,
-) -> bool {
-    effective_from.is_none_or(|date| offering.starts_on.is_none_or(|start| start <= date))
-}
-
-fn offering_ended_before(
-    offering: &OfferingTargetRow,
-    effective_from: Option<chrono::NaiveDate>,
-) -> bool {
-    effective_from.is_some_and(|date| offering.ends_on.is_some_and(|end| end < date))
-}
-
 fn select_applicable_offering<'a>(
     candidates: &'a [&'a OfferingTargetRow],
     homeroom_id: Uuid,
     grade_level_id: Uuid,
     study_program_id: Uuid,
-    effective_from: Option<chrono::NaiveDate>,
-) -> Option<&'a OfferingTargetRow> {
-    candidates
+) -> Result<Option<&'a OfferingTargetRow>, AppError> {
+    let matching = candidates
         .iter()
         .copied()
         .filter(|offering| {
             target_applies_to_room(offering, homeroom_id, grade_level_id, study_program_id)
-                && offering_has_started(offering, effective_from)
         })
-        .max_by_key(|offering| {
-            (
-                !offering_ended_before(offering, effective_from),
-                offering.starts_on,
-                offering.offering_id,
-            )
-        })
+        .collect::<Vec<_>>();
+    let distinct = matching
+        .iter()
+        .map(|offering| offering.offering_id)
+        .collect::<HashSet<_>>();
+    if distinct.len() > 1 {
+        return Err(AppError::Conflict(
+            "พบรายการเปิดสอนปัจจุบันซ้ำในห้องเดียวกัน กรุณาตรวจสอบรายการเปิดสอน".into(),
+        ));
+    }
+    Ok(matching.first().copied())
 }
 
 fn classify_expected_alignment(
     offering: Option<&OfferingTargetRow>,
     standard_periods_per_week: Option<i32>,
-    effective_from: Option<chrono::NaiveDate>,
 ) -> Vec<CurriculumDeliveryAlignmentState> {
-    let Some(offering) = offering else {
-        return vec![CurriculumDeliveryAlignmentState::CurriculumRequirementNotOffered];
-    };
-    let mut states = Vec::new();
-    if offering_ended_before(offering, effective_from) {
-        states.push(CurriculumDeliveryAlignmentState::EndedEarly);
+    match offering {
+        None => vec![CurriculumDeliveryAlignmentState::CurriculumRequirementNotOffered],
+        Some(offering)
+            if standard_periods_per_week.is_some()
+                && standard_periods_per_week != offering.weekly_period_target =>
+        {
+            vec![CurriculumDeliveryAlignmentState::OperationalPeriodsDiffer]
+        }
+        Some(_) => vec![CurriculumDeliveryAlignmentState::MatchesCurriculum],
     }
-    if standard_periods_per_week.is_some()
-        && offering.weekly_period_target.is_some()
-        && standard_periods_per_week != offering.weekly_period_target
-    {
-        states.push(CurriculumDeliveryAlignmentState::OperationalPeriodsDiffer);
-    }
-    if states.is_empty() {
-        states.push(CurriculumDeliveryAlignmentState::MatchesCurriculum);
-    }
-    states
 }
-
 fn classify_extra_alignment(
-    offering: &OfferingTargetRow,
-    effective_from: Option<chrono::NaiveDate>,
+    _offering: &OfferingTargetRow,
 ) -> Vec<CurriculumDeliveryAlignmentState> {
-    let mut states = vec![CurriculumDeliveryAlignmentState::ExtraOffering];
-    if offering_ended_before(offering, effective_from) {
-        states.push(CurriculumDeliveryAlignmentState::EndedEarly);
-    }
-    states
-}
-
-fn offering_state(status: LearningOfferingStatus) -> HomeroomOfferingState {
-    match status {
-        LearningOfferingStatus::Draft => HomeroomOfferingState::Draft,
-        LearningOfferingStatus::Published => HomeroomOfferingState::Published,
-        LearningOfferingStatus::Cancelled => HomeroomOfferingState::Closed,
-        LearningOfferingStatus::Closed => HomeroomOfferingState::Closed,
-    }
+    vec![CurriculumDeliveryAlignmentState::ExtraOffering]
 }
 
 fn classify_opening_group_mode(
@@ -1049,9 +871,7 @@ fn delivery_group_summary(group: &DeliveryGroupRow) -> HomeroomDeliveryGroupSumm
         id: group.id,
         code: group.code.clone(),
         name: group.name.clone(),
-        status: group.status,
-        teachers_locked: group.status != LearningOfferingStatus::Draft,
-        roster_status: group.roster_status,
+
         homeroom_ids: group.homeroom_ids.clone(),
         homeroom_names: group.homeroom_names.clone(),
         primary_teacher_count: group.primary_teacher_count,
@@ -1168,13 +988,12 @@ pub async fn delivery_overview_on_connection(
         .query_as(
             "academic_delivery.services.workspaces.delivery_overview_on_connection",
             r#"
-        SELECT g.id,g.learning_offering_id,g.status,g.roster_status,
+        SELECT g.id,g.learning_offering_id,
                count(assignment.id)::bigint AS registry_teacher_count,
                coalesce(bool_or(assignment.role='primary' AND account.user_type='staff'
                    AND account.status='active'),false) AS registry_has_primary
         FROM learning_groups g
         LEFT JOIN learning_group_teachers assignment ON assignment.learning_group_id=g.id
-            AND g.status<>'published'
         LEFT JOIN users account ON account.id=assignment.teacher_id
         WHERE g.learning_offering_id=ANY($1)
         GROUP BY g.id ORDER BY g.id LIMIT 2001
@@ -1188,26 +1007,6 @@ pub async fn delivery_overview_on_connection(
             "จำนวนกลุ่มเรียนในพื้นที่ทำงานเกิน 2000 กลุ่ม กรุณาแบ่งข้อมูลก่อนเปิดพื้นที่ทำงาน".to_string(),
         ));
     }
-    let published_groups = group_rows
-        .iter()
-        .filter(|group| group.status == LearningOfferingStatus::Published)
-        .map(|group| group.id)
-        .collect::<Vec<_>>();
-    let year = offerings
-        .first()
-        .ok_or_else(|| AppError::InternalServerError("ไม่พบปีของรายการเปิดสอน".into()))?
-        .academic_year_id;
-    let published = super::versions::group_teacher_assignments_on_connection(
-        connection,
-        year,
-        academic_term_id,
-        &published_groups,
-    )
-    .await?
-    .groups
-    .into_iter()
-    .map(|group| (group.learning_group_id, group))
-    .collect::<HashMap<_, _>>();
     let mut aggregates_by_id: HashMap<Uuid, OfferingAggregateRow> = offering_ids
         .iter()
         .map(|id| {
@@ -1217,7 +1016,6 @@ pub async fn delivery_overview_on_connection(
                     group_count: 0,
                     teacher_assignment_count: 0,
                     groups_without_primary_teacher: 0,
-                    published_roster_count: 0,
                 },
             )
         })
@@ -1226,30 +1024,11 @@ pub async fn delivery_overview_on_connection(
         let aggregate = aggregates_by_id
             .get_mut(&group.learning_offering_id)
             .ok_or_else(|| AppError::InternalServerError("ไม่พบรายการเปิดสอนของกลุ่ม".into()))?;
-        let (teacher_count, has_primary) = match group.status {
-            LearningOfferingStatus::Published => published
-                .get(&group.id)
-                .map(|source| {
-                    (
-                        source.teacher_ids.len() as i64,
-                        !source.primary_teacher_ids.is_empty(),
-                    )
-                })
-                .unwrap_or((0, false)),
-            LearningOfferingStatus::Draft => {
-                (group.registry_teacher_count, group.registry_has_primary)
-            }
-            // Closed/cancelled registry rows remain archival facts, not a fallback
-            // for a published group's current planning membership.
-            LearningOfferingStatus::Closed | LearningOfferingStatus::Cancelled => {
-                (group.registry_teacher_count, group.registry_has_primary)
-            }
-        };
+        let (teacher_count, has_primary) =
+            (group.registry_teacher_count, group.registry_has_primary);
         aggregate.group_count += 1;
         aggregate.teacher_assignment_count += teacher_count;
         aggregate.groups_without_primary_teacher += i64::from(!has_primary);
-        aggregate.published_roster_count +=
-            i64::from(group.roster_status == RosterStatus::Published);
     }
 
     let mut overview_items = Vec::with_capacity(offerings.len());
@@ -1297,7 +1076,6 @@ pub async fn delivery_overview_on_connection(
             group_count: aggregate.group_count,
             teacher_assignment_count: aggregate.teacher_assignment_count,
             groups_without_primary_teacher: aggregate.groups_without_primary_teacher,
-            published_roster_count: aggregate.published_roster_count,
         });
     }
 
@@ -1637,7 +1415,7 @@ mod tests {
         };
         let (workspace, _) = timeout(
             Duration::from_secs(5),
-            homeroom_delivery_workspace_with_timing(&pool, year, term, None, &filter),
+            homeroom_delivery_workspace_with_timing(&pool, year, term, &filter),
         )
         .await
         .expect("parallel branches must release their checkout before the dependent phase")
@@ -1654,7 +1432,6 @@ mod tests {
                 &mut connection,
                 year,
                 term,
-                None,
                 &filter,
             ),
         )
@@ -1775,68 +1552,53 @@ mod tests {
         );
     }
 
-    fn alignment_offering(
-        weekly_period_target: Option<i32>,
-        starts_on: Option<chrono::NaiveDate>,
-        ends_on: Option<chrono::NaiveDate>,
-    ) -> OfferingTargetRow {
+    fn alignment_offering(weekly_period_target: Option<i32>) -> OfferingTargetRow {
         OfferingTargetRow {
             offering_id: Uuid::new_v4(),
             resource_kind: LearningOfferingKind::Course,
             catalog_version_id: Uuid::new_v4(),
-            status: LearningOfferingStatus::Published,
-            code: "TEST101".to_string(),
-            name: "รายวิชาทดสอบ".to_string(),
+            code: "TEST101".into(),
+            name: "Test".into(),
             weekly_period_target,
-            starts_on,
-            ends_on,
-            target_kind: "homeroom".to_string(),
+            target_kind: "homeroom".into(),
             homeroom_id: Some(Uuid::new_v4()),
             grade_level_id: Uuid::new_v4(),
             study_program_id: Uuid::new_v4(),
         }
     }
-
     #[test]
-    fn alignment_states_distinguish_missing_matching_ended_period_difference_and_extra() {
-        let effective_from = chrono::NaiveDate::from_ymd_opt(2026, 8, 15).unwrap();
+    fn current_alignment_preserves_missing_matching_target_difference_and_extra() {
         assert_eq!(
-            classify_expected_alignment(None, Some(2), Some(effective_from)),
+            classify_expected_alignment(None, Some(2)),
             vec![CurriculumDeliveryAlignmentState::CurriculumRequirementNotOffered]
         );
-
-        let matching = alignment_offering(
-            Some(2),
-            Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
-            None,
-        );
         assert_eq!(
-            classify_expected_alignment(Some(&matching), Some(2), Some(effective_from)),
+            classify_expected_alignment(Some(&alignment_offering(Some(2))), Some(2)),
             vec![CurriculumDeliveryAlignmentState::MatchesCurriculum]
         );
-
-        let ended_with_different_periods = alignment_offering(
-            Some(3),
-            Some(chrono::NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
-            Some(chrono::NaiveDate::from_ymd_opt(2026, 8, 14).unwrap()),
+        assert_eq!(
+            classify_expected_alignment(Some(&alignment_offering(Some(3))), Some(2)),
+            vec![CurriculumDeliveryAlignmentState::OperationalPeriodsDiffer]
         );
         assert_eq!(
-            classify_expected_alignment(
-                Some(&ended_with_different_periods),
-                Some(2),
-                Some(effective_from)
+            classify_extra_alignment(&alignment_offering(Some(0))),
+            vec![CurriculumDeliveryAlignmentState::ExtraOffering]
+        );
+    }
+    #[test]
+    fn current_room_projection_refuses_ambiguous_offerings() {
+        let first = alignment_offering(Some(2));
+        let mut second = alignment_offering(Some(2));
+        second.homeroom_id = first.homeroom_id;
+        let candidates = [&first, &second];
+        assert!(matches!(
+            select_applicable_offering(
+                &candidates,
+                first.homeroom_id.unwrap(),
+                first.grade_level_id,
+                first.study_program_id
             ),
-            vec![
-                CurriculumDeliveryAlignmentState::EndedEarly,
-                CurriculumDeliveryAlignmentState::OperationalPeriodsDiffer,
-            ]
-        );
-        assert_eq!(
-            classify_extra_alignment(&ended_with_different_periods, Some(effective_from)),
-            vec![
-                CurriculumDeliveryAlignmentState::ExtraOffering,
-                CurriculumDeliveryAlignmentState::EndedEarly,
-            ]
-        );
+            Err(AppError::Conflict(_))
+        ));
     }
 }

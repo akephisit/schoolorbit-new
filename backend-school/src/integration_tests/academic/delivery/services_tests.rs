@@ -1,48 +1,21 @@
+use super::{
+    models::*,
+    services::{activities, current, groups, offerings, roster_memberships, workspaces},
+};
 use crate::integration_tests::academic::{
     cutover_test_preflight::run_academic_core_preflight,
     cutover_test_support::{
-        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
-        CutoverFixture,
+        CutoverFixture, apply_migrations_through, apply_phase_b_runtime_migrations,
+        seed_academic_cutover_fixture,
     },
-    models::{
-        timetable_block::CreateOrdinaryTimetableBlockRequest,
-        timetable_version::CloneTimetableVersionRequest,
-    },
-    services::{timetable_block_service, timetable_version_service},
 };
 use chrono::{Duration, NaiveDate, Utc};
+use school_authorization::AcademicResourceListFilter;
+use school_errors::AppError;
+const ACADEMIC_CORE_NAMESPACE: Uuid = Uuid::from_u128(0x5c33_b984_10df_58db_bf80_62db_c4a0_3d1b);
 use school_test_db::{create_named_test_pool, create_named_test_pool_with_max_connections};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
-
-use super::{
-    models::{
-        AcademicChangeFindingCode, AcademicChangeFindingSeverity, AcademicChangeImpactCounts,
-        AcademicTermChangeSet, AcademicTermChangeSetStatus, ActivityAttendanceRequirement,
-        ActivityPassCriteria, ActivityRegistrationType, ActivitySchedulingMode,
-        AddDatedRosterMembershipRequest, ApplyCurriculumOfferingsRequest, ApplyRosterRequest,
-        ApplyTeacherHandoffRequest, CreateAcademicTermChangeSetRequest,
-        CreateActivityOfferingRequest, CreateCourseOfferingRequest, CreateLearningGroupRequest,
-        CreateLearningOfferingRequest, CurriculumDeliveryAlignmentState, CurriculumOfferingPreview,
-        CurriculumPreparationChoice, DeleteAcademicTermChangeItemRequest, LearningOfferingKind,
-        LearningOfferingQuery, LearningOfferingSnapshot, LearningOfferingStatus,
-        LearningTeacherRole, OfferingTargetInput, OfferingTargetKind, PreparationAction,
-        PreparationGroupingState, PreviewCurriculumOfferingsRequest, PreviewTeacherHandoffRequest,
-        PublishAcademicTermChangeSetRequest, PublishLearningOfferingRequest, PublishRosterRequest,
-        RemoveDatedRosterMembershipRequest, ReplaceLearningGroupHomeroomsRequest,
-        ReplaceLearningGroupTeachersRequest, RosterOverrideAction, RosterOverrideInput,
-        StudentActivityRegistrationQuery, TeacherAssignmentInput, TeacherHandoffEntryVersion,
-        TeacherHandoffMode, UpdateAcademicTermChangeSetRequest, UpdateLearningOfferingRequest,
-        UpsertAcademicTermChangeItemRequest,
-    },
-    services::{
-        activities, change_sets, groups, offerings, roster_memberships, teacher_handoff, workspaces,
-    },
-};
-use school_authorization::AcademicResourceListFilter;
-use school_errors::AppError;
-
-const ACADEMIC_CORE_NAMESPACE: Uuid = Uuid::from_u128(0x5c33_b984_10df_58db_bf80_62db_c4a0_3d1b);
 
 fn stable_uuid(name: &str) -> Uuid {
     Uuid::new_v5(&ACADEMIC_CORE_NAMESPACE, name.as_bytes())
@@ -428,9 +401,11 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("a student-year cannot have two current placements");
-    assert!(duplicate_placement
-        .to_string()
-        .contains("homeroom_placements_one_current_key"));
+    assert!(
+        duplicate_placement
+            .to_string()
+            .contains("homeroom_placements_one_current_key")
+    );
 
     let duplicate_student = sqlx::query(
         r#"INSERT INTO learning_group_students (
@@ -448,9 +423,11 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("a student cannot be active twice in one group");
-    assert!(duplicate_student
-        .to_string()
-        .contains("learning_group_students_one_active_key"));
+    assert!(
+        duplicate_student
+            .to_string()
+            .contains("learning_group_students_one_active_key")
+    );
 
     let cross_year_homeroom = sqlx::query(
         r#"INSERT INTO learning_group_homerooms (
@@ -467,9 +444,11 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("group coverage cannot use a homeroom from another year");
-    assert!(cross_year_homeroom
-        .to_string()
-        .contains("learning_group_homerooms_homeroom_context_fkey"));
+    assert!(
+        cross_year_homeroom
+            .to_string()
+            .contains("learning_group_homerooms_homeroom_context_fkey")
+    );
 
     let offering_id = stable_uuid(
         "course-offering:11000000-0000-0000-0000-000000000251:20000000-0000-0000-0000-000000000025",
@@ -491,9 +470,11 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("a group cannot cross its offering term");
-    assert!(mismatched_group
-        .to_string()
-        .contains("learning_groups_offering_context_fkey"));
+    assert!(
+        mismatched_group
+            .to_string()
+            .contains("learning_groups_offering_context_fkey")
+    );
 
     let mut transaction = pool.begin().await.unwrap();
     sqlx::query("UPDATE learning_offerings SET status = 'draft' WHERE id = $1")
@@ -561,37 +542,11 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("published offering snapshots must be immutable");
-    assert!(published_snapshot_error
-        .to_string()
-        .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
-}
-
-struct RejectAssessmentPublication;
-#[async_trait::async_trait]
-impl school_academic_delivery::ports::AssessmentPublicationPort for RejectAssessmentPublication {
-    async fn fill_missing_coordinators(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        actor: Uuid,
-        offering_ids: &[Uuid],
-    ) -> Result<(), AppError> {
-        let unpublished_revisions: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_term_change_sets revision JOIN academic_delivery_latest_published_teacher_allocations allocation ON allocation.delivery_version_id=revision.target_delivery_version_id WHERE allocation.learning_offering_id=ANY($1) AND revision.status<>'published'")
-            .bind(offering_ids).fetch_one(&mut **tx).await.unwrap();
-        assert_eq!(
-            unpublished_revisions, 0,
-            "both publication transitions precede Assessment initialization"
-        );
-        school_academic_assessment::assessment::services::fill_missing_coordinators(
-            &crate::adapters::academic_result_locks::RESULT_LOCKS,
-            tx,
-            actor,
-            offering_ids,
-        )
-        .await?;
-        Err(AppError::InternalServerError(
-            "ASSESSMENT_TEST_REJECTED".into(),
-        ))
-    }
+    assert!(
+        published_snapshot_error
+            .to_string()
+            .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE")
+    );
 }
 
 async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
@@ -693,6 +648,7 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "Lock ordering".into(),
             description: None,
             capacity: Some(40),
@@ -725,6 +681,7 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
                     actor,
                     offering.id,
                     UpdateLearningOfferingRequest {
+                        weekly_period_target: 5,
                         row_version: offering.row_version,
                         targets,
                     },
@@ -736,6 +693,7 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
                     actor,
                     offering.id,
                     CreateLearningGroupRequest {
+                        registration_open: false,
                         name: "Second group".into(),
                         description: None,
                         capacity: Some(40),
@@ -749,6 +707,7 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
                     actor,
                     group.id,
                     super::models::UpdateLearningGroupRequest {
+                        registration_open: false,
                         row_version: group.row_version,
                         name: group.name,
                         description: None,
@@ -769,13 +728,12 @@ async fn lifecycle_delivery_waits_before_locking_offering_or_group() {
                 )
                 .await
                 .map(|_| ()),
-                _ => offerings::publish(
+                _ => offerings::update_weekly_period_target(
                     &worker_pool,
-                    actor,
                     offering.id,
-                    PublishLearningOfferingRequest {
+                    school_academic_delivery::models::current::UpdateWeeklyPeriodTargetRequest {
                         row_version: offering.row_version,
-                        idempotency_key: Uuid::new_v4(),
+                        weekly_period_target: 1,
                     },
                 )
                 .await
@@ -839,6 +797,7 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "Historical group".into(),
             description: None,
             capacity: Some(40),
@@ -869,6 +828,7 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
                 context.teacher_id,
                 offering.id,
                 UpdateLearningOfferingRequest {
+                    weekly_period_target: 5,
                     row_version: offering.row_version,
                     targets: course_request(&context).targets().to_vec(),
                 },
@@ -880,6 +840,7 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
                 context.teacher_id,
                 offering.id,
                 CreateLearningGroupRequest {
+                    registration_open: false,
                     name: "Must not exist".into(),
                     description: None,
                     capacity: None,
@@ -893,6 +854,7 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
                 context.teacher_id,
                 group.id,
                 super::models::UpdateLearningGroupRequest {
+                    registration_open: false,
                     row_version: group.row_version,
                     name: "Changed".into(),
                     description: None,
@@ -924,13 +886,12 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
             )
             .await
             .map(|_| ()),
-            offerings::publish(
+            offerings::update_weekly_period_target(
                 &pool,
-                context.teacher_id,
                 offering.id,
-                PublishLearningOfferingRequest {
+                school_academic_delivery::models::current::UpdateWeeklyPeriodTargetRequest {
                     row_version: offering.row_version,
-                    idempotency_key: Uuid::new_v4(),
+                    weekly_period_target: 1,
                 },
             )
             .await
@@ -953,186 +914,11 @@ async fn lifecycle_delivery_closed_context_retains_history_and_rejects_mutations
     }
 }
 
-async fn wait_for_offering_lock_waiters(pool: &PgPool, expected: i64) {
-    for _ in 0..200 {
-        let waiting: i64 = sqlx::query_scalar(
-            r#"SELECT count(*)::bigint
-               FROM pg_stat_activity
-               WHERE datname = current_database()
-                 AND wait_event_type = 'Lock'
-                 AND query LIKE '%learning_offerings%'
-                 AND query LIKE '%FOR %'"#,
-        )
-        .fetch_one(pool)
-        .await
-        .unwrap();
-        if waiting >= expected {
-            return;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
-    panic!("expected {expected} delivery transactions to wait on an offering lock");
-}
-
-#[tokio::test]
-async fn group_read_model_returns_effective_teacher_episodes() {
-    let pool = prepare_delivery_runtime_fixture("academic_group_teacher_episode_read").await;
-    let (offering_id, term_id, year_id, starts_on, teacher_id, display_name): (
-        Uuid,
-        Uuid,
-        Uuid,
-        NaiveDate,
-        Uuid,
-        String,
-    ) = sqlx::query_as(
-        r#"SELECT offering.id, offering.academic_term_id, offering.academic_year_id,
-                  offering.starts_on, teacher.teacher_id,
-                  concat_ws(' ',
-                      nullif(concat(coalesce(user_account.title, ''), user_account.first_name), ''),
-                      nullif(user_account.last_name, '')) AS display_name
-           FROM learning_offerings offering
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = offering.id
-           JOIN learning_group_teachers teacher
-             ON teacher.learning_group_id = learning_group.id
-           JOIN users user_account ON user_account.id = teacher.teacher_id
-           WHERE teacher.role = 'primary'
-           ORDER BY offering.id, teacher.starts_on, teacher.id
-           LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must contain a migrated teacher episode");
-
-    let group_id = Uuid::new_v4();
-    let assignment_id = Uuid::new_v4();
-    let second_teacher_id = Uuid::new_v4();
-    let third_teacher_id = Uuid::new_v4();
-    let fourth_teacher_id = Uuid::new_v4();
-    let second_assignment_id = Uuid::parse_str("f1000000-0000-0000-0000-000000000001").unwrap();
-    let third_assignment_id = Uuid::parse_str("f1000000-0000-0000-0000-000000000003").unwrap();
-    let fourth_assignment_id = Uuid::parse_str("f1000000-0000-0000-0000-000000000002").unwrap();
-    let actor_user_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let early_secondary_starts_on = starts_on.succ_opt().unwrap();
-    let late_secondary_starts_on = early_secondary_starts_on.succ_opt().unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_groups (
-               id, learning_offering_id, academic_term_id, academic_year_id,
-               code, name, status, roster_status
-           ) VALUES ($1, $2, $3, $4, $5, 'กลุ่มทดสอบ episode ครู', 'draft', 'draft')"#,
-    )
-    .bind(group_id)
-    .bind(offering_id)
-    .bind(term_id)
-    .bind(year_id)
-    .bind(format!("EPISODE-{}", &group_id.to_string()[..8]))
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO users (
-               id, email, username, password_hash, first_name, last_name,
-               user_type, status
-           ) VALUES
-               ($1, $4, $7, 'fixture-not-a-login', 'ครูรองหนึ่ง', 'ทดสอบ', 'staff', 'active'),
-               ($2, $5, $8, 'fixture-not-a-login', 'ครูรองสอง', 'ทดสอบ', 'staff', 'active'),
-               ($3, $6, $9, 'fixture-not-a-login', 'ครูรองสาม', 'ทดสอบ', 'staff', 'active')"#,
-    )
-    .bind(second_teacher_id)
-    .bind(third_teacher_id)
-    .bind(fourth_teacher_id)
-    .bind(format!("{second_teacher_id}@example.invalid"))
-    .bind(format!("{third_teacher_id}@example.invalid"))
-    .bind(format!("{fourth_teacher_id}@example.invalid"))
-    .bind(format!("teacher-{second_teacher_id}"))
-    .bind(format!("teacher-{third_teacher_id}"))
-    .bind(format!("teacher-{fourth_teacher_id}"))
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_group_teachers (
-               id, learning_group_id, academic_term_id, academic_year_id,
-               teacher_id, role, starts_on, created_by, updated_by
-           ) VALUES
-               ($1, $5, $6, $7, $8, 'primary', $12, $13, $13),
-               ($2, $5, $6, $7, $9, 'secondary', $14, $13, $13),
-               ($3, $5, $6, $7, $10, 'secondary', $15, $13, $13),
-               ($4, $5, $6, $7, $11, 'secondary', $15, $13, $13)"#,
-    )
-    .bind(assignment_id)
-    .bind(second_assignment_id)
-    .bind(third_assignment_id)
-    .bind(fourth_assignment_id)
-    .bind(group_id)
-    .bind(term_id)
-    .bind(year_id)
-    .bind(teacher_id)
-    .bind(second_teacher_id)
-    .bind(third_teacher_id)
-    .bind(fourth_teacher_id)
-    .bind(starts_on)
-    .bind(actor_user_id)
-    .bind(late_secondary_starts_on)
-    .bind(early_secondary_starts_on)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let group = groups::get(&pool, group_id).await.unwrap();
-    let assignment = group
-        .teacher_assignments
-        .iter()
-        .find(|assignment| assignment.id == assignment_id)
-        .expect("group read model must expose the assignment identity");
-    assert_eq!(assignment.teacher_id, teacher_id);
-    assert_eq!(assignment.display_name, display_name);
-    assert_eq!(assignment.role, LearningTeacherRole::Primary);
-    assert_eq!(assignment.starts_on, starts_on);
-    assert_eq!(assignment.ends_on, None);
-    assert_eq!(assignment.row_version, 1);
-    let second_assignment = group
-        .teacher_assignments
-        .iter()
-        .find(|assignment| assignment.id == second_assignment_id)
-        .expect("group read model must expose every teacher episode");
-    assert_eq!(second_assignment.teacher_id, second_teacher_id);
-    assert_eq!(second_assignment.role, LearningTeacherRole::Secondary);
-    assert_eq!(second_assignment.starts_on, late_secondary_starts_on);
-    assert_eq!(second_assignment.ends_on, None);
-    assert_eq!(second_assignment.row_version, 1);
-    assert_eq!(
-        group
-            .teacher_assignments
-            .iter()
-            .map(|assignment| assignment.id)
-            .collect::<Vec<_>>(),
-        vec![
-            assignment_id,
-            fourth_assignment_id,
-            third_assignment_id,
-            second_assignment_id
-        ]
-    );
-    let primary_position = group
-        .teacher_assignments
-        .iter()
-        .position(|assignment| assignment.id == assignment_id)
-        .unwrap();
-    let secondary_position = group
-        .teacher_assignments
-        .iter()
-        .position(|assignment| assignment.id == second_assignment_id)
-        .unwrap();
-    assert!(primary_position < secondary_position);
-}
-
 fn runtime_operation_date() -> NaiveDate {
     Utc::now()
         .with_timezone(&chrono_tz::Asia::Bangkok)
         .date_naive()
 }
-
 #[derive(Debug)]
 struct RuntimeContext {
     term_id: Uuid,
@@ -1224,1608 +1010,17 @@ async fn planning_runtime_context_at(pool: &PgPool, catalog_date: NaiveDate) -> 
 }
 
 async fn operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
-    let (term_id, base_version_id): (Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT term.id, version.id
-           FROM academic_terms term
-           JOIN academic_years year ON year.id = term.academic_year_id
-           JOIN academic_timetable_versions version
-             ON version.academic_term_id = term.id
-            AND version.status = 'published'
-           WHERE term.status = 'active'
-           ORDER BY year.year, term.sequence_no, term.id, version.effective_from DESC, version.id
-           LIMIT 1"#,
-    )
-    .fetch_one(pool)
-    .await
-    .expect("fixture must contain an active term with a published timetable base");
-    let today = runtime_operation_date();
-    configure_operational_context(
-        pool,
+    let (term_id,year_id,homeroom_id,grade_level_id,study_program_id,subject_version_id,owner_id,teacher_id):(Uuid,Uuid,Uuid,Uuid,Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT offering.academic_term_id,offering.academic_year_id,room.id,room.grade_level_id,room.study_program_id,detail.subject_version_id,offering.owning_organization_unit_id,teacher.teacher_id FROM learning_offerings offering JOIN academic_terms term ON term.id=offering.academic_term_id JOIN course_offering_details detail ON detail.learning_offering_id=offering.id JOIN learning_groups g ON g.learning_offering_id=offering.id JOIN learning_group_homerooms coverage ON coverage.learning_group_id=g.id JOIN homerooms room ON room.id=coverage.homeroom_id JOIN learning_group_teachers teacher ON teacher.learning_group_id=g.id JOIN users account ON account.id=teacher.teacher_id WHERE term.status='active' AND account.status='active' ORDER BY offering.id,g.id,teacher.id LIMIT 1").fetch_one(pool).await.unwrap();
+    RuntimeContext {
         term_id,
-        base_version_id,
-        today + Duration::days(365),
-        today,
-    )
-    .await
-}
-
-// These inputs describe the predecessor schema's real availability rule, never a live fallback.
-async fn historical_operational_change_runtime_context(pool: &PgPool) -> RuntimeContext {
-    let (term,base,starts,ends):(Uuid,Uuid,NaiveDate,NaiveDate) = sqlx::query_as(
-        "SELECT term.id,version.id,term.start_date,year.end_date FROM academic_terms term JOIN academic_years year ON year.id=term.academic_year_id JOIN academic_timetable_versions version ON version.academic_term_id=term.id AND version.status='published' WHERE term.status='active' ORDER BY year.year,term.sequence_no,term.id,version.effective_from DESC,version.id LIMIT 1")
-        .fetch_one(pool).await.unwrap();
-    configure_operational_context(pool, term, base, ends, starts).await
-}
-
-async fn configure_operational_context(
-    pool: &PgPool,
-    term_id: Uuid,
-    base_version_id: Uuid,
-    deferred_until: NaiveDate,
-    catalog_date: NaiveDate,
-) -> RuntimeContext {
-    sqlx::query(
-        r#"UPDATE learning_offerings offering
-           SET starts_on = $3,
-               updated_at = now()
-           WHERE offering.academic_term_id = $1
-             AND offering.status IN ('draft', 'published')
-             AND NOT EXISTS (
-                 SELECT 1
-                 FROM academic_timetable_versions version
-                 JOIN academic_delivery_versions opening ON opening.id=version.delivery_version_id
-                 CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry
-                 WHERE version.id=$2 AND (entry->>'id')::uuid=offering.id
-             )"#,
-    )
-    .bind(term_id)
-    .bind(base_version_id)
-    .bind(deferred_until)
-    .execute(pool)
-    .await
-    .expect("operational change fixture must defer offerings absent from its published baseline");
-    sqlx::query("UPDATE academic_terms SET status = 'planning' WHERE id = $1")
-        .bind(term_id)
-        .execute(pool)
-        .await
-        .unwrap();
-    let context = planning_runtime_context_at(pool, catalog_date).await;
-    assert_eq!(context.term_id, term_id);
-    context
-}
-
-async fn create_runtime_change_set(
-    pool: &PgPool,
-    actor_id: Uuid,
-    term_id: Uuid,
-    offset_days: i64,
-    idempotency_name: &str,
-) -> super::models::AcademicTermChangeSet {
-    create_runtime_change_set_at(
-        pool,
-        actor_id,
-        term_id,
-        runtime_operation_date() + Duration::days(offset_days),
-        idempotency_name,
-    )
-    .await
-}
-
-async fn create_runtime_change_set_at(
-    pool: &PgPool,
-    actor_id: Uuid,
-    term_id: Uuid,
-    date: NaiveDate,
-    idempotency_name: &str,
-) -> super::models::AcademicTermChangeSet {
-    let created = change_sets::create_change_set(
-        pool,
-        actor_id,
-        CreateAcademicTermChangeSetRequest {
-            academic_term_id: term_id,
-            reason: "  ปรับการเปิดสอนระหว่างภาคเรียน  ".to_string(),
-            idempotency_key: stable_uuid(idempotency_name),
-        },
-    )
-    .await
-    .expect("a planning term must accept a draft operational change");
-    if created.reference_date == date {
-        return created;
+        year_id,
+        homeroom_id,
+        grade_level_id,
+        study_program_id,
+        subject_version_id,
+        owner_id,
+        teacher_id,
     }
-    change_sets::update_change_set(
-        pool,
-        actor_id,
-        created.id,
-        UpdateAcademicTermChangeSetRequest {
-            row_version: created.row_version,
-            reference_date: date,
-            reason: created.reason.clone(),
-        },
-    )
-    .await
-    .unwrap()
-}
-
-async fn independent_table_draft(
-    pool: &PgPool,
-    context: &RuntimeContext,
-) -> school_academic_timetable::models::timetable_version::TimetableVersion {
-    let source_id: Uuid=sqlx::query_scalar("SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id LIMIT 1")
-        .bind(context.term_id).fetch_one(pool).await.unwrap();
-    let source = timetable_version_service::get_version(pool, source_id, Utc::now().date_naive())
-        .await
-        .unwrap();
-    timetable_version_service::clone_draft(
-        pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            pool,
-            context.teacher_id,
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            source_row_version: source.row_version,
-            resume_draft_id: None,
-            draft_row_version: None,
-        },
-    )
-    .await
-    .unwrap()
-}
-
-async fn table_preview(
-    pool: &PgPool,
-    draft_id: Uuid,
-) -> school_academic_timetable::models::timetable_publication::TimetablePublicationPreview {
-    let table = timetable_version_service::get_version(pool, draft_id, Utc::now().date_naive())
-        .await
-        .unwrap();
-    let opening =
-        school_academic_delivery::services::versions::get_version(pool, table.delivery_version_id)
-            .await
-            .unwrap();
-    school_academic_timetable::services::timetable_lifecycle::preview(&crate::adapters::publication_history::PUBLICATION_HISTORY,pool,draft_id,school_academic_timetable::models::timetable_publication::PreviewTimetablePublicationRequest {
-        row_version:table.row_version,effective_from:opening.effective_from.unwrap().succ_opt().unwrap()
-    }).await.unwrap()
-}
-
-pub(crate) async fn fill_change_set_target_deficits(
-    pool: &PgPool,
-    actor_user_id: Uuid,
-    academic_term_id: Uuid,
-    timetable_version_id: Uuid,
-) {
-    let table =
-        timetable_version_service::get_version(pool, timetable_version_id, Utc::now().date_naive())
-            .await
-            .unwrap();
-    let opening =
-        school_academic_delivery::services::versions::get_version(pool, table.delivery_version_id)
-            .await
-            .unwrap();
-    for offering in &opening.snapshot.offerings {
-        if matches!(&offering.catalog,LearningOfferingSnapshot::Activity(activity) if activity.scheduling_mode==ActivitySchedulingMode::Synchronized)
-        {
-            let placed_count: i64=sqlx::query_scalar("SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND learning_offering_id=$2 AND is_active").bind(timetable_version_id).bind(offering.id).fetch_one(pool).await.unwrap();
-            for _ in placed_count..i64::from(offering.weekly_period_target) {
-                let slots: Vec<(String,Uuid)>=sqlx::query_as("SELECT day.code,period.id FROM academic_terms term JOIN bell_schedule_periods period ON period.bell_schedule_id=term.bell_schedule_id CROSS JOIN (VALUES('MON'),('TUE'),('WED'),('THU'),('FRI')) day(code) WHERE term.id=$1 AND period.is_active ORDER BY day.code,period.order_index").bind(academic_term_id).fetch_all(pool).await.unwrap();
-                let mut placed = false;
-                for (day_of_week, bell_schedule_period_id) in slots {
-                    match timetable_block_service::create_synchronized_block(pool,&school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor_user_id),school_academic_timetable::models::timetable_block::CreateSynchronizedTimetableBlockRequest {
-                    timetable_version_id,academic_term_id,learning_offering_id:offering.id,day_of_week,bell_schedule_period_id,intended_homeroom_ids:offering.homeroom_ids.clone(),teacher_ids:vec![],room_id:None,note:None
-                }).await {
-                    Ok(_) => {placed=true;break;},Err(AppError::Conflict(_))=>{},Err(error)=>panic!("unexpected activity placement error: {error:?}")
-                }
-                }
-                assert!(placed, "fixture requires a conflict-free activity slot");
-            }
-            continue;
-        }
-        for group in &offering.groups {
-            let group_id = group.id;
-            let placed_count: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id WHERE block.timetable_version_id=$1 AND placed.learning_group_id=$2 AND placed.is_active AND block.is_active")
-            .bind(timetable_version_id).bind(group_id).fetch_one(pool).await.unwrap();
-            let missing_count = i64::from(offering.weekly_period_target) - placed_count;
-            let instructor_ids = group
-                .teachers
-                .iter()
-                .map(|teacher| teacher.teacher_id)
-                .collect::<Vec<_>>();
-            for _ in 0..missing_count {
-                let slots: Vec<(String, Uuid)> = sqlx::query_as(
-                    r#"SELECT day.code, period.id
-                   FROM (VALUES ('MON'), ('TUE'), ('WED'), ('THU'), ('FRI')) AS day(code)
-                   JOIN academic_terms term ON term.id = $1
-                   JOIN bell_schedule_periods period
-                     ON period.bell_schedule_id = term.bell_schedule_id
-                    AND period.is_active
-                   ORDER BY day.code, period.order_index
-                   LIMIT 100"#,
-                )
-                .bind(academic_term_id)
-                .fetch_all(pool)
-                .await
-                .expect("fixture must leave enough empty timetable slots");
-                let mut placed = false;
-                for (day_of_week, bell_schedule_period_id) in slots {
-                    let result = timetable_block_service::create_ordinary_block(
-                        pool,
-                        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(pool, actor_user_id),
-                        CreateOrdinaryTimetableBlockRequest {
-                            timetable_version_id,
-                            academic_term_id,
-                            learning_group_id: group_id,
-                            day_of_week,
-                            bell_schedule_period_id,
-                            room_id: None,
-                            note: Some("เติมคาบสำหรับทดสอบ readiness".to_string()),
-                            instructor_ids: instructor_ids.clone(),
-                        },
-                    )
-                    .await;
-                    if result.is_ok() {
-                        placed = true;
-                        break;
-                    }
-                }
-                assert!(placed, "fixture must leave a valid timetable slot");
-            }
-        }
-    }
-}
-
-#[tokio::test]
-async fn teacher_change_items_support_add_adjust_stop_and_delete() {
-    let pool = prepare_delivery_runtime_fixture("academic_teacher_change_items").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        14,
-        "teacher-change-items:create",
-    )
-    .await;
-    let (group_id, assignment_id, current_teacher_id): (Uuid, Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT learning_group.id, teacher.id, teacher.teacher_id
-           FROM learning_groups learning_group
-           JOIN learning_group_teachers teacher
-             ON teacher.learning_group_id = learning_group.id
-           WHERE learning_group.academic_term_id = $1
-             AND learning_group.status = 'published'
-             AND teacher.starts_on < $2
-             AND (teacher.ends_on IS NULL OR teacher.ends_on >= $2)
-           ORDER BY learning_group.id, teacher.id
-           LIMIT 1"#,
-    )
-    .bind(context.term_id)
-    .bind(change_set.reference_date)
-    .fetch_one(&pool)
-    .await
-    .expect("fixture must contain an effective teacher episode");
-    let new_teacher_id = stable_uuid("teacher-change-items:new-teacher");
-    sqlx::query(
-        r#"INSERT INTO users (
-               id, email, username, password_hash, first_name, last_name,
-               user_type, status
-           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูใหม่', 'กลางภาค',
-                     'staff', 'active')"#,
-    )
-    .bind(new_teacher_id)
-    .bind(format!("{new_teacher_id}@example.invalid"))
-    .bind(format!("teacher-{new_teacher_id}"))
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let added = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_group_id: group_id,
-            teacher_id: new_teacher_id,
-            teacher_role: LearningTeacherRole::Secondary,
-        },
-    )
-    .await
-    .expect("an active staff member must be addable at the effective date");
-    let (add_item_id, add_item_row_version) = added
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::AddGroupTeacher {
-                id,
-                learning_group_id,
-                teacher_id,
-                teacher_role,
-                row_version,
-                learning_group_label,
-                teacher_label,
-                ..
-            } => {
-                assert_eq!(*learning_group_id, group_id);
-                assert_eq!(*teacher_id, new_teacher_id);
-                assert_eq!(*teacher_role, LearningTeacherRole::Secondary);
-                assert!(!learning_group_label.is_empty());
-                assert!(teacher_label.contains("ครูใหม่"));
-                Some((*id, *row_version))
-            }
-            _ => None,
-        })
-        .expect("response must hydrate the typed add-teacher item");
-    let group_offering_id: Uuid =
-        sqlx::query_scalar("SELECT learning_offering_id FROM learning_groups WHERE id = $1")
-            .bind(group_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(
-        offerings::operational_change_offering_ids(&pool, added.id)
-            .await
-            .expect("teacher items must authorize and signal through their learning group"),
-        vec![group_offering_id]
-    );
-
-    let stale = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
-            change_set_row_version: change_set.row_version,
-            item_row_version: Some(add_item_row_version),
-            learning_group_id: group_id,
-            teacher_id: new_teacher_id,
-            teacher_role: LearningTeacherRole::Primary,
-        },
-    )
-    .await
-    .expect_err("a stale change-set revision must reject the edit");
-    assert!(matches!(stale, AppError::Conflict(_)));
-
-    let adjusted = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AdjustGroupTeacherRole {
-            change_set_row_version: added.row_version,
-            item_row_version: None,
-            learning_group_id: group_id,
-            learning_group_teacher_id: assignment_id,
-            teacher_id: current_teacher_id,
-            teacher_role: LearningTeacherRole::Assistant,
-        },
-    )
-    .await
-    .expect("an effective assignment must accept a role adjustment item");
-    let (adjust_item_id, adjust_item_row_version) = adjusted
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::AdjustGroupTeacherRole {
-                id,
-                learning_group_teacher_id,
-                teacher_role,
-                row_version,
-                ..
-            } if *learning_group_teacher_id == assignment_id => {
-                assert_eq!(*teacher_role, LearningTeacherRole::Assistant);
-                Some((*id, *row_version))
-            }
-            _ => None,
-        })
-        .expect("response must hydrate the typed role-adjustment item");
-
-    let after_delete_adjust = change_sets::delete_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        adjust_item_id,
-        DeleteAcademicTermChangeItemRequest {
-            change_set_row_version: adjusted.row_version,
-            item_row_version: adjust_item_row_version,
-        },
-    )
-    .await
-    .expect("a draft teacher-role item must be deletable");
-    let stopped = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::StopGroupTeacher {
-            change_set_row_version: after_delete_adjust.row_version,
-            item_row_version: None,
-            learning_group_id: group_id,
-            learning_group_teacher_id: assignment_id,
-            teacher_id: current_teacher_id,
-        },
-    )
-    .await
-    .expect("an effective assignment must be stoppable");
-    let (stop_item_id, stop_item_row_version) = stopped
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::StopGroupTeacher {
-                id,
-                learning_group_teacher_id,
-                row_version,
-                ..
-            } if *learning_group_teacher_id == assignment_id => Some((*id, *row_version)),
-            _ => None,
-        })
-        .expect("response must hydrate the typed stop-teacher item");
-    let after_delete_stop = change_sets::delete_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        stop_item_id,
-        DeleteAcademicTermChangeItemRequest {
-            change_set_row_version: stopped.row_version,
-            item_row_version: stop_item_row_version,
-        },
-    )
-    .await
-    .expect("a draft stop-teacher item must be deletable");
-    let add_item = after_delete_stop
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::AddGroupTeacher {
-                id, row_version, ..
-            } if *id == add_item_id => Some((*id, *row_version)),
-            _ => None,
-        })
-        .expect("the independent add-teacher item must remain");
-    change_sets::delete_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        add_item.0,
-        DeleteAcademicTermChangeItemRequest {
-            change_set_row_version: after_delete_stop.row_version,
-            item_row_version: add_item.1,
-        },
-    )
-    .await
-    .expect("a draft add-teacher item must be deletable");
-}
-
-#[tokio::test]
-async fn teacher_handoff_preview_and_apply_replace_exact_instructors_atomically() {
-    let pool = prepare_delivery_runtime_fixture("academic_teacher_handoff_apply").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let source_id: Uuid=sqlx::query_scalar("SELECT id FROM academic_timetable_versions WHERE academic_term_id=$1 AND status='published' ORDER BY effective_from DESC,id LIMIT 1").bind(context.term_id).fetch_one(&pool).await.unwrap();
-    let source = timetable_version_service::get_version(&pool, source_id, Utc::now().date_naive())
-        .await
-        .unwrap();
-    let base = school_academic_delivery::services::versions::get_version(
-        &pool,
-        source.delivery_version_id,
-    )
-    .await
-    .unwrap();
-    let group = base
-        .snapshot
-        .offerings
-        .iter()
-        .flat_map(|offering| &offering.groups)
-        .find(|group| !group.teachers.is_empty())
-        .unwrap();
-    let stopped = &group.teachers[0];
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        14,
-        "teacher-handoff:create",
-    )
-    .await;
-    let replacement = stable_uuid("teacher-handoff:replacement");
-    sqlx::query("INSERT INTO users(id,email,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,$3,'fixture-not-a-login','ครูรับช่วง','ทดสอบ','staff','active')")
-        .bind(replacement).bind(format!("{replacement}@example.invalid")).bind(format!("teacher-{replacement}")).execute(&pool).await.unwrap();
-    let added = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AddGroupTeacher {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_group_id: group.id,
-            teacher_id: replacement,
-            teacher_role: LearningTeacherRole::Primary,
-        },
-    )
-    .await
-    .unwrap();
-    let changed = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::StopGroupTeacher {
-            change_set_row_version: added.row_version,
-            item_row_version: None,
-            learning_group_id: group.id,
-            learning_group_teacher_id: stopped.assignment_id,
-            teacher_id: stopped.teacher_id,
-        },
-    )
-    .await
-    .unwrap();
-    let stop_item = changed
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::StopGroupTeacher { id, .. } => Some(*id),
-            _ => None,
-        })
-        .unwrap();
-    let opening_preview = publication_preview(&pool, changed.id).await.unwrap();
-    let published = change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        changed.id,
-        PublishAcademicTermChangeSetRequest {
-            effective_from: opening_preview.effective_from,
-            row_version: opening_preview.change_set_row_version,
-            target_delivery_version_row_version: opening_preview
-                .target_delivery_version_row_version,
-            preview_hash: opening_preview.preview_hash,
-            acknowledged_warning_codes: vec![],
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    let draft = timetable_version_service::clone_draft(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            source_row_version: source.row_version,
-            resume_draft_id: None,
-            draft_row_version: None,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        draft.delivery_version_id,
-        published.target_delivery_version_id
-    );
-    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
-    let draft = timetable_version_service::get_version(&pool, draft.id, Utc::now().date_naive())
-        .await
-        .unwrap();
-    let entry_id: Uuid=sqlx::query_scalar("SELECT placed.id FROM academic_timetable_block_groups placed JOIN academic_timetable_blocks block ON block.id=placed.block_id JOIN academic_timetable_block_group_instructors instructor ON instructor.block_group_id=placed.id WHERE block.timetable_version_id=$1 AND placed.learning_group_id=$2 AND instructor.instructor_id=$3 ORDER BY placed.id LIMIT 1")
-        .bind(draft.id).bind(group.id).bind(stopped.teacher_id).fetch_one(&pool).await.unwrap();
-    let request = PreviewTeacherHandoffRequest {
-        timetable_version_id: draft.id,
-        change_set_row_version: published.row_version,
-        target_timetable_version_row_version: draft.row_version,
-        teacher_change_item_id: stop_item,
-        entry_ids: vec![entry_id],
-        mode: TeacherHandoffMode::AssignOne,
-        instructor_ids: vec![replacement],
-    };
-    let preview = teacher_handoff::preview(&pool, published.id, request.clone())
-        .await
-        .unwrap();
-    assert!(preview.conflicts.is_empty());
-    assert_eq!(preview.proposed_entries.len(), 1);
-    assert!(preview.proposed_entries[0]
-        .after_instructors
-        .iter()
-        .all(|teacher| teacher.instructor_id != stopped.teacher_id));
-    let ineligible = teacher_handoff::preview(
-        &pool,
-        published.id,
-        PreviewTeacherHandoffRequest {
-            instructor_ids: vec![stopped.teacher_id],
-            ..request
-        },
-    )
-    .await
-    .unwrap();
-    assert!(!ineligible.conflicts.is_empty());
-    let apply = ApplyTeacherHandoffRequest {
-        timetable_version_id: draft.id,
-        change_set_row_version: published.row_version,
-        target_timetable_version_row_version: draft.row_version,
-        teacher_change_item_id: stop_item,
-        entries: preview
-            .proposed_entries
-            .iter()
-            .map(|entry| TeacherHandoffEntryVersion {
-                entry_id: entry.entry_id,
-                row_version: entry.row_version,
-            })
-            .collect(),
-        mode: TeacherHandoffMode::AssignOne,
-        instructor_ids: vec![replacement],
-        preview_hash: preview.preview_hash.unwrap(),
-        idempotency_key: Uuid::new_v4(),
-    };
-    let stale = teacher_handoff::apply(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        published.id,
-        ApplyTeacherHandoffRequest {
-            preview_hash: "0".repeat(64),
-            ..apply.clone()
-        },
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(stale, AppError::Conflict(_)));
-    let applied = teacher_handoff::apply(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        published.id,
-        apply.clone(),
-    )
-    .await
-    .unwrap();
-    assert!(!applied.response.replayed);
-    let replayed = teacher_handoff::apply(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        published.id,
-        apply,
-    )
-    .await
-    .unwrap();
-    assert!(replayed.response.replayed);
-    let instructors: Vec<Uuid>=sqlx::query_scalar("SELECT instructor_id FROM academic_timetable_block_group_instructors WHERE block_group_id=$1 ORDER BY instructor_id").bind(entry_id).fetch_all(&pool).await.unwrap();
-    assert!(instructors.contains(&replacement));
-    assert!(!instructors.contains(&stopped.teacher_id));
-    let historical: bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_timetable_block_group_instructors instructor JOIN academic_timetable_block_groups placed ON placed.id=instructor.block_group_id JOIN academic_timetable_blocks block ON block.id=placed.block_id WHERE block.timetable_version_id=$1 AND placed.learning_group_id=$2 AND instructor.instructor_id=$3)")
-        .bind(source_id).bind(group.id).bind(stopped.teacher_id).fetch_one(&pool).await.unwrap();
-    assert!(historical, "handoff never rewrites the published table");
-}
-
-async fn add_operational_change_catalog_fixture(
-    pool: &PgPool,
-    context: &RuntimeContext,
-) -> (Uuid, Uuid, ActivitySchedulingMode) {
-    let subject_id = stable_uuid("change-set:catalog:subject");
-    let subject_version_id = stable_uuid("change-set:catalog:subject-version");
-    sqlx::query(
-        r#"INSERT INTO subjects (
-               id, code, identity_key, subject_group_id, owning_organization_unit_id
-           )
-           SELECT $1, 'ท99999', 'change-set-test-subject',
-                  source.subject_group_id, source.owning_organization_unit_id
-           FROM subject_versions version
-           JOIN subjects source ON source.id = version.subject_id
-           WHERE version.id = $2"#,
-    )
-    .bind(subject_id)
-    .bind(context.subject_version_id)
-    .execute(pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO subject_versions (
-               id, subject_id, version_no, code, name_th, name_en, credit,
-               hours_per_semester, type, description, effective_from,
-               term, is_active,
-               periods_per_week, status, published_at
-           )
-           SELECT $1, $2, 1, 'ท99999', 'รายวิชาทดสอบกลางภาค', NULL, credit,
-                  hours_per_semester, type, 'fixture', effective_from,
-                  term, true,
-                  periods_per_week, 'published', now()
-           FROM subject_versions
-           WHERE id = $3"#,
-    )
-    .bind(subject_version_id)
-    .bind(subject_id)
-    .bind(context.subject_version_id)
-    .execute(pool)
-    .await
-    .unwrap();
-
-    let source_activity_version_id: Uuid = sqlx::query_scalar(
-        r#"SELECT version.id
-           FROM activity_versions version
-           JOIN academic_terms term ON term.id = $1
-           WHERE version.status = 'published'
-             AND version.effective_from <= $2::date
-           ORDER BY version.id
-           LIMIT 1"#,
-    )
-    .bind(context.term_id)
-    .bind(runtime_operation_date())
-    .fetch_one(pool)
-    .await
-    .unwrap();
-    let activity_id = stable_uuid("change-set:catalog:activity");
-    let activity_version_id = stable_uuid("change-set:catalog:activity-version");
-    sqlx::query(
-        r#"INSERT INTO activities (
-               id, code, identity_key, activity_type, owning_organization_unit_id
-           )
-           SELECT $1, 'ACT-CHANGE', 'change-set-test-activity', activity.activity_type,
-                  activity.owning_organization_unit_id
-           FROM activity_versions version
-           JOIN activities activity ON activity.id = version.activity_id
-           WHERE version.id = $2"#,
-    )
-    .bind(activity_id)
-    .bind(source_activity_version_id)
-    .execute(pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO activity_versions (
-               id, activity_id, version_no, name, activity_type, description,
-               periods_per_week, hours_per_week, hours_per_term, scheduling_mode,
-               is_active, term, grade_level_ids,
-               effective_from, status, published_at
-           )
-           SELECT $1, $2, 1, 'กิจกรรมทดสอบกลางภาค', activity_type, 'fixture',
-                  periods_per_week, hours_per_week, hours_per_term, scheduling_mode,
-                  true, term, grade_level_ids,
-                  effective_from, 'published', now()
-           FROM activity_versions
-           WHERE id = $3"#,
-    )
-    .bind(activity_version_id)
-    .bind(activity_id)
-    .bind(source_activity_version_id)
-    .execute(pool)
-    .await
-    .unwrap();
-    let scheduling_mode: ActivitySchedulingMode =
-        sqlx::query_scalar("SELECT scheduling_mode FROM activity_versions WHERE id = $1")
-            .bind(activity_version_id)
-            .fetch_one(pool)
-            .await
-            .unwrap();
-    (subject_version_id, activity_version_id, scheduling_mode)
-}
-
-#[tokio::test]
-async fn change_set_creation_clones_the_effective_base_and_is_idempotent() {
-    let pool = prepare_delivery_runtime_fixture("academic_opening_clone").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_timetable_versions")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let created = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        10,
-        "opening:clone",
-    )
-    .await;
-    let base = school_academic_delivery::services::versions::get_version(
-        &pool,
-        created.base_delivery_version_id.unwrap(),
-    )
-    .await
-    .unwrap();
-    let target = school_academic_delivery::services::versions::get_version(
-        &pool,
-        created.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    assert_eq!(target.source_version_id, Some(base.id));
-    assert_eq!(
-        target.status,
-        school_academic_delivery::models::versions::DeliveryVersionStatus::Draft
-    );
-    assert_eq!(
-        serde_json::to_value(&target.snapshot).unwrap(),
-        serde_json::to_value(&base.snapshot).unwrap()
-    );
-    assert!(created.items.is_empty());
-    assert_eq!(created.reason, "ปรับการเปิดสอนระหว่างภาคเรียน");
-    assert_eq!(target.effective_from, None);
-    assert_eq!(target.reference_date, created.reference_date);
-    let retried = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        10,
-        "opening:clone",
-    )
-    .await;
-    assert_eq!(retried.id, created.id);
-    let mismatched = change_sets::create_change_set(
-        &pool,
-        context.teacher_id,
-        CreateAcademicTermChangeSetRequest {
-            academic_term_id: context.term_id,
-            reason: "คนละเหตุผล".into(),
-            idempotency_key: stable_uuid("opening:clone"),
-        },
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(mismatched, AppError::Conflict(_)));
-    let after: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_timetable_versions")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        before, after,
-        "opening creation never creates timetable drafts"
-    );
-    assert!(
-        change_sets::list_change_set_summaries(&pool, context.term_id)
-            .await
-            .unwrap()
-            .iter()
-            .any(|item| item.id == created.id)
-    );
-}
-
-#[tokio::test]
-async fn academic_term_change_set_summary_omits_hydrated_detail() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_summary").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        12,
-        "change-set:summary:idempotency",
-    )
-    .await;
-    let base = school_academic_delivery::services::versions::get_version(
-        &pool,
-        change_set.base_delivery_version_id.unwrap(),
-    )
-    .await
-    .unwrap();
-    let first = &base.snapshot.offerings[0];
-    let (offering_id, base_target) = (first.id, first.weekly_period_target);
-    let detailed = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-            weekly_period_target: base_target + 1,
-        },
-    )
-    .await
-    .expect("fixture change set must contain a detail item");
-    assert_eq!(detailed.items.len(), 1);
-
-    let summaries = change_sets::list_change_set_summaries(&pool, context.term_id)
-        .await
-        .expect("summary list must load without detail hydration");
-    let summary = summaries
-        .iter()
-        .find(|summary| summary.id == change_set.id)
-        .expect("created change set must be listed");
-    let value = serde_json::to_value(summary).expect("summary must serialize");
-    let keys = value
-        .as_object()
-        .expect("summary must serialize as an object")
-        .keys()
-        .cloned()
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(
-        keys,
-        std::collections::BTreeSet::from([
-            "academicTermId".to_string(),
-            "academicYearId".to_string(),
-            "effectiveFrom".to_string(),
-            "referenceDate".to_string(),
-            "id".to_string(),
-            "publicationNo".to_string(),
-            "publishedAt".to_string(),
-            "publishedBy".to_string(),
-            "reason".to_string(),
-            "status".to_string(),
-            "targetDeliveryVersionId".to_string(),
-            "updatedAt".to_string(),
-        ])
-    );
-    assert!(summary.publication_no.is_none());
-    assert!(summary.published_at.is_none());
-    assert!(summary.published_by.is_none());
-    for field in ["publicationNo", "publishedAt", "publishedBy"] {
-        assert!(value[field].is_null(), "draft {field} is explicitly null");
-    }
-    assert_eq!(
-        summary.target_delivery_version_id,
-        detailed.target_delivery_version_id
-    );
-}
-
-#[tokio::test]
-async fn draft_change_set_update_uses_row_versions_and_cancel_preserves_the_base() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_update_cancel").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let created = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        11,
-        "change-set:update:idempotency",
-    )
-    .await;
-    let revised_effective_from = created
-        .reference_date
-        .checked_add_signed(chrono::Duration::days(1))
-        .unwrap();
-
-    let updated = change_sets::update_change_set(
-        &pool,
-        context.teacher_id,
-        created.id,
-        UpdateAcademicTermChangeSetRequest {
-            row_version: created.row_version,
-            reference_date: revised_effective_from,
-            reason: "เหตุผลที่ปรับแล้ว".to_string(),
-        },
-    )
-    .await
-    .expect("a draft reason must remain editable");
-    assert_eq!(updated.reason, "เหตุผลที่ปรับแล้ว");
-    assert_eq!(updated.effective_from, None);
-    assert_eq!(updated.reference_date, revised_effective_from);
-    assert_eq!(updated.row_version, created.row_version + 1);
-    let target_effective_from: NaiveDate =
-        sqlx::query_scalar("SELECT reference_date FROM academic_delivery_versions WHERE id = $1")
-            .bind(created.target_delivery_version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(target_effective_from, revised_effective_from);
-
-    let stale = change_sets::update_change_set(
-        &pool,
-        context.teacher_id,
-        created.id,
-        UpdateAcademicTermChangeSetRequest {
-            row_version: created.row_version,
-            reference_date: created.reference_date,
-            reason: "ข้อมูลล้าสมัย".to_string(),
-        },
-    )
-    .await
-    .expect_err("a stale draft update must conflict");
-    assert!(matches!(stale, AppError::Conflict(_)));
-
-    let version = school_academic_delivery::services::versions::get_version(
-        &pool,
-        created.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    let deleted = change_sets::delete_version(
-        &pool,
-        context.teacher_id,
-        version.id,
-        delete_opening_request(&updated, &version),
-    )
-    .await
-    .unwrap();
-    assert_eq!(deleted.id, version.id);
-    assert!(matches!(
-        change_sets::get_change_set(&pool, created.id).await,
-        Err(AppError::NotFound(_))
-    ));
-    assert!(matches!(
-        school_academic_delivery::services::versions::get_version(&pool, version.id).await,
-        Err(AppError::NotFound(_))
-    ));
-    assert_eq!(
-        school_academic_delivery::services::versions::get_version(
-            &pool,
-            created.base_delivery_version_id.unwrap()
-        )
-        .await
-        .unwrap()
-        .status,
-        school_academic_delivery::models::versions::DeliveryVersionStatus::Published
-    );
-}
-
-#[tokio::test]
-async fn change_set_creation_uses_explicit_dates_and_rejects_unwritable_terms() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_date_guards").await;
-    let context = operational_change_runtime_context(&pool).await;
-    for (name, date) in [
-        (
-            "change-set:earlier-operation",
-            runtime_operation_date() - Duration::days(730),
-        ),
-        (
-            "change-set:later-operation",
-            runtime_operation_date() + Duration::days(730),
-        ),
-    ] {
-        let created = change_sets::create_change_set(
-            &pool,
-            context.teacher_id,
-            CreateAcademicTermChangeSetRequest {
-                academic_term_id: context.term_id,
-                reason: "วันที่ดำเนินการที่ระบุชัดเจน".into(),
-                idempotency_key: stable_uuid(name),
-            },
-        )
-        .await
-        .unwrap();
-        let updated = change_sets::update_change_set(
-            &pool,
-            context.teacher_id,
-            created.id,
-            UpdateAcademicTermChangeSetRequest {
-                row_version: created.row_version,
-                reference_date: date,
-                reason: created.reason,
-            },
-        )
-        .await
-        .expect("explicit operation dates have no academic containment boundary");
-        assert_eq!(updated.reference_date, date);
-    }
-
-    sqlx::query("UPDATE academic_terms SET status = 'closing' WHERE id = $1")
-        .bind(context.term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let closing = change_sets::create_change_set(
-        &pool,
-        context.teacher_id,
-        CreateAcademicTermChangeSetRequest {
-            academic_term_id: context.term_id,
-            reason: "ภาคเรียนกำลังปิด".to_string(),
-            idempotency_key: stable_uuid("change-set:closing-term"),
-        },
-    )
-    .await
-    .expect("closing allows preparing outstanding operational changes");
-    assert_eq!(closing.status, AcademicTermChangeSetStatus::Draft);
-    for (year_status, term_status) in [("closed", "planning"), ("active", "closed")] {
-        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
-            .bind(context.year_id)
-            .bind(year_status)
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
-            .bind(context.term_id)
-            .bind(term_status)
-            .execute(&pool)
-            .await
-            .unwrap();
-        let closed = change_sets::create_change_set(
-            &pool,
-            context.teacher_id,
-            CreateAcademicTermChangeSetRequest {
-                academic_term_id: context.term_id,
-                reason: "Must not create".into(),
-                idempotency_key: Uuid::new_v4(),
-            },
-        )
-        .await;
-        assert!(matches!(closed, Err(AppError::Conflict(_))));
-        let update = change_sets::update_change_set(
-            &pool,
-            context.teacher_id,
-            closing.id,
-            UpdateAcademicTermChangeSetRequest {
-                row_version: closing.row_version,
-                reference_date: closing.reference_date,
-                reason: "Must not change".into(),
-            },
-        )
-        .await;
-        assert!(matches!(update, Err(AppError::Conflict(_))));
-        let version = school_academic_delivery::services::versions::get_version(
-            &pool,
-            closing.target_delivery_version_id,
-        )
-        .await
-        .unwrap();
-        let deleted = change_sets::delete_version(
-            &pool,
-            context.teacher_id,
-            version.id,
-            delete_opening_request(&closing, &version),
-        )
-        .await;
-        assert!(matches!(deleted, Err(AppError::Conflict(_))));
-        assert_eq!(
-            change_sets::get_change_set(&pool, closing.id)
-                .await
-                .unwrap()
-                .row_version,
-            closing.row_version
-        );
-    }
-}
-
-#[tokio::test]
-async fn add_change_items_create_draft_course_and_activity_delivery_then_delete_cleanly() {
-    use school_academic_delivery::models::versions::{DeliveryChangeKind, DeliveryVersionChange};
-
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_add_items").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        12,
-        "change-set:add-items:idempotency",
-    )
-    .await;
-    let (subject_version_id, activity_version_id, scheduling_mode) =
-        add_operational_change_catalog_fixture(&pool, &context).await;
-    let CreateLearningOfferingRequest::Course(mut course) = course_request(&context) else {
-        unreachable!();
-    };
-    course.subject_version_id = subject_version_id;
-
-    let with_course = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AddCourse {
-            change_set_row_version: change_set.row_version,
-            offering: course,
-        },
-    )
-    .await
-    .expect("a course add item must create draft delivery resources");
-    let (course_item_id, course_offering_id, course_item_row_version) = with_course
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::AddOffering {
-                id,
-                learning_offering_id,
-                row_version,
-                ..
-            } => Some((*id, *learning_offering_id, *row_version)),
-            _ => None,
-        })
-        .expect("the change set must expose the added course item");
-    let (course_status, starts_on): (String, NaiveDate) =
-        sqlx::query_as("SELECT status, starts_on FROM learning_offerings WHERE id = $1")
-            .bind(course_offering_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(course_status, "draft");
-    assert_eq!(starts_on, change_set.reference_date);
-    let target = school_academic_delivery::services::versions::get_version(
-        &pool,
-        change_set.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    let course_target = target
-        .snapshot
-        .offerings
-        .iter()
-        .find(|item| item.id == course_offering_id)
-        .unwrap()
-        .weekly_period_target;
-    let catalog_standard: i32 =
-        sqlx::query_scalar("SELECT periods_per_week FROM subject_versions WHERE id = $1")
-            .bind(subject_version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(course_target, catalog_standard);
-    let course_group_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM learning_groups WHERE learning_offering_id = $1")
-            .bind(course_offering_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(course_group_count, 1);
-    let course = target
-        .snapshot
-        .offerings
-        .iter()
-        .find(|offering| offering.id == course_offering_id)
-        .unwrap();
-    let course_preview = publication_preview(&pool, change_set.id).await.unwrap();
-    assert_eq!(
-        course_preview
-            .changes
-            .iter()
-            .find(|change| change.resource_id == course_offering_id),
-        Some(&DeliveryVersionChange {
-            kind: DeliveryChangeKind::Added,
-            learning_offering_id: course_offering_id,
-            resource_id: course_offering_id,
-            label: format!("{} — {}", course.code, course.name),
-            field: "รายการเปิดสอน".into(),
-            before: None,
-            after: Some(format!("เปิดสอน {} คาบ/สัปดาห์", course.weekly_period_target)),
-        })
-    );
-    let course_finding = course_preview
-        .findings
-        .into_iter()
-        .find(|finding| {
-            finding.learning_offering_id == Some(course_offering_id)
-                && finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
-        })
-        .expect("the added course without a primary teacher must expose its readiness finding");
-    let course_group = &course.groups[0];
-    assert_eq!(
-        course_finding.title,
-        format!(
-            "{} — {} · {}: กลุ่มเรียนยังไม่มีครูหลัก",
-            course.code, course.name, course_group.name
-        ),
-    );
-    assert_eq!(course_finding.learning_group_id, Some(course_group.id));
-    assert_eq!(course_finding.resource_id, Some(target.id));
-    assert_eq!(
-        course_finding.route,
-        Some(format!(
-            "/staff/academic/delivery/{course_offering_id}?deliveryVersionId={}",
-            target.id,
-        ))
-    );
-
-    let without_course = change_sets::delete_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        course_item_id,
-        DeleteAcademicTermChangeItemRequest {
-            change_set_row_version: with_course.row_version,
-            item_row_version: course_item_row_version,
-        },
-    )
-    .await
-    .expect("deleting a draft-only add item must remove its resource graph");
-    let course_still_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM learning_offerings WHERE id = $1)")
-            .bind(course_offering_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert!(!course_still_exists);
-
-    let with_activity = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AddActivity {
-            change_set_row_version: without_course.row_version,
-            weekly_period_target: 2,
-            offering: CreateActivityOfferingRequest {
-                starts_on: runtime_operation_date(),
-                create_homeroom_groups: false,
-                academic_term_id: context.term_id,
-                activity_version_id,
-                curriculum_activity_requirement_id: None,
-                targets: vec![OfferingTargetInput {
-                    target_kind: OfferingTargetKind::Homeroom,
-                    homeroom_id: Some(context.homeroom_id),
-                    grade_level_id: context.grade_level_id,
-                    study_program_id: context.study_program_id,
-                }],
-                registration_type: ActivityRegistrationType::Assigned,
-                scheduling_mode,
-                capacity: None,
-                attendance_requirement: ActivityAttendanceRequirement {
-                    minimum_percent: None,
-                    required_sessions: None,
-                },
-                pass_criteria: ActivityPassCriteria {
-                    require_attendance: false,
-                    require_teacher_confirmation: true,
-                    outcomes: vec!["pass".to_string(), "fail".to_string()],
-                },
-            },
-        },
-    )
-    .await
-    .expect("an activity add item must require and store an explicit period target");
-    let target = school_academic_delivery::services::versions::get_version(
-        &pool,
-        change_set.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    let activity_target = target.snapshot.offerings.iter().find(|item| item.kind==LearningOfferingKind::Activity && matches!(&item.catalog,LearningOfferingSnapshot::Activity(activity) if activity.activity_version_id==activity_version_id)).map(|item| item.weekly_period_target);
-    assert_eq!(activity_target, Some(2));
-    assert_eq!(with_activity.items.len(), 1);
-    let activity = target
-        .snapshot
-        .offerings
-        .iter()
-        .find(|offering| {
-            offering.kind == LearningOfferingKind::Activity
-                && matches!(&offering.catalog, LearningOfferingSnapshot::Activity(activity)
-                if activity.activity_version_id == activity_version_id)
-        })
-        .unwrap();
-    let activity_group = groups::create(
-        &pool,
-        context.teacher_id,
-        activity.id,
-        CreateLearningGroupRequest {
-            name: "กลุ่มกิจกรรมรอครูหลัก".into(),
-            description: None,
-            capacity: None,
-            preferred_room_ids: Vec::new(),
-        },
-    )
-    .await
-    .unwrap();
-    let target_before_preview =
-        school_academic_delivery::services::versions::get_version(&pool, target.id)
-            .await
-            .unwrap();
-    let target_bytes_before_preview = serde_json::to_vec(&target_before_preview).unwrap();
-    let preview = publication_preview(&pool, change_set.id).await.unwrap();
-    let activity_changes: Vec<_> = preview
-        .changes
-        .iter()
-        .filter(|change| change.learning_offering_id == activity.id)
-        .cloned()
-        .collect();
-    let mut expected_activity_changes = vec![DeliveryVersionChange {
-        kind: DeliveryChangeKind::Added,
-        learning_offering_id: activity.id,
-        resource_id: activity.id,
-        label: activity.name.clone(),
-        field: "รายการเปิดสอน".into(),
-        before: None,
-        after: Some("เปิดสอน 2 คาบ/สัปดาห์".into()),
-    }];
-    let mut activity_groups = activity
-        .groups
-        .iter()
-        .map(|group| (group.id, group.name.as_str()))
-        .collect::<Vec<_>>();
-    activity_groups.push((activity_group.id, activity_group.name.as_str()));
-    activity_groups.sort_by_key(|(id, _)| *id);
-    expected_activity_changes.extend(activity_groups.into_iter().map(|(id, name)| {
-        DeliveryVersionChange {
-            kind: DeliveryChangeKind::Added,
-            learning_offering_id: activity.id,
-            resource_id: id,
-            label: format!("{} · {}", activity.name, name),
-            field: "กลุ่มเรียน".into(),
-            before: None,
-            after: Some(name.into()),
-        }
-    }));
-    assert_eq!(activity_changes, expected_activity_changes);
-    assert!(activity_changes
-        .iter()
-        .all(|change| !change.label.contains(&activity.code) && !change.label.contains("ACT-")));
-    assert_eq!(
-        with_activity
-            .changes
-            .iter()
-            .find(|change| change.resource_id == activity.id),
-        activity_changes.first()
-    );
-    let activity_finding = preview
-        .findings
-        .iter()
-        .find(|finding| {
-            finding.learning_offering_id == Some(activity.id)
-                && finding.learning_group_id == Some(activity_group.id)
-                && finding.code == AcademicChangeFindingCode::MissingPrimaryTeacher
-        })
-        .expect("the activity without a primary teacher must expose its readiness finding");
-    assert!(!activity_finding.title.contains(&activity.code));
-    assert_eq!(
-        activity_finding.title,
-        format!(
-            "{} · {}: กลุ่มเรียนยังไม่มีครูหลัก",
-            activity.name, activity_group.name
-        ),
-    );
-    assert_eq!(activity_finding.learning_group_id, Some(activity_group.id));
-    assert_eq!(activity_finding.resource_id, Some(target.id));
-    assert_eq!(
-        activity_finding.severity,
-        AcademicChangeFindingSeverity::Blocking
-    );
-    assert_eq!(activity_finding.guidance, "เลือกครูหลักให้กลุ่มเรียนก่อนเผยแพร่");
-    assert_eq!(
-        activity_finding.route,
-        Some(format!(
-            "/staff/academic/delivery/{}?deliveryVersionId={}",
-            activity.id, target.id,
-        ))
-    );
-    let repeated = publication_preview(&pool, change_set.id).await.unwrap();
-    assert_eq!(repeated.preview_hash, preview.preview_hash);
-    assert_eq!(repeated.changes, preview.changes);
-    assert_eq!(
-        serde_json::to_value(repeated.findings).unwrap(),
-        serde_json::to_value(&preview.findings).unwrap()
-    );
-    let target_after_preview =
-        school_academic_delivery::services::versions::get_version(&pool, target.id)
-            .await
-            .unwrap();
-    assert_eq!(
-        serde_json::to_vec(&target_after_preview).unwrap(),
-        target_bytes_before_preview
-    );
-}
-
-#[tokio::test]
-async fn adjust_and_stop_items_mutate_only_the_target_version_and_delete_restores_it() {
-    let pool = prepare_delivery_runtime_fixture("academic_opening_adjust_stop").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let created = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        13,
-        "opening:adjust-stop",
-    )
-    .await;
-    let base = school_academic_delivery::services::versions::get_version(
-        &pool,
-        created.base_delivery_version_id.unwrap(),
-    )
-    .await
-    .unwrap();
-    let first = &base.snapshot.offerings[0];
-    let before_tables: serde_json::Value = sqlx::query_scalar(
-        "SELECT jsonb_agg(to_jsonb(block) ORDER BY id) FROM academic_timetable_blocks block",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let adjusted = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        created.id,
-        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: created.row_version,
-            item_row_version: None,
-            learning_offering_id: first.id,
-            weekly_period_target: first.weekly_period_target + 1,
-        },
-    )
-    .await
-    .unwrap();
-    let target = school_academic_delivery::services::versions::get_version(
-        &pool,
-        created.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        target
-            .snapshot
-            .offerings
-            .iter()
-            .find(|offering| offering.id == first.id)
-            .unwrap()
-            .weekly_period_target,
-        first.weekly_period_target + 1
-    );
-    let item = &adjusted.items[0];
-    let restored = change_sets::delete_change_item(
-        &pool,
-        context.teacher_id,
-        created.id,
-        match item {
-            super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget { id, .. }
-            | super::models::AcademicTermChangeItem::StopOffering { id, .. } => *id,
-            _ => panic!("expected opening adjustment"),
-        },
-        DeleteAcademicTermChangeItemRequest {
-            change_set_row_version: adjusted.row_version,
-            item_row_version: match item {
-                super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
-                    row_version,
-                    ..
-                }
-                | super::models::AcademicTermChangeItem::StopOffering { row_version, .. } => {
-                    *row_version
-                }
-                _ => panic!("expected opening adjustment"),
-            },
-        },
-    )
-    .await
-    .unwrap();
-    let stopped = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        created.id,
-        UpsertAcademicTermChangeItemRequest::StopOffering {
-            change_set_row_version: restored.row_version,
-            item_row_version: None,
-            learning_offering_id: first.id,
-        },
-    )
-    .await
-    .unwrap();
-    let target = school_academic_delivery::services::versions::get_version(
-        &pool,
-        created.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    assert!(!target
-        .snapshot
-        .offerings
-        .iter()
-        .any(|offering| offering.id == first.id));
-    let item = &stopped.items[0];
-    change_sets::delete_change_item(
-        &pool,
-        context.teacher_id,
-        created.id,
-        match item {
-            super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget { id, .. }
-            | super::models::AcademicTermChangeItem::StopOffering { id, .. } => *id,
-            _ => panic!("expected opening adjustment"),
-        },
-        DeleteAcademicTermChangeItemRequest {
-            change_set_row_version: stopped.row_version,
-            item_row_version: match item {
-                super::models::AcademicTermChangeItem::AdjustWeeklyPeriodTarget {
-                    row_version,
-                    ..
-                }
-                | super::models::AcademicTermChangeItem::StopOffering { row_version, .. } => {
-                    *row_version
-                }
-                _ => panic!("expected opening adjustment"),
-            },
-        },
-    )
-    .await
-    .unwrap();
-    let restored = school_academic_delivery::services::versions::get_version(
-        &pool,
-        created.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        serde_json::to_value(&restored.snapshot).unwrap(),
-        serde_json::to_value(&base.snapshot).unwrap()
-    );
-    let after_tables: serde_json::Value = sqlx::query_scalar(
-        "SELECT jsonb_agg(to_jsonb(block) ORDER BY id) FROM academic_timetable_blocks block",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        before_tables, after_tables,
-        "opening adjustments never rewrite placements"
-    );
 }
 
 #[tokio::test]
@@ -2841,8 +1036,6 @@ async fn dated_roster_remove_and_readd_preserve_inclusive_membership_history() {
                  ON membership.learning_group_id = learning_group.id
                 AND membership.membership_status = 'active'
                WHERE learning_group.academic_term_id = $1
-                 AND learning_group.status = 'published'
-                 AND learning_group.roster_status = 'published'
                ORDER BY learning_group.id, membership.id
                LIMIT 1"#,
         )
@@ -2946,7 +1139,7 @@ async fn dated_roster_remove_and_readd_preserve_inclusive_membership_history() {
 }
 
 #[tokio::test]
-async fn dated_roster_rejects_closed_groups_and_dates_outside_availability() {
+async fn dated_roster_rejects_closed_terms_and_dates_before_actual_join() {
     let pool = prepare_delivery_runtime_fixture("academic_dated_roster_guards").await;
     let context = operational_change_runtime_context(&pool).await;
     let (group_id, membership_id): (Uuid, Uuid) = sqlx::query_as(
@@ -2956,8 +1149,6 @@ async fn dated_roster_rejects_closed_groups_and_dates_outside_availability() {
              ON membership.learning_group_id = learning_group.id
             AND membership.membership_status = 'active'
            WHERE learning_group.academic_term_id = $1
-             AND learning_group.status = 'published'
-             AND learning_group.roster_status = 'published'
            ORDER BY learning_group.id, membership.id
            LIMIT 1"#,
     )
@@ -2972,16 +1163,7 @@ async fn dated_roster_rejects_closed_groups_and_dates_outside_availability() {
         .into_iter()
         .find(|value| value.id == membership_id)
         .unwrap();
-    let before_offering: NaiveDate = sqlx::query_scalar(
-        r#"SELECT offering.starts_on - 1
-           FROM learning_groups learning_group
-           JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
-           WHERE learning_group.id = $1"#,
-    )
-    .bind(group_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let before_offering = membership.joined_at - Duration::days(1);
     let invalid_date = roster_memberships::remove_membership(
         &pool,
         context.teacher_id,
@@ -2997,7 +1179,7 @@ async fn dated_roster_rejects_closed_groups_and_dates_outside_availability() {
     .expect_err("membership dates before offering availability must fail");
     assert!(matches!(invalid_date, AppError::ValidationError(_)));
 
-    sqlx::query("UPDATE learning_groups SET status = 'closed' WHERE id = $1")
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=(SELECT academic_term_id FROM learning_groups WHERE id=$1)")
         .bind(group_id)
         .execute(&pool)
         .await
@@ -3018,1294 +1200,10 @@ async fn dated_roster_rejects_closed_groups_and_dates_outside_availability() {
     assert!(matches!(closed, AppError::Conflict(_)));
 }
 
-#[tokio::test]
-async fn change_set_preview_blocks_an_empty_change_set_with_a_stable_hash() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_preview_empty").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        14,
-        "change-set:preview-empty:idempotency",
-    )
-    .await;
-
-    let preview = publication_preview(&pool, change_set.id)
-        .await
-        .expect("a draft change set must return a typed preview");
-
-    assert_eq!(preview.change_set_id, change_set.id);
-    assert_eq!(preview.change_set_row_version, change_set.row_version);
-    assert_eq!(
-        preview.target_delivery_version_id,
-        change_set.target_delivery_version_id
-    );
-    assert_eq!(preview.preview_hash.len(), 64);
-    assert!(preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::ChangeSetNoItems
-            && finding.severity == AcademicChangeFindingSeverity::Blocking
-    }));
-    for (year_status, term_status, blocked) in [
-        ("closing", "closing", false),
-        ("closed", "planning", true),
-        ("active", "closed", true),
-    ] {
-        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
-            .bind(context.year_id)
-            .bind(year_status)
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
-            .bind(context.term_id)
-            .bind(term_status)
-            .execute(&pool)
-            .await
-            .unwrap();
-        let state = publication_preview(&pool, change_set.id).await.unwrap();
-        assert_eq!(
-            state
-                .findings
-                .iter()
-                .any(|finding| finding.code == AcademicChangeFindingCode::TermNotWritable),
-            blocked
-        );
-    }
-    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
-        .bind(context.year_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
-        .bind(context.term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert_eq!(preview.impact_counts.groups, 0);
-    let repeated = publication_preview(&pool, change_set.id).await.unwrap();
-    assert_eq!(repeated.preview_hash, preview.preview_hash);
-}
-
-#[tokio::test]
-async fn timetable_readiness_blocks_missing_and_ineligible_exact_entry_instructors() {
-    let pool = prepare_delivery_runtime_fixture("academic_table_exact_instructors").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let draft = independent_table_draft(&pool, &context).await;
-    let (block_id,entry_id): (Uuid,Uuid)=sqlx::query_as("SELECT block.id,placed.id FROM academic_timetable_blocks block JOIN academic_timetable_block_groups placed ON placed.block_id=block.id WHERE block.timetable_version_id=$1 AND block.is_active AND placed.is_active ORDER BY placed.id LIMIT 1").bind(draft.id).fetch_one(&pool).await.unwrap();
-    sqlx::query("DELETE FROM academic_timetable_block_group_instructors WHERE block_group_id=$1")
-        .bind(entry_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let missing = table_preview(&pool, draft.id).await;
-    assert!(!missing.can_publish);
-    assert!(missing.source_issues.iter().any(|issue| issue.block_id==block_id && issue.code==school_academic_timetable::models::timetable_source::TimetableSourceIssueCode::MissingInstructor));
-    let outsider = Uuid::new_v4();
-    sqlx::query("INSERT INTO users(id,email,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,$3,'fixture','ครูนอกกลุ่ม','ทดสอบ','staff','active')")
-        .bind(outsider).bind(format!("{outsider}@example.invalid")).bind(outsider.to_string()).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO academic_timetable_block_group_instructors(block_group_id,instructor_id,role,display_order) VALUES($1,$2,'primary',1)").bind(entry_id).bind(outsider).execute(&pool).await.unwrap();
-    let ineligible = table_preview(&pool, draft.id).await;
-    assert!(!ineligible.can_publish);
-    assert!(ineligible.source_issues.iter().any(|issue| issue.block_id==block_id && issue.teacher_id==Some(outsider) && issue.code==school_academic_timetable::models::timetable_source::TimetableSourceIssueCode::IneligibleInstructor));
-    assert_ne!(missing.preview_hash, ineligible.preview_hash);
-}
-
-#[tokio::test]
-async fn independent_timetable_can_publish_position_changes_without_a_delivery_revision() {
-    use school_academic_timetable::services::timetable_lifecycle;
-    let pool = prepare_delivery_runtime_fixture("academic_table_publish_positions").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let draft = independent_table_draft(&pool, &context).await;
-    let before_openings: serde_json::Value = sqlx::query_scalar(
-        "SELECT jsonb_agg(to_jsonb(opening) ORDER BY id) FROM academic_delivery_versions opening",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
-    let preview = table_preview(&pool, draft.id).await;
-    assert!(preview.content_changed);
-    assert!(
-        preview.can_publish,
-        "table findings: {:?}",
-        preview.findings
-    );
-    let request =
-        school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest {
-            row_version: preview.row_version,
-            effective_from: preview.effective_from,
-            preview_hash: preview.preview_hash,
-            idempotency_key: Uuid::new_v4(),
-        };
-    let published = timetable_lifecycle::publish(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        draft.id,
-        request.clone(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        published.status,
-        school_academic_core::models::TimetableVersionStatus::Published
-    );
-    assert_eq!(published.delivery_version_id, draft.delivery_version_id);
-    assert_eq!(published.effective_from, Some(request.effective_from));
-    let repeated = timetable_lifecycle::publish(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        draft.id,
-        request.clone(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(repeated.row_version, published.row_version);
-    let changed_retry = timetable_lifecycle::publish(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        draft.id,
-        school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest {
-            effective_from: request.effective_from.succ_opt().unwrap(),
-            ..request
-        },
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(changed_retry, AppError::Conflict(_)));
-    let after_openings: serde_json::Value = sqlx::query_scalar(
-        "SELECT jsonb_agg(to_jsonb(opening) ORDER BY id) FROM academic_delivery_versions opening",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        before_openings, after_openings,
-        "table publication never publishes or revises opening data"
-    );
-}
-
-#[tokio::test]
-async fn change_set_preview_blocks_a_past_effective_date_after_the_term_becomes_active() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_preview_past_date").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        1,
-        "change-set:preview-past-date:idempotency",
-    )
-    .await;
-    sqlx::query("UPDATE academic_term_change_sets SET reference_date = $1 WHERE id = $2")
-        .bind(Utc::now().date_naive() - chrono::Duration::days(1))
-        .bind(change_set.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_delivery_versions SET reference_date=$1 WHERE id=$2")
-        .bind(Utc::now().date_naive() - Duration::days(1))
-        .bind(change_set.target_delivery_version_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET status = 'active' WHERE id = $1")
-        .bind(context.term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let preview = publication_preview(&pool, change_set.id).await.unwrap();
-
-    assert!(preview.findings.iter().any(|finding| {
-        finding.code == AcademicChangeFindingCode::EffectiveDateInvalid
-            && finding.severity == AcademicChangeFindingSeverity::Blocking
-    }));
-}
-
-#[tokio::test]
-async fn change_set_preview_counts_stop_impact_without_exposing_roster_identities() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_preview_stop_impact").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        15,
-        "change-set:preview-stop-impact:idempotency",
-    )
-    .await;
-    let (offering_id, learning_group_id, subject_id, student_academic_year_id): (
-        Uuid,
-        Uuid,
-        Uuid,
-        Uuid,
-    ) = sqlx::query_as(
-        r#"SELECT target.learning_offering_id,
-                      learning_group.id,
-                      detail.subject_id,
-                      membership.student_academic_year_id
-           FROM (SELECT opening.id AS delivery_version_id,(entry->>'id')::uuid AS learning_offering_id,(entry->>'weeklyPeriodTarget')::integer AS weekly_period_target FROM academic_delivery_versions opening CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry) target
-           JOIN course_offering_details detail
-             ON detail.learning_offering_id = target.learning_offering_id
-           JOIN learning_groups learning_group
-             ON learning_group.learning_offering_id = target.learning_offering_id
-            AND learning_group.academic_term_id = detail.academic_term_id
-            AND learning_group.academic_year_id = detail.academic_year_id
-           JOIN learning_group_students membership
-             ON membership.learning_group_id = learning_group.id
-           WHERE target.delivery_version_id = $1
-             AND learning_group.status <> 'closed'
-             AND membership.left_at IS NULL
-           ORDER BY target.learning_offering_id, learning_group.id, membership.id
-           LIMIT 1"#,
-    )
-    .bind(change_set.base_delivery_version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"INSERT INTO learning_group_result_overrides
-              (learning_group_id,learning_offering_id,academic_term_id,academic_year_id,
-               subject_id,student_academic_year_id,outcome,updated_by)
-           VALUES ($1,$2,$3,$4,$5,$6,'incomplete',$7)
-           ON CONFLICT (learning_group_id,student_academic_year_id)
-           DO UPDATE SET outcome = EXCLUDED.outcome,
-                         updated_by = EXCLUDED.updated_by,
-                         updated_at = now()"#,
-    )
-    .bind(learning_group_id)
-    .bind(offering_id)
-    .bind(context.term_id)
-    .bind(context.year_id)
-    .bind(subject_id)
-    .bind(student_academic_year_id)
-    .bind(context.teacher_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    let expected = sqlx::query(
-        r#"SELECT
-             (SELECT count(*) FROM learning_groups WHERE learning_offering_id = $1) AS groups,
-             (SELECT count(*) FROM learning_group_homerooms coverage
-                JOIN learning_groups learning_group ON learning_group.id = coverage.learning_group_id
-                WHERE learning_group.learning_offering_id = $1) AS homerooms,
-             (SELECT count(*) FROM learning_group_students membership
-                JOIN learning_groups learning_group ON learning_group.id = membership.learning_group_id
-                WHERE learning_group.learning_offering_id = $1) AS membership_intervals,
-             (SELECT count(*) FROM learning_group_teachers teacher
-                JOIN learning_groups learning_group ON learning_group.id = teacher.learning_group_id
-                WHERE learning_group.learning_offering_id = $1) AS teacher_assignments,
-             (SELECT count(*) FROM academic_timetable_blocks block
-                WHERE block.timetable_version_id IN (SELECT id FROM academic_timetable_versions WHERE delivery_version_id=$2)
-                  AND block.learning_offering_id = $1 AND block.is_active) AS target_timetable_entries,
-             (SELECT count(*) FROM course_assessment_plans plan
-                WHERE plan.learning_offering_id = $1) AS course_assessment_plans,
-             (SELECT count(*) FROM course_assessment_phases phase
-                JOIN course_assessment_plans plan ON plan.id = phase.plan_id
-                WHERE plan.learning_offering_id = $1) AS course_assessment_phases,
-             (SELECT count(*) FROM learning_group_score_items item
-                WHERE item.learning_offering_id = $1) AS learning_group_score_items,
-             (SELECT count(*) FROM learning_group_student_scores score
-                WHERE score.learning_offering_id = $1) AS student_scores,
-             (SELECT count(*) FROM learning_group_result_overrides selection
-                JOIN learning_groups learning_group
-                  ON learning_group.id = selection.learning_group_id
-                WHERE learning_group.learning_offering_id = $1) AS result_selections,
-             ((SELECT count(*) FROM learning_group_phase_confirmations confirmation
-                 JOIN learning_groups learning_group
-                   ON learning_group.id = confirmation.learning_group_id
-                 WHERE learning_group.learning_offering_id = $1)
-              + (SELECT count(*) FROM learning_group_result_confirmations confirmation
-                 JOIN learning_groups learning_group
-                   ON learning_group.id = confirmation.learning_group_id
-                 WHERE learning_group.learning_offering_id = $1)
-              + (SELECT count(*) FROM academic_activity_result_confirmations confirmation
-                 JOIN learning_groups learning_group
-                   ON learning_group.id = confirmation.learning_group_id
-                 WHERE learning_group.learning_offering_id = $1)
-              + (SELECT count(*) FROM learning_group_evaluation_confirmations confirmation
-                 JOIN learning_groups learning_group
-                   ON learning_group.id = confirmation.learning_group_id
-                 WHERE learning_group.learning_offering_id = $1)) AS result_confirmations,
-             (SELECT count(*) FROM academic_activity_evaluations evaluation
-                WHERE evaluation.learning_offering_id = $1) AS activity_evaluations,
-             (SELECT count(*) FROM learning_group_student_evaluations evaluation
-                WHERE evaluation.learning_offering_id = $1) AS learner_evaluations,
-             (SELECT count(*) FROM (
-                  SELECT course_lock.id
-                  FROM academic_course_result_locks course_lock
-                  WHERE EXISTS (
-                      SELECT 1 FROM course_offering_details detail
-                      WHERE detail.learning_offering_id = $1
-                        AND detail.subject_id = course_lock.subject_id
-                        AND detail.academic_term_id = course_lock.academic_term_id
-                        AND detail.academic_year_id = course_lock.academic_year_id
-                  )
-                  UNION ALL
-                  SELECT activity_lock.id
-                  FROM academic_activity_result_locks activity_lock
-                  WHERE activity_lock.learning_offering_id = $1
-                  UNION ALL
-                  SELECT evaluation_lock.id
-                  FROM subject_term_evaluation_locks evaluation_lock
-                  WHERE EXISTS (
-                      SELECT 1 FROM course_offering_details detail
-                      WHERE detail.learning_offering_id = $1
-                        AND detail.subject_id = evaluation_lock.subject_id
-                        AND detail.academic_term_id = evaluation_lock.academic_term_id
-                        AND detail.academic_year_id = evaluation_lock.academic_year_id
-                  )
-              ) official_lock) AS official_result_locks,
-             ((SELECT count(*) FROM academic_course_results result
-                 WHERE result.learning_offering_id = $1)
-              + (SELECT count(*) FROM academic_activity_results result
-                 WHERE result.learning_offering_id = $1)
-              + (SELECT count(*) FROM subject_term_student_evaluations result
-                 WHERE result.learning_offering_id = $1)) AS official_results,
-             (SELECT count(*) FROM academic_result_corrections correction
-                WHERE EXISTS (
-                    SELECT 1 FROM academic_course_results result
-                    WHERE result.id = correction.course_result_id
-                      AND result.learning_offering_id = $1
-                ) OR EXISTS (
-                    SELECT 1 FROM academic_activity_results result
-                    WHERE result.id = correction.activity_result_id
-                      AND result.learning_offering_id = $1
-                ) OR EXISTS (
-                    SELECT 1 FROM subject_term_student_evaluations result
-                    WHERE result.id = correction.subject_student_evaluation_id
-                      AND result.learning_offering_id = $1
-                )) AS result_corrections,
-             (SELECT count(*) FROM academic_exam_schedule_items item
-                WHERE item.learning_offering_id = $1) AS exam_schedule_items,
-             (SELECT count(*) FROM supervision_observations observation
-                JOIN learning_groups learning_group ON learning_group.id = observation.learning_group_id
-                WHERE learning_group.learning_offering_id = $1) AS supervision_observations"#,
-    )
-    .bind(offering_id)
-    .bind(change_set.base_delivery_version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let expected = AcademicChangeImpactCounts {
-        groups: expected.get("groups"),
-        homerooms: expected.get("homerooms"),
-        membership_intervals: expected.get("membership_intervals"),
-        teacher_assignments: expected.get("teacher_assignments"),
-        target_timetable_entries: expected.get("target_timetable_entries"),
-        course_assessment_plans: expected.get("course_assessment_plans"),
-        course_assessment_phases: expected.get("course_assessment_phases"),
-        learning_group_score_items: expected.get("learning_group_score_items"),
-        student_scores: expected.get("student_scores"),
-        result_selections: expected.get("result_selections"),
-        result_confirmations: expected.get("result_confirmations"),
-        activity_evaluations: expected.get("activity_evaluations"),
-        learner_evaluations: expected.get("learner_evaluations"),
-        official_result_locks: expected.get("official_result_locks"),
-        official_results: expected.get("official_results"),
-        result_corrections: expected.get("result_corrections"),
-        exam_schedule_items: expected.get("exam_schedule_items"),
-        supervision_observations: expected.get("supervision_observations"),
-    };
-    assert!(expected.result_selections > 0);
-
-    let changed = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::StopOffering {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-        },
-    )
-    .await
-    .unwrap();
-    let preview = publication_preview(&pool, changed.id).await.unwrap();
-    assert_eq!(
-        offerings::operational_change_offering_ids(&pool, changed.id)
-            .await
-            .unwrap(),
-        vec![offering_id]
-    );
-
-    assert_eq!(preview.impact_counts, expected);
-    assert!(!preview
-        .findings
-        .iter()
-        .any(|finding| finding.code == AcademicChangeFindingCode::ChangeSetNoItems));
-}
-
-#[tokio::test]
-async fn timetable_preview_reports_each_group_below_its_opening_target() {
-    let pool = prepare_delivery_runtime_fixture("academic_table_group_deficits").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let draft = independent_table_draft(&pool, &context).await;
-    let opening =
-        school_academic_delivery::services::versions::get_version(&pool, draft.delivery_version_id)
-            .await
-            .unwrap();
-    let offering = opening
-        .snapshot
-        .offerings
-        .iter()
-        .find(|offering| {
-            matches!(&offering.catalog, LearningOfferingSnapshot::Course(_))
-                && !offering.groups.is_empty()
-        })
-        .unwrap();
-    sqlx::query("DELETE FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND learning_offering_id=$2").bind(draft.id).bind(offering.id).execute(&pool).await.unwrap();
-    let preview = table_preview(&pool, draft.id).await;
-    assert!(!preview.can_publish);
-    for group in &offering.groups {
-        assert!(preview.findings.iter().any(|finding| finding.code==school_academic_timetable::models::timetable_publication::TimetablePublicationFindingCode::PeriodCountMismatch && finding.learning_group_id==Some(group.id) && finding.learning_offering_id==Some(offering.id)));
-    }
-}
-
-#[tokio::test]
-async fn timetable_preview_stays_unchanged_after_a_rejected_draft_collision() {
-    let pool = prepare_delivery_runtime_fixture("academic_table_rejected_collision").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let draft = independent_table_draft(&pool, &context).await;
-    let block=timetable_block_service::get_block(&pool,sqlx::query_scalar("SELECT block.id FROM academic_timetable_blocks block JOIN academic_timetable_block_groups placed ON placed.block_id=block.id WHERE block.timetable_version_id=$1 AND block.is_active AND placed.is_active AND block.scheduling_mode='independent' ORDER BY block.id LIMIT 1").bind(draft.id).fetch_one(&pool).await.unwrap()).await.unwrap();
-    let placed = &block.groups[0];
-    let before = table_preview(&pool, draft.id).await;
-    let collision = timetable_block_service::create_ordinary_block(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        CreateOrdinaryTimetableBlockRequest {
-            timetable_version_id: draft.id,
-            academic_term_id: context.term_id,
-            learning_group_id: placed.learning_group_id,
-            day_of_week: block.day_of_week.clone(),
-            bell_schedule_period_id: block.bell_schedule_period_id,
-            room_id: placed.room_id,
-            note: None,
-            instructor_ids: placed
-                .instructors
-                .iter()
-                .map(|teacher| teacher.teacher_id)
-                .collect(),
-        },
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(collision, AppError::Conflict(_)));
-    let after = table_preview(&pool, draft.id).await;
-    assert_eq!(before.preview_hash, after.preview_hash);
-    assert_eq!(before.block_count, after.block_count);
-}
-
-#[tokio::test]
-async fn publishing_a_stop_change_set_is_atomic_and_idempotent() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_publish_stop").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        17,
-        "change-set:publish-stop:create",
-    )
-    .await;
-    let offering_id: Uuid = sqlx::query_scalar(
-        r#"SELECT target.learning_offering_id
-           FROM (SELECT opening.id AS delivery_version_id,(entry->>'id')::uuid AS learning_offering_id,(entry->>'weeklyPeriodTarget')::integer AS weekly_period_target FROM academic_delivery_versions opening CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry) target
-           WHERE target.delivery_version_id = $1
-           ORDER BY target.learning_offering_id
-           LIMIT 1"#,
-    )
-    .bind(change_set.base_delivery_version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let raw_offering_sql = "SELECT to_jsonb(offering) FROM learning_offerings offering WHERE id=$1";
-    let original_raw: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
-        .bind(offering_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let original_offering = offerings::get(&pool, offering_id).await.unwrap();
-    let changed = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::StopOffering {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-        },
-    )
-    .await
-    .unwrap();
-    let preview = publication_preview(&pool, changed.id).await.unwrap();
-    let blocking = preview
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking)
-        .collect::<Vec<_>>();
-    assert!(blocking.is_empty(), "blocking findings: {blocking:#?}");
-    let warning_codes = preview
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
-        .map(|finding| finding.code)
-        .collect::<Vec<_>>();
-    let idempotency_key = stable_uuid("change-set:publish-stop:publication");
-    let request = PublishAcademicTermChangeSetRequest {
-        effective_from: preview.effective_from,
-        row_version: preview.change_set_row_version,
-        target_delivery_version_row_version: preview.target_delivery_version_row_version,
-        preview_hash: preview.preview_hash.clone(),
-        acknowledged_warning_codes: warning_codes,
-        idempotency_key,
-    };
-    let before_boundary = preview.effective_from.pred_opt().unwrap();
-    let availability_sql="SELECT academic_delivery_offering_available($1,$2),academic_delivery_offering_available($1,$3)";
-    let initial_availability: (bool, bool) = sqlx::query_as(availability_sql)
-        .bind(offering_id)
-        .bind(before_boundary)
-        .bind(preview.effective_from)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(initial_availability, (true, true));
-    let rejected = school_academic_delivery::services::change_sets::publish_change_set(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        &RejectAssessmentPublication,
-        &pool,
-        context.teacher_id,
-        changed.id,
-        request.clone(),
-    )
-    .await
-    .expect_err("Assessment failure must roll back an otherwise ready stop");
-    assert!(
-        matches!(rejected,AppError::InternalServerError(message) if message=="ASSESSMENT_TEST_REJECTED")
-    );
-    let after_rollback: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
-        .bind(offering_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(after_rollback, original_raw);
-    let partial_effectivity:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM academic_delivery_offering_effectivity WHERE change_set_id=$1)+(SELECT count(*) FROM academic_delivery_teacher_cutoffs WHERE change_set_id=$1)")
-        .bind(changed.id).fetch_one(&pool).await.unwrap();
-    assert_eq!(partial_effectivity, 0);
-    assert_eq!(
-        change_sets::get_change_set(&pool, changed.id)
-            .await
-            .unwrap()
-            .status,
-        AcademicTermChangeSetStatus::Draft
-    );
-    let target_before_retry: String =
-        sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id=$1")
-            .bind(changed.target_delivery_version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(target_before_retry, "draft");
-    let rollback_availability: (bool, bool) = sqlx::query_as(availability_sql)
-        .bind(offering_id)
-        .bind(before_boundary)
-        .bind(preview.effective_from)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(rollback_availability, initial_availability);
-    let published =
-        change_sets::publish_change_set(&pool, context.teacher_id, changed.id, request.clone())
-            .await
-            .expect("a ready stop change must publish atomically");
-    assert_eq!(published.status, AcademicTermChangeSetStatus::Published);
-
-    let after_publish: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
-        .bind(offering_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        after_publish, original_raw,
-        "stop publication preserves the complete raw registry provenance"
-    );
-    let cutoff:(String,NaiveDate,Uuid,Uuid,Uuid,Option<Uuid>,String,Uuid)=sqlx::query_as(
-        "SELECT effect.effect_kind,effect.effective_on,effect.change_set_id,effect.academic_term_id,effect.academic_year_id,accepted.published_by,accepted.reason,accepted.target_delivery_version_id FROM academic_delivery_offering_effectivity effect JOIN academic_term_change_sets accepted ON accepted.id=effect.change_set_id WHERE effect.learning_offering_id=$1 AND effect.change_set_id=$2")
-        .bind(offering_id).bind(changed.id).fetch_one(&pool).await.unwrap();
-    assert_eq!(
-        cutoff,
-        (
-            "cutoff".into(),
-            preview.effective_from,
-            changed.id,
-            context.term_id,
-            context.year_id,
-            Some(context.teacher_id),
-            changed.reason.clone(),
-            changed.target_delivery_version_id
-        )
-    );
-    let stopped_availability: (bool, bool) = sqlx::query_as(availability_sql)
-        .bind(offering_id)
-        .bind(before_boundary)
-        .bind(preview.effective_from)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        stopped_availability,
-        (true, false),
-        "the accepted cutoff, rather than a raw ends_on rewrite, stops dated availability"
-    );
-    let ledger_sql="SELECT jsonb_agg(to_jsonb(effect) ORDER BY effect.learning_offering_id) FROM academic_delivery_offering_effectivity effect WHERE change_set_id=$1";
-    let accepted_ledger: serde_json::Value = sqlx::query_scalar(ledger_sql)
-        .bind(changed.id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let offering = offerings::get(&pool, offering_id)
-        .await
-        .expect("original registry provenance must remain exposed through the offering DTO");
-    assert!(offering.starts_on.is_some());
-    assert_eq!(offering.starts_on, original_offering.starts_on);
-    assert_eq!(offering.ends_on, original_offering.ends_on);
-    assert_eq!(offering.stop_reason, original_offering.stop_reason);
-    let target_status: String =
-        sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id = $1")
-            .bind(changed.target_delivery_version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(target_status, "published");
-    let base_status: String =
-        sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id = $1")
-            .bind(changed.base_delivery_version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(base_status, "published");
-
-    let retried =
-        change_sets::publish_change_set(&pool, context.teacher_id, changed.id, request.clone())
-            .await
-            .expect("the same publication request must be idempotent");
-    assert_eq!(retried.id, published.id);
-    assert_eq!(retried.row_version, published.row_version);
-    assert_eq!(retried.publication_no, published.publication_no);
-    let after_replay: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
-        .bind(offering_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let replay_ledger: serde_json::Value = sqlx::query_scalar(ledger_sql)
-        .bind(changed.id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(after_replay, original_raw);
-    assert_eq!(replay_ledger, accepted_ledger);
-    let mut changed_retry = request;
-    changed_retry.acknowledged_warning_codes =
-        vec![AcademicChangeFindingCode::MissingDeliveryGroup];
-    let conflicting_retry =
-        change_sets::publish_change_set(&pool, context.teacher_id, changed.id, changed_retry)
-            .await
-            .expect_err("the publication key cannot be reused with a different request");
-    assert!(matches!(conflicting_retry, AppError::Conflict(_)));
-    let after_conflict: serde_json::Value = sqlx::query_scalar(raw_offering_sql)
-        .bind(offering_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let conflict_ledger: serde_json::Value = sqlx::query_scalar(ledger_sql)
-        .bind(changed.id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(after_conflict, original_raw);
-    assert_eq!(conflict_ledger, accepted_ledger);
-}
-
-#[tokio::test]
-async fn timetable_period_excess_is_blocking_and_cannot_be_acknowledged_as_a_delivery_warning() {
-    let pool = prepare_delivery_runtime_fixture("academic_table_period_excess").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let draft = independent_table_draft(&pool, &context).await;
-    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
-    let opening =
-        school_academic_delivery::services::versions::get_version(&pool, draft.delivery_version_id)
-            .await
-            .unwrap();
-    let offering = opening
-        .snapshot
-        .offerings
-        .iter()
-        .find(|offering| {
-            matches!(&offering.catalog, LearningOfferingSnapshot::Course(_))
-                && !offering.groups.is_empty()
-        })
-        .unwrap();
-    let group = &offering.groups[0];
-    let slots: Vec<(String,Uuid)>=sqlx::query_as("SELECT day.code,period.id FROM academic_terms term JOIN bell_schedule_periods period ON period.bell_schedule_id=term.bell_schedule_id CROSS JOIN (VALUES('MON'),('TUE'),('WED'),('THU'),('FRI')) day(code) WHERE term.id=$1 AND period.is_active ORDER BY day.code,period.order_index").bind(context.term_id).fetch_all(&pool).await.unwrap();
-    let mut added = false;
-    for (day_of_week, bell_schedule_period_id) in slots {
-        match timetable_block_service::create_ordinary_block(
-            &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-                &pool,
-                context.teacher_id,
-            ),
-            CreateOrdinaryTimetableBlockRequest {
-                timetable_version_id: draft.id,
-                academic_term_id: context.term_id,
-                learning_group_id: group.id,
-                day_of_week,
-                bell_schedule_period_id,
-                room_id: None,
-                note: None,
-                instructor_ids: group
-                    .teachers
-                    .iter()
-                    .map(|teacher| teacher.teacher_id)
-                    .collect(),
-            },
-        )
-        .await
-        {
-            Ok(_) => {
-                added = true;
-                break;
-            }
-            Err(AppError::Conflict(_)) => {}
-            Err(error) => panic!("unexpected extra lesson error: {error:?}"),
-        }
-    }
-    assert!(added);
-    let preview = table_preview(&pool, draft.id).await;
-    assert!(!preview.can_publish);
-    assert!(preview.findings.iter().any(|finding| finding.code==school_academic_timetable::models::timetable_publication::TimetablePublicationFindingCode::PeriodCountMismatch && finding.learning_group_id==Some(group.id)));
-    let publication = school_academic_timetable::services::timetable_lifecycle::publish(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        draft.id,
-        school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest {
-            row_version: preview.row_version,
-            effective_from: preview.effective_from,
-            preview_hash: preview.preview_hash,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(publication, AppError::ValidationError(_)));
-    let rejected = serde_json::from_value::<
-        school_academic_timetable::models::timetable_publication::PublishTimetableVersionRequest,
-    >(
-        serde_json::json!({"rowVersion":1,"effectiveFrom":"2027-01-01","previewHash":"0".repeat(64),"idempotencyKey":Uuid::new_v4(),"acknowledgedWarningCodes":["weekly_period_excess"]}),
-    );
-    assert!(rejected.is_err());
-}
-
-#[tokio::test]
-async fn publication_rolls_back_every_write_when_the_final_change_set_write_fails() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_publish_rollback").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        19,
-        "change-set:publish-rollback:create",
-    )
-    .await;
-    let offering_id: Uuid = sqlx::query_scalar(
-        r#"SELECT learning_offering_id
-           FROM (SELECT opening.id AS delivery_version_id,(entry->>'id')::uuid AS learning_offering_id,(entry->>'weeklyPeriodTarget')::integer AS weekly_period_target FROM academic_delivery_versions opening CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry)
-           WHERE delivery_version_id = $1
-           ORDER BY learning_offering_id LIMIT 1"#,
-    )
-    .bind(change_set.base_delivery_version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let changed = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::StopOffering {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-        },
-    )
-    .await
-    .unwrap();
-    let preview = publication_preview(&pool, changed.id).await.unwrap();
-    assert!(!preview
-        .findings
-        .iter()
-        .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking));
-    sqlx::raw_sql(
-        r#"CREATE FUNCTION academic_test_fail_change_set_publication()
-           RETURNS TRIGGER LANGUAGE plpgsql AS $$
-           BEGIN
-               IF NEW.status = 'published' THEN
-                   RAISE EXCEPTION 'TEST_FINAL_CHANGE_SET_WRITE_FAILURE';
-               END IF;
-               RETURN NEW;
-           END;
-           $$;
-           CREATE TRIGGER academic_test_fail_change_set_publication
-           BEFORE UPDATE ON academic_term_change_sets
-           FOR EACH ROW EXECUTE FUNCTION academic_test_fail_change_set_publication();"#,
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-    let warning_codes = preview
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
-        .map(|finding| finding.code)
-        .collect();
-    let failed = change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        changed.id,
-        PublishAcademicTermChangeSetRequest {
-            effective_from: preview.effective_from,
-            row_version: preview.change_set_row_version,
-            target_delivery_version_row_version: preview.target_delivery_version_row_version,
-            preview_hash: preview.preview_hash,
-            acknowledged_warning_codes: warning_codes,
-            idempotency_key: stable_uuid("change-set:publish-rollback:publication"),
-        },
-    )
-    .await
-    .expect_err("an injected final write failure must roll back the transaction");
-    assert!(matches!(failed, AppError::DbError(_)));
-
-    let offering_end: Option<NaiveDate> =
-        sqlx::query_scalar("SELECT ends_on FROM learning_offerings WHERE id = $1")
-            .bind(offering_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(offering_end, None);
-    let target_status: String =
-        sqlx::query_scalar("SELECT status FROM academic_delivery_versions WHERE id = $1")
-            .bind(changed.target_delivery_version_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(target_status, "draft");
-    assert_eq!(
-        change_sets::get_change_set(&pool, changed.id)
-            .await
-            .unwrap()
-            .status,
-        AcademicTermChangeSetStatus::Draft
-    );
-}
-
-#[tokio::test]
-async fn publishing_an_added_course_preserves_the_separate_roster_publication() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_publish_added_course").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        20,
-        "change-set:publish-added-course:create",
-    )
-    .await;
-    let (subject_version_id, _, _) = add_operational_change_catalog_fixture(&pool, &context).await;
-    let CreateLearningOfferingRequest::Course(mut course) = course_request(&context) else {
-        unreachable!();
-    };
-    course.subject_version_id = subject_version_id;
-    let changed = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::AddCourse {
-            change_set_row_version: change_set.row_version,
-            offering: course,
-        },
-    )
-    .await
-    .unwrap();
-    let added_offering_id = changed
-        .items
-        .iter()
-        .find_map(|item| match item {
-            super::models::AcademicTermChangeItem::AddOffering {
-                learning_offering_id,
-                ..
-            } => Some(*learning_offering_id),
-            _ => None,
-        })
-        .expect("add item must expose the draft offering");
-    let draft_group = groups::list(&pool, added_offering_id)
-        .await
-        .unwrap()
-        .into_iter()
-        .next()
-        .expect("one homeroom target must create a draft group");
-    let with_teacher = groups::replace_teachers(
-        &pool,
-        context.teacher_id,
-        draft_group.id,
-        ReplaceLearningGroupTeachersRequest {
-            row_version: draft_group.row_version,
-            teachers: vec![TeacherAssignmentInput {
-                teacher_id: context.teacher_id,
-                role: LearningTeacherRole::Primary,
-            }],
-        },
-    )
-    .await
-    .unwrap();
-    let roster_preview = groups::preview_roster(&pool, draft_group.id).await.unwrap();
-    let prepared_group = groups::apply_roster(
-        &pool,
-        context.teacher_id,
-        draft_group.id,
-        ApplyRosterRequest {
-            row_version: with_teacher.row_version,
-            source_hash: roster_preview.source_hash,
-            overrides: Vec::new(),
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        prepared_group.roster_status,
-        super::models::RosterStatus::Draft
-    );
-    let preview = publication_preview(&pool, changed.id).await.unwrap();
-    let blocking = preview
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking)
-        .collect::<Vec<_>>();
-    assert!(blocking.is_empty(), "blocking findings: {blocking:#?}");
-    let warning_codes = preview
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
-        .map(|finding| finding.code)
-        .collect();
-    let publication_request = PublishAcademicTermChangeSetRequest {
-        effective_from: preview.effective_from,
-        row_version: preview.change_set_row_version,
-        target_delivery_version_row_version: preview.target_delivery_version_row_version,
-        preview_hash: preview.preview_hash,
-        acknowledged_warning_codes: warning_codes,
-        idempotency_key: stable_uuid("change-set:publish-added-course:publication"),
-    };
-    let rejected = school_academic_delivery::services::change_sets::publish_change_set(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        &RejectAssessmentPublication,
-        &pool,
-        context.teacher_id,
-        changed.id,
-        publication_request.clone(),
-    )
-    .await;
-    assert!(matches!(rejected, Err(AppError::InternalServerError(_))));
-    assert_eq!(
-        offerings::get(&pool, added_offering_id)
-            .await
-            .unwrap()
-            .status,
-        LearningOfferingStatus::Draft
-    );
-    assert!(
-        school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
-            .await
-            .unwrap()
-            .id
-            .is_none()
-    );
-    change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        changed.id,
-        publication_request.clone(),
-    )
-    .await
-    .unwrap();
-    let first_assessment =
-        school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
-            .await
-            .unwrap();
-    assert!(publication_request.effective_from > runtime_operation_date());
-    assert_eq!(
-        first_assessment.assessment_coordinator_id,
-        Some(context.teacher_id)
-    );
-    assert!(!first_assessment.coordinator_candidates.is_empty());
-    assert!(
-        first_assessment.id.is_some(),
-        "the newly published allocation initializes its teacher independent of today"
-    );
-    assert_eq!(first_assessment.phases.len(), 4);
-    let accepted_facts_sql = r#"SELECT jsonb_build_object(
-        'revisions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_term_change_sets r WHERE academic_term_id=$1),
-        'versions',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_delivery_versions r WHERE academic_term_id=$1),
-        'offerings',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_offerings r WHERE academic_term_id=$1),
-        'groups',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_groups r WHERE academic_term_id=$1),
-        'teachers',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_group_teachers r WHERE academic_term_id=$1),
-        'memberships',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM learning_group_students r WHERE academic_term_id=$1),
-        'plans',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM course_assessment_plans r WHERE academic_term_id=$1),
-        'phases',(SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id) FROM course_assessment_phases r JOIN course_assessment_plans p ON p.id=r.plan_id WHERE p.academic_term_id=$1),
-        'audits',(SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM academic_audit_events r WHERE academic_term_id=$1))"#;
-    let accepted_facts: serde_json::Value = sqlx::query_scalar(accepted_facts_sql)
-        .bind(context.term_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let accepted_revision = change_sets::get_change_set(&pool, changed.id)
-        .await
-        .unwrap();
-    let replay = school_academic_delivery::services::change_sets::publish_change_set(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        &RejectAssessmentPublication,
-        &pool,
-        context.teacher_id,
-        changed.id,
-        publication_request,
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        serde_json::to_value(replay).unwrap(),
-        serde_json::to_value(accepted_revision).unwrap(),
-        "accepted replay skips even a rejecting initializer"
-    );
-    assert_eq!(
-        accepted_facts,
-        sqlx::query_scalar::<_, serde_json::Value>(accepted_facts_sql)
-            .bind(context.term_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap()
-    );
-    assert_eq!(
-        school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
-            .await
-            .unwrap()
-            .assessment_coordinator_id,
-        Some(context.teacher_id)
-    );
-    let retained = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        21,
-        "assessment-retained-target:create",
-    )
-    .await;
-    let changed_retained = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        retained.id,
-        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: retained.row_version,
-            item_row_version: None,
-            learning_offering_id: added_offering_id,
-            weekly_period_target: 1,
-        },
-    )
-    .await
-    .unwrap();
-    let retained_preview = publication_preview(&pool, changed_retained.id)
-        .await
-        .unwrap();
-    change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        retained.id,
-        PublishAcademicTermChangeSetRequest {
-            effective_from: retained_preview.effective_from,
-            row_version: retained_preview.change_set_row_version,
-            target_delivery_version_row_version: retained_preview
-                .target_delivery_version_row_version,
-            preview_hash: retained_preview.preview_hash,
-            acknowledged_warning_codes: retained_preview
-                .findings
-                .iter()
-                .filter(|f| f.severity == AcademicChangeFindingSeverity::Warning)
-                .map(|f| f.code)
-                .collect(),
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    let retained_assessment =
-        school_academic_assessment::assessment::services::get_plan_detail(&pool, added_offering_id)
-            .await
-            .unwrap();
-    assert_eq!(
-        retained_assessment.assessment_coordinator_id,
-        Some(context.teacher_id)
-    );
-    assert_eq!(retained_assessment.id, first_assessment.id);
-    assert_eq!(
-        serde_json::to_value(&retained_assessment.phases).unwrap(),
-        serde_json::to_value(&first_assessment.phases).unwrap()
-    );
-
-    let published_offering = offerings::get(&pool, added_offering_id).await.unwrap();
-    assert_eq!(published_offering.status, LearningOfferingStatus::Published);
-    let published_group = groups::get(&pool, draft_group.id).await.unwrap();
-    assert_eq!(published_group.status, LearningOfferingStatus::Published);
-    assert_eq!(
-        published_group.roster_status,
-        super::models::RosterStatus::Draft
-    );
-    assert!(published_group.teachers_locked);
-    let unpublished_memberships: i64 = sqlx::query_scalar(
-        r#"SELECT count(*) FROM learning_group_students
-           WHERE learning_group_id = $1 AND published_at IS NULL"#,
-    )
-    .bind(draft_group.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let membership_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM learning_group_students WHERE learning_group_id=$1",
-    )
-    .bind(draft_group.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        unpublished_memberships, membership_count,
-        "opening publication never publishes student memberships"
-    );
-    let roster = groups::publish_roster(
-        &pool,
-        context.teacher_id,
-        draft_group.id,
-        PublishRosterRequest {
-            row_version: published_group.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(roster.roster_status, super::models::RosterStatus::Published);
-}
-
-#[tokio::test]
-async fn publication_rejects_a_preview_after_a_resource_revision_changes() {
-    let pool = prepare_delivery_runtime_fixture("academic_change_set_publish_stale_preview").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let change_set = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        21,
-        "change-set:publish-stale-preview:create",
-    )
-    .await;
-    let offering_id: Uuid = sqlx::query_scalar(
-        r#"SELECT learning_offering_id
-           FROM (SELECT opening.id AS delivery_version_id,(entry->>'id')::uuid AS learning_offering_id,(entry->>'weeklyPeriodTarget')::integer AS weekly_period_target FROM academic_delivery_versions opening CROSS JOIN LATERAL jsonb_array_elements(opening.snapshot->'offerings') entry)
-           WHERE delivery_version_id = $1
-           ORDER BY learning_offering_id LIMIT 1"#,
-    )
-    .bind(change_set.base_delivery_version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let changed = change_sets::upsert_change_item(
-        &pool,
-        context.teacher_id,
-        change_set.id,
-        UpsertAcademicTermChangeItemRequest::StopOffering {
-            change_set_row_version: change_set.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-        },
-    )
-    .await
-    .unwrap();
-    let preview = publication_preview(&pool, changed.id).await.unwrap();
-    assert!(!preview
-        .findings
-        .iter()
-        .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking));
-    sqlx::query("UPDATE learning_offerings SET row_version = row_version + 1 WHERE id = $1")
-        .bind(offering_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let warning_codes = preview
-        .findings
-        .iter()
-        .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
-        .map(|finding| finding.code)
-        .collect();
-    let stale = change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        changed.id,
-        PublishAcademicTermChangeSetRequest {
-            effective_from: preview.effective_from,
-            row_version: preview.change_set_row_version,
-            target_delivery_version_row_version: preview.target_delivery_version_row_version,
-            preview_hash: preview.preview_hash,
-            acknowledged_warning_codes: warning_codes,
-            idempotency_key: stable_uuid("change-set:publish-stale-preview:publication"),
-        },
-    )
-    .await
-    .expect_err("resource drift after preview must block publication");
-    assert!(matches!(stale, AppError::Conflict(_)));
-    let stopped_end: Option<NaiveDate> =
-        sqlx::query_scalar("SELECT ends_on FROM learning_offerings WHERE id = $1")
-            .bind(offering_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(stopped_end, None);
-    assert_eq!(
-        change_sets::get_change_set(&pool, changed.id)
-            .await
-            .unwrap()
-            .status,
-        AcademicTermChangeSetStatus::Draft
-    );
-}
-
 fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
     CreateLearningOfferingRequest::Course(CreateCourseOfferingRequest {
-        starts_on: runtime_operation_date(),
+        weekly_period_target: 5,
+
         academic_term_id: context.term_id,
         subject_version_id: context.subject_version_id,
         curriculum_course_requirement_id: None,
@@ -4323,24 +1221,24 @@ fn course_request(context: &RuntimeContext) -> CreateLearningOfferingRequest {
 fn course_offering_wire_contract_owns_only_assessment_total() {
     let base = serde_json::json!({
         "academicTermId": Uuid::new_v4(),
-        "startsOn": "2026-10-31",
+        "weeklyPeriodTarget": 5,
         "subjectVersionId": Uuid::new_v4(),
         "curriculumCourseRequirementId": null,
         "targets": [],
         "assessmentTotalScore": "120.50"
     });
     let parsed = serde_json::from_value::<CreateCourseOfferingRequest>(base.clone()).unwrap();
-    assert_eq!(
-        parsed.starts_on,
-        NaiveDate::from_ymd_opt(2026, 10, 31).unwrap()
-    );
+    assert_eq!(parsed.weekly_period_target, 5);
     let mut missing_date = base.clone();
-    missing_date.as_object_mut().unwrap().remove("startsOn");
+    missing_date
+        .as_object_mut()
+        .unwrap()
+        .remove("weeklyPeriodTarget");
     assert!(
         serde_json::from_value::<CreateCourseOfferingRequest>(missing_date)
             .unwrap_err()
             .to_string()
-            .contains("missing field `startsOn`")
+            .contains("missing field `weeklyPeriodTarget`")
     );
     let mut legacy = base;
     legacy["gradingPolicy"] = serde_json::json!({"policyCode": "school_default", "totalScore": "100.00", "passingScore": "50.00"});
@@ -4380,49 +1278,6 @@ async fn course_offering_persists_exact_assessment_total() {
 }
 
 #[tokio::test]
-async fn manual_offering_creation_adds_the_target_to_an_existing_draft() {
-    let pool = prepare_delivery_runtime_fixture("academic_opening_manual_target").await;
-    let context = planning_runtime_context(&pool).await;
-    let created = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        7,
-        "opening:manual-target",
-    )
-    .await;
-    let offering = offerings::create_for_delivery(
-        &pool,
-        context.teacher_id,
-        Some(created.target_delivery_version_id),
-        course_request(&context),
-    )
-    .await
-    .unwrap();
-    let target = school_academic_delivery::services::versions::get_version(
-        &pool,
-        created.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    let captured = target
-        .snapshot
-        .offerings
-        .iter()
-        .find(|item| item.id == offering.id)
-        .unwrap();
-    assert_eq!(captured.weekly_period_target, 3);
-    let journal = change_sets::get_change_set(&pool, created.id)
-        .await
-        .unwrap();
-    assert!(journal.items.iter().any(|item| matches!(item, super::models::AcademicTermChangeItem::AddOffering { learning_offering_id,.. } if *learning_offering_id==offering.id)));
-    assert_eq!(
-        target.status,
-        school_academic_delivery::models::versions::DeliveryVersionStatus::Draft
-    );
-}
-
-#[tokio::test]
 async fn course_offering_snapshot_keeps_the_catalog_standard_immutable() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_weekly_period_target").await;
     let context = planning_runtime_context(&pool).await;
@@ -4457,6 +1312,7 @@ async fn course_offering_snapshot_keeps_the_catalog_standard_immutable() {
         context.teacher_id,
         offering.id,
         UpdateLearningOfferingRequest {
+            weekly_period_target: 5,
             row_version: offering.row_version,
             targets,
         },
@@ -4534,7 +1390,7 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
     let parsed = serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
         "kind": "course",
         "academicTermId": Uuid::nil(),
-        "startsOn": "2026-10-31",
+        "weeklyPeriodTarget": 5,
         "subjectVersionId": Uuid::nil(),
         "targets": [],
         "assessmentTotalScore": "100.00"
@@ -4543,10 +1399,7 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
     let CreateLearningOfferingRequest::Course(course) = parsed else {
         panic!("course tag must select the course DTO")
     };
-    assert_eq!(
-        course.starts_on,
-        NaiveDate::from_ymd_opt(2026, 10, 31).unwrap()
-    );
+    assert_eq!(course.weekly_period_target, 5);
 
     let missing_date = serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
         "kind": "course", "academicTermId": Uuid::nil(), "subjectVersionId": Uuid::nil(),
@@ -4555,7 +1408,7 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
     .unwrap_err()
     .to_string();
     assert!(
-        missing_date.contains("missing field `startsOn`"),
+        missing_date.contains("missing field `weeklyPeriodTarget`"),
         "{missing_date}"
     );
 
@@ -4563,7 +1416,7 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
         serde_json::from_value::<CreateLearningOfferingRequest>(serde_json::json!({
             "kind": "course",
             "academicTermId": Uuid::nil(),
-            "startsOn": "2026-10-31",
+        "weeklyPeriodTarget": 5,
             "activityVersionId": Uuid::nil(),
             "targets": [],
             "assessmentTotalScore": "100.00"
@@ -4572,540 +1425,6 @@ fn create_offering_wire_contract_is_strictly_tagged_by_kind() {
     assert!(
         error.contains("unknown field `activityVersionId`"),
         "{error}"
-    );
-}
-
-#[tokio::test]
-async fn offering_group_and_roster_publish_are_revisioned_and_idempotent() {
-    let pool = prepare_delivery_runtime_fixture("academic_delivery_runtime_publish").await;
-    let context = planning_runtime_context(&pool).await;
-
-    let migrated_published_course_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM learning_offerings WHERE kind = 'course' AND status = 'published' \
-         AND migration_provenance <> '{}'::jsonb ORDER BY id LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let immutable_after_normalization = sqlx::query(
-        "UPDATE course_offering_details SET credit = credit + 1 \
-         WHERE learning_offering_id = $1",
-    )
-    .bind(migrated_published_course_id)
-    .execute(&pool)
-    .await
-    .expect_err("migration 044 must restore published snapshot immutability");
-    assert!(immutable_after_normalization
-        .to_string()
-        .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
-
-    // The old candidate could be expired. Start-only catalogs need an explicit
-    // new future revision to retain this independent offering-start denial case.
-    let source = school_academic_core::services::catalog::get_subject_version(
-        &pool,
-        context.subject_version_id,
-    )
-    .await
-    .unwrap();
-    let offering_start = runtime_operation_date();
-    let future = school_academic_core::services::catalog::create_subject_version(
-        &pool,
-        source.subject_id,
-        school_academic_core::models::CreateSubjectVersionRequest {
-            name_th: format!("{} ฉบับเริ่มหลังเปิดสอนจริง", source.name_th),
-            name_en: source.name_en,
-            credit: source.credit,
-            hours_per_semester: source.hours_per_semester,
-            subject_type: source.subject_type,
-            description: source.description,
-            effective_from: offering_start + chrono::Duration::days(1),
-            term_code: source.term_code,
-            periods_per_week: source.periods_per_week,
-            grade_level_ids: source.grade_level_ids,
-        },
-    )
-    .await
-    .unwrap();
-    let future = school_academic_core::services::catalog::publish_subject_version(
-        &pool,
-        future.id,
-        school_academic_core::models::PublishVersionRequest {
-            row_version: future.row_version,
-        },
-    )
-    .await
-    .unwrap();
-    assert!(future.effective_from > offering_start);
-    let ineffective_subject_version_id = future.id;
-    let mut ineffective_version_request = course_request(&context);
-    let CreateLearningOfferingRequest::Course(course) = &mut ineffective_version_request else {
-        unreachable!();
-    };
-    course.subject_version_id = ineffective_subject_version_id;
-    let ineffective_version =
-        offerings::create(&pool, context.teacher_id, ineffective_version_request).await;
-    assert!(matches!(
-        ineffective_version,
-        Err(AppError::ValidationError(message)) if message == "เวอร์ชันนี้ไม่มีผลในภาคเรียนที่เลือก"
-    ));
-
-    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
-        .await
-        .unwrap();
-    assert_eq!(offering.kind, LearningOfferingKind::Course);
-    assert_eq!(offering.status, LearningOfferingStatus::Draft);
-    assert_eq!(offering.academic_year_id, context.year_id);
-    let expected_owner_id: Uuid = sqlx::query_scalar(
-        r#"SELECT subject.owning_organization_unit_id
-           FROM subject_versions version
-           JOIN subjects subject ON subject.id = version.subject_id
-           WHERE version.id = $1"#,
-    )
-    .bind(context.subject_version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(offering.owning_organization_unit_id, expected_owner_id);
-
-    let group = groups::create(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        CreateLearningGroupRequest {
-            name: "กลุ่มทดสอบ".to_string(),
-            description: None,
-            capacity: Some(40),
-            preferred_room_ids: Vec::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let missing_primary_teacher = offerings::publish(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        PublishLearningOfferingRequest {
-            row_version: offering.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await;
-    assert!(matches!(
-        missing_primary_teacher,
-        Err(AppError::ValidationError(_))
-    ));
-
-    let duplicate_name = groups::create(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        CreateLearningGroupRequest {
-            name: "  กลุ่มทดสอบ  ".to_string(),
-            description: None,
-            capacity: None,
-            preferred_room_ids: Vec::new(),
-        },
-    )
-    .await;
-    assert!(matches!(duplicate_name, Err(AppError::Conflict(_))));
-
-    let duplicate_teacher = groups::replace_teachers(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupTeachersRequest {
-            row_version: group.row_version,
-            teachers: vec![
-                TeacherAssignmentInput {
-                    teacher_id: context.teacher_id,
-                    role: LearningTeacherRole::Primary,
-                },
-                TeacherAssignmentInput {
-                    teacher_id: context.teacher_id,
-                    role: LearningTeacherRole::Secondary,
-                },
-            ],
-        },
-    )
-    .await;
-    assert!(matches!(
-        duplicate_teacher,
-        Err(AppError::ValidationError(_))
-    ));
-
-    let group = groups::replace_teachers(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupTeachersRequest {
-            row_version: group.row_version,
-            teachers: vec![TeacherAssignmentInput {
-                teacher_id: context.teacher_id,
-                role: LearningTeacherRole::Primary,
-            }],
-        },
-    )
-    .await
-    .unwrap();
-    assert!(!group.teachers_locked);
-    let assignment = group
-        .teacher_assignments
-        .first()
-        .expect("teacher replacement must return the created episode");
-    let (
-        offering_starts_on,
-        stored_starts_on,
-        stored_ends_on,
-        stored_row_version,
-        created_by,
-        updated_by,
-    ): (NaiveDate, NaiveDate, Option<NaiveDate>, i64, Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT offering.starts_on, teacher.starts_on, teacher.ends_on,
-                  teacher.row_version, teacher.created_by, teacher.updated_by
-           FROM learning_group_teachers teacher
-           JOIN learning_groups learning_group ON learning_group.id = teacher.learning_group_id
-           JOIN learning_offerings offering ON offering.id = learning_group.learning_offering_id
-           WHERE teacher.id = $1"#,
-    )
-    .bind(assignment.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(assignment.teacher_id, context.teacher_id);
-    assert_eq!(assignment.starts_on, offering_starts_on);
-    assert_eq!(assignment.ends_on, None);
-    assert_eq!(assignment.row_version, 1);
-    assert_eq!(stored_starts_on, offering_starts_on);
-    assert_eq!(stored_ends_on, None);
-    assert_eq!(stored_row_version, 1);
-    assert_eq!(created_by, context.teacher_id);
-    assert_eq!(updated_by, context.teacher_id);
-
-    let wrong_year_homeroom_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM homerooms WHERE academic_year_id <> $1 ORDER BY id LIMIT 1",
-    )
-    .bind(context.year_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let wrong_year_homeroom = groups::replace_homerooms(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupHomeroomsRequest {
-            row_version: group.row_version,
-            homeroom_ids: vec![wrong_year_homeroom_id],
-        },
-    )
-    .await;
-    assert!(matches!(
-        wrong_year_homeroom,
-        Err(AppError::ValidationError(_))
-    ));
-
-    let group = groups::replace_homerooms(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupHomeroomsRequest {
-            row_version: group.row_version,
-            homeroom_ids: vec![context.homeroom_id],
-        },
-    )
-    .await
-    .unwrap();
-
-    let before_rejected_publication: serde_json::Value = sqlx::query_scalar(
-        "SELECT jsonb_build_object('offering',to_jsonb(offering),'groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM learning_groups g WHERE learning_offering_id=offering.id)) FROM learning_offerings offering WHERE id=$1",
-    ).bind(offering.id).fetch_one(&pool).await.unwrap();
-    let rejected = school_academic_delivery::services::offerings::publish(
-        &RejectAssessmentPublication,
-        &pool,
-        context.teacher_id,
-        offering.id,
-        PublishLearningOfferingRequest {
-            row_version: offering.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await;
-    assert!(matches!(rejected, Err(AppError::InternalServerError(_))));
-    let after_rejected_publication: serde_json::Value = sqlx::query_scalar(
-        "SELECT jsonb_build_object('offering',to_jsonb(offering),'groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM learning_groups g WHERE learning_offering_id=offering.id)) FROM learning_offerings offering WHERE id=$1",
-    ).bind(offering.id).fetch_one(&pool).await.unwrap();
-    assert_eq!(before_rejected_publication, after_rejected_publication);
-
-    let published = offerings::publish(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        PublishLearningOfferingRequest {
-            row_version: offering.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(published.status, LearningOfferingStatus::Published);
-    let assessment =
-        school_academic_assessment::assessment::services::get_plan_detail(&pool, offering.id)
-            .await
-            .unwrap();
-    assert_eq!(assessment.assessment_coordinator_id, None);
-    assert!(assessment.id.is_none());
-    assert!(assessment.coordinator_candidates.is_empty());
-    assert_eq!(assessment.phases.len(), 4);
-    assert!(assessment
-        .phases
-        .iter()
-        .all(|phase| phase.max_score == "0.00" && phase.row_version.is_none()));
-
-    let group = groups::get(&pool, group.id).await.unwrap();
-    assert!(group.teachers_locked);
-    let teachers_before: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
-        r#"SELECT id, teacher_id, role::text
-           FROM learning_group_teachers
-           WHERE learning_group_id = $1
-           ORDER BY id"#,
-    )
-    .bind(group.id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    let locked_replacement = groups::replace_teachers(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupTeachersRequest {
-            row_version: group.row_version,
-            teachers: vec![TeacherAssignmentInput {
-                teacher_id: context.teacher_id,
-                role: LearningTeacherRole::Primary,
-            }],
-        },
-    )
-    .await;
-    assert!(
-        matches!(locked_replacement, Err(AppError::Conflict(message)) if message == "เผยแพร่กลุ่มเรียนแล้ว ไม่สามารถเปลี่ยนครูผู้สอนได้")
-    );
-    let teachers_after: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
-        r#"SELECT id, teacher_id, role::text
-           FROM learning_group_teachers
-           WHERE learning_group_id = $1
-           ORDER BY id"#,
-    )
-    .bind(group.id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
-    assert_eq!(teachers_after, teachers_before);
-    assert_eq!(
-        groups::get(&pool, group.id).await.unwrap().row_version,
-        group.row_version
-    );
-    let preview = groups::preview_roster(&pool, group.id).await.unwrap();
-    assert!(!preview.source_hash.is_empty());
-    assert!(preview.added > 0);
-    let group = groups::apply_roster(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ApplyRosterRequest {
-            row_version: group.row_version,
-            source_hash: preview.source_hash,
-            overrides: Vec::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let stale_publish = groups::publish_roster(
-        &pool,
-        context.teacher_id,
-        group.id,
-        PublishRosterRequest {
-            row_version: group.row_version - 1,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await;
-    assert!(matches!(stale_publish, Err(AppError::Conflict(_))));
-
-    let idempotency_key = Uuid::new_v4();
-    let published_group = groups::publish_roster(
-        &pool,
-        context.teacher_id,
-        group.id,
-        PublishRosterRequest {
-            row_version: group.row_version,
-            idempotency_key,
-        },
-    )
-    .await
-    .unwrap();
-    let retried = groups::publish_roster(
-        &pool,
-        context.teacher_id,
-        group.id,
-        PublishRosterRequest {
-            row_version: group.row_version,
-            idempotency_key,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(retried.id, published_group.id);
-    assert_eq!(retried.row_version, published_group.row_version);
-
-    let republished_with_new_key = groups::publish_roster(
-        &pool,
-        context.teacher_id,
-        group.id,
-        PublishRosterRequest {
-            row_version: published_group.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await;
-    assert!(matches!(
-        republished_with_new_key,
-        Err(AppError::Conflict(_))
-    ));
-}
-
-// Catches publish_roster acquiring the group before the offering while roster mutations acquire
-// the offering before the group, which lets the two transactions form a PostgreSQL deadlock.
-#[tokio::test]
-async fn roster_publication_and_apply_serialize_in_canonical_lock_order() {
-    let pool =
-        prepare_concurrent_delivery_runtime_fixture("academic_roster_publish_apply_lock_order")
-            .await;
-    let context = planning_runtime_context(&pool).await;
-    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
-        .await
-        .unwrap();
-    let group = groups::create(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        CreateLearningGroupRequest {
-            name: "ทดสอบลำดับล็อก roster".to_string(),
-            description: None,
-            capacity: Some(40),
-            preferred_room_ids: Vec::new(),
-        },
-    )
-    .await
-    .unwrap();
-    let group = groups::replace_teachers(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupTeachersRequest {
-            row_version: group.row_version,
-            teachers: vec![TeacherAssignmentInput {
-                teacher_id: context.teacher_id,
-                role: LearningTeacherRole::Primary,
-            }],
-        },
-    )
-    .await
-    .unwrap();
-    groups::replace_homerooms(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupHomeroomsRequest {
-            row_version: group.row_version,
-            homeroom_ids: vec![context.homeroom_id],
-        },
-    )
-    .await
-    .unwrap();
-    offerings::publish(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        PublishLearningOfferingRequest {
-            row_version: offering.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    let group = groups::get(&pool, group.id).await.unwrap();
-    let preview = groups::preview_roster(&pool, group.id).await.unwrap();
-    let group = groups::apply_roster(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ApplyRosterRequest {
-            row_version: group.row_version,
-            source_hash: preview.source_hash.clone(),
-            overrides: Vec::new(),
-        },
-    )
-    .await
-    .unwrap();
-
-    let mut offering_blocker = pool.begin().await.unwrap();
-    sqlx::query("SELECT id FROM learning_offerings WHERE id = $1 FOR UPDATE")
-        .bind(offering.id)
-        .execute(&mut *offering_blocker)
-        .await
-        .unwrap();
-
-    let apply_pool = pool.clone();
-    let source_hash = preview.source_hash;
-    let group_id = group.id;
-    let actor_id = context.teacher_id;
-    let row_version = group.row_version;
-    let apply = tokio::spawn(async move {
-        groups::apply_roster(
-            &apply_pool,
-            actor_id,
-            group_id,
-            ApplyRosterRequest {
-                row_version,
-                source_hash,
-                overrides: Vec::new(),
-            },
-        )
-        .await
-    });
-    wait_for_offering_lock_waiters(&pool, 1).await;
-
-    let publish_pool = pool.clone();
-    let publish = tokio::spawn(async move {
-        groups::publish_roster(
-            &publish_pool,
-            actor_id,
-            group_id,
-            PublishRosterRequest {
-                row_version,
-                idempotency_key: Uuid::new_v4(),
-            },
-        )
-        .await
-    });
-    wait_for_offering_lock_waiters(&pool, 2).await;
-    offering_blocker.commit().await.unwrap();
-
-    let (apply_result, publish_result) =
-        tokio::time::timeout(std::time::Duration::from_secs(15), async {
-            tokio::join!(apply, publish)
-        })
-        .await
-        .expect("competing roster mutations must finish without a database deadlock");
-    let applied = apply_result
-        .unwrap()
-        .expect("the first offering-lock waiter must apply the roster");
-    assert_eq!(applied.row_version, row_version + 1);
-    let publish_result = publish_result.unwrap();
-    assert!(
-        matches!(publish_result, Err(AppError::Conflict(_))),
-        "the serialized stale publication must return an optimistic conflict, got {publish_result:?}"
     );
 }
 
@@ -5196,8 +1515,6 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let earlier_edition = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
-            delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![earlier_edition_program_id],
         },
@@ -5212,8 +1529,6 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
-            delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -5225,20 +1540,21 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let publication_id = preview.curriculum_sources[0].publication_id;
     assert!(!preview.source_hash.is_empty());
     assert!(!preview.proposals.is_empty());
-    assert!(preview
-        .proposals
-        .iter()
-        .any(|proposal| !proposal.default_groups.is_empty()));
+    assert!(
+        preview
+            .proposals
+            .iter()
+            .any(|proposal| !proposal.default_groups.is_empty())
+    );
     let choices = default_preparation_choices(&preview);
 
     let mismatched = offerings::apply_from_curriculum(
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: None,
+
             source_hash: "stale-source-hash".to_string(),
             idempotency_key: Uuid::new_v4(),
             choices: choices.clone(),
@@ -5252,10 +1568,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: None,
+
             source_hash: preview.source_hash.clone(),
             idempotency_key,
             choices: choices.clone(),
@@ -5280,29 +1595,17 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         source_count, applied.created_offering_count as i64,
         "retained legacy offerings must not acquire invented provenance"
     );
-    let captured: sqlx::types::Json<school_academic_delivery::models::versions::DeliverySnapshot> =
-        sqlx::query_scalar("SELECT academic_capture_delivery_snapshot($1,$3,$2)")
-            .bind(context.term_id)
-            .bind(sqlx::types::Json(
-                applied
-                    .offering_ids
-                    .iter()
-                    .map(|id| serde_json::json!({"id":id,"weekly_period_target":1}))
-                    .collect::<Vec<_>>(),
-            ))
-            .bind(runtime_operation_date())
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let captured = current_workspace(&pool, context.year_id, context.term_id)
+        .await
+        .unwrap();
     assert_eq!(
         captured
-            .0
             .offerings
             .iter()
-            .filter(|o| o
+            .filter(|offering| offering
                 .curriculum_sources
                 .iter()
-                .any(|s| s.publication_id == publication_id))
+                .any(|source| source.publication_id == publication_id))
             .count(),
         applied.created_offering_count
     );
@@ -5310,10 +1613,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: None,
+
             source_hash: preview.source_hash.clone(),
             idempotency_key,
             choices,
@@ -5327,21 +1629,20 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         applied.created_offering_count > 0,
         "the first receipt must bind a newly created offering date"
     );
-    let changed_date = offerings::apply_from_curriculum(
+    let changed_request = offerings::apply_from_curriculum(
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date() + Duration::days(1),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: None,
-            source_hash: preview.source_hash.clone(),
+
+            source_hash: "changed-current-source".into(),
             idempotency_key,
             choices: default_preparation_choices(&preview),
         },
     )
     .await;
-    assert!(matches!(changed_date, Err(AppError::Conflict(_))));
+    assert!(matches!(changed_request, Err(AppError::Conflict(_))));
 
     assert!(!applied.group_ids.is_empty());
     let course_totals: Vec<String> = sqlx::query_scalar(
@@ -5368,8 +1669,6 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let retained_preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
-            delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -5382,10 +1681,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: None,
+
             source_hash: retained_preview.source_hash.clone(),
             idempotency_key: retained_key,
             choices: retained_choices.clone(),
@@ -5402,10 +1700,9 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date() + Duration::days(30),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: None,
+
             source_hash: retained_preview.source_hash.clone(),
             idempotency_key: retained_key,
             choices: retained_choices,
@@ -5503,8 +1800,6 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
-            delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -5534,10 +1829,9 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: None,
+
             source_hash: preview.source_hash.clone(),
             idempotency_key: Uuid::new_v4(),
             choices: empty_apply_choices,
@@ -5577,10 +1871,9 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: None,
+
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices,
@@ -5621,6 +1914,7 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
         context.teacher_id,
         offering_id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มที่ครูจัดเอง".to_string(),
             description: None,
             capacity: Some(40),
@@ -5643,8 +1937,6 @@ async fn curriculum_preparation_groups_support_reviewed_combined_split_and_manua
     let next_preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
-            delivery_version_id: None,
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -5683,7 +1975,8 @@ async fn self_registration_activity_uses_common_delivery() {
         &pool,
         context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-            starts_on: runtime_operation_date(),
+            weekly_period_target: 1,
+
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -5717,6 +2010,7 @@ async fn self_registration_activity_uses_common_delivery() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กิจกรรมสมัครเอง".to_string(),
             description: None,
             capacity: Some(1),
@@ -5746,17 +2040,6 @@ async fn self_registration_activity_uses_common_delivery() {
         ReplaceLearningGroupHomeroomsRequest {
             row_version: group.row_version,
             homeroom_ids: vec![context.homeroom_id],
-        },
-    )
-    .await
-    .unwrap();
-    offerings::publish(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        PublishLearningOfferingRequest {
-            row_version: offering.row_version,
-            idempotency_key: Uuid::new_v4(),
         },
     )
     .await
@@ -5792,17 +2075,7 @@ async fn self_registration_activity_uses_common_delivery() {
     )
     .await
     .unwrap();
-    groups::publish_roster(
-        &pool,
-        context.teacher_id,
-        group.id,
-        PublishRosterRequest {
-            row_version: group.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
+
     let roster_sources: Vec<String> = sqlx::query_scalar(
         "SELECT roster_source FROM learning_group_students WHERE learning_group_id = $1",
     )
@@ -5814,19 +2087,11 @@ async fn self_registration_activity_uses_common_delivery() {
 }
 
 #[tokio::test]
-async fn student_activity_registration_without_academic_date_boundaries_is_term_scoped_eligible_and_revisioned(
-) {
+async fn student_activity_registration_without_academic_date_boundaries_is_term_scoped_eligible_and_revisioned()
+ {
     let pool =
         prepare_delivery_runtime_fixture("academic_delivery_student_activity_registration").await;
     let context = planning_runtime_context(&pool).await;
-    let opening = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        0,
-        "activity-registration:opening",
-    )
-    .await;
     let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
     let (activity_version_id, scheduling_mode): (Uuid, ActivitySchedulingMode) = sqlx::query_as(
         r#"SELECT version.id, version.scheduling_mode
@@ -5842,12 +2107,12 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
     .fetch_one(&pool)
     .await
     .unwrap();
-    let offering = offerings::create_for_delivery(
+    let offering = offerings::create(
         &pool,
         context.teacher_id,
-        Some(opening.target_delivery_version_id),
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-            starts_on: runtime_operation_date(),
+            weekly_period_target: 1,
+
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -5879,6 +2144,7 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "ชุมนุมดาราศาสตร์".to_string(),
             description: Some("เรียนรู้ท้องฟ้าผ่านการสังเกตจริง".to_string()),
             capacity: Some(1),
@@ -5887,11 +2153,10 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
     )
     .await
     .unwrap();
-    let unlinked_workspace = workspaces::homeroom_delivery_workspace_for_version(
+    let unlinked_workspace = workspaces::homeroom_delivery_workspace(
         &pool,
         context.year_id,
         context.term_id,
-        None,
         &AcademicResourceListFilter {
             includes_school_owned: true,
             ..Default::default()
@@ -5938,6 +2203,7 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "ชุมนุมหุ่นยนต์".to_string(),
             description: None,
             capacity: Some(2),
@@ -5975,24 +2241,37 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
     let query = StudentActivityRegistrationQuery {
         academic_term_id: context.term_id,
     };
+    let closed = activities::list_registration_options(&pool, student_id, query.clone())
+        .await
+        .unwrap();
     assert!(
-        activities::list_registration_options(&pool, student_id, query.clone())
-            .await
-            .unwrap()
-            .is_empty()
+        closed
+            .iter()
+            .filter(|item| item.id == offering.id)
+            .flat_map(|item| &item.groups)
+            .all(|group| !group.registration_open)
     );
-
-    offerings::publish(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        PublishLearningOfferingRequest {
-            row_version: offering.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
+    assert!(matches!(
+        activities::enroll(&pool, student_id, first_group.id, query.clone()).await,
+        Err(AppError::Conflict(_))
+    ));
+    for group in [&first_group, &second_group] {
+        groups::update(
+            &pool,
+            context.teacher_id,
+            group.id,
+            UpdateLearningGroupRequest {
+                row_version: group.row_version,
+                name: group.name.clone(),
+                description: group.description.clone(),
+                capacity: group.capacity,
+                preferred_room_ids: group.preferred_room_ids.clone(),
+                registration_open: true,
+            },
+        )
+        .await
+        .unwrap();
+    }
 
     let available = activities::list_registration_options(&pool, student_id, query.clone())
         .await
@@ -6044,28 +2323,52 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
     .fetch_all(&pool)
     .await
     .unwrap();
-    assert_eq!(
-        audit_events,
-        vec![
-            "activity.self_registered".to_string(),
-            "activity.self_unregistered".to_string()
-        ]
+    assert!(
+        audit_events.is_empty(),
+        "current operational saves do not retain business edit history"
     );
 }
 
 #[tokio::test]
 async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_batch_list").await;
-    let academic_term_id: Uuid = sqlx::query_scalar(
-        r#"SELECT academic_term_id
-           FROM learning_offerings
-           GROUP BY academic_term_id
-           ORDER BY COUNT(*) DESC, academic_term_id
-           LIMIT 1"#,
+    let context = planning_runtime_context(&pool).await;
+    let course = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let (activity_version_id,scheduling_mode):(Uuid,ActivitySchedulingMode)=sqlx::query_as("SELECT id,scheduling_mode FROM activity_versions WHERE status='published' AND effective_from<=$1 ORDER BY id LIMIT 1").bind(runtime_operation_date()).fetch_one(&pool).await.unwrap();
+    let activity = offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
+            academic_term_id: context.term_id,
+            weekly_period_target: 1,
+            create_homeroom_groups: false,
+            activity_version_id,
+            curriculum_activity_requirement_id: None,
+            targets: vec![OfferingTargetInput {
+                target_kind: OfferingTargetKind::Homeroom,
+                homeroom_id: Some(context.homeroom_id),
+                grade_level_id: context.grade_level_id,
+                study_program_id: context.study_program_id,
+            }],
+            registration_type: ActivityRegistrationType::Assigned,
+            scheduling_mode,
+            capacity: None,
+            attendance_requirement: ActivityAttendanceRequirement {
+                minimum_percent: None,
+                required_sessions: None,
+            },
+            pass_criteria: ActivityPassCriteria {
+                require_attendance: false,
+                require_teacher_confirmation: true,
+                outcomes: vec!["pass".into(), "fail".into()],
+            },
+        }),
     )
-    .fetch_one(&pool)
     .await
     .unwrap();
+    let academic_term_id = context.term_id;
 
     let values = offerings::list(
         &pool,
@@ -6079,13 +2382,19 @@ async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
     .unwrap();
 
     assert!(values.len() >= 2);
+    assert!(values.iter().any(|offering| offering.id == course.id));
+    assert!(values.iter().any(|offering| offering.id == activity.id));
     assert!(values.iter().all(|offering| !offering.targets.is_empty()));
-    assert!(values
-        .iter()
-        .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Course(_))));
-    assert!(values
-        .iter()
-        .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Activity(_))));
+    assert!(
+        values
+            .iter()
+            .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Course(_)))
+    );
+    assert!(
+        values
+            .iter()
+            .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Activity(_)))
+    );
     assert!(values.iter().all(|offering| matches!(
         (offering.kind, &offering.snapshot),
         (
@@ -6111,6 +2420,7 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มภาพรวมหนึ่ง".to_string(),
             description: None,
             capacity: Some(40),
@@ -6150,6 +2460,7 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มภาพรวมสอง".to_string(),
             description: None,
             capacity: Some(40),
@@ -6172,17 +2483,7 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     )
     .await
     .unwrap();
-    let published_offering = offerings::publish(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        PublishLearningOfferingRequest {
-            row_version: offering.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
+    let current_offering = offerings::get(&pool, offering.id).await.unwrap();
 
     let first_group = groups::get(&pool, first_group.id).await.unwrap();
     let roster_preview = groups::preview_roster(&pool, first_group.id).await.unwrap();
@@ -6198,86 +2499,11 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     )
     .await
     .unwrap();
-    groups::publish_roster(
-        &pool,
-        context.teacher_id,
-        first_group.id,
-        PublishRosterRequest {
-            row_version: first_group.row_version,
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    let before_opening = workspaces::delivery_overview(
-        &pool,
-        context.term_id,
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    let unavailable = before_opening
-        .offerings
-        .iter()
-        .find(|item| item.offering.id == published_offering.id)
-        .unwrap();
+
     assert_eq!(
-        unavailable.group_count, 2,
-        "registry groups remain the coverage denominator before an opening is published"
+        first_group.teacher_assignments[0].teacher_id,
+        context.teacher_id
     );
-    assert_eq!(
-        unavailable.teacher_assignment_count, 0,
-        "standalone registry publication supplies no canonical opening allocation"
-    );
-    assert_eq!(unavailable.groups_without_primary_teacher, 2);
-    assert_eq!(unavailable.published_roster_count, 1);
-    let revision = change_sets::create_change_set(
-        &pool,
-        context.teacher_id,
-        CreateAcademicTermChangeSetRequest {
-            academic_term_id: context.term_id,
-            reason: "Publish the overview fixture opening".into(),
-            idempotency_key: stable_uuid("delivery-overview:opening"),
-        },
-    )
-    .await
-    .unwrap();
-    let opening_preview = publication_preview(&pool, revision.id).await.unwrap();
-    assert!(
-        !opening_preview
-            .findings
-            .iter()
-            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
-        "{:?}",
-        opening_preview.findings
-    );
-    let accepted = change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        revision.id,
-        PublishAcademicTermChangeSetRequest {
-            row_version: opening_preview.change_set_row_version,
-            target_delivery_version_row_version: opening_preview
-                .target_delivery_version_row_version,
-            effective_from: opening_preview.effective_from,
-            preview_hash: opening_preview.preview_hash,
-            acknowledged_warning_codes: opening_preview
-                .findings
-                .iter()
-                .filter(|finding| finding.severity == AcademicChangeFindingSeverity::Warning)
-                .map(|finding| finding.code)
-                .collect::<std::collections::BTreeSet<_>>()
-                .into_iter()
-                .collect(),
-            idempotency_key: stable_uuid("delivery-overview:publication"),
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(accepted.status, AcademicTermChangeSetStatus::Published);
     let overview = workspaces::delivery_overview(
         &pool,
         context.term_id,
@@ -6291,7 +2517,7 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     let summary = overview
         .offerings
         .iter()
-        .find(|item| item.offering.id == published_offering.id)
+        .find(|item| item.offering.id == current_offering.id)
         .expect("created offering should appear");
     assert_eq!(summary.grade_levels.len(), 1);
     assert_eq!(summary.grade_levels[0].id, context.grade_level_id);
@@ -6302,7 +2528,6 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     assert_eq!(summary.group_count, 2);
     assert_eq!(summary.teacher_assignment_count, 2);
     assert_eq!(summary.groups_without_primary_teacher, 0);
-    assert_eq!(summary.published_roster_count, 1);
 
     let outside_owner_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM organization_units WHERE is_active AND id <> $1 ORDER BY id LIMIT 1",
@@ -6321,190 +2546,12 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     )
     .await
     .expect("organization overview should load");
-    assert!(!outside_scope
-        .offerings
-        .iter()
-        .any(|item| item.offering.id == published_offering.id));
-}
-
-#[tokio::test]
-async fn delivery_version_course_metadata_uses_visible_pinned_versions_without_changing_snapshot() {
-    use school_academic_delivery::services::versions;
-
-    let pool = prepare_delivery_runtime_fixture("delivery_course_metadata_visibility").await;
-    let version_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM academic_delivery_versions WHERE status='published' AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(snapshot->'offerings') offering
-            WHERE offering->>'kind'='course') ORDER BY id LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let stored_before: serde_json::Value = sqlx::query_scalar(
-        "SELECT to_jsonb(version) FROM academic_delivery_versions version WHERE id=$1",
-    )
-    .bind(version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let business_version = versions::get_version(&pool, version_id).await.unwrap();
-    let expected_publication_no = stored_before["publication_no"].as_i64();
-    assert!(expected_publication_no.is_some_and(|number| number > 0));
-    assert_eq!(business_version.publication_no, expected_publication_no);
-    let expected_superseded = business_version.effective_from.is_some_and(|start| {
-        business_version
-            .effective_until
-            .is_some_and(|end| end < start)
-    });
-    assert_eq!(business_version.is_superseded, expected_superseded);
-    // Keep a closed current business field set and order, including publication
-    // chronology. Read-time course metadata stays outside these hashed bytes.
-    #[derive(serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct CurrentBusinessEvidence<'a> {
-        publication_no: Option<i64>,
-        is_superseded: bool,
-        id: Uuid,
-        academic_term_id: Uuid,
-        academic_year_id: Uuid,
-        source_version_id: Option<Uuid>,
-        effective_from: Option<NaiveDate>,
-        reference_date: NaiveDate,
-        effective_until: Option<NaiveDate>,
-        status: school_academic_delivery::models::versions::DeliveryVersionStatus,
-        row_version: i64,
-        created_by: Option<Uuid>,
-        published_by: Option<Uuid>,
-        published_at: Option<chrono::DateTime<Utc>>,
-        created_at: chrono::DateTime<Utc>,
-        updated_at: chrono::DateTime<Utc>,
-        snapshot: &'a school_academic_delivery::models::versions::DeliverySnapshot,
-    }
-    let business_bytes = serde_json::to_vec(&CurrentBusinessEvidence {
-        publication_no: expected_publication_no,
-        is_superseded: expected_superseded,
-        id: business_version.id,
-        academic_term_id: business_version.academic_term_id,
-        academic_year_id: business_version.academic_year_id,
-        source_version_id: business_version.source_version_id,
-        effective_from: business_version.effective_from,
-        reference_date: business_version.reference_date,
-        effective_until: business_version.effective_until,
-        status: business_version.status,
-        row_version: business_version.row_version,
-        created_by: business_version.created_by,
-        published_by: business_version.published_by,
-        published_at: business_version.published_at,
-        created_at: business_version.created_at,
-        updated_at: business_version.updated_at,
-        snapshot: &business_version.snapshot,
-    })
-    .unwrap();
-    assert_eq!(
-        serde_json::to_vec(&business_version).unwrap(),
-        business_bytes
+    assert!(
+        !outside_scope
+            .offerings
+            .iter()
+            .any(|item| item.offering.id == current_offering.id)
     );
-    assert!(serde_json::to_value(&business_version)
-        .unwrap()
-        .get("courseMetadata")
-        .is_none());
-    use sha2::{Digest, Sha256};
-    let business_hash = hex::encode(Sha256::digest(&business_bytes));
-    let mut tx = pool.begin().await.unwrap();
-    let evidence_before =
-        versions::published_source_evidence(&mut tx, version_id, business_version.academic_term_id)
-            .await
-            .unwrap();
-    tx.rollback().await.unwrap();
-    assert_eq!(evidence_before, business_hash);
-    let unrestricted = versions::visible_version_details(
-        &pool,
-        version_id,
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    let first_course = unrestricted
-        .version
-        .snapshot
-        .offerings
-        .iter()
-        .find(|offering| offering.kind == LearningOfferingKind::Course)
-        .unwrap();
-    assert!(!unrestricted.course_metadata.is_empty());
-    let scoped = versions::visible_version_details(
-        &pool,
-        version_id,
-        &AcademicResourceListFilter {
-            organization_unit_ids: vec![first_course.owning_organization_unit_id],
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-    let pinned_ids = scoped
-        .version
-        .snapshot
-        .offerings
-        .iter()
-        .filter_map(|offering| match &offering.catalog {
-            LearningOfferingSnapshot::Course(course) => Some(course.subject_version_id),
-            LearningOfferingSnapshot::Activity(_) => None,
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    let metadata_ids = scoped
-        .course_metadata
-        .iter()
-        .map(|metadata| metadata.subject_version_id)
-        .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(metadata_ids, pinned_ids);
-    assert_eq!(metadata_ids.len(), scoped.course_metadata.len());
-    for metadata in &scoped.course_metadata {
-        let expected: (Uuid, String) = sqlx::query_as(
-            "SELECT subject.subject_group_id, subject_group.name_th
-             FROM subject_versions version JOIN subjects subject ON subject.id=version.subject_id
-             JOIN subject_groups subject_group ON subject_group.id=subject.subject_group_id
-             WHERE version.id=$1",
-        )
-        .bind(metadata.subject_version_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(metadata.subject_group_id, expected.0);
-        assert_eq!(metadata.subject_group_name, expected.1);
-    }
-    let denied = versions::visible_version_details(
-        &pool,
-        version_id,
-        &AcademicResourceListFilter::default(),
-    )
-    .await
-    .unwrap();
-    assert!(denied.version.snapshot.offerings.is_empty());
-    assert!(denied.course_metadata.is_empty());
-    let wire = serde_json::to_value(&scoped).unwrap();
-    assert!(wire["courseMetadata"].is_array());
-    assert_eq!(wire["id"], serde_json::json!(version_id));
-    assert!(wire.get("version").is_none());
-    assert!(wire["snapshot"].get("courseMetadata").is_none());
-    let mut tx = pool.begin().await.unwrap();
-    let evidence_after =
-        versions::published_source_evidence(&mut tx, version_id, business_version.academic_term_id)
-            .await
-            .unwrap();
-    tx.rollback().await.unwrap();
-    assert_eq!(evidence_before, evidence_after);
-    let stored_after: serde_json::Value = sqlx::query_scalar(
-        "SELECT to_jsonb(version) FROM academic_delivery_versions version WHERE id=$1",
-    )
-    .bind(version_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(stored_before, stored_after);
 }
 
 #[tokio::test]
@@ -6625,11 +2672,10 @@ async fn homeroom_delivery_classification_is_pinned_and_independent_of_requireme
         pinned_before,
         "published requirement identities, catalog pins and classifications survive upgrade"
     );
-    let workspace = workspaces::homeroom_delivery_workspace_for_version(
+    let workspace = workspaces::homeroom_delivery_workspace(
         &pool,
         context.year_id,
         context.term_id,
-        None,
         &AcademicResourceListFilter {
             includes_school_owned: true,
             ..Default::default()
@@ -6643,44 +2689,45 @@ async fn homeroom_delivery_classification_is_pinned_and_independent_of_requireme
         .find(|room| room.homeroom.id == context.homeroom_id)
         .unwrap()
         .items;
-    assert!(items
-        .iter()
-        .any(|item| item.subject_type.as_deref() == Some("BASIC")
-            && item.requirement_kind == school_academic_core::models::RequirementKind::Elective));
-    assert!(items
-        .iter()
-        .any(|item| item.subject_type.as_deref() == Some("ADDITIONAL")
-            && item.requirement_kind == school_academic_core::models::RequirementKind::Required));
-    assert!(items
-        .iter()
-        .any(|item| item.subject_type.as_deref() == Some("LEGACY-UNKNOWN")));
-    assert!(items
-        .iter()
-        .any(|item| item.resource_kind == LearningOfferingKind::Activity));
-    assert!(items
-        .iter()
-        .filter(|item| item.resource_kind == LearningOfferingKind::Activity)
-        .all(|item| item.subject_type.is_none()));
+    assert!(
+        items
+            .iter()
+            .any(|item| item.subject_type.as_deref() == Some("BASIC")
+                && item.requirement_kind
+                    == school_academic_core::models::RequirementKind::Elective)
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| item.subject_type.as_deref() == Some("ADDITIONAL")
+                && item.requirement_kind
+                    == school_academic_core::models::RequirementKind::Required)
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| item.subject_type.as_deref() == Some("LEGACY-UNKNOWN"))
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| item.resource_kind == LearningOfferingKind::Activity)
+    );
+    assert!(
+        items
+            .iter()
+            .filter(|item| item.resource_kind == LearningOfferingKind::Activity)
+            .all(|item| item.subject_type.is_none())
+    );
 }
 
 #[tokio::test]
 async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverage() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_homeroom_workspace").await;
     let context = planning_runtime_context(&pool).await;
-    let revision = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        0,
-        "homeroom:opening",
-    )
-    .await;
-    let draft_version_id = revision.target_delivery_version_id;
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
-            delivery_version_id: Some(draft_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
         },
@@ -6700,10 +2747,9 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![context.study_program_id],
-            delivery_version_id: Some(draft_version_id),
+
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices: deferred_choices,
@@ -6722,34 +2768,24 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     .await
     .unwrap();
     assert_eq!(deferred_group_count, 0);
-    let opening =
-        school_academic_delivery::services::versions::get_version(&pool, draft_version_id)
-            .await
-            .unwrap();
-    assert!(applied.offering_ids.iter().all(|id| opening
-        .snapshot
-        .offerings
-        .iter()
-        .any(|item| item.id == *id)));
+    let opening = current_workspace(&pool, context.year_id, context.term_id)
+        .await
+        .unwrap();
+    assert!(
+        applied
+            .offering_ids
+            .iter()
+            .all(|id| opening.offerings.iter().any(|item| item.id == *id))
+    );
 
     let filter = AcademicResourceListFilter {
         includes_school_owned: true,
         ..Default::default()
     };
-    let before = workspaces::homeroom_delivery_workspace_for_version(
-        &pool,
-        context.year_id,
-        context.term_id,
-        None,
-        &filter,
-    )
-    .await
-    .expect("homeroom workspace should load");
-    assert_eq!(before.delivery_version_id, Some(draft_version_id));
-    assert_eq!(
-        before.delivery_version_status,
-        Some(school_academic_delivery::models::versions::DeliveryVersionStatus::Draft)
-    );
+    let before =
+        workspaces::homeroom_delivery_workspace(&pool, context.year_id, context.term_id, &filter)
+            .await
+            .expect("homeroom workspace should load");
     let room = before
         .homerooms
         .iter()
@@ -6763,11 +2799,12 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         .count();
     assert!(central_count > 0);
     assert_eq!(room.ready_count, central_count);
-    assert!(room
-        .items
-        .iter()
-        .filter(|item| item.group_mode == super::models::HomeroomGroupMode::Central)
-        .all(|item| item.teacher_state == super::models::HomeroomTeacherState::Deferred));
+    assert!(
+        room.items
+            .iter()
+            .filter(|item| item.group_mode == super::models::HomeroomGroupMode::Central)
+            .all(|item| item.teacher_state == super::models::HomeroomTeacherState::Deferred)
+    );
     assert!(room.items.iter().all(|item| match item.resource_kind {
         LearningOfferingKind::Course => {
             item.standard_periods_per_week
@@ -6793,6 +2830,7 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         context.teacher_id,
         offering_id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มห้องประจำชั้น".to_string(),
             description: None,
             capacity: Some(40),
@@ -6813,172 +2851,21 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     .await
     .unwrap();
 
-    let after = workspaces::homeroom_delivery_workspace_for_version(
-        &pool,
-        context.year_id,
-        context.term_id,
-        None,
-        &filter,
-    )
-    .await
-    .expect("homeroom workspace should refresh");
+    let after =
+        workspaces::homeroom_delivery_workspace(&pool, context.year_id, context.term_id, &filter)
+            .await
+            .expect("homeroom workspace should refresh");
     let room = after
         .homerooms
         .iter()
         .find(|room| room.homeroom.id == context.homeroom_id)
         .unwrap();
     assert_eq!(room.ready_count, central_count + 1);
-    assert!(room
-        .items
-        .iter()
-        .any(|item| item.offering_id == Some(offering_id) && item.groups.len() == 1));
-}
-
-#[tokio::test]
-async fn active_homeroom_workspace_projects_the_effective_version_targets() {
-    let pool = prepare_delivery_runtime_fixture("academic_delivery_workspace_version_target").await;
-    let (year_id, term_id): (Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT academic_year_id, id
-           FROM academic_terms
-           WHERE status = 'active'
-           ORDER BY (SELECT year FROM academic_years WHERE id=academic_terms.academic_year_id), sequence_no, id LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let workspace = workspaces::homeroom_delivery_workspace_for_version(
-        &pool,
-        year_id,
-        term_id,
-        None,
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-
-    assert!(workspace.delivery_version_id.is_some());
-    assert_eq!(
-        workspace.delivery_version_status,
-        Some(school_academic_delivery::models::versions::DeliveryVersionStatus::Published)
+    assert!(
+        room.items
+            .iter()
+            .any(|item| item.offering_id == Some(offering_id) && item.groups.len() == 1)
     );
-    assert!(workspace
-        .homerooms
-        .iter()
-        .flat_map(|room| &room.items)
-        .filter(|item| item.offering_id.is_some())
-        .any(|item| item.weekly_period_target.is_some_and(|target| target > 0)));
-}
-
-#[tokio::test]
-async fn homeroom_alignment_uses_the_explicit_delivery_version_target() {
-    let pool =
-        prepare_delivery_runtime_fixture("academic_delivery_workspace_alignment_version").await;
-    let (year_id, term_id): (Uuid, Uuid) = sqlx::query_as(
-        r#"SELECT academic_year_id, id
-           FROM academic_terms
-           WHERE status = 'active'
-           ORDER BY (SELECT year FROM academic_years WHERE id=academic_terms.academic_year_id), sequence_no, id LIMIT 1"#,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let actor_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM users WHERE user_type='staff' AND status='active' ORDER BY id LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='planning' WHERE id=$1")
-        .bind(term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let revision =
-        create_runtime_change_set(&pool, actor_id, term_id, 1, "alignment:opening").await;
-    let opening = school_academic_delivery::services::versions::get_version(
-        &pool,
-        revision.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    let offering=opening.snapshot.offerings.iter().find(|offering| matches!(&offering.catalog,LearningOfferingSnapshot::Course(course) if course.standard_periods_per_week > 0)).unwrap();
-    let offering_id = offering.id;
-    let standard_periods = match &offering.catalog {
-        LearningOfferingSnapshot::Course(course) => course.standard_periods_per_week,
-        _ => unreachable!(),
-    };
-    change_sets::upsert_change_item(
-        &pool,
-        actor_id,
-        revision.id,
-        UpsertAcademicTermChangeItemRequest::AdjustWeeklyPeriodTarget {
-            change_set_row_version: revision.row_version,
-            item_row_version: None,
-            learning_offering_id: offering_id,
-            weekly_period_target: standard_periods + 1,
-        },
-    )
-    .await
-    .unwrap();
-
-    let workspace = workspaces::homeroom_delivery_workspace_for_version(
-        &pool,
-        year_id,
-        term_id,
-        Some(opening.id),
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(workspace.delivery_version_id, Some(opening.id));
-    assert_eq!(
-        workspace.delivery_version_effective_from,
-        opening.effective_from
-    );
-    let aligned = workspace
-        .homerooms
-        .iter()
-        .flat_map(|room| &room.items)
-        .find(|item| item.offering_id == Some(offering_id))
-        .expect("the selected offering should align to a curriculum requirement");
-    assert_eq!(aligned.weekly_period_target, Some(standard_periods + 1));
-    assert!(aligned
-        .alignment_states
-        .contains(&CurriculumDeliveryAlignmentState::OperationalPeriodsDiffer));
-    assert!(!aligned
-        .alignment_states
-        .contains(&CurriculumDeliveryAlignmentState::MatchesCurriculum));
-
-    let other_version_id: Uuid = sqlx::query_scalar(
-        r#"SELECT id
-           FROM academic_delivery_versions
-           WHERE academic_term_id <> $1
-           ORDER BY id LIMIT 1"#,
-    )
-    .bind(term_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let error = workspaces::homeroom_delivery_workspace_for_version(
-        &pool,
-        year_id,
-        term_id,
-        Some(other_version_id),
-        &AcademicResourceListFilter {
-            includes_school_owned: true,
-            ..Default::default()
-        },
-    )
-    .await
-    .expect_err("an opening version from another term must be rejected");
-    assert!(matches!(error, AppError::ValidationError(_)));
 }
 
 #[tokio::test]
@@ -7020,27 +2907,13 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
     .fetch_one(&pool)
     .await
     .expect("fixture must expose a published catalog version outside this program term");
-    let revision = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        0,
-        "alignment:extra",
-    )
-    .await;
-    let extra = offerings::create_for_delivery(
-        &pool,
-        context.teacher_id,
-        Some(revision.target_delivery_version_id),
-        course_request(&context),
-    )
-    .await
-    .unwrap();
-    let workspace = workspaces::homeroom_delivery_workspace_for_version(
+    let extra = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let workspace = workspaces::homeroom_delivery_workspace(
         &pool,
         context.year_id,
         context.term_id,
-        Some(revision.target_delivery_version_id),
         &AcademicResourceListFilter {
             includes_school_owned: true,
             ..Default::default()
@@ -7053,9 +2926,10 @@ async fn homeroom_alignment_reports_missing_and_extra_delivery_per_room() {
         .iter()
         .find(|room| room.homeroom.id == context.homeroom_id)
         .expect("target homeroom should be present");
-    assert!(room.items.iter().any(|item| item
-        .alignment_states
-        .contains(&CurriculumDeliveryAlignmentState::CurriculumRequirementNotOffered)));
+    assert!(room.items.iter().any(|item| {
+        item.alignment_states
+            .contains(&CurriculumDeliveryAlignmentState::CurriculumRequirementNotOffered)
+    }));
     let extra_alignment = room
         .extra_offerings
         .iter()
@@ -7093,6 +2967,7 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มตัวเลือกกลางภาค".to_string(),
             description: None,
             capacity: None,
@@ -7119,40 +2994,51 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
 
     assert_eq!(options.academic_term_id, context.term_id);
     assert_eq!(options.academic_year_id, context.year_id);
-    assert!(options
-        .catalog_versions
-        .iter()
-        .any(|item| item.id == context.subject_version_id
+    assert!(options.catalog_versions.iter().any(|item| {
+        item.id == context.subject_version_id
             && item.label.contains(&item.code)
             && item.label.contains(&item.name)
             && item
                 .standard_periods_per_week
-                .is_some_and(|periods| periods > 0)));
-    assert!(options
-        .catalog_versions
-        .iter()
-        .filter(|item| item.kind == LearningOfferingKind::Activity)
-        .all(|item| item.standard_periods_per_week.is_none()));
-    assert!(options
-        .grade_levels
-        .iter()
-        .any(|item| item.id == context.grade_level_id && !item.name.is_empty()));
-    assert!(options
-        .study_programs
-        .iter()
-        .any(|item| item.id == context.study_program_id && !item.name.is_empty()));
-    assert!(options
-        .homerooms
-        .iter()
-        .any(|item| item.id == context.homeroom_id && item.grade_level.is_some()));
-    assert!(options
-        .teachers
-        .iter()
-        .any(|item| item.id == context.teacher_id && !item.name.trim().is_empty()));
-    assert!(options
-        .learning_groups
-        .iter()
-        .any(|item| item.id == group.id && item.learning_offering_id == offering.id));
+                .is_some_and(|periods| periods > 0)
+    }));
+    assert!(
+        options
+            .catalog_versions
+            .iter()
+            .filter(|item| item.kind == LearningOfferingKind::Activity)
+            .all(|item| item.standard_periods_per_week.is_none())
+    );
+    assert!(
+        options
+            .grade_levels
+            .iter()
+            .any(|item| item.id == context.grade_level_id && !item.name.is_empty())
+    );
+    assert!(
+        options
+            .study_programs
+            .iter()
+            .any(|item| item.id == context.study_program_id && !item.name.is_empty())
+    );
+    assert!(
+        options
+            .homerooms
+            .iter()
+            .any(|item| item.id == context.homeroom_id && item.grade_level.is_some())
+    );
+    assert!(
+        options
+            .teachers
+            .iter()
+            .any(|item| item.id == context.teacher_id && !item.name.trim().is_empty())
+    );
+    assert!(
+        options
+            .learning_groups
+            .iter()
+            .any(|item| item.id == group.id && item.learning_offering_id == offering.id)
+    );
     assert!(options.rooms.iter().all(|item| !item.name_th.is_empty()));
 
     let scoped = workspaces::delivery_management_options(
@@ -7169,14 +3055,18 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
     )
     .await
     .expect("organization-scoped options should load");
-    assert!(scoped
-        .catalog_versions
-        .iter()
-        .all(|item| owned_catalog_ids.contains(&item.id)));
-    assert!(scoped
-        .catalog_versions
-        .iter()
-        .any(|item| item.id == context.subject_version_id));
+    assert!(
+        scoped
+            .catalog_versions
+            .iter()
+            .all(|item| owned_catalog_ids.contains(&item.id))
+    );
+    assert!(
+        scoped
+            .catalog_versions
+            .iter()
+            .any(|item| item.id == context.subject_version_id)
+    );
     assert!(
         scoped
             .study_programs
@@ -7200,10 +3090,12 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
         "offering scope must not authorize school curriculum choices"
     );
     assert!(!without_curriculum.catalog_versions.is_empty());
-    assert!(without_curriculum
-        .catalog_versions
-        .iter()
-        .all(|item| owned_catalog_ids.contains(&item.id)));
+    assert!(
+        without_curriculum
+            .catalog_versions
+            .iter()
+            .all(|item| owned_catalog_ids.contains(&item.id))
+    );
     assert_eq!(
         without_curriculum
             .catalog_versions
@@ -7230,6 +3122,7 @@ async fn roster_preview_exposes_minimal_display_data_without_hashing_names() {
         context.teacher_id,
         offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มตรวจข้อมูลรายชื่อ".to_string(),
             description: None,
             capacity: Some(40),
@@ -7256,10 +3149,12 @@ async fn roster_preview_exposes_minimal_display_data_without_hashing_names() {
     let student = preview.students.first().expect("fixture roster student");
     assert!(!student.display_name.trim().is_empty());
     assert!(!student.grade_level_name.trim().is_empty());
-    assert!(student
-        .homeroom_name
-        .as_deref()
-        .is_some_and(|name| !name.is_empty()));
+    assert!(
+        student
+            .homeroom_name
+            .as_deref()
+            .is_some_and(|name| !name.is_empty())
+    );
     let student_json = serde_json::to_value(student).expect("student should serialize");
     assert!(student_json.get("studentCode").is_some());
     for forbidden in [
@@ -7281,10 +3176,12 @@ async fn roster_preview_exposes_minimal_display_data_without_hashing_names() {
         .unwrap();
     let renamed = groups::preview_roster(&pool, group.id).await.unwrap();
     assert_eq!(renamed.source_hash, preview.source_hash);
-    assert!(renamed
-        .students
-        .iter()
-        .any(|item| item.display_name.contains("ชื่อใหม่")));
+    assert!(
+        renamed
+            .students
+            .iter()
+            .any(|item| item.display_name.contains("ชื่อใหม่"))
+    );
 }
 
 #[tokio::test]
@@ -7335,7 +3232,8 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         &pool,
         context.teacher_id,
         CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-            starts_on: runtime_operation_date(),
+            weekly_period_target: 1,
+
             create_homeroom_groups: false,
             academic_term_id: context.term_id,
             activity_version_id,
@@ -7369,6 +3267,7 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         context.teacher_id,
         course_offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มชุดที่หนึ่ง".to_string(),
             description: None,
             capacity: Some(40),
@@ -7407,6 +3306,7 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         context.teacher_id,
         course_offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มชุดที่สอง".to_string(),
             description: None,
             capacity: Some(40),
@@ -7420,6 +3320,7 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
         context.teacher_id,
         activity_offering.id,
         CreateLearningGroupRequest {
+            registration_open: false,
             name: "กลุ่มกิจกรรม".to_string(),
             description: None,
             capacity: Some(40),
@@ -7478,12 +3379,16 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
     )
     .await
     .unwrap();
-    assert!(!organization_unit
-        .iter()
-        .any(|group| group.id == course_group_a.id));
-    assert!(organization_unit
-        .iter()
-        .any(|group| group.id == activity_group.id));
+    assert!(
+        !organization_unit
+            .iter()
+            .any(|group| group.id == course_group_a.id)
+    );
+    assert!(
+        organization_unit
+            .iter()
+            .any(|group| group.id == activity_group.id)
+    );
 
     let organization_tree = groups::list_for_term(
         &pool,
@@ -7602,12 +3507,12 @@ async fn list_groups_for_term_rejects_unbounded_workspace() {
     sqlx::query(
         r#"INSERT INTO learning_groups (
                id, learning_offering_id, academic_term_id, academic_year_id,
-               code, name, status, roster_status
+               code, name, registration_open
            )
            SELECT gen_random_uuid(), $1, $2, $3,
                   'LIMIT-' || to_char(sequence, 'FM00000'),
                   'กลุ่มทดสอบขีดจำกัด ' || sequence::text,
-                  'draft', 'draft'
+                  false
            FROM generate_series(1, 2001) AS sequence"#,
     )
     .bind(offering_id)
@@ -7632,447 +3537,6 @@ async fn list_groups_for_term_rejects_unbounded_workspace() {
 }
 
 #[tokio::test]
-async fn first_timetable_edit_requires_published_opening_and_resumes_its_initial_draft() {
-    use school_academic_timetable::models::timetable_version::CreateTimetableVersionRequest;
-    use school_academic_timetable::services::timetable_version_service::create_initial_draft;
-    let pool = prepare_delivery_runtime_fixture("academic_first_table").await;
-    let context = planning_runtime_context(&pool).await;
-    let request = CreateTimetableVersionRequest {
-        academic_term_id: context.term_id,
-    };
-    assert!(create_initial_draft(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id
-        ),
-        request.clone()
-    )
-    .await
-    .is_err());
-    let revision = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        0,
-        "first:opening",
-    )
-    .await;
-    let offering = offerings::create_for_delivery(
-        &pool,
-        context.teacher_id,
-        Some(revision.target_delivery_version_id),
-        course_request(&context),
-    )
-    .await
-    .unwrap();
-    let group = groups::create(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        CreateLearningGroupRequest {
-            name: "กลุ่มเปิดสอนก่อนจัดตาราง".into(),
-            description: None,
-            capacity: None,
-            preferred_room_ids: Vec::new(),
-        },
-    )
-    .await
-    .unwrap();
-    let group = groups::replace_homerooms(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupHomeroomsRequest {
-            row_version: group.row_version,
-            homeroom_ids: vec![context.homeroom_id],
-        },
-    )
-    .await
-    .unwrap();
-    groups::replace_teachers(
-        &pool,
-        context.teacher_id,
-        group.id,
-        ReplaceLearningGroupTeachersRequest {
-            row_version: group.row_version,
-            teachers: vec![TeacherAssignmentInput {
-                teacher_id: context.teacher_id,
-                role: LearningTeacherRole::Primary,
-            }],
-        },
-    )
-    .await
-    .unwrap();
-    let preview = publication_preview(&pool, revision.id).await.unwrap();
-    assert!(
-        !preview
-            .findings
-            .iter()
-            .any(|finding| finding.severity == AcademicChangeFindingSeverity::Blocking),
-        "{:?}",
-        preview.findings
-    );
-    change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        revision.id,
-        PublishAcademicTermChangeSetRequest {
-            effective_from: preview.effective_from,
-            row_version: preview.change_set_row_version,
-            target_delivery_version_row_version: preview.target_delivery_version_row_version,
-            preview_hash: preview.preview_hash,
-            acknowledged_warning_codes: Vec::new(),
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap();
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_versions WHERE academic_term_id=$1",
-    )
-    .bind(context.term_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(count, 0);
-    let table = create_initial_draft(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool,
-            context.teacher_id,
-        ),
-        request.clone(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        table.delivery_version_id,
-        revision.target_delivery_version_id
-    );
-    assert_eq!(table.effective_from, None);
-    assert_eq!(table.source_version_id, None);
-    assert_eq!(
-        create_initial_draft(
-            &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-                &pool,
-                context.teacher_id
-            ),
-            request
-        )
-        .await
-        .unwrap()
-        .id,
-        table.id
-    );
-}
-
-#[tokio::test]
-async fn timetable_draft_deletion_serializes_with_autosave_without_partial_children() {
-    use school_academic_timetable::{
-        models::{
-            timetable_block::UpdateTimetableBlockRequest,
-            timetable_version::DeleteTimetableDraftRequest,
-        },
-        services::timetable_lifecycle,
-    };
-    let pool = prepare_concurrent_delivery_runtime_fixture("table_delete_save_race").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let draft = independent_table_draft(&pool, &context).await;
-    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
-    let block_id:Uuid=sqlx::query_scalar("SELECT id FROM academic_timetable_blocks WHERE timetable_version_id=$1 AND is_active ORDER BY id LIMIT 1").bind(draft.id).fetch_one(&pool).await.unwrap();
-    let block = timetable_block_service::get_block(&pool, block_id)
-        .await
-        .unwrap();
-    let current = timetable_version_service::get_version(&pool, draft.id, Utc::now().date_naive())
-        .await
-        .unwrap();
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
-    )
-    .bind(draft.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let mutation = school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-        &pool,
-        context.teacher_id,
-    );
-    let (saved, deleted) = tokio::join!(
-        timetable_block_service::update_block(
-            &pool,
-            &mutation,
-            block.id,
-            UpdateTimetableBlockRequest {
-                timetable_version_id: draft.id,
-                row_version: block.row_version,
-                day_of_week: None,
-                bell_schedule_period_id: None,
-                title: None,
-                clear_title: false,
-                note: Some("บันทึกแข่งกับลบ".into()),
-                clear_note: false,
-                room_id: None,
-                clear_room: false,
-                instructor_ids: None,
-                teacher_ids: None
-            }
-        ),
-        timetable_lifecycle::delete_draft(
-            &pool,
-            &mutation,
-            draft.id,
-            DeleteTimetableDraftRequest {
-                row_version: current.row_version,
-                expected_block_count: count
-            }
-        )
-    );
-    assert_ne!(
-        saved.is_ok(),
-        deleted.is_ok(),
-        "one serialized writer succeeds, the other sees a deleted or stale draft"
-    );
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
-    )
-    .bind(draft.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    if deleted.is_ok() {
-        assert_eq!(remaining, 0);
-    } else {
-        assert_eq!(remaining, count);
-        assert!(matches!(deleted.unwrap_err(), AppError::Conflict(_)));
-    }
-}
-
-#[tokio::test]
-async fn timetable_draft_deletion_serializes_with_publication() {
-    use school_academic_timetable::{
-        models::{
-            timetable_publication::PublishTimetableVersionRequest,
-            timetable_version::DeleteTimetableDraftRequest,
-        },
-        services::timetable_lifecycle,
-    };
-    let pool = prepare_concurrent_delivery_runtime_fixture("table_delete_publish_race").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let draft = independent_table_draft(&pool, &context).await;
-    fill_change_set_target_deficits(&pool, context.teacher_id, context.term_id, draft.id).await;
-    let preview = table_preview(&pool, draft.id).await;
-    assert!(preview.can_publish, "{:?}", preview.findings);
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
-    )
-    .bind(draft.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    let mutation = school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-        &pool,
-        context.teacher_id,
-    );
-    let (published, deleted) = tokio::join!(
-        timetable_lifecycle::publish(
-            &crate::adapters::publication_history::PUBLICATION_HISTORY,
-            &pool,
-            &mutation,
-            draft.id,
-            PublishTimetableVersionRequest {
-                row_version: preview.row_version,
-                effective_from: preview.effective_from,
-                preview_hash: preview.preview_hash,
-                idempotency_key: Uuid::new_v4()
-            }
-        ),
-        timetable_lifecycle::delete_draft(
-            &pool,
-            &mutation,
-            draft.id,
-            DeleteTimetableDraftRequest {
-                row_version: preview.row_version,
-                expected_block_count: count
-            }
-        )
-    );
-    assert_ne!(published.is_ok(), deleted.is_ok());
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id=$1",
-    )
-    .bind(draft.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    if published.is_ok() {
-        assert_eq!(remaining, count);
-        assert!(matches!(deleted.unwrap_err(), AppError::Conflict(_)));
-    } else {
-        assert_eq!(remaining, 0);
-        assert!(matches!(published.unwrap_err(), AppError::NotFound(_)));
-    }
-}
-
-fn delete_opening_request(
-    change: &super::models::AcademicTermChangeSet,
-    version: &school_academic_delivery::models::versions::DeliveryVersion,
-) -> school_academic_delivery::models::versions::DeleteDeliveryVersionRequest {
-    school_academic_delivery::models::versions::DeleteDeliveryVersionRequest {
-        row_version: version.row_version,
-        change_set_row_version: change.row_version,
-        expected_item_count: change.items.len() as i64,
-        expected_offering_count: version.snapshot.offerings.len() as i64,
-        expected_group_count: version
-            .snapshot
-            .offerings
-            .iter()
-            .map(|o| o.groups.len() as i64)
-            .sum(),
-    }
-}
-
-async fn publication_preview(
-    pool: &sqlx::PgPool,
-    id: uuid::Uuid,
-) -> Result<school_academic_delivery::models::AcademicTermChangeSetPreview, school_errors::AppError>
-{
-    let revision =
-        school_academic_delivery::services::change_sets::get_change_set(pool, id).await?;
-    school_academic_delivery::services::change_sets::preview_change_set_at(
-        &crate::adapters::publication_history::PUBLICATION_HISTORY,
-        pool,
-        id,
-        Some(revision.reference_date),
-    )
-    .await
-}
-
-#[tokio::test]
-async fn opening_hard_delete_removes_exclusive_children_and_rejects_stale_counts() {
-    let pool = prepare_delivery_runtime_fixture("opening_hard_delete_children").await;
-    let context = planning_runtime_context(&pool).await;
-    let revision = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        1,
-        "opening-hard-delete",
-    )
-    .await;
-    assert!(revision.effective_from.is_none());
-    let offering = offerings::create_for_delivery(
-        &pool,
-        context.teacher_id,
-        Some(revision.target_delivery_version_id),
-        course_request(&context),
-    )
-    .await
-    .unwrap();
-    let group = groups::create(
-        &pool,
-        context.teacher_id,
-        offering.id,
-        CreateLearningGroupRequest {
-            name: "กลุ่มที่จะลบ".into(),
-            description: None,
-            capacity: None,
-            preferred_room_ids: vec![],
-        },
-    )
-    .await
-    .unwrap();
-    let current = change_sets::get_change_set(&pool, revision.id)
-        .await
-        .unwrap();
-    let version = school_academic_delivery::services::versions::get_version(
-        &pool,
-        current.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    let request = delete_opening_request(&current, &version);
-    let mut stale = request.clone();
-    stale.expected_group_count += 1;
-    assert!(matches!(
-        change_sets::delete_version(&pool, context.teacher_id, version.id, stale).await,
-        Err(AppError::Conflict(_))
-    ));
-    let deleted = change_sets::delete_version(&pool, context.teacher_id, version.id, request)
-        .await
-        .unwrap();
-    assert_eq!(deleted.deleted_offering_count, 1);
-    let remaining:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM academic_delivery_versions WHERE id=$1) OR EXISTS(SELECT 1 FROM academic_term_change_sets WHERE id=$2) OR EXISTS(SELECT 1 FROM learning_offerings WHERE id=$3) OR EXISTS(SELECT 1 FROM learning_groups WHERE id=$4)").bind(version.id).bind(current.id).bind(offering.id).bind(group.id).fetch_one(&pool).await.unwrap();
-    assert!(!remaining);
-    let audit:i64=sqlx::query_scalar("SELECT count(*) FROM academic_audit_events WHERE entity_id=$1 AND event_code='academic_delivery_version.deleted'").bind(version.id).fetch_one(&pool).await.unwrap();
-    assert_eq!(audit, 1);
-}
-
-#[tokio::test]
-async fn opening_preview_dates_are_read_only_bound_to_hash_and_validate_teacher_windows() {
-    let pool = prepare_delivery_runtime_fixture("opening_candidate_dates").await;
-    let context = operational_change_runtime_context(&pool).await;
-    let revision = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        1,
-        "opening-candidate-dates",
-    )
-    .await;
-    let before = school_academic_delivery::services::versions::get_version(
-        &pool,
-        revision.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    let general = change_sets::preview_change_set(&pool, revision.id)
-        .await
-        .unwrap();
-    assert!(general.preliminary);
-    let chosen =
-        change_sets::preview_change_set_at(&pool, revision.id, Some(revision.reference_date))
-            .await
-            .unwrap();
-    assert!(!chosen.preliminary);
-    assert_ne!(general.preview_hash, chosen.preview_hash);
-    let next = change_sets::preview_change_set_at(
-        &pool,
-        revision.id,
-        Some(revision.reference_date + Duration::days(1)),
-    )
-    .await
-    .unwrap();
-    assert_ne!(chosen.preview_hash, next.preview_hash);
-    let after = school_academic_delivery::services::versions::get_version(
-        &pool,
-        revision.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
-    assert_eq!(before.row_version, after.row_version);
-    assert!(after.effective_from.is_none());
-    assert_eq!(before.reference_date, after.reference_date);
-    let stale = change_sets::publish_change_set(
-        &pool,
-        context.teacher_id,
-        revision.id,
-        PublishAcademicTermChangeSetRequest {
-            effective_from: revision.reference_date + Duration::days(1),
-            row_version: chosen.change_set_row_version,
-            target_delivery_version_row_version: chosen.target_delivery_version_row_version,
-            preview_hash: chosen.preview_hash,
-            acknowledged_warning_codes: vec![],
-            idempotency_key: Uuid::new_v4(),
-        },
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(stale, AppError::Conflict(_)));
-}
-
-#[tokio::test]
 async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_central() {
     let pool = prepare_delivery_runtime_fixture("academic_delivery_manual_activity_groups").await;
     let context = planning_runtime_context(&pool).await;
@@ -8080,7 +3544,8 @@ async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_
         .bind(context.term_id).bind(runtime_operation_date())
     .fetch_one(&pool).await.unwrap();
     let request = CreateActivityOfferingRequest {
-        starts_on: runtime_operation_date(),
+        weekly_period_target: 1,
+
         create_homeroom_groups: false,
         academic_term_id: context.term_id,
         activity_version_id,
@@ -8133,13 +3598,15 @@ async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_
     let mut invalid = request;
     invalid.create_homeroom_groups = true;
     invalid.targets[0].homeroom_id = Some(Uuid::new_v4());
-    assert!(offerings::create(
-        &pool,
-        context.teacher_id,
-        CreateLearningOfferingRequest::Activity(invalid)
-    )
-    .await
-    .is_err());
+    assert!(
+        offerings::create(
+            &pool,
+            context.teacher_id,
+            CreateLearningOfferingRequest::Activity(invalid)
+        )
+        .await
+        .is_err()
+    );
     let after: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
         .fetch_one(&pool)
         .await
@@ -8202,35 +3669,19 @@ async fn subject_zero_workload_manual_opening_keeps_course_and_activity_zero_tar
     let pool = prepare_delivery_runtime_fixture("subject_zero_workload_manual").await;
     let context = planning_runtime_context(&pool).await;
     let version = zero_workload_subject(&pool, &context).await;
-    let opening = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        7,
-        "subject-zero-manual",
-    )
-    .await;
     let mut request = course_request(&context);
     let CreateLearningOfferingRequest::Course(course) = &mut request else {
         panic!("course fixture");
     };
     course.subject_version_id = version.id;
-    let offering = offerings::create_for_delivery(
-        &pool,
-        context.teacher_id,
-        Some(opening.target_delivery_version_id),
-        request,
-    )
-    .await
-    .unwrap();
-    let draft = school_academic_delivery::services::versions::get_version(
-        &pool,
-        opening.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
+    course.weekly_period_target = 0;
+    let offering = offerings::create(&pool, context.teacher_id, request)
+        .await
+        .unwrap();
+    let draft = current_workspace(&pool, context.year_id, context.term_id)
+        .await
+        .unwrap();
     let captured = draft
-        .snapshot
         .offerings
         .iter()
         .find(|item| item.id == offering.id)
@@ -8290,12 +3741,12 @@ async fn subject_zero_workload_manual_opening_keeps_course_and_activity_zero_tar
             .fetch_one(&pool)
             .await
             .unwrap();
-        let included = offerings::create_for_delivery(
+        let included = offerings::create(
             &pool,
             context.teacher_id,
-            Some(opening.target_delivery_version_id),
             CreateLearningOfferingRequest::Activity(CreateActivityOfferingRequest {
-                starts_on: runtime_operation_date(),
+                weekly_period_target: 0,
+
                 create_homeroom_groups: false,
                 academic_term_id: context.term_id,
                 activity_version_id: activity.id,
@@ -8322,13 +3773,9 @@ async fn subject_zero_workload_manual_opening_keeps_course_and_activity_zero_tar
         )
         .await
         .unwrap();
-        let snapshot = school_academic_delivery::services::versions::get_version(
-            &pool,
-            opening.target_delivery_version_id,
-        )
-        .await
-        .unwrap()
-        .snapshot;
+        let snapshot = current_workspace(&pool, context.year_id, context.term_id)
+            .await
+            .unwrap();
         assert_eq!(
             snapshot
                 .offerings
@@ -8424,19 +3871,9 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
     .unwrap();
     sqlx::query("INSERT INTO homerooms(id,code,name,academic_year_id,grade_level_id,study_program_id,capacity,is_active) VALUES(gen_random_uuid(),'ZERO-GEN','ห้องศูนย์คาบ',$1,$2,$3,40,true)")
         .bind(context.year_id).bind(context.grade_level_id).bind(program.id).execute(&pool).await.unwrap();
-    let opening = create_runtime_change_set(
-        &pool,
-        context.teacher_id,
-        context.term_id,
-        7,
-        "subject-zero-generated",
-    )
-    .await;
     let preview = offerings::preview_from_curriculum(
         &pool,
         PreviewCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
-            delivery_version_id: Some(opening.target_delivery_version_id),
             academic_term_id: context.term_id,
             study_program_ids: vec![program.id],
         },
@@ -8450,10 +3887,9 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
         &pool,
         context.teacher_id,
         ApplyCurriculumOfferingsRequest {
-            starts_on: runtime_operation_date(),
             academic_term_id: context.term_id,
             study_program_ids: vec![program.id],
-            delivery_version_id: Some(opening.target_delivery_version_id),
+
             source_hash: preview.source_hash,
             idempotency_key: Uuid::new_v4(),
             choices,
@@ -8462,14 +3898,10 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
     .await
     .unwrap();
     assert_eq!(applied.created_offering_count, 1);
-    let draft = school_academic_delivery::services::versions::get_version(
-        &pool,
-        opening.target_delivery_version_id,
-    )
-    .await
-    .unwrap();
+    let draft = current_workspace(&pool, context.year_id, context.term_id)
+        .await
+        .unwrap();
     let captured = draft
-        .snapshot
         .offerings
         .iter()
         .find(|item| applied.offering_ids.contains(&item.id))
@@ -8487,21 +3919,174 @@ async fn subject_zero_workload_curriculum_generated_opening_keeps_zero() {
 #[path = "bulk_group_setup_tests.rs"]
 mod bulk_group_setup_tests;
 
-#[path = "draft_removal_tests.rs"]
-pub(super) mod draft_removal_tests;
-
 #[path = "preparation_target_tests.rs"]
 mod preparation_target_tests;
 
-#[path = "room_scope_tests.rs"]
-mod room_scope_tests;
+async fn current_workspace(
+    pool: &PgPool,
+    year: Uuid,
+    term: Uuid,
+) -> Result<school_academic_delivery::models::current::DeliveryWorkspace, AppError> {
+    let mut connection = pool.acquire().await?;
+    current::workspace_on_connection(&mut connection, year, term).await
+}
 
-#[path = "room_scope_consumer_tests.rs"]
-mod room_scope_consumer_tests;
+#[path = "composed_deletion_tests.rs"]
+mod composed_deletion_tests;
 
-#[path = "draft_teacher_construction_tests.rs"]
-mod draft_teacher_construction_tests;
-#[path = "initial_construction_tests.rs"]
-mod initial_construction_tests;
-#[path = "publication_revision_tests.rs"]
-mod publication_revision_tests;
+#[tokio::test]
+async fn current_assigned_discovery_requires_active_staff_and_keeps_saved_management_facts() {
+    use school_academic_delivery::policies::learning_offering_access_policy as access;
+    use school_authorization::{AcademicResourceAccess, ActorContext};
+    use school_permissions::registry::codes;
+    let pool = prepare_delivery_runtime_fixture("delivery_active_assignment_discovery").await;
+    let context = planning_runtime_context(&pool).await;
+    let offering = offerings::create(&pool, context.teacher_id, course_request(&context))
+        .await
+        .unwrap();
+    let group = groups::create(
+        &pool,
+        context.teacher_id,
+        offering.id,
+        CreateLearningGroupRequest {
+            registration_open: false,
+            name: "Current assignment".into(),
+            description: None,
+            capacity: None,
+            preferred_room_ids: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let group = groups::replace_teachers(
+        &pool,
+        context.teacher_id,
+        group.id,
+        ReplaceLearningGroupTeachersRequest {
+            row_version: group.row_version,
+            teachers: vec![TeacherAssignmentInput {
+                teacher_id: context.teacher_id,
+                role: LearningTeacherRole::Primary,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let assignment = group.teacher_assignments[0].id;
+    let actor = ActorContext {
+        user_id: context.teacher_id,
+        permissions: vec![codes::LEARNING_OFFERING_MANAGE_ASSIGNED.into()],
+    };
+    let assigned = AcademicResourceListFilter {
+        assigned_actor_id: Some(actor.user_id),
+        ..Default::default()
+    };
+    assert!(
+        offerings::list(
+            &pool,
+            LearningOfferingQuery {
+                academic_term_id: context.term_id
+            },
+            &assigned
+        )
+        .await
+        .unwrap()
+        .iter()
+        .any(|row| row.id == offering.id)
+    );
+    assert_ne!(
+        access::learning_offering_access(
+            &pool,
+            &actor,
+            offering.id,
+            access::OfferingAction::Manage
+        )
+        .await
+        .unwrap(),
+        AcademicResourceAccess::None
+    );
+    for (kind, status) in [
+        ("staff", "inactive"),
+        ("student", "active"),
+        ("parent", "active"),
+    ] {
+        sqlx::query("UPDATE users SET user_type=$2,status=$3 WHERE id=$1")
+            .bind(actor.user_id)
+            .bind(kind)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            offerings::list(
+                &pool,
+                LearningOfferingQuery {
+                    academic_term_id: context.term_id
+                },
+                &assigned
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        assert!(
+            groups::list_for_term(&pool, context.term_id, &assigned)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            current::workspace(&pool, context.year_id, context.term_id, &assigned)
+                .await
+                .unwrap()
+                .offerings
+                .is_empty()
+        );
+        assert_eq!(
+            access::learning_offering_access(
+                &pool,
+                &actor,
+                offering.id,
+                access::OfferingAction::Manage
+            )
+            .await
+            .unwrap(),
+            AcademicResourceAccess::None
+        );
+        assert!(matches!(
+            access::require_learning_offering_batch_access(
+                &pool,
+                &actor,
+                &[offering.id],
+                access::OfferingAction::Manage
+            )
+            .await,
+            Err(AppError::Forbidden(_))
+        ));
+        let mut detail = offerings::get(&pool, offering.id).await.unwrap();
+        access::populate_offering_management_capabilities(&pool, &actor, &mut [&mut detail])
+            .await
+            .unwrap();
+        assert!(!detail.can_manage);
+        let school = AcademicResourceListFilter {
+            includes_school_owned: true,
+            ..Default::default()
+        };
+        let management = current::workspace(&pool, context.year_id, context.term_id, &school)
+            .await
+            .unwrap();
+        let saved = management
+            .offerings
+            .iter()
+            .find(|row| row.id == offering.id)
+            .unwrap()
+            .groups
+            .iter()
+            .find(|row| row.id == group.id)
+            .unwrap();
+        assert_eq!(saved.teachers.len(), 1);
+        assert_eq!(saved.teachers[0].assignment_id, assignment);
+        assert_eq!(saved.teachers[0].teacher_id, actor.user_id);
+        assert!(!saved.teachers[0].is_active);
+    }
+}

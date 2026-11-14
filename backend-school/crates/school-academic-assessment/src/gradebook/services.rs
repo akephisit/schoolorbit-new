@@ -193,7 +193,7 @@ pub(super) async fn begin_scope<'a>(
         DbSession::new(&mut *tx).query("academic_assessment.gradebook.services.begin_scope", "SELECT id FROM academic_gradebook_phase_controls WHERE academic_term_id=$1 ORDER BY id FOR SHARE").bind(context.academic_term_id).execute().await?;
     }
     let assignments =
-        school_academic_delivery::services::versions::group_teacher_assignments_on_connection(
+        school_academic_delivery::services::current::group_teacher_assignments_on_connection(
             &mut tx,
             context.academic_year_id,
             context.academic_term_id,
@@ -305,7 +305,7 @@ async fn list_subjects_in_tx(
     user_id: Uuid,
 ) -> Result<Vec<GradebookSubject>, AppError> {
     let assignments =
-        school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+        school_academic_delivery::services::current::assigned_group_ids_on_connection(
             &mut **tx,
             context.academic_year_id,
             context.academic_term_id,

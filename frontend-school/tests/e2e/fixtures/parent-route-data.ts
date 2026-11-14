@@ -18,6 +18,7 @@ export async function mockParent(
 	options: { hold?: Region; holdAt?: number; fail?: Region; failAt?: number; denied?: boolean } = {}
 ) {
 	const base = await mockStaffHome(page, { userType: 'parent', permissions: [] });
+	let removedSources = false;
 	const reads: URL[] = [],
 		writes: string[] = [],
 		counts = new Map<string, number>();
@@ -137,7 +138,7 @@ export async function mockParent(
 					schedulingMode: null,
 					seriesId: null,
 					structuralKind: null,
-					timetableVersionId: id(514),
+					timetableId: id(514),
 					title: null,
 					note: null
 				}
@@ -147,7 +148,6 @@ export async function mockParent(
 					roundId: id(515),
 					roundName: `รอบ${suffix}${label}`,
 					academicTermId: selected,
-					publishedAt: '2026-10-01T00:00:00Z',
 					sessions: [
 						{
 							examDate: '2026-10-01',
@@ -193,9 +193,13 @@ export async function mockParent(
 				kind === 'context'
 					? academicOptions
 					: kind === 'timetable'
-						? blocks
+						? removedSources
+							? []
+							: blocks
 						: kind === 'exams'
-							? rounds
+							? removedSources
+								? []
+								: rounds
 							: kind === 'calendar'
 								? events
 								: path === '/api/parent/profile'
@@ -204,5 +208,14 @@ export async function mockParent(
 			);
 		}
 	);
-	return { ...base, reads, writes, release, count: (kind: Region) => counts.get(kind) ?? 0 };
+	return {
+		...base,
+		removeSources: () => {
+			removedSources = true;
+		},
+		reads,
+		writes,
+		release,
+		count: (kind: Region) => counts.get(kind) ?? 0
+	};
 }

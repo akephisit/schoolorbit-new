@@ -4,8 +4,6 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-#[cfg(feature = "api-docs")]
-use school_academic_timetable::models::timetable_source::TimetableDraftSourceConflict;
 use uuid::Uuid;
 
 use crate::state::AcademicTimetableHttpState;
@@ -25,15 +23,15 @@ use school_academic_timetable::policy::{
     TimetableResourceSet,
 };
 use school_academic_timetable::services::{
-    daily_teaching as daily_teaching_service, timetable_block_service, timetable_version_service,
+    daily_teaching as daily_teaching_service, timetable_block_service, timetable_service,
 };
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
 use school_auth_http::origin::extract_subdomain_from_request;
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-#[cfg(feature = "api-docs")]
-use school_http::{ApiErrorResponse, ApiErrorResponseWithOptionalData};
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get,
@@ -78,7 +76,7 @@ pub async fn get_workspace(
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -89,7 +87,7 @@ pub async fn preview_placement(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let mut resources = TimetableResourceSet {
-        timetable_version_ids: vec![payload.timetable_version_id],
+        timetable_ids: vec![payload.timetable_id],
         learning_offering_ids: payload.candidate.learning_offering_id.into_iter().collect(),
         learning_group_ids: payload.candidate.learning_group_id.into_iter().collect(),
         homeroom_ids: payload.candidate.homeroom_ids.clone(),
@@ -131,7 +129,7 @@ pub async fn preview_placement(
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -147,7 +145,7 @@ pub async fn create_ordinary(
         &context.actor,
         TimetableAction::Manage,
         &TimetableResourceSet {
-            timetable_version_ids: vec![payload.timetable_version_id],
+            timetable_ids: vec![payload.timetable_id],
             learning_group_ids: vec![payload.learning_group_id],
             teacher_ids: payload.instructor_ids.clone(),
             room_ids: payload.room_id.into_iter().collect(),
@@ -174,7 +172,7 @@ pub async fn create_ordinary(
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -190,7 +188,7 @@ pub async fn create_synchronized(
         &context.actor,
         TimetableAction::Manage,
         &TimetableResourceSet {
-            timetable_version_ids: vec![payload.timetable_version_id],
+            timetable_ids: vec![payload.timetable_id],
             learning_offering_ids: vec![payload.learning_offering_id],
             homeroom_ids: payload.intended_homeroom_ids.clone(),
             room_ids: payload.room_id.into_iter().collect(),
@@ -220,7 +218,7 @@ pub async fn create_synchronized(
         (status = 400, description = "Invalid input", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -236,7 +234,7 @@ pub async fn create_structural(
         &context.actor,
         TimetableAction::Manage,
         &TimetableResourceSet {
-            timetable_version_ids: vec![payload.timetable_version_id],
+            timetable_ids: vec![payload.timetable_id],
             homeroom_ids: payload.homeroom_ids.clone(),
             teacher_ids: payload.teacher_ids.clone(),
             room_ids: payload.room_id.into_iter().collect(),
@@ -267,7 +265,7 @@ pub async fn create_structural(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Resource not found", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -280,7 +278,7 @@ pub async fn update_block(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let mut resources = TimetableResourceSet {
-        timetable_version_ids: vec![payload.timetable_version_id],
+        timetable_ids: vec![payload.timetable_id],
         teacher_ids: payload.instructor_ids.clone().unwrap_or_default(),
         room_ids: payload.room_id.into_iter().collect(),
         ..TimetableResourceSet::default()
@@ -313,7 +311,7 @@ pub async fn update_block(
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Permission denied", body = ApiErrorResponse),
         (status = 404, description = "Resource not found", body = ApiErrorResponse),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -326,7 +324,7 @@ pub async fn remove_target(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let mut resources = TimetableResourceSet {
-        timetable_version_ids: vec![payload.timetable_version_id],
+        timetable_ids: vec![payload.timetable_id],
         ..TimetableResourceSet::default()
     };
     match payload.target_kind {
@@ -356,7 +354,7 @@ pub async fn remove_target(
     operation_id = "retryTimetableBlockSync",
     params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path)),
     request_body = RetryTimetableBlockSyncRequest,
-    responses((status = 200, description = "Timetable block synchronization retry result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)),
+    responses((status = 200, description = "Timetable block synchronization retry result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
     tag = "academic"
 ))]
 pub async fn retry_sync(
@@ -367,7 +365,7 @@ pub async fn retry_sync(
     Json(payload): Json<RetryTimetableBlockSyncRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    require_existing_block_manage_access(&context, block_id, payload.timetable_version_id).await?;
+    require_existing_block_manage_access(&context, block_id, payload.timetable_id).await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block =
         timetable_block_service::retry_sync(&context.tenant.pool, &mutation, block_id, payload)
@@ -382,7 +380,7 @@ pub async fn retry_sync(
     operation_id = "restoreTimetableBlockGroup",
     params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path)),
     request_body = RestoreTimetableBlockGroupRequest,
-    responses((status = 200, description = "Timetable block group restoration result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)),
+    responses((status = 200, description = "Timetable block group restoration result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
     tag = "academic"
 ))]
 pub async fn restore_group(
@@ -393,7 +391,7 @@ pub async fn restore_group(
     Json(payload): Json<RestoreTimetableBlockGroupRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    require_existing_block_manage_access(&context, block_id, payload.timetable_version_id).await?;
+    require_existing_block_manage_access(&context, block_id, payload.timetable_id).await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block =
         timetable_block_service::restore_group(&context.tenant.pool, &mutation, block_id, payload)
@@ -407,7 +405,7 @@ pub async fn restore_group(
     path = "/api/academic/timetable-blocks/{block_id}",
     operation_id = "deleteTimetableBlock",
     params(crate::mutation::TimetableMutationHeaders, ("block_id" = Uuid, Path), DeleteTimetableBlockQuery),
-    responses((status = 200, description = "Timetable block deletion result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)),
+    responses((status = 200, description = "Timetable block deletion result returned", body = ApiResponse<TimetableBlock>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
     tag = "academic"
 ))]
 pub async fn delete_block(
@@ -418,13 +416,13 @@ pub async fn delete_block(
     Query(query): Query<DeleteTimetableBlockQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    require_existing_block_manage_access(&context, block_id, query.timetable_version_id).await?;
+    require_existing_block_manage_access(&context, block_id, query.timetable_id).await?;
     let mutation = crate::mutation::from_session(&state, &headers, &session, &context)?;
     let block = timetable_block_service::deactivate_block(
         &context.tenant.pool,
         &mutation,
         block_id,
-        query.timetable_version_id,
+        query.timetable_id,
         query.row_version,
     )
     .await?;
@@ -437,7 +435,7 @@ pub async fn delete_block(
     path = "/api/academic/timetable-blocks/series/{series_id}",
     operation_id = "deleteTimetableBlockSeries",
     params(crate::mutation::TimetableMutationHeaders, ("series_id" = Uuid, Path), DeleteTimetableBlockSeriesQuery),
-    responses((status = 200, description = "Timetable block series deletion result returned", body = ApiResponse<Vec<TimetableBlock>>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)),
+    responses((status = 200, description = "Timetable block series deletion result returned", body = ApiResponse<Vec<TimetableBlock>>), (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)),
     tag = "academic"
 ))]
 pub async fn delete_series(
@@ -453,7 +451,7 @@ pub async fn delete_series(
         &context.actor,
         TimetableAction::Manage,
         &TimetableResourceSet {
-            timetable_version_ids: vec![query.timetable_version_id],
+            timetable_ids: vec![query.timetable_id],
             requires_school_scope: true,
             ..TimetableResourceSet::default()
         },
@@ -464,7 +462,7 @@ pub async fn delete_series(
         &context.tenant.pool,
         &mutation,
         series_id,
-        query.timetable_version_id,
+        query.timetable_id,
     )
     .await?;
     for block in &blocks {
@@ -481,7 +479,7 @@ pub async fn delete_series(
     params(crate::mutation::TimetableMutationHeaders),
     responses(
         (status = 200, description = "Timetable block swap result returned", body = ApiResponse<school_academic_timetable::models::timetable_block::SwapTimetableBlocksResponse>),
-        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>)
+        (status = 409, description = "Request conflicts with the current resource state", body = ApiErrorResponse)
     ),
     tag = "academic"
 ))]
@@ -493,7 +491,7 @@ pub async fn swap_blocks(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let mut resources = TimetableResourceSet {
-        timetable_version_ids: vec![payload.timetable_version_id],
+        timetable_ids: vec![payload.timetable_id],
         ..TimetableResourceSet::default()
     };
     resources_from_block(&context, payload.block_a_id, &mut resources).await?;
@@ -525,12 +523,11 @@ pub async fn get_my_timetable(
     Extension(session): Extension<AuthenticatedSession>,
     Query(query): Query<PersonalTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let version = timetable_version_service::resolve_for_date(
-        &session.tenant.pool,
-        query.academic_term_id,
-        query.date,
-    )
-    .await?;
+    let Some(version) =
+        timetable_service::get_for_term(&session.tenant.pool, query.academic_term_id).await?
+    else {
+        return Ok(Json(ApiResponse::ok(Vec::<TimetableBlock>::new())).into_response());
+    };
     let blocks = match session.user_type.as_str() {
         "student" => {
             timetable_block_service::list_student_blocks(
@@ -595,10 +592,10 @@ async fn resources_from_block(
 async fn require_existing_block_manage_access(
     context: &ActorTenantContext,
     block_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
 ) -> Result<(), AppError> {
     let mut resources = TimetableResourceSet {
-        timetable_version_ids: vec![timetable_version_id],
+        timetable_ids: vec![timetable_id],
         ..TimetableResourceSet::default()
     };
     resources_from_block(&context, block_id, &mut resources).await?;
@@ -626,7 +623,7 @@ fn broadcast_changed(
         TimetableEvent::TimetableChanged {
             user_id,
             academic_term_id: block.academic_term_id,
-            timetable_version_id: block.timetable_version_id,
+            timetable_id: block.timetable_id,
             block_id: Some(block.id),
             revision: block.row_version,
         },

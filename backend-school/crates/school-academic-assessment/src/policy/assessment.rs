@@ -131,7 +131,7 @@ pub async fn require_assessment_plan_access_on_connection(
 
     let filter = assessment_plan_list_access_on_connection(connection, actor, action).await?;
     let actor_is_assigned = if filter.assigned_actor_id.is_some() {
-        school_academic_delivery::services::versions::group_teacher_assignments_on_connection(
+        school_academic_delivery::services::current::group_teacher_assignments_on_connection(
             connection, year, term, &group_ids,
         )
         .await?

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use super::timetable::Timetable;
 use super::timetable_block::{
     TimetableBlock, TimetableBlockPlacementCandidate, TimetableBlockPlacementSource,
     TimetableBlockSummary, TimetableBlockWorkspace, TimetableBlockWorkspaceHomeroom,
@@ -12,11 +13,10 @@ use super::timetable_block::{
     TimetableOrdinaryDemand, TimetableSynchronizedDemand,
 };
 use super::timetable_source::TimetableSourceIssue;
-use super::timetable_version::TimetableVersion;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
-pub enum DraftViewMode {
+pub enum TimetableViewMode {
     #[serde(rename = "homeroom")]
     Homeroom,
     #[serde(rename = "teacher")]
@@ -30,8 +30,8 @@ pub enum DraftViewMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DraftContext {
-    pub view_mode: DraftViewMode,
+pub struct TimetableContext {
+    pub view_mode: TimetableViewMode,
     pub view_id: Option<Uuid>,
     pub day_of_week: Option<String>,
 }
@@ -44,7 +44,7 @@ pub struct DraftContext {
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
-pub enum DraftAnchor {
+pub enum TimetableAnchor {
     Cell {
         #[serde(rename = "dayOfWeek")]
         day_of_week: String,
@@ -66,7 +66,7 @@ pub enum DraftAnchor {
     },
 }
 
-impl DraftAnchor {
+impl TimetableAnchor {
     pub fn has_valid_coordinates(&self) -> bool {
         let (u, v) = match self {
             Self::Cell { u, v, .. } | Self::Block { u, v, .. } | Self::Tray { u, v, .. } => {
@@ -80,7 +80,7 @@ impl DraftAnchor {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DraftTarget {
+pub struct TimetableTarget {
     pub day_of_week: String,
     pub bell_schedule_period_id: Uuid,
     pub block_id: Option<Uuid>,
@@ -89,7 +89,7 @@ pub struct DraftTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum DraftReservationPurpose {
+pub enum TimetableReservationPurpose {
     Drag,
     Edit,
 }
@@ -97,18 +97,18 @@ pub enum DraftReservationPurpose {
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DraftPresenceUpdate {
-    pub context: DraftContext,
-    pub anchor: Option<DraftAnchor>,
+pub struct TimetablePresenceUpdate {
+    pub context: TimetableContext,
+    pub anchor: Option<TimetableAnchor>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DraftClaim {
+pub struct TimetableClaim {
     pub request_id: Uuid,
     pub source: TimetableBlockPlacementSource,
-    pub purpose: DraftReservationPurpose,
+    pub purpose: TimetableReservationPurpose,
     /// Private configuration, used only for the server's resource footprint.
     pub candidate: Option<TimetableBlockPlacementCandidate>,
 }
@@ -116,17 +116,17 @@ pub struct DraftClaim {
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DraftTargetUpdate {
+pub struct TimetableTargetUpdate {
     pub request_id: Uuid,
     pub lease_token: Uuid,
-    pub target: Option<DraftTarget>,
+    pub target: Option<TimetableTarget>,
     pub candidate: Option<TimetableBlockPlacementCandidate>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DraftLeaseCommand {
+pub struct TimetableLeaseCommand {
     pub request_id: Uuid,
     pub lease_token: Uuid,
 }
@@ -134,7 +134,7 @@ pub struct DraftLeaseCommand {
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DraftReplay {
+pub struct TimetableReplay {
     pub epoch: Uuid,
     pub after_seq: u64,
 }
@@ -142,53 +142,53 @@ pub struct DraftReplay {
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(tag = "type", content = "payload", deny_unknown_fields)]
-pub enum DraftClientMessage {
-    ClientPresenceUpdate(DraftPresenceUpdate),
-    ClientClaim(DraftClaim),
-    ClientTarget(DraftTargetUpdate),
-    ClientRenew(DraftLeaseCommand),
-    ClientRelease(DraftLeaseCommand),
-    ClientReplay(DraftReplay),
+pub enum TimetableClientMessage {
+    ClientPresenceUpdate(TimetablePresenceUpdate),
+    ClientClaim(TimetableClaim),
+    ClientTarget(TimetableTargetUpdate),
+    ClientRenew(TimetableLeaseCommand),
+    ClientRelease(TimetableLeaseCommand),
+    ClientReplay(TimetableReplay),
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftConnectionPresence {
+pub struct TimetableConnectionPresence {
     pub connection_id: Uuid,
     pub active_reservation_id: Option<Uuid>,
-    pub context: Option<DraftContext>,
-    pub anchor: Option<DraftAnchor>,
+    pub context: Option<TimetableContext>,
+    pub anchor: Option<TimetableAnchor>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftParticipant {
+pub struct TimetableParticipant {
     pub user_id: Uuid,
     pub name: String,
     pub color: String,
     pub profile_image_file_id: Option<Uuid>,
-    pub connections: Vec<DraftConnectionPresence>,
+    pub connections: Vec<TimetableConnectionPresence>,
 }
 
 /// Public lease identity is distinct from its private ownership token.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftReservation {
+pub struct TimetableReservation {
     pub reservation_id: Uuid,
     pub owner_connection_id: Uuid,
-    pub purpose: DraftReservationPurpose,
+    pub purpose: TimetableReservationPurpose,
     pub source: TimetableBlockPlacementSource,
-    pub target: Option<DraftTarget>,
+    pub target: Option<TimetableTarget>,
     pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
-pub enum DraftCommandKind {
+pub enum TimetableCommandKind {
     Claim,
     Target,
     Renew,
@@ -198,13 +198,13 @@ pub enum DraftCommandKind {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftCommandResult {
+pub struct TimetableCommandResult {
     pub request_id: Uuid,
-    pub command: DraftCommandKind,
+    pub command: TimetableCommandKind,
     pub accepted: bool,
     pub code: Option<String>,
     pub source: Option<TimetableBlockPlacementSource>,
-    pub target: Option<DraftTarget>,
+    pub target: Option<TimetableTarget>,
     pub reservation_id: Option<Uuid>,
     pub lease_token: Option<Uuid>,
     pub expires_at: Option<DateTime<Utc>>,
@@ -213,18 +213,18 @@ pub struct DraftCommandResult {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftBlockedCell {
+pub struct TimetableBlockedCell {
     pub day_of_week: String,
     pub bell_schedule_period_id: Uuid,
     pub reservation_id: Uuid,
     pub owner_connection_id: Uuid,
-    pub purpose: DraftReservationPurpose,
+    pub purpose: TimetableReservationPurpose,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftRoomOptions {
+pub struct TimetableRoomOptions {
     pub reservation_id: Uuid,
     pub available_room_ids: Vec<Uuid>,
 }
@@ -232,29 +232,29 @@ pub struct DraftRoomOptions {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftAvailability {
+pub struct TimetableAvailability {
     pub source: TimetableBlockPlacementSource,
-    pub context: Option<DraftContext>,
-    pub blocked_cells: Vec<DraftBlockedCell>,
+    pub context: Option<TimetableContext>,
+    pub blocked_cells: Vec<TimetableBlockedCell>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub room_options: Option<DraftRoomOptions>,
+    pub room_options: Option<TimetableRoomOptions>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftStateSync {
+pub struct TimetableStateSync {
     pub connection_id: Uuid,
     pub workspace: TimetableBlockWorkspace,
-    pub users: Vec<DraftParticipant>,
-    pub reservations: Vec<DraftReservation>,
+    pub users: Vec<TimetableParticipant>,
+    pub reservations: Vec<TimetableReservation>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftPatch {
-    pub timetable_version_id: Uuid,
+pub struct TimetablePatch {
+    pub timetable_id: Uuid,
     pub origin_connection_id: Option<Uuid>,
     pub mutation_id: Uuid,
     pub upserted_blocks: Vec<TimetableBlock>,
@@ -263,17 +263,17 @@ pub struct DraftPatch {
     pub synchronized_demands: Vec<TimetableSynchronizedDemand>,
     pub summary: TimetableBlockSummary,
     pub source_issues: Vec<TimetableSourceIssue>,
-    pub total_draft_block_count: Option<i64>,
-    pub version: Option<TimetableVersion>,
+    pub total_block_count: Option<i64>,
+    pub timetable: Option<Timetable>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lookup_changes: Option<DraftLookupChanges>,
+    pub lookup_changes: Option<TimetableLookupChanges>,
 }
 
 /// Recipient-specific lookup membership/metadata changes caused by a normal block mutation.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftLookupChanges {
+pub struct TimetableLookupChanges {
     pub upserted_staff: Vec<TimetableBlockWorkspaceStaff>,
     pub removed_staff_ids: Vec<Uuid>,
     pub upserted_homerooms: Vec<TimetableBlockWorkspaceHomeroom>,
@@ -299,20 +299,20 @@ pub struct DraftLookupChanges {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(tag = "type", content = "payload")]
-pub enum DraftServerMessage {
-    DraftStateSync(DraftStateSync),
-    DraftPresenceChanged(DraftParticipant),
-    DraftPresenceLeft {
+pub enum TimetableServerMessage {
+    TimetableStateSync(TimetableStateSync),
+    TimetablePresenceChanged(TimetableParticipant),
+    TimetablePresenceLeft {
         #[serde(rename = "connectionId")]
         connection_id: Uuid,
     },
-    DraftCommandResult(DraftCommandResult),
-    DraftReservationsChanged {
-        reservations: Vec<DraftReservation>,
+    TimetableCommandResult(TimetableCommandResult),
+    TimetableReservationsChanged {
+        reservations: Vec<TimetableReservation>,
     },
-    DraftAvailability(DraftAvailability),
-    DraftPatched(DraftPatch),
-    DraftReconcileRequired {
+    TimetableAvailability(TimetableAvailability),
+    TimetablePatched(TimetablePatch),
+    TimetableReconcileRequired {
         reason: String,
     },
 }
@@ -320,19 +320,19 @@ pub enum DraftServerMessage {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct DraftEventEnvelope {
+pub struct TimetableEventEnvelope {
     pub epoch: Uuid,
     /// Snapshot sequence for state sync; committed journal sequence for patches.
     pub seq: u64,
     #[serde(flatten)]
-    pub event: DraftServerMessage,
+    pub event: TimetableServerMessage,
 }
 
 /// Optional HTTP ownership proof. Actor/session identity always comes from authentication.
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DraftMutationIdentity {
+pub struct TimetableMutationIdentity {
     pub connection_id: Uuid,
     pub lease_token: Uuid,
     pub mutation_id: Uuid,

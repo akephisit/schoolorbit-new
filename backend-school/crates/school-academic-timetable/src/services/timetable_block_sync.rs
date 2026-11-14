@@ -10,7 +10,6 @@ struct SyncBlockContext {
     learning_offering_id: Uuid,
     academic_term_id: Uuid,
     academic_year_id: Uuid,
-    delivery_version_id: Uuid,
 }
 
 #[derive(Debug, FromRow)]
@@ -28,23 +27,34 @@ struct SyncStateRow {
 
 pub(crate) async fn sync_offering_groups_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
+    permit: &crate::collaboration::CommitPermit,
     block_id: Uuid,
     actor_id: Uuid,
 ) -> Result<Vec<TimetableBlockSyncState>, AppError> {
-    sync_groups_in_tx(transaction, block_id, actor_id, &[], false).await
+    sync_groups_in_tx(transaction, permit, block_id, actor_id, &[], false).await
 }
 
 pub(crate) async fn retry_groups_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
+    permit: &crate::collaboration::CommitPermit,
     block_id: Uuid,
     actor_id: Uuid,
     learning_group_ids: &[Uuid],
 ) -> Result<Vec<TimetableBlockSyncState>, AppError> {
-    sync_groups_in_tx(transaction, block_id, actor_id, learning_group_ids, false).await
+    sync_groups_in_tx(
+        transaction,
+        permit,
+        block_id,
+        actor_id,
+        learning_group_ids,
+        false,
+    )
+    .await
 }
 
 pub(crate) async fn restore_group_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
+    permit: &crate::collaboration::CommitPermit,
     block_id: Uuid,
     actor_id: Uuid,
     learning_group_id: Uuid,
@@ -63,11 +73,20 @@ pub(crate) async fn restore_group_in_tx(
         .bind(actor_id)
         .execute()
         .await?;
-    sync_groups_in_tx(transaction, block_id, actor_id, &[learning_group_id], true).await
+    sync_groups_in_tx(
+        transaction,
+        permit,
+        block_id,
+        actor_id,
+        &[learning_group_id],
+        true,
+    )
+    .await
 }
 
 async fn sync_groups_in_tx(
     transaction: &mut Transaction<'_, Postgres>,
+    permit: &crate::collaboration::CommitPermit,
     block_id: Uuid,
     actor_id: Uuid,
     selected_group_ids: &[Uuid],
@@ -77,40 +96,40 @@ async fn sync_groups_in_tx(
         .query_as(
             "academic_timetable.services.timetable_block_sync.sync_groups_in_tx",
             r#"SELECT block.learning_offering_id, block.academic_term_id,
-                  block.academic_year_id, version.delivery_version_id
+                  block.academic_year_id
            FROM academic_timetable_blocks block
-           JOIN academic_timetable_versions version ON version.id = block.timetable_version_id
+           JOIN academic_timetables version ON version.id = block.timetable_id
            WHERE block.id = $1
              AND block.is_active
              AND block.block_kind = 'ACTIVITY'
              AND block.scheduling_mode = 'synchronized'
-             AND version.status = 'draft'
            FOR UPDATE OF block, version"#,
         )
         .bind(block_id)
         .fetch_optional()
         .await?
-        .ok_or_else(|| AppError::Conflict("ซิงค์ได้เฉพาะช่วงกิจกรรมพร้อมกันในรุ่นแบบร่าง".to_string()))?;
+        .ok_or_else(|| {
+            AppError::Conflict("ซิงค์ได้เฉพาะช่วงกิจกรรมพร้อมกันในตารางเรียนปัจจุบัน".to_string())
+        })?;
 
     let selected = canonical_ids(selected_group_ids);
-    let source = school_academic_delivery::services::versions::published_source(
+    let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         transaction,
-        context.delivery_version_id,
+        context.academic_year_id,
         context.academic_term_id,
     )
     .await?;
     let offering = source
-        .snapshot
         .offerings
         .iter()
         .find(|offering| offering.id == context.learning_offering_id)
-        .ok_or_else(|| AppError::ValidationError("กิจกรรมไม่มีในรุ่นเปิดสอนที่อ้างอิง กรุณาถอดคาบ".into()))?;
+        .ok_or_else(|| AppError::ValidationError("กิจกรรมไม่มีในข้อมูลเปิดสอนปัจจุบัน กรุณาถอดคาบ".into()))?;
     if selected
         .iter()
         .any(|id| !offering.groups.iter().any(|group| group.id == *id))
     {
         return Err(AppError::ValidationError(
-            "กลุ่มที่เลือกไม่มีในรุ่นเปิดสอนที่อ้างอิง".into(),
+            "กลุ่มที่เลือกไม่มีในข้อมูลเปิดสอนปัจจุบัน".into(),
         ));
     }
     let groups = offering
@@ -156,13 +175,13 @@ async fn sync_groups_in_tx(
                 .fetch_one()
                 .await?;
         if !inside_scope {
-            remove_group_allocation(transaction, block_id, group.id, actor_id).await?;
+            remove_group_allocation(transaction, permit, block_id, group.id, actor_id).await?;
             upsert_sync_state(
                 transaction,
                 block_id,
                 &context,
                 group.id,
-                source.row_version,
+                group.row_version,
                 "OUTSIDE_SCOPE",
                 None,
                 Some("TIMETABLE_SYNC_OUTSIDE_RESERVED_HOMEROOMS"),
@@ -185,13 +204,13 @@ async fn sync_groups_in_tx(
             })
             .collect::<Vec<_>>();
         if teachers.is_empty() {
-            remove_group_allocation(transaction, block_id, group.id, actor_id).await?;
+            remove_group_allocation(transaction, permit, block_id, group.id, actor_id).await?;
             upsert_sync_state(
                 transaction,
                 block_id,
                 &context,
                 group.id,
-                source.row_version,
+                group.row_version,
                 "WAITING_FOR_DATA",
                 None,
                 Some("TIMETABLE_SYNC_MISSING_INSTRUCTOR"),
@@ -226,7 +245,7 @@ async fn sync_groups_in_tx(
                     block_id,
                     &context,
                     group.id,
-                    source.row_version,
+                    group.row_version,
                     "LINKED",
                     Some(block_group_id),
                     None,
@@ -254,13 +273,13 @@ async fn sync_groups_in_tx(
                 let Some((code, message)) = conflict else {
                     return Err(AppError::DbError(error));
                 };
-                remove_group_allocation(transaction, block_id, group.id, actor_id).await?;
+                remove_group_allocation(transaction, permit, block_id, group.id, actor_id).await?;
                 upsert_sync_state(
                     transaction,
                     block_id,
                     &context,
                     group.id,
-                    source.row_version,
+                    group.row_version,
                     "CONFLICT",
                     None,
                     Some(code),
@@ -279,7 +298,7 @@ async fn write_group_allocation(
     transaction: &mut Transaction<'_, Postgres>,
     block_id: Uuid,
     context: &SyncBlockContext,
-    group: &school_academic_delivery::models::versions::DeliveryVersionGroup,
+    group: &school_academic_delivery::models::current::DeliveryGroup,
     teachers: &[(Uuid, String)],
     actor_id: Uuid,
 ) -> Result<Uuid, sqlx::Error> {
@@ -336,24 +355,14 @@ async fn write_group_allocation(
 
 async fn remove_group_allocation(
     transaction: &mut Transaction<'_, Postgres>,
+    permit: &crate::collaboration::CommitPermit,
     block_id: Uuid,
     learning_group_id: Uuid,
     actor_id: Uuid,
 ) -> Result<(), AppError> {
-    DbSession::new(&mut **transaction)
-        .query(
-            "academic_timetable.services.timetable_block_sync.remove_group_allocation",
-            r#"UPDATE academic_timetable_block_groups
-           SET is_active = false, row_version = row_version + 1,
-               updated_by = $3, updated_at = now()
-           WHERE block_id = $1 AND learning_group_id = $2 AND is_active"#,
-        )
-        .bind(block_id)
-        .bind(learning_group_id)
-        .bind(actor_id)
-        .execute()
-        .await?;
-    Ok(())
+    let _actor_id = actor_id;
+    let ids:Vec<Uuid>=DbSession::new(&mut **transaction).scalar("academic_timetable.services.timetable_block_sync.remove_group_allocation", "SELECT id FROM academic_timetable_block_groups WHERE block_id=$1 AND learning_group_id=$2 ORDER BY id").bind(block_id).bind(learning_group_id).fetch_all().await?;
+    super::deletion::remove_groups_in_transaction(transaction, permit, &ids).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -434,7 +443,7 @@ async fn load_states(
                     _ => {
                         return Err(AppError::InternalServerError(
                             "สถานะซิงค์ตารางสอนไม่ถูกต้อง".to_string(),
-                        ))
+                        ));
                     }
                 },
                 linked_block_group_id: row.linked_block_group_id,

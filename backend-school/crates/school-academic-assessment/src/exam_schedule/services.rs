@@ -1,7 +1,6 @@
 pub use rounds_and_days::pending_term_work;
+mod current_views;
 mod invigilation;
-mod published_views;
-mod publishing;
 mod room_assignments;
 mod rounds_and_days;
 mod sessions_and_conflicts;
@@ -10,15 +9,13 @@ mod term_preparation;
 mod workspace;
 pub use term_preparation::apply as apply_term_preparation;
 
+pub use self::current_views::{
+    list_child_exam_schedule, list_my_exam_schedule, list_staff_exam_schedule,
+};
 pub use self::invigilation::{
     assign_invigilator_to_assignment, get_invigilator_workspace, list_invigilator_staff_options,
     remove_invigilator_from_assignment, update_assignment_invigilators,
 };
-pub use self::published_views::{
-    list_child_published_exam_schedule, list_my_published_exam_schedule,
-    list_staff_published_exam_schedule,
-};
-pub use self::publishing::publish_round;
 pub use self::room_assignments::{
     generate_seats_for_assignment, list_day_room_assignments, upsert_day_room_assignment,
 };
@@ -27,19 +24,18 @@ pub use self::rounds_and_days::{
     upsert_exam_day,
 };
 pub use self::sessions_and_conflicts::{delete_exam_session, place_exam_session};
-pub use self::workspace::{get_workspace, preview_exam_sources, sync_exam_sources};
+pub use self::workspace::get_workspace;
 
 #[cfg(test)]
 mod tests;
 
+pub use self::current_views::{
+    list_child_exam_schedule_on_connection, list_my_exam_schedule_on_connection,
+    list_staff_exam_schedule_on_connection,
+};
 pub use self::invigilation::{
     get_invigilator_workspace_on_connection, list_invigilator_staff_options_on_connection,
 };
-pub use self::published_views::{
-    list_child_published_exam_schedule_on_connection,
-    list_my_published_exam_schedule_on_connection,
-    list_staff_published_exam_schedule_on_connection,
-};
 pub use self::room_assignments::list_day_room_assignments_on_connection;
 pub use self::rounds_and_days::list_rounds_on_connection;
-pub use self::workspace::{get_workspace_on_connection, preview_exam_sources_on_connection};
+pub use self::workspace::get_workspace_on_connection;

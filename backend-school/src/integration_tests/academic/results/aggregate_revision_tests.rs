@@ -89,10 +89,11 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
         .await
         .unwrap();
     assert!(ws.can_close);
-    assert!(ws
-        .findings
-        .iter()
-        .any(|row| row.code == "year.optional_terms"));
+    assert!(
+        ws.findings
+            .iter()
+            .any(|row| row.code == "year.optional_terms")
+    );
     year_transitions::transition_year(
         &pool,
         &actor,
@@ -138,8 +139,8 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
 }
 
 #[tokio::test]
-async fn lifecycle_closure_preserves_reported_aggregates_and_requires_exact_operational_warning_acknowledgement(
-) {
+async fn lifecycle_closure_preserves_reported_aggregates_and_requires_exact_operational_warning_acknowledgement()
+ {
     use crate::integration_tests::academic::{
         core::{
             models::{AcademicTermStatus, TermTransitionAction, TermTransitionRequest},
@@ -206,10 +207,12 @@ async fn lifecycle_closure_preserves_reported_aggregates_and_requires_exact_oper
         lifecycle::get_workspace(&pool, &actor, ctx.academic_year_id, ctx.academic_term_id)
             .await
             .unwrap();
-    assert!(workspace
-        .findings
-        .iter()
-        .all(|row| !row.code.starts_with("results.")));
+    assert!(
+        workspace
+            .findings
+            .iter()
+            .all(|row| !row.code.starts_with("results."))
+    );
     let mut request = TermTransitionRequest {
         academic_year_id: ctx.academic_year_id,
         request_id: Uuid::new_v4(),
@@ -232,14 +235,11 @@ async fn lifecycle_closure_preserves_reported_aggregates_and_requires_exact_oper
     request.expected_year_version = workspace.context.year_row_version;
     request.expected_term_version = workspace.context.term_row_version;
     request.readiness_checksum = workspace.source_checksum;
-    assert!(term_transitions::transition_term(
-        &pool,
-        &actor,
-        ctx.academic_term_id,
-        request.clone()
-    )
-    .await
-    .is_err());
+    assert!(
+        term_transitions::transition_term(&pool, &actor, ctx.academic_term_id, request.clone())
+            .await
+            .is_err()
+    );
     request.acknowledged_warning_codes = workspace
         .findings
         .iter()
@@ -368,12 +368,16 @@ async fn aggregate_batch_providers_preserve_student_boundaries_and_existing_chec
     .await
     .unwrap();
     assert_eq!(aggregates.len(), students.len());
-    assert!(!aggregates[&original]
-        .blockers
-        .contains(&AggregateBlocker::NoCourseCoverage));
-    assert!(aggregates[&extra_student]
-        .blockers
-        .contains(&AggregateBlocker::NoCourseCoverage));
+    assert!(
+        !aggregates[&original]
+            .blockers
+            .contains(&AggregateBlocker::NoCourseCoverage)
+    );
+    assert!(
+        aggregates[&extra_student]
+            .blockers
+            .contains(&AggregateBlocker::NoCourseCoverage)
+    );
     for (student, result, summary) in expected {
         assert_eq!(
             serde_json::to_value(&results[&student]).unwrap(),
@@ -392,10 +396,12 @@ async fn aggregate_batch_providers_preserve_student_boundaries_and_existing_chec
             serde_json::to_value(&summary).unwrap()
         );
     }
-    assert!(preview_student_terms_in_transaction(&mut tx, &[], &query)
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        preview_student_terms_in_transaction(&mut tx, &[], &query)
+            .await
+            .unwrap()
+            .is_empty()
+    );
     assert!(
         learner::summarize_student_terms_in_transaction(&mut tx, &lc, &[])
             .await
@@ -512,12 +518,14 @@ pub(crate) async fn ready_aggregate_fixture_with_cohort(
     };
     for course in &preview.courses {
         prepare_course_subject(&pool, &actor, &ctx, course.subject_id).await;
-        assert!(lock_course_subject(&pool, &actor, &ctx, course.subject_id)
-            .await
-            .unwrap()
-            .lock
-            .is_some());
-        let rooms: Vec<(Uuid, Uuid)> = sqlx::query_as("SELECT g.id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id AND t.role='primary' WHERE d.subject_id=$1 AND g.academic_term_id=$2 AND g.status<>'closed' ORDER BY g.id").bind(course.subject_id).bind(ctx.academic_term_id).fetch_all(&pool).await.unwrap();
+        assert!(
+            lock_course_subject(&pool, &actor, &ctx, course.subject_id)
+                .await
+                .unwrap()
+                .lock
+                .is_some()
+        );
+        let rooms: Vec<(Uuid, Uuid)> = sqlx::query_as("SELECT g.id,t.teacher_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id JOIN learning_group_teachers t ON t.learning_group_id=g.id AND t.role='primary' WHERE d.subject_id=$1 AND g.academic_term_id=$2 ORDER BY g.id").bind(course.subject_id).bind(ctx.academic_term_id).fetch_all(&pool).await.unwrap();
         for domain in [
             lm::LearnerEvaluationDomain::DesirableCharacteristic,
             lm::LearnerEvaluationDomain::ReadingThinkingWriting,
@@ -779,9 +787,11 @@ async fn aggregate_revisions_retain_history_retry_safely_and_detect_corrections(
         .await
         .unwrap();
     assert!(!strict.can_lock);
-    assert!(strict
-        .blockers
-        .contains(&AggregateBlocker::ReviewedHoldNotAllowed));
+    assert!(
+        strict
+            .blockers
+            .contains(&AggregateBlocker::ReviewedHoldNotAllowed)
+    );
     let hold_policy = create_aggregate_policy(
         &pool,
         &actor,
@@ -969,12 +979,16 @@ async fn aggregate_preview_missing_results_cannot_be_locked_even_with_a_hold() {
         .await
         .unwrap();
     assert!(!preview.can_lock);
-    assert!(preview
-        .blockers
-        .contains(&AggregateBlocker::MissingCourseResults));
-    assert!(preview
-        .blockers
-        .contains(&AggregateBlocker::MissingLearnerEvaluations));
+    assert!(
+        preview
+            .blockers
+            .contains(&AggregateBlocker::MissingCourseResults)
+    );
+    assert!(
+        preview
+            .blockers
+            .contains(&AggregateBlocker::MissingLearnerEvaluations)
+    );
     let input = AggregateLockInput {
         policy_id: policy.id,
         source_checksum: preview.source_checksum,

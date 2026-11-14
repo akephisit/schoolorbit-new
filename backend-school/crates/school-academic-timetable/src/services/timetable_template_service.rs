@@ -1,6 +1,6 @@
 use crate::collaboration::{CommitPermit, MutationScope, TimetableMutationContext};
 use school_database::DbSession;
-use sqlx::{types::Json, FromRow, PgPool};
+use sqlx::{FromRow, PgPool, types::Json};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -11,7 +11,7 @@ use crate::models::timetable::{
 };
 use school_errors::AppError;
 
-use super::timetable_version_service::require_current_draft_write;
+use super::timetable_service::require_current_write;
 use super::{timetable_block_conflicts::map_write_error, timetable_block_queries};
 
 #[derive(Debug, FromRow)]
@@ -256,22 +256,20 @@ pub async fn from_current(
         "academic_timetable.services.timetable_template_service.from_current",
     )
     .await?;
-    let version_exists: bool = DbSession::new(&mut *transaction)
+    let timetable_exists: bool = DbSession::new(&mut *transaction)
         .scalar(
             "academic_timetable.services.timetable_template_service.from_current",
             r#"SELECT EXISTS(
-               SELECT 1 FROM academic_timetable_versions
-               WHERE id = $1 AND academic_term_id = $2 AND status <> 'cancelled'
+               SELECT 1 FROM academic_timetables
+               WHERE id = $1 AND academic_term_id = $2
            )"#,
         )
-        .bind(request.timetable_version_id)
+        .bind(request.timetable_id)
         .bind(request.academic_term_id)
         .fetch_one()
         .await?;
-    if !version_exists {
-        return Err(AppError::NotFound(
-            "ไม่พบรุ่นตารางสอนในภาคเรียนที่ระบุ".to_string(),
-        ));
+    if !timetable_exists {
+        return Err(AppError::NotFound("ไม่พบตารางเรียนในภาคเรียนที่ระบุ".to_string()));
     }
     let template_id = Uuid::now_v7();
     DbSession::new(&mut *transaction)
@@ -343,7 +341,7 @@ pub async fn from_current(
              ON activity_detail.learning_offering_id = offering.id
            LEFT JOIN homerooms homeroom ON homeroom.id = homeroom_target.homeroom_id
            WHERE block.academic_term_id = $1
-             AND block.timetable_version_id = $4
+             AND block.timetable_id = $4
              AND block.is_active
              AND block.scheduling_mode IS DISTINCT FROM 'synchronized'
              AND CASE WHEN block.block_kind = 'STRUCTURAL'
@@ -352,7 +350,7 @@ pub async fn from_current(
         .bind(request.academic_term_id)
         .bind(template_id)
         .bind(&entry_types)
-        .bind(request.timetable_version_id)
+        .bind(request.timetable_id)
         .execute()
         .await?;
     transaction.commit().await?;
@@ -368,8 +366,8 @@ pub async fn apply_template(
     context
         .execute(
             pool,
-            request.timetable_version_id,
-            MutationScope::WholeDraft,
+            request.timetable_id,
+            MutationScope::WholeTimetable,
             move |pool, permit| async move {
                 apply_template_in_permit(&pool, permit, template_id, request).await
             },
@@ -390,7 +388,7 @@ async fn apply_template_in_permit(
     AppError,
 > {
     let actor_user_id = permit.actor_id;
-    permit.require_version(request.timetable_version_id)?;
+    permit.require_timetable(request.timetable_id)?;
     let template = get_template(pool, template_id).await?;
     let series_id = Uuid::now_v7();
     let mut transaction = school_tenancy::TenantPool::begin_observed(
@@ -398,33 +396,31 @@ async fn apply_template_in_permit(
         "academic_timetable.services.timetable_template_service.apply_template",
     )
     .await?;
-    require_current_draft_write(&mut transaction, request.timetable_version_id).await?;
-    let (academic_year_id, bell_schedule_id, delivery_version_id): (
-        Uuid,
-        Uuid,
-        Uuid,
-    ) = DbSession::new(&mut *transaction).query_as("academic_timetable.services.timetable_template_service.apply_template",
-        r#"SELECT version.academic_year_id, version.bell_schedule_id, version.delivery_version_id
-           FROM academic_timetable_versions version
+    require_current_write(&mut transaction, request.timetable_id).await?;
+    let (academic_year_id, bell_schedule_id): (Uuid, Uuid) = DbSession::new(&mut *transaction)
+        .query_as(
+            "academic_timetable.services.timetable_template_service.apply_template",
+            r#"SELECT version.academic_year_id, version.bell_schedule_id
+           FROM academic_timetables version
            WHERE version.id = $1
              AND version.academic_term_id = $2
-             AND version.status = 'draft'
            FOR UPDATE OF version"#,
-    )
-    .bind(request.timetable_version_id)
-    .bind(request.academic_term_id)
-    .fetch_optional()
-    .await?
-    .ok_or_else(|| AppError::Conflict("เพิ่มแม่แบบได้เฉพาะรุ่นตารางฉบับร่างในภาคเรียนที่เปิดอยู่".to_string()))?;
+        )
+        .bind(request.timetable_id)
+        .bind(request.academic_term_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| {
+            AppError::Conflict("เพิ่มแม่แบบได้เฉพาะรุ่นตารางฉบับร่างในภาคเรียนที่เปิดอยู่".to_string())
+        })?;
     let mut block_ids = Vec::with_capacity(template.entries.len());
-    let delivery = school_academic_delivery::services::versions::published_source(
+    let delivery = school_academic_delivery::services::current::complete_workspace_on_connection(
         &mut transaction,
-        delivery_version_id,
+        academic_year_id,
         request.academic_term_id,
     )
     .await?;
     let source_teacher_ids = delivery
-        .snapshot
         .offerings
         .iter()
         .flat_map(|offering| &offering.groups)
@@ -465,13 +461,12 @@ async fn apply_template_in_permit(
                 ))
             })?;
         let learning_group_id = resolve_target_group(
-            &delivery.snapshot,
+            &delivery.offerings,
             &entry.resource_kind,
             entry.stable_resource_id,
             entry.learning_group_code.as_deref(),
         )?;
         let pinned_group = delivery
-            .snapshot
             .offerings
             .iter()
             .flat_map(|offering| &offering.groups)
@@ -501,7 +496,6 @@ async fn apply_template_in_permit(
                 )));
             }
             let offering = delivery
-                .snapshot
                 .offerings
                 .iter()
                 .find(|offering| offering.groups.iter().any(|group| group.id == group_id))
@@ -519,7 +513,7 @@ async fn apply_template_in_permit(
                 .query(
                     "academic_timetable.services.timetable_template_service.apply_template",
                     r#"INSERT INTO academic_timetable_blocks (
-                       id, timetable_version_id, academic_term_id, academic_year_id,
+                       id, timetable_id, academic_term_id, academic_year_id,
                        bell_schedule_id, bell_schedule_period_id, day_of_week,
                        block_kind, scheduling_mode, learning_offering_id,
                        note, series_id, created_by, updated_by
@@ -527,7 +521,7 @@ async fn apply_template_in_permit(
                              NULL, $10, $11, $11)"#,
                 )
                 .bind(block_id)
-                .bind(request.timetable_version_id)
+                .bind(request.timetable_id)
                 .bind(request.academic_term_id)
                 .bind(academic_year_id)
                 .bind(bell_schedule_id)
@@ -605,14 +599,14 @@ async fn apply_template_in_permit(
                 .query(
                     "academic_timetable.services.timetable_template_service.apply_template",
                     r#"INSERT INTO academic_timetable_blocks (
-                       id, timetable_version_id, academic_term_id, academic_year_id,
+                       id, timetable_id, academic_term_id, academic_year_id,
                        bell_schedule_id, bell_schedule_period_id, day_of_week,
                        block_kind, structural_kind, title, series_id, created_by, updated_by
                    ) VALUES ($1, $2, $3, $4, $5, $6, $7,
                              'STRUCTURAL', $8, $9, $10, $11, $11)"#,
                 )
                 .bind(block_id)
-                .bind(request.timetable_version_id)
+                .bind(request.timetable_id)
                 .bind(request.academic_term_id)
                 .bind(academic_year_id)
                 .bind(bell_schedule_id)
@@ -679,7 +673,7 @@ async fn apply_template_in_permit(
 }
 
 fn eligible_template_group_instructors(
-    group: &school_academic_delivery::models::versions::DeliveryVersionGroup,
+    group: &school_academic_delivery::models::current::DeliveryGroup,
     active: &std::collections::HashSet<Uuid>,
     selected_ids: &[Uuid],
 ) -> Vec<Uuid> {
@@ -708,8 +702,8 @@ pub async fn clear_timetable(
     context
         .execute(
             pool,
-            request.timetable_version_id,
-            MutationScope::WholeDraft,
+            request.timetable_id,
+            MutationScope::WholeTimetable,
             move |pool, permit| async move {
                 let value = clear_timetable_in_permit(&pool, permit, request).await?;
                 let blocks = value.clone();
@@ -724,27 +718,26 @@ async fn clear_timetable_in_permit(
     permit: Arc<CommitPermit>,
     request: ClearTimetableRequest,
 ) -> Result<Vec<crate::models::timetable_block::TimetableBlock>, AppError> {
-    let actor_user_id = permit.actor_id;
-    permit.require_version(request.timetable_version_id)?;
+    permit.require_timetable(request.timetable_id)?;
     let entry_types = canonical_entry_types(request.entry_types)?;
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_timetable.services.timetable_template_service.clear_timetable",
     )
     .await?;
-    require_current_draft_write(&mut transaction, request.timetable_version_id).await?;
-    let is_draft: bool = DbSession::new(&mut *transaction)
+    require_current_write(&mut transaction, request.timetable_id).await?;
+    let exists_current: bool = DbSession::new(&mut *transaction)
         .scalar(
             "academic_timetable.services.timetable_template_service.clear_timetable",
-            r#"SELECT status = 'draft' FROM academic_timetable_versions
+            r#"SELECT true FROM academic_timetables
            WHERE id = $1 AND academic_term_id = $2 FOR UPDATE"#,
         )
-        .bind(request.timetable_version_id)
+        .bind(request.timetable_id)
         .bind(request.academic_term_id)
         .fetch_optional()
         .await?
         .unwrap_or(false);
-    if !is_draft {
+    if !exists_current {
         return Err(AppError::Conflict("ล้างได้เฉพาะรุ่นตารางฉบับร่าง".to_string()));
     }
     let ids: Vec<Uuid> = DbSession::new(&mut *transaction)
@@ -752,7 +745,7 @@ async fn clear_timetable_in_permit(
             "academic_timetable.services.timetable_template_service.clear_timetable",
             r#"SELECT id FROM academic_timetable_blocks
            WHERE academic_term_id = $1
-             AND timetable_version_id = $3
+             AND timetable_id = $3
              AND CASE WHEN block_kind = 'STRUCTURAL'
                       THEN structural_kind ELSE block_kind END = ANY($2)
              AND is_active
@@ -760,35 +753,17 @@ async fn clear_timetable_in_permit(
         )
         .bind(request.academic_term_id)
         .bind(&entry_types)
-        .bind(request.timetable_version_id)
+        .bind(request.timetable_id)
         .fetch_all()
         .await?;
-    DbSession::new(&mut *transaction)
-        .query(
-            "academic_timetable.services.timetable_template_service.clear_timetable",
-            r#"UPDATE academic_timetable_blocks
-           SET is_active = false, updated_by = $3,
-               row_version = row_version + 1, updated_at = now()
-           WHERE academic_term_id = $1
-             AND timetable_version_id = $4
-             AND CASE WHEN block_kind = 'STRUCTURAL'
-                      THEN structural_kind ELSE block_kind END = ANY($2)
-             AND is_active"#,
-        )
-        .bind(request.academic_term_id)
-        .bind(&entry_types)
-        .bind(actor_user_id)
-        .bind(request.timetable_version_id)
-        .execute()
-        .await
-        .map_err(map_write_error)?;
-    let blocks = timetable_block_queries::get_blocks_on_connection(&mut transaction, &ids).await?;
+    let blocks =
+        super::deletion::remove_blocks_in_transaction(&mut transaction, &permit, &ids).await?;
     permit.commit(transaction).await?;
     Ok(blocks)
 }
 
 fn resolve_target_group(
-    source: &school_academic_delivery::models::versions::DeliverySnapshot,
+    source: &[school_academic_delivery::models::current::DeliveryOffering],
     resource_kind: &str,
     stable_resource_id: Option<Uuid>,
     group_code: Option<&str>,
@@ -800,7 +775,6 @@ fn resolve_target_group(
         return Err(AppError::ValidationError("แม่แบบขาดข้อมูลรายวิชา".into()));
     };
     let matches = source
-        .offerings
         .iter()
         .filter(|offering| match &offering.catalog {
             school_academic_delivery::models::LearningOfferingSnapshot::Course(course) => {
@@ -905,8 +879,8 @@ fn require_name(name: &str) -> Result<&str, AppError> {
 mod tests {
     use super::{canonical_entry_types, eligible_template_group_instructors};
     use school_academic_delivery::models::{
-        versions::{DeliveryVersionGroup, DeliveryVersionTeacher},
         LearningTeacherRole,
+        current::{DeliveryGroup, DeliveryTeacher},
     };
     use std::collections::HashSet;
     use uuid::Uuid;
@@ -914,7 +888,9 @@ mod tests {
     #[test]
     fn template_instructors_must_match_the_pinned_group_and_current_staff_state() {
         let teacher = Uuid::from_u128(1);
-        let group = DeliveryVersionGroup {
+        let group = DeliveryGroup {
+            row_version: 1,
+            registration_open: false,
             id: Uuid::from_u128(2),
             code: "G1".into(),
             name: "กลุ่มทดสอบ".into(),
@@ -922,7 +898,9 @@ mod tests {
             capacity: None,
             homeroom_ids: Vec::new(),
             preferred_room_ids: Vec::new(),
-            teachers: vec![DeliveryVersionTeacher {
+            teachers: vec![DeliveryTeacher {
+                row_version: 1,
+                is_active: true,
                 assignment_id: Uuid::from_u128(3),
                 teacher_id: teacher,
                 display_name: "ครูทดสอบ".into(),

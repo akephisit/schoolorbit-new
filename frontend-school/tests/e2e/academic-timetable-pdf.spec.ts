@@ -18,8 +18,8 @@ import {
 } from './timetable-test-harness';
 
 test.use({ serviceWorkers: 'block' });
-const url = (view = 'homeroom', status = 'draft') =>
-	`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableVersionId=${status === 'draft' ? timetableIds.draftVersion : timetableIds.publishedVersion}&view=${view}&ownerId=${view === 'teacher' ? timetableIds.teacherA : view === 'group' ? timetableIds.groupA : timetableIds.homeroom}`;
+const url = (view = 'homeroom') =>
+	`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&timetableId=${timetableIds.timetable}&view=${view}&ownerId=${view === 'teacher' ? timetableIds.teacherA : view === 'group' ? timetableIds.groupA : timetableIds.homeroom}`;
 
 async function pdfText(download: Download) {
 	const path = await download.path();
@@ -59,7 +59,7 @@ for (const width of [1543, 390]) {
 			special.homerooms[0].roomName = 'ห้องคณิตศาสตร์';
 			await installTimetableMock(page, {
 				permissions: ['academic_timetable.read.school'],
-				requestedWorkspaceVersion: true,
+
 				staff: [timetableIds.teacherA, timetableIds.teacherB].map((id) => ({
 					id,
 					displayName: teacherName(id),
@@ -144,7 +144,7 @@ for (const width of [1543, 390]) {
 				await confirmDownload(page);
 				const download = await pending;
 				await expectSquareTimetablePdf(download, [1]);
-				expect(download.suggestedFilename()).toMatch(/แบบร่าง\.pdf$/);
+				expect(download.suggestedFilename()).toMatch(/ตารางปัจจุบัน\.pdf$/);
 				await download.saveAs(`/tmp/academic-timetable-${width}-${theme}-${view}.pdf`);
 				const text = await pdfText(download);
 				expect(brandingRequests).toBe(brandingBefore + 1);
@@ -223,8 +223,8 @@ for (const width of [1543, 390]) {
 
 test('PDF failure preserves the table and permits retry', async ({ page }) => {
 	await installTimetableMock(page, {
-		status: 'published',
-		requestedWorkspaceVersion: true,
+		permissions: ['academic_timetable.read.school'],
+
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	let attempts = 0;
@@ -239,7 +239,7 @@ test('PDF failure preserves the table and permits retry', async ({ page }) => {
 			)
 		})
 	);
-	await page.goto(url('homeroom', 'published'));
+	await page.goto(url('homeroom'));
 	const button = page.getByRole('button', { name: 'ดาวน์โหลด PDF', exact: true });
 	await openDownload(page);
 	await confirmDownload(page);
@@ -249,18 +249,17 @@ test('PDF failure preserves the table and permits retry', async ({ page }) => {
 	const pending = page.waitForEvent('download');
 	await confirmDownload(page);
 	const download = await pending;
-	expect(download.suggestedFilename()).toMatch(/เผยแพร่แล้ว\.pdf$/);
+	expect(download.suggestedFilename()).toMatch(/ตารางปัจจุบัน\.pdf$/);
 	const text = await pdfText(download);
 	expect(text).toContain('ภาคเรียนที่1');
 	expect(text).not.toContain('เผยแพร่แล้ว');
 	expect(text).not.toContain('2026-05-01');
 });
 
-test('PDF captures the requested owner and version before its lazy renderer loads', async ({
+test('PDF captures the requested current owner and table before its lazy renderer loads', async ({
 	page
 }) => {
 	await installTimetableMock(page, {
-		requestedWorkspaceVersion: true,
 		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
 	});
 	await page.route('**/api/school/public', (route) =>
@@ -297,7 +296,7 @@ test('PDF captures the requested owner and version before its lazy renderer load
 
 	release();
 	const download = await pending;
-	expect(download.suggestedFilename()).toMatch(/^ตารางเรียน ม\.1-1 .*แบบร่าง\.pdf$/);
+	expect(download.suggestedFilename()).toMatch(/^ตารางเรียน ม\.1-1 .*ตารางปัจจุบัน\.pdf$/);
 	const text = await pdfText(download);
 	expect(text).toContain('ระดับชั้นมัธยมศึกษาปีที่1/1');
 	expect(text).not.toContain('แบบร่าง');
@@ -463,7 +462,6 @@ for (const [shape, width, height] of [
 		const fixture = await PDFDocument.create();
 		// Generate an opaque, distinctive crest in the browser without another image dependency.
 		await installTimetableMock(page, {
-			requestedWorkspaceVersion: true,
 			permissions: ['academic_timetable.read.school'],
 			periodCount: 10,
 			staff: Array.from({ length: 6 }, (_, i) => ({
@@ -569,7 +567,6 @@ test('exports 31 selected teachers as 31 complete pages with an external crest a
 		status: 'active'
 	}));
 	await installTimetableMock(page, {
-		requestedWorkspaceVersion: true,
 		permissions: ['academic_timetable.read.school'],
 		periodCount: 10,
 		staff,
@@ -628,7 +625,6 @@ test('wraps school and owner using their loaded bold measurement face within the
 	const schoolName = `โรงเรียน${'พัฒนา'.repeat(13)}วิทยาคม`;
 	const ownerName = `นาย${'พัฒนา'.repeat(13)}วิทยาคม`;
 	await installTimetableMock(page, {
-		requestedWorkspaceVersion: true,
 		permissions: ['academic_timetable.read.school'],
 		periodCount: 10,
 		staff: [

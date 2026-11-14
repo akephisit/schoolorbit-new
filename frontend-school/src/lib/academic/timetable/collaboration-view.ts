@@ -1,8 +1,8 @@
 import type {
-	DraftAnchor,
-	DraftContext,
-	DraftParticipant,
-	DraftReservation,
+	TimetableAnchor,
+	TimetableContext,
+	TimetableParticipant,
+	TimetableReservation,
 	TimetableBlockWorkspace
 } from '../../api/timetable.js';
 import type {
@@ -28,7 +28,7 @@ const dayNames: Record<string, string> = {
 
 export function collaborationContextLabel(
 	workspace: TimetableBlockWorkspace,
-	context: DraftContext | null | undefined
+	context: TimetableContext | null | undefined
 ): string | null {
 	if (!context) return null;
 	switch (context.viewMode) {
@@ -56,9 +56,9 @@ export function collaborationContextLabel(
 
 export function timetableCollaborators(
 	workspace: TimetableBlockWorkspace,
-	participants: DraftParticipant[],
+	participants: TimetableParticipant[],
 	ownConnectionId: string | null,
-	reservations: DraftReservation[]
+	reservations: TimetableReservation[]
 ): TimetableCollaborator[] {
 	return participants
 		.map((participant) => ({
@@ -89,7 +89,10 @@ export function timetableCollaborators(
 		.filter((participant) => participant.tabs.length > 0);
 }
 
-export function collaborationContextsMatch(local: DraftContext, remote: DraftContext): boolean {
+export function collaborationContextsMatch(
+	local: TimetableContext,
+	remote: TimetableContext
+): boolean {
 	if (local.viewMode === 'wholeSchool')
 		return Boolean(
 			remote.viewId &&
@@ -108,9 +111,9 @@ export function collaborationContextsMatch(local: DraftContext, remote: DraftCon
 
 export function resolveCollaborationAnchor(
 	root: HTMLElement,
-	local: DraftContext,
-	remote: DraftContext,
-	anchor: DraftAnchor
+	local: TimetableContext,
+	remote: TimetableContext,
+	anchor: TimetableAnchor
 ): HTMLElement | null {
 	if (!collaborationContextsMatch(local, remote)) return null;
 	if (anchor.kind === 'block') {
@@ -159,10 +162,10 @@ export function resolveCollaborationAnchor(
 export function timetableRemotePointers(
 	root: HTMLElement,
 	workspace: TimetableBlockWorkspace,
-	local: DraftContext,
-	participants: DraftParticipant[],
+	local: TimetableContext,
+	participants: TimetableParticipant[],
 	ownConnectionId: string | null,
-	reservations: DraftReservation[]
+	reservations: TimetableReservation[]
 ): TimetableRemotePointer[] {
 	return participants.flatMap((participant) =>
 		participant.connections.flatMap((connection) => {

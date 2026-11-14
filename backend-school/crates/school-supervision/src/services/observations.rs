@@ -14,7 +14,7 @@ use crate::models::{
     SupervisionObservationStatus, SupervisionTimetableOption, UpdateRequestedObservationRequest,
     UpdateSupervisionObservationRequest,
 };
-use school_academic_timetable::services::timetable_version_service;
+use school_academic_timetable::services::timetable_service;
 use school_errors::AppError;
 
 use super::cycles::SupervisionCycleTargetRow;
@@ -237,13 +237,22 @@ pub async fn observation_timetable_options(
     let observation =
         super::observations::get_observation_with_connection(&mut connection, observation_id)
             .await?;
-    let version = timetable_version_service::resolve_for_date_on_connection(
+    let Some(version) = timetable_service::get_for_term_on_connection(
         &mut connection,
         observation.academic_term_id,
-        bangkok_observation_date(observation.observed_at),
+    )
+    .await?
+    else {
+        return Ok(Vec::new());
+    };
+
+    let assigned = school_academic_delivery::services::current::assigned_group_ids_on_connection(
+        &mut connection,
+        version.academic_year_id,
+        version.academic_term_id,
+        observation.observed_user_id,
     )
     .await?;
-
     DbSession::new(&mut *connection)
         .query_as(
             "supervision.services.observations.observation_timetable_options",
@@ -277,15 +286,17 @@ pub async fn observation_timetable_options(
            JOIN learning_groups learning_group ON learning_group.id = block_group.learning_group_id
            JOIN learning_offerings offering ON offering.id = block_group.learning_offering_id
            LEFT JOIN rooms room ON room.id = block_group.room_id
-           WHERE block.timetable_version_id = $1
+           WHERE block.timetable_id = $1
              AND block.academic_term_id = $2
              AND block.is_active
              AND instructor.instructor_id = $3
+             AND block_group.learning_group_id=ANY($4)
            ORDER BY block.day_of_week, period.order_index, block_group.id"#,
         )
         .bind(version.id)
         .bind(observation.academic_term_id)
         .bind(observation.observed_user_id)
+        .bind(&assigned.learning_group_ids)
         .fetch_all()
         .await
         .map_err(AppError::from)
@@ -1297,18 +1308,15 @@ async fn resolve_lesson_input(
     match (timetable_block_group_id, observed_at, manual_lesson) {
         (Some(block_group_id), Some(observed_at), None) => {
             validate_observed_at_in_cycle(cycle, observed_at)?;
-            let observed_date = bangkok_observation_date(observed_at);
-            let timetable_version_id =
-                timetable_version_service::resolve_version_id_for_date_on_connection(
-                    &mut *connection,
-                    academic_term_id,
-                    observed_date,
-                )
-                .await?;
+            let timetable_id =
+                timetable_service::get_for_term_on_connection(connection, academic_term_id)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound("ไม่พบตารางเรียนในภาคเรียนที่เลือก".into()))?
+                    .id;
             let entry = load_timetable_block_group_context_for_teacher(
                 &mut *connection,
                 block_group_id,
-                timetable_version_id,
+                timetable_id,
                 actor_user_id,
                 cycle.academic_year_id,
                 academic_term_id,
@@ -1380,7 +1388,7 @@ fn bangkok_observation_date(observed_at: DateTime<Utc>) -> NaiveDate {
 }
 
 fn day_of_week_matches_observed_at(day_of_week: &str, observed_at: DateTime<Utc>) -> bool {
-    let observed_weekday = observed_at.with_timezone(&SCHOOL_TIMEZONE).weekday();
+    let observed_weekday = bangkok_observation_date(observed_at).weekday();
     matches!(
         (day_of_week, observed_weekday),
         ("MON", Weekday::Mon)
@@ -1416,7 +1424,7 @@ struct TimetableBlockGroupLessonContext {
 async fn load_timetable_block_group_context_for_teacher(
     connection: &mut PgConnection,
     block_group_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     teacher_user_id: Uuid,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
@@ -1430,7 +1438,7 @@ async fn load_timetable_block_group_context_for_teacher(
         FROM academic_timetable_block_groups block_group
         JOIN academic_timetable_blocks block ON block.id = block_group.block_id
         WHERE block_group.id = $1
-          AND block.timetable_version_id = $2
+          AND block.timetable_id = $2
           AND block.academic_year_id = $4
           AND block.academic_term_id = $5
           AND block.is_active
@@ -1443,7 +1451,7 @@ async fn load_timetable_block_group_context_for_teacher(
         "#,
         )
         .bind(block_group_id)
-        .bind(timetable_version_id)
+        .bind(timetable_id)
         .bind(teacher_user_id)
         .bind(academic_year_id)
         .bind(academic_term_id)
@@ -1457,9 +1465,25 @@ async fn load_timetable_block_group_context_for_teacher(
             AppError::InternalServerError("ไม่สามารถตรวจสอบคาบสอนได้".to_string())
         })?;
 
-    context.ok_or_else(|| {
-        AppError::Forbidden("เลือกจองได้เฉพาะคาบสอนของตนเองในภาคเรียนที่เลือก".to_string())
-    })
+    let context = context
+        .ok_or_else(|| AppError::Forbidden("เลือกจองได้เฉพาะคาบสอนของตนเองในภาคเรียนที่เลือก".into()))?;
+    let groups = context.learning_group_id.into_iter().collect::<Vec<_>>();
+    let assignments =
+        school_academic_delivery::services::current::group_teacher_assignments_on_connection(
+            connection,
+            academic_year_id,
+            academic_term_id,
+            &groups,
+        )
+        .await?;
+    if !assignments
+        .groups
+        .iter()
+        .any(|group| group.teacher_ids.contains(&teacher_user_id))
+    {
+        return Err(AppError::Forbidden("ครูไม่ได้รับมอบหมายในกลุ่มเรียนปัจจุบัน".into()));
+    }
+    Ok(context)
 }
 
 async fn load_timetable_block_group_lesson_snapshot(
@@ -1711,7 +1735,7 @@ pub async fn resolve_lesson_input_for_test(
 pub async fn load_timetable_block_group_context_for_teacher_for_test(
     pool: &PgPool,
     block_group_id: Uuid,
-    timetable_version_id: Uuid,
+    timetable_id: Uuid,
     teacher_user_id: Uuid,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
@@ -1724,7 +1748,7 @@ pub async fn load_timetable_block_group_context_for_teacher_for_test(
     load_timetable_block_group_context_for_teacher(
         &mut connection,
         block_group_id,
-        timetable_version_id,
+        timetable_id,
         teacher_user_id,
         academic_year_id,
         academic_term_id,

@@ -6,8 +6,8 @@ use super::*;
 pub struct OpeningPolicy {
     pub row_version: i64,
     pub require_homeroom_placements: bool,
-    pub require_published_offerings: bool,
-    pub require_published_timetable: bool,
+    pub require_offerings: bool,
+    pub require_timetable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -16,6 +16,6 @@ pub struct OpeningPolicy {
 pub struct UpdateOpeningPolicyInput {
     pub row_version: i64,
     pub require_homeroom_placements: bool,
-    pub require_published_offerings: bool,
-    pub require_published_timetable: bool,
+    pub require_offerings: bool,
+    pub require_timetable: bool,
 }

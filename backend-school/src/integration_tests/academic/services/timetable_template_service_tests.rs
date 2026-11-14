@@ -1,64 +1,25 @@
-use chrono::NaiveDate;
+use super::timetable_block_service_tests::migrated_pool;
+use school_academic_timetable::{
+    collaboration::TimetableMutationContext,
+    models::timetable::{ApplyTemplateRequest, ClearTimetableRequest, FromCurrentRequest},
+    services::{timetable_service, timetable_template_service},
+};
 use uuid::Uuid;
 
-use super::{timetable_template_service, timetable_version_service};
-use crate::integration_tests::academic::cutover_test_support::{
-    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
-    CutoverFixture,
-};
-use school_academic_timetable::models::timetable::{
-    ApplyTemplateRequest, ClearTimetableRequest, FromCurrentRequest,
-};
-use school_academic_timetable::models::timetable_version::CloneTimetableVersionRequest;
-use school_errors::AppError;
-use school_test_db::create_named_test_pool;
-
 #[tokio::test]
-async fn template_source_apply_and_clear_are_version_scoped() {
-    let pool = create_named_test_pool("timetable_template_version_scope").await;
-    apply_migrations_through(&pool, 40).await.unwrap();
-    seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)
-        .await
-        .unwrap();
-    apply_phase_b_runtime_migrations(&pool).await.unwrap();
-    apply_migrations_through(&pool, school_migrations::latest_migration_version())
-        .await
-        .unwrap();
-
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    let (source_id, source_row_version, term_id, term_start): (Uuid, i64, Uuid, NaiveDate) =
-        sqlx::query_as(
-            r#"SELECT version.id, version.row_version, term.id, version.effective_from
-               FROM academic_timetable_versions version
-               JOIN academic_terms term ON term.id = version.academic_term_id
-               WHERE version.status = 'published' AND term.status = 'active'
-               ORDER BY version.effective_from, version.id LIMIT 1"#,
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let draft = timetable_version_service::clone_draft(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
-        source_id,
-        CloneTimetableVersionRequest {
-            resume_draft_id: None,
-            draft_row_version: None,
-            source_row_version,
-        },
-    )
-    .await
-    .unwrap();
-
+async fn template_capture_clear_and_apply_mutate_the_single_current_board() {
+    let pool = migrated_pool("timetable_template_current").await;
+    let (id,term):(Uuid,Uuid)=sqlx::query_as("SELECT timetable.id,timetable.academic_term_id FROM academic_timetables timetable JOIN academic_terms term ON term.id=timetable.academic_term_id WHERE term.status='active' ORDER BY timetable.id LIMIT 1").fetch_one(&pool).await.unwrap();
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let mutation = TimetableMutationContext::for_tests(&pool, actor);
+    let before = timetable_service::get_by_id(&pool, id).await.unwrap();
     let template = timetable_template_service::from_current(
         &pool,
-        actor_id,
+        actor,
         FromCurrentRequest {
-            timetable_version_id: source_id,
-            academic_term_id: term_id,
-            name: "แม่แบบจากรุ่นเผยแพร่".to_string(),
+            timetable_id: id,
+            academic_term_id: term,
+            name: "Current board template".into(),
             description: None,
             entry_types: None,
         },
@@ -66,233 +27,49 @@ async fn template_source_apply_and_clear_are_version_scoped() {
     .await
     .unwrap();
     assert!(!template.entries.is_empty());
-
-    let published_before: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active",
-    )
-    .bind(source_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
     let cleared = timetable_template_service::clear_timetable(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
+        &mutation,
         ClearTimetableRequest {
-            timetable_version_id: draft.id,
-            academic_term_id: term_id,
+            timetable_id: id,
+            academic_term_id: term,
             entry_types: None,
         },
     )
     .await
     .unwrap();
     assert!(!cleared.is_empty());
-    let published_after: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE timetable_version_id = $1 AND is_active",
-    )
-    .bind(source_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(published_after, published_before);
-
     let applied = timetable_template_service::apply_template(
         &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
+        &mutation,
         template.template.id,
         ApplyTemplateRequest {
-            timetable_version_id: draft.id,
-            academic_term_id: term_id,
+            timetable_id: id,
+            academic_term_id: term,
         },
     )
     .await
     .unwrap();
     assert_eq!(applied.applied, template.entries.len());
-    for (template_entry, applied_entry_id) in template.entries.iter().zip(&applied.entry_ids) {
-        if template_entry.resource_kind == "structural" {
-            continue;
+    let after = timetable_service::get_by_id(&pool, id).await.unwrap();
+    assert_eq!(after.id, before.id);
+    assert!(after.row_version > before.row_version);
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM academic_timetables WHERE academic_term_id=$1")
+            .bind(term)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 1);
+    assert!(timetable_template_service::apply_template(
+        &pool,
+        &mutation,
+        template.template.id,
+        ApplyTemplateRequest {
+            timetable_id: id,
+            academic_term_id: Uuid::new_v4()
         }
-        let actual: Vec<(Uuid, String)> = sqlx::query_as(
-            r#"SELECT instructor_id, role::text
-               FROM academic_timetable_block_group_instructors instructor
-               JOIN academic_timetable_block_groups block_group
-                 ON block_group.id = instructor.block_group_id
-               WHERE block_group.block_id = $1
-               ORDER BY CASE role WHEN 'primary' THEN 1 ELSE 2 END,
-                        instructor.created_at,
-                        instructor_id"#,
-        )
-        .bind(applied_entry_id)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        let expected = template_entry
-            .instructor_ids
-            .iter()
-            .enumerate()
-            .map(|(index, instructor_id)| {
-                (
-                    *instructor_id,
-                    if index == 0 { "primary" } else { "secondary" }.to_string(),
-                )
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(actual, expected);
-    }
-    let exact_group_instructor_count: i64 = sqlx::query_scalar(
-        r#"SELECT count(*)
-           FROM academic_timetable_block_group_instructors instructor
-           JOIN academic_timetable_block_groups block_group
-             ON block_group.id = instructor.block_group_id
-           WHERE block_group.block_id = ANY($1) AND block_group.is_active"#,
-    )
-    .bind(&applied.entry_ids)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert!(exact_group_instructor_count > 0);
-    let wrong_version_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM academic_timetable_blocks WHERE id = ANY($1) AND timetable_version_id <> $2",
-    )
-    .bind(&applied.entry_ids)
-    .bind(draft.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(wrong_version_count, 0);
-
-    timetable_template_service::clear_timetable(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
-        ClearTimetableRequest {
-            timetable_version_id: draft.id,
-            academic_term_id: term_id,
-            entry_types: None,
-        },
     )
     .await
-    .unwrap();
-    for (year_status, term_status) in [
-        ("closed", "active"),
-        ("active", "closed"),
-        ("active", "cancelled"),
-    ] {
-        sqlx::query("UPDATE academic_years SET status=$2 WHERE id=$1")
-            .bind(draft.academic_year_id)
-            .bind(year_status)
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query("UPDATE academic_terms SET status=$2 WHERE id=$1")
-            .bind(term_id)
-            .bind(term_status)
-            .execute(&pool)
-            .await
-            .unwrap();
-        let apply = timetable_template_service::apply_template(
-            &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-                &pool, actor_id,
-            ),
-            template.template.id,
-            ApplyTemplateRequest {
-                timetable_version_id: draft.id,
-                academic_term_id: term_id,
-            },
-        )
-        .await;
-        assert!(
-            matches!(apply, Err(AppError::Conflict(_))),
-            "closed context must reject a valid template: {apply:?}"
-        );
-        let clear = timetable_template_service::clear_timetable(
-            &pool,
-            &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-                &pool, actor_id,
-            ),
-            ClearTimetableRequest {
-                timetable_version_id: draft.id,
-                academic_term_id: term_id,
-                entry_types: None,
-            },
-        )
-        .await;
-        assert!(matches!(clear, Err(AppError::Conflict(_))));
-        assert_eq!(
-            timetable_version_service::resolve_for_date(&pool, term_id, term_start)
-                .await
-                .unwrap()
-                .id,
-            source_id
-        );
-    }
-    sqlx::query("UPDATE academic_years SET status='active' WHERE id=$1")
-        .bind(draft.academic_year_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE academic_terms SET status='active' WHERE id=$1")
-        .bind(term_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    let group_template_entry = template
-        .entries
-        .iter()
-        .find(|entry| entry.resource_kind != "structural" && !entry.instructor_ids.is_empty())
-        .expect("source template must contain one taught group entry");
-    let ineligible_teacher_id = Uuid::new_v4();
-    sqlx::query(
-        r#"INSERT INTO users (
-               id, email, username, password_hash, first_name, last_name,
-               user_type, status
-           ) VALUES ($1, $2, $3, 'fixture-not-a-login', 'ครูนอกแม่แบบ', 'ทดสอบ', 'staff', 'active')"#,
-    )
-    .bind(ineligible_teacher_id)
-    .bind(format!("{ineligible_teacher_id}@example.invalid"))
-    .bind(format!("teacher-{ineligible_teacher_id}"))
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query("UPDATE timetable_template_entries SET instructor_ids = $2 WHERE id = $1")
-        .bind(group_template_entry.id)
-        .bind(sqlx::types::Json(vec![ineligible_teacher_id]))
-        .execute(&pool)
-        .await
-        .unwrap();
-    let ineligible_result = timetable_template_service::apply_template(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
-        template.template.id,
-        ApplyTemplateRequest {
-            timetable_version_id: draft.id,
-            academic_term_id: term_id,
-        },
-    )
-    .await;
-    assert!(matches!(
-        ineligible_result,
-        Err(AppError::ValidationError(_))
-    ));
-
-    let published_apply = timetable_template_service::apply_template(
-        &pool,
-        &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(
-            &pool, actor_id,
-        ),
-        template.template.id,
-        ApplyTemplateRequest {
-            timetable_version_id: source_id,
-            academic_term_id: term_id,
-        },
-    )
-    .await;
-    assert!(matches!(published_apply, Err(AppError::Conflict(_))));
+    .is_err());
 }

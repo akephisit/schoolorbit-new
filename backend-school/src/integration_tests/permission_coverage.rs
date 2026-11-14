@@ -105,15 +105,19 @@ pub(crate) fn coverage_router(f: &ProtectedFixture) -> Router {
     let delivery = school_academic_delivery_http::state::AcademicDeliveryHttpState {
         auth_runtime: f.runtime.clone(),
         websocket_manager: manager.clone(),
-        assessment_publication: &crate::adapters::assessment_publication::ASSESSMENT_PUBLICATION,
-        publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        assessment_current: &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
+        delivery_deletion: Arc::new(
+            crate::adapters::delivery_deletion::ApplicationDeliveryDeletion {
+                collaboration: manager.collaboration(),
+            },
+        ),
     };
     let timetable = school_academic_timetable_http::state::AcademicTimetableHttpState {
         auth_runtime: f.runtime.clone(),
         websocket_manager: manager.clone(),
         collaboration: manager.collaboration(),
         staff_directory: &crate::adapters::staff_directory::STAFF_DIRECTORY,
-        publication_history: &crate::adapters::publication_history::PUBLICATION_HISTORY,
+        lesson_source_detachment: &crate::adapters::lesson_sources::LESSON_SOURCE_DETACHMENT,
     };
     let academic = school_academic_core_http::routes::academic_routes()
         .with_state(core)

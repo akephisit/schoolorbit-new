@@ -29,16 +29,14 @@ enum FailureStage {
     OwnerSchema,
     OwnerAcademicCoreCutover,
     OwnerGradebookResultsCutover,
-    OwnerDeliveryTimetableCutover,
-    OwnerPublicationRevisionsCutover,
+    OwnerCurrentOperationsCutover,
     OwnerStaffProfileCutover,
     RuntimeConnection,
     RuntimeIdentity,
     RuntimeSchema,
     RuntimeAcademicCoreCutover,
     RuntimeGradebookResultsCutover,
-    RuntimeDeliveryTimetableCutover,
-    RuntimePublicationRevisionsCutover,
+    RuntimeCurrentOperationsCutover,
     RuntimeStaffProfileCutover,
     AdminStatus,
 }
@@ -55,16 +53,14 @@ impl FailureStage {
             Self::OwnerSchema => "owner_schema",
             Self::OwnerAcademicCoreCutover => "owner_academic_core_cutover",
             Self::OwnerGradebookResultsCutover => "owner_gradebook_results_cutover",
-            Self::OwnerDeliveryTimetableCutover => "owner_delivery_timetable_cutover",
-            Self::OwnerPublicationRevisionsCutover => "owner_publication_revisions_cutover",
+            Self::OwnerCurrentOperationsCutover => "owner_current_operations_cutover",
             Self::OwnerStaffProfileCutover => "owner_staff_profile_cutover",
             Self::RuntimeConnection => "runtime_connection",
             Self::RuntimeIdentity => "runtime_identity",
             Self::RuntimeSchema => "runtime_schema",
             Self::RuntimeAcademicCoreCutover => "runtime_academic_core_cutover",
             Self::RuntimeGradebookResultsCutover => "runtime_gradebook_results_cutover",
-            Self::RuntimeDeliveryTimetableCutover => "runtime_delivery_timetable_cutover",
-            Self::RuntimePublicationRevisionsCutover => "runtime_publication_revisions_cutover",
+            Self::RuntimeCurrentOperationsCutover => "runtime_current_operations_cutover",
             Self::RuntimeStaffProfileCutover => "runtime_staff_profile_cutover",
             Self::AdminStatus => "admin_status",
         }
@@ -310,30 +306,14 @@ async fn cutovers_detailed(
         return Err(RolloutFailure::plain(stage, BindingError::Database));
     }
     let stage = if owner {
-        FailureStage::OwnerDeliveryTimetableCutover
+        FailureStage::OwnerCurrentOperationsCutover
     } else {
-        FailureStage::RuntimeDeliveryTimetableCutover
+        FailureStage::RuntimeCurrentOperationsCutover
     };
-    if !school_academic_delivery::services::versions::read_cutover_audit_on_connection(
-        &mut *connection,
-    )
-    .await
-    .map_err(|error| RolloutFailure::audit(stage, &error))?
-    .completed
-    {
-        return Err(RolloutFailure::plain(stage, BindingError::Database));
-    }
-    let stage = if owner {
-        FailureStage::OwnerPublicationRevisionsCutover
-    } else {
-        FailureStage::RuntimePublicationRevisionsCutover
-    };
-    if !school_academic_delivery::services::publication::read_revisions_audit_on_connection(
-        &mut *connection,
-    )
-    .await
-    .map_err(|error| RolloutFailure::audit(stage, &error))?
-    .completed
+    if !crate::operations::current_academic::read_on_connection(&mut *connection)
+        .await
+        .map_err(|error| RolloutFailure::audit(stage, &error))?
+        .completed
     {
         return Err(RolloutFailure::plain(stage, BindingError::Database));
     }

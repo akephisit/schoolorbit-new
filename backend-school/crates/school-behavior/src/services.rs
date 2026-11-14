@@ -1,6 +1,7 @@
 pub mod catalog;
 pub mod cleanup;
 pub mod integration;
+pub mod lesson_deletion;
 pub mod manual;
 pub mod report;
 pub mod schedules;

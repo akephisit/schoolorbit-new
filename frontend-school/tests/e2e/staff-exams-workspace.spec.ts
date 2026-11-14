@@ -2,9 +2,9 @@ import { sessionState } from './fixtures/session-state';
 import { mkdir } from 'node:fs/promises';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type {
-	StaffPublishedExamDay,
-	StaffPublishedExamScheduleRound,
-	StaffPublishedExamSession
+	StaffExamDay,
+	StaffExamScheduleRound,
+	StaffExamSession
 } from '../../src/lib/api/examSchedule.js';
 import {
 	DEFAULT_APPEARANCE,
@@ -24,11 +24,11 @@ const appearance: SchoolAppearanceResponse = {
 	revision: 4
 };
 
-function day(id: string, date: string, upper = false): StaffPublishedExamDay {
+function day(id: string, date: string, upper = false): StaffExamDay {
 	const homeroomId = `class-${upper ? 'upper' : 'lower'}`;
 	const homeroomName = upper ? 'ม.4/2' : 'ม.1/1';
 	const assignmentId = `assignment-${id}`;
-	const session = (index: number): StaffPublishedExamSession => ({
+	const session = (index: number): StaffExamSession => ({
 		sessionId: `${id}-session-${index}`,
 		dayRoomAssignmentId: assignmentId,
 		assessmentPhaseName: index === 1 ? 'สอบกลางภาค' : 'สอบเพิ่มเติม',
@@ -75,27 +75,24 @@ function day(id: string, date: string, upper = false): StaffPublishedExamDay {
 	};
 }
 
-function rounds(): StaffPublishedExamScheduleRound[] {
+function rounds(): StaffExamScheduleRound[] {
 	return [
 		{
 			roundId: 'round-main',
 			roundName: 'กลางภาค · รอบหลัก',
 			academicTermId: term,
-			publishedAt: '2026-10-01T00:00:00Z',
 			days: [day('past', '2026-10-19'), day('next', '2026-10-21'), day('upper', '2026-10-22', true)]
 		},
 		{
 			roundId: 'round-other',
 			roundName: 'รอบไม่มีงานคุมของฉัน',
 			academicTermId: term,
-			publishedAt: '2026-10-01T00:00:00Z',
 			days: [{ ...day('other', '2026-10-23'), roomAssignments: [] }]
 		},
 		{
 			roundId: 'round-empty',
 			roundName: 'รอบที่ยังไม่มีรายการ',
 			academicTermId: term,
-			publishedAt: '2026-10-01T00:00:00Z',
 			days: []
 		}
 	];
@@ -195,7 +192,7 @@ async function install(page: Page, mode: 'light' | 'dark' = 'light', values = ro
 }
 
 async function selectRound(page: Page, name: string) {
-	await page.getByRole('button', { name: 'เลือกรอบสอบ' }).click();
+	await page.getByRole('combobox', { name: 'เลือกรอบสอบ' }).click();
 	await page.getByRole('option', { name, exact: true }).click();
 }
 
@@ -221,7 +218,7 @@ test('four tabs keep their own scope, clear dependent filters, and allow leaving
 	await expect(
 		page.getByRole('table', { name: 'ตารางสอบ', exact: true }).getByRole('row')
 	).toHaveCount(7);
-	await page.getByRole('button', { name: 'กรองตามวันสอบ' }).click();
+	await page.getByRole('combobox', { name: 'กรองตามวันสอบ' }).click();
 	await page.getByRole('option', { name: /21 ต.ค./ }).click();
 	await expect(
 		page.getByRole('table', { name: 'ตารางสอบ', exact: true }).getByRole('row')
@@ -233,11 +230,11 @@ test('four tabs keep their own scope, clear dependent filters, and allow leaving
 		'data-state',
 		'on'
 	);
-	await page.getByRole('button', { name: 'กรองตามชั้นเรียน' }).click();
+	await page.getByRole('combobox', { name: 'กรองตามชั้นเรียน' }).click();
 	await expect(page.getByRole('option', { name: 'ม.4/2', exact: true })).toHaveCount(0);
 	await page.getByRole('option', { name: 'ม.1/1', exact: true }).click();
 	await page.getByRole('radio', { name: 'ม.4–ม.6', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'กรองตามชั้นเรียน' })).toHaveText('ทุกชั้นเรียน');
+	await expect(page.getByRole('combobox', { name: 'กรองตามชั้นเรียน' })).toHaveText('ทุกชั้นเรียน');
 	await expect(
 		page.getByRole('table', { name: 'ตารางสอบ', exact: true }).getByRole('row')
 	).toHaveCount(3);
@@ -293,7 +290,7 @@ for (const width of [1029, 390]) {
 			await page.setViewportSize({ width, height: 888 });
 			const requests = await install(page, mode);
 			await page.goto(url);
-			const roundControl = page.getByRole('button', { name: 'เลือกรอบสอบ' });
+			const roundControl = page.getByRole('combobox', { name: 'เลือกรอบสอบ' });
 			await expect(roundControl).toBeVisible();
 			await expect(roundControl).toHaveCSS('font-family', /School Noto Sans Thai/);
 			await expect(page.locator('html')).toHaveClass(mode === 'dark' ? /dark/ : /^(?!.*dark)/);
@@ -313,7 +310,7 @@ for (const width of [1029, 390]) {
 				'true'
 			);
 			if (width === 390) {
-				await expect(page.getByRole('button', { name: 'กรองตามวันสอบ' })).toBeHidden();
+				await expect(page.getByRole('combobox', { name: 'กรองตามวันสอบ' })).toBeHidden();
 				await page.getByRole('button', { name: 'ตัวกรอง', exact: true }).click();
 				await page.getByRole('radio', { name: 'ม.4–ม.6', exact: true }).click();
 				await page.getByRole('button', { name: 'ตัวกรอง', exact: true }).click();

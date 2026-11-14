@@ -7,7 +7,7 @@
 		type MissingDeliveryRequirement
 	} from '#lib/academic/homeroom-delivery.js';
 	import type { CurriculumPreparationFocus } from '#lib/academic/synchronized-activity-delivery.js';
-	import { deliveryChangePage } from '#lib/academic/learning-delivery-change-list.js';
+	import { deliveryChangePage } from '#lib/academic/delivery-pagination.js';
 	import { deliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -81,9 +81,7 @@
 		disposed = false,
 		observedContext = '';
 	const context = $derived(
-		workspace
-			? `${workspace.academicYearId}:${workspace.academicTermId}:${workspace.deliveryVersionId ?? 'no-version'}`
-			: ''
+		workspace ? `${workspace.academicYearId}:${workspace.academicTermId}` : ''
 	);
 	function showReport() {
 		returnFocusOnClose = true;
@@ -164,7 +162,7 @@
 		}}
 	>
 		<Dialog.Header class="shrink-0"
-			><Dialog.Title>ผลเทียบหลักสูตรของรุ่นเปิดสอน</Dialog.Title><Dialog.Description
+			><Dialog.Title>ผลเทียบหลักสูตรกับการเปิดสอนปัจจุบัน</Dialog.Title><Dialog.Description
 				>แสดงทุกห้องของรุ่นที่เลือก โดยไม่ใช้ตัวกรองในตารางรายการเปิดสอน
 				รายการเดียวอาจมีหลายสถานะในคนละห้อง จึงไม่นำจำนวนแต่ละสถานะมาบวกรวม</Dialog.Description
 			></Dialog.Header
@@ -177,8 +175,8 @@
 				</p>
 				<p>
 					รายการนอกโครงสร้างอาจเป็นรายการเพิ่มเติมที่ตั้งใจเปิด ควรตรวจรายละเอียดก่อนตัดสินใจลบ
-					หากต้องใช้รายการตามหลักสูตรปัจจุบัน ให้ตรวจและเปิดในแบบร่าง
-					ส่วนการลบมีผลเฉพาะรุ่นแบบร่างที่เลือกและไม่ลบประวัติที่เผยแพร่แล้ว
+					หากต้องใช้รายการตามหลักสูตรปัจจุบัน ให้ตรวจและเพิ่มรายการเปิดสอน
+					การลบรายการเปิดสอนมีการตรวจผลกระทบต่อกลุ่ม คะแนน และเช็คชื่อก่อนยืนยัน
 				</p>
 			</div>
 			<Input
@@ -208,17 +206,13 @@
 							ระบบจะตรวจวันเริ่มใช้ของฉบับทะเบียนและข้อจำกัดของภาคเรียนอีกครั้ง
 							รายการใหม่ไม่โอนกลุ่ม ครู หรือคะแนนจากรายการเดิมให้อัตโนมัติ
 						</p>
-						{#if canManage && workspace?.deliveryVersionId}<Button
+						{#if canManage && workspace}<Button
 								size="sm"
 								variant="outline"
 								disabled={preparing || launching}
 								onclick={() => prepare(item)}
 								aria-label={`เปิดตามหลักสูตร · ${item.name}`}>เปิดตามหลักสูตร</Button
-							>{:else if canManage && !workspace?.deliveryVersionId}<p
-								class="text-xs text-muted-foreground"
-							>
-								สร้างรุ่นเปิดสอนจากปุ่มด้านบนก่อนเปิดรายการตามหลักสูตร
-							</p>{/if}
+							>{/if}
 					</article>{:else}<p class="text-sm text-muted-foreground">
 						{query
 							? 'ไม่พบรายการที่ตรงกับการค้นหา'

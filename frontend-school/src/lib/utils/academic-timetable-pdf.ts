@@ -55,7 +55,7 @@ export function buildAcademicTimetablePdfDownload(
 		.sort((a, b) => a.orderIndex - b.orderIndex);
 	const dayValues = [...schoolDays];
 	const context = `${termName || 'ภาคเรียน'} ${yearName || 'ปีการศึกษา'}`;
-	const versionLabel = workspace.version.status === 'draft' ? 'แบบร่าง' : 'เผยแพร่แล้ว';
+	const timetableLabel = 'ตารางปัจจุบัน';
 	const subTitle = context;
 	const roomNames = Object.fromEntries(workspace.rooms.map((room) => [room.id, room.name]));
 	const homeroomNames = Object.fromEntries(workspace.homerooms.map((room) => [room.id, room.name]));
@@ -83,7 +83,7 @@ export function buildAcademicTimetablePdfDownload(
 	}));
 	// A compact selection key distinguishes batches without putting every name in the filename.
 	let selectionKey = 2166136261;
-	for (const char of [workspace.version.id, ownerView, ...rows.map((row) => row.id)].join(':')) {
+	for (const char of [workspace.timetable.id, ownerView, ...rows.map((row) => row.id)].join(':')) {
 		selectionKey = Math.imul(selectionKey ^ char.charCodeAt(0), 16777619) >>> 0;
 	}
 	const batchLabel =
@@ -99,7 +99,7 @@ export function buildAcademicTimetablePdfDownload(
 	const layoutLabel = layout === 'portrait-2col' ? '6ต่อหน้า' : '1ต่อหน้า';
 	return {
 		pages,
-		fileName: `${fileTitle} ${context} ${layoutLabel} ${versionLabel}`
+		fileName: `${fileTitle} ${context} ${layoutLabel} ${timetableLabel}`
 			.replaceAll('/', '-')
 			.replaceAll('\\', '-')
 	};

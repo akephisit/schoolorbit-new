@@ -22,7 +22,7 @@ async function load(relative, dependencies) {
 	}, exports);
 	return exports;
 }
-const params = { academicTermId: 'term-a', currentUserId: 'user-a', timetableVersionId: 'draft-a' };
+const params = { academicTermId: 'term-a', currentUserId: 'user-a', timetableId: 'draft-a' };
 const user = {
 	id: 'user-a',
 	user_type: 'staff',
@@ -147,7 +147,7 @@ for (const change of ['logout', 'user', 'session', 'term', 'draft', 'disposal'])
 		if (change === 'term')
 			fixture.store.connectTimetableSocket({ ...params, academicTermId: 'term-b' });
 		if (change === 'draft')
-			fixture.store.connectTimetableSocket({ ...params, timetableVersionId: 'draft-b' });
+			fixture.store.connectTimetableSocket({ ...params, timetableId: 'draft-b' });
 		if (change === 'disposal') fixture.store.disconnectTimetableSocket();
 		finish('authenticated');
 		assert.equal(await recovery, 'stop');
@@ -156,7 +156,7 @@ for (const change of ['logout', 'user', 'session', 'term', 'draft', 'disposal'])
 
 test('only accepted draft or validated legacy state sync acknowledges the runtime baseline', async () => {
 	const legacy = await harness();
-	legacy.store.connectTimetableSocket({ ...params, timetableVersionId: undefined });
+	legacy.store.connectTimetableSocket({ ...params, timetableId: undefined });
 	for (const payload of [
 		{ current_seq: '0', users: [] },
 		{ current_seq: -1, users: [] },
@@ -187,11 +187,11 @@ test('only accepted draft or validated legacy state sync acknowledges the runtim
 	);
 	const draft = await harness();
 	const workspace = collaborationWorkspace();
-	draft.store.connectTimetableSocket({ ...params, timetableVersionId: workspace.version.id });
+	draft.store.connectTimetableSocket({ ...params, timetableId: workspace.timetable.id });
 	const snapshot = {
 		epoch: timetableIds.blockA,
 		seq: 0,
-		type: 'DraftStateSync',
+		type: 'TimetableStateSync',
 		payload: { connectionId: timetableIds.teacherA, workspace, users: [], reservations: [] }
 	};
 	draft.runtime.onMessage(
@@ -201,7 +201,7 @@ test('only accepted draft or validated legacy state sync acknowledges the runtim
 				...snapshot.payload,
 				workspace: {
 					...workspace,
-					version: { ...workspace.version, id: timetableIds.publishedVersion }
+					timetable: { ...workspace.timetable, id: 'a1000000-0000-4000-8000-000000000999' }
 				}
 			}
 		})

@@ -42,7 +42,9 @@ test('timetable owns a generated permission boundary independent from Delivery',
 	}
 
 	assert.match(policyModules, /pub mod policy;/);
-	assert.match(policy, /enum TimetableAction[\s\S]*Read[\s\S]*Manage[\s\S]*Publish/);
+	assert.match(policy, /enum TimetableAction[\s\S]*Read[\s\S]*Manage/);
+	assert.doesNotMatch(policy,/enum TimetableAction[^{]*\{[^}]*Publish/);
+	assert.match(policy,/direct_management_retains_its_separate_permission/);
 	assert.match(policy, /struct TimetableResourceSet/);
 	assert.match(policy, /require_timetable_resources/);
 	assert.match(route, /permission:\s*PERMISSION_MODULES\.ACADEMIC_TIMETABLE/);

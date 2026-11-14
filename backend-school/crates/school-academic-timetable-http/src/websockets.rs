@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-mod draft;
+mod collaboration;
 
 /// จำนวน event ที่เก็บใน buffer ต่อ room (สำหรับ replay เมื่อ client reconnect)
 const EVENT_BUFFER_SIZE: usize = 200;
@@ -71,7 +71,7 @@ pub struct WsParams {
     #[serde(default)]
     pub school_subdomain: Option<String>,
     #[serde(default)]
-    pub timetable_version_id: Option<Uuid>,
+    pub timetable_id: Option<Uuid>,
 }
 
 fn parse_ws_params(
@@ -82,11 +82,14 @@ fn parse_ws_params(
         raw_query.ok_or_else(|| AppError::BadRequest("Invalid WebSocket query".to_string()))?;
     let mut seen = HashSet::new();
     let mut academic_term_id = None;
-    let mut timetable_version_id = None;
+    let mut timetable_id = None;
 
     for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
         if !seen.insert(key.to_string()) {
             return Err(AppError::BadRequest("Invalid WebSocket query".to_string()));
+        }
+        if !matches!(key.as_ref(), "academicTermId" | "timetableId" | "school_subdomain" | "schoolSubdomain") {
+            return Err(AppError::BadRequest("Invalid WebSocket query".into()));
         }
         if key == "academicTermId" {
             academic_term_id = Some(
@@ -95,8 +98,8 @@ fn parse_ws_params(
                     .map_err(|_| AppError::BadRequest("Invalid WebSocket query".to_string()))?,
             );
         }
-        if key == "timetableVersionId" {
-            timetable_version_id = Some(
+        if key == "timetableId" {
+            timetable_id = Some(
                 value
                     .parse::<Uuid>()
                     .map_err(|_| AppError::BadRequest("Invalid WebSocket query".into()))?,
@@ -108,7 +111,7 @@ fn parse_ws_params(
         academic_term_id: academic_term_id
             .ok_or_else(|| AppError::BadRequest("Invalid WebSocket query".to_string()))?,
         school_subdomain,
-        timetable_version_id,
+        timetable_id,
     })
 }
 
@@ -864,9 +867,9 @@ pub async fn timetable_websocket_handler(
     let authenticated =
         session_service::acknowledge(&session_context, &authenticated, Utc::now()).await?;
     let context = actor_tenant_context_from_session(&state.auth_runtime, &authenticated).await?;
-    let draft = if let Some(version_id) = params.timetable_version_id {
+    let draft = if let Some(version_id) = params.timetable_id {
         Some(
-            draft::prepare(
+            collaboration::prepare(
                 &state,
                 &context,
                 &authenticated,
@@ -898,7 +901,7 @@ pub async fn timetable_websocket_handler(
     authenticated.tenant.pool.release_for_realtime();
     Ok(ws.on_upgrade(move |socket| async move {
         if let Some(draft) = draft {
-            draft::handle(
+            collaboration::handle(
                 socket,
                 state,
                 authenticated,
@@ -1316,7 +1319,7 @@ mod security_tests {
         let signal = TimetableEvent::TimetableChanged {
             user_id: forged,
             academic_term_id: Uuid::new_v4(),
-            timetable_version_id: Uuid::new_v4(),
+            timetable_id: Uuid::new_v4(),
             block_id: None,
             revision: 1,
         };

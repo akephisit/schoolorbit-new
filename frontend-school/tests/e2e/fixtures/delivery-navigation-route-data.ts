@@ -1,14 +1,10 @@
 import { sessionState } from './session-state.ts';
 import type { Page, Route } from '@playwright/test';
 import type {
-	DeliveryVersion,
-	DeliveryVersionSummary,
+	DeliveryWorkspace,
 	HomeroomDeliveryWorkspace,
 	LearningOffering,
 	CreateLearningOfferingRequest,
-	AcademicTermChangeSet,
-	AcademicTermChangeSetPreview,
-	AcademicChangeFinding,
 	DeliveryManagementOptions
 } from '../../../src/lib/api/learning-delivery.js';
 
@@ -89,72 +85,26 @@ export const navigationOfferingIds = {
 	guidance: uuid(25)
 };
 
-export function navigationVersion(): DeliveryVersion {
+export function navigationDelivery(): DeliveryWorkspace {
 	return {
-		id: navigationIds.version,
 		academicYearId: navigationIds.year,
 		academicTermId: navigationIds.term,
-		sourceVersionId: null,
-		status: 'draft',
-		publicationNo: null,
-		publishedAt: null,
-		publishedBy: null,
-		effectiveFrom: null,
-		effectiveUntil: null,
-		isSuperseded: false,
-		referenceDate: '2027-05-01',
 		rowVersion: 1,
-		createdAt: '2027-04-01T00:00:00Z',
-		updatedAt: '2027-04-01T00:00:00Z',
-		courseMetadata: definitions.flatMap((item) =>
-			item.kind === 'course'
-				? [
-						{
-							subjectVersionId: item.id,
-							subjectGroupId: item.group!,
-							subjectGroupName: item.group === navigationIds.math ? 'คณิตศาสตร์' : 'ภาษาไทย'
-						}
-					]
-				: []
-		),
-		snapshot: {
-			offerings: definitions.map((item) => ({
-				id: item.id,
-				kind: item.kind,
-				code: item.code,
-				name: item.name,
-				owningOrganizationUnitId: item.group ?? navigationIds.program,
-				weeklyPeriodTarget: 2,
-				groups: [],
-				homeroomIds: [],
-				targets: [],
-				catalog:
-					item.kind === 'course'
-						? {
-								kind: 'course' as const,
-								subjectId: item.id,
-								subjectVersionId: item.id,
-								standardPeriodsPerWeek: 2,
-								credit: '1.0',
-								hours: '40',
-								assessmentTotalScore: '100.00'
-							}
-						: {
-								kind: 'activity' as const,
-								activityId: item.id,
-								activityVersionId: item.id,
-								registrationType: 'assigned' as const,
-								schedulingMode: 'synchronized' as const,
-								hours: '20',
-								attendanceRequirement: { minimumPercent: '80' },
-								passCriteria: {
-									requireAttendance: true,
-									requireTeacherConfirmation: true,
-									outcomes: ['pass' as const, 'fail' as const]
-								}
-							}
-			}))
-		}
+		courseMetadata: definitions.flatMap((item) => item.kind === 'course' ? [{subjectVersionId: item.id,subjectGroupId: item.group!,subjectGroupName: item.group === navigationIds.math ? 'คณิตศาสตร์' : 'ภาษาไทย'}] : []),
+		offerings: definitions.map((item) => ({
+			id: item.id, kind: item.kind, code: item.code, name: item.name, rowVersion: 1,
+			owningOrganizationUnitId: item.group ?? navigationIds.program,
+			weeklyPeriodTarget: 2, groups: [], homeroomIds: [], targets: [],
+			catalog: item.kind === 'course' ? {
+				kind: 'course' as const, subjectId: item.id,subjectVersionId: item.id,
+				standardPeriodsPerWeek: 2, credit: '1.0',hours: '40',assessmentTotalScore: '100.00'
+			} : {
+				kind: 'activity' as const, activityId: item.id,activityVersionId: item.id,
+				registrationType: 'assigned' as const,schedulingMode: 'synchronized' as const,
+				hours: '20',attendanceRequirement: {minimumPercent: '80'},
+				passCriteria: {requireAttendance:true,requireTeacherConfirmation:true,outcomes:['pass' as const,'fail' as const]}
+			}
+		}))
 	};
 }
 
@@ -162,9 +112,7 @@ export function navigationWorkspace(): HomeroomDeliveryWorkspace {
 	return {
 		academicYearId: navigationIds.year,
 		academicTermId: navigationIds.term,
-		deliveryVersionId: navigationIds.version,
-		deliveryVersionStatus: 'draft',
-		deliveryVersionEffectiveFrom: null,
+		rowVersion: 1,
 		homerooms: [navigationIds.roomA, navigationIds.roomB].map((roomId, index) => ({
 			homeroom: { id: roomId, name: `ม.1/${index + 1}` },
 			gradeLevel: {
@@ -205,7 +153,7 @@ export function navigationWorkspace(): HomeroomDeliveryWorkspace {
 					weeklyPeriodTarget: 2,
 					schedulingMode: item.kind === 'activity' ? ('synchronized' as const) : null,
 					offeringId: item.id,
-					offeringState: 'draft' as const,
+					offeringState: 'present' as const,
 					groupMode: 'normal' as const,
 					teacherState: 'assigned' as const,
 					alignmentStates: ['matches_curriculum' as const],
@@ -238,20 +186,8 @@ export function navigationWorkspace(): HomeroomDeliveryWorkspace {
 	};
 }
 
-export function navigationSummary(): DeliveryVersionSummary {
-	return {
-		...navigationVersion(),
-		publishedAt: null,
-		publishedBy: null,
-		changeSetId: null,
-		offeringCount: definitions.length,
-		groupCount: 0,
-		teacherAssignmentCount: 0
-	};
-}
-
 export const navigationOverviewPath = () =>
-	`/staff/academic/delivery?academicYearId=${navigationIds.year}&academicTermId=${navigationIds.term}&deliveryVersionId=${navigationIds.version}`;
+	`/staff/academic/delivery?academicYearId=${navigationIds.year}&academicTermId=${navigationIds.term}`;
 
 export async function mockDeliveryNavigation(
 	page: Page,
@@ -266,67 +202,8 @@ export async function mockDeliveryNavigation(
 	const writes: string[] = [];
 	const creations: CreateLearningOfferingRequest[] = [];
 	let created = false;
-	const findingOffering =
-		options.readiness === 'activity' ? navigationOfferingIds.club : navigationOfferingIds.basic21;
-	const finding: AcademicChangeFinding = {
-		severity: 'blocking',
-		code: 'missing_delivery_group',
-		affectedCount: 1,
-		learningOfferingId: findingOffering,
-		title:
-			options.readiness === 'activity'
-				? 'ชุมนุม: ยังไม่มีกลุ่มเรียน'
-				: 'ค21101 — คณิตศาสตร์ต้น: ยังไม่มีกลุ่มเรียน',
-		guidance: 'จัดกลุ่มก่อนเผยแพร่',
-		route: `/staff/academic/delivery/${findingOffering}?deliveryVersionId=${navigationIds.version}`
-	};
-	const changeSet: AcademicTermChangeSet = {
-		baseTeacherAssignments: [],
-		id: navigationIds.changeSet,
-		academicYearId: navigationIds.year,
-		academicTermId: navigationIds.term,
-		targetDeliveryVersionId: navigationIds.version,
-		publicationDateRules: { today: '2027-05-01', minimumEffectiveFrom: null },
-		status: 'draft',
-		publicationNo: null,
-		publishedAt: null,
-		publishedBy: null,
-		rowVersion: 1,
-		effectiveFrom: null,
-		referenceDate: '2027-05-01',
-		reason: 'ตรวจบริบทการนำทาง',
-		items: [],
-		changes: [
-			{
-				kind: 'changed',
-				learningOfferingId: navigationOfferingIds.club,
-				resourceId: navigationOfferingIds.club,
-				label: 'ชุมนุม',
-				field: 'รายการเปิดสอน',
-				before: 'เปิดสอน 2 คาบ/สัปดาห์',
-				after: 'เปิดสอน 3 คาบ/สัปดาห์'
-			},
-			{
-				kind: 'changed',
-				learningOfferingId: navigationOfferingIds.basic21,
-				resourceId: navigationOfferingIds.basic21,
-				label: 'ค21101 — คณิตศาสตร์ต้น',
-				field: 'รายการเปิดสอน',
-				before: 'เปิดสอน 2 คาบ/สัปดาห์',
-				after: 'เปิดสอน 4 คาบ/สัปดาห์'
-			}
-		],
-		offeringLabels: definitions
-			.filter((item) =>
-				[navigationOfferingIds.club, navigationOfferingIds.basic21].includes(item.id)
-			)
-			.map(({ id, code, name }) => ({ id, code, name })),
-		createdBy: navigationIds.actor,
-		createdAt: '2027-04-01T00:00:00Z',
-		updatedAt: '2027-04-01T00:00:00Z'
-	};
 	function offeringResource(id: string): LearningOffering {
-		const item = navigationVersion().snapshot.offerings.find((offering) => offering.id === id)!;
+		const item = navigationDelivery().offerings.find((offering) => offering.id === id)!;
 		return {
 			canManage: true,
 			id: item.id,
@@ -335,11 +212,8 @@ export async function mockDeliveryNavigation(
 			kind: item.kind,
 			codeSnapshot: item.code,
 			nameSnapshot: item.name,
-			status: created ? 'draft' : 'published',
 			rowVersion: 1,
-			startsOn: '2027-05-01',
-			endsOn: null,
-			stopReason: null,
+			weeklyPeriodTarget: item.weeklyPeriodTarget,
 			targets: [],
 			snapshot: item.catalog,
 			migrated: false,
@@ -348,42 +222,16 @@ export async function mockDeliveryNavigation(
 			updatedAt: '2027-04-01T00:00:00Z'
 		};
 	}
-	function versionResource(id: string): DeliveryVersion {
-		const version = navigationVersion();
-		if ((options.groupedCreation && !created) || id === navigationIds.sourceVersion)
-			version.snapshot.offerings = version.snapshot.offerings.filter(
-				(item) => item.id !== navigationOfferingIds.club
-			);
-		return id === navigationIds.sourceVersion
-			? {
-					...version,
-					id,
-					status: 'published',
-					publicationNo: 1,
-					publishedAt: '2027-05-01T00:00:00Z',
-					publishedBy: navigationIds.actor,
-					effectiveFrom: '2027-05-01'
-				}
-			: { ...version, sourceVersionId: options.continuation ? navigationIds.sourceVersion : null };
+	function currentDelivery(): DeliveryWorkspace {
+		const workspace = navigationDelivery();
+		if (options.groupedCreation && !created) workspace.offerings = workspace.offerings.filter((item) => item.id !== navigationOfferingIds.club);
+		return workspace;
 	}
-	function workspaceResource(id: string | null): HomeroomDeliveryWorkspace {
+	function workspaceResource(): HomeroomDeliveryWorkspace {
 		const workspace = navigationWorkspace();
-		if (id === navigationIds.sourceVersion) {
-			workspace.deliveryVersionId = id;
-			workspace.deliveryVersionStatus = 'published';
-			workspace.deliveryVersionEffectiveFrom = '2027-05-01';
-		}
-		if ((options.groupedCreation && !created) || id === navigationIds.sourceVersion) {
-			for (const room of workspace.homerooms) {
-				const activity = room.items.find((item) => item.offeringId === navigationOfferingIds.club)!;
-				Object.assign(activity, {
-					offeringId: null,
-					offeringState: 'missing',
-					groupMode: 'missing',
-					teacherState: 'missing_primary',
-					alignmentStates: ['curriculum_requirement_not_offered']
-				});
-			}
+		if (options.groupedCreation && !created) for (const room of workspace.homerooms) {
+			const activity = room.items.find((item) => item.offeringId === navigationOfferingIds.club)!;
+			Object.assign(activity, {offeringId:null,offeringState:'missing',groupMode:'missing',teacherState:'missing_primary',alignmentStates:['curriculum_requirement_not_offered']});
 		}
 		return workspace;
 	}
@@ -454,70 +302,9 @@ export async function mockDeliveryNavigation(
 						}
 					]
 				});
-			if (path === '/api/academic/delivery-versions')
-				return reply(route, [
-					...(options.continuation
-						? [
-								{
-									...navigationSummary(),
-									id: navigationIds.sourceVersion,
-									status: 'published',
-									publicationNo: 1,
-									publishedAt: '2027-05-01T00:00:00Z',
-									publishedBy: navigationIds.actor,
-									effectiveFrom: '2027-05-01'
-								}
-							]
-						: []),
-					{
-						...navigationSummary(),
-						sourceVersionId: options.continuation ? navigationIds.sourceVersion : null,
-						changeSetId: options.readiness ? navigationIds.changeSet : null
-					}
-				]);
-			if (
-				path === `/api/academic/delivery-versions/${navigationIds.version}` ||
-				path === `/api/academic/delivery-versions/${navigationIds.sourceVersion}`
-			)
-				return reply(route, versionResource(path.split('/').at(-1)!));
-			if (path === '/api/academic/delivery/homerooms')
-				return reply(route, workspaceResource(url.searchParams.get('deliveryVersionId')));
-			if (path === '/api/academic/term-change-sets')
-				return reply(route, options.readiness ? [changeSet] : []);
-			if (path === `/api/academic/term-change-sets/${navigationIds.changeSet}`)
-				return reply(route, changeSet);
-			if (path === `/api/academic/term-change-sets/${navigationIds.changeSet}/preview`)
-				return reply(route, {
-					changeSetId: navigationIds.changeSet,
-					changeSetRowVersion: 1,
-					targetDeliveryVersionId: navigationIds.version,
-					targetDeliveryVersionRowVersion: 1,
-					effectiveFrom: url.searchParams.get('effectiveFrom') ?? changeSet.referenceDate,
-					preliminary: !url.searchParams.has('effectiveFrom'),
-					previewHash: 'a'.repeat(64),
-					changes: changeSet.changes,
-					impactCounts: {
-						activityEvaluations: 0,
-						courseAssessmentPhases: 0,
-						courseAssessmentPlans: 0,
-						examScheduleItems: 0,
-						groups: 0,
-						homerooms: 0,
-						learnerEvaluations: 0,
-						learningGroupScoreItems: 0,
-						membershipIntervals: 0,
-						officialResultLocks: 0,
-						officialResults: 0,
-						resultConfirmations: 0,
-						resultCorrections: 0,
-						resultSelections: 0,
-						studentScores: 0,
-						supervisionObservations: 0,
-						targetTimetableEntries: 0,
-						teacherAssignments: 0
-					},
-					findings: [finding]
-				} satisfies AcademicTermChangeSetPreview);
+			if (path === '/api/academic/delivery/workspace') return reply(route, currentDelivery());
+			if (path === '/api/academic/delivery/homerooms') return reply(route, workspaceResource());
+			if (path.includes('delivery-versions') || path.includes('term-change-sets')) return route.fulfill({status:404,json:{success:false,error:'Retired operational endpoint'}});
 			if (path === '/api/academic/delivery/management-options')
 				return reply(route, {
 					academicYearId: navigationIds.year,

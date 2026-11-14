@@ -34,7 +34,7 @@ pub async fn confirm(
 ) -> Result<Json<ApiResponse<YearRolloverOutcome>>, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let result = services::confirm_year_rollover(
-        state.lifecycle_providers,
+        state.lifecycle_providers.as_ref(),
         &context.tenant.pool,
         &context.actor,
         input,

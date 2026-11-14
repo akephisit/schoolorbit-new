@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type {
 		ExamDayDetail,
-		ExamRoundStatus,
 		ExamScheduleItem,
 		ExamScheduleReadiness,
 		ExamSession
@@ -11,13 +10,11 @@
 	import { AlertCircle, CheckCircle2, CircleDashed } from '@lucide/svelte';
 
 	let {
-		status = 'draft',
 		readiness,
 		days = [],
 		unscheduledItems = [],
 		scheduledSessions = []
 	}: {
-		status?: ExamRoundStatus;
 		readiness: ExamScheduleReadiness;
 		days: ExamDayDetail[];
 		unscheduledItems: ExamScheduleItem[];
@@ -37,13 +34,10 @@
 	<div class="border-b px-4 py-4">
 		<div class="flex items-center justify-between gap-3">
 			<h2 class="font-semibold">ความพร้อม</h2>
-			<Badge variant={readiness.canPublish ? 'default' : 'secondary'}>
-				{readiness.canPublish ? 'พร้อมเผยแพร่' : 'ยังไม่พร้อม'}
+			<Badge variant={readiness.complete ? 'default' : 'secondary'}>
+				{readiness.complete ? 'ข้อมูลครบ' : 'มีรายการที่ควรตรวจ'}
 			</Badge>
 		</div>
-		<p class="mt-1 text-sm text-muted-foreground">
-			{status === 'published' ? 'เผยแพร่แล้ว' : 'ฉบับร่าง'}
-		</p>
 	</div>
 
 	<div class="space-y-4 p-4">
@@ -68,7 +62,7 @@
 
 		<div class="space-y-2">
 			<div class="flex items-center gap-2 text-sm font-medium">
-				{#if readiness.canPublish}
+				{#if readiness.complete}
 					<CheckCircle2 class="h-4 w-4 text-emerald-600" />
 				{:else}
 					<AlertCircle class="h-4 w-4 text-amber-600" />

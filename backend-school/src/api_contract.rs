@@ -7,24 +7,19 @@ use school_academic_core::ports::{
     TermPreparationContext, TermPreparationMappingKind, TermPreparationModule,
     TermPreparationModuleOutcome,
 };
-use school_academic_delivery::models::versions::*;
+use school_academic_delivery::models::current::*;
 use school_academic_delivery::models::*;
 use school_academic_lifecycle::models::*;
 use school_academic_results::models::*;
 use school_academic_timetable::models::collaboration::*;
 use school_academic_timetable::models::timetable::{
-    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, FromCurrentRequest,
-    TemplateApplyResult, TemplateWithEntries, TimetableTemplate, TimetableTemplateEntry,
-    TimetableTemplateTargetSelector, UpdateTemplateRequest,
+    ApplyTemplateRequest, ClearTimetableRequest, CreateTemplateRequest, CreateTimetableRequest,
+    FromCurrentRequest, TemplateApplyResult, TemplateWithEntries, Timetable, TimetableQuery,
+    TimetableTemplate, TimetableTemplateEntry, TimetableTemplateTargetSelector,
+    UpdateTemplateRequest,
 };
 use school_academic_timetable::models::timetable_block::*;
-use school_academic_timetable::models::timetable_publication::*;
 use school_academic_timetable::models::timetable_source::*;
-use school_academic_timetable::models::timetable_version::{
-    CloneTimetableVersionRequest, DeleteTimetableDraftRequest, DeletedTimetableDraft,
-    TimetableVersion, TimetableVersionDisplayState, TimetableVersionStatus, TimetableVersionTarget,
-    UpdateTimetableDeliverySourceRequest,
-};
 use school_academic_timetable::services::daily_teaching::{
     DailyTeachingEntry, DailyTeachingOverview, DailyTeachingPeriod, DailyTeachingPeriodCell,
     DailyTeachingSummary, DailyTeachingTeacher,
@@ -468,6 +463,8 @@ use utoipa::OpenApi;
         school_students::parents::http::handlers::get_child_timetable,
         school_students::parents::http::handlers::get_child_exam_schedule,
         school_students::parents::http::handlers::get_child_calendar_events,
+        school_academic_timetable_http::handlers::timetable::get_timetable,
+        school_academic_timetable_http::handlers::timetable::create_timetable,
         school_academic_timetable_http::handlers::timetable_blocks::get_my_timetable,
         school_academic_core_http::core::handlers::list_my_context_options,
         school_academic_timetable_http::handlers::timetable_blocks::get_workspace,
@@ -483,14 +480,6 @@ use utoipa::OpenApi;
         school_academic_timetable_http::handlers::timetable_blocks::delete_series,
         school_academic_timetable_http::handlers::timetable_blocks::swap_blocks,
         school_academic_timetable_http::handlers::timetable_blocks::daily_teaching_overview,
-        school_academic_timetable_http::handlers::timetable_versions::list_versions,
-        school_academic_timetable_http::handlers::timetable_versions::create_version,
-        school_academic_timetable_http::handlers::timetable_versions::resolve_version,
-        school_academic_timetable_http::handlers::timetable_versions::clone_version,
-        school_academic_timetable_http::handlers::timetable_versions::update_delivery_source,
-        school_academic_timetable_http::handlers::timetable_versions::delete_draft,
-        school_academic_timetable_http::handlers::timetable_versions::preview_publication,
-        school_academic_timetable_http::handlers::timetable_versions::publish_version,
         school_academic_timetable_http::handlers::timetable_templates::list_templates,
         school_academic_timetable_http::handlers::timetable_templates::get_template,
         school_academic_timetable_http::handlers::timetable_templates::create_template,
@@ -584,8 +573,6 @@ use utoipa::OpenApi;
         school_academic_assessment_http::handlers::exam_schedule::update_round,
         school_academic_assessment_http::handlers::exam_schedule::delete_round,
         school_academic_assessment_http::handlers::exam_schedule::get_workspace,
-        school_academic_assessment_http::handlers::exam_schedule::preview_sources,
-        school_academic_assessment_http::handlers::exam_schedule::sync_sources,
         school_academic_assessment_http::handlers::exam_schedule::upsert_day,
         school_academic_assessment_http::handlers::exam_schedule::update_day,
         school_academic_assessment_http::handlers::exam_schedule::delete_day,
@@ -599,7 +586,6 @@ use utoipa::OpenApi;
         school_academic_assessment_http::handlers::exam_schedule::generate_seats,
         school_academic_assessment_http::handlers::exam_schedule::place_session,
         school_academic_assessment_http::handlers::exam_schedule::delete_session,
-        school_academic_assessment_http::handlers::exam_schedule::publish_round,
         school_academic_assessment_http::handlers::exam_schedule::list_my_exam_schedule,
         school_academic_assessment_http::handlers::exam_schedule::list_staff_exam_schedule,
         school_academic_core_http::core::handlers::list_context_options,
@@ -710,8 +696,13 @@ use utoipa::OpenApi;
         school_academic_core_http::core::handlers::mutate_homeroom_roster,
         school_academic_core_http::core::handlers::list_homeroom_transfer_targets,
 
+        school_academic_delivery_http::delivery::handlers::get_delivery_workspace,
+        school_academic_delivery_http::delivery::handlers::update_weekly_period_target,
+        school_academic_delivery_http::delivery::handlers::preview_offering_deletion,
+        school_academic_delivery_http::delivery::handlers::delete_offering,
+        school_academic_delivery_http::delivery::handlers::preview_group_deletion,
+        school_academic_delivery_http::delivery::handlers::delete_group,
         school_academic_delivery_http::delivery::handlers::list_offerings,
-        school_academic_delivery_http::delivery::handlers::get_delivery_overview,
         school_academic_delivery_http::delivery::handlers::get_homeroom_delivery_workspace,
         school_academic_delivery_http::delivery::handlers::get_delivery_management_options,
         school_academic_delivery_http::delivery::handlers::create_offering,
@@ -719,7 +710,6 @@ use utoipa::OpenApi;
         school_academic_delivery_http::delivery::handlers::apply_offerings_from_curriculum,
         school_academic_delivery_http::delivery::handlers::get_offering,
         school_academic_delivery_http::delivery::handlers::update_offering,
-        school_academic_delivery_http::delivery::handlers::publish_offering,
         school_academic_delivery_http::delivery::handlers::list_groups_for_term,
         school_academic_delivery_http::delivery::handlers::list_groups,
         school_academic_delivery_http::delivery::bulk_group_setup_handlers::preview_bulk_group_setup,
@@ -735,23 +725,6 @@ use utoipa::OpenApi;
         school_academic_delivery_http::delivery::handlers::update_group_roster_tracking,
         school_academic_delivery_http::delivery::handlers::preview_group_roster,
         school_academic_delivery_http::delivery::handlers::apply_group_roster,
-        school_academic_delivery_http::delivery::handlers::publish_group_roster,
-        school_academic_delivery_http::delivery::handlers::list_term_change_sets,
-        school_academic_delivery_http::delivery::version_handlers::list_versions,
-        school_academic_delivery_http::delivery::version_handlers::get_version,
-        school_academic_delivery_http::delivery::version_handlers::delete_version,
-        school_academic_delivery_http::delivery::handlers::create_term_change_set,
-        school_academic_delivery_http::delivery::handlers::get_term_change_set,
-        school_academic_delivery_http::delivery::handlers::update_term_change_set,
-        school_academic_delivery_http::delivery::handlers::upsert_term_change_item,
-        school_academic_delivery_http::delivery::handlers::delete_term_change_item,
-        school_academic_delivery_http::delivery::handlers::remove_draft_offering,
-        school_academic_delivery_http::delivery::handlers::remove_draft_offering_homeroom,
-        school_academic_delivery_http::delivery::handlers::remove_draft_group,
-        school_academic_delivery_http::delivery::handlers::preview_term_change_set,
-        school_academic_timetable_http::handlers::teacher_handoff::preview_teacher_handoff,
-        school_academic_timetable_http::handlers::teacher_handoff::apply_teacher_handoff,
-        school_academic_delivery_http::delivery::handlers::publish_term_change_set,
         school_academic_delivery_http::delivery::handlers::list_group_memberships,
         school_academic_delivery_http::delivery::handlers::add_group_membership,
         school_academic_delivery_http::delivery::handlers::end_group_membership,
@@ -1850,12 +1823,10 @@ fn build_schema_group_11() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<EffectiveResultSearchItem>>,
         ApiResponse<EffectiveResult>,
         LearningOfferingKind,
-        LearningOfferingStatus,
         OfferingTargetKind,
         ActivityRegistrationType,
         ActivitySchedulingMode,
         LearningTeacherRole,
-        RosterStatus,
         MembershipStatus,
         RosterOverrideAction,
         CurriculumPreviewAction,
@@ -1865,9 +1836,7 @@ fn build_schema_group_11() -> utoipa::openapi::OpenApi {
         CreateCourseOfferingRequest,
         CreateActivityOfferingRequest,
         CreateLearningOfferingRequest,
-        CreateLearningOfferingQuery,
         UpdateLearningOfferingRequest,
-        PublishLearningOfferingRequest,
         LearningOfferingQuery,
         HomeroomDeliveryQuery,
         LearningGroupTermQuery,
@@ -1913,6 +1882,10 @@ fn build_schema_group_12() -> utoipa::openapi::OpenApi {
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        DeliveryWorkspace, DeliveryOffering, DeliveryGroup, DeliveryTeacher, DeliveryCourseMetadata,
+        DeliveryWorkspaceQuery, UpdateWeeklyPeriodTargetRequest,
+        DeleteDeliveryResourceRequest, DeliveryDeletionPreview, DeletedDeliveryResource, OfferingDeletionImpact,
+        ApiResponse<DeliveryWorkspace>, ApiResponse<DeliveryDeletionPreview>, ApiResponse<DeletedDeliveryResource>,
         ReplaceLearningGroupTeachersRequest,
         ReplaceLearningGroupHomeroomsRequest,
         LearningGroupHomeroomIds,
@@ -1921,50 +1894,7 @@ fn build_schema_group_12() -> utoipa::openapi::OpenApi {
         RosterPreview,
         RosterOverrideInput,
         ApplyRosterRequest,
-        PublishRosterRequest,
         LearningGroupStudent,
-        AcademicTermChangeSetStatus,
-        DeliveryVersionStatus,
-        DeliverySnapshot,
-        DeliveryVersionOffering,
-        DeliveryVersionGroup,
-        DeliveryVersionTeacher,
-        DeliveryVersion,
-        DeliveryVersionDetails,
-        DeliveryVersionCourseMetadata,
-        DeliveryVersionSummary,
-        DeliveryVersionQuery,
-        DeliveryReadinessCode,
-        DeliveryReadinessFinding,
-        ApiResponse<Vec<DeliveryVersionSummary>>,
-        ApiResponse<DeliveryVersionDetails>,
-        AcademicTermChangeActionKind,
-        AcademicTermChangeItem,
-        AcademicTermChangeSet,
-        AcademicTermChangeSetSummary,
-        CreateAcademicTermChangeSetRequest,
-        UpdateAcademicTermChangeSetRequest,
-        DeliveryPublicationPreviewQuery,
-        AcademicTermChangeSetQuery,
-        UpsertAcademicTermChangeItemRequest,
-        DeleteAcademicTermChangeItemRequest,
-        RemoveDeliveryDraftResourceRequest,
-        AcademicChangeFindingSeverity,
-        AcademicChangeFindingCode,
-        AcademicChangeFinding,
-        AcademicChangeImpactCounts,
-        AcademicTermChangeSetPreview,
-        PublishAcademicTermChangeSetRequest,
-        TeacherHandoffMode,
-        PreviewTeacherHandoffRequest,
-        TeacherHandoffEntryVersion,
-        ApplyTeacherHandoffRequest,
-        TeacherHandoffInstructorPreview,
-        TeacherHandoffConflictKind,
-        TeacherHandoffConflict,
-        TeacherHandoffEntryPreview,
-        TeacherHandoffPreview,
-        ApplyTeacherHandoffResponse,
         DatedRosterMembership,
         AddDatedRosterMembershipRequest,
         RemoveDatedRosterMembershipRequest,
@@ -1975,8 +1905,6 @@ fn build_schema_group_12() -> utoipa::openapi::OpenApi {
         ApiResponse<Vec<LearningOffering>>,
         ApiResponse<LearningOffering>,
         ApiResponse<LearningDeliveryOverview>,
-        ApiResponse<TeacherHandoffPreview>,
-        ApiResponse<ApplyTeacherHandoffResponse>,
         ApiResponse<HomeroomDeliveryWorkspace>,
         ApiResponse<DeliveryManagementOptions>,
         ApiResponse<CurriculumOfferingPreview>
@@ -1996,10 +1924,6 @@ fn build_schema_group_13() -> utoipa::openapi::OpenApi {
         ApiResponse<LearningGroupHomeroomIds>,
         ApiResponse<Vec<LearningGroupTeacherAssignment>>,
         ApiResponse<RosterPreview>,
-        ApiResponse<Vec<AcademicTermChangeSet>>,
-        ApiResponse<Vec<AcademicTermChangeSetSummary>>,
-        ApiResponse<AcademicTermChangeSet>,
-        ApiResponse<AcademicTermChangeSetPreview>,
         ApiResponse<Vec<DatedRosterMembership>>,
         ApiResponse<DatedRosterMembership>,
         ApiResponse<Vec<StudentActivityOfferingOption>>,
@@ -2037,31 +1961,31 @@ fn build_schema_group_13() -> utoipa::openapi::OpenApi {
         TimetableSynchronizedDemand,
         TimetableBlockSummary,
         TimetableBlockWorkspace,
-        DraftViewMode,
-        DraftContext,
-        DraftAnchor,
-        DraftTarget,
-        DraftReservationPurpose,
-        DraftPresenceUpdate,
-        DraftClaim,
-        DraftTargetUpdate,
-        DraftLeaseCommand,
-        DraftReplay,
-        DraftClientMessage,
-        DraftConnectionPresence,
-        DraftParticipant,
-        DraftReservation,
-        DraftCommandKind,
-        DraftCommandResult,
-        DraftBlockedCell,
-        DraftAvailability,
-        DraftRoomOptions,
-        DraftStateSync,
-        DraftPatch,
-        DraftLookupChanges,
-        DraftServerMessage,
-        DraftEventEnvelope,
-        DraftMutationIdentity,
+        TimetableViewMode,
+        TimetableContext,
+        TimetableAnchor,
+        TimetableTarget,
+        TimetableReservationPurpose,
+        TimetablePresenceUpdate,
+        TimetableClaim,
+        TimetableTargetUpdate,
+        TimetableLeaseCommand,
+        TimetableReplay,
+        TimetableClientMessage,
+        TimetableConnectionPresence,
+        TimetableParticipant,
+        TimetableReservation,
+        TimetableCommandKind,
+        TimetableCommandResult,
+        TimetableBlockedCell,
+        TimetableAvailability,
+        TimetableRoomOptions,
+        TimetableStateSync,
+        TimetablePatch,
+        TimetableLookupChanges,
+        TimetableServerMessage,
+        TimetableEventEnvelope,
+        TimetableMutationIdentity,
         CreateOrdinaryTimetableBlockRequest,
         CreateSynchronizedTimetableBlockRequest,
         TimetableStructuralSlotInput,
@@ -2092,27 +2016,9 @@ fn build_schema_group_14() -> utoipa::openapi::OpenApi {
         ApiResponse<TimetableBlockWorkspace>,
         ApiResponse<TimetableBlockPlacementPreview>,
         ApiResponse<SwapTimetableBlocksResponse>,
-        TimetableVersionStatus,
-        TimetableVersionDisplayState,
-        TimetableVersionTarget,
-        TimetableVersion,
-        CloneTimetableVersionRequest,
-        DeleteTimetableDraftRequest,
-        DeletedTimetableDraft,
-        UpdateTimetableDeliverySourceRequest,
-        PreviewTimetablePublicationRequest,
-        PublishTimetableVersionRequest,
-        TimetablePublicationPreview,
-        TimetablePublicationFinding,
-        TimetablePublicationFindingCode,
+        Timetable, TimetableQuery, CreateTimetableRequest, ApiResponse<Option<Timetable>>, ApiResponse<Timetable>,
         TimetableSourceIssue,
         TimetableSourceIssueCode,
-        TimetableDraftSourceConflict,
-        TimetableDraftSourceConflictCode,
-        ApiErrorResponseWithOptionalData<TimetableDraftSourceConflict>,
-        ApiResponse<Vec<TimetableVersion>>,
-        ApiResponse<TimetableVersion>,
-        ApiResponse<TimetableVersionTarget>,
         ApiResponse<Vec<TimetableTemplate>>,
         ApiResponse<TimetableTemplate>,
         ApiResponse<TemplateWithEntries>,
@@ -2133,13 +2039,6 @@ fn build_schema_group_14() -> utoipa::openapi::OpenApi {
         BlockedWindowInput,
         UpsertDayRoomAssignmentRequest,
         UpdateExamInvigilatorsRequest,
-        ExamSourceChangeKind,
-        ExamSourceChange,
-        ExamSourcePreview,
-        ExamSourceSyncItemStatus,
-        ExamSourceSyncItemResult,
-        SyncExamSourcesRequest,
-        SyncExamSourcesResult,
         DayRoomAssignmentView,
         InvigilatorView,
         ExamInvigilatorAssignmentSummary,
@@ -2175,8 +2074,6 @@ fn build_schema_group_15() -> utoipa::openapi::OpenApi {
         ApiResponse<ExamRound>,
         ApiResponse<Vec<ExamRound>>,
         ApiResponse<ExamScheduleWorkspace>,
-        ApiResponse<ExamSourcePreview>,
-        ApiResponse<SyncExamSourcesResult>,
         ApiResponse<ExamDayDetail>,
         ApiResponse<Vec<DayRoomAssignmentView>>,
         ApiResponse<DayRoomAssignmentView>,
@@ -2187,12 +2084,12 @@ fn build_schema_group_15() -> utoipa::openapi::OpenApi {
         PersonalExamScheduleRound,
         PersonalExamSessionView,
         ApiResponse<Vec<PersonalExamScheduleRound>>,
-        StaffPublishedExamScheduleRound,
-        StaffPublishedExamDay,
-        StaffPublishedExamSession,
-        StaffPublishedExamRoomAssignment,
-        StaffPublishedExamInvigilator,
-        ApiResponse<Vec<StaffPublishedExamScheduleRound>>,
+        StaffExamScheduleRound,
+        StaffExamDay,
+        StaffExamSession,
+        StaffExamRoomAssignment,
+        StaffExamInvigilator,
+        ApiResponse<Vec<StaffExamScheduleRound>>,
         CalendarAudienceType,
         CalendarVisibility,
         CalendarEventTag,
@@ -2482,7 +2379,7 @@ pub fn render_school_api() -> Result<String, serde_json::Error> {
 
 #[cfg(test)]
 mod tests {
-    use school_academic_timetable::models::collaboration::DraftAnchor;
+    use school_academic_timetable::models::collaboration::TimetableAnchor;
     use serde_json::Value;
     use std::collections::{BTreeSet, HashSet};
 
@@ -3390,7 +3287,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_start_only_contract_retires_expiry_and_preserves_delivery_temporal_fields() {
+    fn catalog_start_only_contract_is_independent_of_current_operational_state() {
         let document = school_api_value().expect("document should serialize");
         let schemas = &document["components"]["schemas"];
         for name in [
@@ -3422,14 +3319,14 @@ mod tests {
             schemas["CatalogDisplayState"]["enum"],
             serde_json::json!(["current", "upcoming", "unpublished"])
         );
-        for name in [
-            "DeliveryVersion",
-            "DeliveryVersionSummary",
-            "TimetableVersion",
-        ] {
+        for name in ["DeliveryOffering", "DeliveryGroup", "Timetable"] {
             assert!(
-                schemas[name]["properties"].get("effectiveUntil").is_some(),
-                "{name} retains its independently derived interval"
+                schemas[name]["properties"].get("effectiveFrom").is_none(),
+                "{name}"
+            );
+            assert!(
+                schemas[name]["properties"].get("effectiveUntil").is_none(),
+                "{name}"
             );
         }
     }
@@ -3704,232 +3601,103 @@ mod tests {
     }
 
     #[test]
-    fn operational_academic_change_contract_is_typed_and_complete() {
-        let document = school_api_value().expect("document should serialize");
-        let operations = [
-            (
-                "/api/academic/term-change-sets",
-                "get",
-                "listAcademicTermChangeSets",
-            ),
-            (
-                "/api/academic/term-change-sets",
-                "post",
-                "createAcademicTermChangeSet",
-            ),
-            (
-                "/api/academic/term-change-sets/{id}",
-                "get",
-                "getAcademicTermChangeSet",
-            ),
-            (
-                "/api/academic/term-change-sets/{id}",
-                "patch",
-                "updateAcademicTermChangeSet",
-            ),
-            (
-                "/api/academic/delivery-versions/{id}",
-                "delete",
-                "deleteDeliveryVersion",
-            ),
-            (
-                "/api/academic/term-change-sets/{id}/items",
-                "put",
-                "upsertAcademicTermChangeItem",
-            ),
-            (
-                "/api/academic/term-change-sets/{id}/items/{itemId}",
-                "delete",
-                "deleteAcademicTermChangeItem",
-            ),
-            (
-                "/api/academic/term-change-sets/{id}/preview",
-                "get",
-                "previewAcademicTermChangeSet",
-            ),
-            (
-                "/api/academic/term-change-sets/{id}/publish",
-                "post",
-                "publishAcademicTermChangeSet",
-            ),
-            (
-                "/api/academic/learning-groups/{id}/memberships",
-                "get",
-                "listDatedRosterMemberships",
-            ),
-            (
-                "/api/academic/learning-groups/{id}/memberships",
-                "post",
-                "addDatedRosterMembership",
-            ),
-            (
-                "/api/academic/learning-groups/{id}/memberships/{membershipId}/end",
-                "post",
-                "endDatedRosterMembership",
-            ),
-        ];
-        assert_operations(&document, &operations);
-        assert_eq!(
-            query_contract(&document, "/api/academic/term-change-sets", "get"),
-            BTreeSet::from([("academicTermId".to_string(), true)])
+    fn current_delivery_deletion_and_actual_roster_contracts_are_typed() {
+        let document = school_api_value().unwrap();
+        assert_operations(
+            &document,
+            &[
+                (
+                    "/api/academic/offerings/{id}/deletion-preview",
+                    "get",
+                    "previewLearningOfferingDeletion",
+                ),
+                (
+                    "/api/academic/offerings/{id}",
+                    "delete",
+                    "deleteLearningOffering",
+                ),
+                (
+                    "/api/academic/learning-groups/{id}/deletion-preview",
+                    "get",
+                    "previewLearningGroupDeletion",
+                ),
+                (
+                    "/api/academic/learning-groups/{id}",
+                    "delete",
+                    "deleteLearningGroup",
+                ),
+                (
+                    "/api/academic/offerings/{id}/weekly-period-target",
+                    "patch",
+                    "updateLearningOfferingWeeklyPeriodTarget",
+                ),
+                (
+                    "/api/academic/learning-groups/{id}/memberships",
+                    "get",
+                    "listDatedRosterMemberships",
+                ),
+                (
+                    "/api/academic/learning-groups/{id}/memberships",
+                    "post",
+                    "addDatedRosterMembership",
+                ),
+                (
+                    "/api/academic/learning-groups/{id}/memberships/{membershipId}/end",
+                    "post",
+                    "endDatedRosterMembership",
+                ),
+            ],
         );
-        for (path, method, expected_names) in [
-            (
-                "/api/academic/term-change-sets/{id}/items/{itemId}",
-                "delete",
-                BTreeSet::from(["id", "itemId"]),
-            ),
-            (
-                "/api/academic/learning-groups/{id}/memberships/{membershipId}/end",
-                "post",
-                BTreeSet::from(["id", "membershipId"]),
-            ),
-        ] {
-            let names = document["paths"][path][method]["parameters"]
-                .as_array()
-                .expect("path parameters must be an array")
-                .iter()
-                .filter(|parameter| parameter["in"] == "path")
-                .map(|parameter| parameter["name"].as_str().expect("path name"))
-                .collect::<BTreeSet<_>>();
-            assert_eq!(names, expected_names);
-        }
-        for (path, method, _) in operations {
-            let operation = &document["paths"][path][method];
-            for status in ["400", "403", "404", "409"] {
-                assert_eq!(
-                    operation["responses"][status]["content"]["application/json"]["schema"]["$ref"],
-                    "#/components/schemas/ApiErrorResponse",
-                    "{method} {path} must document {status}"
-                );
-            }
-        }
+        let schemas = &document["components"]["schemas"];
         assert_eq!(
-            document["paths"]["/api/academic/term-change-sets"]["get"]["responses"]["200"]
-                ["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_Vec_AcademicTermChangeSetSummary"
-        );
-        let summary = &document["components"]["schemas"]["AcademicTermChangeSetSummary"];
-        assert_eq!(
-            required(summary),
+            required(&schemas["DeleteDeliveryResourceRequest"]),
             vec![
                 "academicTermId",
                 "academicYearId",
-                "effectiveFrom",
-                "id",
-                "publicationNo",
-                "publishedAt",
-                "publishedBy",
-                "reason",
-                "referenceDate",
-                "status",
-                "targetDeliveryVersionId",
-                "updatedAt",
+                "rowVersion",
+                "sourceDigest"
             ]
         );
-        assert!(summary["properties"]["items"].is_null());
-        for (field, value_type, format) in [
-            ("publicationNo", "integer", "int64"),
-            ("publishedAt", "string", "date-time"),
-            ("publishedBy", "string", "uuid"),
-        ] {
-            let property = &summary["properties"][field];
-            let types = property["type"]
-                .as_array()
-                .expect("publication summary fields must expose their nullable value type")
-                .iter()
-                .map(|value| value.as_str().expect("schema types must be strings"))
-                .collect::<BTreeSet<_>>();
-            assert_eq!(types, BTreeSet::from([value_type, "null"]), "{field}");
-            assert_eq!(property["format"], format, "{field}");
-        }
-        for field in ["publication_no", "published_at", "published_by"] {
-            assert!(summary["properties"][field].is_null());
-        }
         assert_eq!(
-            document["paths"]["/api/academic/term-change-sets/{id}/preview"]["get"]["responses"]
-                ["200"]["content"]["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_AcademicTermChangeSetPreview"
+            schemas["DeleteDeliveryResourceRequest"]["additionalProperties"],
+            false
         );
+        assert_eq!(
+            required(&schemas["UpdateWeeklyPeriodTargetRequest"]),
+            vec!["rowVersion", "weeklyPeriodTarget"]
+        );
+        for name in [
+            "DeliveryDeletionPreview",
+            "DeletedDeliveryResource",
+            "OfferingDeletionImpact",
+        ] {
+            assert!(schemas[name].is_object(), "{name}");
+        }
+        for field in ["joinedAt", "leftAt", "membershipStatus"] {
+            assert!(
+                schemas["LearningGroupStudent"]["properties"][field].is_object(),
+                "actual membership {field}"
+            );
+        }
+        for field in ["startsOn", "endsOn", "status", "publishedAt", "stopReason"] {
+            assert!(
+                schemas["LearningOffering"]["properties"]
+                    .get(field)
+                    .is_none(),
+                "retired {field}"
+            );
+        }
+        assert!(
+            required(&schemas["DeliveryCatalogVersionOption"]).contains(&"standardPeriodsPerWeek")
+        );
+        assert!(contains_null(
+            &schemas["DeliveryCatalogVersionOption"]["properties"]["standardPeriodsPerWeek"]
+        ));
         assert_eq!(
             document["paths"]["/api/academic/learning-groups/{id}/memberships"]["get"]["responses"]
                 ["200"]["content"]["application/json"]["schema"]["$ref"],
             "#/components/schemas/ApiResponse_Vec_DatedRosterMembership"
         );
-        let schemas = &document["components"]["schemas"];
-        for schema_name in [
-            "CreateAcademicTermChangeSetRequest",
-            "UpdateAcademicTermChangeSetRequest",
-            "DeleteDeliveryVersionRequest",
-            "DeleteAcademicTermChangeItemRequest",
-            "PublishAcademicTermChangeSetRequest",
-            "AddDatedRosterMembershipRequest",
-            "RemoveDatedRosterMembershipRequest",
-        ] {
-            assert_ne!(
-                schemas[schema_name]["additionalProperties"],
-                Value::Bool(true),
-                "{schema_name} must not accept arbitrary fields"
-            );
-        }
-        let offering = &schemas["LearningOffering"];
-        for field in ["startsOn", "endsOn", "stopReason"] {
-            assert!(
-                required(offering).contains(&field),
-                "LearningOffering must expose {field} for date-derived delivery state"
-            );
-            assert!(contains_null(&offering["properties"][field]));
-        }
-        let catalog_option = &schemas["DeliveryCatalogVersionOption"];
-        assert!(
-            required(catalog_option).contains(&"standardPeriodsPerWeek"),
-            "delivery catalog options must expose the course scheduling standard"
-        );
-        assert!(contains_null(
-            &catalog_option["properties"]["standardPeriodsPerWeek"]
-        ));
-        for (schema_name, camel_fields, snake_fields) in [
-            (
-                "AcademicTermChangeItem",
-                ["learningOfferingId", "rowVersion", "weeklyPeriodTarget"].as_slice(),
-                [
-                    "learning_offering_id",
-                    "row_version",
-                    "weekly_period_target",
-                ]
-                .as_slice(),
-            ),
-            (
-                "UpsertAcademicTermChangeItemRequest",
-                [
-                    "learningOfferingId",
-                    "changeSetRowVersion",
-                    "weeklyPeriodTarget",
-                ]
-                .as_slice(),
-                [
-                    "learning_offering_id",
-                    "change_set_row_version",
-                    "weekly_period_target",
-                ]
-                .as_slice(),
-            ),
-        ] {
-            let serialized = serde_json::to_string(&schemas[schema_name])
-                .expect("operational change schema must serialize");
-            for field in camel_fields {
-                assert!(
-                    serialized.contains(&format!("\"{field}\"")),
-                    "{schema_name} must expose camelCase field {field}"
-                );
-            }
-            for field in snake_fields {
-                assert!(
-                    !serialized.contains(&format!("\"{field}\"")),
-                    "{schema_name} must not expose snake_case field {field}"
-                );
-            }
-        }
     }
 
     #[test]
@@ -4680,7 +4448,6 @@ mod tests {
             BTreeSet::from([
                 ("academicTermId".to_string(), true),
                 ("academicYearId".to_string(), true),
-                ("deliveryVersionId".to_string(), false),
             ])
         );
         assert_eq!(
@@ -5094,7 +4861,7 @@ mod tests {
         assert_eq!(
             document["paths"]["/api/staff/exam-schedules"]["get"]["responses"]["200"]["content"]
                 ["application/json"]["schema"]["$ref"],
-            "#/components/schemas/ApiResponse_Vec_StaffPublishedExamScheduleRound"
+            "#/components/schemas/ApiResponse_Vec_StaffExamScheduleRound"
         );
 
         let parent_calendar_parameters = document["paths"]
@@ -5138,31 +4905,29 @@ mod tests {
         }
 
         let exam_round = &schemas["PersonalExamScheduleRound"];
-        assert!(required(exam_round).contains(&"publishedAt"));
-        assert!(contains_null(&exam_round["properties"]["publishedAt"]));
+        assert!(exam_round["properties"].get("publishedAt").is_none());
         let exam_session = &schemas["PersonalExamSessionView"];
         for field in ["buildingName", "seatNumber"] {
             assert!(required(exam_session).contains(&field));
             assert!(contains_null(&exam_session["properties"][field]));
         }
 
-        let staff_round = &schemas["StaffPublishedExamScheduleRound"];
-        assert!(required(staff_round).contains(&"publishedAt"));
-        assert!(contains_null(&staff_round["properties"]["publishedAt"]));
+        let staff_round = &schemas["StaffExamScheduleRound"];
+        assert!(staff_round["properties"].get("publishedAt").is_none());
         assert!(required(staff_round).contains(&"days"));
 
-        let staff_day = &schemas["StaffPublishedExamDay"];
+        let staff_day = &schemas["StaffExamDay"];
         for field in ["sessions", "roomAssignments"] {
             assert!(required(staff_day).contains(&field));
         }
 
-        let staff_assignment = &schemas["StaffPublishedExamRoomAssignment"];
+        let staff_assignment = &schemas["StaffExamRoomAssignment"];
         for field in ["buildingName", "earliestStartsAt", "latestEndsAt"] {
             assert!(required(staff_assignment).contains(&field));
             assert!(contains_null(&staff_assignment["properties"][field]));
         }
 
-        let staff_invigilator = &schemas["StaffPublishedExamInvigilator"];
+        let staff_invigilator = &schemas["StaffExamInvigilator"];
         for forbidden in ["username", "email", "phone", "nationalId", "national_id"] {
             assert!(staff_invigilator["properties"].get(forbidden).is_none());
         }
@@ -5183,155 +4948,53 @@ mod tests {
     }
 
     #[test]
-    fn documents_independent_delivery_and_timetable_version_lifecycles() {
-        let document = school_api_value().expect("document should serialize");
+    fn documents_current_delivery_timetable_and_exam_authority() {
+        let document = school_api_value().unwrap();
         assert_operations(
             &document,
             &[
                 (
-                    "/api/academic/timetable-versions",
+                    "/api/academic/delivery/workspace",
                     "get",
-                    "listTimetableVersions",
+                    "getDeliveryWorkspace",
                 ),
-                (
-                    "/api/academic/timetable-versions/resolve",
-                    "get",
-                    "resolveTimetableVersion",
-                ),
-                (
-                    "/api/academic/timetable-versions/{source_id}/clone",
-                    "post",
-                    "cloneTimetableVersion",
-                ),
-                (
-                    "/api/academic/timetable-versions/{version_id}/delivery-source",
-                    "put",
-                    "updateTimetableDeliverySource",
-                ),
+                ("/api/academic/timetable", "get", "getTimetable"),
+                ("/api/academic/timetable", "post", "createTimetable"),
             ],
         );
-
-        assert_operations(
-            &document,
-            &[
-                (
-                    "/api/academic/delivery-versions",
-                    "get",
-                    "listDeliveryVersions",
-                ),
-                (
-                    "/api/academic/delivery-versions/{id}",
-                    "get",
-                    "getDeliveryVersion",
-                ),
-                (
-                    "/api/academic/timetable-versions",
-                    "post",
-                    "createTimetableVersion",
-                ),
-                (
-                    "/api/academic/timetable-versions/{version_id}/publication-preview",
-                    "post",
-                    "previewTimetablePublication",
-                ),
-                (
-                    "/api/academic/timetable-versions/{version_id}/publish",
-                    "post",
-                    "publishTimetableVersion",
-                ),
-                (
-                    "/api/academic/timetable-versions/{version_id}/delete-draft",
-                    "post",
-                    "deleteTimetableDraft",
-                ),
-            ],
-        );
-        assert!(
-            document["paths"]["/api/academic/timetable-versions/{version_id}/targets"].is_null()
-        );
+        for path in [
+            "/api/academic/delivery-versions",
+            "/api/academic/term-change-sets",
+            "/api/academic/timetable-versions",
+            "/api/academic/exam-schedules/{round_id}/publish",
+            "/api/academic/exam-schedules/{round_id}/source-preview",
+            "/api/academic/exam-schedules/{round_id}/source-sync",
+        ] {
+            assert!(document["paths"].get(path).is_none(), "retired {path}");
+        }
         let schemas = &document["components"]["schemas"];
-        assert!(required(&schemas["TimetableVersion"]).contains(&"deliveryVersionId"));
-        let alignment = &schemas["UpdateTimetableDeliverySourceRequest"];
-        assert_eq!(required(alignment), vec!["rowVersion"]);
-        assert_eq!(alignment["properties"].as_object().unwrap().len(), 1);
-        assert_eq!(alignment["properties"]["rowVersion"]["type"], "integer");
-        assert_eq!(alignment["properties"]["rowVersion"]["format"], "int64");
-        assert_eq!(alignment["additionalProperties"], false);
-        let preview = &schemas["TimetablePublicationPreview"];
-        assert!(preview["properties"]
-            .get("applicableDeliveryPublication")
-            .is_none());
-        assert!(required(preview).contains(&"deliveryPublication"));
-        assert!(required(preview).contains(&"latestDeliveryPublication"));
-        assert!(schemas["TimetablePublicationFindingCode"]["enum"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("delivery_source_outdated")));
-        assert_eq!(
-            schemas["TimetableDraftSourceConflictCode"]["enum"],
-            serde_json::json!(["TIMETABLE_DELIVERY_SOURCE_OUTDATED"])
-        );
-        let source_conflict = &schemas["TimetableDraftSourceConflict"];
-        assert_eq!(required(source_conflict), vec!["code"]);
-        assert_eq!(source_conflict["properties"].as_object().unwrap().len(), 1);
-        assert_eq!(source_conflict["additionalProperties"], false);
-        assert_eq!(
-            source_conflict["properties"]["code"]["$ref"],
-            "#/components/schemas/TimetableDraftSourceConflictCode"
-        );
-        let envelope = &schemas["ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict"];
-        assert!(
-            !required(envelope).contains(&"data"),
-            "ordinary409 has no definitive source code"
-        );
-        assert_eq!(required(&envelope["properties"]["data"]), vec!["code"]);
-        assert_eq!(
-            envelope["properties"]["data"]["properties"]["code"]["$ref"],
-            "#/components/schemas/TimetableDraftSourceConflictCode"
-        );
-        for (path, method) in [
-            ("/api/academic/timetable-blocks/ordinary", "post"),
-            ("/api/academic/timetable-blocks/synchronized", "post"),
-            ("/api/academic/timetable-blocks/structural", "post"),
-            ("/api/academic/timetable-blocks/{block_id}", "put"),
-            ("/api/academic/timetable-blocks/{block_id}", "delete"),
-            (
-                "/api/academic/timetable-blocks/{block_id}/targets",
-                "delete",
-            ),
-            ("/api/academic/timetable-blocks/{block_id}/sync", "post"),
-            ("/api/academic/timetable-blocks/{block_id}/restore", "post"),
-            (
-                "/api/academic/timetable-blocks/series/{series_id}",
-                "delete",
-            ),
-            ("/api/academic/timetable-blocks/swap", "post"),
-            (
-                "/api/academic/timetable-templates/{template_id}/apply",
-                "post",
-            ),
-            ("/api/academic/timetable-blocks/clear", "delete"),
-            ("/api/academic/teacher-handoffs/{id}/apply", "post"),
+        for field in [
+            "academicYearId",
+            "academicTermId",
+            "rowVersion",
+            "offerings",
+            "courseMetadata",
         ] {
-            assert_eq!(document["paths"][path][method]["responses"]["409"]["content"]["application/json"]["schema"]["$ref"],"#/components/schemas/ApiErrorResponseWithOptionalData_TimetableDraftSourceConflict","{method} {path}");
+            assert!(required(&schemas["DeliveryWorkspace"]).contains(&field));
         }
-        assert!(schemas["TimetableVersion"]["properties"]["changeSetId"].is_null());
-        assert!(
-            schemas["AcademicTermChangeSet"]["properties"]["targetTimetableVersionId"].is_null()
-        );
-        assert!(
-            schemas["AcademicTermChangeSet"]["properties"]["targetDeliveryVersionId"].is_object()
-        );
-        for schema_name in [
+        for name in [
+            "DeliveryVersion",
+            "DeliverySnapshot",
             "TimetableVersion",
-            "TimetableVersionTarget",
-            "TimetableVersionStatus",
-            "TimetableVersionDisplayState",
-            "CloneTimetableVersionRequest",
+            "AcademicTermChangeSet",
+            "ExamSourcePreview",
+            "SyncExamSourcesRequest",
         ] {
-            assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
+            assert!(schemas.get(name).is_none(), "retired {name}");
         }
-        for schema_name in [
+        assert!(required(&schemas["DeliveryOffering"]).contains(&"weeklyPeriodTarget"));
+        assert!(required(&schemas["DeliveryTeacher"]).contains(&"isActive"));
+        for name in [
             "CreateOrdinaryTimetableBlockRequest",
             "CreateSynchronizedTimetableBlockRequest",
             "CreateStructuralTimetableBlocksRequest",
@@ -5342,41 +5005,27 @@ mod tests {
             "ApplyTemplateRequest",
             "ClearTimetableRequest",
         ] {
-            assert!(
-                required(&schemas[schema_name]).contains(&"timetableVersionId"),
-                "{schema_name} must require timetableVersionId"
-            );
+            {
+                assert!(required(&schemas[name]).contains(&"timetableId"), "{name}");
+            }
         }
-        assert!(required(&schemas["LearningGroup"]).contains(&"teachersLocked"));
-        assert!(schemas["UpdateTimetableBlockRequest"]["properties"]["instructorIds"].is_object());
-        assert!(required(&schemas["LearningGroupTeacherAssignment"]).contains(&"startsOn"));
-        assert!(required(&schemas["LearningGroupTeacherAssignment"]).contains(&"displayName"));
-        assert!(required(&schemas["HomeroomDeliveryWorkspace"]).contains(&"deliveryVersionId"));
-        assert!(contains_null(
-            &schemas["HomeroomDeliveryWorkspace"]["properties"]["deliveryVersionId"]
-        ));
-        assert!(required(&schemas["HomeroomDeliveryItem"]).contains(&"weeklyPeriodTarget"));
-        assert!(contains_null(
-            &schemas["HomeroomDeliveryItem"]["properties"]["weeklyPeriodTarget"]
-        ));
-        assert!(
-            schemas["UpdateLearningOfferingRequest"]["properties"]["weeklyPeriodTarget"].is_null()
-        );
-        assert!(schemas["CourseOfferingSnapshot"]["properties"]["weeklyPeriodTarget"].is_null());
-
-        assert_eq!(
-            query_contract(&document, "/api/me/timetable", "get"),
-            BTreeSet::from([
-                ("academicTermId".to_string(), true),
-                ("date".to_string(), true),
-            ])
-        );
-        assert!(query_contract(
-            &document,
-            "/api/parent/students/{student_id}/timetable",
-            "get"
-        )
-        .contains(&("date".to_string(), true)));
+        assert!(required(&schemas["LearningGroup"]).contains(&"registrationOpen"));
+        assert!(schemas["LearningGroup"]["properties"]
+            .get("teachersLocked")
+            .is_none());
+        assert!(schemas["LearningGroupTeacherAssignment"]["properties"]
+            .get("startsOn")
+            .is_none());
+        assert!(schemas["HomeroomDeliveryWorkspace"]["properties"]
+            .get("deliveryVersionId")
+            .is_none());
+        assert!(required(&schemas["ExamRound"]).contains(&"rowVersion"));
+        assert!(required(&schemas["UpdateExamRoundRequest"]).contains(&"rowVersion"));
+        assert!(schemas["ExamRound"]["properties"].get("status").is_none());
+        assert!(required(&schemas["ExamScheduleReadiness"]).contains(&"complete"));
+        assert!(schemas["ExamScheduleWorkspace"]["properties"]
+            .get("sourcePreview")
+            .is_none());
     }
 
     #[test]
@@ -5395,7 +5044,7 @@ mod tests {
             BTreeSet::from([
                 ("academicTermId".to_string(), true),
                 ("academicYearId".to_string(), true),
-                ("timetableVersionId".to_string(), true),
+                ("timetableId".to_string(), true),
             ])
         );
 
@@ -5415,7 +5064,9 @@ mod tests {
         assert!(required(learning_group).contains(&"subjectType"));
         assert!(contains_null(&learning_group["properties"]["subjectType"]));
         for field in [
-            "version",
+            "timetable",
+            "deliveryRowVersion",
+            "totalBlockCount",
             "bellPeriods",
             "blocks",
             "learningGroups",
@@ -5433,18 +5084,18 @@ mod tests {
     #[test]
     fn draft_anchor_schema_matches_serde_wire_field_names() {
         let document = school_api_value().unwrap();
-        let variants = document["components"]["schemas"]["DraftAnchor"]["oneOf"]
+        let variants = document["components"]["schemas"]["TimetableAnchor"]["oneOf"]
             .as_array()
             .unwrap();
         let period = uuid::Uuid::new_v4();
         for anchor in [
-            DraftAnchor::Cell {
+            TimetableAnchor::Cell {
                 day_of_week: "MON".into(),
                 bell_schedule_period_id: period,
                 u: 0.2,
                 v: 0.8,
             },
-            DraftAnchor::Block {
+            TimetableAnchor::Block {
                 block_id: uuid::Uuid::new_v4(),
                 u: 0.2,
                 v: 0.8,
@@ -5490,8 +5141,9 @@ mod tests {
         ] {
             assert!(!schemas[schema_name].is_null(), "missing {schema_name}");
         }
-        assert!(required(&schemas["TimetableBlockPlacementPreviewRequest"])
-            .contains(&"timetableVersionId"));
+        assert!(
+            required(&schemas["TimetableBlockPlacementPreviewRequest"]).contains(&"timetableId")
+        );
         assert!(required(&schemas["TimetableBlockPlacementPreviewRequest"])
             .contains(&"targetBellSchedulePeriodId"));
         assert!(required(&schemas["TimetableBlockPlacementPreview"]).contains(&"conflicts"));
@@ -7620,8 +7272,8 @@ mod tests {
         for field in [
             "rowVersion",
             "requireHomeroomPlacements",
-            "requirePublishedOfferings",
-            "requirePublishedTimetable",
+            "requireOfferings",
+            "requireTimetable",
         ] {
             assert!(update["required"]
                 .as_array()

@@ -1,17 +1,6 @@
 <script lang="ts">
 	import { SCHOOL_WEEKDAYS, periodAllowsSchoolDay } from '#lib/academic-core/school-schedule.js';
 	import {
-		initialTimetablePublicationDate,
-		draftSaveOutcome,
-		timetableSourceIsCurrent
-	} from '#lib/academic/timetable/latest-delivery-source.js';
-	import {
-		publicationDateRulesLabel,
-		publicationEffectiveLabel,
-		publicationSourceLabel,
-		timetablePublicationLabel
-	} from '#lib/academic/publication-presentation.js';
-	import {
 		orderTimetableHomerooms,
 		relatedSynchronizedDemands
 	} from '#lib/academic/timetable/demand-ordering.js';
@@ -28,7 +17,7 @@
 	import { resolve } from '$app/paths';
 	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import {
-		applyDraftPatch,
+		applyTimetablePatch,
 		InvalidDraftLookupPatch
 	} from '#lib/academic/timetable/collaboration-patch.js';
 	import { placementSourceKey } from '#lib/academic/timetable/collaboration-source.js';
@@ -46,7 +35,7 @@
 		timetableCollaborators,
 		timetableRemotePointers
 	} from '#lib/academic/timetable/collaboration-view.js';
-	import { sameDraftTarget } from '#lib/academic/timetable/collaboration-session.js';
+	import { sameTimetableTarget } from '#lib/academic/timetable/collaboration-session.js';
 	import { timetableEditRoomOptions } from '#lib/academic/timetable/collaboration-presentation.js';
 	import TimetableRemotePointers from '#lib/components/academic/timetable/TimetableRemotePointers.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -54,7 +43,6 @@
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 
 	import { buildAcademicTimetablePdfDownload } from '#lib/utils/academic-timetable-pdf.js';
-	import { selectPreferredBoardVersion } from '#lib/academic/timetable/version-selection.js';
 	import {
 		blockBelongsToRow,
 		blockHomeroomIds,
@@ -75,7 +63,6 @@
 		swapTimetableBlocksOptimistically
 	} from '#lib/academic/timetable/optimistic-block.js';
 
-	import { DraftLeaseError } from '#lib/academic/timetable/collaboration-session.js';
 	import { placementFailureMessage } from '#lib/academic/timetable/placement-preview.js';
 
 	import {
@@ -85,15 +72,8 @@
 	} from '#lib/academic/timetable/workspace-controller.svelte.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import {
-		cloneTimetableVersion,
-		createTimetableVersion,
-		deleteTimetableDraft,
-		previewTimetablePublication,
-		publishTimetableVersion,
-		updateTimetableDeliverySource,
-		isTimetableDeliverySourceOutdated,
-		TimetableDeliverySourceOutdatedError,
-		type TimetablePublicationPreview,
+		createTimetable,
+		getTimetable,
 		createOrdinaryTimetableBlock,
 		createStructuralTimetableBlocks,
 		createSynchronizedTimetableBlock,
@@ -101,7 +81,6 @@
 		deleteTimetableBlockSeries,
 		getTimetableBlockWorkspace,
 		timetableMutationOptions,
-		listTimetableVersions,
 		previewTimetableBlockPlacement,
 		removeTimetableBlockTarget,
 		swapTimetableBlocks,
@@ -113,15 +92,15 @@
 		type TimetableBlockPlacementSource,
 		type TimetableStructuralKind,
 		type TimetableTargetKind,
-		type TimetableVersion,
 		type UpdateTimetableBlockRequest,
 		type TimetableBlockWorkspace,
-		type DraftAnchor,
-		type DraftContext,
-		type DraftEventEnvelope,
-		type DraftPresenceUpdate,
-		type DraftTarget,
-		type DraftMutationIdentity
+		type Timetable,
+		type TimetableAnchor,
+		type TimetableContext,
+		type TimetableEventEnvelope,
+		type TimetablePresenceUpdate,
+		type TimetableTarget,
+		type TimetableMutationIdentity
 	} from '#lib/api/timetable.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import TimetableBoard from '#lib/components/academic/timetable/TimetableBoard.svelte';
@@ -144,10 +123,8 @@
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
-	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -176,8 +153,6 @@
 		FileSpreadsheet,
 		Download,
 		Pencil,
-		MoreHorizontal,
-		Send,
 		LoaderCircle,
 		Plus,
 		Trash2
@@ -196,7 +171,7 @@
 		cancelled: boolean;
 		targetKey: string;
 		targetPromise: Promise<OwnedDraftLease> | null;
-		requestedTarget: DraftTarget | null;
+		requestedTarget: TimetableTarget | null;
 		targetError: Error | null;
 	};
 	type OptimisticPlacementOperation = {
@@ -287,7 +262,7 @@
 		epoch: number;
 		versionId: string;
 		intent: FailedIntent;
-		outcome: ReturnType<typeof draftSaveOutcome>;
+		outcome: 'not_submitted' | 'unknown';
 		message: string;
 		reviewError?: string;
 	};
@@ -338,36 +313,19 @@
 	const academicTermId = $derived(data.academicTermId);
 	const academicYearId = $derived(data.academicYearId);
 	const request = new LatestRequest();
-	const versionsRequest = new LatestRequest();
 	const reloadRequest = new LatestRequest();
 	const routePromiseEpochs = new WeakMap<object, number>();
 	let workspaceReadVersionId: string | null = null;
 
-	let versions = $state<TimetableVersion[]>([]);
 	let controller = $state.raw<TimetableWorkspaceController | null>(null);
 	let loading = $state(true);
-	let versionsLoading = $state(true);
-	let versionsError = $state('');
 	let activeContextKey = '';
-	let activeRouteVersionId: string | null = null;
-	let versionsRevision = 0;
 	let workspaceRevision = 0;
 	let boardRetryVersionId = '';
 	let busy = $state(false);
-	let draftChoiceOpen = $state(false);
-	let draftChoiceId = $state('');
-	let publishOpen = $state(false);
-	let deleteDraftOpen = $state(false);
-	let deleteDraftConfirmation = $state<{
-		id: string;
-		rowVersion: number;
-		count: number;
-		label: string;
-	} | null>(null);
 	let failedSaves = $state.raw<FailedSave[]>([]);
 	let retainedRemovalTarget = $state.raw<OptimisticRemovalOperation['target']>(null);
 	let reviewedIntentId = $state<string | null>(null);
-	let automaticAlignmentPaused: TimetableWorkspaceController | null = null;
 	let recoveryEpoch = authStore.sessionEpoch;
 	let lifecycleToken: symbol | null = null;
 	const currentFailedSaves = $derived(
@@ -389,25 +347,7 @@
 				}
 			: null
 	);
-	let publicationDate = $state('');
-	let sourceSyncTarget = $state.raw<TimetableWorkspaceController | null>(null);
-	let sourceFailure = $state.raw<{
-		controller: TimetableWorkspaceController;
-		context: string;
-		epoch: number;
-		latestId: string;
-		message: string;
-	} | null>(null);
-	let sourceSyncTask: {
-		controller: TimetableWorkspaceController;
-		promise: Promise<boolean>;
-		token: symbol;
-		admission: ReturnType<typeof sourceAdmission>;
-		reconcileRequested: boolean;
-	} | null = null;
 	let reclaimEditor = $state.raw<TimetableWorkspaceController | null>(null);
-	let publicationPreview = $state.raw<TimetablePublicationPreview | null>(null);
-	let publicationKey = '';
 	const pendingWaiters = new SvelteSet<() => void>();
 
 	let pendingBlockIds = $state.raw<Set<string>>(new Set());
@@ -456,15 +396,15 @@
 	let editInteraction = $state.raw<LocalInteraction | null>(null);
 	let removeInteraction = $state.raw<LocalInteraction | null>(null);
 	let interactionRevision = $state(0);
-	let currentAnchor = $state.raw<DraftAnchor | null>(null);
+	let currentAnchor = $state.raw<TimetableAnchor | null>(null);
 	let pointerOwnerId = $state<string | null>(null);
 	let editorOrigin = $state.raw<{
 		versionId: string;
 		blockId: string;
-		context: DraftContext;
+		context: TimetableContext;
 	} | null>(null);
 	let domRevision = $state(0);
-	let queuedDraftEvents: DraftEventEnvelope[] = [];
+	let queuedDraftEvents: TimetableEventEnvelope[] = [];
 	let draftQueueOverflow = false;
 	let queuedDraftSessionEpoch = authStore.sessionEpoch;
 	let draftSocketSessionEpoch: number | null = null;
@@ -473,7 +413,7 @@
 	let lastPointerPoint: { x: number; y: number } | null = null;
 	let resampleSenderLayout = () => {};
 	let presenceCoalescer: ReturnType<
-		typeof createPointerCoalescer<DraftPresenceUpdate, ReturnType<typeof setTimeout>>
+		typeof createPointerCoalescer<TimetablePresenceUpdate, ReturnType<typeof setTimeout>>
 	> | null = null;
 	const editorContext = $derived.by(() => {
 		const origin = editorOrigin;
@@ -482,7 +422,7 @@
 			!editOpen ||
 			!origin ||
 			!workspace ||
-			origin.versionId !== workspace.version.id ||
+			origin.versionId !== workspace.timetable.id ||
 			origin.blockId !== selectedBlockId ||
 			origin.context.viewMode !== activeView ||
 			!workspace.blocks.some((block) => block.id === origin.blockId)
@@ -496,7 +436,7 @@
 			return { ...origin.context, viewId: null };
 		return origin.context;
 	});
-	const collaborationContext = $derived<DraftContext>({
+	const collaborationContext = $derived<TimetableContext>({
 		viewMode: activeView,
 		viewId:
 			activeView === 'wholeSchool'
@@ -531,7 +471,7 @@
 	});
 	const socketContextKey = $derived.by(
 		() =>
-			`${academicTermId ?? ''}:${$authStore.user?.id ?? ''}:${$authStore.session?.sessionId ?? ''}:${controller?.workspace.version.id ?? ''}:${canRead}`
+			`${academicTermId ?? ''}:${$authStore.user?.id ?? ''}:${$authStore.session?.sessionId ?? ''}:${controller?.workspace.timetable.id ?? ''}:${canRead}`
 	);
 	const editCanEdit = $derived.by(() => {
 		void interactionRevision;
@@ -591,7 +531,6 @@
 		presenceCoalescer?.dispose();
 		disposeInteraction(removeInteraction);
 		request.abort();
-		versionsRequest.abort();
 		reloadRequest.abort();
 	});
 
@@ -604,8 +543,7 @@
 			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
 			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_TREE,
 			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED,
-			PERMISSIONS.ACADEMIC_TIMETABLE_PUBLISH_SCHOOL
+			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED
 		)
 	);
 	const canManage = $derived(
@@ -616,26 +554,15 @@
 			PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_ASSIGNED
 		)
 	);
-	const sourceCurrent = $derived(!controller || timetableSourceIsCurrent(controller.workspace));
-	const sourceSyncing = $derived(controller !== null && sourceSyncTarget === controller);
-	const sourceError = $derived(
-		sourceFailure?.controller === controller &&
-			sourceFailure.context === activeContextKey &&
-			sourceFailure.epoch === authStore.sessionEpoch
-			? sourceFailure.message
-			: ''
-	);
 	const canEdit = $derived(
 		Boolean(
 			canManage &&
 			controller?.canEdit &&
 			!busy &&
-			sourceCurrent &&
-			!sourceSyncing &&
 			(!saveError || (saveError.reviewable && reviewedIntentId !== null))
 		)
 	);
-	const selectedVersion = $derived(controller?.workspace.version ?? null);
+	const selectedVersion = $derived(controller?.workspace.timetable ?? null);
 	const canDownloadPdf = $derived(
 		Boolean(
 			canRead &&
@@ -645,8 +572,8 @@
 			pendingOperationCount === 0 &&
 			!controller?.isRefreshing &&
 			controller &&
-			controller.workspace.version.academicYearId === academicYearId &&
-			controller.workspace.version.academicTermId === academicTermId &&
+			controller.workspace.timetable.academicYearId === academicYearId &&
+			controller.workspace.timetable.academicTermId === academicTermId &&
 			controller.workspace.bellPeriods.some((period) => period.isActive) &&
 			controller.workspace.blocks.some((block) => block.isActive) &&
 			(activeView === 'wholeSchool'
@@ -654,26 +581,11 @@
 				: controller.selectedRow)
 		)
 	);
-	let versionSelectValue = $derived(selectedVersion?.id ?? '');
 
 	const selectedBlock = $derived(
 		controller?.workspace.blocks.find((block) => block.id === selectedBlockId) ?? null
 	);
 	const canManageSchool = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_MANAGE_SCHOOL));
-	const canPublish = $derived($can.has(PERMISSIONS.ACADEMIC_TIMETABLE_PUBLISH_SCHOOL));
-	const canAlignLatest = $derived(canManageSchool || canPublish);
-	const sameSourceDrafts = $derived(
-		versions.filter(
-			(version) => version.status === 'draft' && version.sourceVersionId === selectedVersion?.id
-		)
-	);
-	const draftHasNewDelivery = $derived(
-		Boolean(
-			selectedVersion?.status === 'draft' &&
-			controller?.workspace.latestDeliveryVersionId &&
-			controller.workspace.latestDeliveryVersionId !== selectedVersion.deliveryVersionId
-		)
-	);
 	const groupsWithoutTeachers = $derived(
 		controller?.workspace.learningGroups.filter((group) => group.eligibleInstructors.length === 0)
 			.length ?? 0
@@ -740,14 +652,12 @@
 			: 'homeroom';
 	}
 
-	const versionLabel = timetablePublicationLabel;
-
 	function initializeController(workspace: TimetableBlockWorkspace): void {
-		const previous = controller?.workspace.version;
+		const previous = controller?.workspace.timetable;
 		const sameWorkspace =
-			previous?.id === workspace.version.id &&
-			previous.academicYearId === workspace.version.academicYearId &&
-			previous.academicTermId === workspace.version.academicTermId;
+			previous?.id === workspace.timetable.id &&
+			previous.academicYearId === workspace.timetable.academicYearId &&
+			previous.academicTermId === workspace.timetable.academicTermId;
 		const keepEditing = sameWorkspace && controller?.editing;
 		const next = createTimetableWorkspaceController(
 			workspace,
@@ -759,13 +669,12 @@
 		const ownerId = (page.shallow?.url ?? page.url).searchParams.get('ownerId');
 		if (ownerId && activeView !== 'wholeSchool') next.selectOwner(ownerId);
 		controller = next;
-		invalidatePublicationPreview(workspace);
 	}
 
 	function syncUrl(): void {
 		if (!controller) return;
 		const next = new URL((page.shallow?.url ?? page.url).href);
-		next.searchParams.set('timetableVersionId', controller.workspace.version.id);
+		next.searchParams.set('timetableId', controller.workspace.timetable.id);
 		next.searchParams.set('view', activeView);
 		if (activeView !== 'wholeSchool' && controller.selectedOwnerId) {
 			next.searchParams.set('ownerId', controller.selectedOwnerId);
@@ -781,7 +690,7 @@
 
 	function notifyReadFailure(message: string, retry: () => void | Promise<void>): void {
 		const contextKey = activeContextKey;
-		const versionId = controller?.workspace.version.id ?? boardRetryVersionId;
+		const versionId = controller?.workspace.timetable.id ?? boardRetryVersionId;
 		toast.error(message, {
 			action: {
 				label: 'ลองใหม่',
@@ -789,7 +698,7 @@
 					if (
 						!disposed &&
 						activeContextKey === contextKey &&
-						(controller?.workspace.version.id ?? boardRetryVersionId) === versionId
+						(controller?.workspace.timetable.id ?? boardRetryVersionId) === versionId
 					)
 						void retry();
 				}
@@ -805,33 +714,24 @@
 			request.isCurrent(revision) &&
 			academicTermId === termId &&
 			academicYearId === yearId;
-		workspaceRevision += 1;
-		versionsRevision += 1;
+		workspaceRevision++;
 		loading = true;
-		versionsLoading = true;
 		errorMessage = '';
-		versionsError = '';
 		try {
-			const loadedVersions = await listTimetableVersions(termId, { signal });
+			const timetable = await getTimetable(termId, { signal });
 			if (!current()) return;
-			versions = loadedVersions;
-			versionsLoading = false;
-			const selected = selectPreferredBoardVersion(
-				loadedVersions,
-				(page.shallow?.url ?? page.url).searchParams.get('timetableVersionId')
-			);
-			if (!selected) {
+			if (!timetable) {
 				controller = null;
 				return;
 			}
-			workspaceReadVersionId = selected.id;
+			workspaceReadVersionId = timetable.id;
 			const workspace = await getTimetableBlockWorkspace(
-				{ academicYearId: yearId, academicTermId: termId, timetableVersionId: selected.id },
+				{ academicYearId: yearId, academicTermId: termId, timetableId: timetable.id },
 				{ signal }
 			);
 			if (!current()) return;
 			initializeController(workspace);
-			boardRetryVersionId = workspace.version.id;
+			boardRetryVersionId = timetable.id;
 			syncUrl();
 		} catch (error) {
 			if (!isAbortError(error) && current()) {
@@ -839,71 +739,14 @@
 				notifyReadFailure(errorMessage, () => loadContext(termId, yearId));
 			}
 		} finally {
-			if (current()) {
-				loading = false;
-				versionsLoading = false;
-			}
+			if (current()) loading = false;
 		}
 	}
 
-	async function refreshVersions(): Promise<void> {
-		if (!academicTermId) return;
-		const termId = academicTermId;
-		const admission = readContextAdmission();
-		const originController = controller;
-		const selectionRevision = workspaceRevision;
-		const { revision, signal } = versionsRequest.begin();
-		const current = () =>
-			admission.current() && versionsRequest.isCurrent(revision) && academicTermId === termId;
-		versionsRevision += 1;
-		versionsLoading = true;
-		versionsError = '';
-		try {
-			const loaded = await listTimetableVersions(termId, { signal });
-			if (!current()) return;
-			versions = loaded.map((version) =>
-				controller?.workspace.version.id === version.id &&
-				controller.workspace.version.rowVersion > version.rowVersion
-					? controller.workspace.version
-					: version
-			);
-			if (
-				workspaceRevision !== selectionRevision ||
-				controller !== originController ||
-				pendingOperationCount > 0
-			)
-				return;
-			const missingVersion =
-				originController &&
-				!loaded.some((version) => version.id === originController.workspace.version.id);
-			if (missingVersion) controller = null;
-			if (!controller) {
-				const preferred = selectPreferredBoardVersion(
-					loaded,
-					missingVersion
-						? originController.workspace.version.sourceVersionId
-						: boardRetryVersionId ||
-								(page.shallow?.url ?? page.url).searchParams.get('timetableVersionId')
-				);
-				if (preferred) {
-					const ownedSelectionRevision = workspaceRevision + 1;
-					await loadVersion(preferred.id, true);
-					if (
-						!current() ||
-						workspaceRevision !== ownedSelectionRevision ||
-						selectedVersion?.id !== preferred.id
-					)
-						return;
-				}
-				if (missingVersion && current()) toast.info('แบบร่างนี้ถูกลบแล้ว กลับไปดูตารางต้นทาง');
-			}
-		} catch (error) {
-			if (!isAbortError(error) && current()) {
-				versionsError = error instanceof Error ? error.message : 'โหลดรุ่นตารางสอนไม่สำเร็จ';
-				notifyReadFailure(versionsError, refreshVersions);
-			}
-		} finally {
-			if (current()) versionsLoading = false;
+	async function refreshTimetable(): Promise<void> {
+		if (academicTermId && academicYearId) {
+			if (controller) await reload();
+			else await loadContext(academicTermId, academicYearId);
 		}
 	}
 
@@ -911,7 +754,7 @@
 		if (
 			!academicTermId ||
 			!academicYearId ||
-			(!force && versionId === controller?.workspace.version.id)
+			(!force && versionId === controller?.workspace.timetable.id)
 		)
 			return;
 
@@ -929,7 +772,7 @@
 		workspaceReadVersionId = versionId;
 		await waitForSaves();
 		if (!current()) return;
-		const retainCurrent = controller?.workspace.version.id === versionId;
+		const retainCurrent = controller?.workspace.timetable.id === versionId;
 		if (!retainCurrent) {
 			controller = null;
 		}
@@ -938,7 +781,7 @@
 		errorMessage = '';
 		try {
 			const workspace = await getTimetableBlockWorkspace(
-				{ academicYearId: yearId, academicTermId: termId, timetableVersionId: versionId },
+				{ academicYearId: yearId, academicTermId: termId, timetableId: versionId },
 				{ signal }
 			);
 			if (!current()) return;
@@ -946,7 +789,7 @@
 			syncUrl();
 		} catch (error) {
 			if (!isAbortError(error) && current()) {
-				errorMessage = error instanceof Error ? error.message : 'เปลี่ยนรุ่นตารางสอนไม่สำเร็จ';
+				errorMessage = error instanceof Error ? error.message : 'โหลดตารางสอนไม่สำเร็จ';
 				notifyReadFailure(errorMessage, () => loadVersion(versionId, true));
 			}
 		} finally {
@@ -979,7 +822,7 @@
 				{
 					academicYearId: yearId,
 					academicTermId: termId,
-					timetableVersionId: admission.versionId
+					timetableId: admission.versionId
 				},
 				{ signal }
 			);
@@ -990,7 +833,6 @@
 			}
 			const previousOwnerId = targetController.selectedOwnerId;
 			targetController.setWorkspace(workspace);
-			invalidatePublicationPreview(workspace);
 			if (previousOwnerId !== targetController.selectedOwnerId) {
 				cancelPlacement();
 				currentAnchor = null;
@@ -1005,7 +847,13 @@
 				error.status === 404 &&
 				controller === targetController
 			) {
-				await refreshVersions();
+				// Resolve this explicit term once. A missing current resource must not
+				// recurse through reload while the missing controller is still present.
+				targetController.setRefreshing(false);
+				controller = null;
+				boardRetryVersionId = '';
+				workspaceReadVersionId = '';
+				await loadContext(termId, yearId);
 				return;
 			}
 			if (controller === targetController) {
@@ -1067,15 +915,10 @@
 			for (const resolvePending of pendingWaiters) resolvePending();
 			pendingWaiters.clear();
 		}
-		if (
-			pendingOperationCount === 0 &&
-			currentFailedSaves.some((failure) => failure.outcome === 'source_rejected')
-		)
-			requestDraftSnapshot();
 		if (pendingOperationCount === 0 && reconcileAfterPending) {
 			reconcileAfterPending = false;
 			void reload();
-			void refreshVersions();
+			void refreshTimetable();
 		}
 	}
 
@@ -1086,18 +929,18 @@
 			return;
 		}
 		void reload();
-		void refreshVersions();
+		void refreshTimetable();
 	}
 
-	function receiveDraftEvent(event: DraftEventEnvelope): void {
+	function receiveDraftEvent(event: TimetableEventEnvelope): void {
 		if (draftSocketSessionEpoch !== authStore.sessionEpoch) return;
 		ensureQueuedDraftSession();
-		if (event.type !== 'DraftStateSync' && event.type !== 'DraftPatched') return;
+		if (event.type !== 'TimetableStateSync' && event.type !== 'TimetablePatched') return;
 		const versionId =
-			event.type === 'DraftStateSync'
-				? event.payload.workspace.version.id
-				: event.payload.timetableVersionId;
-		if (disposed || versionId !== controller?.workspace.version.id) return;
+			event.type === 'TimetableStateSync'
+				? event.payload.workspace.timetable.id
+				: event.payload.timetableId;
+		if (disposed || versionId !== controller?.workspace.timetable.id) return;
 		// Canonical socket state supersedes any older read of this same workspace.
 		workspaceRevision++;
 		loading = false;
@@ -1109,7 +952,7 @@
 		}
 		if (pendingOperationCount > 0) {
 			// A reconnect baseline may precede an in-flight HTTP commit. Rejoin after it finishes.
-			if (event.type === 'DraftStateSync' || queuedDraftEvents.length >= 128) {
+			if (event.type === 'TimetableStateSync' || queuedDraftEvents.length >= 128) {
 				draftQueueOverflow = true;
 				queuedDraftEvents = [];
 			} else if (!draftQueueOverflow) queuedDraftEvents.push(event);
@@ -1118,17 +961,16 @@
 		applyCanonicalDraftEvent(event);
 	}
 
-	function applyCanonicalDraftEvent(event: DraftEventEnvelope): boolean {
+	function applyCanonicalDraftEvent(event: TimetableEventEnvelope): boolean {
 		if (!controller) return false;
 		const previousOwnerId = controller.selectedOwnerId;
-		if (event.type === 'DraftStateSync') {
-			if (event.payload.workspace.version.id !== controller.workspace.version.id) return false;
+		if (event.type === 'TimetableStateSync') {
+			if (event.payload.workspace.timetable.id !== controller.workspace.timetable.id) return false;
 			controller.setWorkspace(event.payload.workspace);
-			if (event.payload.workspace.version.status !== 'draft') controller.setEditing(false);
-		} else if (event.type === 'DraftPatched') {
-			if (event.payload.timetableVersionId !== controller.workspace.version.id) return false;
+		} else if (event.type === 'TimetablePatched') {
+			if (event.payload.timetableId !== controller.workspace.timetable.id) return false;
 			try {
-				controller.setWorkspace(applyDraftPatch(controller.workspace, event.payload));
+				controller.setWorkspace(applyTimetablePatch(controller.workspace, event.payload));
 			} catch (error) {
 				if (!(error instanceof InvalidDraftLookupPatch)) throw error;
 				queuedDraftEvents = [];
@@ -1142,15 +984,6 @@
 			pointerOwnerId = null;
 			syncUrl();
 		}
-		invalidatePublicationPreview(controller.workspace);
-		if (
-			event.type === 'DraftStateSync' &&
-			controller.editing &&
-			!timetableSourceIsCurrent(controller.workspace)
-		)
-			queueLatestDeliveryReconcile();
-		const version = controller.workspace.version;
-		versions = versions.map((item) => (item.id === version.id ? version : item));
 		return true;
 	}
 
@@ -1242,7 +1075,7 @@
 		candidate: TimetableBlockPlacementCandidate,
 		purpose: 'drag' | 'edit'
 	): LocalInteraction {
-		if (!controller) throw new Error('กรุณาเลือกรุ่นตารางสอน');
+		if (!controller) throw new Error('กรุณาเลือกตารางสอน');
 		const abort = new AbortController();
 		const interaction: LocalInteraction = {
 			controller,
@@ -1250,7 +1083,7 @@
 			candidate,
 			abort,
 			claim: claimDraftLease(
-				controller.workspace.version.id,
+				controller.workspace.timetable.id,
 				source,
 				candidate,
 				purpose,
@@ -1278,15 +1111,6 @@
 					interactionRevision++;
 				}
 				if (removeInteraction === interaction) removeInteraction = null;
-				if (
-					error instanceof DraftLeaseError &&
-					error.code === 'delivery_source_outdated' &&
-					controller === interaction.controller &&
-					controller.editing
-				) {
-					requestDraftSnapshot();
-					return;
-				}
 				toast.error(error instanceof Error ? error.message : 'ยังจองคาบนี้ไม่ได้');
 			});
 		return interaction;
@@ -1310,7 +1134,7 @@
 
 	function confirmInteractionTarget(
 		interaction: LocalInteraction,
-		target: DraftTarget | null,
+		target: TimetableTarget | null,
 		force = false
 	): Promise<OwnedDraftLease> {
 		const key = JSON.stringify({ target, candidate: interaction.candidate });
@@ -1589,8 +1413,8 @@
 		workspace: TimetableBlockWorkspace
 	): Promise<TimetableBlockPlacementPreview> {
 		return previewTimetableBlockPlacement({
-			academicTermId: workspace.version.academicTermId,
-			timetableVersionId: workspace.version.id,
+			academicTermId: workspace.timetable.academicTermId,
+			timetableId: workspace.timetable.id,
 			targetDayOfWeek: dayOfWeek,
 			targetBellSchedulePeriodId: periodId,
 			expectedTargetBlockId: target?.id ?? null,
@@ -1686,13 +1510,13 @@
 			...pendingPlacementSources,
 			placementSourceKey(interaction.source)
 		]);
-		const selectedTarget: DraftTarget = {
+		const selectedTarget: TimetableTarget = {
 			dayOfWeek,
 			bellSchedulePeriodId: periodId,
 			blockId: target?.id ?? null
 		};
 		const previewPromise = confirmInteractionTarget(interaction, selectedTarget).then((lease) => {
-			if (!ownsDraftLease(lease) || !sameDraftTarget(lease.target, selectedTarget))
+			if (!ownsDraftLease(lease) || !sameTimetableTarget(lease.target, selectedTarget))
 				throw new Error('สิทธิ์วางคาบเปลี่ยนไป กรุณาลองใหม่');
 			return requestPlacementPreview(
 				dayOfWeek,
@@ -1733,12 +1557,6 @@
 		try {
 			const preview = await operation.previewPromise;
 			if (!operation.admission.current()) return;
-			if (
-				preview.conflicts.some((conflict) => conflict.code === 'TIMETABLE_DELIVERY_SOURCE_OUTDATED')
-			)
-				throw new TimetableDeliverySourceOutdatedError(
-					'ข้อมูลเปิดสอนเปลี่ยนก่อนวางคาบ กรุณาทบทวนกับข้อมูลล่าสุด'
-				);
 			const failureMessage = placementFailureMessage(preview);
 			if (failureMessage) throw new Error(failureMessage);
 
@@ -1752,7 +1570,7 @@
 			const lease = await operation.interaction.claim;
 			if (!operation.admission.current()) return;
 			if (
-				!sameDraftTarget(lease.target, {
+				!sameTimetableTarget(lease.target, {
 					dayOfWeek: operation.dayOfWeek,
 					bellSchedulePeriodId: operation.periodId,
 					blockId: operation.targetBlock?.id ?? null
@@ -1767,8 +1585,8 @@
 				savedBlocks = [
 					await createOrdinaryTimetableBlock(
 						{
-							academicTermId: operation.controller.workspace.version.academicTermId,
-							timetableVersionId: operation.controller.workspace.version.id,
+							academicTermId: operation.controller.workspace.timetable.academicTermId,
+							timetableId: operation.controller.workspace.timetable.id,
 							learningGroupId: dragSource.source.learningGroupId,
 							dayOfWeek: operation.dayOfWeek,
 							bellSchedulePeriodId: operation.periodId,
@@ -1784,8 +1602,8 @@
 				savedBlocks = [
 					await createSynchronizedTimetableBlock(
 						{
-							academicTermId: operation.controller.workspace.version.academicTermId,
-							timetableVersionId: operation.controller.workspace.version.id,
+							academicTermId: operation.controller.workspace.timetable.academicTermId,
+							timetableId: operation.controller.workspace.timetable.id,
 							learningOfferingId: dragSource.source.learningOfferingId,
 							intendedHomeroomIds: dragSource.candidate.homeroomIds ?? [],
 							teacherIds: dragSource.candidate.teacherIds ?? [],
@@ -1805,7 +1623,7 @@
 				operation.mutationSent = true;
 				const swapped = await swapTimetableBlocks(
 					{
-						timetableVersionId: operation.controller.workspace.version.id,
+						timetableId: operation.controller.workspace.timetable.id,
 						blockAId: dragSource.source.blockId,
 						blockARowVersion: dragSource.source.rowVersion,
 						blockBId: other.id,
@@ -1820,7 +1638,7 @@
 					await updateTimetableBlock(
 						dragSource.source.blockId,
 						{
-							timetableVersionId: operation.controller.workspace.version.id,
+							timetableId: operation.controller.workspace.timetable.id,
 							rowVersion: dragSource.source.rowVersion,
 							dayOfWeek: operation.dayOfWeek,
 							bellSchedulePeriodId: operation.periodId
@@ -1940,7 +1758,7 @@
 				workspace,
 				`สรุปคาบสอนครู-${selectedTerm?.name ?? 'ภาคเรียน'}-${selectedYear?.name ?? 'ปีการศึกษา'}`
 			);
-			if (teacherCount === 0) toast.error('ไม่พบคาบที่มีครูผู้รับผิดชอบในรุ่นตารางที่เลือก');
+			if (teacherCount === 0) toast.error('ไม่พบคาบที่มีครูผู้รับผิดชอบในตารางปัจจุบัน');
 			else toast.success(`ดาวน์โหลดสรุปคาบสอน ${teacherCount} คนแล้ว`);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : 'ส่งออกสรุปคาบสอนไม่สำเร็จ');
@@ -2001,11 +1819,7 @@
 			epoch: admission.epoch,
 			versionId: admission.versionId,
 			intent: structuredClone($state.snapshot(intent)),
-			outcome: draftSaveOutcome(
-				mutationSent,
-				isTimetableDeliverySourceOutdated(error) ||
-					(error instanceof DraftLeaseError && error.code === 'delivery_source_outdated')
-			),
+			outcome: mutationSent ? 'unknown' : 'not_submitted',
 			message: error instanceof Error ? error.message : 'บันทึกรายการไม่สำเร็จ'
 		};
 		failedSaves = [...failedSaves.filter((item) => item.id !== failure.id), failure];
@@ -2019,30 +1833,18 @@
 
 	async function createFirstTable(): Promise<void> {
 		if (!academicTermId || busy || !canManageSchool) return;
-		const context = activeContextKey;
-		const epoch = authStore.sessionEpoch;
+		const admission = readContextAdmission();
 		const origin = controller;
-		const current = () =>
-			!disposed && activeContextKey === context && authStore.sessionEpoch === epoch;
-		const termId = academicTermId;
 		const finishBusy = beginLifecycle();
 		try {
-			const version = await createTimetableVersion({ academicTermId: termId });
-			if (!current() || controller !== origin) return;
-			versions = [...versions.filter((item) => item.id !== version.id), version];
-			await loadVersion(version.id, true);
-			const target = controller;
-			if (
-				current() &&
-				target?.workspace.version.id === version.id &&
-				(await ensureLatestDeliverySource(target, true)) &&
-				current() &&
-				controller === target &&
-				canManage
-			)
-				target.setEditing(true);
+			const timetable = await createTimetable({ academicTermId });
+			if (!admission.current() || controller !== origin) return;
+			await loadVersion(timetable.id, true);
+			if (admission.current() && controller?.workspace.timetable.id === timetable.id && canManage)
+				controller.setEditing(true);
 		} catch (error) {
-			if (current()) toast.error(error instanceof Error ? error.message : 'สร้างตารางสอนไม่สำเร็จ');
+			if (admission.current())
+				toast.error(error instanceof Error ? error.message : 'สร้างตารางสอนไม่สำเร็จ');
 		} finally {
 			finishBusy();
 		}
@@ -2054,9 +1856,9 @@
 	}
 	function sourceAdmission(target: TimetableWorkspaceController) {
 		const admission = readContextAdmission();
-		const versionId = target.workspace.version.id;
+		const versionId = target.workspace.timetable.id;
 		const current = () =>
-			admission.current() && controller === target && target.workspace.version.id === versionId;
+			admission.current() && controller === target && target.workspace.timetable.id === versionId;
 		return {
 			context: admission.context,
 			epoch: admission.epoch,
@@ -2069,8 +1871,8 @@
 	async function savedVersion(
 		target = controller,
 		allowReviewableFailure = false
-	): Promise<TimetableVersion> {
-		if (!target) throw new Error('กรุณาเลือกรุ่นตารางสอน');
+	): Promise<Timetable> {
+		if (!target) throw new Error('กรุณาเลือกตารางสอน');
 		const admission = sourceAdmission(target);
 		const requireCurrent = () => {
 			if (!admission.current()) throw new Error('บริบทตารางสอนเปลี่ยนไป');
@@ -2084,112 +1886,7 @@
 		await reload(undefined, false);
 		requireCurrent();
 		if (refreshError) throw new Error(refreshError);
-		return target.workspace.version;
-	}
-	function invalidatePublicationPreview(workspace: TimetableBlockWorkspace): void {
-		if (
-			publicationPreview &&
-			(publicationPreview.timetableVersionId !== workspace.version.id ||
-				publicationPreview.rowVersion !== workspace.version.rowVersion ||
-				publicationPreview.deliveryVersionId !== workspace.version.deliveryVersionId ||
-				publicationPreview.latestDeliveryVersionId !== workspace.latestDeliveryVersionId)
-		)
-			publicationPreview = null;
-		if (timetableSourceIsCurrent(workspace) && sourceFailure?.controller === controller)
-			sourceFailure = null;
-	}
-	function queueLatestDeliveryReconcile(): void {
-		if (
-			!controller?.editing ||
-			controller.workspace.version.status !== 'draft' ||
-			automaticAlignmentPaused === controller
-		)
-			return;
-		if (sourceSyncTask?.controller === controller && sourceSyncTask.admission.current()) {
-			sourceSyncTask.reconcileRequested = true;
-			return;
-		}
-		void ensureLatestDeliverySource(controller, false);
-	}
-	async function ensureLatestDeliverySource(
-		target: TimetableWorkspaceController,
-		retry: boolean
-	): Promise<boolean> {
-		const admission = sourceAdmission(target);
-		if (!admission.current()) return false;
-		if (retry && automaticAlignmentPaused === target) automaticAlignmentPaused = null;
-		if (
-			!retry &&
-			sourceFailure?.controller === target &&
-			sourceFailure.context === admission.context &&
-			sourceFailure.epoch === admission.epoch &&
-			sourceFailure.latestId === target.workspace.latestDeliveryVersionId
-		)
-			return false;
-		if (sourceSyncTask?.controller === target && sourceSyncTask.admission.current())
-			return sourceSyncTask.promise;
-		sourceSyncTarget = target;
-		const preserveEditor = editOpen && selectedBlockId !== null;
-		const token = Symbol();
-		const promise = (async () => {
-			try {
-				const version = await savedVersion(target, true);
-				if (!admission.current()) return false;
-				if (version.status !== 'draft') return false;
-				if (timetableSourceIsCurrent(target.workspace)) {
-					sourceFailure = null;
-					return true;
-				}
-				if (!canAlignLatest)
-					throw new Error(
-						'แบบร่างต้องใช้ข้อมูลเปิดสอนล่าสุด ให้ผู้จัดการตารางระดับโรงเรียนหรือผู้เผยแพร่ดำเนินการก่อนแก้ไข'
-					);
-				publicationPreview = null;
-				const aligned = await updateTimetableDeliverySource(version.id, {
-					rowVersion: version.rowVersion
-				});
-				if (!admission.current()) return false;
-				versions = versions.map((item) =>
-					item.id === aligned.id && item.rowVersion <= aligned.rowVersion ? aligned : item
-				);
-				requestDraftSnapshot();
-				await reload(undefined, false);
-				if (!admission.current()) return false;
-				if (refreshError) throw new Error(refreshError);
-				if (!timetableSourceIsCurrent(target.workspace))
-					throw new Error('ข้อมูลเปิดสอนเปลี่ยนอีกครั้ง กรุณาตรวจข้อมูลล่าสุดแล้วลองใหม่');
-				sourceFailure = null;
-				return true;
-			} catch (error) {
-				if (admission.current())
-					sourceFailure = {
-						controller: target,
-						context: admission.context,
-						epoch: admission.epoch,
-						latestId: target.workspace.latestDeliveryVersionId,
-						message: error instanceof Error ? error.message : 'อัปเดตข้อมูลเปิดสอนล่าสุดไม่สำเร็จ'
-					};
-				return false;
-			} finally {
-				const completed = sourceSyncTask?.token === token ? sourceSyncTask : null;
-				if (completed) {
-					sourceSyncTask = null;
-					sourceSyncTarget = null;
-				}
-				if (admission.current() && preserveEditor && editOpen) reclaimEditor = target;
-				const again = completed?.reconcileRequested ?? false;
-				if (
-					again &&
-					admission.current() &&
-					target.editing &&
-					!sourceFailure &&
-					!timetableSourceIsCurrent(target.workspace)
-				)
-					queueMicrotask(queueLatestDeliveryReconcile);
-			}
-		})();
-		sourceSyncTask = { controller: target, promise, token, admission, reconcileRequested: false };
-		return promise;
+		return target.workspace.timetable;
 	}
 
 	async function releaseIdleInteractions(): Promise<void> {
@@ -2224,58 +1921,17 @@
 			}
 		}
 	}
-	async function startEditing(draftId?: string): Promise<void> {
-		if (!controller || busy) return;
-		const reportFailure = lifecycleFailureReporter();
-		if (controller.workspace.version.status === 'draft') {
-			if (!canManage) return;
-			const target = controller;
-			const admission = sourceAdmission(target);
-			const finishBusy = beginLifecycle();
-			try {
-				if ((await ensureLatestDeliverySource(target, true)) && admission.current() && canManage)
-					target.setEditing(true);
-			} finally {
-				finishBusy();
-			}
-			return;
-		}
-		if (!canManageSchool) return;
-		if (sameSourceDrafts.length > 1 && !draftId) {
-			draftChoiceId = sameSourceDrafts[0].id;
-			draftChoiceOpen = true;
-			return;
-		}
-		const target = controller;
-		const admission = sourceAdmission(target);
+	async function startEditing(): Promise<void> {
+		if (!controller || busy || !canManage) return;
+		const target = controller,
+			admission = sourceAdmission(target);
 		const finishBusy = beginLifecycle();
 		try {
-			const source = await savedVersion(target);
-			if (!admission.current() || !canManageSchool) return;
-			const resume = draftId
-				? versions.find((version) => version.id === draftId)
-				: sameSourceDrafts[0];
-			const draft = await cloneTimetableVersion(source.id, {
-				sourceRowVersion: source.rowVersion,
-				resumeDraftId: resume?.id,
-				draftRowVersion: resume?.rowVersion
-			});
-			if (!admission.current()) return;
-			versions = [...versions.filter((item) => item.id !== draft.id), draft];
-			await loadVersion(draft.id, true);
-			const resumed = controller;
-			if (
-				admission.sameContext() &&
-				resumed?.workspace.version.id === draft.id &&
-				(await ensureLatestDeliverySource(resumed, true)) &&
-				admission.sameContext() &&
-				controller === resumed &&
-				canManage
-			)
-				resumed.setEditing(true);
-			draftChoiceOpen = false;
+			await savedVersion(target);
+			if (admission.current() && canManage) target.setEditing(true);
 		} catch (error) {
-			reportFailure(error, 'เปิดแบบร่างไม่สำเร็จ');
+			if (admission.current())
+				toast.error(error instanceof Error ? error.message : 'เปิดแก้ไขตารางไม่สำเร็จ');
 		} finally {
 			finishBusy();
 		}
@@ -2296,149 +1952,15 @@
 		}
 	}
 
-	async function openPublication(): Promise<void> {
-		if (!canPublish || busy || !controller) return;
-		const target = controller;
-		const admission = sourceAdmission(target);
-		const finishBusy = beginLifecycle();
-		try {
-			if (!(await ensureLatestDeliverySource(target, true)) || !admission.current()) return;
-			if (currentFailedSaves.length) {
-				toast.error('ยังมีรายการที่ไม่ได้บันทึก กรุณาทบทวนหรือละทิ้งรายการก่อนเผยแพร่');
-				return;
-			}
-			publicationDate = initialTimetablePublicationDate(target.workspace);
-			publicationPreview = null;
-			publicationKey = crypto.randomUUID();
-			publishOpen = true;
-		} finally {
-			finishBusy();
-		}
-	}
-	async function checkPublication(): Promise<void> {
-		if (!controller || busy || !publicationDate) return;
-		const target = controller;
-		const admission = sourceAdmission(target);
-		const chosenDate = publicationDate;
-		const finishBusy = beginLifecycle();
-		publicationPreview = null;
-		try {
-			if (
-				!(await ensureLatestDeliverySource(target, true)) ||
-				!admission.current() ||
-				publicationDate !== chosenDate
-			)
-				return;
-			const version = target.workspace.version;
-			const preview = await previewTimetablePublication(version.id, {
-				rowVersion: version.rowVersion,
-				effectiveFrom: chosenDate
-			});
-			if (
-				!admission.current() ||
-				publicationDate !== chosenDate ||
-				target.workspace.version.rowVersion !== preview.rowVersion
-			)
-				return;
-			publicationPreview = preview;
-		} catch (error) {
-			if (admission.current())
-				sourceFailure = {
-					controller: target,
-					context: admission.context,
-					epoch: admission.epoch,
-					latestId: target.workspace.latestDeliveryVersionId,
-					message: error instanceof Error ? error.message : 'ตรวจความพร้อมไม่สำเร็จ'
-				};
-		} finally {
-			finishBusy();
-		}
-	}
-
-	async function publishVersion(): Promise<void> {
-		if (!publicationPreview?.canPublish || !controller || busy || !canPublish) return;
-		const target = controller;
-		const admission = sourceAdmission(target);
-		const preview = publicationPreview;
-		const finishBusy = beginLifecycle();
-		const reportFailure = lifecycleFailureReporter();
-		try {
-			await waitForSaves();
-			if (!admission.current() || publicationPreview !== preview || !canPublish) return;
-			const version = await publishTimetableVersion(preview.timetableVersionId, {
-				rowVersion: preview.rowVersion,
-				effectiveFrom: preview.effectiveFrom,
-				previewHash: preview.previewHash,
-				idempotencyKey: publicationKey
-			});
-			if (!admission.current()) return;
-			target.setEditing(false);
-			publishOpen = false;
-			versions = versions.map((item) => (item.id === version.id ? version : item));
-			await loadVersion(version.id, true);
-			if (admission.sameContext() && controller?.workspace.version.id === version.id)
-				toast.success('เผยแพร่เวอร์ชันตารางสอนใหม่แล้ว');
-		} catch (error) {
-			reportFailure(error, 'เผยแพร่ตารางสอนไม่สำเร็จ');
-			if (admission.current()) publicationPreview = null;
-		} finally {
-			finishBusy();
-		}
-	}
-	async function openDeleteDraft(): Promise<void> {
-		if (!controller || busy || !canManageSchool) return;
-		const finishBusy = beginLifecycle();
-		const reportFailure = lifecycleFailureReporter();
-		try {
-			const version = await savedVersion();
-			const count = controller?.workspace.totalDraftBlockCount;
-			if (count === null || count === undefined) throw new Error('ไม่สามารถตรวจจำนวนคาบที่จะลบได้');
-			deleteDraftConfirmation = {
-				id: version.id,
-				rowVersion: version.rowVersion,
-				count,
-				label: versionLabel(version)
-			};
-			deleteDraftOpen = true;
-		} catch (error) {
-			reportFailure(error, 'ตรวจแบบร่างไม่สำเร็จ');
-		} finally {
-			finishBusy();
-		}
-	}
-	async function confirmDeleteDraft(): Promise<void> {
-		if (!controller || busy || !canManageSchool || !deleteDraftConfirmation) return;
-		const finishBusy = beginLifecycle();
-		const reportFailure = lifecycleFailureReporter();
-		try {
-			await waitForSaves();
-			const confirmation = deleteDraftConfirmation;
-			const deleted = await deleteTimetableDraft(confirmation.id, {
-				rowVersion: confirmation.rowVersion,
-				expectedBlockCount: confirmation.count
-			});
-			deleteDraftOpen = false;
-			controller.setEditing(false);
-			controller = null;
-			await refreshVersions();
-			const source = deleted.sourceVersionId ?? selectPreferredBoardVersion(versions, null)?.id;
-			if (source) await loadVersion(source, true);
-			toast.success('ลบแบบร่างแล้ว');
-		} catch (error) {
-			reportFailure(error, 'ลบแบบร่างไม่สำเร็จ');
-		} finally {
-			finishBusy();
-		}
-	}
 	function sourceIssueLabel(code: TimetableBlockWorkspace['sourceIssues'][number]['code']): string {
 		const labels = {
-			missing_offering: 'รายวิชาไม่อยู่ในรุ่นเปิดสอน',
-			missing_group: 'กลุ่มเรียนไม่อยู่ในรุ่นเปิดสอน',
+			missing_offering: 'รายวิชาไม่อยู่ในชุดเปิดสอนปัจจุบัน',
+			missing_group: 'กลุ่มเรียนไม่อยู่ในชุดเปิดสอนปัจจุบัน',
 			group_offering_mismatch: 'กลุ่มเรียนไม่ตรงกับรายวิชา',
-			ineligible_instructor: 'ครูไม่ตรงกับรุ่นเปิดสอน',
-			instructor_role_mismatch: 'บทบาทครูไม่ตรงกับรุ่นเปิดสอน',
+			ineligible_instructor: 'ครูไม่ตรงกับชุดเปิดสอนปัจจุบัน',
+			instructor_role_mismatch: 'บทบาทครูไม่ตรงกับชุดเปิดสอนปัจจุบัน',
 			scheduling_mode_mismatch: 'รูปแบบการจัดคาบเปลี่ยนไป',
-			homeroom_coverage_mismatch: 'ห้องที่เรียนไม่ตรงกับรุ่นเปิดสอน',
+			homeroom_coverage_mismatch: 'ห้องที่เรียนไม่ตรงกับชุดเปิดสอนปัจจุบัน',
 			missing_instructor: 'ยังไม่มีครูประจำคาบ'
 		} satisfies Record<TimetableBlockWorkspace['sourceIssues'][number]['code'], string>;
 		return labels[code];
@@ -2464,7 +1986,7 @@
 				: null;
 		editorOrigin = workspace
 			? {
-					versionId: workspace.version.id,
+					versionId: workspace.timetable.id,
 					blockId: block.id,
 					context: {
 						viewMode: activeView,
@@ -2532,33 +2054,13 @@
 	$effect(() => {
 		const target = reclaimEditor;
 		const ready = $draftSessionState.ready;
-		const currentSource = sourceCurrent;
-		const syncing = sourceSyncing;
-		if (
-			target &&
-			target === controller &&
-			ready &&
-			currentSource &&
-			!syncing &&
-			editOpen &&
-			canEdit
-		) {
+		if (target && target === controller && ready && editOpen && canEdit) {
 			untrack(() => {
 				reclaimEditor = null;
 				reclaimEditorLease();
 			});
 		}
 	});
-	async function retryLatestDeliverySource(): Promise<void> {
-		if (!controller || sourceSyncing || busy) return;
-		const target = controller;
-		const admission = sourceAdmission(target);
-		await waitForSaves();
-		if (!admission.current()) return;
-		await reload(undefined, false);
-		if (!admission.current() || refreshError) return;
-		await ensureLatestDeliverySource(target, true);
-	}
 
 	function retainedIntentLabel(intent: FailedIntent): string {
 		switch (intent.kind) {
@@ -2597,7 +2099,6 @@
 		if (
 			!controller ||
 			busy ||
-			sourceSyncing ||
 			!canManage ||
 			failure.outcome === 'unknown' ||
 			!currentFailedSaves.includes(failure)
@@ -2607,7 +2108,8 @@
 		const admission = sourceAdmission(target);
 		const finishBusy = beginLifecycle();
 		try {
-			if (!(await ensureLatestDeliverySource(target, true)) || !admission.current()) return;
+			await savedVersion(target, true);
+			if (!admission.current()) return;
 			if (currentFailedSaves.some((item) => item.outcome === 'unknown'))
 				throw new Error('กรุณาตรวจข้อมูลล่าสุดและละทิ้งรายการที่ยังไม่ยืนยันก่อน');
 			const workspace = target.workspace;
@@ -2714,10 +2216,10 @@
 		}
 	}
 	async function discardFailedSave(failure: FailedSave): Promise<void> {
-		if (!controller || busy || sourceSyncing || !currentFailedSaves.includes(failure)) return;
+		if (!controller || busy || !currentFailedSaves.includes(failure)) return;
 		const target = controller;
 		const admission = sourceAdmission(target);
-		automaticAlignmentPaused = target;
+
 		const finishBusy = beginLifecycle();
 		try {
 			await waitForSaves();
@@ -2727,7 +2229,6 @@
 			await reload(undefined, false);
 			if (!admission.current() || refreshError) return;
 			completeRetainedIntent(failure.id);
-			sourceFailure = null;
 			if (!currentFailedSaves.length) {
 				target.setEditing(false);
 				editOpen = false;
@@ -2811,7 +2312,7 @@
 		};
 		interaction.captured = true;
 		const request: UpdateTimetableBlockRequest = {
-			timetableVersionId: operationController.workspace.version.id,
+			timetableId: operationController.workspace.timetable.id,
 			rowVersion: originalBlock.rowVersion,
 			title,
 			clearTitle: title === null,
@@ -3024,7 +2525,7 @@
 			pendingBlockIds: pendingIds,
 			pendingCellKeys: pendingCells,
 			target,
-			versionId: operationController.workspace.version.id,
+			versionId: operationController.workspace.timetable.id,
 			interaction
 		});
 	}
@@ -3039,7 +2540,7 @@
 			if (!operation.interaction) throw new Error('ยังไม่ได้จองคาบที่จะนำออก กรุณาลองใหม่');
 			const lease = await operation.interaction.claim;
 			if (!operation.admission.current()) return;
-			let identity: DraftMutationIdentity | undefined;
+			let identity: TimetableMutationIdentity | undefined;
 			if (operation.mode === 'series') await releaseDraftLease(lease);
 			else identity = draftMutationIdentity(lease);
 			if (!operation.admission.current()) return;
@@ -3050,7 +2551,7 @@
 				const saved = await removeTimetableBlockTarget(
 					block.id,
 					{
-						timetableVersionId: operation.versionId,
+						timetableId: operation.versionId,
 						blockRowVersion: block.rowVersion,
 						targetKind: operation.target.kind,
 						targetId: operation.target.id,
@@ -3157,7 +2658,7 @@
 		}
 		const body: CreateStructuralTimetableBlocksRequest = {
 			academicTermId,
-			timetableVersionId: controller.workspace.version.id,
+			timetableId: controller.workspace.timetable.id,
 			structuralKind: structuralForm.kind,
 			title: structuralForm.title.trim(),
 			note: structuralForm.note.trim() || null,
@@ -3219,11 +2720,11 @@
 				clearQueuedDraftSession();
 				failedSaves = [];
 				reviewedIntentId = null;
-				automaticAlignmentPaused = null;
+
 				invalidateLifecycle();
 				if (!controller && academicTermId && academicYearId)
 					void loadContext(academicTermId, academicYearId);
-				else if (versionsLoading) void refreshVersions();
+				else void refreshTimetable();
 			});
 	});
 
@@ -3236,20 +2737,12 @@
 	}
 
 	$effect.pre(() => {
-		const yearId = data.academicYearId;
-		const termId = data.academicTermId;
-		const requestedVersionId = data.requestedVersionId;
-		const routeVersions = data.versions;
-		const routeWorkspace = data.workspace;
-		const contextKey = `${yearId}:${termId}`;
-		const routeEpoch = authStore.sessionEpoch;
-		if (
-			(routeVersions && routePromiseEpoch(routeVersions) !== routeEpoch) ||
-			(routeWorkspace && routePromiseEpoch(routeWorkspace) !== routeEpoch)
-		)
-			return;
-		const versionSelectionChanged = activeRouteVersionId !== requestedVersionId;
-		const initialVersionsRevision = versionsRevision;
+		const yearId = data.academicYearId,
+			termId = data.academicTermId,
+			routeWorkspace = data.workspace;
+		const contextKey = `${yearId}:${termId}`,
+			routeEpoch = authStore.sessionEpoch;
+		if (routeWorkspace && routePromiseEpoch(routeWorkspace) !== routeEpoch) return;
 		const initialWorkspaceRevision = workspaceRevision;
 		let current = true;
 		untrack(() => {
@@ -3258,92 +2751,44 @@
 				failedSaves = [];
 				reviewedIntentId = null;
 				activeContextKey = contextKey;
-				versions = [];
 				controller = null;
-				boardRetryVersionId = requestedVersionId ?? '';
+				boardRetryVersionId = '';
 				selectedBlockId = null;
 				editOpen = false;
 				removeOpen = false;
 				structuralOpen = false;
 				refreshError = '';
-				publishOpen = false;
-				publicationPreview = null;
-			} else if (
-				versionSelectionChanged &&
-				(!requestedVersionId || controller?.workspace.version.id !== requestedVersionId)
-			) {
-				invalidateLifecycle();
-				failedSaves = [];
-				reviewedIntentId = null;
-				controller = null;
-				boardRetryVersionId = requestedVersionId ?? '';
 			}
-			activeRouteVersionId = requestedVersionId;
 			request.abort();
-			versionsRequest.abort();
-			versionsLoading = Boolean(routeVersions);
 			loading = Boolean(routeWorkspace);
-			versionsError = '';
 			errorMessage = '';
 		});
-		if (routeVersions) {
-			void routeVersions.then((result) => {
-				if (
-					!current ||
-					disposed ||
-					authStore.sessionEpoch !== routeEpoch ||
-					activeContextKey !== contextKey ||
-					activeRouteVersionId !== requestedVersionId
-				)
-					return;
-				untrack(() => {
-					if (versionsRevision === initialVersionsRevision) {
-						if (result.ok) {
-							versions = result.data.map((version) =>
-								controller?.workspace.version.id === version.id &&
-								controller.workspace.version.rowVersion > version.rowVersion
-									? controller.workspace.version
-									: version
-							);
-							boardRetryVersionId ||=
-								selectPreferredBoardVersion(result.data, requestedVersionId)?.id ?? '';
-						} else {
-							versionsError = result.error;
-							notifyReadFailure(result.error, refreshVersions);
-						}
-						versionsLoading = false;
-					}
-				});
-			});
-		}
-		if (routeWorkspace) {
+		if (routeWorkspace)
 			void routeWorkspace.then((result) => {
 				if (
 					!current ||
 					disposed ||
 					authStore.sessionEpoch !== routeEpoch ||
-					activeContextKey !== contextKey ||
-					activeRouteVersionId !== requestedVersionId
+					activeContextKey !== contextKey
 				)
 					return;
 				untrack(() => {
-					if (workspaceRevision === initialWorkspaceRevision) {
-						if (result.ok && result.data) {
+					if (workspaceRevision !== initialWorkspaceRevision) return;
+					if (result.ok) {
+						if (result.data) {
 							initializeController(result.data);
-							boardRetryVersionId = result.data.version.id;
+							boardRetryVersionId = result.data.timetable.id;
 							syncUrl();
-						} else if (!result.ok) {
-							errorMessage = result.error;
-							notifyReadFailure(result.error, () => {
-								if (boardRetryVersionId) return loadVersion(boardRetryVersionId, true);
-								if (termId && yearId) return loadContext(termId, yearId);
-							});
-						}
-						loading = false;
+						} else controller = null;
+					} else {
+						errorMessage = result.error;
+						notifyReadFailure(result.error, () => {
+							if (termId && yearId) return loadContext(termId, yearId);
+						});
 					}
+					loading = false;
 				});
 			});
-		}
 		return () => {
 			current = false;
 		};
@@ -3517,7 +2962,7 @@
 	const presenceConnectionKey = $derived(
 		$draftSessionState.ready ? ($draftSessionState.connectionId ?? '') : ''
 	);
-	const collaborationIsDraft = $derived(controller?.workspace.version.status === 'draft');
+	const collaborationAvailable = $derived(Boolean(controller));
 	$effect(() => {
 		const key = socketContextKey;
 		untrack(() => {
@@ -3532,7 +2977,7 @@
 			connectTimetableSocket({
 				academicTermId: termId,
 				currentUserId: userId,
-				timetableVersionId: controller?.workspace.version.id
+				timetableId: controller?.workspace.timetable.id
 			});
 		});
 		return () => {
@@ -3546,7 +2991,7 @@
 		const key = presenceConnectionKey;
 		const context = collaborationContext;
 		const anchor = currentAnchor;
-		if (key && collaborationIsDraft) presenceCoalescer?.push({ context, anchor });
+		if (key && collaborationAvailable) presenceCoalescer?.push({ context, anchor });
 		else presenceCoalescer?.cancel();
 	});
 	$effect(() => {
@@ -3649,7 +3094,7 @@
 			});
 		};
 		presenceCoalescer = createPointerCoalescer({
-			send: (value: DraftPresenceUpdate) => {
+			send: (value: TimetablePresenceUpdate) => {
 				sendDraftPresence(value.context, value.anchor ?? null);
 			},
 			setTimer: (callback, delay) => setTimeout(callback, delay),
@@ -3662,13 +3107,13 @@
 				return;
 			}
 			if (controller) requestReconcile();
-			else void refreshVersions();
+			else void refreshTimetable();
 		});
 		const unsubscribeDraft = subscribeDraftEvents(receiveDraftEvent);
 		const unsubscribeReconcile = draftReconcileSignal.subscribe((signal) => {
 			if (
 				!signal ||
-				signal.versionId !== controller?.workspace.version.id ||
+				signal.timetableId !== controller?.workspace.timetable.id ||
 				signal.reason === 'journal_gap'
 			)
 				return;
@@ -3677,7 +3122,7 @@
 				disposeInteraction(editInteraction);
 				editInteraction = null;
 			}
-			void refreshVersions();
+			void refreshTimetable();
 		});
 		const unsubscribeLease = subscribeDraftLeaseLost((lease, error) => {
 			if (dragInteraction?.lease === lease && !dragInteraction.captured) {
@@ -3731,41 +3176,18 @@
 
 <PageShell
 	title="ตารางสอน"
-	description="ดูตารางตามห้อง กลุ่มเรียน หรือครู กดแก้ไขเมื่อต้องการจัดตารางเวอร์ชันใหม่"
+	description="จัดตารางสอนปัจจุบันของภาคเรียนตามห้อง กลุ่มเรียน หรือครู"
 	class="xl:flex xl:h-full xl:min-h-0 xl:flex-col"
 	contentClass="xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
 >
 	{#snippet actions()}
 		{#if selectedVersion && academicTermId}
-			{#if controller?.editing}
-				<Button disabled={busy} onclick={finishEditing}><Check class="size-4" />เสร็จสิ้น</Button>
-			{:else if (selectedVersion.status === 'published' && canManageSchool) || (selectedVersion.status === 'draft' && canManage)}
-				<Button disabled={busy || loading} onclick={() => startEditing()}
-					><Pencil class="size-4" />แก้ไข</Button
+			{#if controller?.editing}<Button disabled={busy} onclick={finishEditing}
+					><Check class="size-4" />เสร็จสิ้น</Button
 				>
-			{/if}
-			{#if selectedVersion.status === 'draft'}
-				{#if canPublish}<Button
-						variant="outline"
-						disabled={busy || loading}
-						onclick={openPublication}><Send class="size-4" />เผยแพร่เวอร์ชันใหม่</Button
-					>{/if}
-				{#if canManageSchool}
-					<DropdownMenu.Root
-						><DropdownMenu.Trigger
-							disabled={busy}
-							aria-label="เพิ่มเติม"
-							class="inline-flex size-9 items-center justify-center rounded-md border"
-							><MoreHorizontal class="size-4" /></DropdownMenu.Trigger
-						>
-						<DropdownMenu.Content
-							><DropdownMenu.Item onclick={openDeleteDraft}
-								><Trash2 class="size-4" />ลบแบบร่าง</DropdownMenu.Item
-							></DropdownMenu.Content
-						>
-					</DropdownMenu.Root>
-				{/if}
-			{/if}
+			{:else if canManage}<Button disabled={busy || loading} onclick={() => startEditing()}
+					><Pencil class="size-4" />แก้ไข</Button
+				>{/if}
 		{/if}
 		{#if !selectedVersion && canManageSchool && academicTermId && !loading}<Button
 				disabled={busy}
@@ -3815,22 +3237,12 @@
 					? loadVersion(boardRetryVersionId, true)
 					: loadContext(academicTermId, academicYearId)}
 		/>
-	{:else if versionsError && !controller}
-		<PageState
-			variant="error"
-			title="โหลดรุ่นตารางสอนไม่สำเร็จ"
-			description="ลองอีกครั้งเพื่อโหลดรุ่นตารางสอน"
-			actionLabel="ลองอีกครั้ง"
-			onaction={refreshVersions}
-		/>
-	{:else if !controller && versions.length === 0}
+	{:else if !controller}
 		<PageState
 			variant="empty"
-			title="ยังไม่มีรุ่นตารางสอน"
-			description="เผยแพร่รุ่นเปิดสอนของภาคเรียนก่อน แล้วกดสร้างตารางสอน"
+			title="ยังไม่มีตารางสอน"
+			description="กดสร้างตารางสอนเพื่อเริ่มจัดคาบของภาคเรียนนี้"
 		/>
-	{:else if !controller}
-		<PageSkeleton variant="table" rows={7} />
 	{:else}
 		<div
 			class="relative space-y-4 xl:flex xl:min-h-0 xl:flex-1 xl:flex-col xl:[&>*]:shrink-0"
@@ -3841,7 +3253,7 @@
 			<TimetableWorkspaceHeader
 				{collaborators}
 				onJumpCollaborator={jumpToCollaborator}
-				version={controller.workspace.version}
+				timetable={controller.workspace.timetable}
 				view={activeView}
 				isSaving={busy || pendingOperationCount > 0}
 				editing={controller.editing}
@@ -3849,28 +3261,7 @@
 			>
 				{#snippet controls()}
 					{#if controller}
-						<div class="flex flex-wrap items-end gap-3" aria-busy={versionsLoading}>
-							<div class="w-full min-w-0 space-y-1.5 sm:w-60">
-								<Label class="text-sm text-muted-foreground">รุ่นตารางสอน</Label>
-
-								<Select.Root
-									type="single"
-									bind:value={versionSelectValue}
-									onValueChange={loadVersion}
-									disabled={loading || versionsLoading || busy || pendingOperationCount > 0}
-								>
-									<Select.Trigger class="w-full" aria-label="เลือกรุ่นตารางสอน">
-										<span class="min-w-0 truncate"
-											>{versionLabel(controller.workspace.version)}</span
-										>
-									</Select.Trigger>
-									<Select.Content>
-										{#each versions as version (version.id)}
-											<Select.Item value={version.id}>{versionLabel(version)}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
+						<div class="flex flex-wrap items-end gap-3" aria-busy={loading}>
 							{#if activeView === 'wholeSchool'}
 								<div class="w-full min-w-0 space-y-1.5 sm:w-60">
 									<Label class="text-sm text-muted-foreground">วันที่ดูภาพรวม</Label>
@@ -3926,22 +3317,20 @@
 						<div class="space-y-2">
 							<p>{retainedIntentLabel(failure.intent)}</p>
 							<p class="text-muted-foreground">
-								{failure.outcome === 'source_rejected'
-									? 'รายการนี้ยังไม่ได้บันทึกเนื่องจากข้อมูลเปิดสอนเปลี่ยน ทบทวนรายการกับข้อมูลล่าสุดแล้วกดบันทึกอีกครั้ง'
-									: failure.outcome === 'not_submitted'
-										? 'ยังไม่ได้ส่งรายการนี้ไปบันทึก กรุณาทบทวนกับข้อมูลล่าสุดก่อนลองบันทึกด้วยตนเอง'
-										: 'ยังยืนยันผลการบันทึกไม่ได้ การละทิ้งจะโหลดตารางล่าสุดและเลิกเก็บรายการที่ค้างนี้ โดยไม่ย้อนคืนงานที่บันทึกสำเร็จแล้ว'}
+								{failure.outcome === 'not_submitted'
+									? 'ยังไม่ได้ส่งรายการนี้ไปบันทึก กรุณาทบทวนกับข้อมูลล่าสุดก่อนลองบันทึกด้วยตนเอง'
+									: 'ยังยืนยันผลการบันทึกไม่ได้ การละทิ้งจะโหลดตารางล่าสุดและเลิกเก็บรายการที่ค้างนี้ โดยไม่ย้อนคืนงานที่บันทึกสำเร็จแล้ว'}
 							</p>
 							{#if failure.reviewError}<p class="text-destructive">{failure.reviewError}</p>{/if}
 							<div class="flex flex-wrap gap-2">
 								{#if failure.outcome !== 'unknown' && canManage}<Button
 										variant="outline"
-										disabled={busy || sourceSyncing || pendingOperationCount > 0}
+										disabled={busy || pendingOperationCount > 0}
 										onclick={() => reviewFailedSave(failure)}>ทบทวนรายการ</Button
 									>{/if}
 								<Button
 									variant="ghost"
-									disabled={busy || sourceSyncing || pendingOperationCount > 0}
+									disabled={busy || pendingOperationCount > 0}
 									onclick={() => discardFailedSave(failure)}>โหลดข้อมูลล่าสุดและละทิ้งรายการ</Button
 								>
 							</div>
@@ -3950,23 +3339,10 @@
 				</div>
 			{/if}
 
-			{#if draftHasNewDelivery || sourceError}
-				<div role="status" class="space-y-2 rounded-xl border bg-muted/30 p-3 text-sm">
-					<p>
-						{sourceError ||
-							'แบบร่างนี้รอใช้ข้อมูลเปิดสอนล่าสุด ระบบจะอัปเดตก่อนเริ่มแก้ไขหรือตรวจเผยแพร่'}
-					</p>
-					{#if sourceError && canAlignLatest}<Button
-							variant="outline"
-							disabled={busy || sourceSyncing}
-							onclick={retryLatestDeliverySource}>ตรวจข้อมูลล่าสุดแล้วลองอีกครั้ง</Button
-						>{/if}
-				</div>
-			{/if}
-			{#if sourceCurrent && controller.workspace.sourceIssues.length > 0}
+			{#if controller.workspace.sourceIssues.length > 0}
 				<div role="alert" class="space-y-2 rounded-xl border border-destructive/30 p-3 text-sm">
 					<p class="font-medium">
-						มีคาบที่ต้องตรวจแก้ก่อนเผยแพร่ ({controller.workspace.sourceIssues.length})
+						มีคาบที่ต้องตรวจแก้ ({controller.workspace.sourceIssues.length})
 					</p>
 					{#each controller.workspace.sourceIssues as issue (`${issue.blockId}:${issue.code}:${issue.learningGroupId}:${issue.teacherId}`)}<button
 							type="button"
@@ -4049,10 +3425,9 @@
 														colors={lessonColors}
 														rowId={homeroom.id}
 														targetLabel={null}
-														needsReview={sourceCurrent &&
-															controller.workspace.sourceIssues.some(
-																(issue) => issue.blockId === block.id
-															)}
+														needsReview={controller.workspace.sourceIssues.some(
+															(issue) => issue.blockId === block.id
+														)}
 														onSelect={(block) => openEditor(block, homeroom.id)}
 														lockedBy={blockLockLabel(block.id)}
 													/>
@@ -4241,15 +3616,9 @@
 					/>
 				</div>
 			</div>
-			{#if sourceError}<p role="alert" class="text-sm text-destructive">{sourceError}</p>
-				{#if canAlignLatest}<Button
-						variant="outline"
-						disabled={sourceSyncing || busy}
-						onclick={retryLatestDeliverySource}>ตรวจข้อมูลล่าสุดแล้วลองอีกครั้ง</Button
-					>{/if}
-			{:else if controller?.editing && sourceCurrent && !editInteraction && !editRoomLoading}<Button
+			{#if controller?.editing && !editInteraction && !editRoomLoading}<Button
 					variant="outline"
-					disabled={sourceSyncing || busy || !$draftSessionState.ready}
+					disabled={busy || !$draftSessionState.ready}
 					onclick={() => reclaimEditorLease()}>ตรวจสิทธิ์แก้ไขคาบอีกครั้ง</Button
 				>{/if}
 			<Dialog.Footer>
@@ -4526,119 +3895,10 @@
 			</AlertDialog.Footer>
 		</AlertDialog.Content>
 	</AlertDialog.Root>
-
-	<Dialog.Root bind:open={draftChoiceOpen}>
-		<Dialog.Content
-			><Dialog.Header
-				><Dialog.Title>เลือกแบบร่างที่จะแก้ต่อ</Dialog.Title><Dialog.Description
-					>มีหลายแบบร่างจากตารางรุ่นนี้ ข้อมูลเปิดสอนจะอัปเดตเป็นรุ่นล่าสุดเมื่อเปิดแก้ไข</Dialog.Description
-				></Dialog.Header
-			>
-			<Label for="timetable-draft-choice">แบบร่าง</Label>
-			<Select.Root type="single" bind:value={draftChoiceId}
-				><Select.Trigger id="timetable-draft-choice">เลือกแบบร่าง</Select.Trigger><Select.Content
-					>{#each sameSourceDrafts as draft (draft.id)}<Select.Item value={draft.id}
-							>{versionLabel(draft)}</Select.Item
-						>{/each}</Select.Content
-				></Select.Root
-			>
-			<Dialog.Footer
-				><Button variant="outline" disabled={busy} onclick={() => (draftChoiceOpen = false)}
-					>ยกเลิก</Button
-				><Button disabled={busy || !draftChoiceId} onclick={() => startEditing(draftChoiceId)}
-					>แก้ต่อ</Button
-				></Dialog.Footer
-			>
-		</Dialog.Content>
-	</Dialog.Root>
-	{#if controller}
-		<Dialog.Root bind:open={publishOpen}>
-			<Dialog.Content class="sm:max-w-xl"
-				><Dialog.Header
-					><Dialog.Title>เผยแพร่เวอร์ชันใหม่</Dialog.Title><Dialog.Description
-						>เลือกวันที่เริ่มใช้ แล้วตรวจจำนวนคาบ การชน และรุ่นเปิดสอนก่อนเผยแพร่</Dialog.Description
-					></Dialog.Header
-				>
-				<div class="space-y-2">
-					<Label for="timetable-publication-date">วันที่เริ่มใช้</Label><DatePicker
-						id="timetable-publication-date"
-						minValue={controller.workspace.publicationDateRules.minimumEffectiveFrom ?? undefined}
-						bind:value={publicationDate}
-						disabled={busy}
-						onValueChange={() => (publicationPreview = null)}
-						ariaLabel="เลือกวันที่เริ่มใช้ตาราง"
-					/>
-				</div>
-				<div
-					class="space-y-2 rounded-lg border bg-muted/30 p-3 text-sm"
-					aria-label="รุ่นเปิดสอนที่ใช้อ้างอิง"
-				>
-					<p class="font-medium">ข้อมูลเปิดสอนที่ตารางนี้อ้างอิง</p>
-					<p>{publicationSourceLabel(controller.workspace.deliveryPublication)}</p>
-					<p class="text-muted-foreground">
-						{publicationEffectiveLabel(controller.workspace.deliveryPublication)}
-					</p>
-					<p class="text-muted-foreground">
-						{publicationDateRulesLabel(controller.workspace.publicationDateRules)}
-					</p>
-					{#if draftHasNewDelivery}<p class="text-muted-foreground">
-							แผนเปิดสอนล่าสุด: {publicationSourceLabel(
-								controller.workspace.latestDeliveryPublication
-							)}
-						</p>{/if}
-					<p class="text-muted-foreground">
-						เผยแพร่หลายรุ่นในวันเดียวกันได้ รุ่นใหม่จะแทนแผนเดิมตั้งแต่วันที่เลือก
-					</p>
-				</div>
-				{#if sourceError}<p role="alert" class="text-sm text-destructive">{sourceError}</p>{/if}
-				<Button variant="outline" disabled={busy || !publicationDate} onclick={checkPublication}
-					>ตรวจความพร้อม</Button
-				>
-				{#if busy}<p role="status" class="text-sm text-muted-foreground">กำลังดำเนินการ...</p>{/if}
-				{#if publicationPreview}
-					<div
-						aria-live="polite"
-						class="max-h-72 space-y-2 overflow-y-auto rounded-lg border p-3 text-sm"
-					>
-						{#if publicationPreview.canPublish}<p>
-								พร้อมเผยแพร่ {publicationPreview.blockCount} คาบ
-							</p>{:else}{#each publicationPreview.findings as finding, index (`${finding.code}:${index}`)}<p
-									class="text-destructive"
-								>
-									{finding.message}
-								</p>{/each}{/if}
-					</div>{/if}
-				<Dialog.Footer
-					><Button variant="outline" disabled={busy} onclick={() => (publishOpen = false)}
-						>ยกเลิก</Button
-					><Button disabled={busy || !publicationPreview?.canPublish} onclick={publishVersion}
-						>เผยแพร่</Button
-					></Dialog.Footer
-				>
-			</Dialog.Content>
-		</Dialog.Root>
-	{/if}
-	<AlertDialog.Root bind:open={deleteDraftOpen}>
-		<AlertDialog.Content
-			><AlertDialog.Header
-				><AlertDialog.Title>ลบแบบร่างถาวร</AlertDialog.Title><AlertDialog.Description
-					>ลบ {deleteDraftConfirmation?.label ?? 'แบบร่าง'} พร้อมคาบ {deleteDraftConfirmation?.count ??
-						0} คาบ การลบนี้ย้อนกลับไม่ได้</AlertDialog.Description
-				></AlertDialog.Header
-			>
-			<AlertDialog.Footer
-				><AlertDialog.Cancel disabled={busy}>ยกเลิก</AlertDialog.Cancel><Button
-					variant="destructive"
-					disabled={busy}
-					onclick={confirmDeleteDraft}>ลบแบบร่าง</Button
-				></AlertDialog.Footer
-			>
-		</AlertDialog.Content>
-	</AlertDialog.Root>
 </PageShell>
 
 {#if pdfOpen && controller}
-	{#key controller.workspace.version.id}
+	{#key controller.workspace.timetable.id}
 		<TimetablePdfDialog
 			bind:open={pdfOpen}
 			workspace={controller.workspace}

@@ -1,43 +1,14 @@
-use school_database::DbSession;
-use std::collections::HashSet;
-
-use sha2::{Digest, Sha256};
-use sqlx::{FromRow, PgPool, Postgres, Transaction};
-use uuid::Uuid;
-
+use super::invigilation::{fetch_invigilators_by_assignment_ids, invigilators_for_assignment};
+use super::rounds_and_days::{fetch_exam_day_details_for_round, fetch_round};
+use super::sessions_and_conflicts::ExamSessionRow;
 use crate::exam_schedule::models::{
     ExamPaperReceiptItem, ExamScheduleItemView, ExamScheduleReadiness, ExamScheduleReadinessCode,
-    ExamScheduleReadinessFinding, ExamScheduleWorkspace, ExamSessionView, ExamSourceChange,
-    ExamSourceChangeKind, ExamSourcePreview, ExamSourceSyncItemResult, ExamSourceSyncItemStatus,
-    SyncExamSourcesRequest, SyncExamSourcesResult,
+    ExamScheduleReadinessFinding, ExamScheduleWorkspace, ExamSessionView,
 };
+use school_database::DbSession;
 use school_errors::AppError;
-
-use super::invigilation::{fetch_invigilators_by_assignment_ids, invigilators_for_assignment};
-use super::rounds_and_days::{
-    ensure_exam_round_is_mutable, fetch_exam_day_details_for_round, fetch_round,
-};
-use super::sessions_and_conflicts::{revalidate_session_duration_change_in_tx, ExamSessionRow};
-use super::shared::{require_exam_write, ExamWriteTarget};
-
-#[derive(Debug, FromRow)]
-struct ExamSourceChangeRow {
-    source_id: Uuid,
-    exam_schedule_item_id: Option<Uuid>,
-    assessment_phase_id: Uuid,
-    learning_group_id: Uuid,
-    homeroom_id: Uuid,
-    subject_id: Uuid,
-    grade_level_id: Uuid,
-    subject_code: String,
-    subject_name: String,
-    homeroom_name: String,
-    change_kind: String,
-    snapshot_duration_minutes: Option<i32>,
-    current_duration_minutes: Option<i32>,
-    scheduled: bool,
-}
-
+use sqlx::PgPool;
+use uuid::Uuid;
 #[derive(Debug, Clone, Copy)]
 pub(super) struct WorkspaceCounts {
     pub(super) day_count: i64,
@@ -48,7 +19,6 @@ pub(super) struct WorkspaceCounts {
     pub(super) missing_seat_student_count: i64,
     pub(super) invigilator_conflict_count: i64,
 }
-
 pub(super) fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness {
     let mut findings = Vec::new();
     if counts.day_count == 0 {
@@ -94,22 +64,22 @@ pub(super) fn build_readiness(counts: WorkspaceCounts) -> ExamScheduleReadiness 
         });
     }
     ExamScheduleReadiness {
-        can_publish: findings.is_empty(),
+        complete: findings.is_empty(),
         findings,
     }
 }
 
-pub(super) fn build_readiness_with_source_changes(
+pub(super) fn build_readiness_with_current_sources(
     counts: WorkspaceCounts,
-    source_change_count: usize,
+    invalid_sources: i64,
 ) -> ExamScheduleReadiness {
     let mut readiness = build_readiness(counts);
-    if source_change_count > 0 {
+    if invalid_sources > 0 {
+        readiness.complete = false;
         readiness.findings.push(ExamScheduleReadinessFinding {
-            code: ExamScheduleReadinessCode::PendingSourceChanges,
-            count: source_change_count as i64,
+            code: ExamScheduleReadinessCode::InvalidCurrentSources,
+            count: invalid_sources,
         });
-        readiness.can_publish = false;
     }
     readiness
 }
@@ -135,549 +105,20 @@ pub async fn get_workspace_on_connection(
     let unscheduled_items = fetch_unscheduled_items(connection, round_id).await?;
     let scheduled_sessions = fetch_scheduled_sessions(connection, round_id).await?;
     let paper_receipt_items = fetch_paper_receipt_items(connection, round_id).await?;
-    let counts = fetch_workspace_counts(connection, round_id).await?;
-    let source_preview = preview_exam_sources_on_connection(connection, round_id).await?;
-    let readiness = build_readiness_with_source_changes(counts, source_preview.changes.len());
+    let mut counts = fetch_workspace_counts(connection, round_id).await?;
+    counts.item_count = (unscheduled_items.len() + scheduled_sessions.len()) as i64;
+    counts.unscheduled_count = unscheduled_items.len() as i64;
+    let invalid_sources: i64 = DbSession::new(connection).scalar("academic_assessment.exam_schedule.workspace.current_source_findings", "SELECT count(*) FROM academic_exam_sessions session JOIN academic_exam_schedule_items item ON item.id=session.exam_schedule_item_id LEFT JOIN academic_exam_eligible_sources source ON source.assessment_phase_id=item.assessment_phase_id AND source.learning_group_id=item.learning_group_id AND source.homeroom_id=item.homeroom_id AND source.exam_kind=$2 WHERE item.exam_round_id=$1 AND (source.source_id IS NULL OR source.duration_minutes<>EXTRACT(EPOCH FROM(session.ends_at-session.starts_at))/60)").bind(round_id).bind(&round.exam_kind).fetch_one().await?;
+    let readiness = build_readiness_with_current_sources(counts, invalid_sources);
 
     Ok(ExamScheduleWorkspace {
         round,
         days,
         unscheduled_items,
         scheduled_sessions,
-        source_preview,
         paper_receipt_items,
         readiness,
     })
-}
-
-pub async fn preview_exam_sources(
-    pool: &PgPool,
-    round_id: Uuid,
-) -> Result<ExamSourcePreview, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "academic_assessment.exam_schedule.services.workspace.preview_exam_sources",
-    )
-    .await?;
-    preview_exam_sources_on_connection(&mut connection, round_id).await
-}
-
-pub async fn preview_exam_sources_on_connection(
-    connection: &mut sqlx::PgConnection,
-    round_id: Uuid,
-) -> Result<ExamSourcePreview, AppError> {
-    let (status, row_version): (String, i64) =
-        DbSession::new(connection).query_as("academic_assessment.exam_schedule.services.workspace.preview_exam_sources_on_connection", "SELECT status, row_version FROM academic_exam_rounds WHERE id = $1")
-            .bind(round_id)
-            .fetch_optional()
-            .await?
-            .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
-    let rows = fetch_source_change_rows(connection, round_id).await?;
-    build_source_preview(round_id, status, row_version, rows)
-}
-
-pub async fn sync_exam_sources(
-    pool: &PgPool,
-    round_id: Uuid,
-    actor_user_id: Uuid,
-    request: SyncExamSourcesRequest,
-) -> Result<SyncExamSourcesResult, AppError> {
-    let mut tx = school_tenancy::TenantPool::begin_observed(
-        pool,
-        "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
-    )
-    .await?;
-    require_exam_write(&mut tx, ExamWriteTarget::Round(round_id)).await?;
-    let (status, row_version): (String, i64) = DbSession::new(&mut *tx)
-        .query_as(
-            "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
-            r#"SELECT status, row_version
-           FROM academic_exam_rounds
-           WHERE id = $1
-           FOR UPDATE"#,
-        )
-        .bind(round_id)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| AppError::NotFound("Exam round not found".to_string()))?;
-    ensure_exam_round_is_mutable(&status)?;
-    if row_version != request.round_row_version {
-        return Err(AppError::Conflict(
-            "Exam round changed after source preview; refresh before syncing".to_string(),
-        ));
-    }
-
-    let rows = fetch_source_change_rows_in_tx(&mut tx, round_id).await?;
-    let preview = build_source_preview(round_id, status, row_version, rows)?;
-    if preview.preview_token != request.preview_token {
-        return Err(AppError::Conflict(
-            "Assessment sources changed after preview; refresh before syncing".to_string(),
-        ));
-    }
-
-    let selected_ids = request.source_ids.into_iter().collect::<HashSet<_>>();
-    if selected_ids.len() > preview.changes.len()
-        || selected_ids.iter().any(|source_id| {
-            !preview
-                .changes
-                .iter()
-                .any(|change| change.source_id == *source_id)
-        })
-    {
-        return Err(AppError::ValidationError(
-            "Selected exam source is not part of the unchanged preview".to_string(),
-        ));
-    }
-
-    let mut inserted_count = 0_i64;
-    let mut updated_duration_count = 0_i64;
-    let mut removed_count = 0_i64;
-    let mut results = Vec::with_capacity(selected_ids.len());
-    for change in preview
-        .changes
-        .iter()
-        .filter(|change| selected_ids.contains(&change.source_id))
-    {
-        match change.change_kind {
-            ExamSourceChangeKind::New => {
-                let inserted =
-                    insert_exam_source_in_tx(&mut tx, round_id, change.source_id).await?;
-                if inserted != 1 {
-                    results.push(source_sync_conflict(
-                        change,
-                        "New exam source changed while synchronizing".to_string(),
-                    ));
-                    continue;
-                }
-                inserted_count += inserted;
-                results.push(source_sync_applied(change));
-            }
-            ExamSourceChangeKind::DurationChanged => {
-                let Some(item_id) = change.exam_schedule_item_id else {
-                    results.push(source_sync_conflict(
-                        change,
-                        "Changed exam source has no snapshot item".to_string(),
-                    ));
-                    continue;
-                };
-                let Some(duration) = change.current_duration_minutes else {
-                    results.push(source_sync_conflict(
-                        change,
-                        "Changed exam source has no current duration".to_string(),
-                    ));
-                    continue;
-                };
-                if let Err(error) =
-                    revalidate_session_duration_change_in_tx(&mut tx, item_id, duration).await
-                {
-                    match source_sync_validation_message(error) {
-                        Ok(message) => {
-                            results.push(source_sync_conflict(change, message));
-                            continue;
-                        }
-                        Err(error) => return Err(error),
-                    }
-                }
-                let updated = DbSession::new(&mut *tx)
-                    .query(
-                        "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
-                        r#"UPDATE academic_exam_schedule_items
-                       SET duration_minutes = $2, imported_at = now()
-                       WHERE id = $1 AND exam_round_id = $3"#,
-                    )
-                    .bind(item_id)
-                    .bind(duration)
-                    .bind(round_id)
-                    .execute()
-                    .await?;
-                if updated.rows_affected() != 1 {
-                    results.push(source_sync_conflict(
-                        change,
-                        "Changed exam source was removed while synchronizing".to_string(),
-                    ));
-                    continue;
-                }
-                updated_duration_count += 1;
-                results.push(source_sync_applied(change));
-            }
-            ExamSourceChangeKind::NoLongerEligible => {
-                let Some(item_id) = change.exam_schedule_item_id else {
-                    results.push(source_sync_conflict(
-                        change,
-                        "Ineligible exam source has no snapshot item".to_string(),
-                    ));
-                    continue;
-                };
-                let deleted = DbSession::new(&mut *tx).query("academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
-                    "DELETE FROM academic_exam_schedule_items WHERE id = $1 AND exam_round_id = $2",
-                )
-                .bind(item_id)
-                .bind(round_id)
-                .execute()
-                .await?;
-                if deleted.rows_affected() != 1 {
-                    results.push(source_sync_conflict(
-                        change,
-                        "Ineligible exam source was removed while synchronizing".to_string(),
-                    ));
-                    continue;
-                }
-                removed_count += 1;
-                results.push(source_sync_applied(change));
-            }
-        }
-    }
-
-    let applied_count = inserted_count + updated_duration_count + removed_count;
-    let next_row_version = if applied_count == 0 {
-        row_version
-    } else {
-        DbSession::new(&mut *tx)
-            .scalar(
-                "academic_assessment.exam_schedule.services.workspace.sync_exam_sources",
-                r#"UPDATE academic_exam_rounds
-               SET row_version = row_version + 1,
-                   updated_by = $2,
-                   updated_at = now()
-               WHERE id = $1
-               RETURNING row_version"#,
-            )
-            .bind(round_id)
-            .bind(actor_user_id)
-            .fetch_one()
-            .await?
-    };
-    tx.commit().await?;
-
-    Ok(SyncExamSourcesResult {
-        inserted_count,
-        updated_duration_count,
-        removed_count,
-        round_row_version: next_row_version,
-        results,
-    })
-}
-
-fn source_sync_applied(change: &ExamSourceChange) -> ExamSourceSyncItemResult {
-    ExamSourceSyncItemResult {
-        source_id: change.source_id,
-        change_kind: change.change_kind,
-        status: ExamSourceSyncItemStatus::Applied,
-        message: None,
-    }
-}
-
-fn source_sync_conflict(change: &ExamSourceChange, message: String) -> ExamSourceSyncItemResult {
-    ExamSourceSyncItemResult {
-        source_id: change.source_id,
-        change_kind: change.change_kind,
-        status: ExamSourceSyncItemStatus::Conflict,
-        message: Some(message),
-    }
-}
-
-fn source_sync_validation_message(error: AppError) -> Result<String, AppError> {
-    match error {
-        AppError::ValidationError(message)
-        | AppError::BadRequest(message)
-        | AppError::Conflict(message) => Ok(message),
-        error => Err(error),
-    }
-}
-
-fn build_source_preview(
-    round_id: Uuid,
-    round_status: String,
-    round_row_version: i64,
-    rows: Vec<ExamSourceChangeRow>,
-) -> Result<ExamSourcePreview, AppError> {
-    let changes = rows
-        .into_iter()
-        .map(source_change_from_row)
-        .collect::<Result<Vec<_>, _>>()?;
-    let preview_token = source_preview_token(round_id, round_row_version, &changes);
-    Ok(ExamSourcePreview {
-        round_id,
-        round_status,
-        round_row_version,
-        preview_token,
-        new_count: changes
-            .iter()
-            .filter(|change| change.change_kind == ExamSourceChangeKind::New)
-            .count() as i64,
-        duration_changed_count: changes
-            .iter()
-            .filter(|change| change.change_kind == ExamSourceChangeKind::DurationChanged)
-            .count() as i64,
-        no_longer_eligible_count: changes
-            .iter()
-            .filter(|change| change.change_kind == ExamSourceChangeKind::NoLongerEligible)
-            .count() as i64,
-        changes,
-    })
-}
-
-fn source_change_from_row(row: ExamSourceChangeRow) -> Result<ExamSourceChange, AppError> {
-    let change_kind = match row.change_kind.as_str() {
-        "new" => ExamSourceChangeKind::New,
-        "duration_changed" => ExamSourceChangeKind::DurationChanged,
-        "no_longer_eligible" => ExamSourceChangeKind::NoLongerEligible,
-        unexpected => {
-            tracing::error!(%unexpected, "invalid exam source change kind");
-            return Err(AppError::InternalServerError(
-                "Invalid exam source change kind".to_string(),
-            ));
-        }
-    };
-    Ok(ExamSourceChange {
-        source_id: row.source_id,
-        exam_schedule_item_id: row.exam_schedule_item_id,
-        assessment_phase_id: row.assessment_phase_id,
-        learning_group_id: row.learning_group_id,
-        homeroom_id: row.homeroom_id,
-        subject_id: row.subject_id,
-        grade_level_id: row.grade_level_id,
-        subject_code: row.subject_code,
-        subject_name: row.subject_name,
-        homeroom_name: row.homeroom_name,
-        change_kind,
-        snapshot_duration_minutes: row.snapshot_duration_minutes,
-        current_duration_minutes: row.current_duration_minutes,
-        scheduled: row.scheduled,
-    })
-}
-
-fn source_preview_token(
-    round_id: Uuid,
-    round_row_version: i64,
-    changes: &[ExamSourceChange],
-) -> String {
-    let mut digest = Sha256::new();
-    digest.update(round_id.as_bytes());
-    digest.update(round_row_version.to_be_bytes());
-    for change in changes {
-        digest.update(change.source_id.as_bytes());
-        digest.update(match change.change_kind {
-            ExamSourceChangeKind::New => b"new".as_slice(),
-            ExamSourceChangeKind::DurationChanged => b"duration_changed".as_slice(),
-            ExamSourceChangeKind::NoLongerEligible => b"no_longer_eligible".as_slice(),
-        });
-        digest.update(
-            change
-                .snapshot_duration_minutes
-                .unwrap_or_default()
-                .to_be_bytes(),
-        );
-        digest.update(
-            change
-                .current_duration_minutes
-                .unwrap_or_default()
-                .to_be_bytes(),
-        );
-        digest.update([u8::from(change.scheduled)]);
-    }
-    hex::encode(digest.finalize())
-}
-
-async fn fetch_source_change_rows(
-    connection: &mut sqlx::PgConnection,
-    round_id: Uuid,
-) -> Result<Vec<ExamSourceChangeRow>, AppError> {
-    DbSession::new(connection)
-        .query_as(
-            "academic_assessment.exam_schedule.services.workspace.fetch_source_change_rows",
-            EXAM_SOURCE_PREVIEW_SQL,
-        )
-        .bind(round_id)
-        .fetch_all()
-        .await
-        .map_err(AppError::from)
-}
-
-async fn fetch_source_change_rows_in_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    round_id: Uuid,
-) -> Result<Vec<ExamSourceChangeRow>, AppError> {
-    DbSession::new(&mut **tx)
-        .query_as(
-            "academic_assessment.exam_schedule.services.workspace.fetch_source_change_rows_in_tx",
-            EXAM_SOURCE_PREVIEW_SQL,
-        )
-        .bind(round_id)
-        .fetch_all()
-        .await
-        .map_err(AppError::from)
-}
-
-pub(super) async fn count_source_changes_in_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    round_id: Uuid,
-) -> Result<usize, AppError> {
-    Ok(fetch_source_change_rows_in_tx(tx, round_id).await?.len())
-}
-
-async fn insert_exam_source_in_tx(
-    tx: &mut Transaction<'_, Postgres>,
-    round_id: Uuid,
-    source_id: Uuid,
-) -> Result<i64, AppError> {
-    let result = DbSession::new(&mut **tx)
-        .query(
-            "academic_assessment.exam_schedule.services.workspace.insert_exam_source_in_tx",
-            r#"INSERT INTO academic_exam_schedule_items (
-               exam_round_id, academic_term_id, academic_year_id,
-               assessment_phase_id, course_assessment_plan_id,
-               learning_offering_id, learning_group_id, homeroom_id,
-               subject_id, grade_level_id, duration_minutes
-           )
-           SELECT round.id, source.academic_term_id, source.academic_year_id,
-                  source.assessment_phase_id, source.course_assessment_plan_id,
-                  source.learning_offering_id, source.learning_group_id,
-                  source.homeroom_id, source.subject_id, source.grade_level_id,
-                  source.duration_minutes
-           FROM academic_exam_rounds round
-           JOIN academic_exam_eligible_sources source
-             ON source.academic_term_id = round.academic_term_id
-            AND source.academic_year_id = round.academic_year_id
-            AND source.exam_kind = round.exam_kind
-           WHERE round.id = $1 AND source.source_id = $2
-           ON CONFLICT (exam_round_id, assessment_phase_id, learning_group_id, homeroom_id)
-           DO NOTHING"#,
-        )
-        .bind(round_id)
-        .bind(source_id)
-        .execute()
-        .await?;
-    Ok(result.rows_affected() as i64)
-}
-
-const EXAM_SOURCE_PREVIEW_SQL: &str = r#"
-WITH round_context AS (
-    SELECT id, academic_term_id, academic_year_id, exam_kind
-    FROM academic_exam_rounds
-    WHERE id = $1
-), eligible AS (
-    SELECT source.*
-    FROM academic_exam_eligible_sources source
-    JOIN round_context round
-      ON round.academic_term_id = source.academic_term_id
-     AND round.academic_year_id = source.academic_year_id
-     AND round.exam_kind = source.exam_kind
-), existing AS (
-    SELECT uuid_generate_v5(
-               '5c33b984-10df-58db-bf80-62dbc4a03d1b'::uuid,
-               'exam-source:' || item.assessment_phase_id::text || ':'
-                   || item.learning_group_id::text || ':' || item.homeroom_id::text
-           ) AS source_id,
-           item.*,
-           EXISTS (
-               SELECT 1 FROM academic_exam_sessions session
-               WHERE session.exam_schedule_item_id = item.id
-           ) AS scheduled
-    FROM academic_exam_schedule_items item
-    JOIN round_context round ON round.id = item.exam_round_id
-), changes AS (
-    SELECT eligible.source_id,
-           NULL::uuid AS exam_schedule_item_id,
-           eligible.assessment_phase_id,
-           eligible.learning_group_id,
-           eligible.homeroom_id,
-           eligible.subject_id,
-           eligible.grade_level_id,
-           'new'::text AS change_kind,
-           NULL::integer AS snapshot_duration_minutes,
-           eligible.duration_minutes AS current_duration_minutes,
-           false AS scheduled
-    FROM eligible
-    LEFT JOIN existing
-      ON existing.assessment_phase_id = eligible.assessment_phase_id
-     AND existing.learning_group_id = eligible.learning_group_id
-     AND existing.homeroom_id = eligible.homeroom_id
-    WHERE existing.id IS NULL
-    UNION ALL
-    SELECT existing.source_id,
-           existing.id,
-           existing.assessment_phase_id,
-           existing.learning_group_id,
-           existing.homeroom_id,
-           existing.subject_id,
-           existing.grade_level_id,
-           'duration_changed'::text,
-           existing.duration_minutes,
-           eligible.duration_minutes,
-           existing.scheduled
-    FROM existing
-    JOIN eligible
-      ON eligible.assessment_phase_id = existing.assessment_phase_id
-     AND eligible.learning_group_id = existing.learning_group_id
-     AND eligible.homeroom_id = existing.homeroom_id
-    WHERE existing.duration_minutes IS DISTINCT FROM eligible.duration_minutes
-    UNION ALL
-    SELECT existing.source_id,
-           existing.id,
-           existing.assessment_phase_id,
-           existing.learning_group_id,
-           existing.homeroom_id,
-           existing.subject_id,
-           existing.grade_level_id,
-           'no_longer_eligible'::text,
-           existing.duration_minutes,
-           NULL::integer,
-           existing.scheduled
-    FROM existing
-    LEFT JOIN eligible
-      ON eligible.assessment_phase_id = existing.assessment_phase_id
-     AND eligible.learning_group_id = existing.learning_group_id
-     AND eligible.homeroom_id = existing.homeroom_id
-    WHERE eligible.source_id IS NULL
-)
-SELECT changes.source_id,
-       changes.exam_schedule_item_id,
-       changes.assessment_phase_id,
-       changes.learning_group_id,
-       changes.homeroom_id,
-       changes.subject_id,
-       changes.grade_level_id,
-       subject.code AS subject_code,
-       coalesce(subject_version.name_th, subject_version.name_en, subject.code) AS subject_name,
-       homeroom.name AS homeroom_name,
-       changes.change_kind,
-       changes.snapshot_duration_minutes,
-       changes.current_duration_minutes,
-       changes.scheduled
-FROM changes
-JOIN subjects subject ON subject.id = changes.subject_id
-JOIN course_assessment_plans plan
-  ON plan.id = (
-      SELECT item.course_assessment_plan_id
-      FROM academic_exam_schedule_items item
-      WHERE item.id = changes.exam_schedule_item_id
-      UNION ALL
-      SELECT source.course_assessment_plan_id
-      FROM eligible source
-      WHERE source.source_id = changes.source_id
-      LIMIT 1
-  )
-JOIN subject_versions subject_version ON subject_version.id = plan.subject_version_id
-JOIN homerooms homeroom ON homeroom.id = changes.homeroom_id
-ORDER BY changes.change_kind, subject.code, homeroom.name, changes.source_id
-"#;
-
-pub(super) async fn fetch_workspace_counts_in_tx(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    round_id: Uuid,
-) -> Result<WorkspaceCounts, AppError> {
-    let row: (i64, i64, i64, i64, i64, i64, i64) = DbSession::new(&mut **tx)
-        .query_as(
-            "academic_assessment.exam_schedule.services.workspace.fetch_workspace_counts_in_tx",
-            WORKSPACE_COUNTS_SQL,
-        )
-        .bind(round_id)
-        .bind(true) // Publication also verifies the automatically synchronized seat snapshot.
-        .fetch_one()
-        .await?;
-
-    Ok(workspace_counts_from_row(row))
 }
 
 pub(super) fn workspace_counts_from_row(
@@ -870,6 +311,18 @@ pub(super) async fn fetch_unscheduled_items(
 ) -> Result<Vec<ExamScheduleItemView>, AppError> {
     DbSession::new(connection).query_as::<ExamScheduleItemView>("academic_assessment.exam_schedule.services.workspace.fetch_unscheduled_items",
         r#"
+        WITH item AS (
+          SELECT COALESCE(saved.id,uuid_generate_v5(round.id,source.source_id::text)) id,
+            round.id exam_round_id,source.academic_term_id,source.academic_year_id,
+            source.assessment_phase_id,source.course_assessment_plan_id,source.learning_offering_id,
+            source.learning_group_id,source.homeroom_id,source.subject_id,source.grade_level_id,
+            source.duration_minutes,COALESCE(saved.imported_at,round.created_at) imported_at
+          FROM academic_exam_rounds round JOIN academic_exam_eligible_sources source
+            ON source.academic_term_id=round.academic_term_id AND source.academic_year_id=round.academic_year_id AND source.exam_kind=round.exam_kind
+          LEFT JOIN academic_exam_schedule_items saved ON saved.exam_round_id=round.id
+            AND saved.assessment_phase_id=source.assessment_phase_id AND saved.learning_group_id=source.learning_group_id AND saved.homeroom_id=source.homeroom_id
+          WHERE round.id=$1
+        )
         SELECT item.id,
                item.exam_round_id,
                item.academic_term_id,
@@ -906,7 +359,7 @@ pub(super) async fn fetch_unscheduled_items(
                END AS grade_level_name,
                grade_level.level_type AS grade_level_type,
                grade_level.year AS grade_level_year
-        FROM academic_exam_schedule_items item
+        FROM item
         JOIN course_assessment_phases phase
           ON phase.id = item.assessment_phase_id
         JOIN learning_offerings offering ON offering.id = item.learning_offering_id
@@ -1078,7 +531,7 @@ pub(super) async fn fetch_workspace_counts(
             WORKSPACE_COUNTS_SQL,
         )
         .bind(round_id)
-        .bind(false) // Draft readiness requires valid class numbers, without a manual generation step.
+        .bind(true) // Current completeness includes the actual canonical seat assignments.
         .fetch_one()
         .await?;
 
@@ -1126,7 +579,6 @@ async fn fetch_paper_receipt_items(
           ON learning_group.learning_offering_id = plan.learning_offering_id
          AND learning_group.academic_term_id = plan.academic_term_id
          AND learning_group.academic_year_id = plan.academic_year_id
-         AND learning_group.status <> 'closed'
         JOIN learning_group_homerooms coverage ON coverage.learning_group_id = learning_group.id
         JOIN homerooms homeroom
           ON homeroom.id = coverage.homeroom_id

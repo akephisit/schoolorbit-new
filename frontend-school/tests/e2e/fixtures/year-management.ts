@@ -449,8 +449,8 @@ export async function mockYearManagement(
 						sourceChecksum: 'c'.repeat(64),
 						policy: {
 							requireHomeroomPlacements: false,
-							requirePublishedOfferings: false,
-							requirePublishedTimetable: false,
+							requireOfferings: false,
+							requireTimetable: false,
 							rowVersion: 1
 						}
 					} satisfies S['TermActivationWorkspace']);

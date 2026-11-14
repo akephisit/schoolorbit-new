@@ -3,12 +3,11 @@ use uuid::Uuid;
 
 use super::exam_schedule_service;
 use crate::integration_tests::academic::cutover_test_support::{
-    apply_migrations_through, record_passing_phase_a_reconciliation_marker,
-    seed_academic_cutover_fixture, CutoverFixture,
+    CutoverFixture, apply_migrations_through, record_passing_phase_a_reconciliation_marker,
+    seed_academic_cutover_fixture,
 };
 use school_academic_assessment::exam_schedule::models::{
-    CreateExamRoundRequest, ExamSourceChangeKind, ExamSourceSyncItemStatus,
-    PlaceExamSessionRequest, SyncExamSourcesRequest, UpsertDayRoomAssignmentRequest,
+    CreateExamRoundRequest, PlaceExamSessionRequest, UpsertDayRoomAssignmentRequest,
     UpsertExamDayRequest,
 };
 use school_test_db::create_named_test_pool_with_max_connections;
@@ -24,6 +23,7 @@ async fn migrated_pool(test_name: &str) -> sqlx::PgPool {
         .await
         .unwrap();
     school_test_db::run_test_migrations(&pool).await;
+    sqlx::query("UPDATE course_assessment_plans plan SET assessment_coordinator_id='50000000-0000-0000-0000-000000000002' WHERE EXISTS(SELECT 1 FROM learning_groups g JOIN learning_group_teachers t ON t.learning_group_id=g.id WHERE g.learning_offering_id=plan.learning_offering_id AND t.teacher_id='50000000-0000-0000-0000-000000000002')").execute(&pool).await.unwrap();
     pool
 }
 
@@ -184,14 +184,18 @@ async fn invigilator_assignment_mutations_return_the_updated_workspace() {
         .iter()
         .find(|assignment| assignment.assignment_id == assignment_id)
         .unwrap();
-    assert!(assigned_room
-        .invigilators
-        .iter()
-        .any(|invigilator| invigilator.staff_id == staff_id));
-    assert!(assigned
-        .staff_workloads
-        .iter()
-        .any(|workload| workload.staff_id == staff_id && workload.total_minutes == 60));
+    assert!(
+        assigned_room
+            .invigilators
+            .iter()
+            .any(|invigilator| invigilator.staff_id == staff_id)
+    );
+    assert!(
+        assigned
+            .staff_workloads
+            .iter()
+            .any(|workload| workload.staff_id == staff_id && workload.total_minutes == 60)
+    );
 
     let removed = exam_schedule_service::remove_invigilator_from_assignment(
         &pool,
@@ -207,272 +211,225 @@ async fn invigilator_assignment_mutations_return_the_updated_workspace() {
         .iter()
         .find(|assignment| assignment.assignment_id == assignment_id)
         .unwrap();
-    assert!(removed_room
-        .invigilators
-        .iter()
-        .all(|invigilator| invigilator.staff_id != staff_id));
-    assert!(removed
-        .staff_workloads
-        .iter()
-        .all(|workload| workload.staff_id != staff_id));
+    assert!(
+        removed_room
+            .invigilators
+            .iter()
+            .all(|invigilator| invigilator.staff_id != staff_id)
+    );
+    assert!(
+        removed
+            .staff_workloads
+            .iter()
+            .all(|workload| workload.staff_id != staff_id)
+    );
 }
 
 #[tokio::test]
-async fn source_preview_and_sync_preserve_snapshots_until_explicit_selection() {
-    let pool = migrated_pool("exam_source_preview_sync").await;
-    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-
-    sqlx::query("DELETE FROM academic_exam_sessions WHERE exam_round_id = $1")
-        .bind(round_id)
+async fn current_sources_refresh_without_writes_or_an_import_stage() {
+    let pool = migrated_pool("exam_current_sources").await;
+    let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    sqlx::query("DELETE FROM academic_exam_sessions WHERE exam_round_id=$1")
+        .bind(round)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("DELETE FROM academic_exam_schedule_items WHERE exam_round_id = $1")
-        .bind(round_id)
+    sqlx::query("DELETE FROM academic_exam_schedule_items WHERE exam_round_id=$1")
+        .bind(round)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query(
-        "UPDATE course_assessment_plans SET assessment_coordinator_id = $1, row_version = row_version + 1",
-    )
-        .bind(actor_id)
+    let first = exam_schedule_service::get_workspace(&pool, round)
+        .await
+        .unwrap();
+    assert!(first.unscheduled_items.len() > 1);
+    let repeated = exam_schedule_service::get_workspace(&pool, round)
+        .await
+        .unwrap();
+    assert_eq!(
+        first
+            .unscheduled_items
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        repeated
+            .unscheduled_items
+            .iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_exam_schedule_items WHERE exam_round_id=$1"
+        )
+        .bind(round)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    let phase = first.unscheduled_items[0].assessment_phase_id;
+    sqlx::query("UPDATE course_assessment_phases SET exam_duration_minutes=75 WHERE id=$1")
+        .bind(phase)
         .execute(&pool)
         .await
         .unwrap();
-
-    let initial = exam_schedule_service::preview_exam_sources(&pool, round_id)
+    let refreshed = exam_schedule_service::get_workspace(&pool, round)
         .await
         .unwrap();
-    assert!(initial.new_count > 1);
-    assert!(initial
-        .changes
-        .iter()
-        .all(|change| change.change_kind == ExamSourceChangeKind::New));
-    let synced = exam_schedule_service::sync_exam_sources(
-        &pool,
-        round_id,
-        actor_id,
-        SyncExamSourcesRequest {
-            round_row_version: initial.round_row_version,
-            preview_token: initial.preview_token,
-            source_ids: initial
-                .changes
-                .iter()
-                .map(|change| change.source_id)
-                .collect(),
-        },
+    assert!(
+        refreshed
+            .unscheduled_items
+            .iter()
+            .filter(|item| item.assessment_phase_id == phase)
+            .all(|item| item.duration_minutes == 75)
+    );
+    sqlx::query(
+        "UPDATE course_assessment_phases SET exam_arrangement='outside_timetable' WHERE id=$1",
     )
+    .bind(phase)
+    .execute(&pool)
     .await
     .unwrap();
-    assert_eq!(synced.inserted_count, initial.new_count);
+    let outside = exam_schedule_service::get_workspace(&pool, round)
+        .await
+        .unwrap();
+    assert!(
+        outside
+            .unscheduled_items
+            .iter()
+            .all(|item| item.assessment_phase_id != phase)
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_exam_schedule_items WHERE exam_round_id=$1"
+        )
+        .bind(round)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+}
 
-    let midterm_phase_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM course_assessment_phases WHERE phase_code = 'midterm' LIMIT 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    sqlx::query("UPDATE course_assessment_phases SET exam_duration_minutes = 90 WHERE id = $1")
-        .bind(midterm_phase_id)
+#[tokio::test]
+async fn current_round_metadata_is_revision_checked_and_preserves_placements() {
+    use school_academic_assessment::exam_schedule::models::UpdateExamRoundRequest;
+    let pool = migrated_pool("exam_current_metadata").await;
+    let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let before = exam_schedule_service::get_workspace(&pool, round)
+        .await
+        .unwrap();
+    let request = || UpdateExamRoundRequest {
+        row_version: before.round.row_version,
+        name: Some("Current final schedule".into()),
+        description: None,
+        exam_kind: None,
+    };
+    let saved = exam_schedule_service::update_round(&pool, round, request(), actor)
+        .await
+        .unwrap();
+    assert_eq!(saved.row_version, before.round.row_version + 1);
+    assert!(matches!(
+        exam_schedule_service::update_round(&pool, round, request(), actor).await,
+        Err(school_errors::AppError::Conflict(_))
+    ));
+    let after = exam_schedule_service::get_workspace(&pool, round)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(before.scheduled_sessions).unwrap(),
+        serde_json::to_value(after.scheduled_sessions).unwrap()
+    );
+    assert!(serde_json::to_value(saved).unwrap().get("status").is_none());
+}
+
+#[tokio::test]
+async fn current_duration_save_revalidates_the_existing_schedule_before_mutation() {
+    let pool = migrated_pool("exam_current_duration_conflict").await;
+    let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let before = exam_schedule_service::get_workspace(&pool, round)
+        .await
+        .unwrap();
+    let session = &before.scheduled_sessions[0];
+    sqlx::query("UPDATE course_assessment_phases SET exam_duration_minutes=600 WHERE id=$1")
+        .bind(session.assessment_phase_id)
         .execute(&pool)
         .await
         .unwrap();
-    let changed = exam_schedule_service::preview_exam_sources(&pool, round_id)
+    let workspace = exam_schedule_service::get_workspace(&pool, round)
         .await
         .unwrap();
-    assert_eq!(changed.duration_changed_count, initial.new_count);
-    let updated = exam_schedule_service::sync_exam_sources(
-        &pool,
-        round_id,
-        actor_id,
-        SyncExamSourcesRequest {
-            round_row_version: changed.round_row_version,
-            preview_token: changed.preview_token,
-            source_ids: changed
-                .changes
-                .iter()
-                .map(|change| change.source_id)
-                .collect(),
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(updated.updated_duration_count, initial.new_count);
-
-    sqlx::query(
-        "UPDATE course_assessment_phases SET exam_arrangement = 'outside_timetable' WHERE id = $1",
-    )
-    .bind(midterm_phase_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    let ineligible = exam_schedule_service::preview_exam_sources(&pool, round_id)
+    assert!(workspace.readiness.findings.iter().any(|finding|finding.code==school_academic_assessment::exam_schedule::models::ExamScheduleReadinessCode::InvalidCurrentSources));
+    assert!(
+        exam_schedule_service::place_exam_session(
+            &pool,
+            PlaceExamSessionRequest {
+                exam_schedule_item_id: session.exam_schedule_item_id,
+                exam_day_id: session.exam_day_id,
+                starts_at: session.starts_at
+            },
+            actor
+        )
+        .await
+        .is_err()
+    );
+    let after = exam_schedule_service::get_workspace(&pool, round)
         .await
         .unwrap();
-    assert_eq!(ineligible.no_longer_eligible_count, initial.new_count);
-    let snapshot_count_before_sync: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM academic_exam_schedule_items WHERE exam_round_id = $1",
-    )
-    .bind(round_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(snapshot_count_before_sync, initial.new_count);
-
-    let removed = exam_schedule_service::sync_exam_sources(
-        &pool,
-        round_id,
-        actor_id,
-        SyncExamSourcesRequest {
-            round_row_version: ineligible.round_row_version,
-            preview_token: ineligible.preview_token,
-            source_ids: ineligible
-                .changes
-                .iter()
-                .map(|change| change.source_id)
-                .collect(),
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(removed.removed_count, initial.new_count);
+    assert_eq!(
+        serde_json::to_value(before.scheduled_sessions).unwrap(),
+        serde_json::to_value(after.scheduled_sessions).unwrap(),
+        "failed current-duration placement rolls back materialized duration and actual sessions"
+    );
 }
 
 #[tokio::test]
-async fn published_round_source_preview_is_read_only() {
-    let pool = migrated_pool("exam_published_source_preview").await;
-    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    sqlx::query(
-        "UPDATE academic_exam_rounds SET status = 'published', published_at = now() WHERE id = $1",
-    )
-    .bind(round_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    let preview = exam_schedule_service::preview_exam_sources(&pool, round_id)
+async fn removing_a_placement_retires_its_item_but_keeps_round_room_and_seat_facts() {
+    let pool = migrated_pool("exam_current_remove_placement").await;
+    let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    let actor = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
+    let before = exam_schedule_service::get_workspace(&pool, round)
         .await
         .unwrap();
-    assert_eq!(preview.round_status, "published");
-    let result = exam_schedule_service::sync_exam_sources(
-        &pool,
-        round_id,
-        actor_id,
-        SyncExamSourcesRequest {
-            round_row_version: preview.round_row_version,
-            preview_token: preview.preview_token,
-            source_ids: Vec::new(),
-        },
-    )
-    .await;
-    assert!(result.is_err());
-}
-
-#[tokio::test]
-async fn placed_duration_sync_revalidates_the_existing_schedule_before_mutation() {
-    let pool = migrated_pool("exam_duration_sync_conflict").await;
-    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
-    sqlx::query(
-        "UPDATE course_assessment_plans SET assessment_coordinator_id = $1, row_version = row_version + 1",
-    )
-    .bind(actor_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        "UPDATE course_assessment_phases SET exam_duration_minutes = 600 WHERE phase_code = 'midterm'",
-    )
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let preview = exam_schedule_service::preview_exam_sources(&pool, round_id)
+    let session = &before.scheduled_sessions[0];
+    let rooms:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM academic_exam_day_room_assignments a WHERE exam_day_id=$1").bind(session.exam_day_id).fetch_one(&pool).await.unwrap();
+    exam_schedule_service::delete_exam_session(&pool, session.id, actor)
         .await
         .unwrap();
-    let scheduled_change = preview
-        .changes
-        .iter()
-        .find(|change| {
-            change.change_kind == ExamSourceChangeKind::DurationChanged && change.scheduled
-        })
-        .expect("fixture must expose one placed duration change");
-    let item_id = scheduled_change.exam_schedule_item_id.unwrap();
-    let result = exam_schedule_service::sync_exam_sources(
-        &pool,
-        round_id,
-        actor_id,
-        SyncExamSourcesRequest {
-            round_row_version: preview.round_row_version,
-            preview_token: preview.preview_token.clone(),
-            source_ids: vec![scheduled_change.source_id],
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(result.updated_duration_count, 0);
-    assert_eq!(result.results.len(), 1);
-    assert_eq!(result.results[0].source_id, scheduled_change.source_id);
-    assert_eq!(result.results[0].status, ExamSourceSyncItemStatus::Conflict);
-    assert!(result.results[0].message.is_some());
-    assert_eq!(result.round_row_version, preview.round_row_version);
-
-    let snapshot_duration: i32 = sqlx::query_scalar(
-        "SELECT duration_minutes FROM academic_exam_schedule_items WHERE id = $1",
-    )
-    .bind(item_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(snapshot_duration, 60);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM academic_exam_schedule_items WHERE id=$1"
+        )
+        .bind(session.exam_schedule_item_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap(),
+        0
+    );
+    let after = exam_schedule_service::get_workspace(&pool, round)
+        .await
+        .unwrap();
+    assert_eq!(after.round.id, round);
+    assert!(
+        after
+            .unscheduled_items
+            .iter()
+            .any(
+                |item| item.assessment_phase_id == session.assessment_phase_id
+                    && item.learning_group_id == session.learning_group_id
+            )
+    );
+    let unchanged:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM academic_exam_day_room_assignments a WHERE exam_day_id=$1").bind(session.exam_day_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(rooms, unchanged);
 }
 
 #[tokio::test]
-async fn imported_item_keeps_canonical_context() {
-    let pool = migrated_pool("exam_canonical_context").await;
-    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
-
-    let (round_term_id, item_term_id, offering_id, group_id, plan_offering_id, subject_id): (
-        Uuid,
-        Uuid,
-        Uuid,
-        Uuid,
-        Uuid,
-        Uuid,
-    ) = sqlx::query_as(
-        r#"SELECT round.academic_term_id, item.academic_term_id,
-                  item.learning_offering_id, item.learning_group_id,
-                  plan.learning_offering_id, item.subject_id
-           FROM academic_exam_schedule_items item
-           JOIN academic_exam_rounds round ON round.id = item.exam_round_id
-           JOIN course_assessment_plans plan ON plan.id = item.course_assessment_plan_id
-           JOIN subjects subject ON subject.id = item.subject_id
-           WHERE item.exam_round_id = $1"#,
-    )
-    .bind(round_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(round_term_id, item_term_id);
-    assert_eq!(offering_id, plan_offering_id);
-
-    let group_context: (Uuid, Uuid) = sqlx::query_as(
-        "SELECT academic_term_id, learning_offering_id FROM learning_groups WHERE id = $1",
-    )
-    .bind(group_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(group_context, (item_term_id, offering_id));
-    assert_ne!(subject_id, Uuid::nil());
-}
-
-#[tokio::test]
-async fn published_student_view_requires_term_and_uses_group_roster() {
+async fn current_student_view_requires_term_and_uses_group_roster() {
     let pool = migrated_pool("exam_published_group_roster").await;
     let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
-    let actor_id = Uuid::parse_str("50000000-0000-0000-0000-000000000002").unwrap();
     let student_id = Uuid::parse_str("50000000-0000-0000-0000-000000000001").unwrap();
     let term_id: Uuid =
         sqlx::query_scalar("SELECT academic_term_id FROM academic_exam_rounds WHERE id = $1")
@@ -481,22 +438,9 @@ async fn published_student_view_requires_term_and_uses_group_roster() {
             .await
             .unwrap();
 
-    sqlx::query(
-        r#"UPDATE academic_exam_rounds
-           SET status = 'published', published_at = now(), published_by = $2,
-               row_version = row_version + 1, updated_by = $2, updated_at = now()
-           WHERE id = $1"#,
-    )
-    .bind(round_id)
-    .bind(actor_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let schedule =
-        exam_schedule_service::list_my_published_exam_schedule(&pool, student_id, term_id)
-            .await
-            .unwrap();
+    let schedule = exam_schedule_service::list_my_exam_schedule(&pool, student_id, term_id)
+        .await
+        .unwrap();
     assert_eq!(schedule.len(), 1);
     assert_eq!(schedule[0].academic_term_id, term_id);
     assert_eq!(schedule[0].sessions.len(), 1);
@@ -511,10 +455,9 @@ async fn published_student_view_requires_term_and_uses_group_roster() {
     .execute(&pool)
     .await
     .unwrap();
-    let removed =
-        exam_schedule_service::list_my_published_exam_schedule(&pool, student_id, term_id)
-            .await
-            .unwrap();
+    let removed = exam_schedule_service::list_my_exam_schedule(&pool, student_id, term_id)
+        .await
+        .unwrap();
     assert!(removed.is_empty());
 }
 
@@ -651,6 +594,7 @@ async fn exam_lifecycle_rejects_closed_context_mutations_and_retains_history() {
                 &pool,
                 round,
                 UpdateExamRoundRequest {
+                    row_version: before["round"]["rowVersion"].as_i64().unwrap(),
                     name: Some("ห้ามแก้หลังปิด".into()),
                     description: None,
                     exam_kind: None,
@@ -708,26 +652,9 @@ async fn exam_lifecycle_rejects_closed_context_mutations_and_retains_history() {
             )
             .await,
         );
-        let preview = exam_schedule_service::preview_exam_sources(&pool, round)
-            .await
-            .unwrap();
-        blocked(
-            exam_schedule_service::sync_exam_sources(
-                &pool,
-                round,
-                actor,
-                SyncExamSourcesRequest {
-                    round_row_version: preview.round_row_version,
-                    preview_token: preview.preview_token,
-                    source_ids: vec![],
-                },
-            )
-            .await,
-        );
-        blocked(exam_schedule_service::publish_round(&pool, round, actor).await);
         blocked(exam_schedule_service::delete_exam_session(&pool, session.id, actor).await);
         blocked(exam_schedule_service::delete_exam_day(&pool, day).await);
-        blocked(exam_schedule_service::delete_round(&pool, round, true).await);
+        blocked(exam_schedule_service::delete_round(&pool, round).await);
         let after = serde_json::to_value(
             exam_schedule_service::get_workspace(&pool, round)
                 .await
@@ -879,7 +806,7 @@ async fn deleting_an_exam_round_cascades_owned_schedule_data() {
     let pool = migrated_pool("exam_round_delete_cascade").await;
     let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
 
-    exam_schedule_service::delete_round(&pool, round_id, true)
+    exam_schedule_service::delete_round(&pool, round_id)
         .await
         .unwrap();
 
@@ -909,30 +836,20 @@ async fn deleting_an_exam_round_cascades_owned_schedule_data() {
 }
 
 #[tokio::test]
-async fn deleting_a_published_exam_round_without_publish_permission_is_denied() {
-    let pool = migrated_pool("exam_round_delete_published_denied").await;
-    let round_id = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
-
-    sqlx::query(
-        "UPDATE academic_exam_rounds SET status = 'published', published_at = now() WHERE id = $1",
-    )
-    .bind(round_id)
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    let error = exam_schedule_service::delete_round(&pool, round_id, false)
+async fn current_round_deletion_does_not_require_a_retired_publish_stage() {
+    let pool = migrated_pool("exam_current_delete_round").await;
+    let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
+    exam_schedule_service::delete_round(&pool, round)
         .await
-        .unwrap_err();
-
-    assert!(matches!(error, school_errors::AppError::Forbidden(_)));
-    let round_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM academic_exam_rounds WHERE id = $1")
-            .bind(round_id)
+        .unwrap();
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM academic_exam_rounds WHERE id=$1")
+            .bind(round)
             .fetch_one(&pool)
             .await
-            .unwrap();
-    assert_eq!(round_count, 1);
+            .unwrap(),
+        0
+    );
 }
 
 #[test]
@@ -953,10 +870,12 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
         .await
         .unwrap();
     assert!(!before.paper_receipt_items.is_empty());
-    assert!(before
-        .paper_receipt_items
-        .iter()
-        .all(|item| item.exam_arrangement == "in_timetable"));
+    assert!(
+        before
+            .paper_receipt_items
+            .iter()
+            .all(|item| item.exam_arrangement == "in_timetable")
+    );
     let phase_id = before.paper_receipt_items[0].assessment_phase_id;
     sqlx::query("UPDATE course_assessment_phases SET exam_arrangement = 'outside_timetable', exam_duration_minutes = NULL WHERE id = $1")
         .bind(phase_id).execute(&pool).await.unwrap();
@@ -967,14 +886,24 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
         outside.paper_receipt_items.len(),
         before.paper_receipt_items.len()
     );
-    assert!(outside
-        .paper_receipt_items
-        .iter()
-        .filter(|item| item.assessment_phase_id == phase_id)
-        .all(|item| item.exam_arrangement == "outside_timetable"));
-    assert_eq!(
-        outside.unscheduled_items.len(),
-        before.unscheduled_items.len()
+    assert!(
+        outside
+            .paper_receipt_items
+            .iter()
+            .filter(|item| item.assessment_phase_id == phase_id)
+            .all(|item| item.exam_arrangement == "outside_timetable")
+    );
+    assert!(
+        before
+            .unscheduled_items
+            .iter()
+            .any(|item| item.assessment_phase_id == phase_id)
+    );
+    assert!(
+        outside
+            .unscheduled_items
+            .iter()
+            .all(|item| item.assessment_phase_id != phase_id)
     );
     assert_eq!(
         outside.scheduled_sessions.len(),
@@ -989,10 +918,12 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
     let no_exam = exam_schedule_service::get_workspace(&pool, round_id)
         .await
         .unwrap();
-    assert!(no_exam
-        .paper_receipt_items
-        .iter()
-        .all(|item| item.assessment_phase_id != phase_id));
+    assert!(
+        no_exam
+            .paper_receipt_items
+            .iter()
+            .all(|item| item.assessment_phase_id != phase_id)
+    );
 
     // The round's phase and term are authoritative even if another phase has an exam.
     sqlx::query("UPDATE academic_exam_rounds SET exam_kind = 'final' WHERE id = $1")
@@ -1003,13 +934,15 @@ async fn paper_receipts_include_outside_exams_without_adding_scheduling_items() 
     let final_round = exam_schedule_service::get_workspace(&pool, round_id)
         .await
         .unwrap();
-    assert!(final_round
-        .paper_receipt_items
-        .iter()
-        .all(|item| item.assessment_phase_id != phase_id));
+    assert!(
+        final_round
+            .paper_receipt_items
+            .iter()
+            .all(|item| item.assessment_phase_id != phase_id)
+    );
 }
 
-async fn exam_seat_publication_pool(test_name: &str) -> sqlx::PgPool {
+async fn exam_seat_pool(test_name: &str) -> sqlx::PgPool {
     let pool = migrated_pool(test_name).await;
     // The cutover fixture has two groups with different teachers, so it intentionally
     // leaves the shared assessment coordinator unset. Prepare one eligible exam group.
@@ -1018,16 +951,16 @@ async fn exam_seat_publication_pool(test_name: &str) -> sqlx::PgPool {
          WHERE EXISTS (SELECT 1 FROM course_assessment_phases phase JOIN academic_exam_schedule_items item ON item.assessment_phase_id=phase.id WHERE phase.plan_id=plan.id)",
     ).execute(&pool).await.unwrap();
     sqlx::query(
-        "UPDATE learning_groups SET status='closed' \
+        "DELETE FROM learning_group_homerooms WHERE learning_group_id IN(SELECT id FROM learning_groups \
          WHERE academic_term_id=(SELECT academic_term_id FROM academic_exam_rounds WHERE id='84000000-0000-0000-0000-000000000001') \
-         AND id NOT IN (SELECT learning_group_id FROM academic_exam_schedule_items)",
+         AND id NOT IN (SELECT learning_group_id FROM academic_exam_schedule_items))",
     ).execute(&pool).await.unwrap();
     pool
 }
 
 #[tokio::test]
-async fn exam_seats_follow_class_numbers_automatically_across_days_and_publication() {
-    let pool = exam_seat_publication_pool("exam_seat_automatic_numbers").await;
+async fn exam_seats_follow_class_numbers_across_direct_room_saves_and_current_reads() {
+    let pool = exam_seat_pool("exam_seat_automatic_numbers").await;
     let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
     let day = Uuid::parse_str("85000000-0000-0000-0000-000000000001").unwrap();
     let homeroom = Uuid::parse_str("40000000-0000-0000-0000-000000000025").unwrap();
@@ -1079,7 +1012,6 @@ async fn exam_seats_follow_class_numbers_automatically_across_days_and_publicati
     exam_schedule_service::upsert_day_room_assignment(&pool, second_day.id, request(), actor)
         .await
         .unwrap();
-    // Existing assignments with no generated seats can publish without per-room actions.
     sqlx::query("DELETE FROM academic_exam_seat_assignments WHERE student_id=$1")
         .bind(student)
         .execute(&pool)
@@ -1088,18 +1020,19 @@ async fn exam_seats_follow_class_numbers_automatically_across_days_and_publicati
     let workspace = exam_schedule_service::get_workspace(&pool, round)
         .await
         .unwrap();
-    assert!(workspace.readiness.can_publish, "{:?}", workspace.readiness);
-    let published = exam_schedule_service::publish_round(&pool, round, actor)
-        .await
-        .unwrap();
-    assert_eq!(published.status, "published");
+    assert!(!workspace.readiness.complete);
+    for exam_day in [day, second_day.id] {
+        exam_schedule_service::upsert_day_room_assignment(&pool, exam_day, request(), actor)
+            .await
+            .unwrap();
+    }
     let seats: Vec<String> = sqlx::query_scalar("SELECT seat.seat_number FROM academic_exam_seat_assignments seat JOIN academic_exam_day_room_assignments assignment ON assignment.id=seat.day_room_assignment_id JOIN academic_exam_days day ON day.id=assignment.exam_day_id WHERE day.exam_round_id=$1 AND seat.student_id=$2")
         .bind(round).bind(student).fetch_all(&pool).await.unwrap();
     assert_eq!(seats, vec!["12", "12"]);
-    let personal = exam_schedule_service::list_my_published_exam_schedule(
+    let personal = exam_schedule_service::list_my_exam_schedule(
         &pool,
         student,
-        published.academic_term_id,
+        workspace.round.academic_term_id,
     )
     .await
     .unwrap();
@@ -1112,9 +1045,11 @@ async fn exam_seats_follow_class_numbers_automatically_across_days_and_publicati
     .execute(&pool)
     .await
     .unwrap();
-    exam_schedule_service::publish_round(&pool, round, actor)
-        .await
-        .unwrap();
+    for exam_day in [day, second_day.id] {
+        exam_schedule_service::upsert_day_room_assignment(&pool, exam_day, request(), actor)
+            .await
+            .unwrap();
+    }
     let seats: Vec<String> = sqlx::query_scalar("SELECT seat.seat_number FROM academic_exam_seat_assignments seat JOIN academic_exam_day_room_assignments assignment ON assignment.id=seat.day_room_assignment_id JOIN academic_exam_days day ON day.id=assignment.exam_day_id WHERE day.exam_round_id=$1 AND seat.student_id=$2")
         .bind(round).bind(student).fetch_all(&pool).await.unwrap();
     assert_eq!(seats, vec!["27", "27"]);
@@ -1135,7 +1070,7 @@ async fn add_exam_seat_classmate(pool: &sqlx::PgPool, homeroom: Uuid, number: i3
 async fn exam_seats_reject_invalid_numbers_atomically_and_handle_number_swaps() {
     use school_academic_assessment::exam_schedule::models::ExamScheduleReadinessCode;
     use school_errors::AppError;
-    let pool = exam_seat_publication_pool("exam_seat_invalid_numbers").await;
+    let pool = exam_seat_pool("exam_seat_invalid_numbers").await;
     let round = Uuid::parse_str("84000000-0000-0000-0000-000000000001").unwrap();
     let day = Uuid::parse_str("85000000-0000-0000-0000-000000000001").unwrap();
     let homeroom = Uuid::parse_str("40000000-0000-0000-0000-000000000025").unwrap();
@@ -1161,15 +1096,25 @@ async fn exam_seats_reject_invalid_numbers_atomically_and_handle_number_swaps() 
         let workspace = exam_schedule_service::get_workspace(&pool, round)
             .await
             .unwrap();
-        assert!(!workspace.readiness.can_publish);
-        assert!(workspace
-            .readiness
-            .findings
-            .iter()
-            .any(|finding| finding.code == ExamScheduleReadinessCode::MissingSeatAssignments));
+        assert!(!workspace.readiness.complete);
+        assert!(
+            workspace
+                .readiness
+                .findings
+                .iter()
+                .any(|finding| finding.code == ExamScheduleReadinessCode::MissingSeatAssignments)
+        );
         let version = workspace.round.row_version;
         assert!(matches!(
-            exam_schedule_service::publish_round(&pool, round, actor).await,
+            exam_schedule_service::generate_seats_for_assignment(
+                &pool,
+                assignment.id,
+                school_academic_assessment::exam_schedule::models::GenerateSeatsRequest {
+                    regenerate: true
+                },
+                actor
+            )
+            .await,
             Err(AppError::BadRequest(_))
         ));
         let mut changed = request();
@@ -1213,9 +1158,11 @@ async fn exam_seats_reject_invalid_numbers_atomically_and_handle_number_swaps() 
         .execute(&pool)
         .await
         .unwrap();
-    exam_schedule_service::publish_round(&pool, round, actor)
-        .await
-        .unwrap();
+    for exam_day in [day] {
+        exam_schedule_service::upsert_day_room_assignment(&pool, exam_day, request(), actor)
+            .await
+            .unwrap();
+    }
     let remaining: Vec<Uuid> = sqlx::query_scalar(
         "SELECT student_id FROM academic_exam_seat_assignments WHERE day_room_assignment_id=$1",
     )

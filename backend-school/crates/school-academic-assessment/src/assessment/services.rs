@@ -307,7 +307,7 @@ pub async fn list_assessment_plans_on_connection(
         return Ok(Vec::new());
     };
     let published_offering_ids =
-        school_academic_delivery::services::versions::latest_published_course_offering_ids_on_connection(
+        school_academic_delivery::services::current::course_offering_ids_on_connection(
             connection,
             year,
             query.academic_term_id,
@@ -317,7 +317,7 @@ pub async fn list_assessment_plans_on_connection(
         return Ok(Vec::new());
     }
     let assigned_group_ids = if let Some(actor) = access.assigned_actor_id {
-        school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+        school_academic_delivery::services::current::assigned_group_ids_on_connection(
             connection,
             year,
             query.academic_term_id,
@@ -333,7 +333,7 @@ pub async fn list_assessment_plans_on_connection(
             assigned_group_ids.clone()
         }
         Some(instructor) => {
-            school_academic_delivery::services::versions::assigned_group_ids_on_connection(
+            school_academic_delivery::services::current::assigned_group_ids_on_connection(
                 connection,
                 year,
                 query.academic_term_id,
@@ -369,14 +369,14 @@ pub async fn list_assessment_plans_on_connection(
                    SELECT learning_group.id
                    FROM learning_groups learning_group
                    WHERE learning_group.learning_offering_id = offering.id
-                     AND learning_group.status <> 'closed'
+
                    ORDER BY learning_group.code, learning_group.id
                ) AS learning_group_ids,
                (
                    SELECT count(*)
                    FROM learning_groups learning_group
                    WHERE learning_group.learning_offering_id = offering.id
-                     AND learning_group.status <> 'closed'
+
                )::bigint AS learning_group_count,
                detail.assessment_total_score
         FROM learning_offerings offering
@@ -509,7 +509,7 @@ pub async fn get_plan_detail_on_connection(
     fetch_plan_detail(connection, offering_id).await
 }
 
-/// Initializes only missing coordinators, using the same published allocation as plan reads.
+/// Initializes only missing coordinators, using the same current allocation as plan reads.
 /// Delivery owns the transaction and publishes its allocation before invoking this operation.
 pub async fn fill_missing_coordinators(
     result_locks: &dyn crate::ports::ResultLockPort,
@@ -537,20 +537,20 @@ pub async fn fill_missing_coordinators(
         }
     }
     #[derive(FromRow)]
-    struct PublicationOfferingScope {
+    struct CurrentOfferingScope {
         offering_id: Uuid,
         academic_term_id: Uuid,
         academic_year_id: Uuid,
         subject_version_id: Uuid,
     }
-    let scopes: Vec<PublicationOfferingScope> = DbSession::new(&mut **transaction).query_as(
+    let scopes: Vec<CurrentOfferingScope> = DbSession::new(&mut **transaction).query_as(
         "academic_assessment.assessment.services.fill_missing_coordinators",
         r#"SELECT offering.id AS offering_id,offering.academic_term_id,offering.academic_year_id,
                   detail.subject_version_id
            FROM learning_offerings offering
            JOIN course_offering_details detail ON detail.learning_offering_id=offering.id
            WHERE offering.id=ANY($1) AND offering.academic_term_id=ANY($2)
-             AND offering.kind='course' AND offering.status='published'
+             AND offering.kind='course'
            ORDER BY offering.id FOR UPDATE OF offering"#,
     ).bind(&offering_ids).bind(&writable_terms).fetch_all().await?;
     let eligible_ids = scopes
@@ -560,7 +560,7 @@ pub async fn fill_missing_coordinators(
     let mut candidates = load_coordinator_candidates(&mut **transaction, &eligible_ids).await?;
     let group_counts: Vec<(Uuid, i64)> = DbSession::new(&mut **transaction).query_as(
         "academic_assessment.assessment.services.fill_missing_coordinators",
-        "SELECT learning_offering_id,count(*)::bigint FROM learning_groups WHERE learning_offering_id=ANY($1) AND status<>'closed' GROUP BY learning_offering_id",
+        "SELECT learning_offering_id,count(*)::bigint FROM learning_groups WHERE learning_offering_id=ANY($1) GROUP BY learning_offering_id",
     ).bind(&eligible_ids).fetch_all().await?;
     let group_counts = group_counts.into_iter().collect::<HashMap<_, _>>();
     for scope in scopes {
@@ -1148,15 +1148,11 @@ async fn fetch_plan_detail(
     .bind(offering_id)
     .fetch_optional()
     .await?;
-    let learning_group_ids: Vec<Uuid> = DbSession::new(connection)
-        .scalar(
-            "academic_assessment.assessment.services.fetch_plan_detail",
-            r#"SELECT id FROM learning_groups
-           WHERE learning_offering_id = $1 AND status <> 'closed'
-           ORDER BY code, id"#,
+    let learning_group_ids =
+        school_academic_delivery::services::current::offering_group_ids_on_connection(
+            connection,
+            offering_id,
         )
-        .bind(offering_id)
-        .fetch_all()
         .await?;
     let candidates = load_coordinator_candidates(connection, &[offering_id])
         .await?
@@ -1329,7 +1325,7 @@ async fn load_coordinator_candidates(
         return Ok(HashMap::new());
     }
     let allocations =
-        school_academic_delivery::services::versions::teacher_allocations_on_connection(
+        school_academic_delivery::services::current::teacher_allocations_on_connection(
             connection,
             offering_ids,
         )
@@ -1604,8 +1600,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             AssessmentPhaseCode::ALL
         );
-        assert!(phases
-            .iter()
-            .all(|phase| phase.id.is_none() && phase.max_score == "0.00"));
+        assert!(
+            phases
+                .iter()
+                .all(|phase| phase.id.is_none() && phase.max_score == "0.00")
+        );
     }
 }

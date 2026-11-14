@@ -78,8 +78,7 @@ pub(super) async fn load_workspace(
             && !c.invalidated
             && (c.source_checksum != source_checksum
                 || c.roster_checksum != roster_checksum
-                || (scope.delivery_version_id.is_some()
-                    && !group.primary_teacher_ids.contains(&c.confirmed_by)))
+                || !group.primary_teacher_ids.contains(&c.confirmed_by))
         {
             invalidate(tx, scope, ctx, Some(group.group_id)).await?;
             c.invalidated = true;
@@ -90,7 +89,6 @@ pub(super) async fn load_workspace(
         !c.invalidated
             && c.source_checksum == source_checksum
             && c.roster_checksum == roster_checksum
-            && scope.delivery_version_id.is_some()
             && group.primary_teacher_ids.contains(&c.confirmed_by)
     });
     let editable = scope.academic_state.is_writable()

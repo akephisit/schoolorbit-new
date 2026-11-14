@@ -136,18 +136,11 @@ test('calendar month shallow history refreshes events only and Back restores mon
 	expect(api.count('calendar')).toBe(3);
 	expect(api.count('context')).toBe(0);
 });
-test('missing required term repairs URL once; foreign term never reaches primary', async ({
-	page
-}) => {
-	const api = await mockStudentSchedules(page);
-	await page.goto(`/student/exams?academicYearId=${year}&academicTermId=foreign-term`);
-	await expect(page).toHaveURL(new RegExp(`academicTermId=${term}`));
-	await expect(page.getByText(ready.exams, { exact: true })).toBeVisible();
-	expect(api.count('context')).toBe(1);
-	expect(api.count('exams')).toBe(1);
-	expect(
-		api.reads.find((url) => url.pathname === resources.exams)?.searchParams.get('academicTermId')
-	).toBe(term);
+test('missing required term repairs the URL once before its one current schedule read',async({page})=>{
+ const api=await mockStudentSchedules(page);await page.goto(`/student/exams?academicYearId=${year}`);await expect(page).toHaveURL(new RegExp(`academicTermId=${term}`));await expect(page.getByText(ready.exams,{exact:true})).toBeVisible();expect(api.count('context')).toBe(1);expect(api.count('exams')).toBe(1);expect(api.reads.find(url=>url.pathname===resources.exams)?.searchParams.get('academicTermId')).toBe(term);
+});
+test('an explicit foreign term remains unselected and never reaches a schedule read',async({page})=>{
+ const api=await mockStudentSchedules(page);await page.goto(`/student/exams?academicYearId=${year}&academicTermId=foreign-term`);await expect(page.getByRole('heading',{name:'ยังไม่มีตารางสอบ',exact:true})).toBeVisible();await expect(page).toHaveURL(/academicTermId=foreign-term/);await expect(page.getByRole('combobox',{name:'ภาคเรียน',exact:true})).toBeDisabled();expect(api.count('context')).toBe(1);expect(api.count('exams')).toBe(0);expect(api.writes).toEqual([]);
 });
 test('typed registration and withdrawal patch only affected offering', async ({ page }) => {
 	const api = await mockStudentSchedules(page);

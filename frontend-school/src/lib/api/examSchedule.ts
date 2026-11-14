@@ -8,12 +8,8 @@ import type { components, operations } from '#lib/api/generated/school-api.js';
 
 type Schemas = components['schemas'];
 
-export type ExamRoundKind = 'midterm' | 'final';
-export type ExamRoundStatus = 'draft' | 'published';
-export type ExamRound = Omit<Schemas['ExamRound'], 'examKind' | 'status'> & {
-	examKind: ExamRoundKind;
-	status: ExamRoundStatus;
-};
+export type ExamRoundKind = NonNullable<Schemas['CreateExamRoundRequest']['examKind']>;
+export type ExamRound = Schemas['ExamRound'];
 export type ExamDay = Schemas['ExamDay'];
 export type BlockedWindow = Schemas['BlockedWindow'];
 export type ExamDayDetail = Schemas['ExamDayDetail'];
@@ -21,16 +17,10 @@ export type ExamDayRoomAssignmentView = Schemas['ExamDayRoomAssignmentView'];
 export type ExamInvigilatorView = Schemas['ExamInvigilatorView'];
 export type ExamScheduleItem = Schemas['ExamScheduleItemView'];
 export type ExamSession = Schemas['ExamSessionView'];
-export type ExamScheduleWorkspace = Omit<Schemas['ExamScheduleWorkspace'], 'round'> & {
-	round: ExamRound;
-};
+export type ExamScheduleWorkspace = Schemas['ExamScheduleWorkspace'];
 export type ExamScheduleReadiness = Schemas['ExamScheduleReadiness'];
 export type ExamScheduleReadinessCode = Schemas['ExamScheduleReadinessCode'];
 export type ExamScheduleReadinessFinding = Schemas['ExamScheduleReadinessFinding'];
-export type ExamSourceChange = Schemas['ExamSourceChange'];
-export type ExamSourcePreview = Schemas['ExamSourcePreview'];
-export type ExamSourceSyncItemResult = Schemas['ExamSourceSyncItemResult'];
-export type SyncExamSourcesResult = Schemas['SyncExamSourcesResult'];
 export type DayRoomAssignmentView = Schemas['DayRoomAssignmentView'];
 export type InvigilatorView = Schemas['InvigilatorView'];
 export type ExamInvigilatorAssignmentSummary = Schemas['ExamInvigilatorAssignmentSummary'];
@@ -41,21 +31,16 @@ export type ExamInvigilatorStaffOption = Schemas['ExamInvigilatorStaffOption'];
 export type SeatAssignmentView = Schemas['SeatAssignmentView'];
 export type PersonalExamScheduleRound = Schemas['PersonalExamScheduleRound'];
 export type PersonalExamSessionView = Schemas['PersonalExamSessionView'];
-export type StaffPublishedExamScheduleRound = Schemas['StaffPublishedExamScheduleRound'];
-export type StaffPublishedExamDay = Schemas['StaffPublishedExamDay'];
-export type StaffPublishedExamSession = Schemas['StaffPublishedExamSession'];
-export type StaffPublishedExamRoomAssignment = Schemas['StaffPublishedExamRoomAssignment'];
-export type StaffPublishedExamInvigilator = Schemas['StaffPublishedExamInvigilator'];
+export type StaffExamScheduleRound = Schemas['StaffExamScheduleRound'];
+export type StaffExamDay = Schemas['StaffExamDay'];
+export type StaffExamSession = Schemas['StaffExamSession'];
+export type StaffExamRoomAssignment = Schemas['StaffExamRoomAssignment'];
+export type StaffExamInvigilator = Schemas['StaffExamInvigilator'];
 
-export type CreateExamRoundInput = Omit<Schemas['CreateExamRoundRequest'], 'examKind'> & {
-	examKind: ExamRoundKind;
-};
-export type UpdateExamRoundInput = Omit<Schemas['UpdateExamRoundRequest'], 'examKind'> & {
-	examKind?: ExamRoundKind | null;
-};
+export type CreateExamRoundInput = Schemas['CreateExamRoundRequest'];
+export type UpdateExamRoundInput = Schemas['UpdateExamRoundRequest'];
 export type BlockedWindowInput = Schemas['BlockedWindowInput'];
 export type UpsertExamDayInput = Schemas['UpsertExamDayRequest'];
-export type SyncExamSourcesInput = Schemas['SyncExamSourcesRequest'];
 export type UpsertDayRoomAssignmentInput = Schemas['UpsertDayRoomAssignmentRequest'];
 export type GenerateSeatsInput = Schemas['GenerateSeatsRequest'];
 export type UpdateExamInvigilatorsInput = Schemas['UpdateExamInvigilatorsRequest'];
@@ -163,28 +148,6 @@ export async function listExamInvigilatorStaffOptions(
 			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}/invigilator-staff-options${examInvigilatorStaffOptionsQuery(filters)}`
 		),
 		'ไม่สามารถโหลดรายชื่อครูสำหรับจัดกรรมการได้'
-	);
-}
-
-export async function previewExamSources(roundId: string): Promise<ExamSourcePreview> {
-	return apiData(
-		await apiClient.get<ExamSourcePreview>(
-			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}/source-preview`
-		),
-		'ไม่สามารถตรวจการเปลี่ยนแปลงรายการสอบได้'
-	);
-}
-
-export async function syncExamSources(
-	roundId: string,
-	input: SyncExamSourcesInput
-): Promise<SyncExamSourcesResult> {
-	return apiData(
-		await apiClient.post<SyncExamSourcesResult>(
-			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}/source-sync`,
-			input
-		),
-		'ไม่สามารถซิงก์รายการสอบที่เลือกได้'
 	);
 }
 
@@ -311,15 +274,6 @@ export async function deleteExamSession(sessionId: string): Promise<Schemas['Emp
 	);
 }
 
-export async function publishExamRound(roundId: string): Promise<ExamRound> {
-	return apiData(
-		await apiClient.post<ExamRound>(
-			`/api/academic/exam-schedules/${encodeURIComponent(roundId)}/publish`
-		),
-		'ไม่สามารถเผยแพร่ตารางสอบได้'
-	);
-}
-
 export async function listMyExamSchedules(
 	academicTermId: string,
 	options: ApiRequestOptions = {}
@@ -336,9 +290,9 @@ export async function listMyExamSchedules(
 export async function listStaffExamSchedules(
 	academicTermId: string,
 	options: ApiRequestOptions = {}
-): Promise<StaffPublishedExamScheduleRound[]> {
+): Promise<StaffExamScheduleRound[]> {
 	return apiData(
-		await apiClient.get<StaffPublishedExamScheduleRound[]>(
+		await apiClient.get<StaffExamScheduleRound[]>(
 			`/api/staff/exam-schedules${examScheduleQuery(requiredTerm(academicTermId))}`,
 			options
 		),

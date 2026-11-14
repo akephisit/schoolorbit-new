@@ -114,7 +114,7 @@ test('a new workspace version resets remembered choices and never uses an owner 
 	controller.setView('teacher');
 	controller.selectOwner(timetableIds.teacherB);
 	const next = workspace();
-	next.version = { ...next.version, id: timetableIds.publishedVersion };
+	next.timetable = { ...next.timetable, id: timetableIds.timetable };
 	controller.setWorkspace(next);
 	assert.equal(controller.selectedOwnerId, timetableIds.teacherA);
 	controller.setView('homeroom');

@@ -31,8 +31,8 @@ fn changes(row_version: i64) -> UpdateOpeningPolicyInput {
     UpdateOpeningPolicyInput {
         row_version,
         require_homeroom_placements: true,
-        require_published_offerings: true,
-        require_published_timetable: false,
+        require_offerings: true,
+        require_timetable: false,
     }
 }
 
@@ -47,8 +47,8 @@ async fn opening_policy_defaults_do_not_require_later_term_work_and_updates_need
     let initial = get_opening_policy(&pool, &reader).await.unwrap();
     assert_eq!(initial.row_version, 1);
     assert!(!initial.require_homeroom_placements);
-    assert!(!initial.require_published_offerings);
-    assert!(!initial.require_published_timetable);
+    assert!(!initial.require_offerings);
+    assert!(!initial.require_timetable);
     for permissions in [
         vec![],
         vec![codes::ACADEMIC_LIFECYCLE_MANAGE_SCHOOL.into()],
@@ -80,8 +80,8 @@ async fn opening_policy_defaults_do_not_require_later_term_work_and_updates_need
         .unwrap();
     assert_eq!(updated.row_version, 2);
     assert!(updated.require_homeroom_placements);
-    assert!(updated.require_published_offerings);
-    assert!(!updated.require_published_timetable);
+    assert!(updated.require_offerings);
+    assert!(!updated.require_timetable);
     assert_eq!(get_opening_policy(&pool, &reader).await.unwrap(), updated);
     assert!(matches!(
         update_opening_policy(&pool, &manager, changes(1)).await,

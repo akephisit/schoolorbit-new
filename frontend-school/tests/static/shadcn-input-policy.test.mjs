@@ -73,7 +73,7 @@ test('academic editors keep controlled shadcn Select values', async () => {
 
 	assert.match(periods, /value=\{selectedScheduleId\}/);
 	assert.match(periods, /selectedScheduleId = id/);
-	assert.match(timetable, /bind:value=\{versionSelectValue\}/);
+	assert.doesNotMatch(timetable, /versionSelectValue|selectedVersionId/);
 	assert.match(timetable, /value=\{controller\.selectedOwnerId \?\? ''\}/);
 	assert.match(timetable, /onValueChange=\{changeOwner\}/);
 	assert.doesNotMatch(timetable, /targetSelectValue|selectedScheduleId/);

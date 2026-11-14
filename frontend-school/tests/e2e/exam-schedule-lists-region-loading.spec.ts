@@ -1,3 +1,4 @@
+import type { ExamRound } from '../../src/lib/api/examSchedule';
 import { sessionState } from './fixtures/session-state';
 import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -14,7 +15,7 @@ const roundsUrl = (termId = termOne) =>
 const staffUrl = (termId = termOne) =>
 	`/staff/exams?academicYearId=${yearId}&academicTermId=${termId}`;
 
-function round(termId: string, name: string) {
+function round(termId: string, name: string): ExamRound {
 	return {
 		id: roundId,
 		academicYearId: yearId,
@@ -22,9 +23,7 @@ function round(termId: string, name: string) {
 		name,
 		description: null,
 		examKind: 'midterm',
-		status: 'draft',
 		rowVersion: 1,
-		publishedAt: null,
 		createdAt: '2026-05-01T00:00:00Z',
 		updatedAt: '2026-05-01T00:00:00Z'
 	};

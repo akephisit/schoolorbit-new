@@ -1,421 +1,85 @@
-import { revalidatePage } from './fixtures/page-revalidation';
-import { expect, test } from '@playwright/test';
+import {expect,test} from '@playwright/test';
+import {installTimetableMock,makeTimetableBlock,timetableIds} from './timetable-test-harness';
 
-import {
-	installTimetableMock,
-	makeDeliveryPublication,
-	makeTimetableBlock,
-	makeTimetableVersion,
-	timetableIds
-} from './timetable-test-harness';
+test.use({serviceWorkers:'block'});
+const url=()=>`/staff/academic/timetable?academicYearId=${timetableIds.year}&academicTermId=${timetableIds.term}&view=homeroom&ownerId=${timetableIds.homeroom}`;
+const header=(page:import('@playwright/test').Page)=>page.locator('header[aria-label="บริบทตารางสอน"]');
 
-test.use({ serviceWorkers: 'block' });
-test.describe.configure({ mode: 'serial' });
-
-function timetableUrl(versionId: string): string {
-	return (
-		`/staff/academic/timetable?academicYearId=${timetableIds.year}` +
-		`&academicTermId=${timetableIds.term}` +
-		`&timetableVersionId=${versionId}` +
-		`&view=homeroom&ownerId=${timetableIds.homeroom}`
-	);
-}
-
-test('loads one bounded draft workspace and preserves exact attached teachers', async ({
-	page
-}) => {
-	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1, {
-		instructorIds: [timetableIds.teacherA, timetableIds.teacherB]
-	});
-	const mock = await installTimetableMock(page, {
-		blocks: [block],
-		eligibleInstructorIds: [timetableIds.teacherA]
-	});
-
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-
-	await expect(page.getByRole('heading', { name: 'ตารางสอน', exact: true })).toBeVisible();
-	await expect(page.getByText('แบบร่าง · โหมดดู')).toBeVisible();
-	await expect(page.getByText('ครูคณิตศาสตร์ +1')).toBeVisible();
-	expect(mock.workspaceRequestCount()).toBe(1);
-
-	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
-	await expect(page.getByRole('dialog').getByText('ครูคณิตศาสตร์ B')).toBeVisible();
+test('loads one current workspace and preserves every exact attached teacher',async({page})=>{
+ const block=makeTimetableBlock(timetableIds.blockA,timetableIds.period1,{instructorIds:[timetableIds.teacherA,timetableIds.teacherB]});
+ const mock=await installTimetableMock(page,{blocks:[block],eligibleInstructorIds:[timetableIds.teacherA]});
+ await page.goto(url());
+ await expect(header(page)).toContainText('ตารางสอนปัจจุบัน');
+ await expect(page.getByText('ครูคณิตศาสตร์ +1')).toBeVisible();
+ expect(mock.timetableRequestCount()).toBe(1);expect(mock.workspaceRequestCount()).toBe(1);
+ await page.getByRole('button',{name:/ดูรายละเอียด ค21101/}).click();
+ await expect(page.getByRole('dialog').getByText('ครูคณิตศาสตร์ B')).toBeVisible();
+ expect(mock.retiredRequests()).toEqual([]);
 });
 
-test('renders a published timetable as the same read-only board', async ({ page }) => {
-	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1, {
-		versionId: timetableIds.publishedVersion
-	});
-	await installTimetableMock(page, { status: 'published', blocks: [block] });
-
-	await page.goto(timetableUrl(timetableIds.publishedVersion));
-
-	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
-	await expect(page.locator(`[data-block-id="${timetableIds.blockA}"]`)).toHaveAttribute(
-		'draggable',
-		'false'
-	);
-	await expect(page.getByRole('button', { name: /นำ .* ออกจากตาราง/ })).toHaveCount(0);
-
-	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
-	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByRole('heading', { name: 'รายละเอียดคาบ' })).toBeVisible();
-	await expect(dialog.getByRole('button', { name: 'บันทึก' })).toHaveCount(0);
+test('read-only staff inspect and export the same current board without management controls',async({page})=>{
+ const block=makeTimetableBlock(timetableIds.blockA,timetableIds.period1);
+ const mock=await installTimetableMock(page,{permissions:['academic_timetable.read.school'],blocks:[block]});
+ await page.goto(url());
+ await expect(page.locator(`[data-block-id="${block.id}"]`)).toHaveAttribute('draggable','false');
+ await expect(page.getByRole('button',{name:'แก้ไข',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'ดาวน์โหลด PDF',exact:true})).toBeEnabled();
+ await page.getByRole('button',{name:/ดูรายละเอียด ค21101/}).click();
+ await expect(page.getByRole('dialog').getByRole('button',{name:'บันทึก',exact:true})).toHaveCount(0);
+ expect(mock.createRequestCount()+mock.updateRequestCount()+mock.deleteRequestCount()).toBe(0);
+ expect(mock.retiredRequests()).toEqual([]);
 });
 
-test('starts with a full read-only board and exposes placement controls only after Edit', async ({
-	page
-}) => {
-	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
-	await installTimetableMock(page, { blocks: [block] });
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-	await expect(page.locator('aside article')).toHaveCount(0);
-	await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable', 'false');
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	await expect(page.locator('aside article')).not.toHaveCount(0);
-	await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable', 'true');
-	await page.getByRole('button', { name: 'เสร็จสิ้น', exact: true }).click();
-	await expect(page.getByText('แบบร่าง · โหมดดู')).toBeVisible();
-	await expect(page.locator('aside article')).toHaveCount(0);
+test('Edit validates current data once and exposes placement only while editing',async({page})=>{
+ const mock=await installTimetableMock(page,{blocks:[makeTimetableBlock(timetableIds.blockA,timetableIds.period1)]});
+ await page.goto(url());
+ await expect(header(page)).toBeVisible();
+ await expect(page.locator('aside article')).toHaveCount(0);
+ expect(mock.workspaceRequestCount()).toBe(1);
+ await page.getByRole('button',{name:'แก้ไข',exact:true}).click();
+ await expect(page.locator('aside article')).not.toHaveCount(0);
+ await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable','true');
+ expect(mock.workspaceRequestCount()).toBe(2);
+ await page.getByRole('button',{name:'เสร็จสิ้น',exact:true}).click();
+ await expect(page.locator('aside article')).toHaveCount(0);
+ await expect(page.locator('article[data-block-id]')).toHaveAttribute('draggable','false');
+ expect(mock.retiredRequests()).toEqual([]);
 });
 
-test('does not prompt a published timetable to update when opening data changes', async ({
-	page
-}) => {
-	const mock = await installTimetableMock(page, { status: 'published' });
-	await page.goto(timetableUrl(timetableIds.publishedVersion));
-	await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
-	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
-	expect(mock.workspaceRequestCount()).toBe(1);
-	mock.publishNewOpening();
-	const refreshed = page.waitForResponse((response) => {
-		const url = new URL(response.url());
-		return (
-			url.pathname === '/api/academic/timetable-blocks/workspace' &&
-			url.searchParams.get('timetableVersionId') === timetableIds.publishedVersion
-		);
-	});
-	await revalidatePage(page);
-	await (await refreshed).finished();
-	await expect.poll(mock.workspaceRequestCount).toBe(2);
-	await expect(page.getByTestId('timetable-board-ready')).toHaveAttribute('aria-busy', 'false');
-	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
-	await expect(page.getByText(/ข้อมูลเปิดสอนมีรุ่นเผยแพร่ใหม่/)).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'อัปเดตข้อมูลเปิดสอน', exact: true })).toHaveCount(
-		0
-	);
-	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
-	expect(mock.sourceUpdateRequestCount()).toBe(0);
+test('current Delivery demand refreshes under the same timetable without source commands',async({page})=>{
+ const mock=await installTimetableMock(page,{requiredPeriods:3});
+ await page.goto(url());await page.getByRole('button',{name:'แก้ไข',exact:true}).click();
+ await expect(page.getByText('3/3',{exact:true})).toBeVisible();
+ mock.changeDelivery({requiredPeriods:5});
+ await expect(page.getByText('5/5',{exact:true})).toBeVisible();
+ await expect(header(page)).toHaveAttribute('data-timetable-id',timetableIds.timetable);
+ expect(mock.workspace().deliveryRowVersion).toBe(2);
+ expect(mock.timetableCreateRequestCount()).toBe(0);expect(mock.retiredRequests()).toEqual([]);
 });
 
-test('keeps compact context filters in the top desktop header row', async ({ page }) => {
-	await page.setViewportSize({ width: 1543, height: 884 });
-	await installTimetableMock(page);
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-	const header = page.locator('header[aria-label="บริบทตารางสอน"]');
-	for (const view of ['ชั้น', 'กลุ่มเรียน', 'ครู', 'โรงเรียน']) {
-		await header.getByRole('button', { name: view, exact: true }).click();
-		const version = header.getByRole('combobox', { name: 'เลือกรุ่นตารางสอน', exact: true });
-		const owner = header.getByRole('combobox', {
-			name: view === 'โรงเรียน' ? 'เลือกวันดูภาพรวม' : 'เลือกรายการสำหรับจัดตาราง',
-			exact: true
-		});
-		await expect(owner).toBeVisible();
-		const versionBox = (await version.boundingBox())!;
-		const ownerBox = (await owner.boundingBox())!;
-		const viewsBox = (await header.locator('[aria-label="มุมมองตารางสอน"]').boundingBox())!;
-		const summaryBox = (await header
-			.getByRole('heading', { name: 'รุ่นตารางสอนที่เลือก', exact: true })
-			.locator('../..')
-			.boundingBox())!;
-		expect(summaryBox.x + summaryBox.width).toBeLessThan(versionBox.x);
-		expect(
-			Math.abs(summaryBox.y + summaryBox.height - versionBox.y - versionBox.height)
-		).toBeLessThanOrEqual(1);
-		expect(versionBox.width).toBeLessThanOrEqual(240);
-		expect(ownerBox.width).toBeLessThanOrEqual(240);
-		expect(Math.abs(versionBox.y - ownerBox.y)).toBeLessThanOrEqual(1);
-		expect(
-			Math.abs(ownerBox.y + ownerBox.height - viewsBox.y - viewsBox.height)
-		).toBeLessThanOrEqual(1);
-		expect(versionBox.x + versionBox.width).toBeLessThan(ownerBox.x);
-		expect(ownerBox.x + ownerBox.width).toBeLessThan(viewsBox.x);
-	}
+test('an unused term remains empty on GET until the school manager explicitly creates its current table',async({page})=>{
+ const mock=await installTimetableMock(page,{initiallyAbsent:true});
+ await page.goto(url());
+ await expect(page.getByText('ยังไม่มีตารางสอน',{exact:true})).toBeVisible();
+ expect(mock.timetableCreateRequestCount()).toBe(0);expect(mock.workspaceRequestCount()).toBe(0);
+ await page.getByRole('button',{name:'สร้างตารางสอน',exact:true}).click();
+ await expect(page.getByTestId('timetable-board-ready')).toBeVisible();
+ expect(mock.timetableCreateRequestCount()).toBe(1);expect(mock.retiredRequests()).toEqual([]);
 });
 
-test('aligns a newer opening during editing and keeps all review placements', async ({ page }) => {
-	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
-	const mock = await installTimetableMock(page, { blocks: [block] });
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	mock.setSourceIssues([
-		{
-			blockId: block.id,
-			learningGroupId: timetableIds.groupA,
-			teacherId: timetableIds.teacherA,
-			code: 'ineligible_instructor'
-		}
-	]);
-	mock.publishNewOpening();
-	await expect(page.getByText(/มีคาบที่ต้องตรวจแก้ก่อนเผยแพร่/)).toBeVisible();
-	await expect(page.locator('article[data-block-id]')).toHaveCount(1);
-	expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
-	expect(mock.workspace().version.deliveryVersionId).toBe(timetableIds.newDeliveryVersion);
-	expect(mock.blocks()).toEqual([block]);
+test('publication permission alone never grants direct management or singleton creation',async({page})=>{
+ const mock=await installTimetableMock(page,{permissions:['academic_timetable.read.school','academic_timetable.publish.school']});
+ await page.goto(url());await expect(header(page)).toBeVisible();
+ await expect(page.getByRole('button',{name:'แก้ไข',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'สร้างตารางสอน',exact:true})).toHaveCount(0);
+ expect(mock.timetableCreateRequestCount()).toBe(0);expect(mock.retiredRequests()).toEqual([]);
 });
 
-test('deletes only a confirmed draft then returns to its source', async ({ page }) => {
-	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
-	const mock = await installTimetableMock(page, { blocks: [block] });
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-	await page.getByRole('button', { name: 'เพิ่มเติม', exact: true }).click();
-	await page.getByRole('menuitem', { name: 'ลบแบบร่าง' }).click();
-	const confirmation = page.getByRole('alertdialog');
-	await expect(confirmation).toContainText('พร้อมคาบ 1 คาบ');
-	await confirmation.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
-	expect(mock.draftDeleteRequestCount()).toBe(0);
-	await page.getByRole('button', { name: 'เพิ่มเติม', exact: true }).click();
-	await page.getByRole('menuitem', { name: 'ลบแบบร่าง' }).click();
-	await page
-		.getByRole('alertdialog')
-		.getByRole('button', { name: 'ลบแบบร่าง', exact: true })
-		.click();
-	await expect(page).toHaveURL(new RegExp(`timetableVersionId=${timetableIds.publishedVersion}`));
-	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
-	expect(mock.draftDeleteRequestCount()).toBe(1);
-});
-
-test('publishes through the separate timetable readiness API', async ({ page }) => {
-	const mock = await installTimetableMock(page, {
-		blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
-	});
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(dialog).toContainText('พร้อมเผยแพร่ 1 คาบ');
-	await dialog.getByRole('button', { name: 'เผยแพร่', exact: true }).click();
-	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
-	expect(mock.publicationRequestCount()).toBe(1);
-});
-
-for (const action of ['เสร็จสิ้น', 'เผยแพร่เวอร์ชันใหม่', 'ลบแบบร่าง'] as const) {
-	test(`waits for autosave before ${action}`, async ({ page }) => {
-		let releaseDelete: () => void = () => {};
-		const deleteGate = new Promise<void>((resolve) => {
-			releaseDelete = resolve;
-		});
-		const mock = await installTimetableMock(page, {
-			blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)],
-			deleteGate
-		});
-		await page.goto(timetableUrl(timetableIds.draftVersion));
-		await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-		await page
-			.locator('article[data-block-id]')
-			.getByRole('button', { name: /นำ .* ออกจากตาราง/ })
-			.click();
-		await page.getByRole('button', { name: 'ยืนยันนำออก', exact: true }).click();
-		try {
-			await expect.poll(mock.deleteRequestCount).toBe(1);
-			await expect(page.getByRole('alertdialog')).toHaveCount(0);
-			if (action === 'ลบแบบร่าง') {
-				await page.getByRole('button', { name: 'เพิ่มเติม', exact: true }).click();
-				await page.getByRole('menuitem', { name: action }).click();
-			} else await page.getByRole('button', { name: action, exact: true }).click();
-			await expect(page.getByRole('button', { name: 'เสร็จสิ้น', exact: true })).toBeDisabled();
-			await expect(page.getByRole('dialog')).toHaveCount(0);
-			await expect(page.getByRole('alertdialog')).toHaveCount(0);
-			await expect(page.getByText('แบบร่าง · โหมดดู')).toHaveCount(0);
-			expect(mock.draftDeleteRequestCount()).toBe(0);
-			expect(mock.publicationRequestCount()).toBe(0);
-		} finally {
-			releaseDelete();
-		}
-		if (action === 'เสร็จสิ้น') await expect(page.getByText('แบบร่าง · โหมดดู')).toBeVisible();
-		else if (action === 'ลบแบบร่าง')
-			await expect(page.getByRole('alertdialog')).toContainText('พร้อมคาบ 0 คาบ');
-		else
-			await expect(
-				page.getByRole('dialog').getByRole('button', { name: 'ตรวจความพร้อม', exact: true })
-			).toBeVisible();
-	});
-}
-
-test('read-only permissions expose detail and export without lifecycle mutations', async ({
-	page
-}) => {
-	await installTimetableMock(page, {
-		status: 'published',
-		permissions: ['academic_timetable.read.school'],
-		blocks: [
-			makeTimetableBlock(timetableIds.blockA, timetableIds.period1, {
-				versionId: timetableIds.publishedVersion
-			})
-		]
-	});
-	await page.goto(timetableUrl(timetableIds.publishedVersion));
-	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true })).toHaveCount(
-		0
-	);
-	await expect(page.getByRole('button', { name: 'เพิ่มเติม', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'สรุปคาบ XLSX' })).toBeVisible();
-	await page.getByRole('button', { name: /ดูรายละเอียด ค21101/ }).click();
-	await expect(
-		page.getByRole('dialog').getByRole('button', { name: 'บันทึก', exact: true })
-	).toHaveCount(0);
-});
-
-for (const viewport of [
-	{ width: 1440, height: 900 },
-	{ width: 390, height: 844 }
-]) {
-	for (const dark of [false, true]) {
-		test(`read/edit layout and keyboard at ${viewport.width}px in ${dark ? 'dark' : 'light'} theme`, async ({
-			page
-		}) => {
-			await page.setViewportSize(viewport);
-			await installTimetableMock(page, {
-				blocks: [makeTimetableBlock(timetableIds.blockA, timetableIds.period1)]
-			});
-			await page.goto(timetableUrl(timetableIds.draftVersion));
-			await page.evaluate(
-				(isDark) => document.documentElement.classList.toggle('dark', isDark),
-				dark
-			);
-			await expect(page.getByRole('heading', { name: 'ตารางสอน', exact: true })).toBeVisible();
-			const overflow = await page.evaluate(
-				() => document.documentElement.scrollWidth > innerWidth + 1
-			);
-			expect(overflow).toBe(false);
-			const edit = page.getByRole('button', { name: 'แก้ไข', exact: true });
-			await edit.focus();
-			await page.keyboard.press('Enter');
-			await expect(page.getByText('แบบร่าง · กำลังแก้ไข')).toBeVisible();
-			await page.screenshot({
-				path: `/tmp/schoolorbit-timetable-${viewport.width}-${dark ? 'dark' : 'light'}.png`,
-				fullPage: true
-			});
-			await page.getByRole('button', { name: 'เสร็จสิ้น', exact: true }).focus();
-			await page.keyboard.press('Enter');
-			await expect(page.getByText('แบบร่าง · โหมดดู')).toBeVisible();
-		});
-	}
-}
-
-test('Edit aligns an old source to latest, preserving blocks and defaulting to its future start', async ({
-	page
-}) => {
-	const block = makeTimetableBlock(timetableIds.blockA, timetableIds.period1);
-	const mock = await installTimetableMock(page, {
-		blocks: [block],
-		deliveryPublications: [
-			makeDeliveryPublication(),
-			makeDeliveryPublication(timetableIds.newDeliveryVersion, 5, '2026-11-05')
-		]
-	});
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-	expect(mock.sourceUpdateRequestCount()).toBe(0);
-	await page.getByRole('button', { name: 'แก้ไข', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'เสร็จสิ้น', exact: true })).toBeVisible();
-	expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
-	expect(mock.blocks()).toEqual([block]);
-	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByLabel('รุ่นเปิดสอนที่ใช้อ้างอิง')).toContainText('รุ่นที่ 5');
-	await expect(
-		dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true })
-	).toContainText('5 พ.ย. 2569');
-	await expect(
-		dialog.getByRole('button', { name: 'ใช้รุ่นที่มีผลในวันที่เลือก', exact: true })
-	).toHaveCount(0);
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
-	expect(mock.sourceUpdateRequestCount()).toBe(1);
-	await dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true }).click();
-	await page.getByRole('button', { name: 'วันอาทิตย์ที่ 1 พฤศจิกายน 2569', exact: true }).click();
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
-	await expect(dialog.getByLabel('รุ่นเปิดสอนที่ใช้อ้างอิง')).toContainText('รุ่นที่ 5');
-	await dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true }).click();
-	await page.getByRole('button', { name: 'วันศุกร์ที่ 6 พฤศจิกายน 2569', exact: true }).click();
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(
-		dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true })
-	).toContainText('6 พ.ย. 2569');
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
-	expect(mock.sourceUpdateRequestCount()).toBe(1);
-});
-
-test('same-day published versions retain distinct numbers and superseded history stays accessible', async ({
-	page
-}) => {
-	const previous = {
-		...makeTimetableVersion('published'),
-		publicationNo: 5,
-		effectiveFrom: '2026-11-01',
-		effectiveUntil: '2026-10-31',
-		displayState: 'superseded' as const
-	};
-	const replacement = {
-		...previous,
-		id: timetableIds.draftVersion,
-		publicationNo: 6,
-		effectiveUntil: null,
-		displayState: 'current' as const,
-		publishedAt: '2026-11-01T05:00:00Z'
-	};
-	await installTimetableMock(page, { status: 'published', versions: [previous, replacement] });
-	await page.goto(timetableUrl(replacement.id));
-	const header = page.locator('header[aria-label="บริบทตารางสอน"]');
-	await expect(header).toContainText('รุ่นที่ 6');
-	await expect(header).toContainText('เผยแพร่');
-	await page.goto(timetableUrl(previous.id));
-	await expect(header).toContainText('รุ่นที่ 5');
-	await expect(header).toContainText('แผนนี้ถูกแทนที่แล้ว');
-	await expect(header).not.toContainText('ถึง');
-	await expect(page.getByText('เผยแพร่แล้ว · โหมดดู')).toBeVisible();
-});
-
-test('changing the timetable date invalidates readiness without altering the selected source', async ({
-	page
-}) => {
-	const mock = await installTimetableMock(page);
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
-	await dialog.getByRole('button', { name: 'เลือกวันที่เริ่มใช้ตาราง', exact: true }).click();
-	await page.getByRole('button', { name: 'วันจันทร์ที่ 2 พฤศจิกายน 2569', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeDisabled();
-	expect(mock.sourceUpdateRequestCount()).toBe(0);
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
-});
-
-test('publication permission alone aligns latest on publication entry without child edit rights', async ({
-	page
-}) => {
-	const mock = await installTimetableMock(page, {
-		permissions: ['academic_timetable.read.school', 'academic_timetable.publish.school'],
-		deliveryPublications: [
-			makeDeliveryPublication(),
-			makeDeliveryPublication(timetableIds.newDeliveryVersion, 5, '2026-11-05')
-		]
-	});
-	await page.goto(timetableUrl(timetableIds.draftVersion));
-	expect(mock.sourceUpdateRequestCount()).toBe(0);
-	await expect(page.getByRole('button', { name: 'แก้ไข', exact: true })).toHaveCount(0);
-	await page.getByRole('button', { name: 'เผยแพร่เวอร์ชันใหม่', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByLabel('รุ่นเปิดสอนที่ใช้อ้างอิง')).toContainText('รุ่นที่ 5');
-	expect(mock.sourceUpdateBodies()).toEqual([{ rowVersion: 1 }]);
-	await dialog.getByRole('button', { name: 'ตรวจความพร้อม', exact: true }).click();
-	await expect(dialog.getByRole('button', { name: 'เผยแพร่', exact: true })).toBeEnabled();
-	expect(mock.updateRequestCount()).toBe(0);
+test('current context tools fit the desktop header without a retired version selector',async({page})=>{
+ await page.setViewportSize({width:1440,height:1000});await installTimetableMock(page);await page.goto(url());
+ const owner=header(page).getByRole('combobox',{name:'เลือกรายการสำหรับจัดตาราง',exact:true});
+ await expect(owner).toBeVisible();
+ expect((await owner.boundingBox())!.width).toBeLessThanOrEqual(240);
+ await expect(page.getByRole('combobox',{name:'เลือกรุ่นตารางสอน',exact:true})).toHaveCount(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });

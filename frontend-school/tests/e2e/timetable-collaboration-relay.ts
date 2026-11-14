@@ -3,28 +3,28 @@ import { createServer } from 'node:http';
 import type { Duplex } from 'node:stream';
 import type { Page, WebSocketRoute } from '@playwright/test';
 import type {
-	DraftClientMessage,
-	DraftEventEnvelope,
-	DraftParticipant,
-	DraftReservation,
+	TimetableClientMessage,
+	TimetableEventEnvelope,
+	TimetableParticipant,
+	TimetableReservation,
 	TimetableBlockWorkspace,
-	DraftPatch,
-	DraftLookupChanges,
+	TimetablePatch,
+	TimetableLookupChanges,
 	TimetableBlockPlacementCandidate
 } from '../../src/lib/api/timetable.js';
 
-type ServerMessage<T = DraftEventEnvelope> = T extends DraftEventEnvelope
+type ServerMessage<T = TimetableEventEnvelope> = T extends TimetableEventEnvelope
 	? Omit<T, 'epoch' | 'seq'>
 	: never;
 type FixturePeer = {
 	id: string;
-	user: DraftParticipant;
-	send(value: DraftEventEnvelope): void;
+	user: TimetableParticipant;
+	send(value: TimetableEventEnvelope): void;
 	active: string | null;
 };
 type FixtureLease = {
 	token: string;
-	public: DraftReservation;
+	public: TimetableReservation;
 	candidate: TimetableBlockPlacementCandidate | null;
 };
 
@@ -42,7 +42,7 @@ function lookupDelta<T>(before: readonly T[], after: readonly T[], key: (value: 
 function lookupChanges(
 	before: TimetableBlockWorkspace,
 	after: TimetableBlockWorkspace
-): DraftLookupChanges | undefined {
+): TimetableLookupChanges | undefined {
 	const staff = lookupDelta(before.staff, after.staff, (value) => value.id),
 		homerooms = lookupDelta(before.homerooms, after.homerooms, (value) => value.id),
 		rooms = lookupDelta(before.rooms, after.rooms, (value) => value.id),
@@ -80,8 +80,8 @@ export function createDraftRelay() {
 	let canonical: TimetableBlockWorkspace | null = null;
 	const peers = new Map<string, FixturePeer>();
 	const leases = new Map<string, FixtureLease>();
-	const journal: DraftEventEnvelope[] = [];
-	const received: { connectionId: string; message: DraftClientMessage }[] = [];
+	const journal: TimetableEventEnvelope[] = [];
+	const received: { connectionId: string; message: TimetableClientMessage }[] = [];
 	let denyNextTarget = false;
 	let denyNextClaim = false;
 	let holdNextClaim = false;
@@ -136,14 +136,14 @@ export function createDraftRelay() {
 		};
 	}
 	function send(peer: FixturePeer, message: ServerMessage) {
-		if (holdNextStateSync && message.type === 'DraftStateSync') {
+		if (holdNextStateSync && message.type === 'TimetableStateSync') {
 			holdNextStateSync = false;
 			heldStateSync = () => send(peer, message);
 			return;
 		}
 		if (
 			holdNextClaim &&
-			message.type === 'DraftCommandResult' &&
+			message.type === 'TimetableCommandResult' &&
 			message.payload.command === 'claim' &&
 			message.payload.accepted
 		) {
@@ -157,7 +157,7 @@ export function createDraftRelay() {
 		for (const peer of peers.values()) send(peer, message);
 	}
 	function users() {
-		const result = new Map<string, DraftParticipant>();
+		const result = new Map<string, TimetableParticipant>();
 		for (const peer of peers.values()) {
 			const previous = result.get(peer.user.userId);
 			if (previous) previous.connections.push(...peer.user.connections);
@@ -166,11 +166,11 @@ export function createDraftRelay() {
 		return [...result.values()];
 	}
 	function presence() {
-		for (const user of users()) broadcast({ type: 'DraftPresenceChanged', payload: user });
+		for (const user of users()) broadcast({ type: 'TimetablePresenceChanged', payload: user });
 	}
 	function reservations() {
 		broadcast({
-			type: 'DraftReservationsChanged',
+			type: 'TimetableReservationsChanged',
 			payload: { reservations: [...leases.values()].map((item) => item.public) }
 		});
 		presence();
@@ -178,7 +178,7 @@ export function createDraftRelay() {
 			const active = peer.active && leases.get(peer.active);
 			if (!active) continue;
 			send(peer, {
-				type: 'DraftAvailability',
+				type: 'TimetableAvailability',
 				payload: {
 					source: active.public.source,
 					context: peer.user.connections[0].context,
@@ -222,7 +222,7 @@ export function createDraftRelay() {
 		};
 		peers.set(id, peer);
 		send(peer, {
-			type: 'DraftStateSync',
+			type: 'TimetableStateSync',
 			payload: {
 				connectionId: id,
 				workspace: canonical,
@@ -233,7 +233,7 @@ export function createDraftRelay() {
 		presence();
 		return {
 			id,
-			receive(message: DraftClientMessage) {
+			receive(message: TimetableClientMessage) {
 				received.push({ connectionId: id, message: structuredClone(message) });
 				if (message.type === 'ClientPresenceUpdate') {
 					Object.assign(peer.user.connections[0], message.payload);
@@ -259,7 +259,7 @@ export function createDraftRelay() {
 					if (collision || denyNextClaim) {
 						denyNextClaim = false;
 						send(peer, {
-							type: 'DraftCommandResult',
+							type: 'TimetableCommandResult',
 							payload: {
 								requestId: message.payload.requestId,
 								command,
@@ -285,7 +285,7 @@ export function createDraftRelay() {
 					peer.active = lease.token;
 					activePresence(peer);
 					send(peer, {
-						type: 'DraftCommandResult',
+						type: 'TimetableCommandResult',
 						payload: {
 							requestId: message.payload.requestId,
 							command,
@@ -303,7 +303,7 @@ export function createDraftRelay() {
 				const lease = leases.get(message.payload.leaseToken);
 				if (!lease || lease.public.ownerConnectionId !== id) {
 					send(peer, {
-						type: 'DraftCommandResult',
+						type: 'TimetableCommandResult',
 						payload: {
 							requestId: message.payload.requestId,
 							command,
@@ -316,7 +316,7 @@ export function createDraftRelay() {
 				if (message.type === 'ClientTarget' && denyNextTarget) {
 					denyNextTarget = false;
 					send(peer, {
-						type: 'DraftCommandResult',
+						type: 'TimetableCommandResult',
 						payload: {
 							requestId: message.payload.requestId,
 							command,
@@ -335,7 +335,7 @@ export function createDraftRelay() {
 				}
 				lease.public.expiresAt = new Date(Date.now() + 10000).toISOString();
 				send(peer, {
-					type: 'DraftCommandResult',
+					type: 'TimetableCommandResult',
 					payload: {
 						requestId: message.payload.requestId,
 						command,
@@ -358,7 +358,7 @@ export function createDraftRelay() {
 				peers.delete(id);
 				for (const [token, lease] of leases)
 					if (lease.public.ownerConnectionId === id) leases.delete(token);
-				broadcast({ type: 'DraftPresenceLeft', payload: { connectionId: id } });
+				broadcast({ type: 'TimetablePresenceLeft', payload: { connectionId: id } });
 				reservations();
 			}
 		};
@@ -370,8 +370,8 @@ export function createDraftRelay() {
 	) {
 		const previous = canonical;
 		canonical = structuredClone(workspace);
-		const patch: DraftPatch = {
-			timetableVersionId: workspace.version.id,
+		const patch: TimetablePatch = {
+			timetableId: workspace.timetable.id,
 			mutationId: identity.mutationId ?? randomUUID(),
 			originConnectionId: identity.connectionId,
 			upsertedBlocks: workspace.blocks.filter(
@@ -387,11 +387,11 @@ export function createDraftRelay() {
 			synchronizedDemands: workspace.synchronizedDemands,
 			summary: workspace.summary,
 			sourceIssues: workspace.sourceIssues,
-			totalDraftBlockCount: workspace.totalDraftBlockCount,
-			version: workspace.version,
+			totalBlockCount: workspace.totalBlockCount,
+			timetable: workspace.timetable,
 			lookupChanges: previous ? lookupChanges(previous, workspace) : undefined
 		};
-		const event: DraftEventEnvelope = { type: 'DraftPatched', payload: patch, epoch, seq: ++seq };
+		const event: TimetableEventEnvelope = { type: 'TimetablePatched', payload: patch, epoch, seq: ++seq };
 		journal.push(event);
 		if (publish) for (const peer of peers.values()) peer.send(event);
 		const consumed = identity.leaseToken ? leases.get(identity.leaseToken) : null;
@@ -415,7 +415,7 @@ export function createDraftRelay() {
 			seq = 0;
 			journal.length = 0;
 			leases.clear();
-			broadcast({ type: 'DraftReconcileRequired', payload: { reason: 'draft_invalidated' } });
+			broadcast({ type: 'TimetableReconcileRequired', payload: { reason: 'draft_invalidated' } });
 		},
 		received,
 		peers,
@@ -448,11 +448,11 @@ export function createDraftRelay() {
 		get workspace() {
 			return canonical;
 		},
-		send(connectionId: string, event: DraftEventEnvelope) {
+		send(connectionId: string, event: TimetableEventEnvelope) {
 			peers.get(connectionId)?.send(event);
 		},
 		reconcile() {
-			broadcast({ type: 'DraftReconcileRequired', payload: { reason: 'journal_gap' } });
+			broadcast({ type: 'TimetableReconcileRequired', payload: { reason: 'journal_gap' } });
 		}
 	};
 }
@@ -461,28 +461,28 @@ export type DraftRelay = ReturnType<typeof createDraftRelay>;
 export async function installRoutedDraftSocket(
 	page: Page,
 	relay: DraftRelay,
-	workspace: (versionId?: string) => TimetableBlockWorkspace,
+	workspace: (timetableId?: string) => TimetableBlockWorkspace,
 	identity: { userId: string; name: string }
 ) {
-	const rooms = new Map<string, DraftRelay>([[workspace().version.id, relay]]);
+	const rooms = new Map<string, DraftRelay>([[workspace().timetable.id, relay]]);
 	await page.routeWebSocket('**/ws/timetable*', (socket: WebSocketRoute) => {
-		if (!new URL(socket.url()).searchParams.has('timetableVersionId')) {
+		if (!new URL(socket.url()).searchParams.has('timetableId')) {
 			socket.send(JSON.stringify({ type: 'StateSync', payload: { users: [], current_seq: 0 } }));
 			return;
 		}
-		const versionId = new URL(socket.url()).searchParams.get('timetableVersionId') ?? undefined;
-		const selectedWorkspace = workspace(versionId);
-		let scopedRelay = rooms.get(selectedWorkspace.version.id);
+		const timetableId = new URL(socket.url()).searchParams.get('timetableId') ?? undefined;
+		const selectedWorkspace = workspace(timetableId);
+		let scopedRelay = rooms.get(selectedWorkspace.timetable.id);
 		if (!scopedRelay) {
 			scopedRelay = createDraftRelay();
-			rooms.set(selectedWorkspace.version.id, scopedRelay);
+			rooms.set(selectedWorkspace.timetable.id, scopedRelay);
 		}
 		const peer = scopedRelay.join(
 			selectedWorkspace,
 			(event) => socket.send(JSON.stringify(event)),
 			identity
 		);
-		socket.onMessage((data) => peer.receive(JSON.parse(String(data)) as DraftClientMessage));
+		socket.onMessage((data) => peer.receive(JSON.parse(String(data)) as TimetableClientMessage));
 		socket.onClose(() => peer.close());
 	});
 }
@@ -582,7 +582,7 @@ export async function startNativeDraftRelay(
 					frame(10, payload);
 					continue;
 				}
-				if (opcode === 1) peer.receive(JSON.parse(payload.toString()) as DraftClientMessage);
+				if (opcode === 1) peer.receive(JSON.parse(payload.toString()) as TimetableClientMessage);
 			}
 		}
 		socket.on('error', () => socket.destroy());

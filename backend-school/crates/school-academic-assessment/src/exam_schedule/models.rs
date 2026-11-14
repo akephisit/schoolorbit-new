@@ -14,9 +14,7 @@ pub struct ExamRound {
     pub name: String,
     pub description: Option<String>,
     pub exam_kind: String,
-    pub status: String,
     pub row_version: i64,
-    pub published_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -35,6 +33,7 @@ pub struct CreateExamRoundRequest {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateExamRoundRequest {
+    pub row_version: i64,
     pub name: Option<String>,
     pub description: Option<String>,
     pub exam_kind: Option<String>,
@@ -99,87 +98,6 @@ pub struct UpsertDayRoomAssignmentRequest {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateExamInvigilatorsRequest {
     pub invigilator_staff_ids: Vec<Uuid>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum ExamSourceChangeKind {
-    New,
-    DurationChanged,
-    NoLongerEligible,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct ExamSourceChange {
-    pub source_id: Uuid,
-    pub exam_schedule_item_id: Option<Uuid>,
-    pub assessment_phase_id: Uuid,
-    pub learning_group_id: Uuid,
-    pub homeroom_id: Uuid,
-    pub subject_id: Uuid,
-    pub grade_level_id: Uuid,
-    pub subject_code: String,
-    pub subject_name: String,
-    pub homeroom_name: String,
-    pub change_kind: ExamSourceChangeKind,
-    pub snapshot_duration_minutes: Option<i32>,
-    pub current_duration_minutes: Option<i32>,
-    pub scheduled: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum ExamSourceSyncItemStatus {
-    Applied,
-    Conflict,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct ExamSourceSyncItemResult {
-    pub source_id: Uuid,
-    pub change_kind: ExamSourceChangeKind,
-    pub status: ExamSourceSyncItemStatus,
-    pub message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct ExamSourcePreview {
-    pub round_id: Uuid,
-    pub round_status: String,
-    pub round_row_version: i64,
-    pub preview_token: String,
-    pub new_count: i64,
-    pub duration_changed_count: i64,
-    pub no_longer_eligible_count: i64,
-    pub changes: Vec<ExamSourceChange>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SyncExamSourcesRequest {
-    pub round_row_version: i64,
-    pub preview_token: String,
-    pub source_ids: Vec<Uuid>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct SyncExamSourcesResult {
-    pub inserted_count: i64,
-    pub updated_duration_count: i64,
-    pub removed_count: i64,
-    pub round_row_version: i64,
-    pub results: Vec<ExamSourceSyncItemResult>,
 }
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -463,7 +381,6 @@ pub struct ExamScheduleWorkspace {
     pub days: Vec<ExamDayDetail>,
     pub unscheduled_items: Vec<ExamScheduleItemView>,
     pub scheduled_sessions: Vec<ExamSessionView>,
-    pub source_preview: ExamSourcePreview,
     pub paper_receipt_items: Vec<ExamPaperReceiptItem>,
     pub readiness: ExamScheduleReadiness,
 }
@@ -472,7 +389,7 @@ pub struct ExamScheduleWorkspace {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ExamScheduleReadiness {
-    pub can_publish: bool,
+    pub complete: bool,
     pub findings: Vec<ExamScheduleReadinessFinding>,
 }
 
@@ -487,7 +404,7 @@ pub enum ExamScheduleReadinessCode {
     InvalidExamSessions,
     MissingSeatAssignments,
     InvigilatorConflicts,
-    PendingSourceChanges,
+    InvalidCurrentSources,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -506,7 +423,6 @@ pub struct PersonalExamScheduleRound {
     pub round_name: String,
     pub academic_term_id: Uuid,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub published_at: Option<DateTime<Utc>>,
     pub sessions: Vec<PersonalExamSessionView>,
 }
 
@@ -530,31 +446,30 @@ pub struct PersonalExamSessionView {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct StaffPublishedExamScheduleRound {
+pub struct StaffExamScheduleRound {
     pub round_id: Uuid,
     pub round_name: String,
     pub academic_term_id: Uuid,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub published_at: Option<DateTime<Utc>>,
-    pub days: Vec<StaffPublishedExamDay>,
+    pub days: Vec<StaffExamDay>,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct StaffPublishedExamDay {
+pub struct StaffExamDay {
     pub exam_day_id: Uuid,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub label: Option<String>,
     pub exam_date: NaiveDate,
-    pub sessions: Vec<StaffPublishedExamSession>,
-    pub room_assignments: Vec<StaffPublishedExamRoomAssignment>,
+    pub sessions: Vec<StaffExamSession>,
+    pub room_assignments: Vec<StaffExamRoomAssignment>,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct StaffPublishedExamSession {
+pub struct StaffExamSession {
     pub session_id: Uuid,
     pub starts_at: NaiveTime,
     pub ends_at: NaiveTime,
@@ -581,7 +496,7 @@ pub struct StaffPublishedExamSession {
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct StaffPublishedExamRoomAssignment {
+pub struct StaffExamRoomAssignment {
     pub assignment_id: Uuid,
     pub homeroom_id: Uuid,
     pub homeroom_name: String,
@@ -594,13 +509,13 @@ pub struct StaffPublishedExamRoomAssignment {
     pub earliest_starts_at: Option<NaiveTime>,
     #[cfg_attr(feature = "api-docs", schema(required = true))]
     pub latest_ends_at: Option<NaiveTime>,
-    pub invigilators: Vec<StaffPublishedExamInvigilator>,
+    pub invigilators: Vec<StaffExamInvigilator>,
 }
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct StaffPublishedExamInvigilator {
+pub struct StaffExamInvigilator {
     pub staff_id: Uuid,
     pub display_name: String,
 }

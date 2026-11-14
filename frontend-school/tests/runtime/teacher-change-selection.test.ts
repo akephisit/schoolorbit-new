@@ -1,99 +1,18 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import type { AcademicTermChangeSet } from '../../src/lib/api/learning-delivery.js';
-import { teacherChangeSelection } from '../../src/lib/academic/teacher-change-selection.ts';
+const contract=JSON.parse(await readFile(new URL('../../../contracts/openapi/school-api.json',import.meta.url),'utf8'));
 
-type Selection = Pick<AcademicTermChangeSet, 'baseTeacherAssignments' | 'items'>;
-const members: Selection['baseTeacherAssignments'] = [
-	{
-		assignmentId: 'same-day',
-		learningGroupId: 'group',
-		teacherId: 'teacher-a',
-		displayName: 'ครูต้นทาง',
-		role: 'primary'
-	},
-	{
-		assignmentId: 'future-ended',
-		learningGroupId: 'group',
-		teacherId: 'teacher-b',
-		displayName: 'ครูอีกคน',
-		role: 'secondary'
-	},
-	{
-		assignmentId: 'other-group',
-		learningGroupId: 'other',
-		teacherId: 'teacher-c',
-		displayName: 'ครูต่างกลุ่ม',
-		role: 'assistant'
-	}
-];
-function command(
-	actionKind: 'stop_group_teacher' | 'adjust_group_teacher_role' | 'add_group_teacher'
-): Selection['items'][number] {
-	const common = {
-		id: actionKind,
-		learningGroupId: 'group',
-		learningGroupLabel: 'กลุ่ม',
-		teacherId: 'teacher-a',
-		teacherLabel: 'ครูต้นทาง',
-		rowVersion: 1,
-		createdAt: '2026-11-01T00:00:00Z',
-		updatedAt: '2026-11-01T00:00:00Z',
-		createdBy: 'actor'
-	};
-	return actionKind === 'add_group_teacher'
-		? { ...common, actionKind, teacherRole: 'primary' }
-		: { ...common, actionKind, learningGroupTeacherId: 'same-day', teacherRole: 'secondary' };
-}
-
-test('teacher choices come from the exact base group membership without date eligibility guesses', () => {
-	const state = teacherChangeSelection({ baseTeacherAssignments: members, items: [] }, 'group');
-	assert.deepEqual(
-		state.availableAssignments.map((item) => item.assignmentId),
-		['same-day', 'future-ended']
-	);
-	assert.deepEqual([...state.blockedTeacherIds], ['teacher-a', 'teacher-b']);
-	assert.deepEqual(
-		teacherChangeSelection({ baseTeacherAssignments: [], items: [] }, 'group').availableAssignments,
-		[]
-	);
+test('current teacher replacement carries exact group revision and complete role choices',()=>{
+ const request=contract.components.schemas.ReplaceLearningGroupTeachersRequest;
+ assert.ok(request.required.includes('rowVersion'));
+ assert.ok(request.required.includes('teachers'));
+ assert.equal(request.properties.startsOn,undefined);
+ assert.equal(request.properties.endsOn,undefined);
+ assert.deepEqual(contract.components.schemas.TeacherAssignmentInput.required.toSorted(),['role','teacherId']);
 });
-
-test('a pending Stop allows the same teacher to be added again while pending Adjust retains membership', () => {
-	const stopped = teacherChangeSelection(
-		{ baseTeacherAssignments: members, items: [command('stop_group_teacher')] },
-		'group'
-	);
-	assert.deepEqual(
-		stopped.availableAssignments.map((item) => item.assignmentId),
-		['future-ended']
-	);
-	assert.equal(stopped.blockedTeacherIds.has('teacher-a'), false);
-	const adjusted = teacherChangeSelection(
-		{ baseTeacherAssignments: members, items: [command('adjust_group_teacher_role')] },
-		'group'
-	);
-	assert.deepEqual(
-		adjusted.availableAssignments.map((item) => item.assignmentId),
-		['future-ended']
-	);
-	assert.equal(adjusted.blockedTeacherIds.has('teacher-a'), true);
-});
-
-test('pending additions still block duplicate teachers after Stop and other-group actions stay scoped', () => {
-	const state = teacherChangeSelection(
-		{
-			baseTeacherAssignments: members,
-			items: [command('stop_group_teacher'), command('add_group_teacher')]
-		},
-		'group'
-	);
-	assert.equal(state.blockedTeacherIds.has('teacher-a'), true);
-	const other = { ...command('stop_group_teacher'), learningGroupId: 'other' };
-	const scoped = teacherChangeSelection(
-		{ baseTeacherAssignments: members, items: [other] },
-		'group'
-	);
-	assert.equal(scoped.availableAssignments.length, 2);
-	assert.equal(scoped.blockedTeacherIds.has('teacher-a'), true);
+test('saved assignment identity and activity state remain explicit in current metadata',()=>{
+ const teacher=contract.components.schemas.DeliveryTeacher;
+ for(const field of ['assignmentId','teacherId','role','rowVersion','isActive'])assert.ok(teacher.required.includes(field),field);
+ for(const field of ['startsOn','endsOn','status'])assert.equal(teacher.properties[field],undefined);
 });

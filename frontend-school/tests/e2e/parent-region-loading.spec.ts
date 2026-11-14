@@ -155,7 +155,7 @@ for (const [route, label] of [
 		const api = await mockParent(page);
 		await page.goto(route);
 		await expect(page).toHaveURL(new RegExp(`academicYearId=${year}`));
-		await page.getByRole('button', { name: 'ปีการศึกษา', exact: true }).click();
+		await page.getByRole('combobox', { name: 'ปีการศึกษา', exact: true }).click();
 		await page.getByRole('option', { name: '2570', exact: true }).click();
 		await expect(page).toHaveURL(new RegExp(`academicYearId=${nextYear}`));
 		await expect(page.getByText(/ห้องปีถัดไป/).first()).toBeVisible();

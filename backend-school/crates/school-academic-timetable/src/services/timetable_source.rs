@@ -1,28 +1,20 @@
 use std::collections::BTreeMap;
 
-use school_academic_delivery::models::versions::DeliverySnapshot;
+use school_academic_delivery::models::current::DeliveryGraph;
 use school_academic_delivery::models::{
     ActivitySchedulingMode, LearningOfferingSnapshot, LearningTeacherRole,
 };
-use school_errors::AppError;
-use serde::Serialize;
-use sha2::{Digest, Sha256};
+#[cfg(test)]
 use uuid::Uuid;
 
-use crate::models::timetable_block::{TimetableBlock, TimetableBlockKind, TimetableStructuralKind};
+#[cfg(test)]
+use crate::models::timetable_block::TimetableStructuralKind;
+use crate::models::timetable_block::{TimetableBlock, TimetableBlockKind};
 use crate::models::timetable_source::{TimetableSourceIssue, TimetableSourceIssueCode};
-
-/// Never use this code for commit uncertainty, stale revisions or cache publication failures.
-pub(crate) fn outdated_draft_source() -> AppError {
-    AppError::ConflictWithCode {
-        code: crate::models::timetable_source::TimetableDraftSourceConflictCode::DeliverySourceOutdated.as_str(),
-        message: "แบบร่างยังไม่ได้ปรับเป็นรุ่นเปิดสอนล่าสุด กรุณาปรับข้อมูลก่อนแก้ไข".into(),
-    }
-}
 
 /// Reconciliation never edits placements or guesses a replacement resource.
 pub fn source_issues(
-    snapshot: &DeliverySnapshot,
+    snapshot: &DeliveryGraph,
     blocks: &[TimetableBlock],
 ) -> Vec<TimetableSourceIssue> {
     let offerings = snapshot
@@ -94,11 +86,9 @@ pub fn source_issues(
                 );
             }
             for instructor in &placement.instructors {
-                match group
-                    .teachers
-                    .iter()
-                    .find(|teacher| teacher.teacher_id == instructor.teacher_id)
-                {
+                match group.teachers.iter().find(|teacher| {
+                    teacher.teacher_id == instructor.teacher_id && teacher.is_active
+                }) {
                     None => record(
                         TimetableSourceIssueCode::IneligibleInstructor,
                         Some(group.id),
@@ -125,119 +115,6 @@ pub(crate) fn role_text(role: LearningTeacherRole) -> &'static str {
     }
 }
 
-#[derive(Serialize)]
-struct Content<'a> {
-    delivery_version_id: Uuid,
-    blocks: Vec<BlockContent<'a>>,
-}
-
-#[derive(Serialize)]
-struct BlockContent<'a> {
-    day: &'a str,
-    period: Uuid,
-    kind: TimetableBlockKind,
-    mode: Option<ActivitySchedulingMode>,
-    offering: Option<Uuid>,
-    structural_kind: Option<TimetableStructuralKind>,
-    title: &'a Option<String>,
-    note: &'a Option<String>,
-    groups: Vec<GroupContent<'a>>,
-    homerooms: Vec<(Uuid, Option<Uuid>)>,
-    teachers: Vec<Uuid>,
-}
-
-#[derive(Serialize)]
-struct GroupContent<'a> {
-    id: Uuid,
-    room: Option<Uuid>,
-    homerooms: Vec<Uuid>,
-    instructors: Vec<(Uuid, &'a str, i32)>,
-}
-
-/// Clone IDs, row revisions, labels, series IDs and audit fields cannot establish
-/// a changed timetable. Sorted content retains duplicate lessons and exact roles.
-pub fn content_hash(
-    delivery_version_id: Uuid,
-    blocks: &[TimetableBlock],
-) -> Result<String, AppError> {
-    let mut content = Vec::new();
-    for block in blocks.iter().filter(|block| block.is_active) {
-        let mut groups = block
-            .groups
-            .iter()
-            .filter(|group| group.is_active)
-            .map(|group| {
-                let mut instructors = group
-                    .instructors
-                    .iter()
-                    .map(|instructor| {
-                        (
-                            instructor.teacher_id,
-                            instructor.role.as_str(),
-                            instructor.order_index,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                instructors.sort_unstable();
-                let mut homerooms = group.homeroom_ids.clone();
-                homerooms.sort_unstable();
-                GroupContent {
-                    homerooms,
-                    id: group.learning_group_id,
-                    room: group.room_id,
-                    instructors,
-                }
-            })
-            .collect::<Vec<_>>();
-        groups.sort_by_key(|group| group.id);
-        let mut homerooms = block
-            .homerooms
-            .iter()
-            .filter(|homeroom| homeroom.is_active)
-            .map(|homeroom| (homeroom.homeroom_id, homeroom.room_id))
-            .collect::<Vec<_>>();
-        homerooms.sort_unstable();
-        let mut teachers = block
-            .teachers
-            .iter()
-            .filter(|teacher| teacher.is_active)
-            .map(|teacher| teacher.teacher_id)
-            .collect::<Vec<_>>();
-        teachers.sort_unstable();
-        content.push(BlockContent {
-            day: &block.day_of_week,
-            period: block.bell_schedule_period_id,
-            kind: block.block_kind,
-            mode: block.scheduling_mode,
-            offering: block.learning_offering_id,
-            structural_kind: block.structural_kind,
-            title: &block.title,
-            note: &block.note,
-            groups,
-            homerooms,
-            teachers,
-        });
-    }
-    // Serialize once per block to define an order over the entire semantic shape.
-    let mut sorted = content
-        .into_iter()
-        .map(|block| {
-            serde_json::to_vec(&block)
-                .map(|key| (key, block))
-                .map_err(|_| {
-                    AppError::InternalServerError("ไม่สามารถเปรียบเทียบเนื้อหาตารางสอนได้".into())
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    sorted.sort_by(|left, right| left.0.cmp(&right.0));
-    let bytes = serde_json::to_vec(&Content {
-        delivery_version_id,
-        blocks: sorted.into_iter().map(|(_, block)| block).collect(),
-    })
-    .map_err(|_| AppError::InternalServerError("ไม่สามารถเปรียบเทียบเนื้อหาตารางสอนได้".into()))?;
-    Ok(hex::encode(Sha256::digest(bytes)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,7 +123,7 @@ mod tests {
     fn structural_block(id: u128, day: &str) -> TimetableBlock {
         TimetableBlock {
             id: Uuid::from_u128(id),
-            timetable_version_id: Uuid::from_u128(2),
+            timetable_id: Uuid::from_u128(2),
             academic_term_id: Uuid::from_u128(3),
             academic_year_id: Uuid::from_u128(4),
             bell_schedule_id: Uuid::from_u128(5),
@@ -276,54 +153,11 @@ mod tests {
     }
 
     #[test]
-    fn copied_identity_and_revisions_do_not_count_as_schedule_changes() {
-        let original = structural_block(1, "MON");
-        let mut copy = original.clone();
-        copy.id = Uuid::from_u128(20);
-        copy.timetable_version_id = Uuid::from_u128(21);
-        copy.series_id = Some(Uuid::from_u128(22));
-        copy.row_version = 99;
-        copy.period_name = "ชื่อคาบที่แก้ไข".into();
-        assert_eq!(
-            content_hash(Uuid::nil(), &[original]).unwrap(),
-            content_hash(Uuid::nil(), &[copy]).unwrap()
-        );
-    }
-
-    #[test]
-    fn placement_and_delivery_source_changes_are_semantic_changes() {
-        let original = structural_block(1, "MON");
-        let other = structural_block(2, "TUE");
-        assert_ne!(
-            content_hash(Uuid::nil(), &[original.clone()]).unwrap(),
-            content_hash(Uuid::nil(), &[other]).unwrap()
-        );
-        assert_ne!(
-            content_hash(Uuid::nil(), &[original.clone()]).unwrap(),
-            content_hash(Uuid::from_u128(1), &[original]).unwrap()
-        );
-    }
-
-    #[test]
-    fn ordering_is_irrelevant_but_duplicate_lesson_content_is_preserved() {
-        let first = structural_block(1, "MON");
-        let second = structural_block(2, "TUE");
-        assert_eq!(
-            content_hash(Uuid::nil(), &[first.clone(), second.clone()]).unwrap(),
-            content_hash(Uuid::nil(), &[second, first.clone()]).unwrap()
-        );
-        assert_ne!(
-            content_hash(Uuid::nil(), &[first.clone()]).unwrap(),
-            content_hash(Uuid::nil(), &[first.clone(), first]).unwrap()
-        );
-    }
-
-    #[test]
     fn missing_source_keeps_lesson_intact_and_returns_its_id() {
         let mut lesson = structural_block(1, "MON");
         lesson.block_kind = TimetableBlockKind::Course;
         lesson.learning_offering_id = Some(Uuid::from_u128(10));
-        let findings = source_issues(&DeliverySnapshot { offerings: vec![] }, &[lesson.clone()]);
+        let findings = source_issues(&DeliveryGraph { offerings: vec![] }, &[lesson.clone()]);
         assert_eq!(
             findings,
             vec![TimetableSourceIssue {

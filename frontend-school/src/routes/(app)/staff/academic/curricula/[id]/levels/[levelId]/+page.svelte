@@ -468,7 +468,7 @@
 			const result = await getHomeroomDeliveryWorkspace(
 				context.academicYearId,
 				context.academicTermId,
-				{ deliveryVersionId: context.deliveryVersionId, signal }
+				{ signal }
 			);
 			if (alignmentRequest.isCurrent(revision)) alignment = result;
 		} catch (e) {

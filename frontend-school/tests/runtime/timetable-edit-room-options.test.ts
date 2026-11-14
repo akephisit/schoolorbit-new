@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { timetableEditRoomOptions } from '../../src/lib/academic/timetable/collaboration-presentation.ts';
 import type {
-	DraftAvailability,
+	TimetableAvailability,
 	TimetableBlockPlacementSource
 } from '../../src/lib/api/timetable.ts';
 import type { OwnedDraftLease } from '../../src/lib/academic/timetable/collaboration-session.ts';
@@ -26,7 +26,7 @@ const lease: OwnedDraftLease = {
 	expiresAt: new Date(2100000000000).toISOString(),
 	valid: true
 };
-const availability: DraftAvailability = {
+const availability: TimetableAvailability = {
 	source,
 	blockedCells: [],
 	roomOptions: {

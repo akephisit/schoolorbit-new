@@ -16,9 +16,7 @@ use super::room_assignments::{
     fetch_day_room_assignment_view, fetch_seat_assignment_context,
     map_day_room_assignment_write_error,
 };
-use super::rounds_and_days::{
-    ensure_exam_round_is_mutable, fetch_round, mark_round_draft_after_mutation,
-};
+use super::rounds_and_days::{bump_round_revision, fetch_round};
 use super::shared::{
     exam_invigilator_staff_lock_keys, has_invigilator_time_conflict, minutes_between_times,
     require_exam_write, unique_uuids, ExamWriteTarget, InvigilatorSessionWindow,
@@ -56,7 +54,6 @@ struct InvigilatorAssignmentMutationContext {
     assignment_id: Uuid,
     exam_day_id: Uuid,
     exam_round_id: Uuid,
-    round_status: String,
 }
 impl InvigilatorViewRow {
     fn into_view(self) -> InvigilatorView {
@@ -218,7 +215,7 @@ pub async fn update_assignment_invigilators(
         &invigilator_staff_ids,
     )
     .await?;
-    mark_round_draft_after_mutation(&mut tx, context.exam_round_id, Some(actor_user_id)).await?;
+    bump_round_revision(&mut tx, context.exam_round_id, Some(actor_user_id)).await?;
     tx.commit().await?;
 
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
@@ -242,7 +239,6 @@ pub async fn assign_invigilator_to_assignment(
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context =
         fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
-    ensure_exam_round_is_mutable(&context.round_status)?;
 
     let staff_ids = vec![staff_id];
     lock_exam_invigilator_staff_conflict_scope(&mut tx, context.exam_day_id, &staff_ids).await?;
@@ -265,7 +261,7 @@ pub async fn assign_invigilator_to_assignment(
 
     let round_id = context.exam_round_id;
     if removed_count > 0 || inserted_count > 0 {
-        mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
+        bump_round_revision(&mut tx, round_id, Some(actor_user_id)).await?;
     }
     tx.commit().await?;
 
@@ -281,7 +277,6 @@ pub async fn remove_invigilator_from_assignment(
     require_exam_write(&mut tx, ExamWriteTarget::Assignment(assignment_id)).await?;
     let context =
         fetch_invigilator_assignment_mutation_context_for_update(&mut tx, assignment_id).await?;
-    ensure_exam_round_is_mutable(&context.round_status)?;
 
     let deleted_count =
         delete_staff_invigilator_from_assignment_in_tx(&mut tx, context.assignment_id, staff_id)
@@ -289,7 +284,7 @@ pub async fn remove_invigilator_from_assignment(
 
     let round_id = context.exam_round_id;
     if deleted_count > 0 {
-        mark_round_draft_after_mutation(&mut tx, round_id, Some(actor_user_id)).await?;
+        bump_round_revision(&mut tx, round_id, Some(actor_user_id)).await?;
     }
     tx.commit().await?;
 
@@ -808,8 +803,7 @@ async fn fetch_invigilator_assignment_mutation_context_for_update(
         r#"
         SELECT assignment.id AS assignment_id,
                assignment.exam_day_id,
-               exam_day.exam_round_id,
-               exam_round.status AS round_status
+               exam_day.exam_round_id
         FROM academic_exam_day_room_assignments assignment
         JOIN academic_exam_days exam_day ON exam_day.id = assignment.exam_day_id
         JOIN academic_exam_rounds exam_round ON exam_round.id = exam_day.exam_round_id

@@ -12,7 +12,7 @@ const smoke = readFileSync(new URL('../smoke_test.sh', import.meta.url), 'utf8')
 const probeSource = smoke.slice(smoke.indexOf('timetable_websocket_smoke() {'), smoke.indexOf('# Timetable WebSocket read-only smoke end'));
 const year = '00000000-0000-0000-0000-000000000001';
 const term = '00000000-0000-0000-0000-000000000002';
-const draft = '00000000-0000-0000-0000-000000000003';
+const current = '00000000-0000-0000-0000-000000000003';
 const connectionId = '00000000-0000-0000-0000-000000000004';
 const epoch = '00000000-0000-0000-0000-000000000005';
 const session = 'synthetic-private-session';
@@ -21,11 +21,11 @@ const origin = 'https://sandbox.example.test';
 const maxMessageBytes = 64 * 1024 * 1024;
 const nginxImage = 'public.ecr.aws/docker/library/nginx:stable-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94';
 const workspace = () => ({
- version: { id: draft, academicYearId: year, academicTermId: term, status: 'draft' },
- latestDeliveryVersionId: epoch, totalDraftBlockCount: 0, summary: {},
+ timetable: { id: current, academicYearId: year, academicTermId: term, bellScheduleId: epoch, rowVersion: 1 },
+ deliveryRowVersion: 1, totalBlockCount: 0, summary: {},
  ...Object.fromEntries(['sourceIssues', 'bellPeriods', 'blocks', 'ordinaryDemands', 'synchronizedDemands', 'learningGroups', 'homerooms', 'rooms', 'staff', 'offeringSubjectGroups'].map(key => [key, []]))
 });
-const sync = () => ({ epoch, seq: 0, type: 'DraftStateSync', payload: {
+const sync = () => ({ epoch, seq: 0, type: 'TimetableStateSync', payload: {
  connectionId, workspace: workspace(), users: [{ userId: epoch, name: 'Synthetic staff', color: '#123456', connections: [{ connectionId, context: null, anchor: null }] }], reservations: []
 } });
 const frameHeader = (opcode, length, final = true) => {
@@ -57,18 +57,18 @@ function execute(command, args, options) {
   child.on('close', status => resolve({ status, stdout, stderr }));
  });
 }
-async function runProbe(directory, api, { version = draft, ca = '', resolve = '', token = '', cookie = session, timeout = '3', httpWorkspace = workspace() } = {}) {
+async function runProbe(directory, api, { timetableId = current, ca = '', resolve = '', token = '', cookie = session, timeout = '3', httpWorkspace = workspace() } = {}) {
  const hostname = new URL(api).hostname;
  writeFileSync(path.join(directory, 'cookies'), `# Netscape HTTP Cookie File\n#HttpOnly_${hostname}\tFALSE\t/\tTRUE\t0\t__Host-schoolorbit_session\t${cookie}\n`, { mode: 0o600 });
  writeFileSync(path.join(directory, 'workspace'), JSON.stringify({ success: true, data: httpWorkspace }), { mode: 0o600 });
  return execute('bash', ['-euc', `pass() { printf 'PASS %s\\n' "$1"; }; fail() { printf 'FAIL %s\\n' "$1"; exit 1; }
 ${probeSource}
 cookie_jar=$1
-timetable_websocket_smoke fixture "$2" "$3" "$4" "$5"`, 'ws-fixture', path.join(directory, 'cookies'), year, term, version, path.join(directory, 'workspace')], {
+timetable_websocket_smoke fixture "$2" "$3" "$4" "$5"`, 'ws-fixture', path.join(directory, 'cookies'), year, term, timetableId, path.join(directory, 'workspace')], {
   env: { ...process.env, SMOKE_API_URL: api, SMOKE_ORIGIN: origin, SMOKE_SUBDOMAIN: 'sandbox', SMOKE_DIRECT_BACKEND: api.startsWith('http:') ? 'true' : 'false', SMOKE_RESOLVE_IP: resolve, SMOKE_CA_CERT: ca, SMOKE_RELEASE_PROBE_TOKEN: token, SMOKE_TIMEOUT_SECONDS: timeout }
  });
 }
-async function fixtureServer(t, { mode = 'draft', tls, requiredProbe = '', fragmented = false } = {}) {
+async function fixtureServer(t, { mode = 'current', tls, requiredProbe = '', fragmented = false } = {}) {
  const observations = { requests: [], commands: [], pings: 0, pongs: 0, closes: 0, errors: [], httpConnections: [], waitedForOversizedPayload: false };
  const server = tls ? https.createServer(tls) : http.createServer();
  server.on('request', (request, response) => {
@@ -90,8 +90,8 @@ async function fixtureServer(t, { mode = 'draft', tls, requiredProbe = '', fragm
   if (mode === 'bad-handshake') { socket.end('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: invalid\r\n\r\n'); return; }
   const accept = createHash('sha1').update(request.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-  let state = query.has('timetableVersionId') ? sync() : { type: 'StateSync', payload: { users: [], current_seq: 0 } };
-  if (mode === 'wrong-version') state.payload.workspace.version.id = epoch;
+  let state = query.has('timetableId') ? sync() : { type: 'StateSync', payload: { users: [], current_seq: 0 } };
+  if (mode === 'wrong-timetable') state.payload.workspace.timetable.id = epoch;
   if (mode === 'invalid-state') state.payload.users = null;
   if (mode === 'private-lease') state.payload.reservations = [{ leaseToken: session }];
   if (mode === 'oversized-frame' || mode === 'oversized-fragments') {
@@ -105,7 +105,7 @@ async function fixtureServer(t, { mode = 'draft', tls, requiredProbe = '', fragm
   if (mode === 'masked-server') { socket.write(Buffer.from([0x81, 0x80])); return; }
   if (mode === 'large-thai') {
    state.payload.workspace.blocks = [{ id: epoch, note: 'ก'.repeat(6 * 1024 * 1024) }];
-   state.payload.workspace.totalDraftBlockCount = 1;
+   state.payload.workspace.totalBlockCount = 1;
   }
   const body = Buffer.from(JSON.stringify(state));
   if (mode === 'large-thai') assert.ok(body.length > 16 * 1024 * 1024 && body.length < maxMessageBytes);
@@ -158,16 +158,16 @@ async function fixtureServer(t, { mode = 'draft', tls, requiredProbe = '', fragm
  return { server, port: server.address().port, observations };
 }
 
-test('standalone smoke performs read-only draft and term exchanges with masked frames and fragmented server heartbeat', async t => {
+test('standalone smoke performs read-only current and term exchanges with masked frames and fragmented server heartbeat', async t => {
  const directory = temporary(t);
  const { port, observations } = await fixtureServer(t, { fragmented: true });
- for (const version of [draft, '']) {
-  const result = await runProbe(directory, `http://localhost:${port}`, { version });
+ for (const timetableId of [current, '']) {
+  const result = await runProbe(directory, `http://localhost:${port}`, { timetableId });
   assert.equal(result.status, 0, result.stdout + result.stderr);
  }
  assert.deepEqual(observations.errors, []);
  assert.equal(observations.requests.length, 2);
- assert.deepEqual([...new URL(observations.requests[0].url, 'http://fixture').searchParams.keys()], ['academicTermId', 'timetableVersionId']);
+ assert.deepEqual([...new URL(observations.requests[0].url, 'http://fixture').searchParams.keys()], ['academicTermId', 'timetableId']);
  assert.deepEqual([...new URL(observations.requests[1].url, 'http://fixture').searchParams.keys()], ['academicTermId']);
  assert.deepEqual(observations.commands, [
   { type: 'ClientPresenceUpdate', payload: { context: { viewMode: 'wholeSchool', viewId: null, dayOfWeek: null }, anchor: null } },
@@ -176,7 +176,7 @@ test('standalone smoke performs read-only draft and term exchanges with masked f
  assert.equal(observations.pings, 2); assert.equal(observations.pongs, 2); assert.equal(observations.closes, 2);
 });
 
-test('standalone smoke accepts Thai draft events above sixteen MiB in single and fragmented frames', async t => {
+test('standalone smoke accepts Thai current events above sixteen MiB in single and fragmented frames', async t => {
  const directory = temporary(t);
  for (const fragmented of [false, true]) {
   await t.test(fragmented ? 'fragmented UTF-8 event' : 'single 64-bit-length frame', async child => {
@@ -234,7 +234,7 @@ test('standalone smoke requires the close reply and reports only bounded failure
 
 test('standalone smoke fails closed for invalid upgrades, scope, frames, private leases, credentials and stalled pong without exposing payloads', async t => {
  const directory = temporary(t);
- for (const mode of ['reject', 'bad-handshake', 'wrong-version', 'invalid-state', 'private-lease', 'masked-server', 'no-pong']) {
+ for (const mode of ['reject', 'bad-handshake', 'wrong-timetable', 'invalid-state', 'private-lease', 'masked-server', 'no-pong']) {
   await t.test(mode, async child => {
    const { port, observations } = await fixtureServer(child, { mode });
    const result = await runProbe(directory, `http://localhost:${port}`, { timeout: '0.4' });
@@ -247,8 +247,15 @@ test('standalone smoke fails closed for invalid upgrades, scope, frames, private
  const { port, observations } = await fixtureServer(t);
  const unauthorized = await runProbe(directory, `http://localhost:${port}`, { cookie: 'incorrect-private-cookie' });
  assert.equal(unauthorized.status, 1); assert.equal(observations.commands.length, 0);
- const invalidHttp = await runProbe(directory, `http://localhost:${port}`, { httpWorkspace: { ...workspace(), version: { ...workspace().version, academicTermId: epoch } } });
+ const invalidHttp = await runProbe(directory, `http://localhost:${port}`, { httpWorkspace: { ...workspace(), timetable: { ...workspace().timetable, academicTermId: epoch } } });
  assert.equal(invalidHttp.status, 1); assert.equal(observations.requests.length, 1, 'invalid authoritative HTTP scope must prevent upgrade');
+ const legacyCount = workspace();
+ legacyCount.totalTimetableBlockCount = legacyCount.totalBlockCount;
+ delete legacyCount.totalBlockCount;
+ const wrongContract = await runProbe(directory, `http://localhost:${port}`, { httpWorkspace: legacyCount });
+ assert.equal(wrongContract.status, 1);
+ assert.match(wrongContract.stdout, /^FAIL fixture input/);
+ assert.equal(observations.requests.length, 1, 'a fabricated legacy count field cannot reach the real socket');
 });
 
 function certificate(directory) {
@@ -271,7 +278,7 @@ test('resolve-pinned TLS preserves the intended Host/SNI and requires trusted ma
  assert.equal(observations.requests.length, 1, 'TLS denial must happen before authenticated headers are sent');
 });
 
-test('real Nginx maintenance probe upgrades authenticated read-only draft traffic while public traffic remains blocked', async t => {
+test('real Nginx maintenance probe upgrades authenticated read-only current traffic while public traffic remains blocked', async t => {
  const directory = temporary(t), tls = certificate(directory);
  const { port: upstreamPort, observations } = await fixtureServer(t);
  const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -320,7 +327,7 @@ test('real Nginx maintenance probe upgrades authenticated read-only draft traffi
  assert.equal(observations.requests.at(-1).headers.host, 'school-api.example.test');
  assert.equal(observations.requests.at(-1).headers.origin, origin);
  assert.equal(observations.requests.at(-1).headers['x-forwarded-proto'], 'https');
- assert.doesNotMatch(docker('logs', proxy), /academicTermId|timetableVersionId|synthetic-private|00000000/);
+ assert.doesNotMatch(docker('logs', proxy), /academicTermId|timetableId|synthetic-private|00000000/);
  assert.equal(await request('', '/ws/timetable'), 503, 'successful probe must leave maintenance active');
  // The same real frame exchange also exercises the normal deployed /ws/ owner.
  execFileSync('bash', ['scripts/render_nginx_config.sh', 'nginx-configs/school-api.conf.template', path.join(conf, 'school.conf'), 'example.test', 'a'.repeat(40), 'ready']);
@@ -333,5 +340,5 @@ test('real Nginx maintenance probe upgrades authenticated read-only draft traffi
   await new Promise(resolve => setTimeout(resolve, 100));
  }
  assert.equal(observations.pings, 2); assert.equal(observations.closes, 2);
- assert.doesNotMatch(docker('logs', proxy), /academicTermId|timetableVersionId|synthetic-private|00000000/);
+ assert.doesNotMatch(docker('logs', proxy), /academicTermId|timetableId|synthetic-private|00000000/);
 });
