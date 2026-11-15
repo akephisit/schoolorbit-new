@@ -2238,7 +2238,7 @@ PostgreSQL itself renders temporal/binary values consistently; no dump bytes are
 synchronized scans. Cluster, database and role defaults remain unchanged, as do migration CLI sessions
 and the explicit Bangkok business-date expression. No historical receipt timezone is guessed.
 Native qualification reads back the effective settings through these exact source/copy startup
-arguments, including conflicting defaults; complete raw/canonical equality remains the release gate.
+arguments, including conflicting defaults; the raw-source drift fence and complete canonical equality remain the release gates.
 This makes client serialization deterministic without claiming which defaults an unobserved
 production source uses. Setup creates only the
 validated primary owner/runtime/provisioner roles and their finite supported membership profile.
