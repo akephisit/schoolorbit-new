@@ -30,7 +30,7 @@ _fidelity_spec = importlib.util.spec_from_file_location('academic_restore_fideli
 fidelity = importlib.util.module_from_spec(_fidelity_spec)
 _fidelity_spec.loader.exec_module(fidelity)
 
-PG_IMAGE = 'public.ecr.aws/docker/library/postgres:18.6-alpine@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66'
+PG_IMAGE = 'docker.io/library/postgres:18.6-trixie@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42'
 CHECKS = sorted(['CURRENT_DELIVERY_GRAPH_RECONCILED', 'CURRENT_TEACHERS_RECONCILED', 'CURRENT_TIMETABLE_IDS_RECONCILED', 'CURRENT_FACTS_PRESERVED', 'CURRENT_SUPERVISION_PRESERVED', 'CURRENT_CATALOG_PINS_PRESERVED', 'CURRENT_LEGACY_SCHEMA_REMOVED', 'CURRENT_SCOPE_GUARDS_ENABLED'])
 OPERATION = 'academic-current-156157'
 MAX_TENANTS = 10000
@@ -713,7 +713,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
     def isolated(self, connection, identity, source_database):
         self.diagnostic_stage='copy_setup'
         profile=fidelity.supported_profile(connection['user'],identity['roles'],identity['memberships'])
-        collate,ctype=fidelity.database_locale(connection['user'],connection['database'],source_database)
+        fidelity.database_locale(connection['user'],connection['database'],source_database)
         if self.exists('container', self.copy) or self.exists('volume', self.volume):
             refuse('copy_resource_unresolved')
         self.command(['podman', 'volume', 'create', *self.labels(), self.volume])
@@ -743,8 +743,8 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
                 tenant_sql='SET ROLE schoolorbit_provisioner;\n'+tenant_sql+'\nRESET ROLE;'
             self.copy_sql(tenant_sql)
             self.verify_copy_profile(connection,identity)
-            self.copy_sql('CREATE DATABASE '+ident(connection['database'])+' OWNER '+ident(connection['user'])+" TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE "+literal(collate)+' LC_CTYPE '+literal(ctype)+" LOCALE_PROVIDER builtin BUILTIN_LOCALE 'C.UTF-8';")
-            self.copy_sql('REVOKE ALL ON DATABASE '+ident(connection['database'])+' FROM PUBLIC; GRANT CONNECT ON DATABASE '+ident(connection['database'])+' TO '+ident(connection['user'])+','+ident(connection['user'][:-6]+'_runtime')+';')
+            # The original custom archive owns the database definition,
+            # properties and ACL. Setup must not approximate them.
             yield
         finally:
             # Only the exact resources created by this invocation may be removed.
@@ -759,8 +759,10 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         with self.source(row) as (_,source_base,source_environment):
             source_metadata=self.catalog(source_base,source_environment)
         with self.isolated(connection, identity, source_metadata['database']):
+            # CREATE DATABASE cannot run inside --single-transaction. Any
+            # failed/partial restore remains confined to this disposable copy.
             with archive.open('rb') as encrypted:
-                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--exit-on-error', '--single-transaction', '--clean', '--if-exists', '-U', 'postgres', '-d', connection['database']], source=encrypted)
+                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--create', '--clean', '--if-exists', '--exit-on-error', '-U', 'postgres', '-d', 'postgres'], source=encrypted)
             before_hash=self.restored_fingerprint(connection,nonce)
             before_metadata=self.catalog(self.copy_read_base(connection))
             self.diagnostic_stage='nn_reconcile'

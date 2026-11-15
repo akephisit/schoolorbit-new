@@ -2223,8 +2223,23 @@ the retained recovery bytes; live source hashes intentionally change when the cu
 the schema and are not compared against their pre-migration value at completion.
 
 The isolated PostgreSQL18.6 restore has no network egress, host ports, application process or
-scheduler. It preserves source ownership, ACLs and role markers, uses fresh local passwords, and
-must prove restore fidelity before applying the same canonical migrations.
+scheduler. Preparation uses one digest-pinned official PostgreSQL18.6 Debian13/trixie image for
+source clients, the copy server and archive validation, matching the documented source OS family.
+Alpine/musl can canonicalize locale names differently from Debian/glibc even with the builtin locale
+provider. OS compatibility never substitutes for actual exact database metadata and full fingerprint
+checks, and does not attest the live source's precise package or libc version.
+It preserves source ownership, ACLs and role markers, uses fresh local passwords, and
+must prove restore fidelity before applying the same canonical migrations. Setup creates only the
+validated global roles and memberships. The original custom archive owns the database definition,
+properties, settings and privileges, including ACL grantors: it is restored with stock
+`pg_restore --create --clean --if-exists --exit-on-error -U postgres -d postgres` in the isolated
+copy. The maintenance database is only the initial connection; the archive names the restored
+database. No manual database/ACL reconstruction or owner/ACL omission substitutes for that archive.
+`--create` cannot combine with `--single-transaction`; any failed or partial restore is unusable,
+refuses before the migration CLI/proof, and its exact owned copy is removed. This disposable-copy
+failure boundary does not authorize replaying a database drop/create against a live tenant.
+Reviewed recovery must preserve the archive-owned database properties and ACLs as well as the
+retained roles and NN identity mapping, while accounting for subsequent writes.
 Unknown roles, insufficient space, failed decryption, source drift, missing child exits or
 unproven controller/resource ownership stop the release. Only exact resources owned by a proven
 dead preparation controller may be cleaned up on retry. Actual receipts and runtime DML grants

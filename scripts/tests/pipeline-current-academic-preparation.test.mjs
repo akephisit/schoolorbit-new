@@ -49,6 +49,32 @@ test("release image contains the exact existing canonical copy CLI and checksum-
   );
 });
 
+test("preparation pins Debian-compatible PostgreSQL tools and archive-owned database restore", () => {
+  const controller = read(
+    "scripts/lib/pipeline-remote/current-academic-preparation.py",
+  );
+  assert.ok(
+    controller.includes(
+      "PG_IMAGE = 'docker.io/library/postgres:18.6-trixie@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42'",
+    ),
+  );
+  assert.ok(
+    controller.includes("yield connection, args + [PG_IMAGE], environment"),
+  );
+  assert.ok(controller.includes(",target=/var/lib/postgresql', PG_IMAGE"));
+  assert.ok(
+    controller.includes(
+      "'--read-only', PG_IMAGE, 'pg_restore', '--file=/dev/null'",
+    ),
+  );
+  assert.ok(
+    controller.includes(
+      "'pg_restore', '--create', '--clean', '--if-exists', '--exit-on-error', '-U', 'postgres', '-d', 'postgres'",
+    ),
+  );
+  assert.ok(!controller.includes("self.copy_sql('CREATE DATABASE '"));
+});
+
 test("immutable bundle and existing headless cutover own preparation after writer removal and before live migration", () => {
   assert.ok(
     releaseBundleFiles(root).includes(

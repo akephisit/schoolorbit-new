@@ -625,7 +625,18 @@ drift fingerprints, distinct actual pre/post-repair raw restore hashes, and inde
 framed fidelity hashes backed by exact PostgreSQL expression oracles. Every byte outside those
 uniquely proven expression spans must match. Then exercise the candidate's canonical
 `migrate_tenant_schema` executable and all eight
-zero-mismatch receipt/runtime-grant checks. Cover all-current and mixed inventories, canonical
+zero-mismatch receipt/runtime-grant checks. Stock archive-level restore fixtures must cover both
+supported role profiles, database owner/ACL grantors and grant options, settings, comments and
+locale forms, with exact database metadata readback. Use the controller's pinned Debian13/trixie
+PostgreSQL18.6 image, including a genuine builtin `C.UTF-8/C.UTF-8` source where supported, to expose
+OS-dependent locale canonicalization. The image contract test binds the source client, copy server
+and archive validator to the same immutable image; it does not replace native fidelity evidence.
+Failures after database creation and during
+restore must leave the copy unusable, prevent CLI/proof publication, preserve source/sibling bytes,
+and clean only owned resources. The portable coordinator test checks fixed `--create` maintenance-DB
+arguments without `--single-transaction`, original producer/consumer exit receipts, exact metadata
+refusal and cleanup; it does not replace actual encrypted-archive qualification.
+Cover all-current and mixed inventories, canonical
 history holes/checksum drift, wrong date/selection hash, missing/wrong keys and corrupt archives,
 child failure/unknown exit, controller loss, exact owned cleanup, and retention without expiry
 before completion. Never substitute a fake controller result for this real restore acceptance,
