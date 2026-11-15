@@ -33,7 +33,7 @@ DIAGNOSTIC_PROPERTIES = {
     'expression_context': ('size','relation','column','type','element','dependency'),
     'oracle': ('replyCount','rollbackConfirmed','remainingReferences','role','number','columns','dependencies','tree','shape'),
     'framing': ('syntax','limit','binding','duplicate','expression','unused_evidence','copy_termination'),
-    'canonical': ('source_raw','canonical'),
+    'canonical': ('source_raw','canonical','dumped_from_header','dumped_by_header','other_preamble','session','ddl','ownership_acl','comments_labels','sequence_state','copy_payload','other','category_order','remainder','source_header_plain_18_6','source_header_debian_18_6_1','source_header_debian_18_6_2','source_header_unclassified'),
     'retained': ('shape','binding','hash','profile','metadata','map','oracle','count'),
 }
 
@@ -53,7 +53,9 @@ def validate_diagnostic(value):
             and isinstance(value['stage'],str) and isinstance(value['facet'],str) and value['stage'] in DIAGNOSTIC_STAGES and value['facet'] in DIAGNOSTIC_PROPERTIES
             and type(value['mismatchCount']) is int and 0<=value['mismatchCount']<=MAX_OBJECTS
             and type(value['propertyMask']) is int and 0<=value['propertyMask']<2**len(DIAGNOSTIC_PROPERTIES[value['facet']])
-            and (value['facet']!='unknown' or value['mismatchCount']==0))
+            and (value['facet']!='unknown' or value['mismatchCount']==0)
+            and (value['facet']!='canonical' or value['propertyMask']>>14==0
+                 or (value['propertyMask']>>14 in [1,2,4,8] and value['propertyMask']&6==6)))
 
 
 def facet_context(facet):
@@ -544,9 +546,133 @@ def parse_name(tokens, position):
     return (None, first), position
 
 
+DIAGNOSTIC_CATEGORIES = ('dumped_from_header','dumped_by_header','other_preamble','session','ddl','ownership_acl','comments_labels','sequence_state','copy_payload','other')
+SOURCE_HEADER_PROFILES = {
+    b'-- Dumped from database version 18.6\n':'source_header_plain_18_6',
+    b'-- Dumped from database version 18.6 (Debian 18.6-1.pgdg13+1)\n':'source_header_debian_18_6_1',
+    b'-- Dumped from database version 18.6 (Debian 18.6-1.pgdg13+2)\n':'source_header_debian_18_6_2',
+}
+SOURCE_HEADER_CONTEXT = tuple(SOURCE_HEADER_PROFILES.values())+('source_header_unclassified',)
+
+
+
+class _DiagnosticBucket:
+    """Transient R/E-framed input, never part of acceptance or stored evidence."""
+    def __init__(self):
+        self.digest=hashlib.sha256(b'schoolorbit.diagnostic.bucket.v1\0')
+        self.run=hashlib.sha256()
+        self.run_size=0
+        self.size=0
+
+    def raw(self, raw):
+        self.run.update(raw);self.run_size+=len(raw);self.size+=len(raw)
+
+    def flush(self):
+        self.digest.update(b'R'+self.run_size.to_bytes(8,'big')+self.run.digest())
+        self.run=hashlib.sha256();self.run_size=0
+
+    def expression(self, packet):
+        self.flush();self.digest.update(packet);self.size+=len(packet)
+
+    def finish(self):
+        self.flush()
+        return self.digest.hexdigest(),self.size
+
+
+class DumpDiagnostics:
+    """Optional, fixed-memory comparison partition. No IO, rows or names retained."""
+    def __init__(self):
+        self.buckets={name:_DiagnosticBucket() for name in DIAGNOSTIC_CATEGORIES}
+        self.remainder=_DiagnosticBucket()
+        self.order=hashlib.sha256(b'schoolorbit.diagnostic.order.v1\0')
+        self.transitions=0;self.previous=None
+        self.category='other';self.ranges=[];self.offset=0;self.result=None
+        self.source_header_profile=None
+
+    def emit(self, category, raw=None, packet=None):
+        if category not in self.buckets:raise ValueError()
+        if category!=self.previous:
+            label=category.encode();self.order.update(len(label).to_bytes(8,'big')+label)
+            self.transitions+=1;self.previous=category
+            if self.transitions>MAX_OBJECTS+16:raise ValueError()
+        buckets=[self.buckets[category]]
+        if category not in ['dumped_from_header','dumped_by_header']:buckets.append(self.remainder)
+        for bucket in buckets:
+            if packet is None:bucket.raw(raw)
+            else:bucket.expression(packet)
+
+    def begin_statement(self, raw, tokens, first):
+        self.ranges=[];self.offset=0
+        prefix_end=0
+        if first and raw.startswith(b'--\n-- PostgreSQL database dump\n--\n'):
+            seen=set()
+            while prefix_end<len(raw):
+                end=raw.find(b'\n',prefix_end)
+                if end<0:break
+                end+=1;line=raw[prefix_end:end];stripped=line.strip(b' \t\r\n')
+                if stripped and not stripped.startswith(b'--') and not re.fullmatch(rb'\\restrict [A-Za-z0-9_]{1,128}',stripped):break
+                category='other_preamble'
+                for marker,label in [(b'-- Dumped from database version ','dumped_from_header'),(b'-- Dumped by pg_dump version ','dumped_by_header')]:
+                    if line.startswith(marker):
+                        if label in seen:raise ValueError()
+                        seen.add(label);category=label
+                        if label=='dumped_from_header':self.source_header_profile=SOURCE_HEADER_PROFILES.get(line,'source_header_unclassified')
+                if self.ranges and self.ranges[-1][2]==category:self.ranges[-1]=(self.ranges[-1][0],end,category)
+                else:self.ranges.append((prefix_end,end,category))
+                prefix_end=end
+            if len(self.ranges)>7:raise ValueError()
+        significant=[token for token in tokens if token[2]>=prefix_end]
+        words=[token[1] if token[0]=='word' else None for token in significant]
+        first_word=words[0] if words else None
+        if first_word in ['set','reset'] or words[:4]==['select','pg_catalog',None,'set_config']:self.category='session'
+        elif words[:4]==['select','pg_catalog',None,'setval']:self.category='sequence_state'
+        elif first_word=='comment' or words[:2]==['security','label']:self.category='comments_labels'
+        elif first_word in ['grant','revoke'] or words[:3]==['alter','default','privileges'] or (first_word=='alter' and any(words[i:i+2]==['owner','to'] for i in range(len(words)-1))):self.category='ownership_acl'
+        elif first_word in ['create','alter','drop']:self.category='ddl'
+        elif first_word=='copy':self.category='copy_payload'
+        else:self.category='other'
+
+    def raw(self, raw):
+        position=0
+        for begin,end,category in self.ranges:
+            if self.offset>=end:continue
+            if self.offset<begin:raise ValueError()
+            size=min(len(raw)-position,end-self.offset)
+            if size:
+                self.emit(category,raw=raw[position:position+size]);position+=size;self.offset+=size
+            if position==len(raw):return
+        if position<len(raw):self.emit(self.category,raw=raw[position:]);self.offset+=len(raw)-position
+
+    def expression(self, packet, raw_size):
+        if any(begin<=self.offset<end for begin,end,_ in self.ranges):raise ValueError()
+        self.emit(self.category,packet=packet);self.offset+=raw_size
+
+    def end_statement(self, copy):
+        self.ranges=[];self.offset=0;self.category='copy_payload' if copy else 'other'
+
+    def begin_tail(self):
+        self.ranges=[];self.offset=0;self.category='other'
+
+    def complete(self):
+        self.result={name:bucket.finish() for name,bucket in self.buckets.items()}
+        self.result['category_order']=(self.order.hexdigest(),self.transitions)
+        self.result['remainder']=self.remainder.finish()
+
+
+def diagnostic_differences(left, right):
+    """Only static facet names escape; malformed observations add no claims."""
+    names=DIAGNOSTIC_CATEGORIES+('category_order','remainder')
+    try:
+        for value in [left,right]:
+            if not isinstance(value,dict) or set(value)!=set(names):return ()
+            if any(not isinstance(item,tuple) or len(item)!=2 or not valid_hash(item[0]) or type(item[1]) is not int or not 0<=item[1]<2**64 for item in value.values()):return ()
+        return tuple(name for name in names if left[name]!=right[name])
+    except Exception:return ()
+
+
 class DumpFingerprint:
     """Chunk-independent raw and framed canonical digests; COPY rows never buffer."""
-    def __init__(self, evidence, side):
+    def __init__(self, evidence, side, observer=None):
         require(side in ['source', 'restored'] and len(evidence) <= MAX_OBJECTS)
         self.evidence = {}
         for item in evidence:
@@ -565,10 +691,17 @@ class DumpFingerprint:
         self.line_start = True
         self.copy_prefix = bytearray()
         self.statement_count = 0
+        self.observer = observer
+
+    def _observe(self, operation, *args):
+        if self.observer is not None:
+            try:getattr(self.observer,operation)(*args)
+            except Exception:self.observer=None
 
     def raw_run(self, raw):
         self.run.update(raw)
         self.run_size += len(raw)
+        self._observe('raw',raw)
 
     @facet_context('framing')
     def expression(self, key, raw):
@@ -582,10 +715,12 @@ class DumpFingerprint:
         self.run = hashlib.sha256()
         self.run_size = 0
         self.used.add(key)
+        self._observe('expression',b'E'+len(identity).to_bytes(8,'big')+identity+bytes.fromhex(entry[self.side+'TreeSha256']),len(raw))
 
     @facet_context('framing')
     def statement(self, raw):
         tokens = list(sql_tokens(raw))
+        self._observe('begin_statement',raw,tokens,self.statement_count==1)
         words = [t[1] if t[0] == 'word' else None for t in tokens]
         spans = []
         table = None
@@ -638,7 +773,9 @@ class DumpFingerprint:
             self.expression(key, raw[begin:end])
             position = end
         self.raw_run(raw[position:])
-        return words[:1] == ['copy'] and words[-3:-1] == ['from', 'stdin']
+        copy=words[:1] == ['copy'] and words[-3:-1] == ['from', 'stdin']
+        self._observe('end_statement',copy)
+        return copy
 
     @facet_context('framing')
     def feed(self, chunk):
@@ -703,7 +840,9 @@ class DumpFingerprint:
         except Incomplete:
             raise FidelityError('framing',('syntax',)) from None
         require(not tokens or (len(tokens) >= 3 and tokens[0][0:2] == ('symbol', '\\') and tokens[1][0:2] == ('word', 'unrestrict') and re.fullmatch(rb'[A-Za-z0-9_]{1,128}', tail[tokens[2][2]:tokens[-1][3]])))
+        self._observe('begin_tail')
         self.raw_run(tail)
         self.canonical.update(b'R'+self.run_size.to_bytes(8, 'big')+self.run.digest())
         require(self.used == self.evidence.keys(),'framing',('unused_evidence',),len(self.evidence.keys()-self.used))
+        self._observe('complete')
         return {'raw': self.raw.hexdigest(), 'canonical': self.canonical.hexdigest(), 'expressions': len(self.used)}

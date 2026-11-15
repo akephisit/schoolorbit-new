@@ -168,6 +168,61 @@ test("release only forwards exact bounded controller and canonical refusal schem
     error: "restored_source_mismatch",
     diagnostic: fidelity,
   };
+  const canonicalReport = {
+    schemaVersion: 1,
+    error: "restored_source_mismatch",
+    diagnostic: {
+      stage: "canonical_compare",
+      facet: "canonical",
+      mismatchCount: 2,
+      propertyMask: 2 + 4 + 16384,
+    },
+  };
+  assert.deepEqual(
+    JSON.parse(execute(canonicalReport).stdout),
+    canonicalReport,
+  );
+  for (const bit of [14, 15, 16, 17]) {
+    const value = {
+      ...canonicalReport,
+      diagnostic: {
+        ...canonicalReport.diagnostic,
+        propertyMask: 6 + (1 << bit),
+      },
+    };
+    assert.deepEqual(JSON.parse(execute(value).stdout), value);
+  }
+  for (const propertyMask of [
+    (1 << 14) | (1 << 15) | 6,
+    (1 << 14) | 2,
+    (1 << 14) | 4,
+    1 << 14,
+    1 << 18,
+  ]) {
+    const result = execute({
+      ...canonicalReport,
+      diagnostic: { ...canonicalReport.diagnostic, propertyMask },
+    });
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+  }
+  assert.equal(
+    execute({
+      ...canonicalReport,
+      diagnostic: {
+        ...canonicalReport.diagnostic,
+        sourceProfile: "private-sentinel",
+      },
+    }).stdout,
+    "",
+  );
+  assert.equal(
+    execute({
+      ...canonicalReport,
+      diagnostic: { ...canonicalReport.diagnostic, propertyMask: 262144 },
+    }).stdout,
+    "",
+  );
   assert.deepEqual(JSON.parse(execute(report).stdout), report);
   // Match executable helper tables, including every stage and every facet ceiling.
   const tables = spawnSync(
@@ -197,7 +252,10 @@ print(json.dumps([f.DIAGNOSTIC_STAGES,{key:2**len(value) for key,value in f.DIAG
     const detail = {
       ...fidelity,
       facet,
-      propertyMask: limit - 1,
+      propertyMask:
+        facet === "canonical"
+          ? (limit - 1) & ~((1 << 15) | (1 << 16) | (1 << 17))
+          : limit - 1,
       mismatchCount: facet === "unknown" ? 0 : 20000,
     };
     assert.deepEqual(

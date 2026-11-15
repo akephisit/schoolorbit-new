@@ -57,7 +57,7 @@ PYJSON
     jq -ces '
         def code: IN("admin_redirect_refused","admin_response_invalid","admin_unavailable","archive_changed","child_failed","child_outcome_unknown","compiled_history_unavailable","completion_binding_changed","completion_cutover_unverified","completion_inventory_changed","controller_evidence_invalid","controller_still_running","converted_source_receipt_changed","copy_audit_unavailable","copy_cutover_not_reconciled","copy_migration_refused","copy_postgres_unavailable","copy_resource_unresolved","copy_runner_evidence_invalid","current_prefix_changed","cutover_date_changed","database_identifier_invalid","fingerprint_failed","fingerprint_outcome_unknown","fixed_operation_required","foreign_preparation_resource","foreign_preparation_volume","insufficient_recovery_space","inventory_changed","inventory_invalid","inventory_too_large","preparation_binding_changed","preparation_coverage_changed","preparation_unavailable","prepared_source_changed","previous_controller_resources_unresolved","private_evidence_invalid","private_evidence_too_large","private_path_invalid","private_path_unavailable","private_runtime_unavailable","recovery_key_invalid","release_context_invalid","resource_state_unknown","restored_source_mismatch","runtime_configuration_unavailable","school_writers_not_drained","source_changed_before_migration","source_changed_during_copy","source_connection_invalid","source_history_invalid","source_identity_invalid","source_identity_unavailable","source_namespace_changed","source_roles_changed","stream_failed","stream_outcome_unknown","unresolved_archive");
         def diagnostic:
-            {"unknown":1,"profile_shape":8,"role_identity":16,"owner_capabilities":32,"runtime_capabilities":32,"provisioner_capabilities":32,"memberships":2097152,"catalog_budget":32,"metadata_shape":2,"database":65536,"relation":64,"columns":16777216,"nn":128,"constraints":4096,"indexes":262144,"expression_context":64,"oracle":512,"framing":128,"canonical":4,"retained":256} as $limits |
+            {"unknown":1,"profile_shape":8,"role_identity":16,"owner_capabilities":32,"runtime_capabilities":32,"provisioner_capabilities":32,"memberships":2097152,"catalog_budget":32,"metadata_shape":2,"database":65536,"relation":64,"columns":16777216,"nn":128,"constraints":4096,"indexes":262144,"expression_context":64,"oracle":512,"framing":128,"canonical":262144,"retained":256} as $limits |
             type=="object" and keys==["facet","mismatchCount","propertyMask","stage"]
             and (.stage|type=="string" and IN("unknown","source_profile","source_catalog","copy_setup","copy_profile","copy_catalog","nn_reconcile","expression_pairing","oracle","source_stream","copy_stream","canonical_compare","retained_validation"))
             and (.facet|type=="string")
@@ -65,7 +65,8 @@ PYJSON
             and (.mismatchCount|type=="number" and floor==. and .>=0 and .<=20000)
             and (.propertyMask|type=="number" and floor==. and .>=0)
             and (.propertyMask < $limits[.facet])
-            and (.facet!="unknown" or .mismatchCount==0);
+            and (.facet!="unknown" or .mismatchCount==0)
+            and (.facet!="canonical" or ((.propertyMask/16384|floor) as $context | $context==0 or (($context|IN(1,2,4,8)) and (.propertyMask%8|IN(6,7)))));
         def stream_failure:
             type=="object" and keys==["consumerCode","consumerExit","consumerStderrTruncated","producerCode","producerExit","producerStderrTruncated","stage"]
             and (.stage|type=="string" and IN("unknown","backup_archive","restore_archive","retained_validation"))

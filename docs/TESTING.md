@@ -621,7 +621,13 @@ launch/timeout cleanup, descendant-held stderr without changing known exits, and
 receipts. Strict projection tests cover all known
 stream stages/error families, mutual exclusion, malformed types/keys/counts and the actual controller
 entrypoint-to-rollout path. Diagnostic classification cannot relax either child's success condition.
-The schema2 cross-language vector remains unchanged.
+The schema2 cross-language vector remains unchanged. Observer regressions also freeze pre-observer
+raw/canonical corpus digests, compare enabled/disabled modes and every two-chunk split, and retain
+identical canonical hashes for authorized expression variants. Mutations exercise each diagnostic
+category, inter-category order and the unambiguous R/E-framed remainder, including header-only changes,
+header-looking function/comment/COPY bytes and multi-megabyte unbuffered rows. Tests cover the three
+exact public source-header profiles and unclassified/poisoned context, strict appended-mask bounds,
+observation failure/overflow without altered outcomes, and absence of diagnostic content in proof files.
 These are support-boundary regressions, not substitutes
 for the native owner-role oracle, rollback and real restored-schema acceptance below.
 
