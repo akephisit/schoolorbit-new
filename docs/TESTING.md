@@ -645,7 +645,13 @@ source/copy readbacks and retained/retry role drift refusals. A role also refere
 must remain unsupported even if database-attested. Verify sibling/global references do not enter
 auxiliary inventory and existing builtin roles are read back rather than created or altered.
 Also cover database owner, settings, comments and
-locale forms, with exact database metadata readback. Use the controller's pinned Debian13/trixie
+locale forms, with exact database metadata readback. Serialization qualification uses the original
+source/copy startup prefixes to read back effective UTC+hex under conflicting cluster and role defaults.
+A source with Bangkok timezone and escape bytea output must preserve exact typed timestamp instants,
+arrays/ranges, wall timestamps and binary values through the encrypted custom archive and stock restore;
+raw and canonical dump hashes must agree using the fixed read-only profile. Actual copy data mutation
+must still refuse. Source/sibling data and default settings, the explicit Bangkok date, and migration
+CLI session arguments must remain unchanged; synthetic GUC variations do not attest production defaults. Use the controller's pinned Debian13/trixie
 PostgreSQL18.6 image, including a genuine builtin `C.UTF-8/C.UTF-8` source where supported, to expose
 OS-dependent locale canonicalization. The image contract test binds the source client, copy server
 and archive validator to the same immutable image; it does not replace native fidelity evidence.

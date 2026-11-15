@@ -128,6 +128,38 @@ def refresh_archive_binding(fake,archive):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_source_and_copy_share_fixed_readonly_serialization_without_changing_business_sessions(self):
+        expected='-c default_transaction_read_only=on -c TimeZone=UTC -c bytea_output=hex'
+        self.assertEqual(m.READ_ONLY_SERIALIZATION_OPTIONS,expected)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);runtime=root/str(os.getuid());runtime.mkdir(mode=0o700)
+            controller=m.Controller.__new__(m.Controller);controller.client='source';controller.ca=root/'ca.crt';controller.labels=lambda:[]
+            selected=m.inventory({'schools':[row()],'total':1})[0]
+            owner='so_'+ID.replace('-','')+'_owner';url=selected['url'].replace('runtime:private',owner+':source-secret')+'&sslrootcert=/run/secrets/postgresql-ca.crt'
+            controller.admin_get=lambda path:({'db_migration_connection_string':url} if '/migration-connection?' in path else {'id':ID,'subdomain':selected['subdomain'],'status':selected['status'],'mutation_pending':False})
+            original=m.Path
+            def paths(value):return root if str(value)=='/run/user' else original(value)
+            with mock.patch.object(m,'Path',side_effect=paths),mock.patch.dict(os.environ,{'PGOPTIONS':'-c TimeZone=Asia/Bangkok -c bytea_output=escape'}):
+                with controller.source(selected) as (connection,arguments,environment):
+                    self.assertEqual(environment['PGOPTIONS'],expected+' -c statement_timeout=900000')
+                    self.assertEqual(environment['PGSSLMODE'],'verify-full');self.assertEqual(arguments[-1],m.PG_IMAGE)
+                    self.assertIn('PGOPTIONS',arguments);self.assertNotIn('source-secret',' '.join(arguments))
+                    self.assertEqual(connection['user'],owner)
+                    controller.copy='copy'
+                    copy=controller.copy_read_base(connection)
+                    self.assertIn('PGOPTIONS='+expected,copy)
+                    self.assertNotIn('statement_timeout=900000',' '.join(copy))
+                    self.assertIn('PGUSER='+owner,copy);self.assertIn('PGDATABASE='+connection['database'],copy)
+                self.assertEqual(list(runtime.iterdir()),[])
+            # The CLI keeps its ordinary local URL/session contract; options only
+            # belong to the source and copy read-only client prefixes.
+            controller.worker='worker';controller.image='image'
+            identity=identity_profile();controller.verify_copy_profile=lambda *a:role_profile();controller.verify_database_roles=lambda *a:[]
+            calls=[];controller.command=lambda arguments,**kwargs:calls.append((arguments,kwargs)) or b'child'
+            controller.migrate_copy({'user':owner},identity,{'MIGRATION_SCHEMA_DATABASE_URL':'local-only'})
+            self.assertNotIn('PGOPTIONS',' '.join(calls[0][0]));self.assertNotIn('TimeZone',' '.join(calls[0][0]))
+            self.assertEqual(calls[0][1]['environment'],{'MIGRATION_SCHEMA_DATABASE_URL':'local-only'})
+
     def test_canonical_failure_enriches_only_with_transient_completed_observations(self):
         profiles=[
             (b'18.6','source_header_plain_18_6'),
