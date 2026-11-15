@@ -69,7 +69,7 @@ test("preparation pins Debian-compatible PostgreSQL tools and archive-owned data
   );
   assert.ok(
     controller.includes(
-      "'pg_restore', '--create', '--clean', '--if-exists', '--exit-on-error', '-U', 'postgres', '-d', 'postgres'",
+      "'pg_restore', '--create', '--transaction-size=2147483647', '--clean', '--if-exists', '--exit-on-error', '-U', 'postgres', '-d', 'postgres'",
     ),
   );
   assert.ok(!controller.includes("self.copy_sql('CREATE DATABASE '"));

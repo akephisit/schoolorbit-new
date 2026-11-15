@@ -305,6 +305,8 @@ class PreparationTests(unittest.TestCase):
     def test_archive_restore_owns_database_and_refusal_never_reaches_cli(self):
         # Use the actual restore coordinator and isolated() lifecycle. Only the
         # external transport is substituted; native stock restore is separate.
+        # -C cannot use -1. PG18 transaction grouping keeps ordinary table DDL
+        # and COPY together; database/properties have separate commit boundaries.
         for failure in ['producer','consumer','metadata']:
             with self.subTest(failure=failure),tempfile.TemporaryDirectory() as directory:
                 point=Path(directory);fake=Fake(point,{ID:155});fake.exits=0
@@ -321,7 +323,7 @@ class PreparationTests(unittest.TestCase):
                 def restore_stream(first,second,**kwargs):
                     observed.append((first,second))
                     self.assertEqual(kwargs['stage'],'restore_archive')
-                    self.assertEqual(second,['podman','exec','-i','copy','pg_restore','--create','--clean','--if-exists','--exit-on-error','-U','postgres','-d','postgres'])
+                    self.assertEqual(second,['podman','exec','-i','copy','pg_restore','--create','--transaction-size=2147483647','--clean','--if-exists','--exit-on-error','-U','postgres','-d','postgres'])
                     self.assertEqual(kwargs['source'].read(),archive.read_bytes());kwargs['source'].seek(0)
                     if failure!='metadata':
                         producer=[sys.executable,'-c', 'import sys;sys.stdout.buffer.write(sys.stdin.buffer.read());raise SystemExit('+('5' if failure=='producer' else '0')+')']

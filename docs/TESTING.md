@@ -658,8 +658,14 @@ and archive validator to the same immutable image; it does not replace native fi
 Failures after database creation and during
 restore must leave the copy unusable, prevent CLI/proof publication, preserve source/sibling bytes,
 and clean only owned resources. The portable coordinator test checks fixed `--create` maintenance-DB
-arguments without `--single-transaction`, original producer/consumer exit receipts, exact metadata
-refusal and cleanup; it does not replace actual encrypted-archive qualification.
+arguments with `--transaction-size=2147483647` and without `--single-transaction`, original
+producer/consumer exit receipts, exact metadata refusal and cleanup. Native qualification must show
+schema creation and COPY share a transaction for variable-width PLAIN, dead-tuple/update and TOAST
+fixtures, with complete raw/canonical equality and preserved database properties. Fresh restore-failure
+evidence must verify table DDL/data rollback, independently committed database/property boundaries,
+no CLI/proof, exact cleanup and successful retry from the valid original archive. Earlier autocommit
+fault evidence showing an externally committed table prefix is not applicable to this constructor.
+Portable checks do not replace actual encrypted-archive qualification.
 Cover all-current and mixed inventories, canonical
 history holes/checksum drift, wrong date/selection hash, missing/wrong keys and corrupt archives,
 child failure/unknown exit, controller loss, exact owned cleanup, and retention without expiry
