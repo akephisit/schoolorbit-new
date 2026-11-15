@@ -173,7 +173,7 @@ def supported_profile(owner, roles, memberships):
 
 @facet_context('database')
 def database_locale(owner, database, source):
-    """Only the two observed PG18.6 builtin-C.UTF-8 locale profiles."""
+    """Preserve bounded source locale names; PostgreSQL validates support."""
     require(isinstance(owner,str) and re.fullmatch('so_[0-9a-f]{32}_owner',owner) is not None)
     require(isinstance(database,str) and re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,62}',database) is not None)
     require(isinstance(source,dict) and set(source)=={'metadata','owner','tablespace','acl','settings'})
@@ -184,7 +184,8 @@ def database_locale(owner, database, source):
     require(metadata.get('datlocprovider')=='b' and metadata.get('datlocale')=='C.UTF-8',
             'database',tuple(k for k,bad in [('metadata.datlocprovider',metadata.get('datlocprovider')!='b'),('metadata.datlocale',metadata.get('datlocale')!='C.UTF-8')] if bad))
     pair=(metadata.get('datcollate'),metadata.get('datctype'))
-    require(pair in [('C','C.UTF-8'),('en_US.utf8','en_US.utf8')],'database',('metadata.datcollate','metadata.datctype'))
+    invalid=tuple(key for key,value in zip(('metadata.datcollate','metadata.datctype'),pair) if not (isinstance(value,str) and 0<len(value)<=255 and re.fullmatch('[A-Za-z0-9_.@+-]+',value) and len(value.encode())<=255))
+    require(not invalid,'database',invalid)
     return pair
 
 

@@ -172,15 +172,14 @@ class PreparationTests(unittest.TestCase):
 
     def test_role_creation_uses_original_effective_authority_and_reads_actual_copy(self):
         owner='so_'+ID.replace('-','')+'_owner'
-        for kind in ['provider3','postgresFixture1']:
-            with self.subTest(kind=kind),tempfile.TemporaryDirectory() as directory:
+        for kind,pair in [(kind,pair) for kind in ['provider3','postgresFixture1'] for pair in [('C','C.UTF-8'),('en_US.utf8','en_US.utf8'),('C.UTF-8','C.UTF-8'),('C','C')]]:
+            with self.subTest(kind=kind,pair=pair),tempfile.TemporaryDirectory() as directory:
                 fake=Fake(Path(directory),{ID:155})
                 profile=role_profile(kind=kind);profile['roles'][0]['login']=False
                 calls=[]
                 fake.copy_sql=lambda sql,*a,**k:calls.append(sql) or b''
                 fake.copy_role_profile=lambda *a:copy.deepcopy(profile)
                 with mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
-                    pair=('C','C.UTF-8') if kind=='provider3' else ('en_US.utf8','en_US.utf8')
                     with fake.isolated({'user':owner,'database':'tenant'},profile,database_profile(owner,'tenant',pair)):
                         pass
                 self.assertIn('CREATE ROLE "schoolorbit_provisioner"',calls[0])
@@ -190,6 +189,17 @@ class PreparationTests(unittest.TestCase):
                 created=next(sql for sql in calls if sql.startswith('CREATE DATABASE '))
                 self.assertIn("LC_COLLATE '"+pair[0]+"' LC_CTYPE '"+pair[1]+"'",created)
                 self.assertFalse(any('GRANTED BY' in x or 'pg_auth_members' in x for x in calls))
+
+    def test_invalid_locale_binding_refuses_before_creating_owned_resources(self):
+        owner='so_'+ID.replace('-','')+'_owner';connection={'user':owner,'database':'tenant'}
+        for field,value in [('datcollate',''),('datctype',"C'; DROP DATABASE tenant;--"),('datcollate','C\\'),('datctype','x'*256),('datlocprovider','c'),('datlocale','C'),('encoding',8),('datname','other')]:
+            with self.subTest(field=field),tempfile.TemporaryDirectory() as directory:
+                fake=Fake(Path(directory),{ID:155});calls=[]
+                fake.command=lambda *a,**k:calls.append(a) or b''
+                source=database_profile(owner,'tenant');source['metadata'][field]=value
+                with self.assertRaises(m.fidelity.FidelityError):
+                    with fake.isolated(connection,role_profile(),source):pass
+                self.assertEqual(calls,[])
 
     def test_final_copy_profile_readback_blocks_cli_after_valid_initial_creation(self):
         owner='so_'+ID.replace('-','')+'_owner';connection={'user':owner}
