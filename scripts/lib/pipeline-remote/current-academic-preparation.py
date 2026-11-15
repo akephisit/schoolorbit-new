@@ -30,7 +30,7 @@ _fidelity_spec = importlib.util.spec_from_file_location('academic_restore_fideli
 fidelity = importlib.util.module_from_spec(_fidelity_spec)
 _fidelity_spec.loader.exec_module(fidelity)
 
-PG_IMAGE = 'public.ecr.aws/docker/library/postgres:18.6-alpine@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66'
+PG_IMAGE = 'docker.io/library/postgres:18.6-trixie@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42'
 CHECKS = sorted(['CURRENT_DELIVERY_GRAPH_RECONCILED', 'CURRENT_TEACHERS_RECONCILED', 'CURRENT_TIMETABLE_IDS_RECONCILED', 'CURRENT_FACTS_PRESERVED', 'CURRENT_SUPERVISION_PRESERVED', 'CURRENT_CATALOG_PINS_PRESERVED', 'CURRENT_LEGACY_SCHEMA_REMOVED', 'CURRENT_SCOPE_GUARDS_ENABLED'])
 OPERATION = 'academic-current-156157'
 MAX_TENANTS = 10000

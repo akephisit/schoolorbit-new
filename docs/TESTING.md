@@ -627,7 +627,11 @@ uniquely proven expression spans must match. Then exercise the candidate's canon
 `migrate_tenant_schema` executable and all eight
 zero-mismatch receipt/runtime-grant checks. Stock archive-level restore fixtures must cover both
 supported role profiles, database owner/ACL grantors and grant options, settings, comments and
-locale forms, with exact database metadata readback. Failures after database creation and during
+locale forms, with exact database metadata readback. Use the controller's pinned Debian13/trixie
+PostgreSQL18.6 image, including a genuine builtin `C.UTF-8/C.UTF-8` source where supported, to expose
+OS-dependent locale canonicalization. The image contract test binds the source client, copy server
+and archive validator to the same immutable image; it does not replace native fidelity evidence.
+Failures after database creation and during
 restore must leave the copy unusable, prevent CLI/proof publication, preserve source/sibling bytes,
 and clean only owned resources. The portable coordinator test checks fixed `--create` maintenance-DB
 arguments without `--single-transaction`, original producer/consumer exit receipts, exact metadata

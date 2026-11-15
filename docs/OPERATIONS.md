@@ -2223,7 +2223,12 @@ the retained recovery bytes; live source hashes intentionally change when the cu
 the schema and are not compared against their pre-migration value at completion.
 
 The isolated PostgreSQL18.6 restore has no network egress, host ports, application process or
-scheduler. It preserves source ownership, ACLs and role markers, uses fresh local passwords, and
+scheduler. Preparation uses one digest-pinned official PostgreSQL18.6 Debian13/trixie image for
+source clients, the copy server and archive validation, matching the documented source OS family.
+Alpine/musl can canonicalize locale names differently from Debian/glibc even with the builtin locale
+provider. OS compatibility never substitutes for actual exact database metadata and full fingerprint
+checks, and does not attest the live source's precise package or libc version.
+It preserves source ownership, ACLs and role markers, uses fresh local passwords, and
 must prove restore fidelity before applying the same canonical migrations. Setup creates only the
 validated global roles and memberships. The original custom archive owns the database definition,
 properties, settings and privileges, including ACL grantors: it is restored with stock
