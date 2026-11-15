@@ -34,6 +34,28 @@ def fingerprint(raw,evidence,side,width=4096):
     return scanner.finish()
 
 
+def diagnostic_dump(expr=SOURCE,rows=b'one\ttwo\n'):
+    header=(b'--\n-- PostgreSQL database dump\n--\n\n\\restrict stableNonce\n\n'
+            b'-- Dumped from database version 18.6 (source-package-1)\n'
+            b'-- Dumped by pg_dump version 18.6 (client-package-2)\n\n')
+    return header+b"SET statement_timeout = 0;\nSELECT pg_catalog.set_config('search_path', '', false);\n"+(
+        'CREATE TABLE public.t (v character varying(10), CONSTRAINT valid_v CHECK ('+expr+'));\n').encode()+(
+        b"CREATE FUNCTION public.note() RETURNS text LANGUAGE sql AS $body$ SELECT '-- Dumped from database version fake; CHECK (fake)'; $body$;\n"
+        b'ALTER TABLE public.t OWNER TO owner;\n'
+        b'GRANT SELECT ON public.t TO reader;\n'
+        b"COMMENT ON TABLE public.t IS '-- Dumped by pg_dump version fake';\n"
+        b"SELECT pg_catalog.setval('public.seq', 1, true);\n"
+        b'COPY public.t (v) FROM stdin;\n')+rows+b"\\.\nSELECT 1;\n-- PostgreSQL database dump complete\n\\unrestrict stableNonce\n"
+
+
+def observed(raw,evidence,side,width=4096,observer=None):
+    observer=f.DumpDiagnostics() if observer is None else observer
+    scanner=f.DumpFingerprint(evidence,side,observer=observer)
+    for start in range(0,len(raw),width):scanner.feed(raw[start:start+width])
+    result=scanner.finish()
+    return result,None if scanner.observer is None else scanner.observer.result
+
+
 def column(number=1,dropped=False):
     return dict(num=number,name='gone' if dropped else 'v',dropped=dropped,notnull=not dropped,typeSchema='pg_catalog',typeName='varchar',typeKind='b',typeCategory='S',typeMod=14,dimensions=0,identity='',generated='',collationSchema='pg_catalog',collationName='default',collationEncoding=-1,collationProvider='d',collationDeterministic=True,collationLocale=None,collationCollate=None,collationCType=None,collationRules=None,collationVersion=None,elementSchema=None,elementName=None,elementKind=None)
 
@@ -58,12 +80,18 @@ class FidelityTests(unittest.TestCase):
         for facet,properties in f.DIAGNOSTIC_PROPERTIES.items():
             self.assertEqual(len(properties),len(set(properties)))
             self.assertLessEqual(len(properties),32)
-            detail=f.diagnostic(facet,properties)
+            selected=properties[:15] if facet=='canonical' else properties
+            detail=f.diagnostic(facet,selected)
             self.assertTrue(f.validate_diagnostic(detail))
             for key,value in [('stage','private-sentinel'),('facet','private-sentinel'),('mismatchCount',True),('mismatchCount',None),('mismatchCount',-1),('mismatchCount',20001),('mismatchCount',1.5),('propertyMask',True),('propertyMask',1.5),('propertyMask',2**len(properties))]:
                 self.assertFalse(f.validate_diagnostic(dict(detail,**{key:value})))
         self.assertFalse(f.validate_diagnostic(dict(f.diagnostic(),payload='private-sentinel')))
         self.assertEqual(str(f.FidelityError('database',('owner',))),'restored_source_mismatch')
+        for bit in [14,15,16,17]:
+            self.assertTrue(f.validate_diagnostic(f.diagnostic('canonical',('canonical','dumped_from_header',f.DIAGNOSTIC_PROPERTIES['canonical'][bit]),count=2)))
+        for mask in [(1<<14)|(1<<15)|6,(1<<14)|2,(1<<14)|4,1<<14,1<<18]:
+            value=f.diagnostic('canonical',('canonical',));value['propertyMask']=mask
+            self.assertFalse(f.validate_diagnostic(value))
 
     def test_membership_and_capability_diagnostics_use_categories_not_identities(self):
         owner='so_11111111111141118111111111111111_owner';runtime=owner[:-6]+'_runtime';prov='schoolorbit_provisioner'
@@ -95,6 +123,94 @@ class FidelityTests(unittest.TestCase):
         self.assertEqual(caught.exception.diagnostic,f.diagnostic('indexes',('owner',)))
         with self.assertRaises(f.FidelityError) as caught:fingerprint(b'SELECT 1;\n',[expression()], 'restored')
         self.assertEqual(caught.exception.diagnostic['facet'],'framing')
+
+    def test_observer_preserves_frozen_old_digests_and_all_two_chunk_splits(self):
+        expected={
+            'source':{'raw':'24cdfed11e018e1f02d012644f5f8ff34bc603dbb40ddf12d559ec9f363a8fce','canonical':'85928cbd2aca4ae8bad645d264c6a804c31a7dcb701464c4ac039d6f95dff1eb','expressions':1},
+            'restored':{'raw':'ee598d2c1b0251d0c695f4c7366b4188edf05659797e9cfedb68c1e66aea9ca4','canonical':'85928cbd2aca4ae8bad645d264c6a804c31a7dcb701464c4ac039d6f95dff1eb','expressions':1},
+        }
+        summaries={}
+        for side,expr in [('source',SOURCE),('restored',RESTORED)]:
+            raw=diagnostic_dump(expr)
+            self.assertEqual(fingerprint(raw,[expression()],side),expected[side])
+            for width in [1,2,7,31,4096,1024*1024]:
+                actual,summary=observed(raw,[expression()],side,width)
+                self.assertEqual(actual,expected[side]);self.assertIsNotNone(summary)
+                if side in summaries:self.assertEqual(summary,summaries[side])
+                summaries[side]=summary
+            for split in range(len(raw)+1):
+                scanner=f.DumpFingerprint([expression()],side,observer=f.DumpDiagnostics())
+                scanner.feed(raw[:split]);scanner.feed(raw[split:])
+                self.assertEqual(scanner.finish(),expected[side]);self.assertEqual(scanner.observer.result,summaries[side])
+        self.assertEqual(f.diagnostic_differences(summaries['source'],summaries['restored']),())
+        self.assertEqual(f.DIAGNOSTIC_PROPERTIES['canonical'][:2],('source_raw','canonical'))
+
+    def test_observer_partitions_each_mutation_without_excluding_acceptance_bytes(self):
+        raw=diagnostic_dump();baseline,left=observed(raw,[expression()],'source')
+        mutations=[
+            (b'source-package-1',b'source-package-long-2',{'dumped_from_header'}),
+            (b'client-package-2',b'client-package-3',{'dumped_by_header'}),
+            (b'\\restrict stableNonce',b'\\restrict changedNonce',{'other_preamble','remainder'}),
+            (b'SET statement_timeout = 0',b'SET statement_timeout = 1',{'session','remainder'}),
+            (b'CHECK (fake)',b'CHECK (changed)',{'ddl','remainder'}),
+            (b'GRANT SELECT',b'GRANT INSERT',{'ownership_acl','remainder'}),
+            (b'version fake\';',b'version changed\';',{'comments_labels','remainder'}),
+            (b"setval('public.seq', 1",b"setval('public.seq', 2",{'sequence_state','remainder'}),
+            (b'one\ttwo\n',b'-- Dumped from database version 18.6\nCHECK (false);\n',{'copy_payload','remainder'}),
+            (b'SELECT 1;',b'SELECT 2;',{'other','remainder'}),
+        ]
+        for before,after,categories in mutations:
+            self.assertIn(before,raw)
+            result,right=observed(raw.replace(before,after),[expression()],'source',7)
+            self.assertNotEqual(result['canonical'],baseline['canonical'])
+            self.assertEqual(set(f.diagnostic_differences(left,right)),categories)
+        # The same buckets can be equal while the actual inter-category order differs.
+        a=b'GRANT SELECT ON public.t TO reader;\n';b=b"COMMENT ON TABLE public.t IS '-- Dumped by pg_dump version fake';\n"
+        result,right=observed(raw.replace(a+b,b+a),[expression()],'source')
+        self.assertNotEqual(result['canonical'],baseline['canonical'])
+        self.assertEqual(set(f.diagnostic_differences(left,right)),{'category_order','remainder'})
+
+    def test_observer_header_context_is_exact_first_preamble_only_not_an_os_claim(self):
+        for line,context in f.SOURCE_HEADER_PROFILES.items():
+            raw=diagnostic_dump().replace(b'-- Dumped from database version 18.6 (source-package-1)\n',line)
+            observer=f.DumpDiagnostics();result,summary=observed(raw,[expression()],'source',1,observer)
+            self.assertIsNotNone(summary);self.assertEqual(observer.source_header_profile,context)
+        observer=f.DumpDiagnostics();observed(diagnostic_dump(),[expression()],'source',observer=observer)
+        self.assertEqual(observer.source_header_profile,'source_header_unclassified')
+        # A header-looking string in a function/comment or COPY row cannot set context.
+        raw=sql(SOURCE,rows=b'-- Dumped from database version 18.6\n')
+        observer=f.DumpDiagnostics();observed(raw,[expression()],'source',1,observer)
+        self.assertIsNone(observer.source_header_profile)
+        duplicate=diagnostic_dump().replace(b'-- Dumped from database version 18.6 (source-package-1)\n',b'-- Dumped from database version 18.6\n'*2)
+        self.assertEqual(observed(duplicate,[expression()],'source')[0],fingerprint(duplicate,[expression()],'source'))
+        self.assertIsNone(observed(duplicate,[expression()],'source')[1])
+
+    def test_observer_r_e_framing_is_unambiguous_and_large_copy_does_not_buffer(self):
+        key=f.encoded(['check','public','t','valid_v']);packet=b'E'+len(key).to_bytes(8,'big')+key+bytes.fromhex(expression()['sourceTreeSha256'])
+        raw=f._DiagnosticBucket();raw.raw(packet)
+        token=f._DiagnosticBucket();token.expression(packet)
+        self.assertNotEqual(raw.finish(),token.finish())
+        rows=b'-- Dumped from database version fake CHECK ('+b'x'*(8*1024*1024)+b')\n'
+        data=diagnostic_dump(rows=rows)
+        scanner=f.DumpFingerprint([expression()],'source',observer=f.DumpDiagnostics())
+        for start in range(0,len(data),65536):
+            scanner.feed(data[start:start+65536]);self.assertLess(len(scanner.buffer),f.MAX_DDL)
+        actual=scanner.finish();self.assertEqual(actual,fingerprint(data,[expression()],'source',65536))
+        self.assertEqual(len(scanner.observer.result),len(f.DIAGNOSTIC_CATEGORIES)+2)
+        self.assertFalse(any(isinstance(value,(bytes,bytearray)) for value in vars(scanner.observer).values()))
+        self.assertNotIn('valid_v',str(scanner.observer.result));self.assertNotIn('Dumped from',str(scanner.observer.result))
+
+    def test_malformed_or_failing_observation_never_changes_original_outcomes(self):
+        class Broken:
+            def begin_statement(self,*args):raise RuntimeError('private-sentinel')
+        raw=diagnostic_dump();expected=fingerprint(raw,[expression()],'source')
+        self.assertEqual(observed(raw,[expression()],'source',observer=Broken()),(expected,None))
+        overflow=f.DumpDiagnostics();overflow.transitions=f.MAX_OBJECTS+16
+        self.assertEqual(observed(raw,[expression()],'source',observer=overflow),(expected,None))
+        with self.assertRaises(f.FidelityError):observed(diagnostic_dump(SOURCE+' invalid'),[expression()],'source',observer=Broken())
+        _,valid=observed(raw,[expression()],'source')
+        for bad in [None,{},dict(valid,rows='private-sentinel'),dict(valid,ddl=('bad',0)),dict(valid,ddl=('a'*64,True))]:
+            self.assertEqual(f.diagnostic_differences(valid,bad),())
 
     def test_database_locale_preserves_bounded_actual_names_and_exact_binding(self):
         owner='so_11111111111141118111111111111111_owner';database='tenant'

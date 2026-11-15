@@ -128,6 +128,61 @@ def refresh_archive_binding(fake,archive):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_canonical_failure_enriches_only_with_transient_completed_observations(self):
+        profiles=[
+            (b'18.6','source_header_plain_18_6'),
+            (b'18.6 (Debian 18.6-1.pgdg13+1)','source_header_debian_18_6_1'),
+            (b'18.6 (Debian 18.6-1.pgdg13+2)','source_header_debian_18_6_2'),
+            (b'18.6 (private-sentinel)','source_header_unclassified'),
+            (b'18.6',None),
+        ]
+        original_observer=m.fidelity.DumpDiagnostics
+        class Poisoned(original_observer):
+            def complete(self):
+                super().complete();self.source_header_profile='postgresql://private-sentinel'
+        for version,profile in profiles:
+            with self.subTest(profile=profile),tempfile.TemporaryDirectory() as directory:
+                fake=Fake(Path(directory),{ID:155});fake.exits=0
+                owner='so_'+ID.replace('-','')+'_owner';connection={'user':owner,'database':fake.source_database['metadata']['datname']}
+                archive=fake.point/'source.dump.age';archive.write_bytes(b'synthetic encrypted archive')
+                prefix=b'--\n-- PostgreSQL database dump\n--\n\n\\restrict stableNonce\n-- Dumped from database version '
+                tail=b"\n-- Dumped by pg_dump version 18.6\n\nSET statement_timeout = 0;\nSELECT 'private-sentinel';\n\\unrestrict stableNonce\n"
+                source=prefix+version+tail;restored=prefix+b'18.6 (other-target-package)'+tail
+                metadata={'catalog':{'relations':[],'constraints':[],'constraintNames':[]},'indexes':[],'database':copy.deepcopy(fake.source_database)}
+                fake.catalog=lambda *a:copy.deepcopy(metadata);fake.oracle=lambda *a:[]
+                fake.copy_sql=lambda *a:b'';fake.copy_role_profile=lambda *a:role_profile()
+                fake.migrate_copy=mock.Mock(side_effect=AssertionError('CLI must remain unreachable'))
+                def original(data,evidence=None,side='source'):
+                    base=[sys.executable,'-c','import sys;sys.stdout.buffer.write('+repr(data)+')']
+                    return m.Controller.fingerprint(fake,base,None,'stableNonce',evidence,side)
+                fake.fingerprint=lambda base,environment,nonce,evidence=None,side='source':original(source,evidence,side)
+                fake.restored_fingerprint=lambda connection,nonce,evidence=None:original(restored,evidence,'restored')
+                observation=mock.patch.object(m.fidelity,'DumpDiagnostics',Poisoned) if profile is None else contextlib.nullcontext()
+                with observation,mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
+                    with self.assertRaises(m.fidelity.FidelityError) as caught:m.Controller.restore_and_migrate(fake,fake.rows[0],connection,identity_profile(),archive,'stableNonce',m.digest(source))
+                properties=('canonical','dumped_from_header')+((profile,) if profile is not None else ())
+                expected=m.fidelity.diagnostic('canonical',properties,count=2);expected['stage']='unknown'
+                self.assertEqual(caught.exception.diagnostic,expected)
+                self.assertEqual(fake._canonical_observations,{});self.assertEqual(fake._canonical_header_profiles,{})
+                fake.migrate_copy.assert_not_called();self.assertFalse(fake.proof.exists())
+                for path in fake.point.iterdir():self.assertNotIn(b'private-sentinel',path.read_bytes())
+
+    def test_fingerprint_observer_failure_and_malformed_context_do_not_change_result_shape(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake=Fake(Path(directory),{ID:155});fake.exits=0
+            data=b'SELECT 1;\n\\unrestrict stableNonce\n'
+            base=[sys.executable,'-c','import sys;sys.stdout.buffer.write('+repr(data)+')']
+            expected=m.fidelity.DumpFingerprint([],'source');expected.feed(data);expected=expected.finish()
+            class Broken:
+                def begin_statement(self,*a):raise RuntimeError('private-sentinel')
+            with mock.patch.object(m.fidelity,'DumpDiagnostics',Broken):
+                actual=m.Controller.fingerprint(fake,base,None,'stableNonce',[],side='source')
+            self.assertEqual(actual,expected);self.assertEqual(set(actual),{'raw','canonical','expressions'})
+            self.assertIsNone(fake._canonical_observations['source'])
+            with mock.patch.object(m.fidelity,'DumpDiagnostics',side_effect=ValueError('private-sentinel')):
+                self.assertEqual(m.Controller.fingerprint(fake,base,None,'stableNonce',[],side='source'),expected)
+            self.assertEqual(m.Controller.fingerprint(fake,base,None,'stableNonce'),m.digest(data))
+
     def test_main_refusal_receipt_is_private_static_and_never_masks_refusal(self):
         with tempfile.TemporaryDirectory() as directory:
             point=Path(directory);point.chmod(0o700)

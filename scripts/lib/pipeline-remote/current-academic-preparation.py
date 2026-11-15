@@ -674,7 +674,11 @@ class Controller:
         # Evidence mode separately frames proven expression spans for canonical
         # SHA; it never changes the bytes contributing to the raw digest.
         child=subprocess.Popen(base+['pg_dump','--format=plain','--no-password','--restrict-key='+nonce],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env=environment)
-        value=hashlib.sha256() if evidence is None else fidelity.DumpFingerprint(evidence,side)
+        observer=None
+        if evidence is not None:
+            try:observer=fidelity.DumpDiagnostics()
+            except Exception:pass # Diagnostics cannot replace an original outcome.
+        value=hashlib.sha256() if evidence is None else fidelity.DumpFingerprint(evidence,side,observer=observer)
         completed=False
         try:
             deadline=time.monotonic()+MAX_SECONDS
@@ -688,7 +692,16 @@ class Controller:
                 else:value.feed(chunk)
             code=child.wait(timeout=30);completed=True
             if code:refuse('fingerprint_failed')
-            return value.hexdigest() if evidence is None else value.finish()
+            if evidence is None:return value.hexdigest()
+            result=value.finish()
+            if not hasattr(self,'_canonical_observations'):self._canonical_observations={}
+            if not hasattr(self,'_canonical_header_profiles'):self._canonical_header_profiles={}
+            try:
+                self._canonical_observations[side]=getattr(value.observer,'result',None)
+                self._canonical_header_profiles[side]=getattr(value.observer,'source_header_profile',None)
+            except Exception:
+                self._canonical_observations[side]=None;self._canonical_header_profiles[side]=None
+            return result
         finally:
             child.stdout.close()
             if child.poll() is None:child.kill();child.wait()
@@ -965,11 +978,21 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
             self.diagnostic_stage='expression_pairing'
             pairs,physical=fidelity.expression_pairs(source_metadata,restored_metadata)
             evidence=self.oracle(pairs,connection)
+            self._canonical_observations={}
+            self._canonical_header_profiles={}
             restored=self.restored_fingerprint(connection,nonce,evidence)
             with self.source(row) as (_,source_base,source_environment):
                 source=self.fingerprint(source_base,source_environment,nonce,evidence,'source')
             self.diagnostic_stage='canonical_compare'
-            fidelity.require(source['raw']==source_hash and source['canonical']==restored['canonical'],'canonical',tuple(key for key,bad in [('source_raw',source['raw']!=source_hash),('canonical',source['canonical']!=restored['canonical'])] if bad))
+            properties=tuple(key for key,bad in [('source_raw',source['raw']!=source_hash),('canonical',source['canonical']!=restored['canonical'])] if bad)
+            if source['canonical']!=restored['canonical']:
+                properties+=fidelity.diagnostic_differences(self._canonical_observations.get('source'),self._canonical_observations.get('restored'))
+            mismatch_count=len(properties)
+            if 'dumped_from_header' in properties:
+                profile=self._canonical_header_profiles.get('source')
+                if type(profile) is str and profile in fidelity.SOURCE_HEADER_CONTEXT:properties+=(profile,)
+            self._canonical_observations.clear();self._canonical_header_profiles.clear()
+            fidelity.require(source['raw']==source_hash and source['canonical']==restored['canonical'],'canonical',properties,count=mismatch_count)
             restored_profile=self.verify_copy_profile(connection,identity)
             self.diagnostic_stage='retained_validation'
             name=uuid.UUID(row['id']).hex

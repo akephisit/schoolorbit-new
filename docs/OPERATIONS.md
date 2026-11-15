@@ -2306,6 +2306,27 @@ bounded `last-fidelity-refusal.json` with mode0600 and the owner UID where recei
 This best-effort receipt never replaces the original refusal and is never a proof or retry input;
 a stale receipt does not establish the stage of a later attempt.
 
+Canonical-comparison diagnostics keep `source_raw` and `canonical` as bits0 and1. Appended fixed bits
+identify actual dump version-header lines, other preamble bytes, session statements, DDL, ownership/ACL,
+comments/labels, sequence state, COPY payload, other bytes, category order and the rigorous remainder.
+An optional observer partitions only existing raw-run and proven-expression events. The remainder
+includes every byte outside the two exact version-header lines and the same R/E-framed proven tokens;
+header comparison plus an equal remainder can therefore localize a header-only difference. Header
+classification is restricted to the actual first PostgreSQL dump preamble. Header-looking text in
+COPY rows, SQL strings, functions or later comments cannot become a version-header observation.
+Partition digests and counts remain transient memory, with no category/object/row hashes or SQL
+persisted or emitted. Missing, malformed or failed observations add no diagnostic claims. The original
+raw and canonical hashes, return shape, proof policy and acceptance predicate remain authoritative.
+
+When the dumped-from header differs and both observations complete, one finite context bit may also
+identify the exact observed source header text: bit14 plain `18.6`, bit15
+`18.6 (Debian 18.6-1.pgdg13+1)`, bit16 `18.6 (Debian 18.6-1.pgdg13+2)`, or bit17 unclassified.
+These context bits do not count as additional mismatches and never carry arbitrary version strings.
+They are mutually exclusive and require both the canonical and dumped-from-header mismatch bits;
+profile-only, conflicting-profile and unknown high-bit masks are rejected.
+A plain header does not identify the source OS. These observations diagnose the refusal; they neither
+normalize a header nor authorize a differing canonical stream.
+
 A `stream_failed` refusal may instead contain the mutually exclusive `streamFailure` object:
 `stage`, `producerExit`, `consumerExit`, `producerCode`, `consumerCode`,
 `producerStderrTruncated` and `consumerStderrTruncated`. Stages identify `backup_archive`,
