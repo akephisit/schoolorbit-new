@@ -39,6 +39,14 @@ def role_profile(identifier=ID,kind='postgresFixture1'):
     return {'roles':sorted(roles,key=lambda x:x['name']),'memberships':memberships}
 
 
+def database_role(name='database-reader'):
+    return {'name':name,'login':False,'super':False,'createDb':False,'createRole':False,'inherit':False,'replication':False,'bypass':False,'limit':7,'comment':"private comment 'quoted' \\ retained"}
+
+
+def identity_profile(identifier=ID,kind='postgresFixture1'):
+    return dict(role_profile(identifier,kind),databaseRoles=[])
+
+
 def database_profile(owner,database,pair=('en_US.utf8','en_US.utf8')):
     return {'metadata':{'datname':database,'encoding':6,'datlocprovider':'b','datlocale':'C.UTF-8','datcollate':pair[0],'datctype':pair[1]},'owner':owner,'tablespace':'pg_default','acl':None,'settings':None}
 
@@ -50,6 +58,7 @@ class Fake(m.Controller):
         self.key=point/'identity.agekey';self.proof=point/'proof.json';self.state=point/'state.json'
         self.client='source';self.copy='copy';self.volume='volume';self.verify='verify';self.versions=versions;self.restored=[];self.checked=False;self.recovery_validations=0
         self.compiled=[[157,True,'a'*96]]
+        self.database_roles=[]
         self.source_database=database_profile('so_'+ID.replace('-','')+'_owner','tenant_'+ID.replace('-',''))
     def labels(self):return []
     def exists(self,*args):return False
@@ -58,7 +67,9 @@ class Fake(m.Controller):
     @contextlib.contextmanager
     def source(self,row):
         yield {'id':row['id'],'database':'tenant_'+row['id'].replace('-',''),'user':'so_'+row['id'].replace('-','')+'_owner'},['source'],{}
-    def identity(self,connection,*args):return dict(role_profile(connection['id']),date='2026-11-14',version=self.versions[connection['id']])
+    def identity(self,connection,*args):return dict(role_profile(connection['id']),databaseRoles=copy.deepcopy(self.database_roles),date='2026-11-14',version=self.versions[connection['id']])
+    def source_database_roles(self,database,owner,*args):
+        return copy.deepcopy(m.validate_database_roles(self.database_roles,database,owner))
     def age(self,*arguments):return ["synthetic-age",*arguments]
     def ensure_key(self):
         self.key.write_text('synthetic key');self.key.chmod(0o600);return 'synthetic recipient'
@@ -78,7 +89,7 @@ class Fake(m.Controller):
         metadata={'catalog':{'relations':[],'constraints':[],'constraintNames':[]},'database':copy.deepcopy(self.source_database),'indexes':[]}
         name=row['id'].replace('-','');archive_hash=m.digest_file(archive)
         profile=role_profile(row['id'])
-        md={'schemaVersion':2,'policy':m.fidelity.POLICY,'schoolId':row['id'],'archiveSha256':archive_hash,'roleMetadata':profile['roles'],'membershipMetadata':profile['memberships'],'restoredRoleMetadata':copy.deepcopy(profile['roles']),'restoredMembershipMetadata':copy.deepcopy(profile['memberships']),'source':metadata,'restoredBefore':metadata,'restored':metadata,'oracle':[],'physicalIndexBookkeepingDifferenceCount':0}
+        md={'schemaVersion':2,'policy':m.fidelity.POLICY,'schoolId':row['id'],'archiveSha256':archive_hash,'roleMetadata':profile['roles'],'membershipMetadata':profile['memberships'],'restoredRoleMetadata':copy.deepcopy(profile['roles']),'restoredMembershipMetadata':copy.deepcopy(profile['memberships']),'databaseRoleMetadata':copy.deepcopy(self.database_roles),'restoredDatabaseRoleMetadata':copy.deepcopy(self.database_roles),'source':metadata,'restoredBefore':metadata,'restored':metadata,'oracle':[],'physicalIndexBookkeepingDifferenceCount':0}
         nm={'schemaVersion':2,'policy':m.fidelity.POLICY,'schoolId':row['id'],'archiveSha256':archive_hash,'renames':[]}
         md_path=self.point/(name+'.restore-metadata.json');nm_path=self.point/(name+'.nn-identities.json')
         m.durable(md_path,md);m.durable(nm_path,nm)
@@ -86,8 +97,11 @@ class Fake(m.Controller):
     def check(self):self.checked=True
 
 
-def completion_fixture(point):
+def completion_fixture(point,database_roles=None):
     fake=Fake(point,{ID:157,OTHER:157})
+    if database_roles:
+        fake.database_roles=copy.deepcopy(database_roles)
+        fake.source_database['acl']=[[role['name'],'so_'+ID.replace('-','')+'_owner','CONNECT',False] for role in database_roles]
     fake.key.write_bytes(b'synthetic key');fake.key.chmod(0o600)
     archive=point/(ID.replace('-','')+'.dump.age')
     archive.write_bytes(b'synthetic encrypted archive');archive.chmod(0o600)
@@ -97,7 +111,7 @@ def completion_fixture(point):
     item['restoreFidelity']['evidenceSha256']=m.fidelity.evidence_digest(bundle,item)
     m.durable(fake.proof,bundle)
     profile=role_profile()
-    m.durable(point/(ID.replace('-','')+'.json'),{'roleMetadata':profile['roles'],'membershipMetadata':profile['memberships']})
+    m.durable(point/(ID.replace('-','')+'.json'),{'roleMetadata':profile['roles'],'membershipMetadata':profile['memberships'],'databaseRoleMetadata':copy.deepcopy(fake.database_roles)})
     m.durable(fake.state,{'state':'prepared','retainUntil':None})
     fake.command=lambda *a,**k:json.dumps(audit()).encode()
     return fake,archive
@@ -175,10 +189,10 @@ class PreparationTests(unittest.TestCase):
         for kind,pair in [(kind,pair) for kind in ['provider3','postgresFixture1'] for pair in [('C','C.UTF-8'),('en_US.utf8','en_US.utf8'),('C.UTF-8','C.UTF-8'),('C','C')]]:
             with self.subTest(kind=kind,pair=pair),tempfile.TemporaryDirectory() as directory:
                 fake=Fake(Path(directory),{ID:155})
-                profile=role_profile(kind=kind);profile['roles'][0]['login']=False
+                profile=identity_profile(kind=kind);profile['roles'][0]['login']=False
                 calls=[]
                 fake.copy_sql=lambda sql,*a,**k:calls.append(sql) or b''
-                fake.copy_role_profile=lambda *a:copy.deepcopy(profile)
+                fake.copy_role_profile=lambda *a:{key:copy.deepcopy(profile[key]) for key in ['roles','memberships']}
                 with mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
                     with fake.isolated({'user':owner,'database':'tenant'},profile,database_profile(owner,'tenant',pair)):
                         pass
@@ -198,7 +212,7 @@ class PreparationTests(unittest.TestCase):
                 fake.command=lambda *a,**k:calls.append(a) or b''
                 source=database_profile(owner,'tenant');source['metadata'][field]=value
                 with self.assertRaises(m.fidelity.FidelityError):
-                    with fake.isolated(connection,role_profile(),source):pass
+                    with fake.isolated(connection,identity_profile(),source):pass
                 self.assertEqual(calls,[])
 
     def test_archive_restore_owns_database_and_refusal_never_reaches_cli(self):
@@ -229,7 +243,7 @@ class PreparationTests(unittest.TestCase):
                 fake.stream=restore_stream
                 expected=m.fidelity.FidelityError if failure=='metadata' else m.Refusal
                 with mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
-                    with self.assertRaises(expected) as caught:m.Controller.restore_and_migrate(fake,fake.rows[0],connection,role_profile(),archive,'nonce','c'*64)
+                    with self.assertRaises(expected) as caught:m.Controller.restore_and_migrate(fake,fake.rows[0],connection,identity_profile(),archive,'nonce','c'*64)
                 if failure=='metadata':
                     self.assertEqual(caught.exception.diagnostic['facet'],'database')
                 else:
@@ -243,16 +257,136 @@ class PreparationTests(unittest.TestCase):
                 self.assertEqual(archive.read_bytes(),b'private encrypted archive sentinel')
                 self.assertEqual(list(point.glob('*.restore-metadata.json')),[])
 
+    def test_database_role_inventory_is_exact_bound_quoted_and_scoped(self):
+        owner='so_'+ID.replace('-','')+'_owner';quoted='data "quoted" role-ก\\name'
+        roles=sorted([database_role(quoted),database_role('settings-only')],key=lambda role:role['name'])
+        database=database_profile(owner,'tenant');database['acl']=[[quoted,owner,'CONNECT',True],['<PUBLIC>',owner,'CONNECT',False]]
+        database['settings']=[{'global':False,'role':'settings-only','config':['application_name=fixture']},{'global':True,'role':owner,'config':['lock_timeout=1s']}]
+        self.assertEqual(m.database_role_names(database,owner),[role['name'] for role in roles])
+        self.assertEqual(m.database_role_identifier(quoted),'"'+quoted.replace('"','""')+'"')
+        self.assertEqual(m.database_role_identifier('ก'*21),'"'+'ก'*21+'"')
+        for name in ['', 'x'*64, 'ก'*22, 'a\x00b', '\ud800']:
+            with self.assertRaises(m.fidelity.FidelityError):m.database_role_identifier(name)
+        self.assertTrue(m.database_role_literal(quoted).startswith("E'"));self.assertIn('\\\\name',m.database_role_literal(quoted))
+        controller=m.Controller.__new__(m.Controller);calls=[]
+        def capture(arguments,**kwargs):
+            sql=arguments[-1];calls.append(sql)
+            self.assertTrue(sql.startswith('SET search_path=pg_catalog; '))
+            self.assertIn('setdatabase=(SELECT oid FROM selected)',sql)
+            self.assertIn('a.grantee<>0',sql);self.assertIn('a.grantor',sql)
+            return json.dumps({'count':2,'comments':64} if 'comments' in sql else roles).encode()
+        controller.bounded_capture=capture
+        self.assertEqual(controller.source_database_roles(database,owner,['source']),roles)
+        self.assertEqual(len(calls),2)
+        controller.bounded_capture=lambda *a,**k:json.dumps({'count':65,'comments':0}).encode()
+        with self.assertRaises(m.fidelity.FidelityError):controller.source_database_roles(database,owner,['source'])
+        for bad in [roles[:1],roles+[database_role('unreferenced')],list(reversed(roles)),[dict(roles[0],comment='x'*65537),roles[1]]]:
+            with self.assertRaises(m.fidelity.FidelityError):m.validate_database_roles(bad,database,owner)
+
+    def test_identity_keeps_local_object_guard_strict_and_scopes_shared_database_roles(self):
+        owner='so_'+ID.replace('-','')+'_owner';connection={'user':owner,'database':'tenant'}
+        for version,local_unknown,selected in [(155,1,False),(155,0,False),(157,0,False),(157,0,True)]:
+            with self.subTest(version=version,local_unknown=local_unknown,selected=selected),tempfile.TemporaryDirectory() as directory:
+                fake=Fake(Path(directory),{ID:version});fake.source_history=lambda *a:version
+                role=database_role();fake.database_roles=[role];fake.source_database=database_profile(owner,'tenant');fake.source_database['acl']=[[role['name'],owner,'CONNECT',False]]
+                if selected:fake._recovery_profiles={ID:{}}
+                primary=role_profile();calls=[]
+                def capture(arguments,**kwargs):
+                    sql=arguments[-1];calls.append(sql)
+                    if 'unknownRoles' in sql:
+                        self.assertNotIn(role['name'],sql)
+                        return json.dumps(dict(primary,user=owner,database='tenant',owner=owner,marker='schoolorbit:'+ID+':migration',super=False,createDb=False,createRole=False,bypass=False,ssl=True,server='180006',unknownRoles=local_unknown,otherConnections=0)).encode()
+                    if sql==m.DATABASE_SQL:return json.dumps(fake.source_database).encode()
+                    if 'pg_shdepend x' in sql:
+                        self.assertTrue(sql.startswith('SET search_path=pg_catalog;'))
+                        self.assertIn("x.dbid=0 AND x.classid='pg_database'::regclass",sql);self.assertIn('x.objid=(SELECT oid FROM pg_database WHERE datname=current_database())',sql)
+                        return b'0'
+                    return json.dumps(primary['memberships']).encode()
+                fake.bounded_capture=capture
+                if local_unknown:
+                    with self.assertRaises(m.Refusal) as caught:m.Controller.identity(fake,connection,['source'],{})
+                    self.assertEqual(str(caught.exception),'source_identity_invalid');self.assertEqual(len(calls),1)
+                else:
+                    value=m.Controller.identity(fake,connection,['source'],{})
+                    expected=[role] if version<157 or selected else []
+                    self.assertEqual(value['databaseRoles'],expected)
+                    self.assertEqual(any('pg_shdepend x' in sql for sql in calls),bool(expected))
+
+    def test_database_role_setup_attests_existing_builtins_and_never_repairs_them(self):
+        owner='so_'+ID.replace('-','')+'_owner';role=database_role('data "quote" role')
+        for existing,expected_failure in [([],False),([role],False),([dict(role,comment='changed')],True)]:
+            with tempfile.TemporaryDirectory() as directory:
+                fake=Fake(Path(directory),{ID:155});identity=identity_profile();identity['databaseRoles']=[role]
+                database=database_profile(owner,'tenant');database['acl']=[[role['name'],owner,'CONNECT',False]]
+                current=copy.deepcopy(existing);statements=[]
+                fake.copy_database_roles=lambda expected:copy.deepcopy(current)
+                fake.copy_role_profile=lambda *a:role_profile()
+                def sql(statement,*args):
+                    statements.append(statement)
+                    if statement.startswith('CREATE ROLE '+m.database_role_identifier(role['name'])):current.append(copy.deepcopy(role))
+                    return b''
+                fake.copy_sql=sql
+                with mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
+                    if expected_failure:
+                        with self.assertRaises(m.fidelity.FidelityError):
+                            with fake.isolated({'user':owner,'database':'tenant'},identity,database):pass
+                    else:
+                        with fake.isolated({'user':owner,'database':'tenant'},identity,database):pass
+                extra=[statement for statement in statements if statement.startswith('CREATE ROLE '+m.database_role_identifier(role['name']))]
+                self.assertEqual(bool(extra),not existing)
+                if extra:self.assertIn('NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 7',extra[0])
+                self.assertFalse(any('ALTER ROLE' in statement or 'GRANTED BY' in statement for statement in statements))
+        for name in ['postgres','pg_monitor']:
+            with tempfile.TemporaryDirectory() as directory:
+                fake=Fake(Path(directory),{ID:155});identity=identity_profile();identity['databaseRoles']=[database_role(name)]
+                database=database_profile(owner,'tenant');database['acl']=[[name,owner,'CONNECT',False]]
+                fake.copy_role_profile=lambda *a:role_profile();fake.copy_database_roles=lambda *a:[];fake.copy_sql=mock.Mock(return_value=b'')
+                with mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
+                    with self.assertRaises(m.fidelity.FidelityError):
+                        with fake.isolated({'user':owner,'database':'tenant'},identity,database):pass
+                self.assertFalse(any(('CREATE ROLE "'+name+'"') in call.args[0] for call in fake.copy_sql.call_args_list))
+
+    def test_database_role_readback_is_required_before_and_after_cli(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake=Fake(Path(directory),{ID:155});identity=identity_profile();identity['databaseRoles']=[database_role()]
+            fake.worker='worker';fake.image='immutable';fake.copy_role_profile=lambda *a:role_profile()
+            current=copy.deepcopy(identity['databaseRoles']);fake.copy_database_roles=lambda *a:copy.deepcopy(current)
+            calls=[]
+            def command(*args,**kwargs):calls.append(args);current[0]['inherit']=True;return b'child result'
+            fake.command=command
+            with self.assertRaises(m.fidelity.FidelityError):fake.migrate_copy({'user':'so_'+ID.replace('-','')+'_owner'},identity,{})
+            self.assertEqual(len(calls),1)
+            with self.assertRaises(m.fidelity.FidelityError):fake.migrate_copy({'user':'so_'+ID.replace('-','')+'_owner'},identity,{})
+            self.assertEqual(len(calls),1)
+
+    def test_database_role_retained_tamper_and_retry_drift_refuse_without_recovery_changes(self):
+        for field in ['databaseRoleMetadata','restoredDatabaseRoleMetadata']:
+            with tempfile.TemporaryDirectory() as directory:
+                fake,archive=completion_fixture(Path(directory),[database_role()]);path=fake.point/(ID.replace('-','')+'.restore-metadata.json')
+                document=m.read_json(path);document[field][0]['comment']='changed';m.durable(path,document)
+                bundle=m.read_json(fake.proof);bundle['tenants'][0]['restoreFidelity']['metadataSha256']=m.digest_file(path);bundle['tenants'][0]['restoreFidelity']['evidenceSha256']=m.fidelity.evidence_digest(bundle,bundle['tenants'][0]);m.durable(fake.proof,bundle)
+                before=archive.read_bytes()
+                with self.assertRaises(m.fidelity.FidelityError):fake.retained_recovery()
+                self.assertEqual(archive.read_bytes(),before)
+        with tempfile.TemporaryDirectory() as directory:
+            fake=Fake(Path(directory),{ID:155,OTHER:157});fake.database_roles=[database_role()];fake.source_database['acl']=[['database-reader','so_'+ID.replace('-','')+'_owner','CONNECT',False]]
+            fake.restore_and_migrate=lambda *a:m.refuse('stream_failed')
+            with mock.patch.object(m.shutil,'disk_usage',return_value=type('Space',(),{'free':10**15})()):
+                with self.assertRaises(m.Refusal):fake.prepare()
+                archive=fake.point/(ID.replace('-','')+'.dump.age');before=archive.read_bytes();fake.database_roles[0]['comment']='source drift'
+                with self.assertRaises(m.Refusal) as caught:fake.prepare()
+            self.assertEqual(str(caught.exception),'source_roles_changed');self.assertEqual(archive.read_bytes(),before);self.assertFalse(fake.proof.exists())
+
     def test_final_copy_profile_readback_blocks_cli_after_valid_initial_creation(self):
         owner='so_'+ID.replace('-','')+'_owner';connection={'user':owner}
         with tempfile.TemporaryDirectory() as directory:
-            fake=Fake(Path(directory),{ID:155});identity=role_profile()
+            fake=Fake(Path(directory),{ID:155});identity=identity_profile()
             fake.worker='worker';fake.image='immutable'
-            current=copy.deepcopy(identity);fake.copy_role_profile=lambda *a:copy.deepcopy(current)
-            self.assertEqual(fake.verify_copy_profile(connection,identity),identity)
+            current=copy.deepcopy(identity);fake.copy_role_profile=lambda *a:{key:copy.deepcopy(current[key]) for key in ['roles','memberships']}
+            self.assertEqual(fake.verify_copy_profile(connection,identity),{key:identity[key] for key in ['roles','memberships']})
             calls=[];fake.command=lambda *a,**k:calls.append(a) or b'child result'
             raw,profile=fake.migrate_copy(connection,identity,{})
-            self.assertEqual(raw,b'child result');self.assertEqual(profile,identity);self.assertEqual(len(calls),1)
+            self.assertEqual(raw,b'child result');self.assertEqual(profile,{key:identity[key] for key in ['roles','memberships']});self.assertEqual(len(calls),1)
             for fault in ['flags','comment','limit','membership']:
                 current=copy.deepcopy(identity)
                 if fault=='flags':current['roles'][0]['inherit']=not current['roles'][0]['inherit']
@@ -286,7 +420,7 @@ class PreparationTests(unittest.TestCase):
                 return subprocess.CompletedProcess(arguments,1 if len(probes)==1 else 0)
             with mock.patch.object(m.subprocess,'run',side_effect=ready),mock.patch.object(m.time,'sleep'):
                 owner='so_'+ID.replace('-','')+'_owner'
-                with fake.isolated({'database':'tenant','user':owner},role_profile(),database_profile(owner,'tenant')):
+                with fake.isolated({'database':'tenant','user':owner},identity_profile(),database_profile(owner,'tenant')):
                     self.assertEqual(len(probes),2)
 
     def test_bounded_metadata_reader_limits_output_and_records_real_child_failures(self):
