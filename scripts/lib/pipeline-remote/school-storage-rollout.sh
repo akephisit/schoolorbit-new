@@ -30,8 +30,42 @@ fail() {
     exit 1
 }
 report_preparation_refusal() {
+    # Reject duplicate keys/nonfinite numbers before jq's lossy JSON decoding.
+    # Private controller output is bounded; never print an unparsed error.
+    if ! python3 - "$1" 2>/dev/null <<'PYJSON'; then
+import json, sys
+
+def unique(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError()
+        value[key] = item
+    return value
+
+def invalid(_):
+    raise ValueError()
+
+with open(sys.argv[1], 'rb') as source:
+    raw = source.read(1048577)
+if len(raw) > 1048576:
+    raise ValueError()
+json.loads(raw, object_pairs_hook=unique, parse_constant=invalid)
+PYJSON
+        return
+    fi
     jq -ces '
         def code: IN("admin_redirect_refused","admin_response_invalid","admin_unavailable","archive_changed","child_failed","child_outcome_unknown","compiled_history_unavailable","completion_binding_changed","completion_cutover_unverified","completion_inventory_changed","controller_evidence_invalid","controller_still_running","converted_source_receipt_changed","copy_audit_unavailable","copy_cutover_not_reconciled","copy_migration_refused","copy_postgres_unavailable","copy_resource_unresolved","copy_runner_evidence_invalid","current_prefix_changed","cutover_date_changed","database_identifier_invalid","fingerprint_failed","fingerprint_outcome_unknown","fixed_operation_required","foreign_preparation_resource","foreign_preparation_volume","insufficient_recovery_space","inventory_changed","inventory_invalid","inventory_too_large","preparation_binding_changed","preparation_coverage_changed","preparation_unavailable","prepared_source_changed","previous_controller_resources_unresolved","private_evidence_invalid","private_evidence_too_large","private_path_invalid","private_path_unavailable","private_runtime_unavailable","recovery_key_invalid","release_context_invalid","resource_state_unknown","restored_source_mismatch","runtime_configuration_unavailable","school_writers_not_drained","source_changed_before_migration","source_changed_during_copy","source_connection_invalid","source_history_invalid","source_identity_invalid","source_identity_unavailable","source_namespace_changed","source_roles_changed","stream_failed","stream_outcome_unknown","unresolved_archive");
+        def diagnostic:
+            {"unknown":1,"profile_shape":8,"role_identity":16,"owner_capabilities":32,"runtime_capabilities":32,"provisioner_capabilities":32,"memberships":2097152,"catalog_budget":32,"metadata_shape":2,"database":65536,"relation":64,"columns":16777216,"nn":128,"constraints":4096,"indexes":262144,"expression_context":64,"oracle":512,"framing":128,"canonical":4,"retained":256} as $limits |
+            type=="object" and keys==["facet","mismatchCount","propertyMask","stage"]
+            and (.stage|type=="string" and IN("unknown","source_profile","source_catalog","copy_setup","copy_profile","copy_catalog","nn_reconcile","expression_pairing","oracle","source_stream","copy_stream","canonical_compare","retained_validation"))
+            and (.facet|type=="string")
+            and (.facet as $facet | $limits|has($facet))
+            and (.mismatchCount|type=="number" and floor==. and .>=0 and .<=20000)
+            and (.propertyMask|type=="number" and floor==. and .>=0)
+            and (.propertyMask < $limits[.facet])
+            and (.facet!="unknown" or .mismatchCount==0);
         def migration:
             type=="object" and keys==["code","operation","schemaVersion","sqlstate","status","version"]
             and .schemaVersion==1 and .operation=="migrate_tenant_schema" and .status=="refused"
@@ -39,8 +73,8 @@ report_preparation_refusal() {
             and (.sqlstate==null or (.sqlstate|type=="string" and test("^[0-9A-Z]{5}$")))
             and (.code=="unclassified" or (.version==147 and (.code|IN("ACADEMIC_CONTEXT_147_RUNNING_CONTEXT_MISMATCH","ACADEMIC_CONTEXT_DEFAULT_MUST_BE_VISIBLE"))) or (.version==148 and (.code|IN("ACADEMIC_CONTEXT_148_CALENDAR_MATERIALIZATION_TOO_LARGE","ACADEMIC_CONTEXT_148_CALENDAR_ROOM_YEAR_MISMATCH","ACADEMIC_CONTEXT_148_CALENDAR_YEAR_UNMAPPABLE","ACADEMIC_CONTEXT_148_CURRICULUM_CREATED_INTENT_UNMAPPABLE","ACADEMIC_CONTEXT_148_POST_CLEANUP_RECONCILIATION_FAILED","ACADEMIC_CONTEXT_148_PREPARATION_CREATED_INTENT_UNMAPPABLE","ACADEMIC_CONTEXT_148_PREPARATION_REQUEST_UNMAPPABLE","ACADEMIC_CONTEXT_148_PROMOTION_ITEM_INTENT_UNMAPPABLE","ACADEMIC_CONTEXT_148_PROMOTION_ITEM_SNAPSHOT_UNMAPPABLE","ACADEMIC_CONTEXT_148_PROMOTION_RUN_SNAPSHOT_UNMAPPABLE","ACADEMIC_CONTEXT_148_RECONCILIATION_FAILED","ACADEMIC_CONTEXT_148_TERM_RECEIPT_SOURCE_UNMAPPABLE","ACADEMIC_CONTEXT_148_UNKNOWN_DATE_DEPENDENCY","ACADEMIC_CONTEXT_148_YEAR_ACTIVATION_RECEIPT_UNMAPPABLE","PROMOTION_RUN_HISTORY_RETAINED","PROMOTION_RUN_IDENTITY_IMMUTABLE"))) or (.version==149 and (.code|IN("ACADEMIC_CONTEXT_149_PHASE_EVIDENCE_INVALID","ACADEMIC_CONTEXT_149_RECONCILIATION_FAILED","ACADEMIC_CONTEXT_149_UNKNOWN_RECEIPT_DEPENDENCY","ACADEMIC_CONTEXT_149_UNSUPPORTED_RECEIPT_STATE"))) or (.version==151 and (.code|IN("PUBLICATION_151_ASSIGNMENT_CONTEXT_INVALID","PUBLICATION_151_INITIAL_SOURCE_UNMAPPABLE","PUBLICATION_151_INITIAL_TEACHERS_UNMAPPABLE","PUBLICATION_151_PRESERVATION_FAILED","PUBLICATION_151_RECONCILIATION_FAILED","PUBLICATION_151_SOURCE_LINEAGE_INVALID"))) or (.version==152 and (.code|IN("MANUAL_ROLLOVER152_PRESERVATION_FAILED","MANUAL_ROLLOVER_LEGACY_EXECUTION_UNRESOLVED"))) or (.version==155 and (.code|IN("ACADEMIC_SCHOOL_DAYS155_INVALID_YEAR_PRESET","ACADEMIC_SCHOOL_DAYS155_MAPPING_FAILED","ACADEMIC_SCHOOL_DAYS155_PRESERVATION_FAILED","ACADEMIC_SCHOOL_DAYS155_TRIGGER_STATE_INVALID"))) or (.version==157 and (.code|IN("ACADEMIC_CURRENT_ATTENDANCE_EVIDENCE_UNMAPPABLE","ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE","ACADEMIC_CURRENT_ATTENDANCE_SOURCE_AMBIGUOUS","ACADEMIC_CURRENT_BEHAVIOR_ARCHIVE_UNMAPPABLE","ACADEMIC_CURRENT_BEHAVIOR_EFFECT_PROTECTED","ACADEMIC_CURRENT_CATALOG_PIN_MISMATCH","ACADEMIC_CURRENT_DELIVERY_SOURCE_AMBIGUOUS","ACADEMIC_CURRENT_DELIVERY_SOURCE_MISSING","ACADEMIC_CURRENT_EXAM_ITEM_DEPENDENT_UNMAPPABLE","ACADEMIC_CURRENT_GRAPH_UNMAPPABLE","ACADEMIC_CURRENT_GROUP_ARCHIVE_UNMAPPABLE","ACADEMIC_CURRENT_GROUP_RESULTS_UNMAPPABLE","ACADEMIC_CURRENT_INACTIVE_SYNC_UNMAPPABLE","ACADEMIC_CURRENT_OFFERING_NOT_FOUND","ACADEMIC_CURRENT_PREPARATION_MISMATCH","ACADEMIC_CURRENT_PREPARATION_REQUIRED","ACADEMIC_CURRENT_RECONCILIATION_FAILED","ACADEMIC_CURRENT_RESULTS_JSON_UNMAPPABLE","ACADEMIC_CURRENT_TIMETABLE_DELIVERY_MISMATCH","ACADEMIC_CURRENT_TIMETABLE_SOURCE_AMBIGUOUS","ACADEMIC_CURRENT_TIMETABLE_SOURCE_MISSING"))));
         if length==1 and (.[0] | type=="object" and .schemaVersion==1 and (.error|code)
-            and ((keys==["error","schemaVersion"]) or (keys==["error","migrationRefusal","schemaVersion"] and (.migrationRefusal|migration))))
-        then .[0] | {schemaVersion,error} + (if has("migrationRefusal") then {migrationRefusal:(.migrationRefusal|{version,sqlstate,code})} else {} end)
+            and ((keys==["error","schemaVersion"]) or (keys==["error","migrationRefusal","schemaVersion"] and (.migrationRefusal|migration)) or (keys==["diagnostic","error","schemaVersion"] and .error=="restored_source_mismatch" and (.diagnostic|diagnostic))))
+        then .[0] | {schemaVersion,error} + (if has("migrationRefusal") then {migrationRefusal:(.migrationRefusal|{version,sqlstate,code})} else {} end) + (if has("diagnostic") then {diagnostic:(.diagnostic|{stage,facet,mismatchCount,propertyMask})} else {} end)
         else error("invalid") end
     ' "$1" 2>/dev/null || true
 }

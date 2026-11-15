@@ -114,6 +114,39 @@ def refresh_archive_binding(fake,archive):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_main_refusal_receipt_is_private_static_and_never_masks_refusal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            point=Path(directory);point.chmod(0o700)
+            class Failing:
+                def __init__(self):self.point=point;self.diagnostic_stage='copy_stream'
+                def prepare(self):
+                    self.diagnostic_stage='source_profile'
+                    raise m.fidelity.FidelityError('memberships',('grantor_unknown',),1)
+            with mock.patch.object(m,'Controller',Failing),mock.patch.object(sys,'argv',['controller','prepare']):
+                with self.assertRaises(m.fidelity.FidelityError) as caught:m.main()
+            expected=dict(m.fidelity.diagnostic('memberships',('grantor_unknown',),1),stage='source_profile')
+            self.assertEqual(caught.exception.diagnostic,expected)
+            receipt=m.private(point/'last-fidelity-refusal.json')
+            self.assertEqual(m.read_json(receipt),{'schemaVersion':1,'error':'restored_source_mismatch','diagnostic':expected})
+            before=receipt.read_bytes()
+            with mock.patch.object(m,'Controller',Failing),mock.patch.object(sys,'argv',['controller','prepare']),mock.patch.object(m,'durable',side_effect=OSError('private-sentinel')):
+                with self.assertRaises(m.fidelity.FidelityError) as caught:m.main()
+            self.assertEqual(caught.exception.diagnostic,expected);self.assertEqual(receipt.read_bytes(),before)
+            receipt.unlink();outside=point/'outside';outside.write_text('untouched');receipt.symlink_to(outside)
+            with mock.patch.object(m,'Controller',Failing),mock.patch.object(sys,'argv',['controller','prepare']):
+                with self.assertRaises(m.fidelity.FidelityError):m.main()
+            self.assertEqual(outside.read_text(),'untouched');self.assertTrue(receipt.is_symlink())
+
+    def test_main_resets_stage_and_never_reuses_receipt_as_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            point=Path(directory);point.chmod(0o700)
+            class Failing:
+                def __init__(self):self.point=point;self.diagnostic_stage='copy_stream'
+                def check(self):raise m.fidelity.FidelityError()
+            with mock.patch.object(m,'Controller',Failing),mock.patch.object(sys,'argv',['controller','check']):
+                with self.assertRaises(m.fidelity.FidelityError) as caught:m.main()
+            self.assertEqual(caught.exception.diagnostic,m.fidelity.diagnostic())
+
     def test_supported_role_profiles_are_finite_and_initial_unsafe_graph_never_creates_recovery(self):
         owner='so_'+ID.replace('-','')+'_owner'
         for kind in ['provider3','postgresFixture1']:

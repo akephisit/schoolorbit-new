@@ -53,6 +53,49 @@ def metadata(number=1):
 
 
 class FidelityTests(unittest.TestCase):
+    def test_diagnostics_are_closed_static_integer_masks(self):
+        self.assertEqual(len(f.DIAGNOSTIC_STAGES),len(set(f.DIAGNOSTIC_STAGES)))
+        for facet,properties in f.DIAGNOSTIC_PROPERTIES.items():
+            self.assertEqual(len(properties),len(set(properties)))
+            self.assertLessEqual(len(properties),32)
+            detail=f.diagnostic(facet,properties)
+            self.assertTrue(f.validate_diagnostic(detail))
+            for key,value in [('stage','private-sentinel'),('facet','private-sentinel'),('mismatchCount',True),('mismatchCount',None),('mismatchCount',-1),('mismatchCount',20001),('mismatchCount',1.5),('propertyMask',True),('propertyMask',1.5),('propertyMask',2**len(properties))]:
+                self.assertFalse(f.validate_diagnostic(dict(detail,**{key:value})))
+        self.assertFalse(f.validate_diagnostic(dict(f.diagnostic(),payload='private-sentinel')))
+        self.assertEqual(str(f.FidelityError('database',('owner',))),'restored_source_mismatch')
+
+    def test_membership_and_capability_diagnostics_use_categories_not_identities(self):
+        owner='so_11111111111141118111111111111111_owner';runtime=owner[:-6]+'_runtime';prov='schoolorbit_provisioner'
+        roles=[{'name':name,'login':True,'super':False,'createDb':name==prov,'createRole':name==prov,'inherit':True,'replication':False,'bypass':False,'limit':-1,'comment':None} for name in [prov,owner,runtime]]
+        graph=[{'role':owner,'member':prov,'grantor':'postgres','admin':True,'inherit':False,'set':False},{'role':owner,'member':prov,'grantor':prov,'admin':False,'inherit':False,'set':True},{'role':runtime,'member':prov,'grantor':'postgres','admin':True,'inherit':False,'set':False}]
+        cases=[(graph[1:],'missing_edge'),(graph+[dict(graph[0],member=runtime)],'extra_edge')]
+        for field,value,bit in [('admin',False,'admin'),('inherit',True,'inherit'),('set',True,'set'),('grantor','postgresql://private-sentinel','grantor_unknown')]:
+            changed=copy.deepcopy(graph);changed[0][field]=value;cases.append((changed,bit))
+        for changed,bit in cases:
+            with self.assertRaises(f.FidelityError) as caught:f.supported_profile(owner,roles,changed)
+            detail=caught.exception.diagnostic
+            self.assertEqual(detail['facet'],'memberships')
+            self.assertTrue(detail['propertyMask'] & (1<<f.DIAGNOSTIC_PROPERTIES['memberships'].index(bit)))
+            self.assertGreater(detail['mismatchCount'],0)
+            self.assertNotIn(owner,str(detail));self.assertNotIn('private-sentinel',str(detail))
+        roles[0]['createDb']=False
+        with self.assertRaises(f.FidelityError) as caught:f.supported_profile(owner,roles,graph)
+        self.assertEqual(caught.exception.diagnostic,f.diagnostic('provisioner_capabilities',('createDb',)))
+
+    def test_property_facets_locate_comparison_without_values(self):
+        left=metadata();right=copy.deepcopy(left);right['database']['metadata']['encoding']=8
+        with self.assertRaises(f.FidelityError) as caught:f.plan_nn(left,right)
+        self.assertEqual(caught.exception.diagnostic,f.diagnostic('database',('metadata.encoding',)))
+        right=copy.deepcopy(left);right['catalog']['relations'][0]['columns'][0]['typeMod']=15
+        with self.assertRaises(f.FidelityError) as caught:f.plan_nn(left,right)
+        self.assertEqual(caught.exception.diagnostic,f.diagnostic('columns',('typeMod',)))
+        right=copy.deepcopy(left);right['indexes'][0]['owner']='private-sentinel'
+        with self.assertRaises(f.FidelityError) as caught:f.expression_pairs(left,right)
+        self.assertEqual(caught.exception.diagnostic,f.diagnostic('indexes',('owner',)))
+        with self.assertRaises(f.FidelityError) as caught:fingerprint(b'SELECT 1;\n',[expression()], 'restored')
+        self.assertEqual(caught.exception.diagnostic['facet'],'framing')
+
     def test_database_locale_preserves_only_both_proven_profiles_and_exact_binding(self):
         owner='so_11111111111141118111111111111111_owner';database='tenant'
         baseline={'metadata':{'datname':database,'encoding':6,'datlocprovider':'b','datlocale':'C.UTF-8','datcollate':'C','datctype':'C.UTF-8'},'owner':owner,'tablespace':'pg_default','acl':None,'settings':None}
