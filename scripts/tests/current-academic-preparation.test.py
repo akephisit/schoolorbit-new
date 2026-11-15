@@ -219,6 +219,7 @@ class PreparationTests(unittest.TestCase):
                 observed=[]
                 def restore_stream(first,second,**kwargs):
                     observed.append((first,second))
+                    self.assertEqual(kwargs['stage'],'restore_archive')
                     self.assertEqual(second,['podman','exec','-i','copy','pg_restore','--create','--clean','--if-exists','--exit-on-error','-U','postgres','-d','postgres'])
                     self.assertEqual(kwargs['source'].read(),archive.read_bytes());kwargs['source'].seek(0)
                     if failure!='metadata':
@@ -419,6 +420,138 @@ class PreparationTests(unittest.TestCase):
             with self.assertRaises(m.Refusal):controller.fingerprint([sys.executable,'-c','raise SystemExit(9)'],os.environ.copy(),'fixedNonce')
             self.assertEqual(m.read_json(controller.point/'last-fingerprint-exit.json')['exitCode'],9)
 
+    def test_stream_diagnostics_have_closed_shapes_and_static_classification(self):
+        detail={'stage':'restore_archive','producerExit':0,'consumerExit':1,'producerCode':'unknown','consumerCode':'missing_role','producerStderrTruncated':False,'consumerStderrTruncated':False}
+        self.assertTrue(m.valid_stream_failure(detail))
+        for key,values in [('stage',[None,True,'private-sentinel']),('producerExit',[None,True,'1',1.5,-256,256]),('consumerExit',[None,False,'1',1.5,-256,256]),('producerCode',[None,True,'private-sentinel']),('consumerCode',[None,True,'private-sentinel']),('producerStderrTruncated',[None,0,1,'true']),('consumerStderrTruncated',[None,0,1,'false'])]:
+            for value in values:self.assertFalse(m.valid_stream_failure(dict(detail,**{key:value})))
+        self.assertFalse(m.valid_stream_failure(dict(detail,consumerExit=0)))
+        self.assertFalse(m.valid_stream_failure(dict(detail,raw='private-sentinel')))
+        self.assertEqual(m.stream_error_code(b'COPY row private-sentinel permission denied\nCONTEXT: role "private" does not exist\n'),'unknown')
+        recipes={
+            'authentication':b'pg_dump: error: connection to server at "private" failed: FATAL: password authentication failed',
+            'missing_role':b'pg_restore: error: could not execute query: ERROR: role "private-sentinel" does not exist',
+            'database_in_use':b'pg_restore: error: database "private-sentinel" is being accessed by other users',
+            'database_exists':b'pg_restore: error: database "private-sentinel" already exists',
+            'unsupported_parameter':b'pg_restore: error: unrecognized configuration parameter "private"',
+            'locale':b'pg_restore: error: invalid locale name: "private-sentinel"',
+            'archive_format':b'pg_restore: error: input file does not appear to be a valid archive',
+            'decryption':b'age: error: no identity matched any of the recipients',
+            'disk_space':b'age: error: failed to write output: No space left on device',
+            'permission':b'pg_dump: error: query failed: ERROR: permission denied for table private',
+            'connection':b'pg_dump: error: connection to server at "private" failed',
+            'acl':b'pg_restore: error: could not set session authorization',
+            'database_create':b'pg_restore: error: could not create database',
+            'broken_pipe':b'age: error: Broken pipe',
+            'tool_runtime':b'Error: unable to find image private-sentinel',
+        }
+        self.assertEqual(set(recipes),set(m.STREAM_CODES)-{'unknown'})
+        for code,sample in recipes.items():self.assertEqual(m.stream_error_code(sample),code)
+        self.assertEqual(m.stream_error_code(recipes['permission']+b'\n'+recipes['locale']),'permission')
+        for message in [b'column "permission denied" does not exist',b'unknown error: private-sentinel permission denied',b'column "role fake does not exist" does not exist']:
+            self.assertEqual(m.stream_error_code(b'pg_restore: error: could not execute query: ERROR: '+message+b'\nCommand was: permission denied\nERROR: permission denied'),'unknown')
+
+    def test_stream_concurrent_stderr_flood_is_bounded_private_and_keeps_real_exits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller=m.Controller.__new__(m.Controller);controller.point=Path(directory);controller.exits=0
+            producer=[sys.executable,'-c','import sys;sys.stderr.buffer.write(b"pg_dump: error: permission denied for table private-sentinel\\n"+b"\\xff"+b"p"*2000000);sys.stderr.flush();sys.stdout.buffer.write(b"original stream bytes"*200000);raise SystemExit(5)']
+            consumer=[sys.executable,'-c','import sys;sys.stderr.buffer.write(b\'pg_restore: error: could not execute query: ERROR: role "private-sentinel" does not exist\\n\'+b"c"*2000000);sys.stderr.flush();assert sys.stdin.buffer.read()==b"original stream bytes"*200000;raise SystemExit(7)']
+            sizes=[];classify=m.stream_error_code
+            def bounded(sample):sizes.append(len(sample));return classify(sample)
+            with mock.patch.object(m,'stream_error_code',side_effect=bounded):
+                with self.assertRaises(m.Refusal) as caught:controller.stream(producer,consumer,stage='restore_archive')
+            self.assertEqual(str(caught.exception),'stream_failed')
+            expected={'stage':'restore_archive','producerExit':5,'consumerExit':7,'producerCode':'permission','consumerCode':'missing_role','producerStderrTruncated':True,'consumerStderrTruncated':True}
+            self.assertEqual(caught.exception.stream_failure,expected);self.assertEqual(sizes,[16384,16384])
+            path=m.private(controller.point/'last-stream-exit.json');receipt=m.read_json(path)
+            self.assertEqual(receipt['streamFailure'],expected);self.assertEqual(path.stat().st_uid,os.getuid())
+            for raw in [b'private-sentinel',b'pg_restore:',b'original stream bytes',b'permission denied',b'postgresql://']:self.assertNotIn(raw,path.read_bytes())
+
+    def test_stream_success_preserves_payload_and_original_receipt_even_with_noisy_stderr(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller=m.Controller.__new__(m.Controller);controller.point=Path(directory);controller.exits=0
+            producer=[sys.executable,'-c','import sys;sys.stderr.buffer.write(b"private-sentinel"*20000);sys.stdout.buffer.write(bytes(range(256))*16384)']
+            consumer=[sys.executable,'-c','import sys;sys.stderr.buffer.write(b"\\xffprivate-sentinel"*20000);sys.stdout.buffer.write(sys.stdin.buffer.read())']
+            output=controller.point/'output'
+            with output.open('wb') as destination:controller.stream(producer,consumer,destination=destination,stage='backup_archive')
+            self.assertEqual(output.read_bytes(),bytes(range(256))*16384)
+            self.assertEqual(m.read_json(controller.point/'last-stream-exit.json'),{'schemaVersion':1,'sequence':1,'producerExit':0,'consumerExit':0})
+
+    def test_stream_exact_stderr_cap_and_original_signal_exit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller=m.Controller.__new__(m.Controller);controller.point=Path(directory);controller.exits=0
+            consumer=[sys.executable,'-c','import sys;sys.stdin.buffer.read()']
+            for length in [16384,16385]:
+                producer=[sys.executable,'-c','import sys;sys.stderr.buffer.write(b"x"*'+str(length)+');raise SystemExit(2)']
+                with self.assertRaises(m.Refusal) as caught:controller.stream(producer,consumer,stage='backup_archive')
+                detail=caught.exception.stream_failure
+                self.assertEqual(detail['producerExit'],2);self.assertEqual(detail['consumerExit'],0)
+                self.assertEqual(detail['producerStderrTruncated'],length>16384);self.assertFalse(detail['consumerStderrTruncated'])
+                self.assertEqual(detail['producerCode'],'unknown')
+            producer=[sys.executable,'-c','import os,signal;os.kill(os.getpid(),signal.SIGTERM)']
+            with self.assertRaises(m.Refusal) as caught:controller.stream(producer,consumer)
+            self.assertEqual(caught.exception.stream_failure['producerExit'],-15)
+            producer=[sys.executable,'-c','import signal,sys;signal.signal(signal.SIGPIPE,signal.SIG_DFL);sys.stdout.buffer.write(b"x"*10000000)']
+            consumer=[sys.executable,'-c','import sys;sys.stderr.write("pg_restore: error: invalid locale name\\n");raise SystemExit(7)']
+            with self.assertRaises(m.Refusal) as caught:controller.stream(producer,consumer,stage='restore_archive')
+            self.assertEqual(caught.exception.stream_failure['producerExit'],-13)
+            self.assertEqual(caught.exception.stream_failure['consumerExit'],7)
+            self.assertEqual(caught.exception.stream_failure['consumerCode'],'locale')
+
+    def test_stream_receipt_failure_does_not_mask_refusal_or_follow_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller=m.Controller.__new__(m.Controller);controller.point=Path(directory);controller.exits=0
+            producer=[sys.executable,'-c','import sys;sys.stdout.buffer.write(b"safe");raise SystemExit(3)']
+            consumer=[sys.executable,'-c','import sys;sys.stdin.buffer.read()']
+            with mock.patch.object(m,'durable',side_effect=OSError('private-sentinel')):
+                with self.assertRaises(m.Refusal) as caught:controller.stream(producer,consumer,stage='retained_validation')
+            self.assertEqual(str(caught.exception),'stream_failed');self.assertTrue(m.valid_stream_failure(caught.exception.stream_failure))
+            target=controller.point/'target';target.write_text('untouched');(controller.point/'last-stream-exit.json').symlink_to(target)
+            with self.assertRaises(m.Refusal):controller.stream(producer,consumer)
+            self.assertEqual(target.read_text(),'untouched');self.assertTrue((controller.point/'last-stream-exit.json').is_symlink())
+
+    def test_stream_descendant_held_stderr_cannot_change_known_client_outcomes(self):
+        for code in [0,3]:
+            with self.subTest(code=code),tempfile.TemporaryDirectory() as directory:
+                controller=m.Controller.__new__(m.Controller);controller.point=Path(directory);controller.exits=0
+                pidfile=controller.point/'descendant.pid'
+                program='import os,sys,time;pid=os.fork();'+'\nif pid==0:\n os.close(1);time.sleep(5);os._exit(0)\n'+ 'open(sys.argv[1],"w").write(str(pid));sys.stdout.buffer.write(b"payload");raise SystemExit('+str(code)+')'
+                producer=[sys.executable,'-c',program,str(pidfile)]
+                consumer=[sys.executable,'-c','import sys;assert sys.stdin.buffer.read()==b"payload"']
+                try:
+                    start=m.time.monotonic()
+                    if code:
+                        with self.assertRaises(m.Refusal) as caught:controller.stream(producer,consumer,stage='backup_archive')
+                        detail=caught.exception.stream_failure
+                        self.assertEqual(detail['producerExit'],3);self.assertEqual(detail['consumerExit'],0);self.assertTrue(detail['producerStderrTruncated'])
+                    else:
+                        controller.stream(producer,consumer)
+                        self.assertNotIn('streamFailure',m.read_json(controller.point/'last-stream-exit.json'))
+                    self.assertLess(m.time.monotonic()-start,1)
+                finally:
+                    if pidfile.exists():
+                        try:os.kill(int(pidfile.read_text()),9)
+                        except ProcessLookupError:pass
+
+    def test_stream_timeout_and_launch_failure_never_report_cleanup_kills_as_original_exits(self):
+        actual=m.subprocess.Popen;children=[]
+        def launch(*args,**kwargs):
+            child=actual(*args,**kwargs);children.append(child);return child
+        with tempfile.TemporaryDirectory() as directory:
+            controller=m.Controller.__new__(m.Controller);controller.point=Path(directory);controller.exits=0
+            sleeping=[sys.executable,'-c','import time;time.sleep(5)']
+            with mock.patch.object(m.subprocess,'Popen',side_effect=launch),mock.patch.object(m,'MAX_SECONDS',0.05):
+                with self.assertRaises(m.Refusal) as caught:controller.stream(sleeping,sleeping,stage='restore_archive')
+            self.assertEqual(str(caught.exception),'stream_outcome_unknown');self.assertFalse(hasattr(caught.exception,'stream_failure'))
+            self.assertTrue(all(child.poll() is not None for child in children));self.assertFalse((controller.point/'last-stream-exit.json').exists())
+            children.clear()
+            def fail_second(*args,**kwargs):
+                if children:raise FileNotFoundError('private-sentinel')
+                return launch(*args,**kwargs)
+            with mock.patch.object(m.subprocess,'Popen',side_effect=fail_second):
+                with self.assertRaises(FileNotFoundError):controller.stream(sleeping,sleeping)
+            self.assertEqual(len(children),1);self.assertIsNotNone(children[0].poll());self.assertFalse((controller.point/'last-stream-exit.json').exists())
+
     def test_stream_requires_both_actual_child_exit_codes(self):
         with tempfile.TemporaryDirectory() as directory:
             controller=m.Controller.__new__(m.Controller);controller.point=Path(directory);controller.exits=0
@@ -556,6 +689,7 @@ class CryptoTests(unittest.TestCase):
                 fake.age=lambda *arguments:[age,*[str(fake.key) if value=='/run/recovery/identity.agekey' else value for value in arguments[1:]]]
                 def stream(producer,consumer,**kwargs):
                     self.assertEqual(consumer[-2:],['pg_restore','--file=/dev/null'])
+                    self.assertEqual(kwargs['stage'],'retained_validation')
                     self.assertIn('none',consumer)
                     # Real age and child exit accounting, but no fake claim of
                     # PostgreSQL restore: that requires the separate native run.

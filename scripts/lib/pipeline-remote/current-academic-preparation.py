@@ -132,6 +132,55 @@ COPY_REFUSALS = {
 }
 
 
+STREAM_STAGES = ('unknown','backup_archive','restore_archive','retained_validation')
+STREAM_CODES = ('unknown','authentication','connection','permission','database_create','database_in_use','database_exists','locale','missing_role','acl','unsupported_parameter','archive_format','decryption','disk_space','broken_pipe','tool_runtime')
+MAX_STREAM_STDERR = 16 * 1024
+
+
+def valid_stream_failure(value):
+    return (isinstance(value,dict) and set(value)=={'stage','producerExit','consumerExit','producerCode','consumerCode','producerStderrTruncated','consumerStderrTruncated'}
+            and isinstance(value['stage'],str) and value['stage'] in STREAM_STAGES
+            and all(type(value[key]) is int and -255<=value[key]<=255 for key in ['producerExit','consumerExit'])
+            and (value['producerExit']!=0 or value['consumerExit']!=0)
+            and all(isinstance(value[key],str) and value[key] in STREAM_CODES for key in ['producerCode','consumerCode'])
+            and all(type(value[key]) is bool for key in ['producerStderrTruncated','consumerStderrTruncated']))
+
+
+def stream_error_code(sample):
+    """Classify the first tool ERROR context, never child-supplied identities."""
+    prefix=rb'^(?:pg_(?:dump|restore): error: |age: error: |(?:ERROR|FATAL):[ \t]+|Error: )'
+    for line in sample.splitlines():
+        matched=re.match(prefix,line)
+        if matched:
+            message=line[matched.end():]
+            break
+    else:return 'unknown'
+    # A pg_restore server ERROR has one fixed wrapper. Never search subsequent
+    # Command/COPY/context/SQL lines, or search for error words inside identifiers.
+    message=re.sub(rb'^(?:could not execute query|query failed): (?:ERROR|FATAL):[ \t]+',b'',message)
+    connection=re.match(rb'^connection to server [^\r\n]+ failed: (?:ERROR|FATAL):[ \t]+(.+)$',message)
+    if connection:message=connection[1]
+    recipes=[
+        ('authentication',rb'^(?:password authentication failed|authentication failed|no pg_hba\.conf entry|no password supplied)\b'),
+        ('missing_role',rb'^role "(?:[^"\r\n]|"")+" does not exist\b'),
+        ('database_in_use',rb'^(?:database "(?:[^"\r\n]|"")+" is being accessed by other users|cannot drop the currently open database)\b'),
+        ('database_exists',rb'^database "(?:[^"\r\n]|"")+" already exists\b'),
+        ('unsupported_parameter',rb'^(?:unrecognized configuration parameter|unrecognized option)\b'),
+        ('locale',rb'^(?:invalid locale|invalid LC_COLLATE|invalid LC_CTYPE|invalid builtin locale|encoding [^\r\n]+ does not match locale)\b'),
+        ('archive_format',rb'^(?:input file does not appear to be a valid archive|unsupported version [^\r\n]+ in file header|did not find magic string|could not read from input file|input file is too short|unexpected end of file)\b'),
+        ('decryption',rb'^(?:no identity matched|failed to decrypt|incorrect passphrase|invalid header|failed to read header)\b'),
+        ('disk_space',rb'^(?:(?:could not write to output file|failed to write output): )?(?:No space left on device|Disk quota exceeded)\b'),
+        ('permission',rb'^(?:permission denied|must be owner|must be member of role|must have [^\r\n]+ privilege)\b'),
+        ('connection',rb'^(?:connection to server [^\r\n]+ failed|could not connect to server|server closed the connection unexpectedly|connection refused|could not translate host name)\b'),
+        ('acl',rb'^could not set session authorization\b'),
+        ('database_create',rb'^could not create database\b'),
+        ('broken_pipe',rb'^(?:failed to write output: )?Broken pipe\b'),
+        ('tool_runtime',rb'^(?:unable to find image|initializing source docker:|failed to create shim task|OCI runtime error|container [^\r\n]+ does not exist)\b'),
+    ]
+    codes={code for code,pattern in recipes if re.match(pattern,message,re.IGNORECASE)}
+    return next(iter(codes)) if len(codes)==1 else 'unknown'
+
+
 class Refusal(Exception):
     pass
 
@@ -492,29 +541,81 @@ class Controller:
             refuse('recovery_key_invalid')
         return recipient
 
-    def stream(self, first, second, *, environment=None, source=None, destination=None):
-        """Pipe without holding plaintext in Python memory; record actual exits."""
-        a = subprocess.Popen(first, stdin=source, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment)
+    def stream(self, first, second, *, environment=None, source=None, destination=None, stage='unknown'):
+        """Pipe original bytes; drain both stderr pipes with bounded private samples."""
+        a = subprocess.Popen(first, stdin=source, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment)
+        b = None
+        samples = [bytearray(),bytearray()]
+        truncated = [False,False]
         try:
-            b = subprocess.Popen(second, stdin=a.stdout, stdout=destination if destination is not None else subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            b = subprocess.Popen(second, stdin=a.stdout, stdout=destination if destination is not None else subprocess.DEVNULL, stderr=subprocess.PIPE)
             a.stdout.close()
+            pipes={a.stderr:0,b.stderr:1}
+            for pipe in pipes:os.set_blocking(pipe.fileno(),False)
+            deadline=time.monotonic()+MAX_SECONDS
+            producer_deadline=None
+            observer_deadline=None
             try:
-                b_exit = b.wait(timeout=MAX_SECONDS)
-                a_exit = a.wait(timeout=30)
+                while pipes or a.poll() is None or b.poll() is None:
+                    now=time.monotonic()
+                    both_exited=a.poll() is not None and b.poll() is not None
+                    if both_exited:
+                        # Descendants can hold stderr open after both original
+                        # clients exit. Observation must not change their outcome.
+                        if observer_deadline is None:observer_deadline=now+0.05
+                        readable,_,_=select.select(list(pipes),[],[],0) if pipes else ([],[],[])
+                        if not readable or now>=observer_deadline:
+                            for number in pipes.values():truncated[number]=True
+                            break
+                    else:
+                        if b.poll() is not None and producer_deadline is None:producer_deadline=now+30
+                        remaining=(producer_deadline if producer_deadline is not None else deadline)-now
+                        if remaining<=0:raise subprocess.TimeoutExpired('stream',MAX_SECONDS)
+                        if not pipes:
+                            time.sleep(min(0.01,remaining))
+                            continue
+                        readable,_,_=select.select(list(pipes),[],[],min(0.1,remaining))
+                    for pipe in readable:
+                        try:chunk=os.read(pipe.fileno(),65536)
+                        except BlockingIOError:continue
+                        if not chunk:
+                            del pipes[pipe]
+                            continue
+                        number=pipes[pipe];room=MAX_STREAM_STDERR-len(samples[number])
+                        samples[number].extend(chunk[:room])
+                        truncated[number] |= len(chunk)>room
+                a_exit=a.wait(timeout=30)
+                b_exit=b.wait(timeout=30)
             except subprocess.TimeoutExpired:
-                a.kill()
-                b.kill()
-                a.wait()
-                b.wait()
                 refuse('stream_outcome_unknown')
             self.exits += 1
-            durable(self.point / 'last-stream-exit.json', {'schemaVersion': 1, 'sequence': self.exits, 'producerExit': a_exit, 'consumerExit': b_exit})
+            receipt={'schemaVersion':1,'sequence':self.exits,'producerExit':a_exit,'consumerExit':b_exit}
             if a_exit or b_exit:
-                refuse('stream_failed')
+                detail={'stage':stage,'producerExit':a_exit,'consumerExit':b_exit,
+                        'producerCode':stream_error_code(samples[0]),'consumerCode':stream_error_code(samples[1]),
+                        'producerStderrTruncated':truncated[0],'consumerStderrTruncated':truncated[1]}
+                failure=Refusal('stream_failed')
+                if valid_stream_failure(detail):
+                    failure.stream_failure=detail
+                    receipt['streamFailure']=detail
+                # Best-effort failure receipt must never hide the actual refusal.
+                try:
+                    private(self.point,directory=True)
+                    path=self.point/'last-stream-exit.json'
+                    if path.exists() or path.is_symlink():private(path)
+                    durable(path,receipt)
+                except (OSError,Refusal):pass
+                raise failure
+            durable(self.point/'last-stream-exit.json',receipt)
         finally:
-            if a.poll() is None:
-                a.kill()
-                a.wait()
+            for child in [b,a]:
+                if child is not None:
+                    if child.poll() is None:
+                        child.kill()
+                        child.wait()
+                    if child.stderr is not None:child.stderr.close()
+            if not a.stdout.closed:a.stdout.close()
+            for sample in samples:sample.clear()
 
     def fingerprint(self, base, environment, nonce, evidence=None, side='source'):
         self.diagnostic_stage='copy_stream' if side=='restored' else 'source_stream'
@@ -762,7 +863,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
             # CREATE DATABASE cannot run inside --single-transaction. Any
             # failed/partial restore remains confined to this disposable copy.
             with archive.open('rb') as encrypted:
-                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--create', '--clean', '--if-exists', '--exit-on-error', '-U', 'postgres', '-d', 'postgres'], source=encrypted)
+                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--create', '--clean', '--if-exists', '--exit-on-error', '-U', 'postgres', '-d', 'postgres'], source=encrypted, stage='restore_archive')
             before_hash=self.restored_fingerprint(connection,nonce)
             before_metadata=self.catalog(self.copy_read_base(connection))
             self.diagnostic_stage='nn_reconcile'
@@ -862,7 +963,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
                         partial.unlink() # prior read-only producers are proven dead/reconciled
                     fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                     with os.fdopen(fd, 'wb') as output:
-                        self.stream(base + ['pg_dump', '--format=custom', '--no-password'], self.age('/usr/local/bin/age', '-r', recipient), environment=environment, destination=output)
+                        self.stream(base + ['pg_dump', '--format=custom', '--no-password'], self.age('/usr/local/bin/age', '-r', recipient), environment=environment, destination=output, stage='backup_archive')
                         output.flush()
                         os.fsync(output.fileno())
                     os.replace(partial,archive)
@@ -908,7 +1009,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
                 refuse('archive_changed')
             # Verify the retained key still decrypts the complete archive now.
             with archive.open('rb') as encrypted:
-                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'run', '--log-driver=none', '--rm', '-i', '--name', self.verify, *self.labels(), '--network', 'none', '--read-only', PG_IMAGE, 'pg_restore', '--file=/dev/null'], source=encrypted)
+                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'run', '--log-driver=none', '--rm', '-i', '--name', self.verify, *self.labels(), '--network', 'none', '--read-only', PG_IMAGE, 'pg_restore', '--file=/dev/null'], source=encrypted, stage='retained_validation')
         return proof
 
     @fidelity.facet_context('retained')
@@ -1053,6 +1154,11 @@ if __name__ == '__main__':
         code = str(error) if isinstance(error, (Refusal,fidelity.FidelityError)) else 'preparation_unavailable'
         body={'schemaVersion':1,'error':code}
         if isinstance(error,fidelity.FidelityError) and fidelity.validate_diagnostic(error.diagnostic):body['diagnostic']=error.diagnostic
-        if isinstance(error,Refusal) and getattr(error,'diagnostic',None): body['migrationRefusal']=error.diagnostic
+        if isinstance(error,Refusal):
+            stream=getattr(error,'stream_failure',None)
+            migration=getattr(error,'diagnostic',None)
+            if stream is not None:
+                if code=='stream_failed' and valid_stream_failure(stream) and migration is None:body['streamFailure']=stream
+            elif migration:body['migrationRefusal']=migration
         print(json.dumps(body),file=sys.stderr)
         sys.exit(1)

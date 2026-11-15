@@ -2288,6 +2288,25 @@ bounded `last-fidelity-refusal.json` with mode0600 and the owner UID where recei
 This best-effort receipt never replaces the original refusal and is never a proof or retry input;
 a stale receipt does not establish the stage of a later attempt.
 
+A `stream_failed` refusal may instead contain the mutually exclusive `streamFailure` object:
+`stage`, `producerExit`, `consumerExit`, `producerCode`, `consumerCode`,
+`producerStderrTruncated` and `consumerStderrTruncated`. Stages identify `backup_archive`,
+`restore_archive`, `retained_validation` or `unknown`. Exit fields are the actual direct child/client
+return codes (integer −255 through255), including negative signal exits; they do not independently
+attest an inner container's exit. At least one observed child exit must be nonzero. Launch failures,
+timeouts and cleanup-induced kills cannot supply invented stream-failure exits.
+The controller's fixed `STREAM_CODES` defines error families. Classification uses only the first
+recognized tool ERROR context in an independent 16KiB stderr prefix for each child; unmatched or
+ambiguous context remains `unknown`. Both pipes continue draining after their prefix limit, with
+truncation reported as booleans. After both original clients exit, only a bounded nonblocking drain
+runs; inherited stderr descriptors cannot change their known outcomes. An open capture at that
+boundary is conservatively marked truncated. Codes are diagnostic hints and never influence acceptance.
+Raw stderr, SQL, row values, identities and hashes of those values are neither forwarded nor retained.
+Only actual exits and the validated closed object enter the private mode0600 `last-stream-exit.json`;
+a failed diagnostic write cannot mask the original refusal. This receipt is not a proof or retry
+input. Success still requires both original children to exit0, with original stream bytes and
+PostgreSQL arguments unchanged.
+
 These supplemental tenant logical recovery points leave the native pgBackRest full/differential
 and WAL policy unchanged. They do not attest its current health, replace the private Admin/global
 credential recovery store, or recover object bytes already deleted from storage. There is no
