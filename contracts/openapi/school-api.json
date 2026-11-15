@@ -109931,7 +109931,7 @@
                 }
               }
             },
-            "description": "Linked child's published exam schedule"
+            "description": "Linked child's current exam schedule"
           },
           "401": {
             "content": {
@@ -114199,7 +114199,7 @@
                 }
               }
             },
-            "description": "Published school exam schedules for staff"
+            "description": "Current school exam schedules for staff"
           },
           "401": {
             "content": {

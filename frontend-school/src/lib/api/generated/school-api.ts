@@ -56967,7 +56967,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Linked child's published exam schedule */
+			/** @description Linked child's current exam schedule */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -60330,7 +60330,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Published school exam schedules for staff */
+			/** @description Current school exam schedules for staff */
 			200: {
 				headers: {
 					[name: string]: unknown;

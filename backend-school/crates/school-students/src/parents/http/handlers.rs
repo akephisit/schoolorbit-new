@@ -200,7 +200,7 @@ pub async fn get_child_timetable(
         ChildExamScheduleQuery
     ),
     responses(
-        (status = 200, description = "Linked child's published exam schedule", body = ApiResponse<Vec<school_academic_assessment::exam_schedule::models::PersonalExamScheduleRound>>),
+        (status = 200, description = "Linked child's current exam schedule", body = ApiResponse<Vec<school_academic_assessment::exam_schedule::models::PersonalExamScheduleRound>>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Parent-child access denied", body = ApiErrorResponse)
     )

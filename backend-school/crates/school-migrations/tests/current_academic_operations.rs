@@ -27,6 +27,9 @@ mod preparation_guard;
 #[path = "current_academic_operations/permission_retirement.rs"]
 mod permission_retirement;
 
+#[path = "current_academic_operations/receipt_dates.rs"]
+mod receipt_dates;
+
 async fn predecessor(name: &str) -> PgPool {
     let pool = school_test_db::create_named_test_pool(name).await;
     seed_release_two_predecessor(&pool).await.unwrap();
@@ -390,7 +393,9 @@ async fn definer_scope_cannot_be_forged_or_shadowed_even_with_temporary_table_pe
     assert!(schema
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '_'));
-    let setup = format!("CREATE ROLE {role}; GRANT USAGE ON SCHEMA {schema} TO {role}; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA {schema} TO {role}; REVOKE ALL ON {schema}.academic_result_removal_scope FROM {role};");
+    let setup = format!(
+        "CREATE ROLE {role}; GRANT USAGE ON SCHEMA {schema} TO {role}; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA {schema} TO {role}; REVOKE ALL ON {schema}.academic_result_removal_scope FROM {role};"
+    );
     sqlx::raw_sql(sqlx::AssertSqlSafe(setup))
         .execute(&mut *tx)
         .await
