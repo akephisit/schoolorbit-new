@@ -170,7 +170,7 @@ class PreparationTests(unittest.TestCase):
             self.assertEqual(m.read_json(fake.state)['state'],'already-current')
             self.assertFalse(fake.key.exists())
 
-    def test_role_creation_uses_original_effective_authority_and_reads_actual_copy(self):
+    def test_setup_preserves_role_authority_and_leaves_database_to_archive(self):
         owner='so_'+ID.replace('-','')+'_owner'
         for kind,pair in [(kind,pair) for kind in ['provider3','postgresFixture1'] for pair in [('C','C.UTF-8'),('en_US.utf8','en_US.utf8'),('C.UTF-8','C.UTF-8'),('C','C')]]:
             with self.subTest(kind=kind,pair=pair),tempfile.TemporaryDirectory() as directory:
@@ -186,8 +186,8 @@ class PreparationTests(unittest.TestCase):
                 self.assertEqual('SET ROLE schoolorbit_provisioner;' in calls[1],kind=='provider3')
                 self.assertIn('RESET ROLE;',calls[1]) if kind=='provider3' else None
                 self.assertIn('NOLOGIN',calls[0])
-                created=next(sql for sql in calls if sql.startswith('CREATE DATABASE '))
-                self.assertIn("LC_COLLATE '"+pair[0]+"' LC_CTYPE '"+pair[1]+"'",created)
+                self.assertEqual(len(calls),2)
+                self.assertFalse(any('DATABASE ' in sql for sql in calls))
                 self.assertFalse(any('GRANTED BY' in x or 'pg_auth_members' in x for x in calls))
 
     def test_invalid_locale_binding_refuses_before_creating_owned_resources(self):
@@ -200,6 +200,47 @@ class PreparationTests(unittest.TestCase):
                 with self.assertRaises(m.fidelity.FidelityError):
                     with fake.isolated(connection,role_profile(),source):pass
                 self.assertEqual(calls,[])
+
+    def test_archive_restore_owns_database_and_refusal_never_reaches_cli(self):
+        # Use the actual restore coordinator and isolated() lifecycle. Only the
+        # external transport is substituted; native stock restore is separate.
+        for failure in ['producer','consumer','metadata']:
+            with self.subTest(failure=failure),tempfile.TemporaryDirectory() as directory:
+                point=Path(directory);fake=Fake(point,{ID:155});fake.exits=0
+                owner='so_'+ID.replace('-','')+'_owner';connection={'user':owner,'database':'tenant'}
+                archive=point/'source.dump.age';archive.write_bytes(b'private encrypted archive sentinel')
+                source={'catalog':{'relations':[],'constraints':[],'constraintNames':[]},'indexes':[],'database':database_profile(owner,'tenant')}
+                restored=copy.deepcopy(source);restored['database']['acl']=[['unexpected','unexpected','CONNECT',False]]
+                fake.catalog=mock.Mock(side_effect=[source,restored])
+                fake.copy_sql=mock.Mock(return_value=b'');fake.copy_role_profile=lambda *a:role_profile()
+                fake.restored_fingerprint=lambda *a:'f'*64
+                fake.migrate_copy=mock.Mock(side_effect=AssertionError('CLI must be unreachable'))
+                commands=[];fake.command=lambda args,**kwargs:commands.append(args) or b''
+                observed=[]
+                def restore_stream(first,second,**kwargs):
+                    observed.append((first,second))
+                    self.assertEqual(second,['podman','exec','-i','copy','pg_restore','--create','--clean','--if-exists','--exit-on-error','-U','postgres','-d','postgres'])
+                    self.assertEqual(kwargs['source'].read(),archive.read_bytes());kwargs['source'].seek(0)
+                    if failure!='metadata':
+                        producer=[sys.executable,'-c', 'import sys;sys.stdout.buffer.write(sys.stdin.buffer.read());raise SystemExit('+('5' if failure=='producer' else '0')+')']
+                        consumer=[sys.executable,'-c','import sys;sys.stdin.buffer.read();raise SystemExit('+('7' if failure=='consumer' else '0')+')']
+                        m.Controller.stream(fake,producer,consumer,**kwargs)
+                fake.stream=restore_stream
+                expected=m.fidelity.FidelityError if failure=='metadata' else m.Refusal
+                with mock.patch.object(m.subprocess,'run',return_value=subprocess.CompletedProcess([],0)):
+                    with self.assertRaises(expected) as caught:m.Controller.restore_and_migrate(fake,fake.rows[0],connection,role_profile(),archive,'nonce','c'*64)
+                if failure=='metadata':
+                    self.assertEqual(caught.exception.diagnostic['facet'],'database')
+                else:
+                    self.assertEqual(str(caught.exception),'stream_failed')
+                    receipt=m.read_json(point/'last-stream-exit.json')
+                    self.assertEqual(receipt['producerExit'],5 if failure=='producer' else 0)
+                    self.assertEqual(receipt['consumerExit'],7 if failure=='consumer' else 0)
+                self.assertEqual(len(observed),1);fake.migrate_copy.assert_not_called()
+                self.assertEqual(commands[-2:],[['podman','rm','-f','copy'],['podman','volume','rm','volume']])
+                self.assertFalse(fake.proof.exists());self.assertFalse(fake.state.exists())
+                self.assertEqual(archive.read_bytes(),b'private encrypted archive sentinel')
+                self.assertEqual(list(point.glob('*.restore-metadata.json')),[])
 
     def test_final_copy_profile_readback_blocks_cli_after_valid_initial_creation(self):
         owner='so_'+ID.replace('-','')+'_owner';connection={'user':owner}
