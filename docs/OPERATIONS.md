@@ -623,33 +623,38 @@ For first-time production server bootstrap, follow [Podman server setup](./PODMA
 
 ## Zero weekly timetable targets
 
-Migration 090 permits nonnegative actual weekly targets in the opening change journal.
-The canonical opening snapshot owns the effective target; no retired catalog column is restored.
+Migration 090 introduced nonnegative actual weekly targets in the former opening workflow.
+After the [current academic cutover](#current-academic-operational-cutover), the normalized
+current Delivery registry owns each offering's weekly target in its explicit year and term.
 Courses and activities (independent or synchronized) set to zero remain opened with their
 curriculum workload, credits, groups, teachers, rosters and assessments/results unchanged; only
 recurring weekly timetable demand becomes zero. Zero does not waive activity evaluation or
 attendance requirements. It does not create weekly timetable-derived attendance sessions.
 Opening defaults stay unchanged; select zero explicitly when an activity has no weekly slot.
-Publish the opening revision; active timetable draft workflows align with the latest opening before
-the new target applies there. Existing placed lessons and published history are preserved; remove
-zero-target lessons from the draft before publishing it.
+Save the target directly in current Delivery. Timetable demand reads that current target;
+changing it preserves existing placed lessons. Remove unwanted placements explicitly through
+the current timetable workspace. Actual membership dates, saved Attendance, scores and
+independent Results history retain their owning safeguards.
 
-Migration [143](../backend-school/migrations/143_delivery_added_target_adjustments.sql) also fixes
-weekly adjustments to offerings added to the same draft. It repairs only a differing cached weekly
+At its historical schema boundary, migration
+[143](../backend-school/migrations/143_delivery_added_target_adjustments.sql) repaired weekly
+adjustments to offerings added to the same draft. It repaired only a differing cached weekly
 target backed by that draft's add and adjustment commands, preserving every other captured field
-and array order. Changed draft and parent revision counters advance once; reload a stale editor.
-Published/cancelled revisions, journals, registry data and downstream history remain unchanged.
-This repair never rebuilds a draft graph or restores excluded offerings/groups.
+and array order. Changed draft and parent revision counters advanced once. Published/cancelled
+revisions, journals, registry data and downstream history remained unchanged. The repair did not
+rebuild a draft graph or restore excluded offerings/groups. Migration157 later retired those
+operational drafts and journals.
 
-Migration090 expanded constraints without rewriting data. Older binaries remain compatible until
-zero targets are stored in opening revisions. After that point, use a roll-forward fix: older
-validation rejects those revisions. Do not roll back by deleting opening or timetable history.
+Migration090 expanded constraints without rewriting data. At that boundary, storing zero targets
+made older validation incompatible. Current recovery follows the matching release's schema fence
+and forward-repair procedure; never delete retained academic facts or alter migration history to
+restore an older writer.
 
 ## Automatic room roster tracking
 
-Migration [100](../backend-school/migrations/100_learning_group_roster_tracking.sql) adds opt-in group roster policy. Existing groups remain manual. An authorized group manager selects room tracking and its effective date using the group's existing source-room coverage. Published group memberships then reconcile in the same transaction as room add, transfer, removal, admission enrollment, account deactivation, promotion execution/correction or term activation. Capacity and date conflicts roll back the originating write. Draft rosters reconcile when prepared and published. Planned placements in a planning or ready year produce dated upcoming memberships; activation reconciles them again. Reads never synchronize memberships.
+Migration [100](../backend-school/migrations/100_learning_group_roster_tracking.sql) introduced opt-in group roster policy. Groups start manual. An authorized group manager selects room tracking and its effective date using the group's existing source-room coverage. Current Delivery roster and tracking saves apply membership directly. Tracked memberships then reconcile in the same transaction as room add, transfer, removal, admission enrollment, account deactivation, promotion execution/correction or term activation. Capacity and date conflicts roll back the originating write. Planned placements in a planning or ready year produce dated upcoming memberships; activation reconciles them again. Reads never synchronize memberships.
 
-Tracking is operational roster policy and does not change immutable opening or timetable snapshots. Existing membership identities, results and scores are retained. Cancelled-before-start (`removed`) episodes retain their history but occupy no teaching dates. Switching to manual preserves the current roster. Group managers must explicitly publish rosters before automatic room mutations apply to them.
+Tracking is current roster policy. Existing membership identities, results, scores and placed timetable lessons are retained. Cancelled-before-start (`removed`) episodes retain their history but occupy no teaching dates. Switching to manual preserves the current roster. Saving room tracking enables automatic room reconciliation without a roster publication stage.
 
 Deploy the backend, generated API contracts and frontend through the normal maintenance and all-tenant migration gates. An older binary can read the expanded schema, but must not be restored once automatic tracking is enabled: it cannot maintain that invariant. Recover with a compatible forward fix; never delete membership history or alter migration checksums to roll back.
 
@@ -854,9 +859,9 @@ the active academic year.
 Room capacity changes use the narrow revision-checked `/homerooms/{id}/capacity` operation in
 planning, ready or active years. Closed periods remain read-only. Bell setup at
 `/staff/academic/core` can prepare the next unopened term during the active year. Reuse an
-unchanged schedule or clone its periods into independent identities; used/published schedules
-cannot be edited. `timetable_references` means existing draft versions must be managed before
-changing that term's table. Cloning alone does not migrate or rebind existing timetable drafts.
+unchanged schedule or clone its periods into independent identities; used or timetable-referenced
+schedules cannot be edited. `timetable_references` means the current timetable protects its
+referenced schedule. Cloning alone does not migrate or rebind that timetable.
 Use the returned edit capabilities, setup-year IDs and exact setup-term IDs; preparation does
 not activate the term. Homeroom screens load exact year context under room permissions, so a
 hidden planning year remains available to authorized room managers and displays its own name
@@ -1631,34 +1636,30 @@ Preserve:
 
 Validate WebSocket heartbeat, reconnect, and authenticated server-owned identity through the same proxy path clients use.
 
-Timetable draft collaboration uses the supported single backend process. The application composes
-one domain runtime for HTTP writes and version-scoped sockets; legacy term observers remain
-separate consumers. Reservations expire after ten seconds and are renewed by active clients.
+Timetable collaboration uses the supported single backend process. The application composes
+one domain runtime for HTTP writes and sockets scoped to the current timetable; legacy term
+observers remain separate consumers. Reservations expire after ten seconds and are renewed by active clients.
 Cursor, drag, target and renewal traffic stays in memory. No database migration, reservation table,
 worker, external broker or new runtime environment setting is required.
 
 Accepted writes keep their resource exclusion through COMMIT and scoped patch publication even
-when the initiating request or socket disconnects. The version's database revision and constraints
-remain authoritative. A failed/ambiguous COMMIT or unavailable publication invalidates the cached
-draft and asks clients to reconcile; never retry a possibly committed create automatically. Cold
-recovery waits on the version row before reading its canonical graph. Upstream source and central
-permission changes invalidate retained rooms even when they have no members.
+when the initiating request or socket disconnects. The current timetable's database revision and
+constraints remain authoritative. A failed/ambiguous COMMIT or unavailable patch publication
+invalidates the cached workspace and asks clients to reconcile; never retry a possibly committed
+create automatically. Cold recovery waits on the current timetable row before reading its
+canonical graph. Upstream source and central permission changes invalidate retained rooms even
+when they have no members.
 
-Active timetable drafts align with the term's latest opening publication through the existing
-source-alignment lifecycle operation. School-wide timetable managers or publishers can align;
-scoped managers and readers cannot change the whole draft's source. A read-only or dormant draft
-may truthfully show an older persisted source until an authorized workflow aligns it. Alignment
-preserves all placed lessons and teachers; resolve any remaining source issues explicitly. It never
-rewrites published timetable pins. Changed alignment requires a fresh authorized workspace and
-room epoch after outstanding edits settle; do not force-release another editor's reservation or
-retry an uncertain write. An unchanged alignment does not churn the room. A future latest opening
-can be used for planning, but publication must respect its start and the existing history guards.
-Only the typed `TIMETABLE_DELIVERY_SOURCE_OUTDATED` save conflict certifies a server pre-write
-source rejection. Local proof that no child HTTP request was dispatched also permits alignment
-after outstanding work drains in the current context. Both retain intent for review and a fresh
-explicit Save, without child replay. Unknown failures after dispatch may have committed: reconcile
-and review or explicitly discard the captured intent. A postcommit cache failure preserves accepted success and
-requests a fresh snapshot; it does not turn the business write into a source rejection.
+The current timetable consumes the typed current Delivery provider for the selected year and
+term. Source changes invalidate the cached workspace and reconcile current demand; existing
+placements and their selected teachers remain until explicitly changed. Resolve reported source
+issues through authorized current Delivery or timetable edits. There is no opening-publication
+selection, source-alignment action or timetable publication stage.
+
+Wait for outstanding edits to settle before replacing their workspace context. Do not force-release
+another editor's reservation or retry an uncertain write. Unknown failures after dispatch may have
+committed: reconcile and review or explicitly discard the captured intent. A postcommit cache
+failure preserves accepted success and requests a fresh snapshot without replaying the save.
 
 A process restart discards roster, leases and replay history and creates a new epoch. Clients join
 with a fresh authorized snapshot; committed timetable data is preserved in PostgreSQL. Do not scale
@@ -2388,6 +2389,17 @@ and cancelled-version cleanup command are retired. Other domain cutover gates re
 Use [the deployment filter](../scripts/lib/pipeline-remote/school-deploy-backend.sh) and
 [server-free receipt reader](../backend-school/src/operations/current_academic.rs) as the
 executable contract.
+
+Follow-up [migration158](../backend-school/migrations/158_remove_operational_receipt_dates.sql)
+removes the unused `learning_delivery_apply_runs.starts_on` and
+`academic_term_preparation_runs.offering_starts_on` metadata. Under exclusive locks it compares
+deterministically ordered row counts and SHA256 evidence for every remaining receipt field before
+and after removal. Request identities and hashes, outcomes, actor references and Curriculum
+provenance remain unchanged; the sealed157 cutover receipt is unchanged. Unexpected column
+dependencies or mismatched preservation evidence refuse the transaction atomically. Deploy the
+matching consumer through the normal maintenance and all-tenant migration gates. Pre158 writers
+that select the removed metadata are incompatible after commit; retain maintenance and recover
+with a compatible forward release. The canonical runner skips an already-applied158.
 
 A refusal is a bounded diagnostic, not authorization to alter source dates, fabricate receipts,
 disable guards or modify SQLx history. Inspect a protected copy and repair forward with reviewed

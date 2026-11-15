@@ -46,7 +46,7 @@ async fn preparation_required_date_and_selection_fail_atomically_then_exact_proo
         school_migrations::verify_tenant_schema(&pool)
             .await
             .unwrap(),
-        157
+        school_migrations::latest_migration_version()
     );
     let receipt:Value=sqlx::query_scalar("SELECT to_jsonb(r) FROM academic_current_operations_migration_audit r WHERE migration_version=157").fetch_one(&pool).await.unwrap();
     run_operational_tenant_migrations(&pool, None)

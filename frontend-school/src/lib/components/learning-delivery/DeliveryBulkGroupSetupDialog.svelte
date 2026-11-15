@@ -386,7 +386,7 @@
 							>
 						</div>{/if}
 					<p class="text-xs text-muted-foreground">
-						กลุ่มที่ใช้ร่วมกันจะอัปเดตในทุกร่างที่อ้างอิงกลุ่มนั้น
+						บันทึกการตั้งค่าลงในกลุ่มเรียนปัจจุบันที่เลือก
 					</p>
 				</section>
 				<section class="space-y-3 rounded-lg border p-3">
