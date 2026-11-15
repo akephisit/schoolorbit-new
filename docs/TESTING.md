@@ -614,7 +614,14 @@ temporary PostgreSQL initialization socket. Diagnostic regressions cover exact f
 per-facet mask ceilings, integer-only counts, unknown/duplicate keys, nonfinite and multiple JSON
 values, raw-payload rejection, and the actual controller entrypoint-to-rollout projection. Private
 receipt tests verify mode/owner validation, symlink refusal, per-operation stage reset and preservation
-of the original refusal when receipt IO fails. The schema2 cross-language vector remains unchanged.
+of the original refusal when receipt IO fails. Real child-process stream tests flood both stderr
+pipes while preserving multi-megabyte binary stdout, verify independent 16KiB prefix caps/truncation,
+non-UTF8 input, private-payload exclusion, producer/consumer/signal exits, early consumer closure,
+launch/timeout cleanup, descendant-held stderr without changing known exits, and best-effort failure
+receipts. Strict projection tests cover all known
+stream stages/error families, mutual exclusion, malformed types/keys/counts and the actual controller
+entrypoint-to-rollout path. Diagnostic classification cannot relax either child's success condition.
+The schema2 cross-language vector remains unchanged.
 These are support-boundary regressions, not substitutes
 for the native owner-role oracle, rollback and real restored-schema acceptance below.
 

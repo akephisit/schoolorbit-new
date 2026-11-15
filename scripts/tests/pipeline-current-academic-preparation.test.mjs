@@ -284,6 +284,147 @@ exec(compile(ast.Module(body=[entry],type_ignores=[]),str(path),'exec'),m.__dict
       propertyMask: 128,
     },
   });
+  const streamFailure = {
+    stage: "restore_archive",
+    producerExit: 0,
+    consumerExit: 4,
+    producerCode: "unknown",
+    consumerCode: "missing_role",
+    producerStderrTruncated: false,
+    consumerStderrTruncated: true,
+  };
+  const streamReport = {
+    schemaVersion: 1,
+    error: "stream_failed",
+    streamFailure,
+  };
+  assert.deepEqual(JSON.parse(execute(streamReport).stdout), streamReport);
+  assert.deepEqual(
+    JSON.parse(execute({ schemaVersion: 1, error: "stream_failed" }).stdout),
+    { schemaVersion: 1, error: "stream_failed" },
+  );
+  const streamTables = spawnSync(
+    "python3",
+    [
+      "-c",
+      `
+import importlib.util,json,sys
+sys.dont_write_bytecode=True
+spec=importlib.util.spec_from_file_location('m','scripts/lib/pipeline-remote/current-academic-preparation.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+print(json.dumps([m.STREAM_STAGES,m.STREAM_CODES]))
+`,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(streamTables.status, 0, streamTables.stderr);
+  const [streamStages, streamCodes] = JSON.parse(streamTables.stdout);
+  for (const stage of streamStages) {
+    const value = {
+      ...streamReport,
+      streamFailure: { ...streamFailure, stage },
+    };
+    assert.deepEqual(JSON.parse(execute(value).stdout), value);
+  }
+  for (const code of streamCodes) {
+    const value = {
+      ...streamReport,
+      streamFailure: {
+        ...streamFailure,
+        producerExit: -255,
+        consumerExit: 255,
+        producerCode: code,
+        consumerCode: code,
+      },
+    };
+    assert.deepEqual(JSON.parse(execute(value).stdout), value);
+  }
+  const invalidStreams = [
+    { ...streamReport, error: "child_failed" },
+    { ...streamReport, diagnostic: fidelity },
+    { ...streamReport, migrationRefusal: diagnostic },
+    { ...report, streamFailure },
+    { ...streamReport, streamFailure: null },
+    { ...streamReport, streamFailure: { ...streamFailure, consumerExit: 0 } },
+    {
+      ...streamReport,
+      streamFailure: { ...streamFailure, raw: "private-sentinel" },
+    },
+    ...["stage", "producerCode", "consumerCode"].flatMap((key) =>
+      [null, true, "postgresql://private-sentinel", "unknown\u0000"].map(
+        (value) => ({
+          ...streamReport,
+          streamFailure: { ...streamFailure, [key]: value },
+        }),
+      ),
+    ),
+    ...["producerExit", "consumerExit"].flatMap((key) =>
+      [null, true, "1", 1.5, -256, 256].map((value) => ({
+        ...streamReport,
+        streamFailure: { ...streamFailure, [key]: value },
+      })),
+    ),
+    ...["producerStderrTruncated", "consumerStderrTruncated"].flatMap((key) =>
+      [null, 0, 1, "false"].map((value) => ({
+        ...streamReport,
+        streamFailure: { ...streamFailure, [key]: value },
+      })),
+    ),
+    JSON.stringify(streamReport) + "\n" + JSON.stringify(streamReport),
+    JSON.stringify(streamReport).replace(
+      '"consumerExit":4',
+      '"consumerExit":NaN',
+    ),
+    JSON.stringify(streamReport).replace(
+      '"consumerExit":4',
+      '"consumerExit":Infinity',
+    ),
+    JSON.stringify(streamReport).replace(
+      '"consumerExit":4',
+      '"consumerExit":4,"consumerExit":5',
+    ),
+    " ".repeat(1048577) + JSON.stringify(streamReport),
+  ];
+  for (const value of invalidStreams) {
+    const result = execute(value);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+  }
+  const streamNative = spawnSync(
+    "python3",
+    [
+      "-c",
+      `
+import ast,importlib.util,sys,tempfile
+from pathlib import Path
+sys.dont_write_bytecode=True
+path=Path('scripts/lib/pipeline-remote/current-academic-preparation.py')
+spec=importlib.util.spec_from_file_location('controller',path)
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+original=m.Controller
+class Failure:
+    def __init__(self):
+        self.temp=tempfile.TemporaryDirectory();self.point=Path(self.temp.name);self.exits=0
+    def prepare(self):
+        producer=[sys.executable,'-c','import sys;sys.stdout.buffer.write(b"data")']
+        message='pg_restore: error: could not execute query: ERROR: role '+chr(34)+'private-sentinel'+chr(34)+' does not exist'+chr(10)
+        consumer=[sys.executable,'-c','import sys;sys.stdin.buffer.read();sys.stderr.write('+repr(message)+');raise SystemExit(4)']
+        original.stream(self,producer,consumer,stage='restore_archive')
+m.Controller=Failure;m.__name__='__main__';sys.argv=['controller','prepare']
+entry=ast.parse(path.read_text()).body[-1]
+exec(compile(ast.Module(body=[entry],type_ignores=[]),str(path),'exec'),m.__dict__)
+`,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(streamNative.status, 1);
+  assert.equal(streamNative.stdout, "");
+  assert.ok(!streamNative.stderr.includes("private-sentinel"));
+  assert.deepEqual(JSON.parse(execute(streamNative.stderr).stdout), {
+    schemaVersion: 1,
+    error: "stream_failed",
+    streamFailure: { ...streamFailure, consumerStderrTruncated: false },
+  });
   for (const value of [
     "raw PostgreSQL error with private row sentinel",
     { schemaVersion: 1, error: "postgresql://private-sentinel" },
