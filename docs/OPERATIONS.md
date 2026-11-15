@@ -2229,7 +2229,18 @@ Alpine/musl can canonicalize locale names differently from Debian/glibc even wit
 provider. OS compatibility never substitutes for actual exact database metadata and full fingerprint
 checks, and does not attest the live source's precise package or libc version.
 It preserves source ownership, ACLs and role markers, uses fresh local passwords, and
-must prove restore fidelity before applying the same canonical migrations. Setup creates only the
+must prove restore fidelity before applying the same canonical migrations. Source and copy read-only
+clients share fixed startup options: `default_transaction_read_only=on`, `TimeZone=UTC` and
+`bytea_output=hex`; source clients retain their existing 900,000 ms statement timeout. This profile
+covers the custom source archive, plain dump fingerprints and read-only catalog observations.
+PostgreSQL itself renders temporal/binary values consistently; no dump bytes are rewritten or omitted.
+`pg_dump` independently sets ISO DateStyle, postgres IntervalStyle, exact float output and disables
+synchronized scans. Cluster, database and role defaults remain unchanged, as do migration CLI sessions
+and the explicit Bangkok business-date expression. No historical receipt timezone is guessed.
+Native qualification reads back the effective settings through these exact source/copy startup
+arguments, including conflicting defaults; complete raw/canonical equality remains the release gate.
+This makes client serialization deterministic without claiming which defaults an unobserved
+production source uses. Setup creates only the
 validated primary owner/runtime/provisioner roles and their finite supported membership profile.
 Database-level ACL grantees/grantors and role-specific settings can additionally reference global
 roles that tenant archives do not create. Preparation attests these exact references from the selected

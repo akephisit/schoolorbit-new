@@ -33,6 +33,7 @@ _fidelity_spec.loader.exec_module(fidelity)
 PG_IMAGE = 'docker.io/library/postgres:18.6-trixie@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42'
 CHECKS = sorted(['CURRENT_DELIVERY_GRAPH_RECONCILED', 'CURRENT_TEACHERS_RECONCILED', 'CURRENT_TIMETABLE_IDS_RECONCILED', 'CURRENT_FACTS_PRESERVED', 'CURRENT_SUPERVISION_PRESERVED', 'CURRENT_CATALOG_PINS_PRESERVED', 'CURRENT_LEGACY_SCHEMA_REMOVED', 'CURRENT_SCOPE_GUARDS_ENABLED'])
 OPERATION = 'academic-current-156157'
+READ_ONLY_SERIALIZATION_OPTIONS = '-c default_transaction_read_only=on -c TimeZone=UTC -c bytea_output=hex'
 MAX_TENANTS = 10000
 MAX_JSON = 1024 * 1024
 MAX_SECONDS = 1800
@@ -537,7 +538,7 @@ class Controller:
             escape = lambda value: str(value).replace('\\', '\\\\').replace(':', '\\:')
             (work / 'pgpass').write_text(':'.join(escape(connection[k]) for k in ['host', 'port', 'database', 'user', 'password']) + '\n')
             (work / 'pgpass').chmod(0o600)
-            environment = {**os.environ, 'PGHOST': connection['host'], 'PGPORT': connection['port'], 'PGDATABASE': connection['database'], 'PGUSER': connection['user'], 'PGPASSFILE': '/run/source/pgpass', 'PGSSLMODE': 'verify-full', 'PGSSLROOTCERT': '/run/secrets/postgresql-ca.crt', 'PGCONNECT_TIMEOUT': '10', 'PGAPPNAME': OPERATION, 'PGOPTIONS': '-c default_transaction_read_only=on -c statement_timeout=900000'}
+            environment = {**os.environ, 'PGHOST': connection['host'], 'PGPORT': connection['port'], 'PGDATABASE': connection['database'], 'PGUSER': connection['user'], 'PGPASSFILE': '/run/source/pgpass', 'PGSSLMODE': 'verify-full', 'PGSSLROOTCERT': '/run/secrets/postgresql-ca.crt', 'PGCONNECT_TIMEOUT': '10', 'PGAPPNAME': OPERATION, 'PGOPTIONS': READ_ONLY_SERIALIZATION_OPTIONS+' -c statement_timeout=900000'}
             args = ['podman', 'run', '--log-driver=none', '--rm', '--name', self.client, *self.labels(), '--network', 'schoolorbit-web', '--read-only', '--cap-drop=all', '--security-opt=no-new-privileges', '--userns=keep-id', '--user', str(os.getuid()) + ':' + str(os.getgid()), '-v', str(work) + ':/run/source:ro', '-v', str(self.ca) + ':/run/secrets/postgresql-ca.crt:ro']
             for key in ['PGHOST', 'PGPORT', 'PGDATABASE', 'PGUSER', 'PGPASSFILE', 'PGSSLMODE', 'PGSSLROOTCERT', 'PGCONNECT_TIMEOUT', 'PGAPPNAME', 'PGOPTIONS']:
                 args += ['--env', key]
@@ -849,7 +850,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         return result
 
     def copy_read_base(self, connection):
-        return ['podman','exec','--env','PGOPTIONS=-c default_transaction_read_only=on','--env','PGUSER='+connection['user'],'--env','PGDATABASE='+connection['database'],self.copy]
+        return ['podman','exec','--env','PGOPTIONS='+READ_ONLY_SERIALIZATION_OPTIONS,'--env','PGUSER='+connection['user'],'--env','PGDATABASE='+connection['database'],self.copy]
 
     def copy_write(self, sql, connection):
         fidelity.require(len(sql.encode())<=fidelity.MAX_METADATA)
