@@ -131,6 +131,133 @@ test("release only forwards exact bounded controller and canonical refusal schem
       },
     },
   );
+  const fidelity = {
+    stage: "source_profile",
+    facet: "memberships",
+    mismatchCount: 1,
+    propertyMask: 1 << 14,
+  };
+  const report = {
+    schemaVersion: 1,
+    error: "restored_source_mismatch",
+    diagnostic: fidelity,
+  };
+  assert.deepEqual(JSON.parse(execute(report).stdout), report);
+  // Match executable helper tables, including every stage and every facet ceiling.
+  const tables = spawnSync(
+    "python3",
+    [
+      "-c",
+      `
+import importlib.util,json,sys
+sys.dont_write_bytecode=True
+spec=importlib.util.spec_from_file_location('f','scripts/lib/pipeline-remote/academic_restore_fidelity.py')
+f=importlib.util.module_from_spec(spec);spec.loader.exec_module(f)
+print(json.dumps([f.DIAGNOSTIC_STAGES,{key:2**len(value) for key,value in f.DIAGNOSTIC_PROPERTIES.items()}]))
+`,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(tables.status, 0, tables.stderr);
+  const [stages, limits] = JSON.parse(tables.stdout);
+  for (const stage of stages)
+    assert.deepEqual(
+      JSON.parse(
+        execute({ ...report, diagnostic: { ...fidelity, stage } }).stdout,
+      ),
+      { ...report, diagnostic: { ...fidelity, stage } },
+    );
+  for (const [facet, limit] of Object.entries(limits)) {
+    const detail = {
+      ...fidelity,
+      facet,
+      propertyMask: limit - 1,
+      mismatchCount: facet === "unknown" ? 0 : 20000,
+    };
+    assert.deepEqual(
+      JSON.parse(execute({ ...report, diagnostic: detail }).stdout),
+      { ...report, diagnostic: detail },
+    );
+    assert.equal(
+      execute({ ...report, diagnostic: { ...detail, propertyMask: limit } })
+        .stdout,
+      "",
+    );
+  }
+  const invalid = [
+    { ...report, error: "child_failed" },
+    { ...report, migrationRefusal: diagnostic },
+    {
+      ...report,
+      diagnostic: { ...fidelity, stage: "postgresql://private-sentinel" },
+    },
+    {
+      ...report,
+      diagnostic: { ...fidelity, facet: "SELECT private-sentinel" },
+    },
+    { ...report, diagnostic: { ...fidelity, raw: "private-sentinel" } },
+    { ...report, diagnostic: null },
+    ...[true, null, "1", 1.5, -1, 20001].map((mismatchCount) => ({
+      ...report,
+      diagnostic: { ...fidelity, mismatchCount },
+    })),
+    ...[true, null, "1", 1.5, -1, 2 ** 32].map((propertyMask) => ({
+      ...report,
+      diagnostic: { ...fidelity, propertyMask },
+    })),
+    JSON.stringify(report) + "\n" + JSON.stringify(report),
+    JSON.stringify(report).replace('"mismatchCount":1', '"mismatchCount":NaN'),
+    JSON.stringify(report).replace(
+      '"mismatchCount":1',
+      '"mismatchCount":Infinity',
+    ),
+    JSON.stringify(report).replace(
+      '"mismatchCount":1',
+      '"mismatchCount":1,"mismatchCount":2',
+    ),
+  ];
+  for (const value of invalid) {
+    const result = execute(value);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "");
+  }
+  // Exercise the actual controller __main__ exception projection before rollout.
+  const native = spawnSync(
+    "python3",
+    [
+      "-c",
+      `
+import ast,importlib.util,sys,tempfile
+from pathlib import Path
+sys.dont_write_bytecode=True
+path=Path('scripts/lib/pipeline-remote/current-academic-preparation.py')
+spec=importlib.util.spec_from_file_location('controller',path)
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+class Failure:
+    def __init__(self):
+        self.temp=tempfile.TemporaryDirectory();self.point=Path(self.temp.name)
+    def prepare(self):
+        self.diagnostic_stage='oracle'
+        raise m.fidelity.FidelityError('oracle',('tree',))
+m.Controller=Failure;m.__name__='__main__';sys.argv=['controller','prepare']
+entry=ast.parse(path.read_text()).body[-1]
+exec(compile(ast.Module(body=[entry],type_ignores=[]),str(path),'exec'),m.__dict__)
+`,
+    ],
+    { cwd: root, encoding: "utf8" },
+  );
+  assert.equal(native.status, 1);
+  assert.equal(native.stdout, "");
+  assert.deepEqual(JSON.parse(execute(native.stderr).stdout), {
+    schemaVersion: 1,
+    error: "restored_source_mismatch",
+    diagnostic: {
+      stage: "oracle",
+      facet: "oracle",
+      mismatchCount: 1,
+      propertyMask: 128,
+    },
+  });
   for (const value of [
     "raw PostgreSQL error with private row sentinel",
     { schemaVersion: 1, error: "postgresql://private-sentinel" },

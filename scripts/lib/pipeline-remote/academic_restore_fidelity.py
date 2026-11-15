@@ -2,6 +2,7 @@
 import hashlib
 import json
 import re
+from functools import wraps
 
 POLICY = 'pg18.6-exact-expression-replay-nn-v1'
 DOMAIN = 'schoolorbit.academic-current.restore-evidence.v2'
@@ -11,14 +12,87 @@ MAX_EXPRESSION = 256 * 1024
 MAX_OBJECTS = 20000
 CHECKS = sorted(['CURRENT_DELIVERY_GRAPH_RECONCILED', 'CURRENT_TEACHERS_RECONCILED', 'CURRENT_TIMETABLE_IDS_RECONCILED', 'CURRENT_FACTS_PRESERVED', 'CURRENT_SUPERVISION_PRESERVED', 'CURRENT_CATALOG_PINS_PRESERVED', 'CURRENT_LEGACY_SCHEMA_REMOVED', 'CURRENT_SCOPE_GUARDS_ENABLED'])
 
+DIAGNOSTIC_STAGES = ('unknown','source_profile','source_catalog','copy_setup','copy_profile','copy_catalog','nn_reconcile','expression_pairing','oracle','source_stream','copy_stream','canonical_compare','retained_validation')
+# Property position is the stable u32 bit position. Never emit supplied keys.
+DIAGNOSTIC_PROPERTIES = {
+    'unknown': (),
+    'profile_shape': ('roles','memberships','shape'),
+    'role_identity': ('owner','runtime','provisioner','unknown'),
+    'owner_capabilities': ('super','createDb','createRole','replication','bypass'),
+    'runtime_capabilities': ('super','createDb','createRole','replication','bypass'),
+    'provisioner_capabilities': ('super','createDb','createRole','replication','bypass'),
+    'memberships': tuple(prefix+category for prefix in ['role_','member_','grantor_'] for category in ['owner','runtime','provisioner','postgres','unknown'])+('admin','inherit','set','missing_edge','extra_edge','count'),
+    'catalog_budget': ('objects','expressionBytes','dependencies','bytes','encodedBytes'),
+    'metadata_shape': ('shape',),
+    'database': ('owner','tablespace','acl','settings','metadata.datname','metadata.encoding','metadata.datlocprovider','metadata.datlocale','metadata.datcollate','metadata.datctype','metadata.datcollversion','metadata.datconnlimit','metadata.datistemplate','metadata.datallowconn','metadata.dathasloginevt','metadata.daticurules'),
+    'relation': ('inventory','schema','name','kind','partition','inheritance'),
+    'columns': ('inventory','name','notnull','typeSchema','typeName','typeKind','typeCategory','typeMod','dimensions','identity','generated','collationSchema','collationName','collationEncoding','collationProvider','collationDeterministic','collationLocale','collationCollate','collationCType','collationRules','collationVersion','elementSchema','elementName','elementKind'),
+    'nn': ('inventory','keys','tree','attnotnull','metadata','target_collision','ambiguity'),
+    'constraints': ('inventory','kind','domain','parent','index','foreignRelation','flags','comment','keys','dependencies','definition','expression'),
+    'indexes': ('inventory','schema','table','name','expression','flags','owner','method','kind','partition','persistence','options','tablespace','comment','keys','dependencies','definition','predicate'),
+    'expression_context': ('size','relation','column','type','element','dependency'),
+    'oracle': ('replyCount','rollbackConfirmed','remainingReferences','role','number','columns','dependencies','tree','shape'),
+    'framing': ('syntax','limit','binding','duplicate','expression','unused_evidence','copy_termination'),
+    'canonical': ('source_raw','canonical'),
+    'retained': ('shape','binding','hash','profile','metadata','map','oracle','count'),
+}
+
+
+def diagnostic(facet='unknown', properties=(), count=None):
+    if facet not in DIAGNOSTIC_PROPERTIES:
+        facet='unknown'
+    allowed=DIAGNOSTIC_PROPERTIES[facet]
+    mask=sum(1<<i for i,key in enumerate(allowed) if key in properties)
+    if count is None:count=mask.bit_count() if mask else (0 if facet=='unknown' else 1)
+    if type(count) is not int or not 0<=count<=MAX_OBJECTS:count=0
+    return {'stage':'unknown','facet':facet,'mismatchCount':count,'propertyMask':mask}
+
+
+def validate_diagnostic(value):
+    return (isinstance(value,dict) and set(value)=={'stage','facet','mismatchCount','propertyMask'}
+            and isinstance(value['stage'],str) and isinstance(value['facet'],str) and value['stage'] in DIAGNOSTIC_STAGES and value['facet'] in DIAGNOSTIC_PROPERTIES
+            and type(value['mismatchCount']) is int and 0<=value['mismatchCount']<=MAX_OBJECTS
+            and type(value['propertyMask']) is int and 0<=value['propertyMask']<2**len(DIAGNOSTIC_PROPERTIES[value['facet']])
+            and (value['facet']!='unknown' or value['mismatchCount']==0))
+
+
+def facet_context(facet):
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args,**kwargs):
+            try:return function(*args,**kwargs)
+            except FidelityError as error:
+                if error.diagnostic['facet']=='unknown':error.diagnostic=diagnostic(facet)
+                raise
+        return wrapped
+    return decorate
+
+
+def difference_properties(left,right,facet):
+    def get(value,path):
+        for key in path.split('.'):
+            if not isinstance(value,dict) or key not in value:return (False,None)
+            value=value[key]
+        return (True,value)
+    return tuple(key for key in DIAGNOSTIC_PROPERTIES[facet] if not exact(get(left,key),get(right,key)))
+
+
+def require_match(left,right,facet):
+    if not exact(left,right):
+        properties=difference_properties(left,right,facet)
+        raise FidelityError(facet,properties,len(properties) if properties else 0)
+
 
 class FidelityError(ValueError):
     """Static reason only; never attach source SQL or rows."""
+    def __init__(self,facet='unknown',properties=(),count=None):
+        super().__init__('restored_source_mismatch')
+        self.diagnostic=diagnostic(facet,properties,count)
 
 
-def require(condition):
+def require(condition,facet='unknown',properties=(),count=None):
     if not condition:
-        raise FidelityError('restored_source_mismatch')
+        raise FidelityError(facet,properties,count)
 
 
 def sha(raw):
@@ -38,6 +112,7 @@ def exact(left, right):
     return encoded(left) == encoded(right)
 
 
+@facet_context('profile_shape')
 def validate_profiles(roles, memberships):
     require(isinstance(roles,list) and len(roles)<=MAX_OBJECTS and isinstance(memberships,list) and len(memberships)<=MAX_OBJECTS)
     require(len({r['name'] for r in roles})==len(roles))
@@ -61,34 +136,59 @@ def supported_profile(owner, roles, memberships):
     runtime=owner[:-6]+'_runtime'
     provisioner='schoolorbit_provisioner'
     by_name={r['name']:r for r in roles}
-    require(set(by_name)=={owner,runtime,provisioner})
+    require(set(by_name)=={owner,runtime,provisioner},'role_identity',
+            tuple(category for name,category in [(owner,'owner'),(runtime,'runtime'),(provisioner,'provisioner')] if name not in by_name)+(('unknown',) if set(by_name)-{owner,runtime,provisioner} else ()))
     for name in [owner,runtime]:
         role=by_name[name]
-        require(not any(role[k] for k in ['super','createDb','createRole','replication','bypass']))
-    require(not any(by_name[provisioner][k] for k in ['super','replication','bypass']))
-    require(by_name[provisioner]['createDb'] and by_name[provisioner]['createRole'])
+        require(not any(role[k] for k in ['super','createDb','createRole','replication','bypass']),
+                'owner_capabilities' if name==owner else 'runtime_capabilities',
+                tuple(k for k in ['super','createDb','createRole','replication','bypass'] if role[k]))
+    require(not any(by_name[provisioner][k] for k in ['super','replication','bypass']),
+            'provisioner_capabilities',tuple(k for k in ['super','replication','bypass'] if by_name[provisioner][k]))
+    require(by_name[provisioner]['createDb'] and by_name[provisioner]['createRole'],
+            'provisioner_capabilities',tuple(k for k in ['createDb','createRole'] if not by_name[provisioner][k]))
     actual=sorted(tuple(row[k] for k in ['role','member','grantor','admin','inherit','set']) for row in memberships)
     fixture=[(owner,provisioner,'postgres',False,False,True)]
     provider=sorted([(owner,provisioner,'postgres',True,False,False),(owner,provisioner,provisioner,False,False,True),(runtime,provisioner,'postgres',True,False,False)])
     if exact(actual,provider):return 'provider3'
-    require(exact(actual,fixture))
+    if not exact(actual,fixture):
+        # Closest profile is diagnostic categorization ONLY, never acceptance.
+        expected=min([provider,fixture],key=lambda rows:len(set(rows)^set(actual)))
+        categories={owner:'owner',runtime:'runtime',provisioner:'provisioner','postgres':'postgres'}
+        observed={row[:3]:row[3:] for row in actual};wanted={row[:3]:row[3:] for row in expected}
+        properties=set();mismatches=0
+        for edge in observed.keys()|wanted.keys():
+            if edge in observed and edge in wanted and observed[edge]==wanted[edge]:continue
+            mismatches+=1
+            for prefix,name in zip(['role_','member_','grantor_'],edge):properties.add(prefix+categories.get(name,'unknown'))
+            if edge not in observed:properties.add('missing_edge')
+            elif edge not in wanted:properties.add('extra_edge')
+            else:
+                for key,left,right in zip(['admin','inherit','set'],observed[edge],wanted[edge]):
+                    if left!=right:properties.add(key)
+        if len(actual)!=len(expected):properties.add('count')
+        raise FidelityError('memberships',properties,mismatches)
     return 'postgresFixture1'
 
 
+@facet_context('database')
 def database_locale(owner, database, source):
     """Only the two observed PG18.6 builtin-C.UTF-8 locale profiles."""
     require(isinstance(owner,str) and re.fullmatch('so_[0-9a-f]{32}_owner',owner) is not None)
     require(isinstance(database,str) and re.fullmatch('[A-Za-z_][A-Za-z0-9_]{0,62}',database) is not None)
     require(isinstance(source,dict) and set(source)=={'metadata','owner','tablespace','acl','settings'})
-    require(source['owner']==owner and isinstance(source['metadata'],dict))
+    require(source['owner']==owner and isinstance(source['metadata'],dict),'database',('owner',))
     metadata=source['metadata']
-    require(metadata.get('datname')==database and type(metadata.get('encoding')) is int and metadata['encoding']==6)
-    require(metadata.get('datlocprovider')=='b' and metadata.get('datlocale')=='C.UTF-8')
+    require(metadata.get('datname')==database and type(metadata.get('encoding')) is int and metadata['encoding']==6,
+            'database',tuple(k for k,bad in [('metadata.datname',metadata.get('datname')!=database),('metadata.encoding',type(metadata.get('encoding')) is not int or metadata.get('encoding')!=6)] if bad))
+    require(metadata.get('datlocprovider')=='b' and metadata.get('datlocale')=='C.UTF-8',
+            'database',tuple(k for k,bad in [('metadata.datlocprovider',metadata.get('datlocprovider')!='b'),('metadata.datlocale',metadata.get('datlocale')!='C.UTF-8')] if bad))
     pair=(metadata.get('datcollate'),metadata.get('datctype'))
-    require(pair in [('C','C.UTF-8'),('en_US.utf8','en_US.utf8')])
+    require(pair in [('C','C.UTF-8'),('en_US.utf8','en_US.utf8')],'database',('metadata.datcollate','metadata.datctype'))
     return pair
 
 
+@facet_context('metadata_shape')
 def validate_metadata(document):
     require(isinstance(document,dict) and set(document)=={'catalog','database','indexes'})
     require(isinstance(document['catalog'],dict) and set(document['catalog'])=={'relations','constraints','constraintNames'})
@@ -193,6 +293,7 @@ def inventory(rows, key):
     return result
 
 
+@facet_context('columns')
 def logical_columns(relation):
     rows = relation['columns'] or []
     require(len(rows) <= MAX_OBJECTS)
@@ -206,21 +307,29 @@ def constraint_meta(row):
     return {k: row[k] for k in ['kind', 'domain', 'parent', 'index', 'foreignRelation', 'flags', 'comment', 'keys', 'dependencies']}
 
 
+@facet_context('expression_context')
 def ordinary(constraint, relation):
     require(not any(constraint[k] for k in ['domain', 'parent', 'index', 'foreignRelation']))
     require(relation['kind'] == 'r' and not relation['partition'] and relation['inheritance'] == 0)
     require(constraint['flags']['conislocal'] is True and constraint['flags']['coninhcount'] == 0)
 
 
+@facet_context('nn')
 def plan_nn(source, restored):
     validate_metadata(source)
     validate_metadata(restored)
     sr = inventory(source['catalog']['relations'], lambda r: (r['schema'], r['name']))
     dr = inventory(restored['catalog']['relations'], lambda r: (r['schema'], r['name']))
-    require(sr.keys() == dr.keys() and exact(source['database'],restored['database']))
+    require(sr.keys() == dr.keys(),'relation',('inventory',))
+    require_match(source['database'],restored['database'],'database')
     for key in sr:
-        require(exact({k: v for k, v in sr[key].items() if k != 'columns'},{k: v for k, v in dr[key].items() if k != 'columns'}))
-        require(exact(logical_columns(sr[key]),logical_columns(dr[key])))
+        require_match({k: v for k, v in sr[key].items() if k != 'columns'},{k: v for k, v in dr[key].items() if k != 'columns'},'relation')
+        left,right=logical_columns(sr[key]),logical_columns(dr[key])
+        if not exact(left,right):
+            properties=set()
+            for a,b in zip(left,right):properties.update(difference_properties(a,b,'columns'))
+            if len(left)!=len(right):properties.add('inventory')
+            raise FidelityError('columns',properties,sum(not exact(a,b) for a,b in zip(left,right))+abs(len(left)-len(right)))
     maps = []
     copy_names = inventory(restored['catalog']['constraintNames'], qualified)
     for metadata, relations in [(source, sr), (restored, dr)]:
@@ -232,22 +341,23 @@ def plan_nn(source, restored):
             ordinary(c, r)
             require(isinstance(c['keys'], list) and len(c['keys']) == 1 and c['tree'] is None)
             key = c['schema'], c['table'], c['keys'][0]
-            require(key not in values)
-            require(any(a['name'] == key[2] and not a['dropped'] and a['notnull'] for a in r['columns']))
+            require(key not in values,'nn',('ambiguity',))
+            require(any(a['name'] == key[2] and not a['dropped'] and a['notnull'] for a in r['columns']),'nn',('attnotnull',))
             values[key] = c
         maps.append(values)
     source_nn, copy_nn = maps
-    require(source_nn.keys() == copy_nn.keys())
+    require(source_nn.keys() == copy_nn.keys(),'nn',('inventory',))
     renames = []
     for key in sorted(source_nn):
         s, d = source_nn[key], copy_nn[key]
-        require(exact(constraint_meta(s),constraint_meta(d)))
+        require_match(constraint_meta(s),constraint_meta(d),'constraints')
         if s['name'] != d['name']:
-            require(qualified(s) not in copy_names)
+            require(qualified(s) not in copy_names,'nn',('target_collision',))
             renames.append({'schema': key[0], 'table': key[1], 'column': key[2], 'from': d['name'], 'to': s['name'], 'metadata': constraint_meta(s)})
     return renames
 
 
+@facet_context('expression_context')
 def supported_expression(row, relation, text):
     require(isinstance(text, str) and 0 < len(text.encode()) <= MAX_EXPRESSION)
     require(relation['kind'] == 'r' and not relation['partition'] and relation['inheritance'] == 0)
@@ -268,18 +378,19 @@ def supported_expression(row, relation, text):
         require(not a['elementKind'] or (a['elementKind'] == 'b' and a['elementSchema'] == 'pg_catalog'))
 
 
+@facet_context('constraints')
 def expression_pairs(source, restored):
     require(plan_nn(source, restored) == [])
-    require(exact(source['catalog']['constraintNames'],restored['catalog']['constraintNames']))
+    require(exact(source['catalog']['constraintNames'],restored['catalog']['constraintNames']),'constraints',('inventory',))
     sr = inventory(source['catalog']['relations'], lambda r: (r['schema'], r['name']))
     dr = inventory(restored['catalog']['relations'], lambda r: (r['schema'], r['name']))
     sc = inventory(source['catalog']['constraints'], qualified)
     dc = inventory(restored['catalog']['constraints'], qualified)
-    require(sc.keys() == dc.keys())
+    require(sc.keys() == dc.keys(),'constraints',('inventory',))
     pairs = []
     for key in sorted(sc):
         s, d = sc[key], dc[key]
-        require(exact(constraint_meta(s),constraint_meta(d)))
+        require_match(constraint_meta(s),constraint_meta(d),'constraints')
         if s['definition'] == d['definition']:
             continue
         require(s['kind'] == 'c' and d['kind'] == 'c')
@@ -292,7 +403,7 @@ def expression_pairs(source, restored):
         pairs.append({'kind': 'check', 'key': list(key), 'source': s, 'restored': d})
     si = inventory(source['indexes'], qualified)
     di = inventory(restored['indexes'], qualified)
-    require(si.keys() == di.keys())
+    require(si.keys() == di.keys(),'indexes',('inventory',))
     physical = 0
     for key in sorted(si):
         s, d = si[key], di[key]
@@ -303,7 +414,7 @@ def expression_pairs(source, restored):
         physical += sm['flags']['indcheckxmin'] != dm['flags']['indcheckxmin']
         sm['flags'] = {k: v for k, v in sm['flags'].items() if k != 'indcheckxmin'}
         dm['flags'] = {k: v for k, v in dm['flags'].items() if k != 'indcheckxmin'}
-        require(exact(sm,dm))
+        require_match(sm,dm,'indexes')
         if s['definition'] == d['definition']:
             continue
         for c, r in [(s, sr[key[:2]]), (d, dr[key[:2]])]:
@@ -315,7 +426,7 @@ def expression_pairs(source, restored):
                 require(a['column'] is not None and a['attributeOptions'] is None and a['opclassSchema'] == 'pg_catalog' and a['opclassDefault'] and a['option'] in [0, 1, 2, 3])
             supported_expression(c, r, c['predicate'])
             require(c['definition'].endswith(' WHERE ' + c['predicate']))
-        require(s['definition'][:-len(s['predicate'])] == d['definition'][:-len(d['predicate'])])
+        require(s['definition'][:-len(s['predicate'])] == d['definition'][:-len(d['predicate'])],'indexes',('definition',))
         pairs.append({'kind': 'index', 'key': list(key), 'source': s, 'restored': d})
     require(len(pairs) <= MAX_OBJECTS)
     return pairs, physical
@@ -458,11 +569,12 @@ class DumpFingerprint:
         self.run.update(raw)
         self.run_size += len(raw)
 
+    @facet_context('framing')
     def expression(self, key, raw):
-        require(key not in self.used and key in self.evidence)
+        require(key not in self.used and key in self.evidence,'framing',('duplicate' if key in self.used else 'binding',))
         entry = self.evidence[key]
         expected = entry[self.side]['expr' if key[0] == 'check' else 'predicate'].encode()
-        require(raw == expected)
+        require(raw == expected,'framing',('expression',))
         self.canonical.update(b'R'+self.run_size.to_bytes(8, 'big')+self.run.digest())
         identity = encoded(list(key))
         self.canonical.update(b'E'+len(identity).to_bytes(8, 'big')+identity+bytes.fromhex(entry[self.side+'TreeSha256']))
@@ -470,6 +582,7 @@ class DumpFingerprint:
         self.run_size = 0
         self.used.add(key)
 
+    @facet_context('framing')
     def statement(self, raw):
         tokens = list(sql_tokens(raw))
         words = [t[1] if t[0] == 'word' else None for t in tokens]
@@ -526,6 +639,7 @@ class DumpFingerprint:
         self.raw_run(raw[position:])
         return words[:1] == ['copy'] and words[-3:-1] == ['from', 'stdin']
 
+    @facet_context('framing')
     def feed(self, chunk):
         require(isinstance(chunk, bytes) and len(chunk) <= 1024*1024)
         self.raw.update(chunk)
@@ -566,9 +680,9 @@ class DumpFingerprint:
             position = len(chunk)
             stop = statement_end(self.buffer)
             if stop is not None:
-                require(stop <= MAX_DDL)
+                require(stop <= MAX_DDL,'framing',('limit',))
                 self.statement_count += 1
-                require(self.statement_count <= MAX_OBJECTS)
+                require(self.statement_count <= MAX_OBJECTS,'framing',('limit',))
                 raw = bytes(self.buffer[:stop])
                 chunk = bytes(self.buffer[stop:])
                 position = 0
@@ -576,18 +690,19 @@ class DumpFingerprint:
                 if self.statement(raw):
                     self.copy_newline = True
             else:
-                require(len(self.buffer) <= MAX_DDL)
+                require(len(self.buffer) <= MAX_DDL,'framing',('limit',))
 
+    @facet_context('framing')
     def finish(self):
-        require(not self.copy and not self.copy_newline and not self.copy_prefix)
+        require(not self.copy and not self.copy_newline and not self.copy_prefix,'framing',('copy_termination',))
         # The pinned dump's closing meta-command/comments contain no statement.
         tail = bytes(self.buffer)
         try:
             tokens = list(sql_tokens(tail+b'\n'))
         except Incomplete:
-            raise FidelityError('restored_source_mismatch') from None
+            raise FidelityError('framing',('syntax',)) from None
         require(not tokens or (len(tokens) >= 3 and tokens[0][0:2] == ('symbol', '\\') and tokens[1][0:2] == ('word', 'unrestrict') and re.fullmatch(rb'[A-Za-z0-9_]{1,128}', tail[tokens[2][2]:tokens[-1][3]])))
         self.raw_run(tail)
         self.canonical.update(b'R'+self.run_size.to_bytes(8, 'big')+self.run.digest())
-        require(self.used == self.evidence.keys())
+        require(self.used == self.evidence.keys(),'framing',('unused_evidence',),len(self.evidence.keys()-self.used))
         return {'raw': self.raw.hexdigest(), 'canonical': self.canonical.hexdigest(), 'expressions': len(self.used)}

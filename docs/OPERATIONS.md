@@ -2256,9 +2256,22 @@ fingerprints and actual Bangkok date. The production canonical runner installs a
 required-proof marker; migration157 compares its expected date and selection fingerprint against
 the actual source resolution under its existing locks, before changing the graph. Missing,
 stale or mismatched proof refuses atomically. It supplies no business-date override, skip flag,
-alternative SQL runner or runtime TEMP privilege. Bounded controller codes and canonical migration
-version/SQLSTATE/refusal codes are the only preparation diagnostics forwarded by
-[the release owner](../scripts/lib/pipeline-remote/school-storage-rollout.sh).
+alternative SQL runner or runtime TEMP privilege. The
+[release owner](../scripts/lib/pipeline-remote/school-storage-rollout.sh) forwards only validated
+controller codes and canonical migration version/SQLSTATE/refusal codes. A fidelity refusal keeps
+`error: restored_source_mismatch` and may additionally include the exact `diagnostic` object:
+`stage`, `facet`, integer `mismatchCount` (0–20,000), and unsigned `propertyMask`. The helper's
+`DIAGNOSTIC_STAGES` and ordered `DIAGNOSTIC_PROPERTIES` are the fixed decoding contract: property
+position is its zero-based mask bit. For example, membership `grantor_unknown` is bit14; graph
+counts and missing/extra-edge bits distinguish unsupported edges from changed options without
+exposing role identities. Catalog facets distinguish database, relation, column, constraint and
+index properties; the controller stage identifies source versus copy and oracle/stream boundaries.
+Unknown diagnostics use facet `unknown`, count0 and mask0. No names, SQL, URLs, values or row hashes
+are emitted. Invalid/extra fields and unknown bits are discarded as a whole, and fidelity diagnostics
+cannot accompany canonical migration refusals. The private recovery directory retains the same
+bounded `last-fidelity-refusal.json` with mode0600 and the owner UID where receipt IO succeeds.
+This best-effort receipt never replaces the original refusal and is never a proof or retry input;
+a stale receipt does not establish the stage of a later attempt.
 
 These supplemental tenant logical recovery points leave the native pgBackRest full/differential
 and WAL policy unchanged. They do not attest its current health, replace the private Admin/global

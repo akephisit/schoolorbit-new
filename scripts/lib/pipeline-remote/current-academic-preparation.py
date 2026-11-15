@@ -451,6 +451,7 @@ class Controller:
             yield connection, args + [PG_IMAGE], environment
 
     def identity(self, connection, base, environment):
+        self.diagnostic_stage='source_profile'
         owner = connection['user']
         runtime = owner[:-6] + '_runtime'
         # Only known per-school and existing provisioner role dependencies are
@@ -516,6 +517,7 @@ class Controller:
                 a.wait()
 
     def fingerprint(self, base, environment, nonce, evidence=None, side='source'):
+        self.diagnostic_stage='copy_stream' if side=='restored' else 'source_stream'
         # Raw SHA covers untouched pg_dump bytes (fixed restrict key only).
         # Evidence mode separately frames proven expression spans for canonical
         # SHA; it never changes the bytes contributing to the raw digest.
@@ -548,6 +550,7 @@ class Controller:
         return self.command(['podman', 'exec', '-i', self.copy, 'psql', '-XAtq', '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database], data=sql.encode())
 
     def copy_role_profile(self, owner):
+        self.diagnostic_stage='copy_profile'
         names=[owner,owner[:-6]+'_runtime','schoolorbit_provisioner']
         selected=','.join(literal(name) for name in names)
         target=','.join(literal(name) for name in names[:2])
@@ -559,11 +562,13 @@ class Controller:
         return profile
 
     def verify_copy_profile(self, connection, identity):
+        self.diagnostic_stage='copy_profile'
         profile=self.copy_role_profile(connection['user'])
-        fidelity.require(fidelity.exact(profile,{'roles':identity['roles'],'memberships':identity['memberships']}))
+        fidelity.require(fidelity.exact(profile,{'roles':identity['roles'],'memberships':identity['memberships']}),'retained',('profile',))
         return profile
 
     def migrate_copy(self, connection, identity, environment):
+        self.diagnostic_stage='copy_profile'
         # This readback happens after restore/oracle, at the actual CLI boundary.
         profile=self.verify_copy_profile(connection,identity)
         raw=self.command(['podman', 'run', '--log-driver=none', '--rm', '--name', self.worker, *self.labels(), '--network', 'container:' + self.copy, '--read-only', '--cap-drop=all', '--security-opt=no-new-privileges', '--env', 'MIGRATION_SCHEMA_DATABASE_URL', '--env', 'MIGRATION_SCHEMA_NAME', '--env', 'MIGRATION_SCHEMA_ALLOW_PUBLIC', self.image, '/app/migrate_tenant_schema'], environment=environment)
@@ -619,6 +624,7 @@ class Controller:
                 durable(self.point/'last-metadata-exit.json',{'schemaVersion':1,'sequence':self.exits,'exitCode':child.returncode,'outcome':'unknown'})
 
     def catalog(self, base, environment=None):
+        self.diagnostic_stage='copy_catalog' if base[1:2]==['exec'] else 'source_catalog'
         # Count and expression-size preflight precede the larger fixed metadata
         # queries. The bounded reader is an independent hard output ceiling.
         preflight = "SET search_path=pg_catalog; SELECT jsonb_build_object('objects',(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public')+(SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='public')+(SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND a.attnum>0),'expressionBytes',greatest((SELECT COALESCE(max(octet_length(pg_get_expr(c.conbin,c.conrelid,false))),0) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='public'),(SELECT COALESCE(max(octet_length(pg_get_expr(i.indpred,i.indrelid,false))),0) FROM pg_index i JOIN pg_class c ON c.oid=i.indrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public')))"
@@ -626,7 +632,8 @@ class Controller:
             raw=self.bounded_capture(base+['psql','-XAtq','-v','ON_ERROR_STOP=1','-c',sql],environment=environment,limit=limit)
             return decode_json(raw)
         size=query(preflight,4096)
-        fidelity.require(type(size['objects']) is int and size['objects']<=fidelity.MAX_OBJECTS and type(size['expressionBytes']) is int and size['expressionBytes']<=fidelity.MAX_EXPRESSION)
+        fidelity.require(type(size['objects']) is int and size['objects']<=fidelity.MAX_OBJECTS and type(size['expressionBytes']) is int and size['expressionBytes']<=fidelity.MAX_EXPRESSION,
+                         'catalog_budget',tuple(key for key,limit in [('objects',fidelity.MAX_OBJECTS),('expressionBytes',fidelity.MAX_EXPRESSION)] if type(size[key]) is not int or size[key]>limit))
         # Bound variable-width strings and dependency count before jsonb_agg
         # materializes the full catalog. Sixfold accounts for JSON escaping;
         # fixed property/flag overhead is bounded per catalog object/dependency.
@@ -641,10 +648,11 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
  +(SELECT COALESCE(sum(octet_length((pg_identify_object(d.refclassid,d.refobjid,d.refobjsubid)).identity)),0) FROM dependencies d)
  +(SELECT octet_length(d::text) FROM pg_database d WHERE datname=current_database()));"""
         budget=query(budget_sql,4096)
-        fidelity.require(type(budget['dependencies']) is int and budget['dependencies']<=fidelity.MAX_OBJECTS and type(budget['bytes']) is int and budget['bytes']*6+size['objects']*1024+budget['dependencies']*256<=fidelity.MAX_METADATA)
+        fidelity.require(type(budget['dependencies']) is int and budget['dependencies']<=fidelity.MAX_OBJECTS and type(budget['bytes']) is int and budget['bytes']*6+size['objects']*1024+budget['dependencies']*256<=fidelity.MAX_METADATA,
+                         'catalog_budget',tuple(key for key,bad in [('dependencies',type(budget['dependencies']) is not int or budget['dependencies']>fidelity.MAX_OBJECTS),('bytes',type(budget['bytes']) is not int or (type(budget['dependencies']) is int and budget['bytes']*6+size['objects']*1024+budget['dependencies']*256>fidelity.MAX_METADATA))] if bad))
         result={'catalog':query(CATALOG),'database':query(DATABASE_SQL),'indexes':query(INDEX_SQL)}
         result['catalog']['constraintNames']=query("SET search_path=pg_catalog; SELECT COALESCE(jsonb_agg(jsonb_build_object('schema',n.nspname,'table',r.relname,'name',c.conname,'kind',c.contype) ORDER BY n.nspname,r.relname,c.conname),'[]') FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace LEFT JOIN pg_class r ON r.oid=c.conrelid WHERE n.nspname='public'")
-        fidelity.require(len(fidelity.encoded(result))<=fidelity.MAX_METADATA)
+        fidelity.require(len(fidelity.encoded(result))<=fidelity.MAX_METADATA,'catalog_budget',('encodedBytes',))
         return result
 
     def copy_read_base(self, connection):
@@ -656,6 +664,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         return [decode_json(line) for line in raw.splitlines() if line]
 
     def oracle(self, pairs, connection):
+        self.diagnostic_stage='oracle'
         tables={}
         statements=['BEGIN; SET LOCAL search_path=pg_catalog;']
         for pair in pairs:
@@ -690,16 +699,19 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         statements.append('ROLLBACK;')
         statements.append("SELECT jsonb_build_object('rollbackConfirmed',txid_current_if_assigned() IS NULL,'remainingReferences',(SELECT count(*) FROM pg_class WHERE relnamespace=pg_my_temp_schema() AND relname LIKE 'academic_restore_%'),'role',current_user);")
         replies=self.copy_write('\n'.join(statements),connection)
-        fidelity.require(len(replies)==len(pairs)+1 and fidelity.exact(replies[-1],{'rollbackConfirmed':True,'remainingReferences':0,'role':connection['user']}))
+        fidelity.require(len(replies)==len(pairs)+1 and fidelity.exact(replies[-1],{'rollbackConfirmed':True,'remainingReferences':0,'role':connection['user']}),
+                         'oracle',('replyCount',) if len(replies)!=len(pairs)+1 else fidelity.difference_properties(replies[-1],{'rollbackConfirmed':True,'remainingReferences':0,'role':connection['user']},'oracle'))
         evidence=[]
         for number,(pair,reply) in enumerate(zip(pairs,replies[:-1])):
-            fidelity.require(set(reply)=={'number','tree','columns','actualColumns','dependencies'} and type(reply['number']) is int and reply['number']==number and fidelity.exact(reply['columns'],reply['actualColumns']) and fidelity.exact(reply['dependencies'],pair['restored']['dependencies']))
-            fidelity.require(isinstance(reply['tree'],str) and reply['tree']==pair['restored']['tree'])
+            fidelity.require(set(reply)=={'number','tree','columns','actualColumns','dependencies'} and type(reply['number']) is int and reply['number']==number and fidelity.exact(reply['columns'],reply['actualColumns']) and fidelity.exact(reply['dependencies'],pair['restored']['dependencies']),
+                             'oracle',('shape','number','columns','dependencies'))
+            fidelity.require(isinstance(reply['tree'],str) and reply['tree']==pair['restored']['tree'],'oracle',('tree',))
             evidence.append(dict(pair,sourceReplayTree=reply['tree'],sourceTreeSha256=digest(reply['tree'].encode()),restoredTreeSha256=digest(pair['restored']['tree'].encode())))
         return evidence
 
     @contextlib.contextmanager
     def isolated(self, connection, identity, source_database):
+        self.diagnostic_stage='copy_setup'
         profile=fidelity.supported_profile(connection['user'],identity['roles'],identity['memberships'])
         collate,ctype=fidelity.database_locale(connection['user'],connection['database'],source_database)
         if self.exists('container', self.copy) or self.exists('volume', self.volume):
@@ -751,18 +763,22 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
                 self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--exit-on-error', '--single-transaction', '--clean', '--if-exists', '-U', 'postgres', '-d', connection['database']], source=encrypted)
             before_hash=self.restored_fingerprint(connection,nonce)
             before_metadata=self.catalog(self.copy_read_base(connection))
+            self.diagnostic_stage='nn_reconcile'
             renames=fidelity.plan_nn(source_metadata,before_metadata)
             if renames:
                 sql='BEGIN; SET LOCAL search_path=pg_catalog;\n'+'\n'.join('ALTER TABLE '+ident(x['schema'])+'.'+ident(x['table'])+' RENAME CONSTRAINT '+ident(x['from'])+' TO '+ident(x['to'])+';' for x in renames)+'\nCOMMIT;'
                 fidelity.require(self.copy_write(sql,connection)==[])
             restored_metadata=self.catalog(self.copy_read_base(connection))
+            self.diagnostic_stage='expression_pairing'
             pairs,physical=fidelity.expression_pairs(source_metadata,restored_metadata)
             evidence=self.oracle(pairs,connection)
             restored=self.restored_fingerprint(connection,nonce,evidence)
             with self.source(row) as (_,source_base,source_environment):
                 source=self.fingerprint(source_base,source_environment,nonce,evidence,'source')
-            fidelity.require(source['raw']==source_hash and source['canonical']==restored['canonical'])
+            self.diagnostic_stage='canonical_compare'
+            fidelity.require(source['raw']==source_hash and source['canonical']==restored['canonical'],'canonical',tuple(key for key,bad in [('source_raw',source['raw']!=source_hash),('canonical',source['canonical']!=restored['canonical'])] if bad))
             restored_profile=self.verify_copy_profile(connection,identity)
+            self.diagnostic_stage='retained_validation'
             name=uuid.UUID(row['id']).hex
             metadata={'schemaVersion':2,'policy':fidelity.POLICY,'schoolId':row['id'],'archiveSha256':digest_file(archive),'roleMetadata':identity['roles'],'membershipMetadata':identity['memberships'],'restoredRoleMetadata':restored_profile['roles'],'restoredMembershipMetadata':restored_profile['memberships'],'source':source_metadata,'restoredBefore':before_metadata,'restored':restored_metadata,'oracle':evidence,'physicalIndexBookkeepingDifferenceCount':physical}
             mapping={'schemaVersion':2,'policy':fidelity.POLICY,'schoolId':row['id'],'archiveSha256':digest_file(archive),'renames':renames}
@@ -857,17 +873,20 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
                 if self.fingerprint(base, environment, nonce) != source_hash:
                     refuse('source_changed_during_copy')
                 proof = {'schoolId': row['id'], 'subdomain': row['subdomain'], 'databaseName': connection['database'], 'cutoverDate': audit['cutoverDate'], 'selectionFingerprint': audit['selectionFingerprint'], 'sourceFingerprint': source_hash, 'restoredSourceFingerprint':audit['restoredSourceFingerprint'],'restoredReconciledFingerprint':audit['restoredReconciledFingerprint'],'restoreFidelity':audit['restoreFidelity'], 'archiveSha256': digest_file(archive), 'decryptionVerified': True, 'historyVersion': audit['version'], 'checks': audit['checks']}
+                self.diagnostic_stage='retained_validation'
                 proof['restoreFidelity']['evidenceSha256']=fidelity.evidence_digest({'releaseSha':self.release,'imageDigest':self.image_digest,'inventoryFingerprint':self.inventory_hash},proof)
                 durable(item_path, {'restrictKey': nonce, 'roleMetadata':identity['roles'],'membershipMetadata':identity['memberships'], 'proof': proof})
                 tenants.append(proof)
             self.unchanged_inventory()
         bundle={'schemaVersion':2,'operation':OPERATION,'releaseSha':self.release,'imageDigest':self.image_digest,'inventoryFingerprint':self.inventory_hash,'tenants':tenants}
+        self.diagnostic_stage='retained_validation'
         fidelity.require(len(fidelity.encoded(bundle))<=MAX_JSON)
         durable(self.proof,bundle)
         durable(self.state, {'schemaVersion': 1, 'state': 'prepared', 'completedAt': None, 'retainUntil': None})
         self.check()
 
     def retained_recovery(self):
+        self.diagnostic_stage='retained_validation'
         # Completion must revalidate the recovery bytes and key independently
         # of the now-intentionally-contracted live business source.
         private(self.key)
@@ -890,7 +909,9 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
                 self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'run', '--log-driver=none', '--rm', '-i', '--name', self.verify, *self.labels(), '--network', 'none', '--read-only', PG_IMAGE, 'pg_restore', '--file=/dev/null'], source=encrypted)
         return proof
 
+    @fidelity.facet_context('retained')
     def retained_fidelity(self, bundle, item, row):
+        self.diagnostic_stage='retained_validation'
         fields={'schoolId','subdomain','databaseName','cutoverDate','selectionFingerprint','sourceFingerprint','restoredSourceFingerprint','restoredReconciledFingerprint','restoreFidelity','archiveSha256','decryptionVerified','historyVersion','checks'}
         fidelity.require(set(item)==fields and item['databaseName']==urllib.parse.urlsplit(row['url']).path[1:])
         fidelity.require(type(item['historyVersion']) is int and item['historyVersion']==self.compiled[-1][0])
@@ -905,7 +926,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         name=uuid.UUID(row['id']).hex
         metadata_path=self.point/(name+'.restore-metadata.json');mapping_path=self.point/(name+'.nn-identities.json')
         metadata=read_json(metadata_path,fidelity.MAX_METADATA);mapping=read_json(mapping_path,fidelity.MAX_METADATA)
-        fidelity.require(digest_file(metadata_path)==f['metadataSha256'] and digest_file(mapping_path)==f['nnIdentityMapSha256'])
+        fidelity.require(digest_file(metadata_path)==f['metadataSha256'] and digest_file(mapping_path)==f['nnIdentityMapSha256'],'retained',('hash',))
         fidelity.require(set(metadata)=={'schemaVersion','policy','schoolId','archiveSha256','roleMetadata','membershipMetadata','restoredRoleMetadata','restoredMembershipMetadata','source','restoredBefore','restored','oracle','physicalIndexBookkeepingDifferenceCount'} and set(mapping)=={'schemaVersion','policy','schoolId','archiveSha256','renames'})
         for document in [metadata,mapping]:
             fidelity.require(type(document['schemaVersion']) is int and document['schemaVersion']==2 and document['policy']==fidelity.POLICY and document['schoolId']==row['id'] and document['archiveSha256']==item['archiveSha256'])
@@ -928,6 +949,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
         self._recovery_profiles[row['id']]={'roles':metadata['roleMetadata'],'memberships':metadata['membershipMetadata'],'database':metadata['source']['database']}
 
     def verify_source_profile(self,row,identity,base,environment):
+        self.diagnostic_stage='source_profile'
         expected=self._recovery_profiles[row['id']]
         fidelity.require(fidelity.exact(identity['roles'],expected['roles']) and fidelity.exact(identity['memberships'],expected['memberships']))
         current=decode_json(self.bounded_capture(base+['psql','-XAtq','-v','ON_ERROR_STOP=1','-c',DATABASE_SQL],environment=environment))
@@ -1002,7 +1024,24 @@ def main():
     if len(sys.argv) != 2 or sys.argv[1] not in ['prepare', 'check', 'complete']:
         refuse('fixed_operation_required')
     controller = Controller()
-    getattr(controller, sys.argv[1])()
+    controller.diagnostic_stage='unknown'
+    try:
+        getattr(controller, sys.argv[1])()
+    except fidelity.FidelityError as error:
+        detail=dict(error.diagnostic)
+        detail['stage']=getattr(controller,'diagnostic_stage','unknown')
+        if not fidelity.validate_diagnostic(detail):detail=fidelity.diagnostic()
+        error.diagnostic=detail
+        # Diagnostic receipts are never proof/retry inputs, and failed receipt IO
+        # must not replace the original refusal. Do not follow an existing link.
+        try:
+            private(controller.point,directory=True)
+            receipt=controller.point/'last-fidelity-refusal.json'
+            if receipt.exists() or receipt.is_symlink():private(receipt)
+            durable(receipt,{'schemaVersion':1,'error':'restored_source_mismatch','diagnostic':detail})
+        except (OSError,Refusal):
+            pass
+        raise
 
 
 if __name__ == '__main__':
@@ -1011,6 +1050,7 @@ if __name__ == '__main__':
     except (Refusal, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         code = str(error) if isinstance(error, (Refusal,fidelity.FidelityError)) else 'preparation_unavailable'
         body={'schemaVersion':1,'error':code}
+        if isinstance(error,fidelity.FidelityError) and fidelity.validate_diagnostic(error.diagnostic):body['diagnostic']=error.diagnostic
         if isinstance(error,Refusal) and getattr(error,'diagnostic',None): body['migrationRefusal']=error.diagnostic
         print(json.dumps(body),file=sys.stderr)
         sys.exit(1)

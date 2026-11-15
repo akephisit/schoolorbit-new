@@ -610,7 +610,12 @@ outside-span mutations, NN ambiguity and target-name collisions, logical column 
 dropped slots, ownership/ACL/type/collation/dependency/index-flag refusals, and the cross-language
 schema2 digest vector. Controller fixtures cover private metadata/map loss or tampering, relevant
 role/database-setting drift, bounded child output/real exits, and TCP readiness rather than the
-temporary PostgreSQL initialization socket. These are support-boundary regressions, not substitutes
+temporary PostgreSQL initialization socket. Diagnostic regressions cover exact fixed stages/facets,
+per-facet mask ceilings, integer-only counts, unknown/duplicate keys, nonfinite and multiple JSON
+values, raw-payload rejection, and the actual controller entrypoint-to-rollout projection. Private
+receipt tests verify mode/owner validation, symlink refusal, per-operation stage reset and preservation
+of the original refusal when receipt IO fails. The schema2 cross-language vector remains unchanged.
+These are support-boundary regressions, not substitutes
 for the native owner-role oracle, rollback and real restored-schema acceptance below.
 
 Pure controller and crypto tests do not establish PostgreSQL restore correctness. Release-owner
