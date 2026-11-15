@@ -2230,7 +2230,25 @@ provider. OS compatibility never substitutes for actual exact database metadata 
 checks, and does not attest the live source's precise package or libc version.
 It preserves source ownership, ACLs and role markers, uses fresh local passwords, and
 must prove restore fidelity before applying the same canonical migrations. Setup creates only the
-validated global roles and memberships. The original custom archive owns the database definition,
+validated primary owner/runtime/provisioner roles and their finite supported membership profile.
+Database-level ACL grantees/grantors and role-specific settings can additionally reference global
+roles that tenant archives do not create. Preparation attests these exact references from the selected
+database's ACL and per-database role settings, captures their public attributes/comments, and recreates
+only those attested roles in the isolated copy with fresh local passwords. Existing builtin/bootstrap
+roles are compared exactly and never recreated or repaired. Quoted role names retain their exact UTF8
+bytes (at most63, no NUL); there is no guessed alias or global role-graph restore. Auxiliary inventory
+is bounded to64 roles and64KiB of total comments. Unrelated databases and global role settings cannot
+add auxiliary roles. Unknown local-object ownership/ACL dependencies still refuse, including when the
+same role is also a valid database-level reference.
+The private archive-bound metadata records separate `databaseRoleMetadata` and actual
+`restoredDatabaseRoleMetadata` lists; primary role and membership metadata retain their original
+meaning. Exact source/copy readbacks occur at setup, after restore/oracle, before and after the
+canonical copy CLI, and on retained-proof/live-source checks. Retry rejects changed auxiliary role
+attributes without replacing the original recovery point. The public schema2 proof is unchanged:
+its existing metadata hash binds these private lists. All-current, unaffected tenants require no new
+backup or auxiliary-role rehearsal. These copy-only role records do not restore passwords or promise
+reconstruction of the full cluster membership topology.
+The original custom archive owns the database definition,
 properties, settings and privileges, including ACL grantors: it is restored with stock
 `pg_restore --create --clean --if-exists --exit-on-error -U postgres -d postgres` in the isolated
 copy. The maintenance database is only the initial connection; the archive names the restored

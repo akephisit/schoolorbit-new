@@ -633,7 +633,12 @@ framed fidelity hashes backed by exact PostgreSQL expression oracles. Every byte
 uniquely proven expression spans must match. Then exercise the candidate's canonical
 `migrate_tenant_schema` executable and all eight
 zero-mismatch receipt/runtime-grant checks. Stock archive-level restore fixtures must cover both
-supported role profiles, database owner/ACL grantors and grant options, settings, comments and
+supported primary role profiles, database-only ACL grantees/grantors and grant options, independent
+role-specific settings auxiliaries, quoted UTF8 role names, exact public role flags/comments/limits,
+source/copy readbacks and retained/retry role drift refusals. A role also referenced by a local table
+must remain unsupported even if database-attested. Verify sibling/global references do not enter
+auxiliary inventory and existing builtin roles are read back rather than created or altered.
+Also cover database owner, settings, comments and
 locale forms, with exact database metadata readback. Use the controller's pinned Debian13/trixie
 PostgreSQL18.6 image, including a genuine builtin `C.UTF-8/C.UTF-8` source where supported, to expose
 OS-dependent locale canonicalization. The image contract test binds the source client, copy server
