@@ -2261,12 +2261,19 @@ backup or auxiliary-role rehearsal. These copy-only role records do not restore 
 reconstruction of the full cluster membership topology.
 The original custom archive owns the database definition,
 properties, settings and privileges, including ACL grantors: it is restored with stock
-`pg_restore --create --clean --if-exists --exit-on-error -U postgres -d postgres` in the isolated
-copy. The maintenance database is only the initial connection; the archive names the restored
+`pg_restore --create --transaction-size=2147483647 --clean --if-exists --exit-on-error -U postgres -d postgres`
+in the isolated copy. The maintenance database is only the initial connection; the archive names the restored
 database. No manual database/ACL reconstruction or owner/ACL omission substitutes for that archive.
-`--create` cannot combine with `--single-transaction`; any failed or partial restore is unusable,
-refuses before the migration CLI/proof, and its exact owned copy is removed. This disposable-copy
-failure boundary does not authorize replaying a database drop/create against a live tenant.
+`--create` cannot combine with `--single-transaction`. PostgreSQL18 transaction grouping explicitly
+commits/reconnects around database creation and database properties; the fixed large action budget
+keeps ordinary schema creation and COPY in one transaction within the qualified archive size. This
+preserves the current-transaction table insertion behavior needed for byte-exact COPY ordering on
+variable-width and previously updated data. The budget is finite and lock capacity can still fail;
+neither condition permits a hash exception. This is not an all-database atomic restore: database and
+properties may remain inside the copy when schema/data roll back. Every failed or partial copy is
+unusable, refuses before the migration CLI/proof and is removed with its exact owned resources.
+A fresh retry uses the original verified archive on a new copy. This disposable-copy failure boundary
+does not authorize replaying a database drop/create against a live tenant.
 Reviewed recovery must preserve the archive-owned database properties and ACLs as well as the
 retained roles and NN identity mapping, while accounting for subsequent writes.
 Unknown roles, insufficient space, failed decryption, source drift, missing child exits or

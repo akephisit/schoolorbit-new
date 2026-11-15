@@ -967,7 +967,7 @@ SELECT jsonb_build_object('dependencies',(SELECT count(*) FROM dependencies),'by
             # CREATE DATABASE cannot run inside --single-transaction. Any
             # failed/partial restore remains confined to this disposable copy.
             with archive.open('rb') as encrypted:
-                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--create', '--clean', '--if-exists', '--exit-on-error', '-U', 'postgres', '-d', 'postgres'], source=encrypted, stage='restore_archive')
+                self.stream(self.age('/usr/local/bin/age', '-d', '-i', '/run/recovery/identity.agekey'), ['podman', 'exec', '-i', self.copy, 'pg_restore', '--create', '--transaction-size=2147483647', '--clean', '--if-exists', '--exit-on-error', '-U', 'postgres', '-d', 'postgres'], source=encrypted, stage='restore_archive')
             before_hash=self.restored_fingerprint(connection,nonce)
             before_metadata=self.catalog(self.copy_read_base(connection))
             self.diagnostic_stage='nn_reconcile'
