@@ -1530,10 +1530,16 @@ async fn coverage_actual_grade_filters_do_not_inherit_other_offering_target_grad
         .iter()
         .any(|c| c.teacher_id == f.teacher.user_id));
 }
-#[tokio::test]
-async fn coverage_reciprocal_replan_retains_consent_and_creates_a_distinct_reservation_pair() {
+async fn returned_reciprocal_fixture(
+    name: &str,
+) -> (
+    AcademicCoverageFixture,
+    LeaveRequestDetail,
+    Vec<school_staff_leave::coverage_models::LeaveCoverageSelection>,
+    Uuid,
+) {
     use school_staff_leave::{coverage, coverage_models::*};
-    let f = academic_coverage_fixture("coverage_pair_replan_consent_cycle", false, 7).await;
+    let f = academic_coverage_fixture(name, false, 7).await;
     let period_id = Uuid::now_v7();
     let extra_block = Uuid::now_v7();
     let extra_allocation = Uuid::now_v7();
@@ -1550,7 +1556,7 @@ async fn coverage_reciprocal_replan_retains_consent_and_creates_a_distinct_reser
         .iter()
         .find(|l| l.lesson.allocation_id == extra_allocation)
         .unwrap();
-    let mut selections = vec![
+    let selections = vec![
         LeaveCoverageSelection {
             lesson_key: original.lesson.lesson_key.clone(),
             replacement_teacher_id: a.replacement_teacher_id,
@@ -1630,6 +1636,33 @@ async fn coverage_reciprocal_replan_retains_consent_and_creates_a_distinct_reser
     )
     .await
     .unwrap();
+    (f, returned, selections, stable_id)
+}
+
+#[tokio::test]
+async fn coverage_reciprocal_replan_retains_consent_and_creates_a_distinct_reservation_pair() {
+    use school_staff_leave::{coverage, coverage_models::*};
+    let (f, returned, mut selections, stable_id) =
+        returned_reciprocal_fixture("coverage_pair_replan_consent_cycle").await;
+    let sent = returned.clone();
+    let receipts_before:String=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(c) ORDER BY id)::text FROM staff_leave_coverage_confirmations c WHERE request_id=$1").bind(returned.request.id).fetch_one(&f.pool).await.unwrap();
+    let returned = coverage::refresh(
+        &f.pool,
+        &f.owner,
+        returned.request.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: returned.request.revision,
+        },
+    )
+    .await
+    .unwrap();
+    let a = returned.coverage.days[0].lessons[0]
+        .assignment
+        .as_ref()
+        .unwrap();
+    assert_eq!(a.id, stable_id);
+    assert_eq!(a.consent, LeaveCoverageConsent::Confirmed);
     selections[1].replacement_teacher_id = f.admin.user_id;
     let saved = coverage::save(
         &f.pool,
@@ -1674,6 +1707,8 @@ async fn coverage_reciprocal_replan_retains_consent_and_creates_a_distinct_reser
     assert_eq!((count, cycles), (4, 2));
     let receipts:i64=sqlx::query_scalar("SELECT count(*) FROM staff_leave_coverage_confirmations WHERE request_id=$1 AND assignment_id=$2").bind(sent.request.id).bind(stable_id).fetch_one(&f.pool).await.unwrap();
     assert_eq!(receipts, 1);
+    let receipts_after:String=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(c) ORDER BY id)::text FROM staff_leave_coverage_confirmations c WHERE request_id=$1").bind(sent.request.id).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(receipts_before, receipts_after);
 }
 
 #[tokio::test]
@@ -1928,4 +1963,238 @@ async fn coverage_same_day_started_exchange_keeps_owed_return_and_unrelated_edit
     .unwrap();
     let states:Vec<String>=sqlx::query_scalar("SELECT state FROM academic_teaching_coverage_duties WHERE request_id=$1 AND kind='reciprocal' ORDER BY pair_leg").bind(approved.request.id).fetch_all(&f.pool).await.unwrap();
     assert_eq!(states, vec!["approved".to_string(), "approved".to_string()]);
+}
+
+#[tokio::test]
+async fn coverage_http_refresh_recovers_external_source_change_without_rewriting_old_evidence() {
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+    };
+    use school_staff_leave::{coverage, coverage_models::*};
+    use tower::ServiceExt;
+    let f = academic_coverage_fixture("coverage_external_source_refresh", true, 7).await;
+    let planned = academic_coverage_plan(&f, LeaveCoverageMode::Substitution).await;
+    let old_plan:String=sqlx::query_scalar("SELECT document::text FROM staff_leave_coverage_plan_revisions WHERE request_id=$1 AND revision=$2").bind(planned.request.id).bind(planned.coverage.revision).fetch_one(&f.pool).await.unwrap();
+    let (block,bell):(Uuid,Uuid)=sqlx::query_as("SELECT b.id,b.bell_schedule_id FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id WHERE g.id=$1").bind(f.allocation).fetch_one(&f.pool).await.unwrap();
+    let slot = Uuid::now_v7();
+    sqlx::query("INSERT INTO bell_schedule_periods(id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days) VALUES($1,$2,'Changed source',TIME '13:00',TIME '14:00',13,NULL)").bind(slot).bind(bell).execute(&f.pool).await.unwrap();
+    sqlx::query("UPDATE academic_timetable_blocks SET bell_schedule_period_id=$1,row_version=row_version+1 WHERE id=$2").bind(slot).bind(block).execute(&f.pool).await.unwrap();
+    let old = service::detail(&f.pool, &f.owner, planned.request.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        old.coverage.source_digest, planned.coverage.source_digest,
+        "GET remains a read of the accepted draft plan"
+    );
+    let query = LeaveCoverageCandidatesRequest {
+        expected_revision: old.request.revision,
+        source_digest: old.coverage.source_digest.clone().unwrap(),
+        lesson_keys: vec![old.coverage.days[0].lessons[0].lesson.lesson_key.clone()],
+        search: None,
+        subject_group_id: None,
+        grade_level_id: None,
+        same_subject_group_only: false,
+        same_student_group_only: false,
+        same_grade_only: false,
+    };
+    assert!(
+        coverage::candidates(&f.pool, &f.owner, old.request.id, query.clone())
+            .await
+            .is_err(),
+        "stale guards stay strict before explicit reconciliation"
+    );
+    let router = coverage_http_router(&f.pool, &f.owner, "coverage-source-refresh");
+    let payload =
+        serde_json::json!({"requestId":Uuid::now_v7(),"expectedRevision":old.request.revision});
+    let response = router
+        .clone()
+        .oneshot(
+            Request::post(format!(
+                "/api/staff-leave/requests/{}/coverage/refresh",
+                old.request.id
+            ))
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "explicit coverage refresh must recover a stale stored plan"
+    );
+    let body: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap())
+            .unwrap();
+    let refreshed: LeaveRequestDetail = serde_json::from_value(body["data"].clone()).unwrap();
+    assert_eq!(refreshed.request.revision, old.request.revision + 1);
+    assert_eq!(refreshed.coverage.revision, old.coverage.revision + 1);
+    assert_ne!(refreshed.coverage.source_digest, old.coverage.source_digest);
+    assert_eq!(
+        refreshed.coverage.days[0].lessons[0]
+            .lesson
+            .bell_schedule_period_id,
+        slot
+    );
+    assert!(refreshed.coverage.days[0].lessons[0].assignment.is_none());
+    let retained:String=sqlx::query_scalar("SELECT document::text FROM staff_leave_coverage_plan_revisions WHERE request_id=$1 AND revision=$2").bind(planned.request.id).bind(planned.coverage.revision).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(retained, old_plan);
+    let replay = router
+        .clone()
+        .oneshot(
+            Request::post(format!(
+                "/api/staff-leave/requests/{}/coverage/refresh",
+                old.request.id
+            ))
+            .header("content-type", "application/json")
+            .body(Body::from(payload.to_string()))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(replay.status(), StatusCode::OK);
+    let replay: serde_json::Value =
+        serde_json::from_slice(&to_bytes(replay.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+    assert_eq!(
+        replay["data"]["request"]["revision"],
+        refreshed.request.revision
+    );
+    coverage::candidates(
+        &f.pool,
+        &f.owner,
+        old.request.id,
+        LeaveCoverageCandidatesRequest {
+            expected_revision: refreshed.request.revision,
+            source_digest: refreshed.coverage.source_digest.clone().unwrap(),
+            lesson_keys: vec![refreshed.coverage.days[0].lessons[0]
+                .lesson
+                .lesson_key
+                .clone()],
+            ..query
+        },
+    )
+    .await
+    .unwrap();
+    let saved = coverage::save(
+        &f.pool,
+        &f.owner,
+        old.request.id,
+        SaveLeaveCoverageRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: refreshed.request.revision,
+            source_digest: refreshed.coverage.source_digest.clone().unwrap(),
+            assignments: vec![LeaveCoverageSelection {
+                lesson_key: refreshed.coverage.days[0].lessons[0]
+                    .lesson
+                    .lesson_key
+                    .clone(),
+                replacement_teacher_id: f.teacher.user_id,
+                mode: LeaveCoverageMode::Substitution,
+                taught_offering_id: Some(f.english),
+                taught_activity: None,
+                return_lesson_key: None,
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    let sent = submit(&f.pool, &f.owner, &saved).await;
+    assert_eq!(sent.request.status, LeaveStatus::Submitted);
+    let denied=router.oneshot(Request::post(format!("/api/staff-leave/requests/{}/coverage/refresh",sent.request.id)).header("content-type","application/json").body(Body::from(serde_json::json!({"requestId":Uuid::now_v7(),"expectedRevision":sent.request.revision}).to_string())).unwrap()).await.unwrap();
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        service::detail(&f.pool, &f.owner, sent.request.id)
+            .await
+            .unwrap()
+            .content_hash,
+        sent.content_hash
+    );
+}
+
+#[tokio::test]
+async fn coverage_refresh_rechecks_return_leg_and_pupils_even_when_original_digest_is_unchanged() {
+    use school_staff_leave::coverage;
+    for (name, change) in [
+        ("coverage_refresh_return_clock", 0),
+        ("coverage_refresh_return_pupils", 1),
+        ("coverage_update_return_joint", 2),
+    ] {
+        let (f, returned, _, stable) = returned_reciprocal_fixture(name).await;
+        let digest = returned.coverage.source_digest.clone();
+        let original:String=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(c) ORDER BY id)::text FROM staff_leave_coverage_confirmations c WHERE request_id=$1").bind(returned.request.id).fetch_one(&f.pool).await.unwrap();
+        let unaffected = returned.coverage.days[0].lessons[1]
+            .assignment
+            .as_ref()
+            .unwrap()
+            .id;
+        match change {
+            0 => {
+                let (block,bell):(Uuid,Uuid)=sqlx::query_as("SELECT b.id,b.bell_schedule_id FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id WHERE g.id=$1").bind(f.return_allocation).fetch_one(&f.pool).await.unwrap();
+                let slot = Uuid::now_v7();
+                sqlx::query("INSERT INTO bell_schedule_periods(id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days) VALUES($1,$2,'Changed return',TIME '10:30',TIME '11:30',20,NULL)").bind(slot).bind(bell).execute(&f.pool).await.unwrap();
+                sqlx::query("UPDATE academic_timetable_blocks SET bell_schedule_period_id=$1,row_version=row_version+1 WHERE id=$2").bind(slot).bind(block).execute(&f.pool).await.unwrap();
+            }
+            1 => {
+                sqlx::query("UPDATE learning_group_students SET membership_status='removed' WHERE learning_group_id=$1 AND student_id=$2").bind(f.english_group).bind(f.pupils[1]).execute(&f.pool).await.unwrap();
+            }
+            _ => {
+                sqlx::query("INSERT INTO academic_timetable_block_group_instructors(id,block_group_id,instructor_id,role,display_order) VALUES(uuidv7(),$1,$2,'secondary',2)").bind(f.return_allocation).bind(f.co_teacher.user_id).execute(&f.pool).await.unwrap();
+            }
+        }
+        let refreshed = if change == 2 {
+            let mut p = period(returned.request.type_id, 17);
+            p.academic_year_id = Some(f.year);
+            p.academic_term_id = Some(f.term);
+            p.start_date = f.from;
+            p.end_date = f.from;
+            p.half_day_boundary = None;
+            p.reason = "Clarified request details".into();
+            service::update(
+                &f.pool,
+                &f.owner,
+                returned.request.id,
+                UpdateLeaveRequest {
+                    request_id: Uuid::now_v7(),
+                    expected_revision: returned.request.revision,
+                    period: p,
+                },
+            )
+            .await
+            .unwrap()
+        } else {
+            coverage::refresh(
+                &f.pool,
+                &f.owner,
+                returned.request.id,
+                LeaveMutationRequest {
+                    request_id: Uuid::now_v7(),
+                    expected_revision: returned.request.revision,
+                },
+            )
+            .await
+            .unwrap()
+        };
+        assert_eq!(refreshed.coverage.source_digest, digest);
+        let first = refreshed.coverage.days[0]
+            .lessons
+            .iter()
+            .find(|l| l.lesson.allocation_id == f.allocation)
+            .unwrap();
+        assert!(
+            first.assignment.is_none(),
+            "changed return/pupil proof must invalidate assignment {stable}"
+        );
+        assert_eq!(
+            refreshed.coverage.days[0].lessons[1]
+                .assignment
+                .as_ref()
+                .unwrap()
+                .id,
+            unaffected
+        );
+        let preserved:String=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(c) ORDER BY id)::text FROM staff_leave_coverage_confirmations c WHERE request_id=$1").bind(returned.request.id).fetch_one(&f.pool).await.unwrap();
+        assert_eq!(original, preserved);
+    }
 }

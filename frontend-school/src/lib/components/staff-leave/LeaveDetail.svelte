@@ -231,6 +231,14 @@
 				>
 					หากเริ่มแลกคาบแล้ว คาบคู่แลกที่เหลือยังคงมีผล
 				</p>{/if}
+			{#if detail.canEdit && creator}<div class="flex justify-end">
+					<Button
+						variant="outline"
+						href={`/staff/leave/requests/${id}/edit?step=coverage&returnTo=${encodeURIComponent(backHref)}`}
+						>จัดคาบสอนตามตารางล่าสุด</Button
+					>
+				</div>{/if}
+
 			<CoverageEditor
 				{detail}
 				readonly={!detail.coverage.canManage ||

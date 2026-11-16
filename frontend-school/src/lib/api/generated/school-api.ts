@@ -7147,6 +7147,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff-leave/requests/{id}/coverage/refresh': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['refreshStaffLeaveCoverage'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/staff-leave/requests/{id}/coverage/replan': {
 		parameters: {
 			query?: never;
@@ -60039,6 +60055,78 @@ export interface operations {
 				};
 			};
 			/** @description Invalid coverage selection */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	refreshStaffLeaveCoverage: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Leave request identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LeaveMutationRequest'];
+			};
+		};
+		responses: {
+			/** @description Reconciled current coverage plan */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			/** @description Malformed request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale request or closed context */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage context */
 			422: {
 				headers: {
 					[name: string]: unknown;

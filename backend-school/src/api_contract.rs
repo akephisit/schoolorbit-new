@@ -199,6 +199,7 @@ use utoipa::OpenApi;
         school_staff_http::leave_coverage::save,
         school_staff_http::leave_coverage::confirm,
         school_staff_http::leave_coverage::replan,
+        school_staff_http::leave_coverage::refresh,
         school_staff_http::leave_coverage::assigned,
 
 

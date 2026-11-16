@@ -1666,6 +1666,39 @@ async fn coverage_emergency_manager_completes_plan_then_starts_original_owner_wo
         .await
         .unwrap();
     assert!(admin_view.coverage.can_manage);
+    let reserved:String=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(d) ORDER BY id)::text FROM academic_teaching_coverage_duties d WHERE request_id=$1").bind(sent.request.id).fetch_one(&pool).await.unwrap();
+    let refresh = LeaveMutationRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: sent.request.revision,
+    };
+    assert!(
+        coverage::refresh(&pool, &other, sent.request.id, refresh.clone())
+            .await
+            .is_err()
+    );
+    let mut unreadable = admin.clone();
+    unreadable
+        .permissions
+        .retain(|p| p != codes::STAFF_LEAVE_READ_SCHOOL);
+    assert!(
+        coverage::refresh(&pool, &unreadable, sent.request.id, refresh.clone())
+            .await
+            .is_err()
+    );
+    let sent = coverage::refresh(&pool, &admin, sent.request.id, refresh)
+        .await
+        .unwrap();
+    assert!(sent.instance.is_none());
+    assert!(sent.coverage.can_manage);
+    assert_eq!(
+        sent.coverage.emergency_reason,
+        admin_view.coverage.emergency_reason
+    );
+    let unchanged:String=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(d) ORDER BY id)::text FROM academic_teaching_coverage_duties d WHERE request_id=$1").bind(sent.request.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        reserved, unchanged,
+        "refresh must not release, reserve or rebind emergency absence duties"
+    );
     let input = SaveLeaveCoverageRequest {
         request_id: Uuid::now_v7(),
         expected_revision: sent.request.revision,
@@ -2026,4 +2059,123 @@ async fn coverage_closed_context_allows_legal_retirement_and_correction_but_not_
     assert_eq!(corrected.request.academic_term_id, Some(next));
     assert_eq!(corrected.coverage.academic_term_id, Some(next));
     assert!(corrected.coverage.days.iter().all(|d| d.lessons.is_empty()));
+}
+
+#[tokio::test]
+async fn coverage_refresh_recovers_missing_to_ready_zero_without_dirty_selection() {
+    use school_staff_leave::{coverage, coverage_models::*};
+    let (pool, owner, admin, other) = fixture("coverage_refresh_verified_zero").await;
+    let (t, _) = typ(&pool, &admin, "refresh_zero", LeaveUnit::Day, None).await;
+    let context = period(t.id, 17);
+    sqlx::query("DELETE FROM academic_timetables WHERE academic_term_id=$1")
+        .bind(context.academic_term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let draft = create(&pool, &owner, t.id, 17).await;
+    let missing = coverage::refresh(
+        &pool,
+        &owner,
+        draft.request.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: draft.request.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        missing.coverage.timetable_state,
+        LeaveCoverageTimetableState::Missing
+    );
+    sqlx::query("INSERT INTO academic_timetables(academic_year_id,academic_term_id,bell_schedule_id) SELECT academic_year_id,id,bell_schedule_id FROM academic_terms WHERE id=$1").bind(context.academic_term_id).execute(&pool).await.unwrap();
+    let read = service::detail(&pool, &owner, missing.request.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        read.coverage.timetable_state,
+        LeaveCoverageTimetableState::Missing
+    );
+    assert_eq!(read.coverage.revision, missing.coverage.revision);
+    let attempt = LeaveMutationRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: missing.request.revision,
+    };
+    let fresh = coverage::refresh(&pool, &owner, missing.request.id, attempt.clone())
+        .await
+        .unwrap();
+    assert_eq!(
+        fresh.coverage.timetable_state,
+        LeaveCoverageTimetableState::Ready
+    );
+    assert_eq!(fresh.coverage.state, LeaveCoverageState::Confirmed);
+    assert!(fresh.coverage.days.iter().all(|d| d.lessons.is_empty()));
+    assert_eq!(fresh.request.revision, missing.request.revision + 1);
+    assert_eq!(fresh.coverage.revision, missing.coverage.revision + 1);
+    let replay = coverage::refresh(&pool, &owner, fresh.request.id, attempt.clone())
+        .await
+        .unwrap();
+    assert_eq!(replay.request.revision, fresh.request.revision);
+    assert!(coverage::refresh(
+        &pool,
+        &owner,
+        fresh.request.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            ..attempt.clone()
+        }
+    )
+    .await
+    .is_err());
+    assert!(
+        coverage::refresh(
+            &pool,
+            &owner,
+            fresh.request.id,
+            LeaveMutationRequest {
+                expected_revision: fresh.request.revision,
+                ..attempt
+            }
+        )
+        .await
+        .is_err(),
+        "same key with changed revision is not a replay"
+    );
+    assert!(coverage::refresh(
+        &pool,
+        &other,
+        fresh.request.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: fresh.request.revision
+        }
+    )
+    .await
+    .is_err());
+    let unchanged = coverage::refresh(
+        &pool,
+        &owner,
+        fresh.request.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: fresh.request.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        unchanged.coverage.source_digest,
+        fresh.coverage.source_digest
+    );
+    assert_eq!(unchanged.request.revision, fresh.request.revision + 1);
+    let sent = submit(&pool, &owner, &unchanged).await;
+    assert_eq!(sent.request.status, LeaveStatus::Submitted);
+    let revisions: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM staff_leave_coverage_plan_revisions WHERE request_id=$1",
+    )
+    .bind(sent.request.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(revisions, 4);
 }

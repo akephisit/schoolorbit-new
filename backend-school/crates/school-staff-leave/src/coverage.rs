@@ -1581,46 +1581,21 @@ pub async fn confirm(
     tx.commit().await?;
     Ok(result)
 }
-async fn validate_audiences(
+async fn invalid_assignment_keys(
     connection: &mut PgConnection,
     r: &Record,
     plan: &LeaveCoveragePlan,
-) -> Result<(), AppError> {
-    let changes = plan
-        .days
-        .iter()
-        .flat_map(|d| &d.lessons)
-        .flat_map(|l| {
-            l.assignment
-                .as_ref()
-                .map(|a| {
-                    let mut changes = vec![(
-                        l.lesson.clone(),
-                        a.taught_offering_id,
-                        a.taught_activity.clone(),
-                    )];
-                    if let Some(back) = &a.return_lesson {
-                        changes.push((
-                            back.clone(),
-                            l.lesson.offering_id,
-                            if l.lesson.offering_id.is_none() {
-                                l.lesson.offering_name.clone()
-                            } else {
-                                None
-                            },
-                        ));
-                    }
-                    changes
-                })
-                .unwrap_or_default()
-        })
-        .collect::<Vec<_>>();
-    duties::validate_content_changes_on_connection(connection, &changes).await?;
+) -> Result<BTreeSet<String>, AppError> {
     let (year, term) = explicit_context(&period_from(r))?;
     let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         connection, year, term,
     )
     .await?;
+    let active = school_staff::services::coverage_candidates_on_connection(connection, None)
+        .await?
+        .into_iter()
+        .map(|s| s.0)
+        .collect::<BTreeSet<_>>();
     let groups = source
         .offerings
         .iter()
@@ -1653,45 +1628,86 @@ async fn validate_audiences(
             .map(|s| s.student_id)
             .collect::<BTreeSet<_>>()
     };
+    let allocations = plan
+        .days
+        .iter()
+        .flat_map(|d| &d.lessons)
+        .flat_map(|l| {
+            std::iter::once(l.lesson.allocation_id).chain(
+                l.assignment
+                    .as_ref()
+                    .and_then(|a| a.return_lesson.as_ref())
+                    .map(|b| b.allocation_id),
+            )
+        })
+        .collect::<Vec<_>>();
+    let joint = duties::joint_allocation_ids_on_connection(connection, &allocations).await?;
+    let mut invalid_keys = BTreeSet::new();
     for lesson in plan.days.iter().flat_map(|d| &d.lessons) {
-        if let Some(a) = &lesson.assignment {
+        let Some(a) = &lesson.assignment else {
+            continue;
+        };
+        let valid = (|| {
+            if !active.contains(&a.replacement_teacher_id) {
+                return false;
+            }
+            if joint.contains(&lesson.lesson.allocation_id)
+                && (a.taught_offering_id != lesson.lesson.offering_id
+                    || a.taught_activity.is_some())
+            {
+                return false;
+            }
+            if let Some(back) = &a.return_lesson {
+                if a.mode != LeaveCoverageMode::Reciprocal
+                    || back.teacher_id != a.replacement_teacher_id
+                    || a.return_date != Some(back.date)
+                    || a.return_lesson_key.as_deref() != Some(&back.lesson_key)
+                {
+                    return false;
+                }
+                if joint.contains(&back.allocation_id)
+                    && (lesson.lesson.offering_id != back.offering_id
+                        || lesson.lesson.offering_id.is_none())
+                {
+                    return false;
+                }
+            } else if a.mode == LeaveCoverageMode::Reciprocal {
+                return false;
+            }
             if a.taught_offering_id.is_some() && a.taught_offering_id != lesson.lesson.offering_id
                 || a.mode == LeaveCoverageMode::Reciprocal
             {
-                let (original, actual) =
-                    match (lesson.lesson.learning_group_id, a.taught_learning_group_id) {
-                        (Some(o), Some(t)) => (o, t),
-                        _ => return Err(invalid("ไม่พบกลุ่มผู้เรียนสำหรับเนื้อหาสอนจริง")),
-                    };
+                let (Some(original), Some(actual)) =
+                    (lesson.lesson.learning_group_id, a.taught_learning_group_id)
+                else {
+                    return false;
+                };
                 let pupils = audience(original, lesson.lesson.date);
                 if pupils.is_empty() || pupils != audience(actual, lesson.lesson.date) {
-                    return Err(invalid("รายชื่อนักเรียนเปลี่ยนแล้ว กรุณาจัดแผนใหม่"));
+                    return false;
                 }
                 if let Some(offering_id) = a.taught_offering_id {
-                    let offering = source
-                        .offerings
-                        .iter()
-                        .find(|o| o.id == offering_id)
-                        .ok_or_else(stale)?;
-                    let actual_group = offering
-                        .groups
-                        .iter()
-                        .find(|g| g.id == actual)
-                        .ok_or_else(stale)?;
-                    let teaching_authority = if a.mode == LeaveCoverageMode::Reciprocal {
-                        actual_group
+                    let Some(offering) = source.offerings.iter().find(|o| o.id == offering_id)
+                    else {
+                        return false;
+                    };
+                    let Some(group) = offering.groups.iter().find(|g| g.id == actual) else {
+                        return false;
+                    };
+                    let authorized = if a.mode == LeaveCoverageMode::Reciprocal {
+                        group
                             .teachers
                             .iter()
-                            .any(|t| t.teacher_id == a.replacement_teacher_id)
+                            .any(|t| t.is_active && t.teacher_id == a.replacement_teacher_id)
                     } else {
                         offering.groups.iter().any(|g| {
                             g.teachers
                                 .iter()
-                                .any(|t| t.teacher_id == a.replacement_teacher_id)
+                                .any(|t| t.is_active && t.teacher_id == a.replacement_teacher_id)
                         })
                     };
-                    if !teaching_authority {
-                        return Err(stale());
+                    if !authorized {
+                        return false;
                     }
                 }
                 if let Some(back) = &a.return_lesson {
@@ -1699,11 +1715,30 @@ async fn validate_audiences(
                         || pupils != audience(actual, back.date)
                         || pupils != audience(original, back.date)
                     {
-                        return Err(invalid("นักเรียนคาบสอนคืนไม่ตรงกับคาบเดิมแล้ว"));
+                        return false;
                     }
                 }
             }
+            true
+        })();
+        if !valid {
+            invalid_keys.insert(lesson.lesson.lesson_key.clone());
         }
+    }
+    Ok(invalid_keys)
+}
+async fn validate_audiences(
+    connection: &mut PgConnection,
+    r: &Record,
+    plan: &LeaveCoveragePlan,
+) -> Result<(), AppError> {
+    if !invalid_assignment_keys(connection, r, plan)
+        .await?
+        .is_empty()
+    {
+        return Err(invalid(
+            "ข้อมูลคาบ ผู้สอน หรือกลุ่มนักเรียนเปลี่ยนแล้ว คาบที่มีครูร่วมสอนต้องคงวิชาเดิม กรุณาจัดแผนใหม่",
+        ));
     }
     Ok(())
 }
@@ -1964,13 +1999,11 @@ pub(super) async fn lock_updated_contexts(
     }
     Ok(())
 }
-pub(super) async fn reconcile_updated_plan(
+async fn reconcile_plan_on_connection(
     connection: &mut PgConnection,
     r: &Record,
-) -> Result<(), AppError> {
-    let Some(previous) = stored_plan(connection, r.document.id).await? else {
-        return Ok(());
-    };
+    previous: Option<&LeaveCoveragePlan>,
+) -> Result<LeaveCoveragePlan, AppError> {
     let mut fresh =
         match preview_on_connection(connection, r.document.owner_id, &period_from(r)).await {
             Ok(p) => p,
@@ -1981,20 +2014,115 @@ pub(super) async fn reconcile_updated_plan(
             }
             Err(error) => return Err(error),
         };
-    fresh.revision = previous.revision + 1;
-    for lesson in fresh.days.iter_mut().flat_map(|d| &mut d.lessons) {
-        if let Some(old) = previous
-            .days
-            .iter()
-            .flat_map(|d| &d.lessons)
-            .find(|old| old.lesson == lesson.lesson)
-        {
-            lesson.assignment = old.assignment.clone();
+    fresh.revision = previous.map_or(1, |p| p.revision + 1);
+    fresh.emergency_reason = previous.and_then(|p| p.emergency_reason.clone());
+    if let Some(previous) = previous {
+        let (year, term) = explicit_context(&period_from(r))?;
+        let mut returns = BTreeMap::new();
+        for old in previous.days.iter().flat_map(|d| &d.lessons) {
+            let Some(a) = &old.assignment else { continue };
+            if let Some(back) = &a.return_lesson {
+                let key = (a.replacement_teacher_id, back.date);
+                if let std::collections::btree_map::Entry::Vacant(entry) = returns.entry(key) {
+                    entry.insert(
+                        duties::snapshot_on_connection(
+                            connection,
+                            year,
+                            term,
+                            key.0,
+                            key.1,
+                            key.1,
+                            NaiveTime::MIN,
+                            end_of_day()?,
+                        )
+                        .await?
+                        .lessons,
+                    );
+                }
+            }
+        }
+        for lesson in fresh.days.iter_mut().flat_map(|d| &mut d.lessons) {
+            if let Some(old) = previous
+                .days
+                .iter()
+                .flat_map(|d| &d.lessons)
+                .find(|old| old.lesson == lesson.lesson)
+            {
+                if let Some(a) = &old.assignment {
+                    let return_current = a.return_lesson.as_ref().is_none_or(|back| {
+                        returns
+                            .get(&(a.replacement_teacher_id, back.date))
+                            .is_some_and(|lessons| lessons.contains(back))
+                    });
+                    if return_current {
+                        lesson.assignment = Some(a.clone());
+                    }
+                }
+            }
+        }
+        let invalid = invalid_assignment_keys(connection, r, &fresh).await?;
+        for lesson in fresh.days.iter_mut().flat_map(|d| &mut d.lessons) {
+            if invalid.contains(&lesson.lesson.lesson_key) {
+                lesson.assignment = None;
+            }
         }
     }
-    persist_plan_mode(connection, r.document.id, &mut fresh, true).await
+    fresh.state = if complete(&fresh) {
+        LeaveCoverageState::AwaitingConfirmation
+    } else if fresh.emergency_reason.is_some() {
+        LeaveCoverageState::Emergency
+    } else {
+        LeaveCoverageState::Incomplete
+    };
+    persist_plan_mode(connection, r.document.id, &mut fresh, true).await?;
+    Ok(fresh)
 }
-
+pub(super) async fn reconcile_updated_plan(
+    connection: &mut PgConnection,
+    r: &Record,
+) -> Result<(), AppError> {
+    if let Some(previous) = stored_plan(connection, r.document.id).await? {
+        reconcile_plan_on_connection(connection, r, Some(&previous)).await?;
+    }
+    Ok(())
+}
+/// Explicit optimistic write; reads never rewrite accepted plans or confirmations.
+pub async fn refresh(
+    pool: &PgPool,
+    actor: &ActorContext,
+    id: Uuid,
+    input: LeaveMutationRequest,
+) -> Result<LeaveRequestDetail, AppError> {
+    settings_access(actor)?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.coverage.refresh").await?;
+    lock_request_context(&mut tx, id).await?;
+    if claim(
+        &mut tx,
+        actor.user_id,
+        input.request_id,
+        "coverage_refresh",
+        id,
+        &(id, &input),
+    )
+    .await?
+    .is_some()
+    {
+        tx.commit().await?;
+        return super::queries::detail(pool, actor, id).await;
+    }
+    let mut r = editable_plan(&mut tx, actor, id, input.expected_revision).await?;
+    let previous = stored_plan(&mut tx, id).await?;
+    let plan = reconcile_plan_on_connection(&mut tx, &r, previous.as_ref()).await?;
+    r.document.revision += 1;
+    r.content_hash = process::payload_hash(&(&r.document, &r.evidence_file_ids, &plan.plan_hash))?;
+    store(&mut tx, &r).await?;
+    history(&mut tx, actor, &r, "coverage_refreshed", None, None, None).await?;
+    // Emergency absence reservations remain untouched. Complete-plan Save owns
+    // reservation replacement and Workflow start under its existing guards.
+    tx.commit().await?;
+    super::queries::detail(pool, actor, id).await
+}
 #[cfg(test)]
 mod fingerprint_tests {
     use super::*;

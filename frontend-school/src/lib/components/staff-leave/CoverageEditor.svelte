@@ -4,6 +4,7 @@
 		getLeaveCoverageCandidates,
 		getLeaveCoverageReturnLessons,
 		saveLeaveCoverage,
+		refreshLeaveCoverage,
 		type LeaveRequestDetail,
 		type LeaveCoverageSelection,
 		type LeaveCoverageCandidate,
@@ -54,6 +55,8 @@
 	let selected = $state<string[]>([]),
 		dirty = $state(false),
 		pending = $state(false),
+		refreshing = $state(false),
+		refreshError = $state(''),
 		error = $state('');
 	let candidates = $state<LeaveCoverageCandidates | null>(null),
 		candidateLoading = $state(false),
@@ -77,10 +80,12 @@
 	let disposed = false;
 	const candidateRequest = new LatestRequest(),
 		returnRequest = new LatestRequest(),
-		intent = new LeaveMutationIntent();
+		intent = new LeaveMutationIntent(),
+		refreshIntent = new LeaveMutationIntent();
 	const stale = $derived(
 		baseRevision !== detail.request.revision || sourceDigest !== plan.sourceDigest
 	);
+	const busy = $derived(pending || refreshing);
 	const allowed = $derived(!readonly && (detail.canEdit || plan.canManage));
 	const counts = $derived(coverageCounts(lessons, assignments));
 	$effect.pre(() => {
@@ -125,7 +130,7 @@
 	}
 	async function findCandidates(event?: SubmitEvent) {
 		event?.preventDefault();
-		if (!allowed || !selected.length || !sourceDigest || stale || pending) return;
+		if (!allowed || !selected.length || !sourceDigest || stale || busy) return;
 		const ticket = candidateRequest.begin();
 		candidateLoading = true;
 		candidateError = '';
@@ -159,6 +164,7 @@
 		}
 	}
 	function choose(candidate: LeaveCoverageCandidate) {
+		if (!allowed || busy || disposed) return;
 		teacher = candidate;
 		mode = 'substitution';
 		taughtOfferingId = '';
@@ -170,7 +176,16 @@
 		returnError = '';
 	}
 	async function findReturnLessons() {
-		if (!teacher || !sourceDigest || selected.length !== 1 || !returnDate || stale) return;
+		if (
+			!allowed ||
+			busy ||
+			!teacher ||
+			!sourceDigest ||
+			selected.length !== 1 ||
+			!returnDate ||
+			stale
+		)
+			return;
 		const ticket = returnRequest.begin();
 		returnLoading = true;
 		returnError = '';
@@ -197,7 +212,7 @@
 		}
 	}
 	function apply() {
-		if (!teacher || !allowed || stale || pending) return;
+		if (!teacher || !allowed || stale || busy) return;
 		const selectedTeacher = teacher;
 		if (!taughtOfferingId && !taughtActivity.trim()) {
 			candidateError = 'เลือกวิชาที่สอนจริง หรือระบุกิจกรรม';
@@ -233,7 +248,7 @@
 		candidateError = '';
 	}
 	async function save() {
-		if (!allowed || stale || !sourceDigest || pending) return;
+		if (!allowed || stale || !sourceDigest || busy) return;
 		pending = true;
 		error = '';
 		const basis = { expectedRevision: baseRevision, sourceDigest, assignments };
@@ -242,30 +257,49 @@
 				requestId: intent.for(basis),
 				...basis
 			});
-			if (!disposed) {
-				dirty = false;
-				ondirty?.(false);
-				baseRevision = result.request.revision;
-				sourceDigest = result.coverage.sourceDigest;
-				assignments = coverageSelections(result.coverage);
-				clearPicker();
-				onsaved?.(result);
-			}
+			if (!disposed) acceptAuthoritative(result);
 		} catch (cause) {
 			if (!disposed) error = cause instanceof Error ? cause.message : 'บันทึกแผนไม่สำเร็จ';
 		} finally {
 			if (!disposed) pending = false;
 		}
 	}
-	function acceptLatest() {
-		baseRevision = detail.request.revision;
-		sourceDigest = plan.sourceDigest;
-		assignments = assignments.filter((value) =>
-			lessons.some((lesson) => lesson.lessonKey === value.lessonKey)
-		);
+	function acceptAuthoritative(result: LeaveRequestDetail) {
+		dirty = false;
+		ondirty?.(false);
+		baseRevision = result.request.revision;
+		sourceDigest = result.coverage.sourceDigest;
+		assignments = coverageSelections(result.coverage);
+		selected = [];
+		choiceLabels = {};
 		clearPicker();
 		error = '';
+		refreshError = '';
+		onsaved?.(result);
 	}
+	async function refreshCoverage() {
+		if (!allowed || busy || disposed) return;
+		const basis = { expectedRevision: detail.request.revision };
+		refreshing = true;
+		refreshError = '';
+		candidateRequest.abort();
+		returnRequest.abort();
+		candidateLoading = false;
+		returnLoading = false;
+		try {
+			const result = await refreshLeaveCoverage(detail.request.id, {
+				requestId: refreshIntent.for(basis),
+				...basis
+			});
+			if (!disposed) acceptAuthoritative(result);
+		} catch (cause) {
+			if (!disposed)
+				refreshError = cause instanceof Error ? cause.message : 'ปรับคาบตามตารางล่าสุดไม่สำเร็จ';
+		} finally {
+			if (!disposed) refreshing = false;
+		}
+	}
+
 	function displayAssignment(key: string) {
 		return assignments.find((value) => value.lessonKey === key);
 	}
@@ -283,6 +317,29 @@
 		</div>
 		{#if dirty}<Badge variant="outline">มีแผนที่ยังไม่บันทึก</Badge>{/if}
 	</div>
+	{#if allowed}<section
+			class="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between"
+			aria-label="ปรับคาบจากตารางล่าสุด"
+		>
+			<p class="min-w-0 flex-1 text-sm text-muted-foreground">
+				ใช้แผนที่บันทึกไว้กับคาบล่าสุด และแทนที่ตัวเลือกคาบที่ยังไม่บันทึก
+			</p>
+			<LoadingButton
+				variant="outline"
+				loading={refreshing}
+				loadingLabel="กำลังปรับคาบ..."
+				disabled={busy}
+				onclick={refreshCoverage}>ปรับคาบตามตารางล่าสุด</LoadingButton
+			>
+		</section>{/if}
+	{#if refreshError}<PageState
+			variant="error"
+			title="ปรับคาบตามตารางล่าสุดไม่สำเร็จ"
+			description={refreshError}
+			actionLabel={onrefresh ? 'ตรวจสอบคำขอล่าสุด' : undefined}
+			onaction={onrefresh}
+		/>{/if}
+
 	{#if plan.blockingReason}<PageState
 			variant="error"
 			title="ยังจัดคาบสอนไม่ได้"
@@ -302,15 +359,13 @@
 	{#if stale}<PageState
 			variant="error"
 			title="ข้อมูลคำขอหรือตารางมีการเปลี่ยนแปลง"
-			description="ตรวจสอบคาบล่าสุดก่อนใช้แผนที่แก้ไข"
-			actionLabel="ใช้ข้อมูลล่าสุดและเก็บแผนที่แก้ไข"
-			onaction={acceptLatest}
+			description="แผนที่แก้ไขยังไม่ผ่านการตรวจตารางล่าสุด ใช้การปรับคาบด้านบนเพื่อเริ่มจากแผนที่บันทึกไว้"
 		/>{/if}
 	{#if error}<PageState
 			variant="error"
 			title="บันทึกแผนไม่สำเร็จ"
 			description={error}
-			actionLabel={onrefresh ? 'ตรวจสอบข้อมูลล่าสุด' : undefined}
+			actionLabel={onrefresh ? 'ตรวจสอบคำขอล่าสุด' : undefined}
 			onaction={onrefresh}
 		/>{/if}
 	<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]">
@@ -320,7 +375,7 @@
 					<Button
 						variant="outline"
 						size="sm"
-						disabled={pending || stale}
+						disabled={busy || stale}
 						onclick={() => {
 							selected =
 								selected.length === lessons.length ? [] : lessons.map((lesson) => lesson.lessonKey);
@@ -352,7 +407,7 @@
 											id={`coverage-${lesson.lessonKey}`}
 											aria-label={`เลือก ${day.date} ${lesson.periodName}`}
 											checked={selected.includes(lesson.lessonKey)}
-											disabled={pending || stale || !sourceDigest}
+											disabled={busy || stale || !sourceDigest}
 											onCheckedChange={(value) => toggle(lesson.lessonKey, value)}
 										/>{/if}
 									<div class="min-w-0 flex-1">
@@ -396,7 +451,7 @@
 										{#if allowed}<Button
 												variant="ghost"
 												size="sm"
-												disabled={pending || stale}
+												disabled={busy || stale}
 												onclick={() => {
 													assignments = assignments.filter(
 														(value) => value.lessonKey !== lesson.lessonKey
@@ -420,7 +475,7 @@
 						<Label for="coverage-teacher-search">ชื่อครู</Label><Input
 							id="coverage-teacher-search"
 							bind:value={search}
-							disabled={pending}
+							disabled={busy}
 							placeholder="ค้นหาชื่อครู"
 						/>
 					</div>
@@ -435,7 +490,7 @@
 								label: value.name
 							}))
 						]}
-						disabled={pending || candidateLoading}
+						disabled={busy || candidateLoading}
 					/>
 					<Choice
 						id="coverage-grade"
@@ -448,34 +503,34 @@
 								label: value.name
 							}))
 						]}
-						disabled={pending || candidateLoading}
+						disabled={busy || candidateLoading}
 					/>
 					<div class="flex items-center gap-2">
 						<Checkbox
 							id="coverage-same-subject"
 							bind:checked={sameSubjectGroupOnly}
-							disabled={pending || candidateLoading}
+							disabled={busy || candidateLoading}
 						/><Label for="coverage-same-subject">เฉพาะกลุ่มสาระเดียวกัน</Label>
 					</div>
 					<div class="flex items-center gap-2">
 						<Checkbox
 							id="coverage-same-students"
 							bind:checked={sameStudentGroupOnly}
-							disabled={pending || candidateLoading}
+							disabled={busy || candidateLoading}
 						/><Label for="coverage-same-students">สอนนักเรียนกลุ่มเดียวกัน/ห้องเดียวกัน</Label>
 					</div>
 					<div class="flex items-center gap-2">
 						<Checkbox
 							id="coverage-same-grade"
 							bind:checked={sameGradeOnly}
-							disabled={pending || candidateLoading}
+							disabled={busy || candidateLoading}
 						/><Label for="coverage-same-grade">สอนระดับชั้นเดียวกัน</Label>
 					</div>
 
 					<LoadingButton
 						type="submit"
 						loading={candidateLoading}
-						disabled={!selected.length || !sourceDigest || stale || pending}
+						disabled={!selected.length || !sourceDigest || stale || busy}
 						>ค้นหาครูที่ว่างทุกคาบ</LoadingButton
 					>
 				</form>
@@ -495,6 +550,7 @@
 									<Button
 										class="h-auto w-full justify-start whitespace-normal text-left"
 										variant={teacher?.teacherId === candidate.teacherId ? 'secondary' : 'outline'}
+										disabled={busy}
 										onclick={() => choose(candidate)}
 										><span class="min-w-0"
 											><span class="block break-words font-medium">{candidate.displayName}</span
@@ -517,6 +573,7 @@
 						<h4 class="font-medium">{teacher.displayName}</h4>
 						<Choice
 							id="coverage-mode"
+							disabled={busy}
 							label="วิธีจัดคาบ"
 							value={mode}
 							onchange={(value) => {
@@ -535,6 +592,7 @@
 						{#if mode === 'substitution'}
 							<Choice
 								id="coverage-taught-offering"
+								disabled={busy}
 								label="วิชาที่สอนจริง"
 								bind:value={taughtOfferingId}
 								onchange={() => {
@@ -552,6 +610,7 @@
 								<Label for="coverage-activity">กิจกรรมที่สอนจริง / กิจกรรมเสริม (แทนวิชา)</Label
 								><Textarea
 									id="coverage-activity"
+									disabled={busy}
 									bind:value={taughtActivity}
 									maxlength={200}
 									oninput={(event) => {
@@ -569,6 +628,7 @@
 								<div class="space-y-2">
 									<Label for="coverage-return-date">วันที่สอนคืน</Label><DatePicker
 										id="coverage-return-date"
+										disabled={busy}
 										bind:value={returnDate}
 										onValueChange={() => {
 											returnRequest.abort();
@@ -579,7 +639,7 @@
 								</div>
 								<LoadingButton
 									loading={returnLoading}
-									disabled={!returnDate}
+									disabled={busy || !returnDate}
 									onclick={findReturnLessons}>ค้นหาคาบสอนคืน</LoadingButton
 								>{#if returnError}<PageState
 										variant="error"
@@ -587,6 +647,7 @@
 										description={returnError}
 									/>{/if}{#if returnLessons.length}<Choice
 										id="coverage-return-lesson"
+										disabled={busy}
 										label="คาบสอนคืน"
 										bind:value={returnLessonKey}
 										onchange={() => {
@@ -614,7 +675,7 @@
 								วิชาที่สอนจริง: {returnLessons.find((value) => value.lessonKey === returnLessonKey)
 									?.offeringName ?? 'กิจกรรมตามตาราง'} · อ้างอิงจากคาบที่แลก
 							</p>{/if}
-						<Button disabled={pending || stale} onclick={apply}
+						<Button disabled={busy || stale} onclick={apply}
 							>ใช้กับ {selected.length} คาบที่เลือก</Button
 						>
 					</div>{/if}
@@ -626,8 +687,10 @@
 			<p class="text-sm text-muted-foreground">
 				บันทึกแผนที่ยังไม่ครบได้ เมื่อเปลี่ยนรายละเอียดคาบ ระบบจะขอให้ครูยืนยันใหม่ก่อนพิจารณา
 			</p>
-			<LoadingButton loading={pending} disabled={!dirty || stale || !sourceDigest} onclick={save}
-				>บันทึกแผนคาบสอน</LoadingButton
+			<LoadingButton
+				loading={pending}
+				disabled={busy || !dirty || stale || !sourceDigest}
+				onclick={save}>บันทึกแผนคาบสอน</LoadingButton
 			>
 		</div>{/if}
 </section>

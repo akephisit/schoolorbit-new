@@ -519,3 +519,245 @@ test('editing saved exit date time and valid academic context consumes reconcile
 	await page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true }).click();
 	await expect(page.getByTestId('leave-detail')).toContainText('รอพิจารณา');
 });
+
+function savedConfirmedCoverage() {
+	const plan = coveragePlan();
+	plan.days = [{ date: '2026-10-19', lessons: [plan.days[0].lessons[0]] }];
+	plan.days[0].lessons[0].assignment = {
+		id: id(951),
+		replacementTeacherId: firstStaff,
+		replacementTeacherName: 'ครูภาษาอังกฤษ ข้ามกลุ่มสาระ',
+		mode: 'substitution',
+		taughtOfferingId: englishOfferingId,
+		taughtOfferingName: 'ภาษาอังกฤษ ม.2',
+		taughtActivity: null,
+		returnLessonKey: null,
+		returnDate: null,
+		returnLesson: null,
+		consent: 'confirmed',
+		confirmedAt: '2026-10-18T03:00:00Z',
+		confirmationId: id(981),
+		confirmationPlanRevision: 1,
+		taughtLearningGroupId: id(871)
+	};
+	plan.state = 'confirmed';
+	return plan;
+}
+
+test('explicit coverage refresh replaces stale same-key choices, preserves detail text and retries exact intent', async ({
+	page
+}, testInfo) => {
+	await page.setViewportSize({ width: 390, height: 900 });
+	await page.addInitScript(() =>
+		localStorage.setItem('ui-preferences', JSON.stringify({ theme: 'dark' }))
+	);
+	const stored = savedConfirmedCoverage();
+	const second = {
+		...teachingLesson(2),
+		assignment: { ...stored.days[0].lessons[0].assignment!, id: id(952), confirmationId: id(982) }
+	};
+	stored.days[0].lessons.push(second);
+	const fresh = structuredClone(stored);
+	fresh.sourceDigest = 'latest-timetable-digest';
+	fresh.days[0].lessons[0] = {
+		...fresh.days[0].lessons[0],
+		startTime: '11:00:00',
+		endTime: '11:50:00',
+		sourceRevision: 2,
+		assignment: null
+	};
+	fresh.state = 'incomplete';
+	const api = await mockTeachingCoverage(page, {
+		plan: stored,
+		refreshedCoverage: fresh,
+		requireCoverageRefresh: true,
+		failRefresh: true
+	});
+	const originalReason = api.detail().request.reason;
+	await page.goto(editPath);
+	await page
+		.getByTestId('leave-coverage-lesson')
+		.nth(1)
+		.getByRole('button', { name: 'นำครูออกจากคาบนี้', exact: true })
+		.click();
+	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
+	await expect(page.getByTestId('leave-coverage-editor')).toContainText('ตารางสอนเปลี่ยน');
+	await page.getByRole('button', { name: 'ตรวจสอบคำขอล่าสุด', exact: true }).click();
+	await expect
+		.poll(() => api.reads.filter((path) => path === `/api/staff-leave/requests/${leaveId}`).length)
+		.toBe(2);
+	expect(api.detail().coverage.sourceDigest).toBe('timetable-digest');
+	await expect(page.getByTestId('leave-coverage-editor')).toContainText('เลือกครู 1/2');
+	await page.getByRole('button', { name: '1. รายละเอียด', exact: true }).click();
+	await page.getByLabel('เหตุผล *', { exact: true }).fill('ข้อความคำขอที่ยังไม่บันทึก');
+	await page.getByRole('button', { name: '2. จัดคาบสอน', exact: true }).click();
+	await expect(page.getByRole('region', { name: 'ปรับคาบจากตารางล่าสุด' })).toContainText(
+		'แทนที่ตัวเลือกคาบที่ยังไม่บันทึก'
+	);
+	await page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true }).click();
+	await expect(page.getByTestId('leave-coverage-editor')).toContainText('ปรับแผนยังไม่พร้อม');
+	await expect(page.getByTestId('leave-coverage-editor')).toContainText('เลือกครู 1/2');
+	await expect(page.getByTestId('leave-coverage-editor')).toContainText('มีแผนที่ยังไม่บันทึก');
+	await page
+		.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true })
+		.scrollIntoViewIfNeeded();
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+	await page.screenshot({
+		path: testInfo.outputPath('coverage-recovery-mobile-dark.png'),
+		fullPage: true
+	});
+	await page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true }).click();
+	const rows = page.getByTestId('leave-coverage-lesson');
+	await expect(rows.nth(0)).toContainText('11:00–11:50');
+	await expect(rows.nth(0)).toContainText('ยังไม่ได้เลือกครู');
+	await expect(rows.nth(1)).toContainText('ตอบรับแล้ว');
+	await expect(page.getByText('มีแผนที่ยังไม่บันทึก', { exact: true })).toHaveCount(0);
+	const refreshes = api.calls.filter((call) => call.path.endsWith('/coverage/refresh'));
+	expect(refreshes).toHaveLength(2);
+	expect(refreshes[0].body).toEqual(refreshes[1].body);
+	expect(Object.keys(refreshes[0].body).sort()).toEqual(['expectedRevision', 'requestId']);
+	await page.getByRole('button', { name: '1. รายละเอียด', exact: true }).click();
+	await expect(page.getByLabel('เหตุผล *', { exact: true })).toHaveValue(
+		'ข้อความคำขอที่ยังไม่บันทึก'
+	);
+	await expect(
+		page.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง', exact: true })
+	).toHaveCount(0);
+	await page.getByLabel('เหตุผล *', { exact: true }).fill(originalReason);
+	await page.getByRole('button', { name: '2. จัดคาบสอน', exact: true }).click();
+	await page.getByRole('checkbox', { name: 'เลือก 2026-10-19 คาบ 1', exact: true }).check();
+	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
+	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
+	await page.locator('#coverage-activity').fill('กิจกรรมหลังปรับตาราง');
+	await page.getByRole('button', { name: 'ใช้กับ 1 คาบที่เลือก', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
+	expect(
+		api.calls.filter((call) => call.path.endsWith('/coverage/candidates')).at(-1)!.body.sourceDigest
+	).toBe('latest-timetable-digest');
+	expect(
+		api.calls.some(
+			(call) =>
+				call.path === `/api/staff-leave/requests/${leaveId}` ||
+				call.path.endsWith('/coverage/preview')
+		)
+	).toBe(false);
+	await page.getByRole('button', { name: 'ตรวจสอบคำขอ', exact: true }).click();
+	await page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true }).click();
+	await expect(page.getByTestId('leave-detail')).toContainText('รอพิจารณา');
+});
+
+for (const state of ['zero', 'unchanged'] as const)
+	test(`explicit coverage refresh persists ${state} plan without dirty resave`, async ({
+		page
+	}) => {
+		const stored = savedConfirmedCoverage();
+		if (state === 'zero') stored.days = [];
+		const fresh = structuredClone(stored);
+		fresh.sourceDigest = `latest-${state}-digest`;
+		const api = await mockTeachingCoverage(page, {
+			plan: stored,
+			status: state === 'zero' ? 'returned' : 'draft',
+			refreshedCoverage: fresh,
+			requireCoverageRefresh: true
+		});
+		await page.goto(editPath);
+		await expect(page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true })).toBeDisabled();
+		await expect(
+			page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true })
+		).toBeEnabled();
+		await page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true }).click();
+		await expect.poll(() => api.detail().request.revision).toBe(2);
+		if (state === 'unchanged') {
+			await expect(page.getByTestId('leave-coverage-editor')).toContainText('ตอบรับ 1/1');
+			expect(api.detail().coverage.days[0].lessons[0].assignment?.confirmationId).toBe(id(981));
+		} else
+			await expect(page.getByText('ไม่มีคาบสอนที่ได้รับผลกระทบ', { exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true })).toBeDisabled();
+		await page.getByRole('button', { name: 'ตรวจสอบคำขอ', exact: true }).click();
+		await page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true }).click();
+		await expect(page.getByTestId('leave-detail')).toContainText('รอพิจารณา');
+		expect(api.calls.filter((call) => call.path.endsWith('/coverage/refresh'))).toHaveLength(1);
+		expect(
+			api.calls.some(
+				(call) =>
+					call.path.endsWith('/coverage') || call.path === `/api/staff-leave/requests/${leaveId}`
+			)
+		).toBe(false);
+	});
+
+test('explicit coverage refresh recovers missing timetable with null old digest into ready zero lessons', async ({
+	page
+}) => {
+	const stored = coveragePlan();
+	stored.days = [];
+	stored.sourceDigest = null;
+	stored.timetableState = 'missing';
+	const fresh = structuredClone(stored);
+	fresh.sourceDigest = 'new-ready-timetable';
+	fresh.timetableState = 'ready';
+	fresh.state = 'confirmed';
+	const api = await mockTeachingCoverage(page, {
+		plan: stored,
+		refreshedCoverage: fresh,
+		requireCoverageRefresh: true
+	});
+	await page.goto(editPath);
+	await expect(page.getByTestId('leave-coverage-editor')).toContainText('ยังไม่มีตารางสอน');
+	await page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true }).click();
+	await expect(page.getByText('ไม่มีคาบสอนที่ได้รับผลกระทบ', { exact: true })).toBeVisible();
+	await expect(page.getByTestId('leave-coverage-editor')).not.toContainText('ยังไม่มีตารางสอน');
+	await page.getByRole('button', { name: 'ตรวจสอบคำขอ', exact: true }).click();
+	await page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true }).click();
+	await expect(page.getByTestId('leave-detail')).toContainText('รอพิจารณา');
+	expect(api.calls.some((call) => call.path.endsWith('/coverage/preview'))).toBe(false);
+});
+
+test('explicit coverage refresh pending blocks repeated plan work and ignores response after route disposal', async ({
+	page
+}) => {
+	const fresh = coveragePlan();
+	fresh.sourceDigest = 'new-after-navigation';
+	const api = await mockTeachingCoverage(page, {
+		refreshedCoverage: fresh,
+		requireCoverageRefresh: true,
+		holdRefresh: true
+	});
+	await page.goto(editPath);
+	await page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'กำลังปรับคาบ...', exact: true })).toBeDisabled();
+	await expect(page.getByRole('button', { name: 'เลือกทุกคาบ', exact: true })).toBeDisabled();
+	expect(api.calls.filter((call) => call.path.endsWith('/coverage/refresh'))).toHaveLength(1);
+	await page.getByRole('link', { name: 'กลับรายการคำขอ', exact: true }).click();
+	await expect(page.getByTestId('leave-requests')).toBeVisible();
+	const response = page.waitForResponse((response) =>
+		new URL(response.url()).pathname.endsWith('/coverage/refresh')
+	);
+	api.releaseRefresh();
+	await response;
+	await expect(page).toHaveURL(/\/staff\/leave\?status=draft&offset=20/);
+	await expect(page.getByTestId('leave-coverage-editor')).toHaveCount(0);
+	await expect(page.getByTestId('leave-requests')).toBeVisible();
+});
+
+test('editable owner detail links to explicit recovery while ordinary submitted detail has no mutation', async ({
+	page
+}) => {
+	const api = await mockTeachingCoverage(page);
+	await page.goto(`/staff/leave/requests/${leaveId}`);
+	await page.getByRole('link', { name: 'จัดคาบสอนตามตารางล่าสุด', exact: true }).click();
+	await expect(page).toHaveURL(/step=coverage/);
+	await expect(
+		page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true })
+	).toBeVisible();
+	expect(api.calls.filter((call) => call.path.endsWith('/coverage/refresh'))).toHaveLength(0);
+	api.detail().canEdit = false;
+	api.detail().canSubmit = false;
+	api.detail().request.status = 'submitted';
+	await page.goto(`/staff/leave/requests/${leaveId}`);
+	await expect(
+		page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true })
+	).toHaveCount(0);
+	await expect(
+		page.getByRole('link', { name: 'จัดคาบสอนตามตารางล่าสุด', exact: true })
+	).toHaveCount(0);
+});

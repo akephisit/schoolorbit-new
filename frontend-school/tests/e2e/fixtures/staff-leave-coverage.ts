@@ -71,13 +71,17 @@ export async function mockTeachingCoverage(
 	page: Page,
 	options: {
 		plan?: LeaveCoveragePlan;
-		status?: 'draft' | 'submitted';
+		status?: 'draft' | 'returned' | 'submitted';
 		assigned?: boolean;
 		failSave?: boolean;
 		missingBoundary?: boolean;
 		manager?: boolean;
 		updatedCoverage?: LeaveCoveragePlan;
 		kind?: LeaveKind;
+		refreshedCoverage?: LeaveCoveragePlan;
+		requireCoverageRefresh?: boolean;
+		failRefresh?: boolean;
+		holdRefresh?: boolean;
 	} = {}
 ) {
 	const plan = options.plan ?? coveragePlan();
@@ -143,7 +147,13 @@ export async function mockTeachingCoverage(
 			})
 	);
 	const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
-	let failed = false;
+	let failed = false,
+		failedRefresh = false,
+		refreshed = false;
+	let releaseRefresh = () => {};
+	const refreshGate = new Promise<void>((resolve) => (releaseRefresh = resolve));
+	const refreshReceipts = new Set<string>();
+	const reads: string[] = [];
 	const settings: LeaveCoverageSettings = {
 		revision: 1,
 		halfDayBoundary: options.missingBoundary ? null : '11:30:00',
@@ -216,6 +226,7 @@ export async function mockTeachingCoverage(
 				method = request.method();
 			const body = method === 'GET' ? {} : request.postDataJSON();
 			if (method !== 'GET') calls.push({ path, body });
+			else reads.push(path);
 			if (path.endsWith('/coverage/settings')) {
 				if (method === 'PUT') {
 					settings.revision++;
@@ -225,6 +236,38 @@ export async function mockTeachingCoverage(
 			}
 			if (path.endsWith('/coverage/assigned'))
 				return reply(route, { items: options.assigned ? [task()] : [], hasMore: false });
+
+			if (path.endsWith('/coverage/refresh')) {
+				if (options.holdRefresh) await refreshGate;
+				if (options.failRefresh && !failedRefresh) {
+					failedRefresh = true;
+					return reply(route, 'ปรับแผนยังไม่พร้อม', 503);
+				}
+				if (refreshReceipts.has(body.requestId)) return reply(route, detail);
+				if (body.expectedRevision !== detail.request.revision)
+					return reply(route, 'คำขอมีการเปลี่ยนแปลง', 409);
+				const previousRevision = detail.coverage.revision;
+				detail.coverage = structuredClone(options.refreshedCoverage ?? detail.coverage);
+				detail.coverage.revision = previousRevision + 1;
+				detail.coverage.planHash = `refreshed-plan-${detail.coverage.revision}`;
+				detail.request.revision++;
+				refreshed = true;
+				refreshReceipts.add(body.requestId);
+				return reply(route, detail);
+			}
+			const planOperation =
+				path.endsWith('/coverage/candidates') ||
+				path.endsWith('/coverage/return-lessons') ||
+				(path.endsWith('/coverage') && method === 'PUT') ||
+				path.endsWith('/submit');
+			if (options.requireCoverageRefresh && planOperation) {
+				if (!refreshed) return reply(route, 'ตารางสอนเปลี่ยน กรุณาปรับคาบตามตารางล่าสุด', 409);
+				if (
+					body.expectedRevision !== detail.request.revision ||
+					('sourceDigest' in body && body.sourceDigest !== detail.coverage.sourceDigest)
+				)
+					return reply(route, 'ยังใช้แผนตารางฉบับเก่า', 409);
+			}
 			if (path.endsWith('/coverage/candidates')) {
 				let candidates = teachers.filter(
 					(teacher) =>
@@ -347,5 +390,15 @@ export async function mockTeachingCoverage(
 			return route.fallback();
 		}
 	);
-	return { api, calls, settings, detail: () => detail, teachers, returnLesson, task };
+	return {
+		api,
+		calls,
+		reads,
+		settings,
+		detail: () => detail,
+		teachers,
+		returnLesson,
+		task,
+		releaseRefresh
+	};
 }

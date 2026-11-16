@@ -266,6 +266,15 @@ export async function saveLeaveCoverage(
 		'บันทึกแผนคาบสอนไม่สำเร็จ'
 	);
 }
+export async function refreshLeaveCoverage(
+	id: string,
+	input: LeaveMutationRequest
+): Promise<LeaveRequestDetail> {
+	return requireApiData(
+		await apiClient.post<LeaveRequestDetail>(`${base}/requests/${id}/coverage/refresh`, input),
+		'ปรับคาบตามตารางล่าสุดไม่สำเร็จ'
+	);
+}
 export async function replanLeaveCoverage(
 	id: string,
 	input: LeaveMutationRequest

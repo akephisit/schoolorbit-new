@@ -108,6 +108,18 @@ pub async fn replan(
     Ok(Json(ApiResponse::ok(result)))
 }
 
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/staff-leave/requests/{id}/coverage/refresh",operation_id="refreshStaffLeaveCoverage",tag="staff-leave",params(("id"=Uuid,Path,description="Leave request identity")),request_body=LeaveMutationRequest,responses((status=200,description="Reconciled current coverage plan",body=ApiResponse<LeaveRequestDetail>),(status=400,description="Malformed request",body=ApiErrorResponse),(status=422,description="Invalid coverage context",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=409,description="Stale request or closed context",body=ApiErrorResponse))))]
+pub async fn refresh(
+    State(state): State<LeaveHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<LeaveMutationRequest>,
+) -> Result<Json<ApiResponse<LeaveRequestDetail>>, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let result = coverage::refresh(&context.tenant.pool, &context.actor, id, input).await?;
+    Ok(Json(ApiResponse::ok(result)))
+}
+
 #[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/staff-leave/coverage/assigned",operation_id="listAssignedStaffLeaveCoverage",tag="staff-leave",params(LeaveCoverageTaskQuery),responses((status=200,description="Teaching coverage result",body=ApiResponse<LeaveCoverageTaskPage>),(status=400,description="Malformed request",body=ApiErrorResponse),(status=422,description="Invalid coverage selection",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=409,description="Stale coverage or conflicting duty",body=ApiErrorResponse))))]
 pub async fn assigned(
     State(state): State<LeaveHttpState>,
@@ -148,6 +160,10 @@ pub fn routes() -> Router<LeaveHttpState> {
         .route(
             "/staff-leave/requests/{id}/coverage/replan",
             axum::routing::post(replan),
+        )
+        .route(
+            "/staff-leave/requests/{id}/coverage/refresh",
+            axum::routing::post(refresh),
         )
         .route(
             "/staff-leave/coverage/assigned",
