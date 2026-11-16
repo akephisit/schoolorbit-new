@@ -146,7 +146,7 @@ export async function updateLeaveRequest(
 
 export async function submitLeaveRequest(
 	id: string,
-	input: LeaveMutationRequest
+	input: SubmitLeaveRequest
 ): Promise<LeaveRequestDetail> {
 	return requireApiData(
 		await apiClient.post<LeaveRequestDetail>(`${base}/requests/${id}/submit`, input),
@@ -180,5 +180,114 @@ export async function getLeaveUsage(
 	return requireApiData(
 		await apiClient.get<LeaveUsageReport>(`${base}/usage`, options),
 		'โหลดสรุปการใช้สิทธิ์ไม่สำเร็จ'
+	);
+}
+
+export type LeaveCoverageSettings = Schemas['LeaveCoverageSettings'];
+export type SaveLeaveCoverageSettingsRequest = Schemas['SaveLeaveCoverageSettingsRequest'];
+export type PreviewLeaveCoverageRequest = Schemas['PreviewLeaveCoverageRequest'];
+export type LeaveCoveragePlan = Schemas['LeaveCoveragePlan'];
+export type LeaveCoverageLesson = Schemas['LeaveCoverageLesson'];
+export type LeaveCoverageSelection = Schemas['LeaveCoverageSelection'];
+export type LeaveCoverageCandidate = Schemas['LeaveCoverageCandidate'];
+export type LeaveCoverageCandidates = Schemas['LeaveCoverageCandidates'];
+export type LeaveCoverageCandidatesRequest = Schemas['LeaveCoverageCandidatesRequest'];
+export type LeaveCoverageReturnLessonsRequest = Schemas['LeaveCoverageReturnLessonsRequest'];
+export type LeaveCoverageReturnLessons = Schemas['LeaveCoverageReturnLessons'];
+export type SaveLeaveCoverageRequest = Schemas['SaveLeaveCoverageRequest'];
+export type ConfirmLeaveCoverageRequest = Schemas['ConfirmLeaveCoverageRequest'];
+export type LeaveCoverageTask = Schemas['LeaveCoverageTask'];
+export type LeaveCoverageTaskPage = Schemas['LeaveCoverageTaskPage'];
+export type SubmitLeaveRequest = Schemas['SubmitLeaveRequest'];
+export type DatedTeachingLesson = Schemas['DatedTeachingLesson'];
+export type LeaveCoverageTaskQuery = NonNullable<
+	operations['listAssignedStaffLeaveCoverage']['parameters']['query']
+>;
+export async function getLeaveCoverageSettings(
+	options: ApiRequestOptions = {}
+): Promise<LeaveCoverageSettings> {
+	return requireApiData(
+		await apiClient.get<LeaveCoverageSettings>(`${base}/coverage/settings`, options),
+		'โหลดบริบทและเวลาครึ่งวันไม่สำเร็จ'
+	);
+}
+export async function saveLeaveCoverageSettings(
+	input: SaveLeaveCoverageSettingsRequest
+): Promise<LeaveCoverageSettings> {
+	return requireApiData(
+		await apiClient.put<LeaveCoverageSettings>(`${base}/coverage/settings`, input),
+		'บันทึกเวลาครึ่งวันไม่สำเร็จ'
+	);
+}
+export async function previewLeaveCoverage(
+	input: PreviewLeaveCoverageRequest,
+	options: ApiRequestOptions = {}
+): Promise<LeaveCoveragePlan> {
+	return requireApiData(
+		await apiClient.post<LeaveCoveragePlan>(`${base}/coverage/preview`, input, options),
+		'ตรวจคาบสอนที่ได้รับผลกระทบไม่สำเร็จ'
+	);
+}
+export async function getLeaveCoverageCandidates(
+	id: string,
+	input: LeaveCoverageCandidatesRequest,
+	options: ApiRequestOptions = {}
+): Promise<LeaveCoverageCandidates> {
+	return requireApiData(
+		await apiClient.post<LeaveCoverageCandidates>(
+			`${base}/requests/${id}/coverage/candidates`,
+			input,
+			options
+		),
+		'ค้นหาครูที่ว่างไม่สำเร็จ'
+	);
+}
+export async function getLeaveCoverageReturnLessons(
+	id: string,
+	input: LeaveCoverageReturnLessonsRequest,
+	options: ApiRequestOptions = {}
+): Promise<LeaveCoverageReturnLessons> {
+	return requireApiData(
+		await apiClient.post<LeaveCoverageReturnLessons>(
+			`${base}/requests/${id}/coverage/return-lessons`,
+			input,
+			options
+		),
+		'ค้นหาคาบสอนคืนไม่สำเร็จ'
+	);
+}
+export async function saveLeaveCoverage(
+	id: string,
+	input: SaveLeaveCoverageRequest
+): Promise<LeaveRequestDetail> {
+	return requireApiData(
+		await apiClient.put<LeaveRequestDetail>(`${base}/requests/${id}/coverage`, input),
+		'บันทึกแผนคาบสอนไม่สำเร็จ'
+	);
+}
+export async function replanLeaveCoverage(
+	id: string,
+	input: LeaveMutationRequest
+): Promise<LeaveRequestDetail> {
+	return requireApiData(
+		await apiClient.post<LeaveRequestDetail>(`${base}/requests/${id}/coverage/replan`, input),
+		'นำคำขอกลับมาจัดแผนไม่สำเร็จ'
+	);
+}
+export async function listAssignedLeaveCoverage(
+	options: Omit<ApiRequestOptions, 'query'> & { query?: LeaveCoverageTaskQuery } = {}
+): Promise<LeaveCoverageTaskPage> {
+	return requireApiData(
+		await apiClient.get<LeaveCoverageTaskPage>(`${base}/coverage/assigned`, options),
+		'โหลดคาบสอนที่มอบหมายไม่สำเร็จ'
+	);
+}
+export async function confirmLeaveCoverage(
+	id: string,
+	input: ConfirmLeaveCoverageRequest
+): Promise<LeaveCoverageTask> {
+	return requireApiData(
+		await apiClient.post<LeaveCoverageTask>(`${base}/requests/${id}/coverage/confirm`, input),
+		'ตอบรับคาบสอนไม่สำเร็จ'
 	);
 }

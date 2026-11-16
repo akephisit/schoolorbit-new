@@ -58,6 +58,9 @@ test('request payload omits client amounts and normalizes stale unit-dependent f
 	};
 	assert.deepEqual(leavePeriodInput(draft, 'minute'), {
 		typeId: 'type',
+		academicYearId: null,
+		academicTermId: null,
+		halfDayBoundary: null,
 		startDate: '2026-10-18',
 		endDate: '2026-10-18',
 		startTime: '09:00:00',

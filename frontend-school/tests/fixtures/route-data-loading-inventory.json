@@ -1172,6 +1172,16 @@
 			"notes": "Route-owned request list; URL status and pagination, identity/filter keys dispose old regions; creation options and policy reads only after opening create workflow."
 		},
 		{
+			"route": "staff/leave/assigned",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff-leave",
+			"notes": "Assigned-read-only route owns bounded redacted teaching tasks; exact update-assigned consent, plan revision/idempotency and identity-keyed disposal. No request detail/evidence reads."
+		},
+		{
 			"route": "staff/leave/new",
 			"wave": "personnel",
 			"dataOwner": "route",

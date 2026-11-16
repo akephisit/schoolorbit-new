@@ -5,6 +5,7 @@
 	import {
 		getLeaveRequest,
 		submitLeaveRequest,
+		type LeaveCoverageSettings,
 		type LeaveKind,
 		type LeavePersonalOptions,
 		type LeaveRequestDetail
@@ -19,14 +20,20 @@
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import CoverageEditor from './CoverageEditor.svelte';
+	import { coverageCounts, coverageStateLabels, coverageReady } from '#lib/staff-leave/coverage.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import RequestEditor from './RequestEditor.svelte';
 	let {
 		source,
 		optionsSource,
+		settingsSource,
 		kind = 'leave',
 		id
 	}: {
 		source?: Promise<RouteLoadResult<LeaveRequestDetail | null>>;
+		settingsSource: Promise<RouteLoadResult<LeaveCoverageSettings | null>>;
 		optionsSource: Promise<RouteLoadResult<LeavePersonalOptions | null>>;
 		kind?: LeaveKind;
 		id?: string;
@@ -36,11 +43,19 @@
 	const detail = $derived(region.value);
 	const effectiveKind = $derived(detail?.request.kind ?? kind);
 	const effectiveUrl = $derived(page.shallow?.url ?? page.url);
-	const step = $derived(effectiveUrl.searchParams.get('step') ?? 'details');
+	const requestedStep = $derived(effectiveUrl.searchParams.get('step'));
+	const step = $derived(
+		detail && (requestedStep === 'coverage' || requestedStep === 'review')
+			? requestedStep
+			: 'details'
+	);
 	const backHref = $derived(
 		safeLeaveReturn(effectiveUrl.searchParams.get('returnTo'), leaveHome(effectiveKind))
 	);
 	const creator = $derived($can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN));
+	let emergencyReason = $state(''),
+		coverageDirty = $state(false),
+		detailsDirty = $state(false);
 	let pending = $state(false),
 		error = $state('');
 	let disposed = false;
@@ -67,11 +82,14 @@
 			);
 		} else if (proceed) selectStep('coverage');
 	}
-	async function submit() {
+	async function submit(emergency = false) {
 		if (!detail || !creator || pending) return;
 		pending = true;
 		error = '';
-		const basis = { expectedRevision: detail.request.revision };
+		const basis = {
+			expectedRevision: detail.request.revision,
+			emergencyReason: emergency ? emergencyReason.trim() : null
+		};
 		try {
 			const result = await submitLeaveRequest(detail.request.id, {
 				requestId: submitIntent.for(basis),
@@ -102,6 +120,11 @@
 	backLabel="กลับรายการคำขอ"
 	contentClass="space-y-5"
 >
+	{#snippet actions()}{#if detail}<Button
+				variant="outline"
+				href={`/staff/leave/requests/${detail.request.id}?returnTo=${encodeURIComponent(backHref)}`}
+				>เปิดรายละเอียดคำขอ</Button
+			>{/if}{/snippet}
 	<nav
 		aria-label="ขั้นตอนเตรียมคำขอ"
 		class="grid grid-cols-3 gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3"
@@ -109,7 +132,8 @@
 		{#each [{ id: 'details', label: 'รายละเอียด' }, { id: 'coverage', label: 'จัดคาบสอน' }, { id: 'review', label: 'ตรวจสอบและส่ง' }] as item, index (item.id)}
 			<Button
 				variant={step === item.id ? 'default' : 'ghost'}
-				disabled={item.id !== 'details' && !detail}
+				disabled={(item.id !== 'details' && !detail) ||
+					(item.id === 'review' && (coverageDirty || detailsDirty))}
 				aria-current={step === item.id ? 'step' : undefined}
 				onclick={() => selectStep(item.id)}>{index + 1}. {item.label}</Button
 			>
@@ -137,24 +161,33 @@
 				kind={effectiveKind}
 				detail={detail ?? undefined}
 				{optionsSource}
+				{settingsSource}
+				ondirty={(value) => (detailsDirty = value)}
 				oncancel={() => goto(backHref)}
 				onsaved={saved}
 				onrefresh={refreshed}
 			/>
 		</div>
-		{#if step === 'coverage' && detail}<section
-				class="space-y-4 rounded-xl border bg-card p-4 sm:p-6"
-				data-testid="leave-coverage-step"
-			>
-				<h2 class="text-lg font-semibold">คาบสอนที่ได้รับผลกระทบ</h2>
-				<p class="text-sm text-muted-foreground">
-					ช่วงวันที่ {leaveDate(detail.request.startDate)} – {leaveDate(detail.request.endDate)}
-				</p>
+
+		{#if detail}<div hidden={step !== 'coverage'} class="space-y-4">
+				{#if detailsDirty}<PageState
+						title="รายละเอียดมีการแก้ไขที่ยังไม่บันทึก"
+						description="แผนคาบนี้ใช้รายละเอียดฉบับที่บันทึกไว้ กลับไปบันทึกวันที่และข้อมูลก่อนตรวจสอบและส่ง"
+					/>{/if}
+				<CoverageEditor
+					{detail}
+					onsaved={(result) => region.patch(result)}
+					onrefresh={refreshed}
+					ondirty={(value) => (coverageDirty = value)}
+				/>
 				<div class="flex justify-between gap-2">
 					<Button variant="outline" onclick={() => selectStep('details')}>กลับรายละเอียด</Button
-					><Button onclick={() => selectStep('review')}>ตรวจสอบคำขอ</Button>
+					><Button disabled={coverageDirty || detailsDirty} onclick={() => selectStep('review')}
+						>ตรวจสอบคำขอ</Button
+					>
 				</div>
-			</section>{/if}
+			</div>{/if}
+
 		{#if step === 'review' && detail}<section
 				class="space-y-4 rounded-xl border bg-card p-4 sm:p-6"
 				data-testid="leave-review-step"
@@ -182,6 +215,29 @@
 						<dd class="whitespace-pre-wrap break-words">{detail.request.reason}</dd>
 					</div>
 				</dl>
+				{#if detail.coverage}<div class="rounded-lg border p-3 text-sm">
+						<p class="font-medium">{coverageStateLabels[detail.coverage.state]}</p>
+						<p>
+							เลือกครู {coverageCounts(detail.coverage.days.flatMap((day) => day.lessons))
+								.selected}/{coverageCounts(detail.coverage.days.flatMap((day) => day.lessons))
+								.total} · ตอบรับ {coverageCounts(detail.coverage.days.flatMap((day) => day.lessons))
+								.confirmed}/{coverageCounts(detail.coverage.days.flatMap((day) => day.lessons))
+								.total}
+						</p>
+					</div>{/if}
+				<div class="space-y-2">
+					<Label for="leave-emergency-reason">เหตุผลกรณีเร่งด่วนที่ยังจัดคาบไม่ครบ</Label><Textarea
+						id="leave-emergency-reason"
+						bind:value={emergencyReason}
+						maxlength={2000}
+						disabled={pending}
+						rows={2}
+					/>
+					<p class="text-xs text-muted-foreground">
+						หลังส่งคำขอ ครูที่เลือกจะตอบรับคาบสอน เมื่อส่งแบบเร่งด่วน
+						ผู้ดูแลต้องจัดแผนและรอครูตอบรับให้ครบก่อนอนุมัติ
+					</p>
+				</div>
 				{#if error}<PageState
 						variant="error"
 						title="ส่งคำขอไม่สำเร็จ"
@@ -192,8 +248,15 @@
 				<div class="flex justify-between gap-2">
 					<Button variant="outline" disabled={pending} onclick={() => selectStep('coverage')}
 						>กลับจัดคาบสอน</Button
-					><LoadingButton loading={pending} disabled={!detail.canSubmit} onclick={submit}
-						>ส่งคำขอพิจารณา</LoadingButton
+					><LoadingButton
+						loading={pending}
+						disabled={!detail.canSubmit || !coverageReady(detail.coverage)}
+						onclick={() => submit(false)}>ส่งคำขอพิจารณา</LoadingButton
+					><LoadingButton
+						variant="outline"
+						loading={pending}
+						disabled={!detail.canSubmit || !emergencyReason.trim()}
+						onclick={() => submit(true)}>ส่งคำขอเร่งด่วน</LoadingButton
 					>
 				</div>
 			</section>{/if}

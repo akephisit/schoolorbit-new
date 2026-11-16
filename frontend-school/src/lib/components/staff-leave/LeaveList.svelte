@@ -70,6 +70,10 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		{/if}
+		{#if $can.has(PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED)}<Button
+				variant="outline"
+				href="/staff/leave/assigned">คาบสอนที่มอบหมายให้ฉัน</Button
+			>{/if}
 		{#if $can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN)}<Button
 				href={`${home}/new?returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`}
 				><Plus class="size-4" />สร้างคำขอ{leaveKindLabels[kind]}</Button

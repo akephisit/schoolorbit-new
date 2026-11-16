@@ -12,7 +12,13 @@
 		return appIdentityKey();
 	});
 	const source = $derived(leaveSource(data.record, identity));
+	const settingsSource = $derived(leaveSource(data.coverageSettings, identity));
 	const optionsSource = $derived(leaveSource(data.options, identity));
 </script>
 
-{#key `${identity}|${data.id}`}<RequestWorkflow {source} {optionsSource} id={data.id} />{/key}
+{#key `${identity}|${data.id}`}<RequestWorkflow
+		{source}
+		{optionsSource}
+		{settingsSource}
+		id={data.id}
+	/>{/key}

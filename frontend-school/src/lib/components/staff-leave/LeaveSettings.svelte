@@ -5,6 +5,7 @@
 		listLeavePolicies,
 		saveLeaveType,
 		deleteLeaveType,
+		type LeaveCoverageSettings,
 		type LeaveType,
 		type LeavePolicyVersion
 	} from '#lib/api/staff-leave.js';
@@ -31,9 +32,16 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
+	import CoverageSettings from './CoverageSettings.svelte';
 	import LeaveTypeForm from './LeaveTypeForm.svelte';
 	import PolicyEditor from './PolicyEditor.svelte';
-	let { source }: { source: Promise<RouteLoadResult<LeaveType[]>> } = $props();
+	let {
+		source,
+		settingsSource
+	}: {
+		source: Promise<RouteLoadResult<LeaveType[]>>;
+		settingsSource: Promise<RouteLoadResult<LeaveCoverageSettings | null>>;
+	} = $props();
 	const region = new LeaveRegion<LeaveType[]>(),
 		request = new LatestRequest(),
 		intent = new LeaveMutationIntent();
@@ -158,6 +166,7 @@
 			title="ดำเนินการไม่สำเร็จ"
 			description={error}
 		/>{/if}
+	<CoverageSettings source={settingsSource} />
 	<div class="grid items-start gap-4 lg:grid-cols-[minmax(15rem,0.7fr)_minmax(0,1.8fr)]">
 		<section data-testid="leave-types" aria-busy={region.loading} class="min-w-0">
 			{#if region.error}<PageState
