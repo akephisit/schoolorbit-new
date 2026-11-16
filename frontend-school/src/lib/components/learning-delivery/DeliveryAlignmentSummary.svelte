@@ -11,7 +11,7 @@
 	import { deliveryOfferingHref } from '#lib/navigation/learning-delivery.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
-	import { PageSkeleton } from '#lib/components/app-state/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import DeliveryAlignmentBadges from './DeliveryAlignmentBadges.svelte';
 	let {
@@ -126,7 +126,17 @@
 	aria-busy={loading}
 >
 	{#if !workspace || !facts}
-		{#if loading}<PageSkeleton variant="cards" rows={1} />
+		{#if loading}<div
+				class="flex w-full flex-wrap items-center justify-between gap-3"
+				role="status"
+				aria-label="กำลังโหลดผลเทียบหลักสูตร"
+			>
+				<div class="min-w-0 flex-1 space-y-2" aria-hidden="true">
+					<Skeleton class="h-5 w-80 max-w-full" />
+					<Skeleton class="h-4 w-full max-w-2xl" />
+				</div>
+				<Skeleton class="h-8 w-36 shrink-0" aria-hidden="true" />
+			</div>
 		{:else if error}<div
 				role="alert"
 				class="flex flex-wrap items-center gap-2 text-sm text-destructive"

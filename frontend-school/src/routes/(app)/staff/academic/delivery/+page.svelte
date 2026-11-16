@@ -40,6 +40,7 @@
 	import OfferingCreateDialog from '#lib/components/learning-delivery/OfferingCreateDialog.svelte';
 	import DeliveryOverviewTable from '#lib/components/learning-delivery/DeliveryOverviewTable.svelte';
 	import HomeroomDeliveryWorkspace from '#lib/components/learning-delivery/HomeroomDeliveryWorkspace.svelte';
+	import HomeroomDeliverySkeleton from '#lib/components/learning-delivery/HomeroomDeliverySkeleton.svelte';
 	import DeliveryAlignmentSummary from '#lib/components/learning-delivery/DeliveryAlignmentSummary.svelte';
 	import DeliveryMissingRequirements from '#lib/components/learning-delivery/DeliveryMissingRequirements.svelte';
 	let { data }: { data: PageData } = $props();
@@ -319,9 +320,8 @@
 					aria-busy={homeroomLoading}
 					data-testid={workspace ? 'delivery-homerooms-ready' : undefined}
 				>
-					{#if homeroomLoading && !workspace}<PageSkeleton
-							variant="cards"
-							rows={4}
+					{#if homeroomLoading && !workspace}<HomeroomDeliverySkeleton
+							{canManage}
 						/>{:else if homeroomError && !workspace}<PageState
 							variant="error"
 							title="โหลดภาพรวมรายห้องไม่สำเร็จ"
