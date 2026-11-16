@@ -275,8 +275,13 @@ test('emergency manager completes coverage while administrative approval remains
 	await page.goto(`/staff/leave/requests/${leaveId}`);
 	await expect(page.getByTestId('leave-detail')).toContainText('คำขอเร่งด่วน');
 	await expect(page.getByRole('button', { name: 'อนุมัติ', exact: true })).toHaveCount(0);
+	expect(api.detail().instance).toBeNull();
+	await expect(
+		page.getByRole('button', { name: 'บันทึกแผนและส่งพิจารณา', exact: true })
+	).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true })).toBeDisabled();
 	await batchTeacher(page);
-	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกแผนและส่งพิจารณา', exact: true }).click();
 	await expect(page.getByTestId('leave-coverage-editor')).toContainText(
 		'เลือกครู 3/3 · ตอบรับ 0/3'
 	);
@@ -760,4 +765,59 @@ test('editable owner detail links to explicit recovery while ordinary submitted 
 	await expect(
 		page.getByRole('link', { name: 'จัดคาบสอนตามตารางล่าสุด', exact: true })
 	).toHaveCount(0);
+	await expect(
+		page.getByRole('button', { name: 'บันทึกแผนและส่งพิจารณา', exact: true })
+	).toHaveCount(0);
 });
+
+for (const state of ['zero', 'unchanged'] as const)
+	test(`emergency manager explicitly finalizes ${state} ready plan after non-starting refresh`, async ({
+		page
+	}) => {
+		const stored = savedConfirmedCoverage();
+		if (state === 'zero') stored.days = [];
+		const fresh = structuredClone(stored);
+		fresh.sourceDigest = `latest-manager-${state}`;
+		const api = await mockTeachingCoverage(page, {
+			plan: stored,
+			status: 'submitted',
+			manager: true,
+			refreshedCoverage: fresh,
+			requireCoverageRefresh: true
+		});
+		await page.goto(`/staff/leave/requests/${leaveId}`);
+		await expect(
+			page.getByRole('button', { name: 'บันทึกแผนและส่งพิจารณา', exact: true })
+		).toBeEnabled();
+		expect(api.detail().instance).toBeNull();
+		expect(api.workflowStarts()).toBe(0);
+		await page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true }).click();
+		await expect.poll(() => api.detail().request.revision).toBe(2);
+		expect(api.detail().instance).toBeNull();
+		expect(api.workflowStarts()).toBe(0);
+		expect(api.calls.filter((call) => call.path.endsWith('/coverage'))).toHaveLength(0);
+		await expect(page.getByText('มีแผนที่ยังไม่บันทึก', { exact: true })).toHaveCount(0);
+		await expect(
+			page.getByRole('button', { name: 'บันทึกแผนและส่งพิจารณา', exact: true })
+		).toBeEnabled();
+		await page.getByRole('button', { name: 'บันทึกแผนและส่งพิจารณา', exact: true }).click();
+		await expect.poll(() => api.workflowStarts()).toBe(1);
+		expect(api.detail().instance).toMatchObject({
+			source: { resourceId: leaveId },
+			status: 'active'
+		});
+		expect(api.detail().coverage.canManage).toBe(false);
+		const saves = api.calls.filter((call) => call.path.endsWith('/coverage'));
+		expect(saves).toHaveLength(1);
+		expect(saves[0].body).toMatchObject({
+			expectedRevision: 2,
+			sourceDigest: `latest-manager-${state}`
+		});
+		expect(saves[0].body.assignments).toHaveLength(state === 'zero' ? 0 : 1);
+		await expect(
+			page.getByRole('button', { name: 'บันทึกแผนและส่งพิจารณา', exact: true })
+		).toHaveCount(0);
+		await expect(
+			page.getByRole('button', { name: 'ปรับคาบตามตารางล่าสุด', exact: true })
+		).toHaveCount(0);
+	});

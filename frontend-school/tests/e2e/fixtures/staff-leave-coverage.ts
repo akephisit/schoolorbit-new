@@ -132,9 +132,18 @@ export async function mockTeachingCoverage(
 		detail.request.ownerId = id(11);
 		for (const day of detail.coverage.days)
 			for (const lesson of day.lessons) lesson.teacherId = id(11);
+		detail.instance = null;
 		detail.coverage.canManage = true;
 		detail.coverage.emergencyReason = 'ปฏิบัติหน้าที่เร่งด่วน';
-		detail.coverage.state = 'emergency';
+		detail.coverage.state =
+			detail.coverage.timetableState === 'ready' &&
+			detail.coverage.days.every((day) => day.lessons.every((lesson) => lesson.assignment))
+				? detail.coverage.days.every((day) =>
+						day.lessons.every((lesson) => lesson.assignment?.consent === 'confirmed')
+					)
+					? 'confirmed'
+					: 'awaiting_confirmation'
+				: 'emergency';
 		detail.canAct = false;
 		detail.availableActions = [];
 	}
@@ -153,6 +162,7 @@ export async function mockTeachingCoverage(
 	let releaseRefresh = () => {};
 	const refreshGate = new Promise<void>((resolve) => (releaseRefresh = resolve));
 	const refreshReceipts = new Set<string>();
+	let workflowStarts = 0;
 	const reads: string[] = [];
 	const settings: LeaveCoverageSettings = {
 		revision: 1,
@@ -247,9 +257,13 @@ export async function mockTeachingCoverage(
 				if (body.expectedRevision !== detail.request.revision)
 					return reply(route, 'คำขอมีการเปลี่ยนแปลง', 409);
 				const previousRevision = detail.coverage.revision;
+				const emergencyReason = detail.coverage.emergencyReason;
 				detail.coverage = structuredClone(options.refreshedCoverage ?? detail.coverage);
 				detail.coverage.revision = previousRevision + 1;
 				detail.coverage.planHash = `refreshed-plan-${detail.coverage.revision}`;
+				detail.coverage.canManage =
+					!!options.manager && detail.request.status === 'submitted' && detail.instance === null;
+				if (options.manager) detail.coverage.emergencyReason = emergencyReason;
 				detail.request.revision++;
 				refreshed = true;
 				refreshReceipts.add(body.requestId);
@@ -361,11 +375,26 @@ export async function mockTeachingCoverage(
 				detail.request.revision++;
 				detail.coverage.revision++;
 				detail.coverage.planHash = `plan-${detail.coverage.revision}`;
-				detail.coverage.state = detail.coverage.days.every((day) =>
-					day.lessons.every((lesson) => lesson.assignment)
-				)
-					? 'awaiting_confirmation'
-					: 'incomplete';
+				const complete =
+					detail.coverage.timetableState === 'ready' &&
+					detail.coverage.days.every((day) => day.lessons.every((lesson) => lesson.assignment));
+				const confirmed =
+					complete &&
+					detail.coverage.days.every((day) =>
+						day.lessons.every((lesson) => lesson.assignment?.consent === 'confirmed')
+					);
+				detail.coverage.state = confirmed
+					? 'confirmed'
+					: complete
+						? 'awaiting_confirmation'
+						: 'incomplete';
+				if (options.manager && detail.coverage.canManage && detail.instance === null && complete) {
+					workflowStarts++;
+					detail.instance = structuredClone(api.detail().instance);
+					if (detail.instance) detail.instance.revision = detail.request.revision;
+					detail.coverage.canManage = false;
+				}
+
 				return reply(route, detail);
 			}
 			if (path.endsWith('/coverage/replan')) {
@@ -399,6 +428,7 @@ export async function mockTeachingCoverage(
 		teachers,
 		returnLesson,
 		task,
-		releaseRefresh
+		releaseRefresh,
+		workflowStarts: () => workflowStarts
 	};
 }

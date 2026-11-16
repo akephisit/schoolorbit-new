@@ -88,6 +88,9 @@
 	const busy = $derived(pending || refreshing);
 	const allowed = $derived(!readonly && (detail.canEdit || plan.canManage));
 	const counts = $derived(coverageCounts(lessons, assignments));
+	const canFinalize = $derived(
+		allowed && plan.canManage && plan.timetableState === 'ready' && counts.selected === counts.total
+	);
 	$effect.pre(() => {
 		const incoming = detail;
 		untrack(() => {
@@ -689,8 +692,8 @@
 			</p>
 			<LoadingButton
 				loading={pending}
-				disabled={busy || !dirty || stale || !sourceDigest}
-				onclick={save}>บันทึกแผนคาบสอน</LoadingButton
+				disabled={busy || (!dirty && !canFinalize) || stale || !sourceDigest}
+				onclick={save}>{canFinalize ? 'บันทึกแผนและส่งพิจารณา' : 'บันทึกแผนคาบสอน'}</LoadingButton
 			>
 		</div>{/if}
 </section>

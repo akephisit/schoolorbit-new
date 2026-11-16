@@ -16,6 +16,6 @@ async fn opening_policy_reads_through_the_lifecycle_crate_boundary() {
 
     assert_eq!(policy.row_version, 1);
     assert!(!policy.require_homeroom_placements);
-    assert!(!policy.require_published_offerings);
-    assert!(!policy.require_published_timetable);
+    assert!(!policy.require_offerings);
+    assert!(!policy.require_timetable);
 }
