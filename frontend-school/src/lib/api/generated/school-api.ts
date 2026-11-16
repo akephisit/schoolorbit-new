@@ -11537,20 +11537,12 @@ export interface components {
 					/** Format: uuid */
 					academicYearId: string;
 					/** Format: date-time */
-					bookingClosesAt?: string | null;
-					/** Format: date-time */
-					bookingOpensAt?: string | null;
-					/** Format: date-time */
 					createdAt: string;
 					/** Format: uuid */
 					createdBy?: string | null;
 					description?: string | null;
-					/** Format: date-time */
-					endsAt: string;
 					/** Format: uuid */
 					id: string;
-					/** Format: date-time */
-					startsAt: string;
 					status: components['schemas']['SupervisionCycleStatus'];
 					targets: components['schemas']['SupervisionCycleTarget'][];
 					/** Format: uuid */
@@ -12926,20 +12918,12 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: date-time */
-				bookingClosesAt?: string | null;
-				/** Format: date-time */
-				bookingOpensAt?: string | null;
-				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				createdBy?: string | null;
 				description?: string | null;
-				/** Format: date-time */
-				endsAt: string;
 				/** Format: uuid */
 				id: string;
-				/** Format: date-time */
-				startsAt: string;
 				status: components['schemas']['SupervisionCycleStatus'];
 				targets: components['schemas']['SupervisionCycleTarget'][];
 				/** Format: uuid */
@@ -19438,15 +19422,7 @@ export interface components {
 			academicTermId?: string | null;
 			/** Format: uuid */
 			academicYearId: string;
-			/** Format: date-time */
-			bookingClosesAt?: string | null;
-			/** Format: date-time */
-			bookingOpensAt?: string | null;
 			description?: string | null;
-			/** Format: date-time */
-			endsAt: string;
-			/** Format: date-time */
-			startsAt: string;
 			status?: components['schemas']['SupervisionCycleStatus'] | null;
 			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][];
 			/** Format: uuid */
@@ -21577,20 +21553,12 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: date-time */
-				bookingClosesAt?: string | null;
-				/** Format: date-time */
-				bookingOpensAt?: string | null;
-				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				createdBy?: string | null;
 				description?: string | null;
-				/** Format: date-time */
-				endsAt: string;
 				/** Format: uuid */
 				id: string;
-				/** Format: date-time */
-				startsAt: string;
 				status: components['schemas']['SupervisionCycleStatus'];
 				targets: components['schemas']['SupervisionCycleTarget'][];
 				/** Format: uuid */
@@ -25211,20 +25179,12 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: date-time */
-			bookingClosesAt?: string | null;
-			/** Format: date-time */
-			bookingOpensAt?: string | null;
-			/** Format: date-time */
 			createdAt: string;
 			/** Format: uuid */
 			createdBy?: string | null;
 			description?: string | null;
-			/** Format: date-time */
-			endsAt: string;
 			/** Format: uuid */
 			id: string;
-			/** Format: date-time */
-			startsAt: string;
 			status: components['schemas']['SupervisionCycleStatus'];
 			targets: components['schemas']['SupervisionCycleTarget'][];
 			/** Format: uuid */
@@ -27320,15 +27280,7 @@ export interface components {
 			academicTermId?: string | null;
 			/** Format: uuid */
 			academicYearId?: string | null;
-			/** Format: date-time */
-			bookingClosesAt?: string | null;
-			/** Format: date-time */
-			bookingOpensAt?: string | null;
 			description?: string | null;
-			/** Format: date-time */
-			endsAt?: string | null;
-			/** Format: date-time */
-			startsAt?: string | null;
 			status?: components['schemas']['SupervisionCycleStatus'] | null;
 			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][] | null;
 			/** Format: uuid */
@@ -31992,6 +31944,24 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiResponse_DeliveryWorkspace'];
+				};
+			};
+			/** @description Invalid Delivery workspace request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required to read the Delivery workspace */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
 			/** @description Delivery read denied */

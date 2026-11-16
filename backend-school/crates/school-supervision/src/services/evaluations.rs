@@ -217,6 +217,21 @@ pub async fn submit_my_evaluation(
     load_evaluator_for_user(&mut *tx, observation_id, evaluator_user_id).await?;
     require_observation_write(&mut tx, observation_id).await?;
     let evaluator = load_evaluator_for_user(&mut *tx, observation_id, evaluator_user_id).await?;
+    let observation = get_observation_with_connection(&mut tx, observation_id).await?;
+    let can_submit = matches!(
+        observation.status,
+        SupervisionObservationStatus::Planned | SupervisionObservationStatus::InProgress
+    );
+    let optional_before_certification = !evaluator.is_required
+        && observation.status == SupervisionObservationStatus::EvaluatorsSubmitted;
+    let submitted_replay = observation.status == SupervisionObservationStatus::EvaluatorsSubmitted
+        && evaluator.status == "submitted"
+        && input.responses.is_empty();
+    if !can_submit && !optional_before_certification && !submitted_replay {
+        return Err(AppError::ValidationError(
+            "ส่งผลประเมินได้เฉพาะรายการที่ยังไม่รับรองผล".into(),
+        ));
+    }
     if !input.responses.is_empty() {
         if evaluator.status == "submitted" {
             return Err(AppError::ValidationError(
@@ -294,6 +309,7 @@ pub async fn submit_my_evaluation(
 struct EvaluatorForUserRow {
     id: Uuid,
     status: String,
+    is_required: bool,
 }
 
 async fn load_evaluator_for_user(
@@ -305,7 +321,7 @@ async fn load_evaluator_for_user(
         .query_as::<EvaluatorForUserRow>(
             "supervision.services.evaluations.load_evaluator_for_user",
             r#"
-        SELECT id, status
+        SELECT id, status, is_required
         FROM supervision_evaluators
         WHERE observation_id = $1 AND evaluator_user_id = $2
         "#,

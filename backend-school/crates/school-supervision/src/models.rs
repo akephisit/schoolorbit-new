@@ -319,10 +319,6 @@ pub struct SupervisionCycle {
     pub title: String,
     pub description: Option<String>,
     pub template_id: Uuid,
-    pub booking_opens_at: Option<DateTime<Utc>>,
-    pub booking_closes_at: Option<DateTime<Utc>>,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
     pub status: SupervisionCycleStatus,
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
@@ -561,17 +557,13 @@ pub struct CreateSupervisionCycleTargetRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateSupervisionCycleRequest {
     pub academic_year_id: Uuid,
     pub academic_term_id: Option<Uuid>,
     pub title: String,
     pub description: Option<String>,
     pub template_id: Uuid,
-    pub booking_opens_at: Option<DateTime<Utc>>,
-    pub booking_closes_at: Option<DateTime<Utc>>,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
     pub status: Option<SupervisionCycleStatus>,
     #[serde(default)]
     pub targets: Vec<CreateSupervisionCycleTargetRequest>,
@@ -579,17 +571,13 @@ pub struct CreateSupervisionCycleRequest {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateSupervisionCycleRequest {
     pub academic_year_id: Option<Uuid>,
     pub academic_term_id: Option<Option<Uuid>>,
     pub title: Option<String>,
     pub description: Option<String>,
     pub template_id: Option<Uuid>,
-    pub booking_opens_at: Option<DateTime<Utc>>,
-    pub booking_closes_at: Option<DateTime<Utc>>,
-    pub starts_at: Option<DateTime<Utc>>,
-    pub ends_at: Option<DateTime<Utc>>,
     pub status: Option<SupervisionCycleStatus>,
     pub targets: Option<Vec<CreateSupervisionCycleTargetRequest>>,
 }

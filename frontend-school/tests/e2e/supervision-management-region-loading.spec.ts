@@ -39,8 +39,8 @@ test('explicit overview renders teacher status while cycle options are pending',
 	await expect(
 		page
 			.getByTestId('supervision-cycle-selector')
-			.getByRole('button', { name: 'รอบแรก', exact: true })
-	).toBeVisible();
+			.getByRole('combobox', { name: 'รอบนิเทศ', exact: true })
+	).toHaveText('รอบแรก');
 });
 
 test('default overview waits only for cycles to select the first ID', async ({ page }) => {
@@ -73,9 +73,14 @@ test('overview cycle selection and Back supersede pending status without broad r
 	const api = await mock(page, { hold: 'teacher-status' });
 	await page.goto(path('overview', year, firstCycle));
 	await expect(page.getByText('ครู รอบแรก')).toBeVisible();
+	await expect(
+		page
+			.getByTestId('supervision-cycle-selector')
+			.getByRole('combobox', { name: 'รอบนิเทศ', exact: true })
+	).toHaveText('รอบแรก');
 	await page
 		.getByTestId('supervision-cycle-selector')
-		.getByRole('button', { name: 'รอบแรก', exact: true })
+		.getByRole('combobox', { name: 'รอบนิเทศ', exact: true })
 		.click();
 	await page.getByRole('option', { name: /รอบที่สอง/ }).click();
 	await expect(page).toHaveURL(new RegExp(`cycleId=${secondCycle}`));
@@ -99,16 +104,16 @@ test('cycles starts with its own skeleton, keeps template choices lazy, and patc
 	await expect(page.getByTestId('supervision-cycles-ready')).toBeVisible();
 	await page.getByRole('button', { name: 'สร้างรอบนิเทศ', exact: true }).first().click();
 	await expect(
-		page.getByRole('dialog').getByRole('button', { name: 'แบบประเมินทดสอบ', exact: true })
-	).toBeVisible();
+		page.getByRole('dialog').getByRole('combobox', { name: 'แบบประเมิน', exact: true })
+	).toHaveText('แบบประเมินทดสอบ');
 	expect(api.count('/api/supervision/templates/summaries')).toBe(1);
 	await page.getByRole('dialog').getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 	await page
 		.getByRole('row', { name: /รอบแรก/ })
-		.getByRole('button', { name: 'ปิดรอบ' })
+		.getByRole('button', { name: 'ปิดรับคำขอ' })
 		.click();
 	await expect(
-		page.getByRole('row', { name: /รอบแรก/ }).getByRole('button', { name: 'เปิดอีกครั้ง' })
+		page.getByRole('row', { name: /รอบแรก/ }).getByRole('button', { name: 'เปิดรับคำขอ' })
 	).toBeVisible();
 	expect(api.count('/api/supervision/cycles')).toBe(1);
 });
@@ -217,12 +222,12 @@ test('a pending cycle mutation does not block or patch the next academic year', 
 	await page.goto(path('cycles'));
 	await page
 		.getByRole('row', { name: /รอบแรก/ })
-		.getByRole('button', { name: 'ปิดรอบ' })
+		.getByRole('button', { name: 'ปิดรับคำขอ' })
 		.click();
 	await navigate(page, path('cycles', nextYear));
 	await expect(page.getByText('รอบปีใหม่', { exact: true })).toBeVisible();
 	await expect(
-		page.getByRole('row', { name: /รอบปีใหม่/ }).getByRole('button', { name: 'ปิดรอบ' })
+		page.getByRole('row', { name: /รอบปีใหม่/ }).getByRole('button', { name: 'ปิดรับคำขอ' })
 	).toBeEnabled();
 	api.release();
 	await expect(page.getByText('รอบแรก', { exact: true })).toHaveCount(0);

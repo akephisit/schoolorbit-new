@@ -2,7 +2,7 @@ use school_database::DbSession;
 use school_errors::AppError;
 use std::collections::HashMap;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::NaiveDate;
 use sqlx::{FromRow, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -17,10 +17,6 @@ struct SourceCycle {
     title: String,
     description: Option<String>,
     template_id: Uuid,
-    booking_opens_at: Option<DateTime<Utc>>,
-    booking_closes_at: Option<DateTime<Utc>>,
-    starts_at: DateTime<Utc>,
-    ends_at: DateTime<Utc>,
 }
 
 #[derive(FromRow)]
@@ -32,33 +28,22 @@ struct SourceTarget {
     priority: i32,
 }
 
-fn mapped_date(
-    value: DateTime<Utc>,
-    dates: &HashMap<NaiveDate, NaiveDate>,
-) -> Result<DateTime<Utc>, AppError> {
-    let target_date = dates.get(&value.date_naive()).copied().ok_or_else(|| {
-        AppError::Conflict(format!("ไม่พบการจับคู่วันที่ของรอบนิเทศ {}", value.date_naive()))
-    })?;
-    Ok(DateTime::from_naive_utc_and_offset(
-        target_date.and_time(value.time()),
-        Utc,
-    ))
-}
-
 pub async fn apply(
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
     context: &TermPreparationContext,
     mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
-    dates: &HashMap<NaiveDate, NaiveDate>,
+    _dates: &HashMap<NaiveDate, NaiveDate>,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
-    let cycles: Vec<SourceCycle> = DbSession::new(&mut **tx).query_as("supervision.services.term_preparation.apply",
-        r#"SELECT id,title,description,template_id,booking_opens_at,booking_closes_at,starts_at,ends_at
-           FROM supervision_cycles WHERE academic_term_id=$1 ORDER BY starts_at,id"#,
-    )
-    .bind(context.source_term_id)
-    .fetch_all()
-    .await?;
+    let cycles: Vec<SourceCycle> = DbSession::new(&mut **tx)
+        .query_as(
+            "supervision.services.term_preparation.apply",
+            r#"SELECT id,title,description,template_id
+           FROM supervision_cycles WHERE academic_term_id=$1 ORDER BY id"#,
+        )
+        .bind(context.source_term_id)
+        .fetch_all()
+        .await?;
     let source_ids = cycles.iter().map(|cycle| cycle.id).collect::<Vec<_>>();
     let targets: Vec<SourceTarget> = if source_ids.is_empty() {
         Vec::new()
@@ -73,38 +58,18 @@ pub async fn apply(
     let mut cycle_map = HashMap::new();
     let mut target_ids = Vec::new();
     for cycle in cycles {
-        let starts_at = mapped_date(cycle.starts_at, dates)?;
-        let ends_at = mapped_date(cycle.ends_at, dates)?;
-        let booking_opens_at = cycle
-            .booking_opens_at
-            .map(|value| mapped_date(value, dates))
-            .transpose()?;
-        let booking_closes_at = cycle
-            .booking_closes_at
-            .map(|value| mapped_date(value, dates))
-            .transpose()?;
-        if ends_at < starts_at {
-            return Err(AppError::ValidationError(
-                "วันสิ้นสุดรอบนิเทศต้องไม่ก่อนวันเริ่ม".into(),
-            ));
-        }
         let id = Uuid::now_v7();
         DbSession::new(&mut **tx)
             .query(
                 "supervision.services.term_preparation.apply",
                 r#"INSERT INTO supervision_cycles(
-                   id,title,description,template_id,booking_opens_at,booking_closes_at,
-                   starts_at,ends_at,status,created_by,academic_year_id,academic_term_id
-               ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'draft',$9,$10,$11)"#,
+                   id,title,description,template_id,status,created_by,academic_year_id,academic_term_id
+               ) VALUES($1,$2,$3,$4,'draft',$5,$6,$7)"#,
             )
             .bind(id)
             .bind(cycle.title)
             .bind(cycle.description)
             .bind(cycle.template_id)
-            .bind(booking_opens_at)
-            .bind(booking_closes_at)
-            .bind(starts_at)
-            .bind(ends_at)
             .bind(actor)
             .bind(context.target_year_id)
             .bind(context.target_term_id)

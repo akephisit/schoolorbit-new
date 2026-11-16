@@ -1,5 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import {
+		supervisionStatusLabel as statusLabel,
+		currentReturnReason
+	} from '#lib/supervision/supervision-presentation.js';
+	import SupervisionWorkflow from '#lib/components/supervision/SupervisionWorkflow.svelte';
 	import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
@@ -58,6 +63,7 @@
 	import { cn } from '#lib/utils.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -103,6 +109,7 @@
 	let templateError = $state('');
 	let reviewOpen = $state(false);
 	let editTimetableError = $state('');
+	let lessonSaveError = $state('');
 	let editTimetableLoaded = $state(false);
 	let evaluatorAvailabilityError = $state('');
 	let evaluatorAvailabilityLoaded = $state(false);
@@ -169,14 +176,19 @@
 	const canApproveResult = $derived(
 		Boolean(observation && canApproveSchool && observation.status === 'approved')
 	);
-	const canEditOwnRequested = $derived(
+	const canCancelOwnRequest = $derived(
 		Boolean(
 			observation &&
 			observation.observedUserId === currentUserId &&
-			observation.status === 'requested' &&
+			(observation.status === 'requested' || observation.status === 'returned') &&
 			$can.has(PERMISSIONS.SUPERVISION_REQUEST_OWN)
 		)
 	);
+	const canEditOwnRequested = $derived(
+		canCancelOwnRequest &&
+			!observation?.evaluators.some((evaluator) => evaluator.status === 'submitted')
+	);
+	const isReturnedOwnRequest = $derived(canEditOwnRequested && observation?.status === 'returned');
 	const canEditLesson = $derived(
 		Boolean(
 			observation &&
@@ -190,7 +202,7 @@
 	const canCancelObservation = $derived(
 		Boolean(
 			observation &&
-			(canEditOwnRequested ||
+			(canCancelOwnRequest ||
 				(canManageObservation &&
 					!['published', 'acknowledged', 'completed', 'cancelled'].includes(observation.status)))
 		)
@@ -243,9 +255,20 @@
 			: null
 	);
 
+	const routeObservationId = $derived(data.observationId);
+	const routeObservation = $derived(data.observation);
+	const routeCycle = $derived(data.cycle);
+	const routeTemplate = $derived(data.template);
+	const routeIdentity = $derived(`${currentUserId}|${$userPermissions.toSorted().join(',')}`);
+
 	$effect.pre(() => {
-		const source = data;
-		const identity = `${$authStore.user?.id ?? ''}|${$userPermissions.toSorted().join(',')}`;
+		const source = {
+			observationId: routeObservationId,
+			observation: routeObservation,
+			cycle: routeCycle,
+			template: routeTemplate
+		};
+		const identity = routeIdentity;
 		if (!routeOwners.has(source.observation)) routeOwners.set(source.observation, identity);
 		const ownsSource = routeOwners.get(source.observation) === identity;
 		untrack(() => {
@@ -345,26 +368,6 @@
 
 	function manageableStatus(status: SupervisionObservationStatus): boolean {
 		return status === 'requested' || status === 'planned' || status === 'returned';
-	}
-
-	function statusLabel(status: SupervisionObservationStatus): string {
-		return (
-			(
-				{
-					requested: 'รออนุมัติคำขอ',
-					planned: 'วางแผนแล้ว',
-					in_progress: 'กำลังประเมิน',
-					evaluators_submitted: 'รอรับรองผล',
-					under_review: 'รอรับรองผล',
-					returned: 'ส่งกลับคำขอ',
-					approved: 'รออนุมัติผล',
-					published: 'รอครูรับทราบ',
-					acknowledged: 'เสร็จสิ้น',
-					completed: 'เสร็จสิ้น',
-					cancelled: 'ยกเลิก'
-				} satisfies Record<SupervisionObservationStatus, string>
-			)[status] ?? status
-		);
 	}
 
 	function observationResultsReleased(status: SupervisionObservationStatus): boolean {
@@ -499,32 +502,6 @@
 		);
 	}
 
-	function actionKindLabel(actionKind: string): string {
-		return (
-			{
-				requested: 'ส่งคำขอ',
-				request_cancelled: 'ยกเลิกคำขอ',
-				updated: 'แก้ไขรายการ',
-				evaluators_updated: 'แก้ไขผู้ประเมิน',
-				planned: 'วางแผน/อนุมัติคำขอ',
-				returned: 'ส่งกลับคำขอ',
-				request_returned: 'ส่งกลับคำขอ',
-				evaluator_draft_saved: 'บันทึกผลประเมินชั่วคราว',
-				evaluator_submitted: 'ส่งผลประเมิน',
-				submitted_for_review: 'เข้าคิวรับรองผล',
-				subject_group_certified: 'รับรองผล',
-				academic_approved: 'อนุมัติผล',
-				approved: 'รับรองผล',
-				result_approved: 'อนุมัติผล',
-				published: 'อนุมัติผล',
-				result_published: 'อนุมัติผล',
-				acknowledged: 'รับทราบผล',
-				result_acknowledged: 'รับทราบผล',
-				cancelled: 'ยกเลิกรายการ'
-			}[actionKind] ?? actionKind
-		);
-	}
-
 	function formatDateTime(value?: string | null): string {
 		if (!value) return '-';
 		return new Date(value).toLocaleString('th-TH', {
@@ -628,11 +605,6 @@
 		return toIsoDateTime(observedDate, startTime);
 	}
 
-	function editDateInCycle(date: string): boolean {
-		if (!cycle) return true;
-		return date >= formatDateInput(cycle.startsAt) && date <= formatDateInput(cycle.endsAt);
-	}
-
 	function editTimetablePeriodKey(entry: SupervisionTimetableOption): string {
 		return (
 			entry.bellSchedulePeriodId ||
@@ -700,7 +672,6 @@
 		entry: SupervisionTimetableOption,
 		observedDate: string
 	) {
-		if (!editDateInCycle(observedDate)) return;
 		selectedEditTimetableBlockGroupId = entry.blockGroupId;
 		selectedEditTimetableDate = observedDate;
 		lessonForm.subjectName = editTimetableBlockGroupTitle(entry);
@@ -934,6 +905,7 @@
 
 	async function openLessonEditor() {
 		if (!observation || !canEditLesson) return;
+		lessonSaveError = '';
 		selectedEditTimetableBlockGroupId = observation.timetableBlockGroupId ?? '';
 		selectedEditTimetableDate = formatDateInput(observation.observedAt);
 		editWeekStartDate = toLocalDateInputValue(startOfWeek(new Date(observation.observedAt)));
@@ -956,6 +928,10 @@
 
 	async function saveLessonEdit() {
 		if (!observation || !canEditLesson) return;
+		if (isReturnedOwnRequest && cycle?.status !== 'open') {
+			toast.error('รอบนิเทศยังไม่เปิดรับคำขอ');
+			return;
+		}
 		if (selectedEditTimetableBlockGroup && !selectedEditTimetableDate) {
 			toast.error('เลือกวันที่จากตารางสอนก่อน');
 			return;
@@ -996,19 +972,24 @@
 		const sourceEpoch = contextEpoch;
 		const submittedId = observation.id;
 		const workflowRevision = lessonWorkflowRevision;
+		const resubmitting = isReturnedOwnRequest;
+		lessonSaveError = '';
 		savingAction = 'lesson';
 		try {
-			const response = canManageObservation
-				? await updateSupervisionObservation(submittedId, payload)
-				: await updateRequestedSupervisionObservation(submittedId, payload);
+			const response =
+				canManageObservation && !canEditOwnRequested
+					? await updateSupervisionObservation(submittedId, payload)
+					: await updateRequestedSupervisionObservation(submittedId, payload);
 			if (sourceEpoch !== contextEpoch) return;
 			const updated = mutationData(response, 'แก้ไขรายการนิเทศไม่สำเร็จ');
 			replaceObservation(updated);
 			if (workflowRevision === lessonWorkflowRevision) editLessonOpen = false;
-			toast.success('แก้ไขคาบนิเทศแล้ว');
+			toast.success(resubmitting ? 'แก้ไขและส่งคำขอใหม่แล้ว' : 'แก้ไขคาบนิเทศแล้ว');
 		} catch (saveError) {
 			if (sourceEpoch !== contextEpoch) return;
-			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขรายการนิเทศไม่สำเร็จ');
+			const message = saveError instanceof Error ? saveError.message : 'แก้ไขรายการนิเทศไม่สำเร็จ';
+			if (workflowRevision === lessonWorkflowRevision) lessonSaveError = message;
+			else toast.error(message);
 		} finally {
 			if (sourceEpoch === contextEpoch) savingAction = null;
 		}
@@ -1097,7 +1078,7 @@
 		savingAction = 'cancel';
 		try {
 			const response =
-				canManageObservation && !canEditOwnRequested
+				canManageObservation && !canCancelOwnRequest
 					? await cancelSupervisionObservation(submittedId, { reason: cancelReason || null })
 					: await cancelRequestedSupervisionObservation(submittedId);
 			if (sourceEpoch !== contextEpoch) return;
@@ -1146,6 +1127,25 @@
 					variant="outline"
 					onclick={retryObservation}>ลองใหม่</Button
 				>{/if}
+			<div class="mb-4 space-y-3">
+				<SupervisionWorkflow {observation} />
+				{#if observation.status === 'returned'}
+					<div
+						class="rounded-lg border bg-muted/30 p-4"
+						data-testid="supervision-current-return-reason"
+					>
+						<p class="text-sm font-medium">เหตุผลที่ส่งกลับ</p>
+						<p class="mt-1 whitespace-pre-wrap text-sm">
+							{currentReturnReason(observation) ?? 'ไม่ได้ระบุเหตุผล'}
+						</p>
+						{#if isReturnedOwnRequest && cycle && cycle.status !== 'open'}<p
+								class="mt-2 text-sm text-muted-foreground"
+							>
+								ส่งใหม่ได้เมื่อผู้ดูแลเปิดรับคำขอในรอบนี้
+							</p>{/if}
+					</div>
+				{/if}
+			</div>
 			<div class="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
 				<div class="min-w-0 space-y-4">
 					<Card.Root>
@@ -1169,7 +1169,7 @@
 									{#if canEditLesson}
 										<Button variant="outline" onclick={() => void openLessonEditor()}>
 											<CalendarClock class="h-4 w-4" />
-											แก้คาบ/วันเวลา
+											{isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'แก้คาบ/วันเวลา'}
 										</Button>
 									{/if}
 									{#if canEditEvaluators}
@@ -1566,45 +1566,6 @@
 							</div>
 						</Card.Content>
 					</Card.Root>
-
-					<Card.Root>
-						<Card.Header>
-							<Card.Title>ประวัติ</Card.Title>
-							<Card.Description>ลำดับการทำงานที่บันทึกจากระบบ</Card.Description>
-						</Card.Header>
-						<Card.Content class="space-y-3">
-							{#if observation.actions.length === 0}
-								<PageState
-									title="ยังไม่มีประวัติ"
-									description="เมื่อมีการดำเนินการ ระบบจะแสดงประวัติที่นี่"
-								/>
-							{:else}
-								{#each observation.actions as action (action.id)}
-									<div class="flex items-start gap-3 rounded-md border p-3">
-										<div class="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary"></div>
-										<div class="min-w-0 space-y-1">
-											<div class="flex flex-wrap items-center gap-2">
-												<p class="text-sm font-medium">{actionKindLabel(action.actionKind)}</p>
-												{#if action.fromStatus || action.toStatus}
-													<Badge variant="outline">
-														{action.fromStatus ? statusLabel(action.fromStatus) : '-'} → {action.toStatus
-															? statusLabel(action.toStatus)
-															: '-'}
-													</Badge>
-												{/if}
-											</div>
-											<p class="text-sm text-muted-foreground">
-												{action.actorDisplayName ?? 'ระบบ'} · {formatDateTime(action.createdAt)}
-											</p>
-											{#if action.comment}
-												<p class="text-sm">{action.comment}</p>
-											{/if}
-										</div>
-									</div>
-								{/each}
-							{/if}
-						</Card.Content>
-					</Card.Root>
 				</div>
 			</div>
 		{/if}
@@ -1708,7 +1669,6 @@
 														? 'default'
 														: 'outline'}
 													class="h-auto w-full justify-start whitespace-normal px-3 py-2 text-left"
-													disabled={!editDateInCycle(observedDate)}
 													onclick={() => selectLessonTimetableBlockGroup(entry, observedDate)}
 												>
 													<div class="space-y-1">
@@ -1794,21 +1754,27 @@
 				</div>
 			</div>
 		</div>
+		{#if lessonSaveError}<Alert.Root variant="destructive"
+				><Alert.Title>บันทึกรายการไม่สำเร็จ</Alert.Title><Alert.Description
+					>{lessonSaveError}</Alert.Description
+				></Alert.Root
+			>{/if}
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (editLessonOpen = false)}>ยกเลิก</Button>
 			<LoadingButton
 				onclick={saveLessonEdit}
-				disabled={!selectedEditTimetableBlockGroup &&
-					(!lessonForm.subjectName.trim() ||
-						!lessonForm.classroomLabel.trim() ||
-						!lessonForm.periodLabel.trim() ||
-						!lessonForm.observedDate ||
-						!lessonForm.observedTime ||
-						!lessonForm.reason.trim())}
+				disabled={(isReturnedOwnRequest && cycle?.status !== 'open') ||
+					(!selectedEditTimetableBlockGroup &&
+						(!lessonForm.subjectName.trim() ||
+							!lessonForm.classroomLabel.trim() ||
+							!lessonForm.periodLabel.trim() ||
+							!lessonForm.observedDate ||
+							!lessonForm.observedTime ||
+							!lessonForm.reason.trim()))}
 				loading={savingAction === 'lesson'}
 				loadingLabel="กำลังบันทึก..."
 			>
-				บันทึกคาบนิเทศ
+				{isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
 			</LoadingButton>
 		</Dialog.Footer>
 	</Dialog.Content>
@@ -1818,9 +1784,7 @@
 	<Dialog.Content class="sm:max-w-2xl" aria-busy={loadingEvaluatorAvailability}>
 		<Dialog.Header>
 			<Dialog.Title>แก้ผู้ประเมิน</Dialog.Title>
-			<Dialog.Description>
-				ผู้ประเมินที่ส่งผลแล้วจะถูกเก็บไว้เพื่อรักษาประวัติและผลประเมิน
-			</Dialog.Description>
+			<Dialog.Description>ผู้ประเมินที่ส่งผลแล้วจะถูกเก็บไว้เพื่อรักษาผลประเมิน</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-3">
 			{#if loadingEvaluatorAvailability}<div role="status" aria-label="กำลังโหลด">
@@ -1927,9 +1891,7 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>ยกเลิกรายการนิเทศ</Dialog.Title>
-			<Dialog.Description>
-				ระบบจะเปลี่ยนสถานะเป็นยกเลิกเพื่อเก็บประวัติ ไม่ลบข้อมูลออกจากฐานข้อมูล
-			</Dialog.Description>
+			<Dialog.Description>รายการจะเปลี่ยนเป็นยกเลิกและหยุดดำเนินการต่อ</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-2">
 			<Label>เหตุผล</Label>

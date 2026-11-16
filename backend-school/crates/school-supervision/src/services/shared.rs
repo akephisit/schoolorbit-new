@@ -71,7 +71,10 @@ pub fn resolve_supervision_target_rule<'a>(
 }
 
 pub fn teacher_can_edit_requested_observation(status: SupervisionObservationStatus) -> bool {
-    status == SupervisionObservationStatus::Requested
+    matches!(
+        status,
+        SupervisionObservationStatus::Requested | SupervisionObservationStatus::Returned
+    )
 }
 
 pub fn manager_can_edit_observation(status: SupervisionObservationStatus) -> bool {
@@ -177,6 +180,7 @@ pub fn can_transition_observation_status(
         (Requested, Planned)
             | (Requested, Returned)
             | (Requested, Cancelled)
+            | (Returned, Requested)
             | (Returned, Planned)
             | (Returned, Cancelled)
             | (Planned, InProgress)
@@ -363,14 +367,14 @@ mod tests {
         assert_eq!(resolved.priority, 10);
     }
     #[test]
-    fn teachers_may_edit_requests_only_while_requested() {
+    fn teachers_may_edit_requested_or_returned_requests() {
         assert!(teacher_can_edit_requested_observation(
             SupervisionObservationStatus::Requested
         ));
         assert!(!teacher_can_edit_requested_observation(
             SupervisionObservationStatus::Planned
         ));
-        assert!(!teacher_can_edit_requested_observation(
+        assert!(teacher_can_edit_requested_observation(
             SupervisionObservationStatus::Returned
         ));
         assert!(!teacher_can_edit_requested_observation(

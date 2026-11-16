@@ -3441,9 +3441,9 @@ mod tests {
                     "previewLearningGroupRoster",
                 ),
                 (
-                    "/api/academic/learning-groups/{id}/roster/publish",
-                    "post",
-                    "publishLearningGroupRoster",
+                    "/api/academic/learning-groups/{id}/roster",
+                    "put",
+                    "applyLearningGroupRoster",
                 ),
                 (
                     "/api/me/activity-registrations",
@@ -3464,6 +3464,7 @@ mod tests {
         );
 
         for retired_path in [
+            "/api/academic/learning-groups/{id}/roster/publish",
             "/api/academic/structure",
             "/api/academic/semesters",
             "/api/academic/classrooms",
@@ -4220,8 +4221,8 @@ mod tests {
             ),
             (
                 "/api/academic/delivery/workspace",
-                "getLearningDeliveryOverview",
-                "#/components/schemas/ApiResponse_LearningDeliveryOverview",
+                "getDeliveryWorkspace",
+                "#/components/schemas/ApiResponse_DeliveryWorkspace",
             ),
             (
                 "/api/academic/delivery/management-options",
@@ -4456,7 +4457,6 @@ mod tests {
                 "matches_curriculum",
                 "curriculum_requirement_not_offered",
                 "extra_offering",
-                "ended_early",
                 "operational_periods_differ"
             ])
         );

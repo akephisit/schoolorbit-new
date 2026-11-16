@@ -1,6 +1,9 @@
 import type {
 	SupervisionObservation,
-	SupervisionObservationStatus
+	SupervisionObservationStatus,
+	SupervisionCycleStatus,
+	SupervisionEvaluator,
+	UpdateRequestedObservationRequest
 } from '../../../src/lib/api/supervision';
 import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
@@ -32,6 +35,7 @@ export async function mock(
 	page: Page,
 	options: {
 		permissions?: string[];
+		cycleStatus?: SupervisionCycleStatus;
 		hold?:
 			| 'cycles'
 			| 'teacher-status'
@@ -73,10 +77,17 @@ export async function mock(
 ) {
 	const reads: string[] = [];
 	const writes: string[] = [];
+	const payloads: unknown[] = [];
 	const held = gate();
 	const counts = new Map<string, number>();
-	let cycleStatus = 'open';
+	let authFirstName = 'นิเทศ';
+	let authPermissions = options.permissions ?? [
+		'supervision.manage.school',
+		'supervision.read.school'
+	];
+	let cycleStatus = options.cycleStatus ?? 'open';
 	let observationStatus = options.observationStatus ?? 'requested';
+	let observationPatch: Partial<SupervisionObservation> = {};
 	const observation = (academicYearId = year): SupervisionObservation => ({
 		canManage: options.canManage ?? true,
 		canReview: options.canReview ?? true,
@@ -109,7 +120,8 @@ export async function mock(
 			}
 		],
 		actions: [],
-		...options.observation
+		...options.observation,
+		...observationPatch
 	});
 	let templateTitle = 'แบบประเมินทดสอบ';
 	const detail = () => ({
@@ -150,23 +162,23 @@ export async function mock(
 			if (method === 'GET') {
 				reads.push(resource);
 				counts.set(resource, (counts.get(resource) ?? 0) + 1);
-			} else writes.push(`${method} ${resource}`);
+			} else {
+				writes.push(`${method} ${resource}`);
+				if (route.request().postData()) payloads.push(route.request().postDataJSON());
+			}
 			if (resource === '/api/auth/me')
 				return reply(route, {
 					id: id(20),
 					username: 'E2E-supervision',
-					firstName: 'นิเทศ',
-					displayName: 'นิเทศ ทดสอบ',
+					firstName: authFirstName,
+					displayName: `${authFirstName} ทดสอบ`,
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
 					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
-					permissions: options.permissions ?? [
-						'supervision.manage.school',
-						'supervision.read.school'
-					]
+					permissions: authPermissions
 				});
 			if (resource === '/api/academic/context/options')
 				return reply(route, {
@@ -206,8 +218,6 @@ export async function mock(
 						: url.searchParams.get('academicYearId') === nextYear
 							? 'รอบปีใหม่'
 							: 'รอบแรก',
-					startsAt: '2026-09-01T00:00:00Z',
-					endsAt: '2026-12-01T00:00:00Z',
 					status: cycleStatus,
 					createdAt: '2026-09-01T00:00:00Z',
 					updatedAt: '2026-09-01T00:00:00Z',
@@ -314,8 +324,44 @@ export async function mock(
 								: resource.includes('/evaluations/')
 									? 'evaluators_submitted'
 									: 'planned';
+				if (resource.includes('/evaluations/'))
+					observationPatch = {
+						...observationPatch,
+						evaluators: observation().evaluators.map((evaluator): SupervisionEvaluator =>
+							evaluator.evaluatorUserId === id(20)
+								? { ...evaluator, status: 'submitted' }
+								: evaluator
+						)
+					};
 				return reply(route, observation());
 			}
+			if (method === 'DELETE' && resource === `/api/supervision/observations/${id(30)}/request`) {
+				observationStatus = 'cancelled';
+				return reply(route, { ...observation(), status: observationStatus });
+			}
+			if (method === 'PATCH' && resource === `/api/supervision/observations/${id(30)}/request`) {
+				observationStatus = 'requested';
+				const payload: UpdateRequestedObservationRequest = route.request().postDataJSON();
+				if (payload.manualLesson) {
+					const lesson = payload.manualLesson;
+					observationPatch = {
+						...observationPatch,
+						manualLesson: lesson,
+						observedAt: lesson.observedAt,
+						lessonSnapshot: {
+							source: 'manual',
+							subjectName: lesson.subjectName,
+							classroomLabel: lesson.classroomLabel,
+							roomLabel: lesson.roomLabel,
+							periodLabel: lesson.periodLabel,
+							observedAt: lesson.observedAt
+						}
+					};
+				}
+				return reply(route, { ...observation(), status: observationStatus });
+			}
+			if (resource === '/api/supervision/cycles' && method === 'POST')
+				return reply(route, { ...cycles()[0], ...route.request().postDataJSON() });
 			if (resource === '/api/supervision/cycles' && method === 'GET')
 				return reply(route, { items: cycles() });
 			if (resource === '/api/supervision/templates/summaries')
@@ -363,8 +409,15 @@ export async function mock(
 		}
 	);
 	return {
+		setFirstName: (firstName: string) => {
+			authFirstName = firstName;
+		},
+		setPermissions: (permissions: string[]) => {
+			authPermissions = [...permissions];
+		},
 		reads,
 		writes,
+		payloads,
 		observation: () => structuredClone(observation()),
 		release: held.release,
 		count: (resource: string) => counts.get(resource) ?? 0

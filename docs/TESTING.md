@@ -2896,3 +2896,23 @@ Download-all streams stored ZIP64 entries from the selected destination into an 
 Recovery tests cover the sixty-second hidden pause and visible auth reconciliation, fresh-device recovery after native SSE loss, retained exact unsent File objects and recipient choices, interrupted-job cancellation without replay, and refusal to automatically repeat an ambiguous registration POST. The feature lifecycle harness also checks bounded safe-auth backoff, terminal draft reset before central auth changes, logout/account replacement, disposal during reconciliation, and held-HTTP one-click stage ownership.
 
 For browser acceptance, use disposable staff sessions in one school: enter the tool and verify automatic presence, select several files and recipients, press Send, then press Receive once per recipient and verify automatic saving. Optionally preview the ordered name/size manifest first. Return from the OS file picker and temporarily interrupt connectivity to confirm the unsent selection remains and the device becomes ready again without resending old work. Queue more recipients than the server parallel limit, decline or slow one recipient, and confirm the others continue. Also cancel, disconnect one browser, revoke its session, receive a new batch after explicitly clearing old downloads, and try a network with client isolation. An unknown create result must keep its admission slot reserved until its matching pair closes or the device is explicitly restarted. Confirm the peer connection uses `iceServers: []` and only host candidates; unavailable direct connectivity must show failure without relay fallback. The backend never receives file bytes.
+
+### Manual supervision cycle status
+
+Run the focused workflow and preparation cases through disposable PostgreSQL:
+
+```bash
+./scripts/test_backend_school.sh supervision -- --test-threads=1
+./scripts/test_backend_school.sh --package school-supervision -- --test-threads=1
+./scripts/test_backend_school.sh term_preparation_tests -- --test-threads=1
+```
+
+The package suite includes a database-backed single-connection hydration case and
+therefore also uses the disposable database runner. The supervision cases include
+populated 158→159 preservation, unknown dependency
+refusal with atomic rollback/retry and native migration replay, strict retired-field
+API rejection, explicit booking states, returned correction/audit atomicity and
+return versus evaluator submission serialization. The existing completed workflow
+also runs evaluation, certification, approval and acknowledgement after cycle closure.
+Preparation verifies fresh draft cycles/staff targets without date mappings or
+operational observation copies; exam date mapping checks remain separate.

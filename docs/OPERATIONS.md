@@ -3092,3 +3092,21 @@ The receiving browser stores the manifest/index in OPFS, pages long lists, and r
 In browser-download mode, completed files are written to OPFS and automatically submitted to browser downloads with their correct names and MIME types. The browser can require permission for multiple downloads or block a request. The UI distinguishes requested downloads from confirmed directory saves and retains session-local completed files for manual individual/ZIP recovery. A web page cannot guarantee that a photo appears in a mobile Gallery; Downloads placement and any later Gallery import depend on the browser and operating system. Identity disposal or leaving the page removes OPFS temporary copies, while device files already saved or exported remain. A local stop or partial transfer failure retains completed files in the current session.
 
 Individual downloads and one combined ZIP64 download remain available. Creating the ZIP streams file contents from the chosen storage provider into a temporary OPFS archive and can require additional storage quota; cancelling or failing the archive removes its partial data while retaining completed received files. Browser storage availability and central-directory memory can constrain very large batches. The MB/s display is live progress information, not a benchmark claim. The canonical authenticated smoke registers protocol 3, checks its six-recipient limit, verifies a bounded ready event and removes only its own temporary device.
+
+## Manual supervision cycle status
+
+Deploy [migration 159](../backend-school/migrations/159_supervision_cycle_manual_status.sql)
+with the matching School backend, generated API contracts and frontend under the
+existing maintenance and all-tenant migration gates. Staff control draft/open/closed/
+archived explicitly; closing booking does not stop previously planned evaluations.
+Actual observation times and academic year/term protections remain.
+
+The migration removes only the four retired cycle/booking timestamps and their two
+named checks, preserves all other cycle fields through count/hash reconciliation,
+and leaves related targets, observations, evaluators, responses and audit actions
+unchanged. RESTRICT refuses an unknown dependency instead of cascading its removal.
+A refusal rolls back the migration; inspect bounded findings on an owned fixture,
+resolve the dependency through reviewed forward work and retry the canonical runner.
+`SUPERVISION_CYCLE159_RECONCILIATION_FAILED` retains maintenance and blocks cutover.
+After commit retain a compatible 159-or-later writer and repair forward; older
+binaries still require the removed fields and cannot write this schema.

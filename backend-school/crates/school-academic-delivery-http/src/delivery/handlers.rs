@@ -255,7 +255,20 @@ pub async fn list_offerings(
     Ok(ok(offerings))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/academic/delivery/workspace",operation_id="getDeliveryWorkspace",tag="academic",params(DeliveryWorkspaceQuery),responses((status=200,description="Current term Delivery workspace",body=ApiResponse<DeliveryWorkspace>),(status=403,description="Delivery read denied",body=ApiErrorResponse),(status=404,description="Academic context not found",body=ApiErrorResponse))))]
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,
+    path = "/api/academic/delivery/workspace",
+    operation_id = "getDeliveryWorkspace",
+    tag = "academic",
+    params(DeliveryWorkspaceQuery),
+    responses(
+        (status = 200, description = "Current term Delivery workspace", body = ApiResponse<DeliveryWorkspace>),
+        (status = 400, description = "Invalid Delivery workspace request", body = ApiErrorResponse),
+        (status = 401, description = "Authentication required to read the Delivery workspace", body = ApiErrorResponse),
+        (status = 403, description = "Delivery read denied", body = ApiErrorResponse),
+        (status = 404, description = "Academic context not found", body = ApiErrorResponse)
+    )
+))]
 pub async fn get_delivery_workspace(
     State(state): State<AcademicDeliveryHttpState>,
     Extension(session): Extension<AuthenticatedSession>,

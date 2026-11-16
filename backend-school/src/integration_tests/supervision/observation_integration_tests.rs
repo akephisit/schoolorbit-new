@@ -62,10 +62,6 @@ mod tests {
             academic_term_id: Some(source_term),
             template_id: Uuid::new_v4(),
             status: "open".into(),
-            booking_opens_at: None,
-            booking_closes_at: None,
-            starts_at: observed_at - chrono::Duration::days(1),
-            ends_at: observed_at + chrono::Duration::days(1),
         };
         let mut transaction = pool.begin().await.unwrap();
         let lesson = tokio::time::timeout(
