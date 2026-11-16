@@ -38,15 +38,13 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
-	import RequestEditor from './RequestEditor.svelte';
 	import LeaveActionForm from './LeaveActionForm.svelte';
 	let { source, id }: { source: Promise<RouteLoadResult<LeaveRequestDetail | null>>; id: string } =
 		$props();
 	const region = new LeaveRegion<LeaveRequestDetail | null>(),
 		submitIntent = new LeaveMutationIntent(),
 		cancelIntent = new LeaveMutationIntent();
-	let editing = $state(false),
-		cancelling = $state(false),
+	let cancelling = $state(false),
 		cancelReason = $state(''),
 		action = $state<ProcessAction | null>(null),
 		pending = $state(''),
@@ -150,7 +148,8 @@
 			{#if detail.canEdit && creator}<Button
 					variant="outline"
 					disabled={!!pending}
-					onclick={() => (editing = true)}>แก้ไขฉบับร่าง</Button
+					href={`/staff/leave/requests/${id}/edit?returnTo=${encodeURIComponent(backHref)}`}
+					>แก้ไขฉบับร่าง</Button
 				>{/if}
 			{#if detail.canSubmit && creator}<LoadingButton
 					loading={pending === 'submit'}
@@ -427,24 +426,6 @@
 	</section>
 </PageShell>
 
-<Dialog.Root bind:open={editing}
-	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
-		><Dialog.Header
-			><Dialog.Title>แก้ไขฉบับร่าง</Dialog.Title><Dialog.Description
-				>ปรับข้อมูลและหลักฐานก่อนส่งพิจารณา</Dialog.Description
-			></Dialog.Header
-		>{#if editing && detail?.canEdit && creator}<RequestEditor
-				kind={detail.request.kind}
-				{detail}
-				onrefresh={refreshed}
-				oncancel={() => (editing = false)}
-				onsaved={(result) => {
-					region.patch(result);
-					editing = false;
-				}}
-			/>{/if}</Dialog.Content
-	></Dialog.Root
->
 <Dialog.Root bind:open={cancelling}
 	><Dialog.Content
 		><Dialog.Header

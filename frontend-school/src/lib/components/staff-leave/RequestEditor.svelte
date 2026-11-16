@@ -13,6 +13,8 @@
 	import { uploadFile } from '#lib/api/files.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { LeaveRegion } from '#lib/staff-leave/region.svelte.js';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
 	import {
 		leaveDraft,
@@ -33,20 +35,24 @@
 	let {
 		kind,
 		detail,
+		optionsSource,
 		oncancel,
 		onsaved,
 		onrefresh
 	}: {
 		kind: LeaveKind;
 		detail?: LeaveRequestDetail;
+		optionsSource: Promise<RouteLoadResult<LeavePersonalOptions | null>>;
 		oncancel: () => void;
-		onsaved: (detail: LeaveRequestDetail) => void;
+		onsaved: (detail: LeaveRequestDetail, proceed: boolean) => void;
 		onrefresh?: () => void;
 	} = $props();
 	let draft = $state<LeaveDraft>(untrack(() => leaveDraft(detail)));
-	let options = $state<LeavePersonalOptions | null>(null),
-		optionsError = $state(''),
-		optionsLoading = $state(true);
+	const optionsRegion = new LeaveRegion<LeavePersonalOptions | null>();
+	const options = $derived(optionsRegion.value);
+	const optionsError = $derived(optionsRegion.error);
+	const optionsLoading = $derived(optionsRegion.loading);
+	$effect.pre(() => optionsRegion.consume(optionsSource));
 	let policy = $state<LeavePolicyVersion | null>(null),
 		policyError = $state(''),
 		policyLoading = $state(false);
@@ -100,27 +106,16 @@
 			if (policyRequest.isCurrent(ticket.revision) && !disposed) policyLoading = false;
 		}
 	}
-	async function loadOptions() {
-		optionsLoading = true;
-		optionsError = '';
-		try {
-			const result = await getLeaveOptions({ signal: controller.signal });
-			if (!disposed) options = result;
-		} catch (cause) {
-			if (!disposed) optionsError = cause instanceof Error ? cause.message : 'โหลดประเภทไม่สำเร็จ';
-		} finally {
-			if (!disposed) optionsLoading = false;
-		}
+	function loadOptions() {
+		optionsRegion.retry((signal) => getLeaveOptions({ signal }));
 	}
 	$effect.pre(() => {
-		untrack(() => {
-			void loadOptions();
-			void resolvePolicy();
-		});
+		untrack(() => void resolvePolicy());
 	});
 	onDestroy(() => {
 		disposed = true;
 		controller.abort();
+		optionsRegion.dispose();
 		policyRequest.abort();
 	});
 	async function save(event: SubmitEvent) {
@@ -153,7 +148,12 @@
 						period
 					})
 				: await createLeaveRequest({ requestId, period });
-			if (!disposed) onsaved(result);
+			if (!disposed) expectedRevision = result.request.revision;
+			if (!disposed)
+				onsaved(
+					result,
+					event.submitter instanceof HTMLButtonElement && event.submitter.value === 'next'
+				);
 		} catch (cause) {
 			if (!disposed) {
 				error = cause instanceof Error ? cause.message : 'บันทึกคำขอไม่สำเร็จ';
@@ -367,6 +367,13 @@
 			loading={pending}
 			disabled={!policy || policyLoading || !typeChoices.length || stale || conflict}
 			>บันทึกฉบับร่าง</LoadingButton
+		><LoadingButton
+			type="submit"
+			name="workflowAction"
+			value="next"
+			loading={pending}
+			disabled={!policy || policyLoading || !typeChoices.length || stale || conflict}
+			>บันทึกและจัดคาบสอนต่อ</LoadingButton
 		>
 	</div>
 </form>

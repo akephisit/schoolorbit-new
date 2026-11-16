@@ -25,9 +25,7 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ChevronDown, Plus } from '@lucide/svelte';
-	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Choice from './Choice.svelte';
-	import RequestEditor from './RequestEditor.svelte';
 	let {
 		source,
 		kind,
@@ -38,7 +36,6 @@
 		query: LeaveListQuery;
 	} = $props();
 	const region = new LeaveRegion<LeaveRequestPage | null>();
-	let creating = $state(false);
 	const home = $derived(leaveHome(kind));
 	const offset = $derived(query.offset ?? 0);
 	$effect.pre(() => {
@@ -73,7 +70,8 @@
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>
 		{/if}
-		{#if $can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN)}<Button onclick={() => (creating = true)}
+		{#if $can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN)}<Button
+				href={`${home}/new?returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`}
 				><Plus class="size-4" />สร้างคำขอ{leaveKindLabels[kind]}</Button
 			>{/if}
 	{/snippet}
@@ -211,23 +209,3 @@
 			/>{/if}
 	</section>
 </PageShell>
-
-<Dialog.Root bind:open={creating}
-	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
-		><Dialog.Header
-			><Dialog.Title>สร้างคำขอ{leaveKindLabels[kind]}</Dialog.Title><Dialog.Description
-				>บันทึกฉบับร่างก่อนแนบหลักฐานและส่งพิจารณา</Dialog.Description
-			></Dialog.Header
-		>
-		{#if creating && $can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN)}<RequestEditor
-				{kind}
-				oncancel={() => (creating = false)}
-				onsaved={(detail) => {
-					creating = false;
-					void goto(
-						`/staff/leave/requests/${detail.request.id}?returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`
-					);
-				}}
-			/>{/if}
-	</Dialog.Content></Dialog.Root
->
