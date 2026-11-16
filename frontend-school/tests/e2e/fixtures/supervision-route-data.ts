@@ -80,6 +80,10 @@ export async function mock(
 	const payloads: unknown[] = [];
 	const held = gate();
 	const counts = new Map<string, number>();
+	let authPermissions = options.permissions ?? [
+		'supervision.manage.school',
+		'supervision.read.school'
+	];
 	let cycleStatus = options.cycleStatus ?? 'open';
 	let observationStatus = options.observationStatus ?? 'requested';
 	let observationPatch: Partial<SupervisionObservation> = {};
@@ -173,10 +177,7 @@ export async function mock(
 					session: sessionState(),
 					profileImageFileId: null,
 					primaryRoleName: null,
-					permissions: options.permissions ?? [
-						'supervision.manage.school',
-						'supervision.read.school'
-					]
+					permissions: authPermissions
 				});
 			if (resource === '/api/academic/context/options')
 				return reply(route, {
@@ -407,6 +408,9 @@ export async function mock(
 		}
 	);
 	return {
+		setPermissions: (permissions: string[]) => {
+			authPermissions = [...permissions];
+		},
 		reads,
 		writes,
 		payloads,

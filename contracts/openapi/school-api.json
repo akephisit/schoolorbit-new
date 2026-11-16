@@ -76047,6 +76047,26 @@
             },
             "description": "Current term Delivery workspace"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid Delivery workspace request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required to read the Delivery workspace"
+          },
           "403": {
             "content": {
               "application/json": {

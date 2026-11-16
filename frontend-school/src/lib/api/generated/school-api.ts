@@ -31946,6 +31946,24 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_DeliveryWorkspace'];
 				};
 			};
+			/** @description Invalid Delivery workspace request */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required to read the Delivery workspace */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			/** @description Delivery read denied */
 			403: {
 				headers: {

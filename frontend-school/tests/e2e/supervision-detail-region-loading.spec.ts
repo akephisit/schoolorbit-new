@@ -1,5 +1,5 @@
 import { revalidatePage } from './fixtures/page-revalidation';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
 	id,
 	year,
@@ -19,6 +19,34 @@ const detailPath = (n = 30) => `/staff/academic/supervision/${id(n)}?academicYea
 const observationPath = `/api/supervision/observations/${id(30)}`;
 const cyclePath = `/api/supervision/cycles/${firstCycle}`;
 const summaryPath = `/api/supervision/templates/${templateId}/summary`;
+
+async function controlledAuthRefresh(
+	page: Page,
+	event: 'reconcile_required' | 'permission_changed' = 'reconcile_required'
+) {
+	const gate = Promise.withResolvers<void>();
+	await page.route('**/api/notifications/stream', async (route) => {
+		await gate.promise;
+		await route.fulfill({
+			status: 200,
+			contentType: 'text/event-stream',
+			body: `event: ${event}\ndata: {}\n\n`
+		});
+	});
+	return async () => {
+		const auth = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === '/api/auth/me'
+		);
+		gate.resolve();
+		await (await auth).finished();
+		await page.evaluate(
+			() =>
+				new Promise<void>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+				)
+		);
+	};
+}
 
 for (const hold of ['selected-cycle', 'summary'] as const) {
 	test(`detail identity renders before ${hold}`, async ({ page }) => {
@@ -62,6 +90,7 @@ test('detail revalidation retains identity and recovers each dependent error loc
 	page
 }) => {
 	const api = await mock(page, { fail: 'observation-detail', failAt: 2 });
+	const refreshSameIdentity = await controlledAuthRefresh(page);
 	await page.goto(detailPath());
 	const detail = page.getByTestId('supervision-detail');
 	const cycle = page.getByTestId('supervision-detail-cycle');
@@ -105,6 +134,10 @@ test('detail revalidation retains identity and recovers each dependent error loc
 	await template.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
 	await expect.poll(() => api.count(summaryPath)).toBe(2);
 	await expect(template).toHaveAttribute('aria-busy', 'false');
+	await expect(detail.getByText('region ไม่พร้อม', { exact: true })).toHaveCount(0);
+	const authReads = api.count('/api/auth/me');
+	await refreshSameIdentity();
+	expect(api.count('/api/auth/me')).toBeGreaterThan(authReads);
 	await expect(detail.getByText('region ไม่พร้อม', { exact: true })).toHaveCount(0);
 	await expect(teacher).toBeVisible();
 	expect(api.count(observationPath)).toBe(3);
@@ -219,4 +252,72 @@ test('unit manager reading another unit cannot manage or review its unreleased o
 	expect(api.count(`${observationPath}/review`)).toBe(0);
 	expect(api.count(`${observationPath}/timetable-options`)).toBe(0);
 	expect(api.count(`${observationPath}/evaluator-availability`)).toBe(0);
+});
+
+async function heldIdentityRetry(page: Page, event: 'reconcile_required' | 'permission_changed') {
+	const api = await mock(page, {
+		fail: 'observation-detail',
+		failAt: 2,
+		hold: 'observation-detail',
+		holdAt: 3
+	});
+	const refresh = await controlledAuthRefresh(page, event);
+	await page.goto(detailPath());
+	const detail = page.getByTestId('supervision-detail');
+	await expect(page.getByTestId('supervision-detail-cycle')).toHaveAttribute('aria-busy', 'false');
+	await expect(page.getByTestId('supervision-detail-template')).toHaveAttribute(
+		'aria-busy',
+		'false'
+	);
+	await revalidatePage(page);
+	await expect(
+		detail.getByRole('heading', { name: 'อัปเดตรายการไม่สำเร็จ', exact: true })
+	).toBeVisible();
+	await detail
+		.locator(':scope > button')
+		.filter({ hasText: /^ลองใหม่$/ })
+		.click();
+	await expect.poll(() => api.count(observationPath)).toBe(3);
+	await expect(detail).toHaveAttribute('aria-busy', 'true');
+	return { api, refresh, detail };
+}
+
+test('same-identity authentication reconciliation preserves a held local retry', async ({
+	page
+}) => {
+	const { api, refresh, detail } = await heldIdentityRetry(page, 'reconcile_required');
+	const authReads = api.count('/api/auth/me');
+	await refresh();
+	expect(api.count('/api/auth/me')).toBeGreaterThan(authReads);
+	await expect(detail).toHaveAttribute('aria-busy', 'true');
+	await expect(
+		detail.getByRole('heading', { name: 'อัปเดตรายการไม่สำเร็จ', exact: true })
+	).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
+	api.release();
+	await expect(detail).toHaveAttribute('aria-busy', 'false');
+	await expect(
+		detail.getByRole('heading', { name: 'อัปเดตรายการไม่สำเร็จ', exact: true })
+	).toHaveCount(0);
+	expect(api.count(observationPath)).toBe(3);
+	expect(api.count(cyclePath)).toBe(1);
+	expect(api.count(summaryPath)).toBe(1);
+});
+
+test('changed read permissions clear identity data and reject a held response without denied reads', async ({
+	page
+}) => {
+	const { api, refresh } = await heldIdentityRetry(page, 'permission_changed');
+	api.setPermissions(['supervision.evaluate.assigned']);
+	await refresh();
+	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toHaveCount(0);
+	api.release();
+	await navigate(page, detailPath(40));
+	await expect(page.getByText('ไม่พบรายการนิเทศ', { exact: true })).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toHaveCount(0);
+	await expect(page.getByText('วิชาทดสอบ', { exact: true })).toHaveCount(0);
+	expect(api.count(observationPath)).toBe(3);
+	expect(api.count(`/api/supervision/observations/${id(40)}`)).toBe(0);
+	expect(api.count(cyclePath)).toBe(1);
+	expect(api.count(summaryPath)).toBe(1);
 });

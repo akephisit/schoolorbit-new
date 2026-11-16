@@ -255,9 +255,20 @@
 			: null
 	);
 
+	const routeObservationId = $derived(data.observationId);
+	const routeObservation = $derived(data.observation);
+	const routeCycle = $derived(data.cycle);
+	const routeTemplate = $derived(data.template);
+	const routeIdentity = $derived(`${currentUserId}|${$userPermissions.toSorted().join(',')}`);
+
 	$effect.pre(() => {
-		const source = data;
-		const identity = `${$authStore.user?.id ?? ''}|${$userPermissions.toSorted().join(',')}`;
+		const source = {
+			observationId: routeObservationId,
+			observation: routeObservation,
+			cycle: routeCycle,
+			template: routeTemplate
+		};
+		const identity = routeIdentity;
 		if (!routeOwners.has(source.observation)) routeOwners.set(source.observation, identity);
 		const ownsSource = routeOwners.get(source.observation) === identity;
 		untrack(() => {
