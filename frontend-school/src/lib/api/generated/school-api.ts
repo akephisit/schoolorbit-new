@@ -22137,6 +22137,10 @@ export interface components {
 		/** @enum {string} */
 		LeaveCountingMode: 'calendar_days' | 'working_days';
 		LeaveCoverageAssignment: {
+			/** Format: uuid */
+			confirmationId?: string | null;
+			/** Format: int64 */
+			confirmationPlanRevision?: number | null;
 			/** Format: date-time */
 			confirmedAt?: string | null;
 			consent: components['schemas']['LeaveCoverageConsent'];
@@ -59090,7 +59094,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveCoverageTaskPage'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59119,6 +59123,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -59150,7 +59163,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveCoveragePlan'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59179,6 +59192,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -59206,7 +59228,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveCoverageSettings'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59235,6 +59257,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -59266,7 +59297,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveCoverageSettings'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59295,6 +59326,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -59818,7 +59858,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59847,6 +59887,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -59881,7 +59930,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveCoverageCandidates'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59910,6 +59959,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -59944,7 +60002,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveCoverageTask'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -59973,6 +60031,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -60007,7 +60074,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60036,6 +60103,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -60070,7 +60146,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_LeaveCoverageReturnLessons'];
 				};
 			};
-			/** @description Invalid coverage */
+			/** @description Malformed request */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -60099,6 +60175,15 @@ export interface operations {
 			};
 			/** @description Stale coverage or conflicting duty */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Invalid coverage selection */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};

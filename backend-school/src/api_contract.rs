@@ -148,8 +148,8 @@ use school_staff_http::http::handlers::organization_members::{
     AddMemberRequest, ListMembersQuery, UpdateMemberRequest,
 };
 use school_staff_http::http::handlers::staff::StaffListData;
-use school_staff_leave::models::*;
 use school_staff_leave::coverage_models::*;
+use school_staff_leave::models::*;
 use school_students::models::{
     CreateParentRequest, CreateStudentRequest, CreateStudentResponse, ParentDto, StudentDbRow,
     StudentListItem, StudentListResponse, StudentProfile, StudentRegisterInfo,

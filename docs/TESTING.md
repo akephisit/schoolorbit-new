@@ -882,6 +882,10 @@ for the real cookie, CSRF, permission and tenant boundary. Use the shared local 
 profile documented above. Browser fixtures supplement these database cases; they do not prove
 reservation, consent, roster or historical preservation behavior.
 
+Run `./scripts/test_backend_school.sh --integration staff_leave_lifecycle_obligations -- --test-threads=1`
+for term/year closure checks against reserved teaching and owed reciprocal returns, including
+same-day intervals, optional terms and stale readiness previews without materialized Attendance.
+
 `school-file-contracts` owns the unchanged provider-neutral values, `PlatformFile` and the File
 authorization contract; serialization/schema tests remain with those definitions. Its consumers
 import contracts directly. `school-file-platform` owns file inspection, purpose/object-key policy, repository,

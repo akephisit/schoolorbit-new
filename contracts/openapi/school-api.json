@@ -49924,6 +49924,20 @@
       "LeaveCoverageAssignment": {
         "additionalProperties": false,
         "properties": {
+          "confirmationId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confirmationPlanRevision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "confirmedAt": {
             "format": "date-time",
             "type": [
@@ -113165,7 +113179,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -113196,6 +113210,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [
@@ -113235,7 +113259,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -113266,6 +113290,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [
@@ -113295,7 +113329,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -113326,6 +113360,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [
@@ -113363,7 +113407,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -113394,6 +113438,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [
@@ -114063,7 +114117,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -114094,6 +114148,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [
@@ -114145,7 +114209,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -114176,6 +114240,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [
@@ -114227,7 +114301,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -114258,6 +114332,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [
@@ -114309,7 +114393,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -114340,6 +114424,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [
@@ -114391,7 +114485,7 @@
                 }
               }
             },
-            "description": "Invalid coverage"
+            "description": "Malformed request"
           },
           "401": {
             "content": {
@@ -114422,6 +114516,16 @@
               }
             },
             "description": "Stale coverage or conflicting duty"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage selection"
           }
         },
         "tags": [

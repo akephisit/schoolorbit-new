@@ -85,10 +85,8 @@ pub(crate) async fn year_workspace_in_transaction(
             code: "year.teaching_obligations".into(),
             severity: LifecycleSeverity::Blocking,
             count: teaching.len(),
-            message: "มีภาระสอนแทนหรือสอนคืนในปีการศึกษานี้ที่ยังไม่สิ้นสุด รวมถึงภาคเรียนไม่บังคับ".into(),
-            resolution_url: actor
-                .has_permission(codes::ACADEMIC_TIMETABLE_READ_SCHOOL)
-                .then(|| format!("/staff/academic/timetable?academicYearId={year}")),
+            message: "มีภาระสอนแทนหรือสอนคืนที่ยังไม่สิ้นสุด รวมถึงภาคเรียนไม่บังคับ กรุณาตรวจสอบการจัดสอนในคำขอลาหรือขอออกนอกสถานศึกษา".into(),
+            resolution_url: None,
         });
     }
     findings.sort_by(|a, b| a.code.cmp(&b.code));

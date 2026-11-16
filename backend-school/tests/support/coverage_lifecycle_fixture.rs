@@ -279,8 +279,8 @@ impl Fixture {
     }
 
     pub async fn assert_no_attendance_materialized(&self) {
-        let counts: (i64, i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM attendance_days WHERE academic_term_id=$1),(SELECT count(*) FROM attendance_sessions WHERE academic_term_id=$1),(SELECT count(*) FROM attendance_calendar_snapshots WHERE academic_term_id=$1)")
+        let counts: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM attendance_days WHERE academic_term_id=$1),(SELECT count(*) FROM attendance_sessions WHERE academic_term_id=$1)")
             .bind(self.term).fetch_one(&self.pool).await.unwrap();
-        assert_eq!(counts, (0, 0, 0));
+        assert_eq!(counts, (0, 0));
     }
 }

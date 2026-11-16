@@ -42,12 +42,9 @@ pub async fn workspace_in_transaction(
         ),
         (
             "timetable",
-            "มีภาระสอนแทนหรือสอนคืนที่จองหรืออนุมัติไว้และยังไม่สิ้นสุด",
+            "มีภาระสอนแทนหรือสอนคืนที่ยังไม่สิ้นสุด กรุณาตรวจสอบการจัดสอนในคำขอลาหรือขอออกนอกสถานศึกษา",
             &timetable,
-            link(
-                codes::ACADEMIC_TIMETABLE_READ_SCHOOL,
-                "/staff/academic/timetable",
-            ),
+            None,
         ),
         (
             "exams",

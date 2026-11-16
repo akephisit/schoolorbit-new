@@ -11,5 +11,5 @@ mod repository;
 #[cfg(test)]
 mod pool_facade_tests;
 
-pub mod coverage_models;
 pub mod coverage;
+pub mod coverage_models;

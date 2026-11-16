@@ -3128,6 +3128,10 @@ return/replan the request through Leave rather than editing stored snapshots or 
 An approved cancellation releases an entirely future exchange pair together. Once either leg
 has begun, its owed counterpart remains operative. Materialized Attendance rows and results
 remain unchanged by coverage approval or cancellation.
+Live teaching obligations also block academic closure, including an owed return in an optional
+term. Resolve the accepted Leave/exit plan before retrying readiness. Legal withdrawal,
+cancellation, rejection and return remain available after closure; creating or approving new
+teaching still requires a writable target context.
 
 Use the coverage fixtures in [Testing](TESTING.md) for a disposable rehearsal. After migration,
 retain a 160-compatible writer and repair forward; do not restore an older migration timeline

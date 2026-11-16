@@ -244,9 +244,9 @@ mod tests {
         };
         let mut r = Record {
             document: Json(LeaveRequestSummary {
-        academic_year_id: None,
-        academic_term_id: None,
-        half_day_boundary: None,
+                academic_year_id: None,
+                academic_term_id: None,
+                half_day_boundary: None,
                 id: Uuid::new_v4(),
                 type_id: Uuid::new_v4(),
                 type_name: "test".into(),

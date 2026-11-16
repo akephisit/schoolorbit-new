@@ -53,7 +53,7 @@ async fn future_reserved_and_approved_teaching_blocks_term_close_without_attenda
     assert!(ws
         .findings
         .iter()
-        .any(|r| r.code == "timetable.blocking" && r.count == 1));
+        .any(|r| r.code == "timetable.blocking" && r.count == 1 && r.resolution_url.is_none()));
     deny_term_close(&f, request).await;
     f.approve(request).await;
     deny_term_close(&f, request).await;
@@ -125,7 +125,8 @@ async fn optional_planning_and_ready_terms_block_year_close_despite_acknowledged
             .findings
             .iter()
             .any(|r| r.code == "year.teaching_obligations"
-                && r.severity == LifecycleSeverity::Blocking));
+                && r.severity == LifecycleSeverity::Blocking
+                && r.resolution_url.is_none()));
         let input = f.year_input(YearTransitionAction::Close).await;
         assert_eq!(
             input.acknowledged_warning_codes,
@@ -196,7 +197,10 @@ async fn same_day_ongoing_blocks_but_actual_ended_interval_does_not() {
     let f = Fixture::new("coverage_lifecycle_intraday", "active").await;
     let now = f.local_now().await;
     let elapsed = now.time() - NaiveTime::MIN;
-    let boundary = NaiveTime::MIN + elapsed / 2;
+    // Persisted PostgreSQL times have microsecond precision. Halving an odd
+    // microsecond without normalization invents a half-microsecond overlap
+    // between the JSON-persisted end and the next in-memory start.
+    let boundary = NaiveTime::MIN + Duration::microseconds(elapsed.num_microseconds().unwrap() / 2);
     let ended = f
         .reserve(&[f.duty(now.date(), NaiveTime::MIN, boundary)])
         .await;

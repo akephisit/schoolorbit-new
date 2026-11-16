@@ -135,8 +135,9 @@ pub async fn detail(
             r.document.status,
             LeaveStatus::Submitted | LeaveStatus::CancellationPending
         );
-    let coverage=super::coverage::detail_on_connection(&mut tx,actor,&r).await?;
-    let coverage_ready=coverage.state==super::coverage_models::LeaveCoverageState::Confirmed||coverage.state==super::coverage_models::LeaveCoverageState::LegacyUnverified;
+    let coverage = super::coverage::detail_on_connection(&mut tx, actor, &r).await?;
+    let coverage_ready = coverage.state == super::coverage_models::LeaveCoverageState::Confirmed
+        || coverage.state == super::coverage_models::LeaveCoverageState::LegacyUnverified;
     let available_actions = if can_act {
         let step = i.as_ref().and_then(|i| i.steps.get(i.current_step));
         let action = if step.is_some_and(|s| s.definition.kind == ProcessStepKind::Review) {
@@ -144,8 +145,11 @@ pub async fn detail(
         } else {
             ProcessAction::Approve
         };
-        let mut actions=vec![ProcessAction::Reject,ProcessAction::ReturnForRevision];
-        if coverage_ready||r.document.status==LeaveStatus::CancellationPending{actions.insert(0,action)}actions
+        let mut actions = vec![ProcessAction::Reject, ProcessAction::ReturnForRevision];
+        if coverage_ready || r.document.status == LeaveStatus::CancellationPending {
+            actions.insert(0, action)
+        }
+        actions
     } else {
         vec![]
     };

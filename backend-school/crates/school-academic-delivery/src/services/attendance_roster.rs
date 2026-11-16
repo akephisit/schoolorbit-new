@@ -108,8 +108,22 @@ pub async fn students_on_connection(
 
 /// Compare the actual dated pupils, including distinct offering-specific groups.
 /// Empty rosters do not establish an audience and never authorize an exchange.
-pub async fn same_audience_on_connection(connection:&mut PgConnection,a:Uuid,a_date:NaiveDate,b:Uuid,b_date:NaiveDate)->Result<bool,AppError>{
- let left=students_on_connection(connection,&[a],a_date).await?.into_iter().map(|s|s.student_id).collect::<std::collections::BTreeSet<_>>();
- let right=students_on_connection(connection,&[b],b_date).await?.into_iter().map(|s|s.student_id).collect::<std::collections::BTreeSet<_>>();
- Ok(!left.is_empty()&&left==right)
+pub async fn same_audience_on_connection(
+    connection: &mut PgConnection,
+    a: Uuid,
+    a_date: NaiveDate,
+    b: Uuid,
+    b_date: NaiveDate,
+) -> Result<bool, AppError> {
+    let left = students_on_connection(connection, &[a], a_date)
+        .await?
+        .into_iter()
+        .map(|s| s.student_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let right = students_on_connection(connection, &[b], b_date)
+        .await?
+        .into_iter()
+        .map(|s| s.student_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    Ok(!left.is_empty() && left == right)
 }
