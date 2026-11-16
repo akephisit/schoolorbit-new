@@ -1,4 +1,5 @@
 use super::queries::detail;
+use super::{coverage,coverage_models::SubmitLeaveRequest};
 use super::{models::*, policy::*, repository::*};
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
@@ -18,6 +19,8 @@ pub async fn create(
     actor.require_any_permission(&[codes::STAFF_LEAVE_READ_OWN, codes::STAFF_LEAVE_READ_SCHOOL])?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.create").await?;
+    let (year,term)=coverage::explicit_context(&input.period)?;
+    school_academic_timetable::services::dated_teaching::lock_context(&mut tx,year,term).await?;
     let id = Uuid::now_v7();
     if let Some(replay) = claim(
         &mut tx,
@@ -53,6 +56,9 @@ pub async fn create(
     }
     let quantity = amount(&input.period, &p)?;
     let s = LeaveRequestSummary {
+        academic_year_id: input.period.academic_year_id,
+        academic_term_id: input.period.academic_term_id,
+        half_day_boundary: input.period.half_day_boundary,
         id,
         type_id: typ.id,
         type_name: typ.name.clone(),
@@ -110,6 +116,7 @@ pub async fn update(
         tx.commit().await?;
         return detail(pool, actor, id).await;
     }
+    coverage::lock_request_context(&mut tx,id).await?;
     let mut r = load(&mut tx, id).await?;
     owner_edit(actor, &r)?;
     if r.document.revision != input.expected_revision {
@@ -128,6 +135,11 @@ pub async fn update(
     super::files::validate_evidence(&mut tx, actor.user_id, id, &input.period.evidence_file_ids)
         .await?;
     let n = amount(&input.period, &p)?;
+    let (year,term)=coverage::explicit_context(&input.period)?;
+    if r.document.academic_year_id!=Some(year)||r.document.academic_term_id!=Some(term){return Err(invalid("เปลี่ยนบริบทปีหรือภาคเรียนด้วยคำขอใหม่"))}
+    r.document.academic_year_id=input.period.academic_year_id;
+    r.document.academic_term_id=input.period.academic_term_id;
+    r.document.half_day_boundary=input.period.half_day_boundary;
     r.document.start_date = input.period.start_date;
     r.document.end_date = input.period.end_date;
     r.document.start_time = input.period.start_time;
@@ -153,6 +165,8 @@ struct LeaveSource {
 }
 #[async_trait::async_trait]
 impl ProcessSourcePort for LeaveSource {
+    fn process_owner(&self,_actor:&ActorContext)->Uuid{self.owner_id}
+
     async fn validate_existing(
         &self,
         _tx: &mut Transaction<'_, Postgres>,
@@ -181,7 +195,10 @@ impl ProcessSourcePort for LeaveSource {
         source: &ProcessSource,
     ) -> Result<(), AppError> {
         let r = load(tx, self.request_id).await?;
-        if actor.user_id != self.owner_id
+        let manager_start=actor.has_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)
+            && self.purpose==LeaveProcessPurpose::Request
+            && coverage::stored_plan(&mut **tx,self.request_id).await?.is_some_and(|p|p.emergency_reason.is_some());
+        if (actor.user_id != self.owner_id && !manager_start)
             || source.module_code != "staff_leave"
             || source.resource_id != self.source_id
             || source.resource_type
@@ -208,6 +225,7 @@ impl ProcessSourcePort for LeaveSource {
     ) -> Result<(), AppError> {
         self.validate_existing(tx, actor, i).await?;
         actor.require_permission(codes::STAFF_LEAVE_UPDATE_ASSIGNED)?;
+        if self.purpose==LeaveProcessPurpose::Request && matches!(r.action,ProcessAction::Review|ProcessAction::Approve){let record=load(tx,self.request_id).await?;if !coverage::approval_ready(&mut **tx,&record).await?{return Err(invalid("รอผู้สอนยืนยันแผนครบก่อนพิจารณาอนุมัติ"))}}
         if actor.user_id == self.owner_id
             || !matches!(
                 r.action,
@@ -239,7 +257,7 @@ impl ProcessSourcePort for LeaveSource {
         Ok(())
     }
 }
-async fn start(
+pub(super) async fn start(
     tx: &mut Transaction<'_, Postgres>,
     actor: &ActorContext,
     r: &mut Record,
@@ -313,8 +331,9 @@ pub async fn submit(
     pool: &PgPool,
     actor: &ActorContext,
     id: Uuid,
-    input: LeaveMutationRequest,
+    input: impl Into<SubmitLeaveRequest>,
 ) -> Result<LeaveRequestDetail, AppError> {
+    let input=input.into();
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.submit").await?;
     if claim(
@@ -331,6 +350,7 @@ pub async fn submit(
         tx.commit().await?;
         return detail(pool, actor, id).await;
     }
+    coverage::lock_request_context(&mut tx,id).await?;
     let mut r = load(&mut tx, id).await?;
     owner_edit(actor, &r)?;
     if r.document.revision != input.expected_revision {
@@ -396,6 +416,7 @@ pub async fn submit(
     if p.annual_limit.is_some_and(|cap| used + quantity > cap) {
         return Err(invalid("ยอดอนุมัติและคำขอที่รอพิจารณารวมกันเกินสิทธิ์ตามเกณฑ์โรงเรียน"));
     }
+    let plan=coverage::prepare_submission(&mut tx,&r,input.emergency_reason.as_deref()).await?;
     r.document.status = LeaveStatus::Submitted;
     r.document.revision += 1;
     r.document.personnel_type = Some(cat);
@@ -405,9 +426,10 @@ pub async fn submit(
     r.policy_id = Some(p.id);
     let snapshots =
         super::files::validate_evidence(&mut tx, actor.user_id, id, &r.evidence_file_ids).await?;
-    r.content_hash = process::payload_hash(&(period_from(&r), &p, cat, &snapshots))?;
+    r.content_hash = process::payload_hash(&(period_from(&r), &p, cat, &snapshots,&plan.plan_hash))?;
     // Persist source state before Workflow validates it; all writes roll back together.
     DbSession::new(&mut *tx).query("staff.leave.lifecycle.submit", "UPDATE staff_leave_requests SET status='submitted',document=$2,quota_year_start=$3 WHERE id=$1").bind(id).bind(&r.document).bind(year).execute().await?;
+    if input.emergency_reason.is_none(){
     start(
         &mut tx,
         actor,
@@ -417,6 +439,7 @@ pub async fn submit(
         LeaveProcessPurpose::Request,
     )
     .await?;
+    }
     store(&mut tx, &r).await?;
     super::files::retain_snapshots(&mut tx, id, r.document.revision, &snapshots).await?;
     history(&mut tx, actor, &r, "submitted", None, None, None).await?;
@@ -445,6 +468,7 @@ pub async fn act(
         tx.commit().await?;
         return detail(pool, actor, id).await;
     }
+    coverage::lock_request_context(&mut tx,id).await?;
     let mut r = load(&mut tx, id).await?;
     require_read(&mut tx, actor, &r).await?;
     if r.document.revision != input.expected_revision {
@@ -480,6 +504,7 @@ pub async fn act(
         },
         purpose,
     };
+    if purpose==LeaveProcessPurpose::Request && matches!(input.action,ProcessAction::Review|ProcessAction::Approve){if let Some(plan)=coverage::stored_plan(&mut tx,id).await?{coverage::revalidate(&mut tx,&r,&plan).await?;}}
     let mut signature_snapshot = vec![];
     if let Some(s) = &input.signature {
         school_workflow::signatures::validate_content_bound_signature(
@@ -525,6 +550,12 @@ pub async fn act(
         ) => LeaveStatus::Approved,
         _ => r.document.status,
     };
+    match r.document.status {
+      LeaveStatus::Approved if purpose==LeaveProcessPurpose::Request=>school_academic_timetable::services::dated_teaching::approve_on_connection(&mut tx,id).await?,
+      LeaveStatus::Returned|LeaveStatus::Rejected=>school_academic_timetable::services::dated_teaching::release_on_connection(&mut tx,id,false).await?,
+      LeaveStatus::Cancelled=>school_academic_timetable::services::dated_teaching::release_on_connection(&mut tx,id,true).await?,
+      _=>{}
+    }
     r.document.revision += 1;
     store(&mut tx, &r).await?;
     super::files::retain_snapshots(&mut tx, id, r.document.revision, &signature_snapshot).await?;
@@ -577,6 +608,7 @@ pub async fn cancel(
         tx.commit().await?;
         return detail(pool, actor, id).await;
     }
+    coverage::lock_request_context(&mut tx,id).await?;
     let mut r = load(&mut tx, id).await?;
     if r.document.owner_id != actor.user_id {
         return Err(denied());
@@ -646,6 +678,7 @@ pub async fn cancel(
             )
             .await?;
         }
+        school_academic_timetable::services::dated_teaching::release_on_connection(&mut tx,id,false).await?;
         r.document.status = LeaveStatus::Cancelled;
         r.document.revision += 1;
         store(&mut tx, &r).await?;
@@ -728,4 +761,8 @@ async fn check_overlaps(
         ));
     }
     Ok(())
+}
+
+pub(super) async fn return_for_coverage_revision(tx:&mut Transaction<'_,Postgres>,actor:&ActorContext,r:&Record,key:Uuid)->Result<(),AppError>{
+ if let Some(id)=r.instance_id {let source=LeaveSource{request_id:r.document.id,owner_id:r.document.owner_id,source_id:r.document.id,purpose:LeaveProcessPurpose::Request};process::return_source_for_revision_in_transaction(tx,actor,&source,id,key).await?;}Ok(())
 }

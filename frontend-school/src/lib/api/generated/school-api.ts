@@ -6971,6 +6971,54 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff-leave/coverage/assigned': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listAssignedStaffLeaveCoverage'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/coverage/preview': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['previewStaffLeaveCoverage'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/coverage/settings': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getStaffLeaveCoverageSettings'];
+		put: operations['saveStaffLeaveCoverageSettings'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/staff-leave/options': {
 		parameters: {
 			query?: never;
@@ -7045,6 +7093,86 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['cancelStaffLeaveRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/coverage': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['saveStaffLeaveCoverage'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/coverage/candidates': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['getStaffLeaveCoverageCandidates'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/coverage/confirm': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['confirmStaffLeaveCoverage'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/coverage/replan': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['replanStaffLeaveCoverage'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/coverage/return-lessons': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['getStaffLeaveCoverageReturnLessons'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -11818,6 +11946,81 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_LeaveCoverageCandidates: {
+			data: {
+				candidates: components['schemas']['LeaveCoverageCandidate'][];
+				gradeLevels: components['schemas']['LeaveCoverageLabel'][];
+				hasMore: boolean;
+				subjectGroups: components['schemas']['LeaveCoverageLabel'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveCoveragePlan: {
+			data: {
+				/** Format: uuid */
+				academicTermId?: string | null;
+				/** Format: uuid */
+				academicYearId?: string | null;
+				blockingReason?: string | null;
+				canManage: boolean;
+				days: components['schemas']['LeaveCoverageDay'][];
+				emergencyReason?: string | null;
+				halfDayBoundary?: string | null;
+				planHash: string;
+				/** Format: int64 */
+				revision: number;
+				sourceDigest?: string | null;
+				state: components['schemas']['LeaveCoverageState'];
+				timetableState: components['schemas']['LeaveCoverageTimetableState'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveCoverageReturnLessons: {
+			data: {
+				lessons: components['schemas']['DatedTeachingLesson'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveCoverageSettings: {
+			data: {
+				contexts: components['schemas']['LeaveCoverageContext'][];
+				/** Format: uuid */
+				defaultAcademicTermId?: string | null;
+				/** Format: uuid */
+				defaultAcademicYearId?: string | null;
+				halfDayBoundary?: string | null;
+				/** Format: int64 */
+				revision: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveCoverageTask: {
+			data: {
+				assignments: components['schemas']['LeaveCoverageLesson'][];
+				ownerName: string;
+				planHash: string;
+				/** Format: int64 */
+				planRevision: number;
+				/** Format: uuid */
+				requestId: string;
+				/** Format: int64 */
+				requestRevision: number;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_LeaveCoverageTaskPage: {
+			data: {
+				hasMore: boolean;
+				items: components['schemas']['LeaveCoverageTask'][];
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_LeavePersonalOptions: {
 			data: {
 				personnelType?: components['schemas']['StaffPersonnelType'] | null;
@@ -11873,6 +12076,7 @@ export interface components {
 				canEdit: boolean;
 				canSubmit: boolean;
 				contentHash: string;
+				coverage: components['schemas']['LeaveCoveragePlan'];
 				evidenceFileIds: string[];
 				history: components['schemas']['LeaveHistoryEntry'][];
 				instance?: components['schemas']['ProcessInstance'] | null;
@@ -18518,6 +18722,14 @@ export interface components {
 			rowVersion?: number | null;
 			sourceChecksum: string;
 		};
+		ConfirmLeaveCoverageRequest: {
+			assignmentIds: string[];
+			decision: components['schemas']['LeaveCoverageConsent'];
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			requestId: string;
+		};
 		ConfirmYearRolloverInput: {
 			preview: components['schemas']['YearRolloverPreviewInput'];
 			/** Format: uuid */
@@ -19942,6 +20154,38 @@ export interface components {
 			studentCode?: string | null;
 			/** Format: uuid */
 			studentId: string;
+		};
+		DatedTeachingLesson: {
+			/** Format: uuid */
+			allocationId: string;
+			/** Format: int64 */
+			allocationRevision: number;
+			/** Format: uuid */
+			bellSchedulePeriodId: string;
+			/** Format: uuid */
+			blockId: string;
+			/** Format: date */
+			date: string;
+			endTime: string;
+			gradeLevelIds: string[];
+			homeroomIds: string[];
+			homeroomNames: string[];
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			learningGroupName?: string | null;
+			lessonKey: string;
+			/** Format: uuid */
+			offeringId?: string | null;
+			offeringName?: string | null;
+			periodName: string;
+			/** Format: uuid */
+			roomId?: string | null;
+			roomName?: string | null;
+			/** Format: int64 */
+			sourceRevision: number;
+			startTime: string;
+			/** Format: uuid */
+			teacherId: string;
 		};
 		DayRoomAssignmentView: {
 			buildingName?: string | null;
@@ -21892,6 +22136,156 @@ export interface components {
 		};
 		/** @enum {string} */
 		LeaveCountingMode: 'calendar_days' | 'working_days';
+		LeaveCoverageAssignment: {
+			/** Format: date-time */
+			confirmedAt?: string | null;
+			consent: components['schemas']['LeaveCoverageConsent'];
+			/** Format: uuid */
+			id: string;
+			mode: components['schemas']['LeaveCoverageMode'];
+			/** Format: uuid */
+			replacementTeacherId: string;
+			replacementTeacherName: string;
+			/** Format: date */
+			returnDate?: string | null;
+			returnLesson?: components['schemas']['DatedTeachingLesson'] | null;
+			returnLessonKey?: string | null;
+			taughtActivity?: string | null;
+			/** Format: uuid */
+			taughtLearningGroupId?: string | null;
+			/** Format: uuid */
+			taughtOfferingId?: string | null;
+			taughtOfferingName?: string | null;
+		};
+		LeaveCoverageCandidate: {
+			displayName: string;
+			gradeLevels: components['schemas']['LeaveCoverageLabel'][];
+			isSameSubjectGroup: boolean;
+			subjectGroups: components['schemas']['LeaveCoverageLabel'][];
+			taughtOfferings: components['schemas']['LeaveCoverageLabel'][];
+			/** Format: uuid */
+			teacherId: string;
+		};
+		LeaveCoverageCandidates: {
+			candidates: components['schemas']['LeaveCoverageCandidate'][];
+			gradeLevels: components['schemas']['LeaveCoverageLabel'][];
+			hasMore: boolean;
+			subjectGroups: components['schemas']['LeaveCoverageLabel'][];
+		};
+		LeaveCoverageCandidatesRequest: {
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			gradeLevelId?: string | null;
+			lessonKeys: string[];
+			sameGradeOnly?: boolean;
+			sameStudentGroupOnly?: boolean;
+			sameSubjectGroupOnly?: boolean;
+			search?: string | null;
+			sourceDigest: string;
+			/** Format: uuid */
+			subjectGroupId?: string | null;
+		};
+		/** @enum {string} */
+		LeaveCoverageConsent: 'pending' | 'confirmed' | 'declined';
+		LeaveCoverageContext: {
+			/** Format: uuid */
+			academicTermId: string;
+			academicTermName: string;
+			/** Format: uuid */
+			academicYearId: string;
+			academicYearName: string;
+		};
+		LeaveCoverageDay: {
+			/** Format: date */
+			date: string;
+			lessons: components['schemas']['LeaveCoverageLesson'][];
+		};
+		LeaveCoverageLabel: {
+			/** Format: uuid */
+			id: string;
+			name: string;
+		};
+		LeaveCoverageLesson: components['schemas']['DatedTeachingLesson'] & {
+			assignment?: components['schemas']['LeaveCoverageAssignment'] | null;
+		};
+		/** @enum {string} */
+		LeaveCoverageMode: 'substitution' | 'reciprocal';
+		LeaveCoveragePlan: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId?: string | null;
+			blockingReason?: string | null;
+			canManage: boolean;
+			days: components['schemas']['LeaveCoverageDay'][];
+			emergencyReason?: string | null;
+			halfDayBoundary?: string | null;
+			planHash: string;
+			/** Format: int64 */
+			revision: number;
+			sourceDigest?: string | null;
+			state: components['schemas']['LeaveCoverageState'];
+			timetableState: components['schemas']['LeaveCoverageTimetableState'];
+		};
+		LeaveCoverageReturnLessons: {
+			lessons: components['schemas']['DatedTeachingLesson'][];
+		};
+		LeaveCoverageReturnLessonsRequest: {
+			/** Format: date */
+			date: string;
+			/** Format: int64 */
+			expectedRevision: number;
+			lessonKey: string;
+			/** Format: uuid */
+			replacementTeacherId: string;
+			sourceDigest: string;
+		};
+		LeaveCoverageSelection: {
+			lessonKey: string;
+			mode: components['schemas']['LeaveCoverageMode'];
+			/** Format: uuid */
+			replacementTeacherId: string;
+			returnLessonKey?: string | null;
+			taughtActivity?: string | null;
+			/** Format: uuid */
+			taughtOfferingId?: string | null;
+		};
+		LeaveCoverageSettings: {
+			contexts: components['schemas']['LeaveCoverageContext'][];
+			/** Format: uuid */
+			defaultAcademicTermId?: string | null;
+			/** Format: uuid */
+			defaultAcademicYearId?: string | null;
+			halfDayBoundary?: string | null;
+			/** Format: int64 */
+			revision: number;
+		};
+		/** @enum {string} */
+		LeaveCoverageState:
+			| 'unplanned'
+			| 'incomplete'
+			| 'awaiting_confirmation'
+			| 'confirmed'
+			| 'emergency'
+			| 'legacy_unverified';
+		LeaveCoverageTask: {
+			assignments: components['schemas']['LeaveCoverageLesson'][];
+			ownerName: string;
+			planHash: string;
+			/** Format: int64 */
+			planRevision: number;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			requestRevision: number;
+		};
+		LeaveCoverageTaskPage: {
+			hasMore: boolean;
+			items: components['schemas']['LeaveCoverageTask'][];
+		};
+		/** @enum {string} */
+		LeaveCoverageTimetableState: 'ready' | 'missing' | 'legacy';
 		/** @enum {string} */
 		LeaveDayPortion: 'full_day' | 'morning' | 'afternoon';
 		LeaveFileSnapshot: {
@@ -21925,11 +22319,16 @@ export interface components {
 			requestId: string;
 		};
 		LeavePeriodInput: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId?: string | null;
 			dayPortion: components['schemas']['LeaveDayPortion'];
 			/** Format: date */
 			endDate: string;
 			endTime?: string | null;
 			evidenceFileIds?: string[];
+			halfDayBoundary?: string | null;
 			reason: string;
 			/** Format: date */
 			startDate: string;
@@ -21985,6 +22384,7 @@ export interface components {
 			canEdit: boolean;
 			canSubmit: boolean;
 			contentHash: string;
+			coverage: components['schemas']['LeaveCoveragePlan'];
 			evidenceFileIds: string[];
 			history: components['schemas']['LeaveHistoryEntry'][];
 			instance?: components['schemas']['ProcessInstance'] | null;
@@ -21997,6 +22397,10 @@ export interface components {
 			items: components['schemas']['LeaveRequestSummary'][];
 		};
 		LeaveRequestSummary: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId?: string | null;
 			/** Format: int64 */
 			amount: number;
 			/** Format: date-time */
@@ -22005,6 +22409,7 @@ export interface components {
 			/** Format: date */
 			endDate: string;
 			endTime?: string | null;
+			halfDayBoundary?: string | null;
 			/** Format: uuid */
 			id: string;
 			kind: components['schemas']['LeaveKind'];
@@ -22679,6 +23084,9 @@ export interface components {
 			/** Format: uuid */
 			academicTermId: string;
 			studyProgramIds: string[];
+		};
+		PreviewLeaveCoverageRequest: {
+			period: components['schemas']['LeavePeriodInput'];
 		};
 		PreviewTermPreparationInput: {
 			mappings?: components['schemas']['TermPreparationMappings'];
@@ -24212,6 +24620,21 @@ export interface components {
 		SaveEvaluationRequest: {
 			responses?: components['schemas']['EvaluationResponseInput'][];
 		};
+		SaveLeaveCoverageRequest: {
+			assignments: components['schemas']['LeaveCoverageSelection'][];
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			requestId: string;
+			sourceDigest: string;
+		};
+		SaveLeaveCoverageSettingsRequest: {
+			/** Format: int64 */
+			expectedRevision: number;
+			halfDayBoundary?: string | null;
+			/** Format: uuid */
+			requestId: string;
+		};
 		SaveLeavePolicyRequest: {
 			/** Format: int64 */
 			annualLimit?: number | null;
@@ -25157,6 +25580,13 @@ export interface components {
 		};
 		SubmitCertificateIssueRequest: {
 			candidateIds: string[];
+		};
+		SubmitLeaveRequest: {
+			emergencyReason?: string | null;
+			/** Format: int64 */
+			expectedRevision: number;
+			/** Format: uuid */
+			requestId: string;
 		};
 		SupervisionAction: {
 			actionKind: string;
@@ -58639,6 +59069,241 @@ export interface operations {
 			};
 		};
 	};
+	listAssignedStaffLeaveCoverage: {
+		parameters: {
+			query?: {
+				limit?: number;
+				offset?: number;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveCoverageTaskPage'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	previewStaffLeaveCoverage: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['PreviewLeaveCoverageRequest'];
+			};
+		};
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveCoveragePlan'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffLeaveCoverageSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveCoverageSettings'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveStaffLeaveCoverageSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveLeaveCoverageSettingsRequest'];
+			};
+		};
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveCoverageSettings'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	getStaffLeaveOptions: {
 		parameters: {
 			query?: never;
@@ -59128,6 +59793,321 @@ export interface operations {
 			};
 		};
 	};
+	saveStaffLeaveCoverage: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Leave request identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveLeaveCoverageRequest'];
+			};
+		};
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffLeaveCoverageCandidates: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Leave request identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LeaveCoverageCandidatesRequest'];
+			};
+		};
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveCoverageCandidates'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	confirmStaffLeaveCoverage: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Leave request identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ConfirmLeaveCoverageRequest'];
+			};
+		};
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveCoverageTask'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	replanStaffLeaveCoverage: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Leave request identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LeaveMutationRequest'];
+			};
+		};
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveRequestDetail'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getStaffLeaveCoverageReturnLessons: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Leave request identity */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LeaveCoverageReturnLessonsRequest'];
+			};
+		};
+		responses: {
+			/** @description Teaching coverage result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LeaveCoverageReturnLessons'];
+				};
+			};
+			/** @description Invalid coverage */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale coverage or conflicting duty */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	submitStaffLeaveRequest: {
 		parameters: {
 			query?: never;
@@ -59140,7 +60120,7 @@ export interface operations {
 		};
 		requestBody: {
 			content: {
-				'application/json': components['schemas']['LeaveMutationRequest'];
+				'application/json': components['schemas']['SubmitLeaveRequest'];
 			};
 		};
 		responses: {

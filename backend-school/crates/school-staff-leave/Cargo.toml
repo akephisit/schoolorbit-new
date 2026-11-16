@@ -9,9 +9,15 @@ api-docs = [
     "school-file-contracts/api-docs",
     "school-staff/api-docs",
     "school-workflow/api-docs",
+    "school-academic-timetable/api-docs",
+    "school-academic-core/api-docs",
+    "school-academic-delivery/api-docs",
 ]
 
 [dependencies]
+school-academic-timetable = { workspace = true }
+school-academic-core = { workspace = true }
+school-academic-delivery = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }

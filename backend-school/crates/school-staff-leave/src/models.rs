@@ -120,6 +120,12 @@ pub struct LeavePolicyVersion {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LeavePeriodInput {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub academic_year_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub academic_term_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub half_day_boundary: Option<NaiveTime>,
     pub type_id: Uuid,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
@@ -184,6 +190,12 @@ pub struct LeaveActionRequest {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LeaveRequestSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub academic_year_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub academic_term_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub half_day_boundary: Option<NaiveTime>,
     pub id: Uuid,
     pub type_id: Uuid,
     pub type_name: String,
@@ -222,6 +234,7 @@ pub struct LeaveHistoryEntry {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LeaveRequestDetail {
+    pub coverage: super::coverage_models::LeaveCoveragePlan,
     pub request: LeaveRequestSummary,
     pub policy: Option<LeavePolicyVersion>,
     pub instance: Option<ProcessInstance>,

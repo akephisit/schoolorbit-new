@@ -12488,6 +12488,315 @@
         ],
         "type": "object"
       },
+      "ApiResponse_LeaveCoverageCandidates": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "candidates": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCoverageCandidate"
+                },
+                "type": "array"
+              },
+              "gradeLevels": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCoverageLabel"
+                },
+                "type": "array"
+              },
+              "hasMore": {
+                "type": "boolean"
+              },
+              "subjectGroups": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCoverageLabel"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "candidates",
+              "subjectGroups",
+              "gradeLevels",
+              "hasMore"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveCoveragePlan": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "academicTermId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "academicYearId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "blockingReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "canManage": {
+                "type": "boolean"
+              },
+              "days": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCoverageDay"
+                },
+                "type": "array"
+              },
+              "emergencyReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "halfDayBoundary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "planHash": {
+                "type": "string"
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "sourceDigest": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "state": {
+                "$ref": "#/components/schemas/LeaveCoverageState"
+              },
+              "timetableState": {
+                "$ref": "#/components/schemas/LeaveCoverageTimetableState"
+              }
+            },
+            "required": [
+              "revision",
+              "planHash",
+              "state",
+              "timetableState",
+              "days",
+              "canManage"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveCoverageReturnLessons": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "lessons": {
+                "items": {
+                  "$ref": "#/components/schemas/DatedTeachingLesson"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "lessons"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveCoverageSettings": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "contexts": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCoverageContext"
+                },
+                "type": "array"
+              },
+              "defaultAcademicTermId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "defaultAcademicYearId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "halfDayBoundary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "revision": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "revision",
+              "contexts"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveCoverageTask": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "assignments": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCoverageLesson"
+                },
+                "type": "array"
+              },
+              "ownerName": {
+                "type": "string"
+              },
+              "planHash": {
+                "type": "string"
+              },
+              "planRevision": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "requestId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "requestRevision": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "requestId",
+              "requestRevision",
+              "planRevision",
+              "planHash",
+              "ownerName",
+              "assignments"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_LeaveCoverageTaskPage": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "hasMore": {
+                "type": "boolean"
+              },
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCoverageTask"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items",
+              "hasMore"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_LeavePersonalOptions": {
         "properties": {
           "data": {
@@ -12694,6 +13003,9 @@
               "contentHash": {
                 "type": "string"
               },
+              "coverage": {
+                "$ref": "#/components/schemas/LeaveCoveragePlan"
+              },
               "evidenceFileIds": {
                 "items": {
                   "format": "uuid",
@@ -12735,6 +13047,7 @@
               }
             },
             "required": [
+              "coverage",
               "request",
               "processPurpose",
               "history",
@@ -37140,6 +37453,36 @@
         ],
         "type": "object"
       },
+      "ConfirmLeaveCoverageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "assignmentIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/LeaveCoverageConsent"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "assignmentIds",
+          "decision"
+        ],
+        "type": "object"
+      },
       "ConfirmYearRolloverInput": {
         "additionalProperties": false,
         "properties": {
@@ -42625,6 +42968,126 @@
           "rosterSource",
           "joinedAt",
           "rowVersion"
+        ],
+        "type": "object"
+      },
+      "DatedTeachingLesson": {
+        "properties": {
+          "allocationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "allocationRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "bellSchedulePeriodId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "blockId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": "string"
+          },
+          "gradeLevelIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "homeroomIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "homeroomNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "learningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "learningGroupName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lessonKey": {
+            "type": "string"
+          },
+          "offeringId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offeringName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "periodName": {
+            "type": "string"
+          },
+          "roomId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startTime": {
+            "type": "string"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lessonKey",
+          "date",
+          "blockId",
+          "allocationId",
+          "teacherId",
+          "bellSchedulePeriodId",
+          "periodName",
+          "startTime",
+          "endTime",
+          "gradeLevelIds",
+          "homeroomIds",
+          "homeroomNames",
+          "sourceRevision",
+          "allocationRevision"
         ],
         "type": "object"
       },
@@ -49458,6 +49921,596 @@
         ],
         "type": "string"
       },
+      "LeaveCoverageAssignment": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmedAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "consent": {
+            "$ref": "#/components/schemas/LeaveCoverageConsent"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/LeaveCoverageMode"
+          },
+          "replacementTeacherId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "replacementTeacherName": {
+            "type": "string"
+          },
+          "returnDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "returnLesson": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DatedTeachingLesson"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "returnLessonKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taughtActivity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taughtLearningGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taughtOfferingId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taughtOfferingName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "replacementTeacherId",
+          "replacementTeacherName",
+          "mode",
+          "consent"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "gradeLevels": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageLabel"
+            },
+            "type": "array"
+          },
+          "isSameSubjectGroup": {
+            "type": "boolean"
+          },
+          "subjectGroups": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageLabel"
+            },
+            "type": "array"
+          },
+          "taughtOfferings": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageLabel"
+            },
+            "type": "array"
+          },
+          "teacherId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "teacherId",
+          "displayName",
+          "subjectGroups",
+          "gradeLevels",
+          "isSameSubjectGroup",
+          "taughtOfferings"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageCandidates": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageCandidate"
+            },
+            "type": "array"
+          },
+          "gradeLevels": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageLabel"
+            },
+            "type": "array"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "subjectGroups": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageLabel"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidates",
+          "subjectGroups",
+          "gradeLevels",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageCandidatesRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "gradeLevelId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lessonKeys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sameGradeOnly": {
+            "type": "boolean"
+          },
+          "sameStudentGroupOnly": {
+            "type": "boolean"
+          },
+          "sameSubjectGroupOnly": {
+            "type": "boolean"
+          },
+          "search": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceDigest": {
+            "type": "string"
+          },
+          "subjectGroupId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "sourceDigest",
+          "lessonKeys"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageConsent": {
+        "enum": [
+          "pending",
+          "confirmed",
+          "declined"
+        ],
+        "type": "string"
+      },
+      "LeaveCoverageContext": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicTermName": {
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "academicYearName",
+          "academicTermId",
+          "academicTermName"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageDay": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageLesson"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "lessons"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageLabel": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageLesson": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DatedTeachingLesson"
+          },
+          {
+            "properties": {
+              "assignment": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LeaveCoverageAssignment"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "LeaveCoverageMode": {
+        "enum": [
+          "substitution",
+          "reciprocal"
+        ],
+        "type": "string"
+      },
+      "LeaveCoveragePlan": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blockingReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageDay"
+            },
+            "type": "array"
+          },
+          "emergencyReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "halfDayBoundary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "planHash": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "sourceDigest": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/LeaveCoverageState"
+          },
+          "timetableState": {
+            "$ref": "#/components/schemas/LeaveCoverageTimetableState"
+          }
+        },
+        "required": [
+          "revision",
+          "planHash",
+          "state",
+          "timetableState",
+          "days",
+          "canManage"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageReturnLessons": {
+        "additionalProperties": false,
+        "properties": {
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/DatedTeachingLesson"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "lessons"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageReturnLessonsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lessonKey": {
+            "type": "string"
+          },
+          "replacementTeacherId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceDigest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedRevision",
+          "sourceDigest",
+          "lessonKey",
+          "replacementTeacherId",
+          "date"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "lessonKey": {
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/LeaveCoverageMode"
+          },
+          "replacementTeacherId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "returnLessonKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taughtActivity": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "taughtOfferingId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "lessonKey",
+          "replacementTeacherId",
+          "mode"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "contexts": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageContext"
+            },
+            "type": "array"
+          },
+          "defaultAcademicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultAcademicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "halfDayBoundary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "contexts"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageState": {
+        "enum": [
+          "unplanned",
+          "incomplete",
+          "awaiting_confirmation",
+          "confirmed",
+          "emergency",
+          "legacy_unverified"
+        ],
+        "type": "string"
+      },
+      "LeaveCoverageTask": {
+        "additionalProperties": false,
+        "properties": {
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageLesson"
+            },
+            "type": "array"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "planHash": {
+            "type": "string"
+          },
+          "planRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestRevision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requestId",
+          "requestRevision",
+          "planRevision",
+          "planHash",
+          "ownerName",
+          "assignments"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageTaskPage": {
+        "additionalProperties": false,
+        "properties": {
+          "hasMore": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageTask"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "hasMore"
+        ],
+        "type": "object"
+      },
+      "LeaveCoverageTimetableState": {
+        "enum": [
+          "ready",
+          "missing",
+          "legacy"
+        ],
+        "type": "string"
+      },
       "LeaveDayPortion": {
         "enum": [
           "full_day",
@@ -49570,6 +50623,20 @@
       "LeavePeriodInput": {
         "additionalProperties": false,
         "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "dayPortion": {
             "$ref": "#/components/schemas/LeaveDayPortion"
           },
@@ -49589,6 +50656,12 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "halfDayBoundary": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "reason": {
             "type": "string"
@@ -49798,6 +50871,9 @@
           "contentHash": {
             "type": "string"
           },
+          "coverage": {
+            "$ref": "#/components/schemas/LeaveCoveragePlan"
+          },
           "evidenceFileIds": {
             "items": {
               "format": "uuid",
@@ -49839,6 +50915,7 @@
           }
         },
         "required": [
+          "coverage",
           "request",
           "processPurpose",
           "history",
@@ -49872,6 +50949,20 @@
       },
       "LeaveRequestSummary": {
         "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "amount": {
             "format": "int64",
             "type": "integer"
@@ -49888,6 +50979,12 @@
             "type": "string"
           },
           "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "halfDayBoundary": {
             "type": [
               "string",
               "null"
@@ -52296,6 +53393,18 @@
         "required": [
           "academicTermId",
           "studyProgramIds"
+        ],
+        "type": "object"
+      },
+      "PreviewLeaveCoverageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/LeavePeriodInput"
+          }
+        },
+        "required": [
+          "period"
         ],
         "type": "object"
       },
@@ -57809,6 +58918,59 @@
         },
         "type": "object"
       },
+      "SaveLeaveCoverageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "assignments": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageSelection"
+            },
+            "type": "array"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sourceDigest": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "sourceDigest",
+          "assignments"
+        ],
+        "type": "object"
+      },
+      "SaveLeaveCoverageSettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "halfDayBoundary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
       "SaveLeavePolicyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -61388,6 +62550,30 @@
         },
         "required": [
           "candidateIds"
+        ],
+        "type": "object"
+      },
+      "SubmitLeaveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "emergencyReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision"
         ],
         "type": "object"
       },
@@ -111937,6 +113123,284 @@
         ]
       }
     },
+    "/api/staff-leave/coverage/assigned": {
+      "get": {
+        "operationId": "listAssignedStaffLeaveCoverage",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageTaskPage"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/coverage/preview": {
+      "post": {
+        "operationId": "previewStaffLeaveCoverage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewLeaveCoverageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoveragePlan"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/coverage/settings": {
+      "get": {
+        "operationId": "getStaffLeaveCoverageSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageSettings"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      },
+      "put": {
+        "operationId": "saveStaffLeaveCoverageSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveLeaveCoverageSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageSettings"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
     "/api/staff-leave/options": {
       "get": {
         "operationId": "getStaffLeaveOptions",
@@ -112555,6 +114019,416 @@
         ]
       }
     },
+    "/api/staff-leave/requests/{id}/coverage": {
+      "put": {
+        "operationId": "saveStaffLeaveCoverage",
+        "parameters": [
+          {
+            "description": "Leave request identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveLeaveCoverageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestDetail"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}/coverage/candidates": {
+      "post": {
+        "operationId": "getStaffLeaveCoverageCandidates",
+        "parameters": [
+          {
+            "description": "Leave request identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveCoverageCandidatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageCandidates"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}/coverage/confirm": {
+      "post": {
+        "operationId": "confirmStaffLeaveCoverage",
+        "parameters": [
+          {
+            "description": "Leave request identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmLeaveCoverageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageTask"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}/coverage/replan": {
+      "post": {
+        "operationId": "replanStaffLeaveCoverage",
+        "parameters": [
+          {
+            "description": "Leave request identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveRequestDetail"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}/coverage/return-lessons": {
+      "post": {
+        "operationId": "getStaffLeaveCoverageReturnLessons",
+        "parameters": [
+          {
+            "description": "Leave request identity",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveCoverageReturnLessonsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageReturnLessons"
+                }
+              }
+            },
+            "description": "Teaching coverage result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid coverage"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale coverage or conflicting duty"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
     "/api/staff-leave/requests/{id}/submit": {
       "post": {
         "operationId": "submitStaffLeaveRequest",
@@ -112574,7 +114448,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LeaveMutationRequest"
+                "$ref": "#/components/schemas/SubmitLeaveRequest"
               }
             }
           },

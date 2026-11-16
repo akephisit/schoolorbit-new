@@ -13,6 +13,11 @@ fn date(day: u32) -> NaiveDate {
 async fn fixture(name: &str) -> (PgPool, ActorContext, ActorContext, ActorContext) {
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 5).await;
     school_test_db::run_test_migrations(&pool).await;
+    sqlx::query("INSERT INTO academic_years(id,year,name,status) VALUES('16000000-0000-0000-0000-000000000001',2569,'Coverage fixture','planning')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO bell_schedules(id,academic_year_id,code,name) VALUES('16000000-0000-0000-0000-000000000002','16000000-0000-0000-0000-000000000001','COVERAGE','Coverage')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id,school_days) VALUES('16000000-0000-0000-0000-000000000003','16000000-0000-0000-0000-000000000001','Coverage',1,'COVERAGE','regular',true,true,'planning','16000000-0000-0000-0000-000000000002','MON,TUE,WED,THU,FRI')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO academic_timetables(academic_year_id,academic_term_id,bell_schedule_id) VALUES('16000000-0000-0000-0000-000000000001','16000000-0000-0000-0000-000000000003','16000000-0000-0000-0000-000000000002')").execute(&pool).await.unwrap();
+    sqlx::query("UPDATE staff_leave_coverage_settings SET half_day_boundary=TIME '11:30'").execute(&pool).await.unwrap();
     let mut actors = vec![];
     for name in ["Requester", "Reviewer", "Other"] {
         let id = Uuid::now_v7();
@@ -115,6 +120,9 @@ async fn typ(
 }
 fn period(t: Uuid, day: u32) -> LeavePeriodInput {
     LeavePeriodInput {
+        academic_year_id: Some(Uuid::from_u128(0x16000000000000000000000000000001)),
+        academic_term_id: Some(Uuid::from_u128(0x16000000000000000000000000000003)),
+        half_day_boundary: Some(chrono::NaiveTime::from_hms_opt(11,30,0).unwrap()),
         type_id: t,
         start_date: date(day),
         end_date: date(day),
@@ -1267,4 +1275,75 @@ async fn leave_future_approved_request_uses_pinned_cancellation_route_until_a_cu
         pending.instance.as_ref().unwrap().template_id,
         Some(p.template_id)
     );
+}
+
+#[tokio::test]
+async fn coverage_missing_timetable_is_not_zero_and_halfday_uses_configured_boundary() {
+ use school_staff_leave::{coverage,coverage_models::*};
+ let(pool,owner,admin,_)=fixture("coverage_missing_vs_zero").await;
+ let(t,_)=typ(&pool,&admin,"coverage-empty",LeaveUnit::HalfDay,None).await;
+ let mut input=period(t.id,17);input.day_portion=LeaveDayPortion::Morning;
+ let preview=coverage::preview(&pool,&owner,PreviewLeaveCoverageRequest{period:input.clone()}).await.unwrap();
+ assert_eq!(preview.timetable_state,LeaveCoverageTimetableState::Ready);
+ assert_eq!(preview.days.len(),1);assert!(preview.days[0].lessons.is_empty());
+ input.half_day_boundary=Some(chrono::NaiveTime::from_hms_opt(12,0,0).unwrap());
+ assert!(coverage::preview(&pool,&owner,PreviewLeaveCoverageRequest{period:input.clone()}).await.is_err());
+ input.half_day_boundary=None;
+ assert!(coverage::preview(&pool,&owner,PreviewLeaveCoverageRequest{period:input.clone()}).await.is_err());
+ input.half_day_boundary=Some(chrono::NaiveTime::from_hms_opt(11,30,0).unwrap());
+ sqlx::query("DELETE FROM academic_timetables").execute(&pool).await.unwrap();
+ let missing=coverage::preview(&pool,&owner,PreviewLeaveCoverageRequest{period:input}).await.unwrap();
+ assert_eq!(missing.timetable_state,LeaveCoverageTimetableState::Missing);
+}
+
+#[tokio::test]
+async fn coverage_settings_permissions_revision_and_replay_preserve_nullable_default() {
+ use school_staff_leave::{coverage,coverage_models::*};
+ let(pool,owner,admin,_)=fixture("coverage_settings_concurrency").await;
+ let settings=coverage::settings(&pool,&owner).await.unwrap();
+ let input=SaveLeaveCoverageSettingsRequest{request_id:Uuid::now_v7(),expected_revision:settings.revision,half_day_boundary:None};
+ assert!(coverage::save_settings(&pool,&owner,input.clone()).await.is_err());
+ let saved=coverage::save_settings(&pool,&admin,input.clone()).await.unwrap();assert_eq!(saved.revision,settings.revision+1);assert_eq!(saved.half_day_boundary,None);
+ let replay=coverage::save_settings(&pool,&admin,input.clone()).await.unwrap();assert_eq!(saved.revision,replay.revision);
+ assert!(coverage::save_settings(&pool,&admin,SaveLeaveCoverageSettingsRequest{request_id:Uuid::now_v7(),..input.clone()}).await.is_err());
+ assert!(coverage::save_settings(&pool,&admin,SaveLeaveCoverageSettingsRequest{half_day_boundary:Some(chrono::NaiveTime::from_hms_opt(10,0,0).unwrap()),..input}).await.is_err());
+}
+
+async fn structural_coverage_slots(pool:&PgPool,teacher:Uuid,count:i32) {
+ let(year,term,bell)=(Uuid::from_u128(0x16000000000000000000000000000001),Uuid::from_u128(0x16000000000000000000000000000003),Uuid::from_u128(0x16000000000000000000000000000002));
+ let timetable:Uuid=sqlx::query_scalar("SELECT id FROM academic_timetables WHERE academic_term_id=$1").bind(term).fetch_one(pool).await.unwrap();
+ for n in 0..count {let period=Uuid::now_v7();let block=Uuid::now_v7();sqlx::query("INSERT INTO bell_schedule_periods(id,bell_schedule_id,name,start_time,end_time,order_index,applicable_days) VALUES($1,$2,'Duty',$3,$4,$5,'TUE')").bind(period).bind(bell).bind(chrono::NaiveTime::from_hms_opt(9+n as u32,0,0).unwrap()).bind(chrono::NaiveTime::from_hms_opt(10+n as u32,0,0).unwrap()).bind(n+1).execute(pool).await.unwrap();
+ sqlx::query("INSERT INTO academic_timetable_blocks(id,timetable_id,academic_year_id,academic_term_id,bell_schedule_id,bell_schedule_period_id,day_of_week,block_kind,structural_kind,title) VALUES($1,$2,$3,$4,$5,$6,'TUE','STRUCTURAL','OTHER','Coverage activity')").bind(block).bind(timetable).bind(year).bind(term).bind(bell).bind(period).execute(pool).await.unwrap();
+ sqlx::query("INSERT INTO academic_timetable_block_teachers(id,block_id,teacher_id,academic_year_id,academic_term_id) VALUES(uuidv7(),$1,$2,$3,$4)").bind(block).bind(teacher).bind(year).bind(term).execute(pool).await.unwrap();}
+}
+#[tokio::test]
+async fn coverage_exact_partial_consents_gate_approval_and_keep_signed_revision_stable() {
+ use school_staff_leave::{coverage,coverage_models::*};
+ let(pool,owner,admin,other)=fixture("coverage_exact_partial_consents").await;structural_coverage_slots(&pool,owner.user_id,2).await;
+ let(t,_)=typ(&pool,&admin,"covered",LeaveUnit::Day,None).await;let draft=create(&pool,&owner,t.id,17).await;
+ let lessons=draft.coverage.days.iter().flat_map(|d|&d.lessons).collect::<Vec<_>>();assert_eq!(lessons.len(),2);
+ let options=coverage::candidates(&pool,&owner,draft.request.id,LeaveCoverageCandidatesRequest{expected_revision:draft.request.revision,source_digest:draft.coverage.source_digest.clone().unwrap(),lesson_keys:lessons.iter().map(|l|l.lesson.lesson_key.clone()).collect(),search:None,subject_group_id:None,grade_level_id:None,same_subject_group_only:false,same_student_group_only:false,same_grade_only:false}).await.unwrap();assert!(options.candidates.iter().any(|c|c.teacher_id==other.user_id));
+ let planned=coverage::save(&pool,&owner,draft.request.id,SaveLeaveCoverageRequest{request_id:Uuid::now_v7(),expected_revision:draft.request.revision,source_digest:draft.coverage.source_digest.clone().unwrap(),assignments:lessons.iter().map(|l|LeaveCoverageSelection{lesson_key:l.lesson.lesson_key.clone(),replacement_teacher_id:other.user_id,mode:LeaveCoverageMode::Substitution,taught_offering_id:None,taught_activity:Some("กิจกรรมเสริม".into()),return_lesson_key:None}).collect()}).await.unwrap();
+ let submitted=submit(&pool,&owner,&planned).await;assert!(!submitted.available_actions.contains(&ProcessAction::Approve));
+ assert!(service::act(&pool,&admin,submitted.request.id,action(&submitted,ProcessAction::Approve)).await.is_err());
+ let tasks=coverage::assigned(&pool,&other,LeaveCoverageTaskQuery::default()).await.unwrap();assert_eq!(tasks.items.len(),1);let task=&tasks.items[0];assert_eq!(task.assignments.len(),2);let ids=task.assignments.iter().map(|l|l.assignment.as_ref().unwrap().id).collect::<Vec<_>>();
+ let input=ConfirmLeaveCoverageRequest{request_id:Uuid::now_v7(),expected_revision:task.plan_revision,assignment_ids:vec![ids[0]],decision:LeaveCoverageConsent::Confirmed};
+ let partial=coverage::confirm(&pool,&other,submitted.request.id,input.clone()).await.unwrap();assert_eq!(partial.assignments.iter().filter(|l|l.assignment.as_ref().unwrap().consent==LeaveCoverageConsent::Confirmed).count(),1);
+ coverage::confirm(&pool,&other,submitted.request.id,input.clone()).await.unwrap();
+ assert!(coverage::confirm(&pool,&other,submitted.request.id,ConfirmLeaveCoverageRequest{assignment_ids:vec![ids[1]],..input.clone()}).await.is_err());
+ assert!(coverage::confirm(&pool,&other,submitted.request.id,ConfirmLeaveCoverageRequest{request_id:Uuid::now_v7(),assignment_ids:vec![ids[1],Uuid::now_v7()],..input.clone()}).await.is_err());
+ let still=service::detail(&pool,&owner,submitted.request.id).await.unwrap();assert_eq!(still.request.revision,submitted.request.revision);assert_eq!(still.content_hash,submitted.content_hash);
+ coverage::confirm(&pool,&other,submitted.request.id,ConfirmLeaveCoverageRequest{request_id:Uuid::now_v7(),assignment_ids:vec![ids[1]],..input}).await.unwrap();
+ let ready=service::detail(&pool,&admin,submitted.request.id).await.unwrap();assert!(ready.available_actions.contains(&ProcessAction::Approve));let approved=service::act(&pool,&admin,ready.request.id,action(&ready,ProcessAction::Approve)).await.unwrap();assert_eq!(approved.request.status,LeaveStatus::Approved);
+ let statuses:Vec<String>=sqlx::query_scalar("SELECT state FROM academic_teaching_coverage_duties WHERE request_id=$1").bind(approved.request.id).fetch_all(&pool).await.unwrap();assert!(statuses.iter().all(|s|s=="approved"));
+}
+#[tokio::test]
+async fn coverage_decline_returns_owner_to_revision_without_withdrawal() {
+ use school_staff_leave::{coverage,coverage_models::*};
+ let(pool,owner,admin,other)=fixture("coverage_decline_replan").await;structural_coverage_slots(&pool,owner.user_id,1).await;
+ let(t,_)=typ(&pool,&admin,"replan",LeaveUnit::Day,None).await;let draft=create(&pool,&owner,t.id,17).await;let lesson=&draft.coverage.days[0].lessons[0];
+ let planned=coverage::save(&pool,&owner,draft.request.id,SaveLeaveCoverageRequest{request_id:Uuid::now_v7(),expected_revision:draft.request.revision,source_digest:draft.coverage.source_digest.clone().unwrap(),assignments:vec![LeaveCoverageSelection{lesson_key:lesson.lesson.lesson_key.clone(),replacement_teacher_id:other.user_id,mode:LeaveCoverageMode::Substitution,taught_offering_id:None,taught_activity:Some("กิจกรรม".into()),return_lesson_key:None}]}).await.unwrap();let sent=submit(&pool,&owner,&planned).await;
+ let task=coverage::assigned(&pool,&other,LeaveCoverageTaskQuery::default()).await.unwrap().items.remove(0);coverage::confirm(&pool,&other,sent.request.id,ConfirmLeaveCoverageRequest{request_id:Uuid::now_v7(),expected_revision:task.plan_revision,assignment_ids:vec![task.assignments[0].assignment.as_ref().unwrap().id],decision:LeaveCoverageConsent::Declined}).await.unwrap();
+ let returned=coverage::replan(&pool,&owner,sent.request.id,LeaveMutationRequest{request_id:Uuid::now_v7(),expected_revision:sent.request.revision}).await.unwrap();assert_eq!(returned.request.status,LeaveStatus::Returned);assert_eq!(returned.instance.as_ref().unwrap().status,ProcessStatus::RevisionRequested);assert!(returned.history.iter().any(|h|h.action=="coverage_revision_requested"));
+ let live:i64=sqlx::query_scalar("SELECT count(*) FROM academic_teaching_coverage_duties WHERE request_id=$1 AND state<>'released'").bind(sent.request.id).fetch_one(&pool).await.unwrap();assert_eq!(live,0);
 }

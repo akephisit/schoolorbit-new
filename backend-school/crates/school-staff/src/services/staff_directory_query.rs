@@ -372,3 +372,10 @@ mod pool_facade_tests {
         pool.close().await;
     }
 }
+
+/// Names only for the bounded Leave coverage picker. The caller authorizes the
+/// absence resource; this provider exposes no private profile or absence data.
+pub async fn coverage_candidates_on_connection(connection:&mut sqlx::PgConnection,search:Option<&str>)->Result<Vec<(Uuid,String)>,AppError>{
+ if search.is_some_and(|s|s.chars().count()>100){return Err(AppError::ValidationError("คำค้นยาวเกินไป".into()))}
+ Ok(DbSession::new(connection).query_as("staff.services.staff_directory_query.coverage_candidates","SELECT id,display_name FROM user_display_names WHERE user_type='staff' AND status='active' AND ($1::text IS NULL OR display_name ILIKE '%'||$1||'%') ORDER BY display_name,id LIMIT 501").bind(search.map(str::trim).filter(|s|!s.is_empty())).fetch_all().await?)
+}

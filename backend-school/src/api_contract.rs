@@ -149,6 +149,7 @@ use school_staff_http::http::handlers::organization_members::{
 };
 use school_staff_http::http::handlers::staff::StaffListData;
 use school_staff_leave::models::*;
+use school_staff_leave::coverage_models::*;
 use school_students::models::{
     CreateParentRequest, CreateStudentRequest, CreateStudentResponse, ParentDto, StudentDbRow,
     StudentListItem, StudentListResponse, StudentProfile, StudentRegisterInfo,
@@ -190,6 +191,16 @@ use utoipa::OpenApi;
         school_staff_http::leave::act_request,
         school_staff_http::leave::cancel_request,
         school_staff_http::leave::usage,
+        school_staff_http::leave_coverage::settings,
+        school_staff_http::leave_coverage::save_settings,
+        school_staff_http::leave_coverage::preview,
+        school_staff_http::leave_coverage::candidates,
+        school_staff_http::leave_coverage::return_lessons,
+        school_staff_http::leave_coverage::save,
+        school_staff_http::leave_coverage::confirm,
+        school_staff_http::leave_coverage::replan,
+        school_staff_http::leave_coverage::assigned,
+
 
         school_student_care::http::handlers::update_assignment_reviewers,
         school_student_care::http::handlers::list_case_events,
@@ -902,6 +913,32 @@ struct SchoolApiDoc;
     LeaveUsageItem,
     LeaveUsageReport,
     LeavePersonalOptions,
+    LeaveCoverageContext,
+    LeaveCoverageSettings,
+    SaveLeaveCoverageSettingsRequest,
+    PreviewLeaveCoverageRequest,
+    LeaveCoverageLabel,
+    LeaveCoverageAssignment,
+    LeaveCoverageLesson,
+    LeaveCoverageDay,
+    LeaveCoveragePlan,
+    LeaveCoverageCandidatesRequest,
+    LeaveCoverageCandidate,
+    LeaveCoverageCandidates,
+    LeaveCoverageReturnLessonsRequest,
+    LeaveCoverageReturnLessons,
+    LeaveCoverageSelection,
+    SaveLeaveCoverageRequest,
+    ConfirmLeaveCoverageRequest,
+    SubmitLeaveRequest,
+    LeaveCoverageTask,
+    LeaveCoverageTaskPage,
+    LeaveCoverageState,
+    LeaveCoverageMode,
+    LeaveCoverageConsent,
+    LeaveCoverageTimetableState,
+    DatedTeachingLesson,
+
     LeaveRoutingUser,
     LeaveRoutingOrganization,
     LeaveRoutingPosition,
