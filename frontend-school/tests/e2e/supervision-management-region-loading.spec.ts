@@ -99,8 +99,8 @@ test('cycles starts with its own skeleton, keeps template choices lazy, and patc
 	await expect(page.getByTestId('supervision-cycles-ready')).toBeVisible();
 	await page.getByRole('button', { name: 'สร้างรอบนิเทศ', exact: true }).first().click();
 	await expect(
-		page.getByRole('dialog').getByRole('combobox', { name: 'แบบประเมินทดสอบ', exact: true })
-	).toBeVisible();
+		page.getByRole('dialog').getByRole('combobox', { name: 'แบบประเมิน', exact: true })
+	).toHaveText('แบบประเมินทดสอบ');
 	expect(api.count('/api/supervision/templates/summaries')).toBe(1);
 	await page.getByRole('dialog').getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 	await page
