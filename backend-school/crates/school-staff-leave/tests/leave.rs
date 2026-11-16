@@ -1,4 +1,3 @@
-#[path = "support/leave_fixture.rs"]
 mod support;
 use school_authorization::ActorContext;
 use school_permissions::registry::codes;
