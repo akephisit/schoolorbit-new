@@ -39,8 +39,8 @@ test('explicit overview renders teacher status while cycle options are pending',
 	await expect(
 		page
 			.getByTestId('supervision-cycle-selector')
-			.getByRole('combobox', { name: 'รอบแรก', exact: true })
-	).toBeVisible();
+			.getByRole('combobox', { name: 'รอบนิเทศ', exact: true })
+	).toHaveText('รอบแรก');
 });
 
 test('default overview waits only for cycles to select the first ID', async ({ page }) => {
@@ -73,9 +73,14 @@ test('overview cycle selection and Back supersede pending status without broad r
 	const api = await mock(page, { hold: 'teacher-status' });
 	await page.goto(path('overview', year, firstCycle));
 	await expect(page.getByText('ครู รอบแรก')).toBeVisible();
+	await expect(
+		page
+			.getByTestId('supervision-cycle-selector')
+			.getByRole('combobox', { name: 'รอบนิเทศ', exact: true })
+	).toHaveText('รอบแรก');
 	await page
 		.getByTestId('supervision-cycle-selector')
-		.getByRole('combobox', { name: 'รอบแรก', exact: true })
+		.getByRole('combobox', { name: 'รอบนิเทศ', exact: true })
 		.click();
 	await page.getByRole('option', { name: /รอบที่สอง/ }).click();
 	await expect(page).toHaveURL(new RegExp(`cycleId=${secondCycle}`));

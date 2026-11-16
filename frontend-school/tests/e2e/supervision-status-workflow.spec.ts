@@ -329,3 +329,41 @@ test('an optional assigned evaluator can submit while the item waits for certifi
 	expect(api.writes).toEqual([`POST ${observationPath}/evaluations/me/submit`]);
 	expect(api.count('/api/supervision/observations')).toBe(1);
 });
+
+for (const referenceState of ['pending', 'failed'] as const) {
+	test(`a ${referenceState} cycle reference keeps resubmission conservative without claiming booking is closed`, async ({
+		page
+	}) => {
+		const api = await mock(page, {
+			permissions: teacherPermissions,
+			canManage: false,
+			observationStatus: 'returned',
+			hold: referenceState === 'pending' ? 'selected-cycle' : undefined,
+			fail: referenceState === 'failed' ? 'selected-cycle' : undefined,
+			observation: {
+				lessonSnapshot: { subjectName: 'วิชาทดสอบ', classroomLabel: 'ม.1/1', periodLabel: 'คาบ 1' }
+			}
+		});
+		await page.goto(detailPath);
+		const cycle = page.getByTestId('supervision-detail-cycle');
+		if (referenceState === 'pending') await expect(cycle.getByRole('status')).toBeVisible();
+		else await expect(cycle.getByText('region ไม่พร้อม', { exact: true })).toBeVisible();
+		const reason = page.getByTestId('supervision-current-return-reason');
+		await expect(reason).toBeVisible();
+		await expect(
+			reason.getByText('ส่งใหม่ได้เมื่อผู้ดูแลเปิดรับคำขอในรอบนี้', { exact: true })
+		).toHaveCount(0);
+		await page.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByLabel('เหตุผล/หมายเหตุ').fill('แก้ไขข้อมูลคาบ');
+		const save = dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true });
+		await expect(save).toBeDisabled();
+		if (referenceState === 'pending') {
+			api.release();
+			await expect(save).toBeEnabled();
+		}
+		expect(api.writes).toEqual([]);
+		expect(api.count(observationPath)).toBe(1);
+		expect(api.count(`/api/supervision/cycles/${firstCycle}`)).toBe(1);
+	});
+}

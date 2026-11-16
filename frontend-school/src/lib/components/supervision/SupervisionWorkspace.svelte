@@ -3386,7 +3386,7 @@
 									value={progressCycleId}
 									onValueChange={selectOverviewCycle}
 								>
-									<Select.Trigger class="w-full md:w-[360px]">
+									<Select.Trigger aria-label="รอบนิเทศ" class="w-full md:w-[360px]">
 										{cycles.find((cycle) => cycle.id === progressCycleId)?.title ?? 'เลือกรอบนิเทศ'}
 									</Select.Trigger>
 									<Select.Content>

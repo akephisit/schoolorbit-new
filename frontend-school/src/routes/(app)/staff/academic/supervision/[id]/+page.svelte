@@ -1127,7 +1127,7 @@
 						<p class="mt-1 whitespace-pre-wrap text-sm">
 							{currentReturnReason(observation) ?? 'ไม่ได้ระบุเหตุผล'}
 						</p>
-						{#if isReturnedOwnRequest && cycle?.status !== 'open'}<p
+						{#if isReturnedOwnRequest && cycle && cycle.status !== 'open'}<p
 								class="mt-2 text-sm text-muted-foreground"
 							>
 								ส่งใหม่ได้เมื่อผู้ดูแลเปิดรับคำขอในรอบนี้
