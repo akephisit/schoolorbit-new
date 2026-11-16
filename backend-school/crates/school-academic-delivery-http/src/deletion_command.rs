@@ -4,7 +4,7 @@ use school_academic_delivery::ports::{
     DeliveryDeletionAuthorizationPort, DeliveryDeletionCommandContext,
 };
 use school_auth::{runtime::AuthRuntime, session_service::AuthenticatedSession};
-use school_auth_http::context::{ActorTenantContext, actor_tenant_context_from_session};
+use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use std::sync::Arc;

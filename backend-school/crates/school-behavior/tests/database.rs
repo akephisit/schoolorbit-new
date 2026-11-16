@@ -267,19 +267,17 @@ async fn manual_group_scope_union_locked_points_and_creator_cancellation() {
         .iter()
         .find(|e| e.student_id == f.b && e.created_by == Some(f.admin.actor_id))
         .unwrap();
-    assert!(
-        manual::cancel_entries(
-            &f.pool,
-            f.teacher,
-            CancelBehaviorEntries {
-                request_id: Uuid::new_v4(),
-                entry_ids: vec![others.id],
-                reason: "wrong selection".into()
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(manual::cancel_entries(
+        &f.pool,
+        f.teacher,
+        CancelBehaviorEntries {
+            request_id: Uuid::new_v4(),
+            entry_ids: vec![others.id],
+            reason: "wrong selection".into()
+        }
+    )
+    .await
+    .is_err());
     let p = CancelBehaviorEntries {
         request_id: Uuid::new_v4(),
         entry_ids: vec![own.id],
@@ -470,22 +468,20 @@ async fn purge_modes_stale_preview_and_history_adjustment() {
     .unwrap();
     let p = payload(&f, f.admin, &merit, vec![f.b]).await;
     manual::create_batch(&f.pool, f.admin, p).await.unwrap();
-    assert!(
-        cleanup::execute(
-            &f.pool,
-            f.admin.actor_id,
-            ExecuteBehaviorCleanup {
-                request_id: Uuid::new_v4(),
-                token: preview.token,
-                revision: preview.revision,
-                scope: scope.clone(),
-                mode: BehaviorCleanupMode::DetailsOnly,
-                reason: "retention".into()
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(cleanup::execute(
+        &f.pool,
+        f.admin.actor_id,
+        ExecuteBehaviorCleanup {
+            request_id: Uuid::new_v4(),
+            token: preview.token,
+            revision: preview.revision,
+            scope: scope.clone(),
+            mode: BehaviorCleanupMode::DetailsOnly,
+            reason: "retention".into()
+        }
+    )
+    .await
+    .is_err());
     let preview = cleanup::preview(
         &f.pool,
         f.admin.actor_id,
@@ -1200,14 +1196,12 @@ async fn manual_selector_keeps_unassigned_students_without_optional_profile() {
     let student = page.items.iter().find(|s| s.id == f.unassigned).unwrap();
     assert_eq!(student.student_code, None);
     assert_eq!(student.homeroom_id, None);
-    assert!(
-        manual::students(&f.pool, f.teacher, query(&f))
-            .await
-            .unwrap()
-            .items
-            .iter()
-            .all(|s| s.id != f.unassigned)
-    );
+    assert!(manual::students(&f.pool, f.teacher, query(&f))
+        .await
+        .unwrap()
+        .items
+        .iter()
+        .all(|s| s.id != f.unassigned));
 }
 
 #[tokio::test]
@@ -1346,13 +1340,11 @@ async fn summaries_retain_other_term_history_and_resets_require_explicit_inclusi
         .find(|cycle| cycle.side == BehaviorSide::Deduction && cycle.state == "current")
         .unwrap();
     assert_eq!(current.starts_on, now);
-    assert!(
-        cycles
-            .iter()
-            .any(|cycle| cycle.side == BehaviorSide::Deduction
-                && cycle.state == "history"
-                && cycle.ends_on == Some(closed_on))
-    );
+    assert!(cycles
+        .iter()
+        .any(|cycle| cycle.side == BehaviorSide::Deduction
+            && cycle.state == "history"
+            && cycle.ends_on == Some(closed_on)));
     let after_reset = summary(&f, f.a).await;
     assert_eq!(
         (
@@ -1695,8 +1687,8 @@ async fn current_lesson_deletion_rejects_inconsistent_saved_source_attribution_a
 }
 
 #[tokio::test]
-async fn cleanup_reference_locks_preserve_closed_context_eligibility_and_reject_mismatch_atomically()
- {
+async fn cleanup_reference_locks_preserve_closed_context_eligibility_and_reject_mismatch_atomically(
+) {
     use school_behavior::models::{
         BehaviorCleanupMode, BehaviorCleanupScope, BehaviorSide, BehaviorSource,
         ExecuteBehaviorCleanup, PreviewBehaviorCleanup,

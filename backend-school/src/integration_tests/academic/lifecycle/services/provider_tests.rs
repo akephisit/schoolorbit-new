@@ -276,12 +276,10 @@ async fn lifecycle_current_delivery_has_no_pending_publication_or_change_set_wor
     let workspace = super::workspace_in_transaction(&mut tx, &actor, year, term)
         .await
         .unwrap();
-    assert!(
-        workspace
-            .findings
-            .iter()
-            .all(|finding| !finding.code.starts_with("delivery."))
-    );
+    assert!(workspace
+        .findings
+        .iter()
+        .all(|finding| !finding.code.starts_with("delivery.")));
 
     assert!(
         school_academic_delivery::services::pending_term_work(&mut tx, year, term)
@@ -327,9 +325,7 @@ async fn lifecycle_permission_defaults_only_grant_verified_system_administrators
     for permission in expected {
         assert!(grants.iter().any(|(_, _, code)| code == permission));
     }
-    assert!(
-        grants
-            .iter()
-            .all(|(role, system, _)| role == "ADMIN" && *system)
-    );
+    assert!(grants
+        .iter()
+        .all(|(role, system, _)| role == "ADMIN" && *system));
 }

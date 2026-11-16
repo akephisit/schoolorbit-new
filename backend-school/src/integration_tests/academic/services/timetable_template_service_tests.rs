@@ -84,17 +84,15 @@ async fn template_capture_clear_and_apply_mutate_the_single_current_board() {
             .await
             .unwrap();
     assert_eq!(count, 1);
-    assert!(
-        timetable_template_service::apply_template(
-            &pool,
-            &mutation,
-            template.template.id,
-            ApplyTemplateRequest {
-                timetable_id: id,
-                academic_term_id: Uuid::new_v4()
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(timetable_template_service::apply_template(
+        &pool,
+        &mutation,
+        template.template.id,
+        ApplyTemplateRequest {
+            timetable_id: id,
+            academic_term_id: Uuid::new_v4()
+        }
+    )
+    .await
+    .is_err());
 }

@@ -90,30 +90,26 @@ async fn current_assignments_are_immediate_context_scoped_and_require_active_acc
             .learning_group_ids
             .is_empty()
     );
-    assert!(
-        group_teacher_assignments_on_connection(
-            &mut connection,
-            Uuid::new_v4(),
-            f.term,
-            &[f.group]
-        )
-        .await
-        .unwrap()
-        .groups
-        .is_empty()
-    );
-    assert!(
-        group_teacher_assignments_on_connection(
-            &mut connection,
-            f.year,
-            Uuid::new_v4(),
-            &[f.group]
-        )
-        .await
-        .unwrap()
-        .groups
-        .is_empty()
-    );
+    assert!(group_teacher_assignments_on_connection(
+        &mut connection,
+        Uuid::new_v4(),
+        f.term,
+        &[f.group]
+    )
+    .await
+    .unwrap()
+    .groups
+    .is_empty());
+    assert!(group_teacher_assignments_on_connection(
+        &mut connection,
+        f.year,
+        Uuid::new_v4(),
+        &[f.group]
+    )
+    .await
+    .unwrap()
+    .groups
+    .is_empty());
     assert!(
         group_teacher_assignments_on_connection(&mut connection, f.year, f.term, &[])
             .await
@@ -169,11 +165,9 @@ impl AssessmentCurrentPort for AssessmentInitialization {
         offerings: &[Uuid],
     ) -> Result<(), AppError> {
         let visible = teacher_allocations_on_connection(tx, offerings).await?;
-        assert!(
-            visible
-                .iter()
-                .any(|teacher| teacher.teacher_id == self.expected_teacher)
-        );
+        assert!(visible
+            .iter()
+            .any(|teacher| teacher.teacher_id == self.expected_teacher));
         if self.fail {
             Err(AppError::Conflict(
                 "assessment initialization refused".into(),

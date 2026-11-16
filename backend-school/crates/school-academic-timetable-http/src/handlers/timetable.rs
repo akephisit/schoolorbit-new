@@ -1,5 +1,3 @@
-#[cfg(feature = "api-docs")]
-use school_academic_timetable::models::timetable::Timetable;
 use crate::state::AcademicTimetableHttpState;
 use axum::{
     extract::{Extension, Query, State},
@@ -8,6 +6,8 @@ use axum::{
     Json,
 };
 use school_academic_realtime::TimetableEvent;
+#[cfg(feature = "api-docs")]
+use school_academic_timetable::models::timetable::Timetable;
 use school_academic_timetable::{
     models::timetable::{CreateTimetableRequest, TimetableQuery},
     policy::{require_timetable_list_access, TimetableAction},

@@ -77,8 +77,8 @@ async fn opening_current_evidence_tracks_exact_term_and_current_revision() {
 }
 
 #[tokio::test]
-async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_current_presence_gates()
- {
+async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_current_presence_gates(
+) {
     let (pool, actor_id) = empty_school("opening_optional_gates").await;
     let (year, term) = ready_year(
         &pool,
@@ -130,12 +130,10 @@ async fn opening_readiness_does_not_invent_optional_work_and_rechecks_enabled_cu
         .await
         .unwrap();
     assert_eq!(read_only.source_checksum, gated.source_checksum);
-    assert!(
-        read_only
-            .findings
-            .iter()
-            .all(|finding| finding.resolution_url.is_none())
-    );
+    assert!(read_only
+        .findings
+        .iter()
+        .all(|finding| finding.resolution_url.is_none()));
 }
 
 #[tokio::test]
@@ -417,11 +415,10 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
         super::get_activation_workspace(&pool, &reader, calculation.run.target_year_id, term.id)
             .await
             .unwrap();
-    assert!(
-        before.findings.iter().any(
-            |finding| finding.code == "opening.promotion_decision_missing" && finding.count == 1
-        )
-    );
+    assert!(before
+        .findings
+        .iter()
+        .any(|finding| finding.code == "opening.promotion_decision_missing" && finding.count == 1));
 
     super::execute_run(
         &pool,
@@ -439,11 +436,9 @@ async fn first_term_opening_readiness_requires_promotion_coverage_but_not_for_a_
         super::get_activation_workspace(&pool, &reader, calculation.run.target_year_id, term.id)
             .await
             .unwrap();
-    assert!(
-        !covered
-            .findings
-            .iter()
-            .any(|finding| finding.code == "opening.promotion_decision_missing")
-    );
+    assert!(!covered
+        .findings
+        .iter()
+        .any(|finding| finding.code == "opening.promotion_decision_missing"));
     assert_ne!(covered.source_checksum, before.source_checksum);
 }

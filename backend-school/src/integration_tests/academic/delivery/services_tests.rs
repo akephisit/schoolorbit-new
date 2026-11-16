@@ -5,8 +5,8 @@ use super::{
 use crate::integration_tests::academic::{
     cutover_test_preflight::run_academic_core_preflight,
     cutover_test_support::{
-        CutoverFixture, apply_migrations_through, apply_phase_b_runtime_migrations,
-        seed_academic_cutover_fixture,
+        apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+        CutoverFixture,
     },
 };
 use chrono::{Duration, NaiveDate, Utc};
@@ -401,11 +401,9 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("a student-year cannot have two current placements");
-    assert!(
-        duplicate_placement
-            .to_string()
-            .contains("homeroom_placements_one_current_key")
-    );
+    assert!(duplicate_placement
+        .to_string()
+        .contains("homeroom_placements_one_current_key"));
 
     let duplicate_student = sqlx::query(
         r#"INSERT INTO learning_group_students (
@@ -423,11 +421,9 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("a student cannot be active twice in one group");
-    assert!(
-        duplicate_student
-            .to_string()
-            .contains("learning_group_students_one_active_key")
-    );
+    assert!(duplicate_student
+        .to_string()
+        .contains("learning_group_students_one_active_key"));
 
     let cross_year_homeroom = sqlx::query(
         r#"INSERT INTO learning_group_homerooms (
@@ -444,11 +440,9 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("group coverage cannot use a homeroom from another year");
-    assert!(
-        cross_year_homeroom
-            .to_string()
-            .contains("learning_group_homerooms_homeroom_context_fkey")
-    );
+    assert!(cross_year_homeroom
+        .to_string()
+        .contains("learning_group_homerooms_homeroom_context_fkey"));
 
     let offering_id = stable_uuid(
         "course-offering:11000000-0000-0000-0000-000000000251:20000000-0000-0000-0000-000000000025",
@@ -470,11 +464,9 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("a group cannot cross its offering term");
-    assert!(
-        mismatched_group
-            .to_string()
-            .contains("learning_groups_offering_context_fkey")
-    );
+    assert!(mismatched_group
+        .to_string()
+        .contains("learning_groups_offering_context_fkey"));
 
     let mut transaction = pool.begin().await.unwrap();
     sqlx::query("UPDATE learning_offerings SET status = 'draft' WHERE id = $1")
@@ -542,11 +534,9 @@ async fn migration_042_enforces_delivery_context_and_subtype_invariants() {
     .execute(&pool)
     .await
     .expect_err("published offering snapshots must be immutable");
-    assert!(
-        published_snapshot_error
-            .to_string()
-            .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE")
-    );
+    assert!(published_snapshot_error
+        .to_string()
+        .contains("ACADEMIC_CORE_PUBLISHED_OFFERING_IMMUTABLE"));
 }
 
 async fn prepare_delivery_runtime_fixture(name: &str) -> PgPool {
@@ -1540,12 +1530,10 @@ async fn curriculum_preview_apply_is_hash_checked_and_closed_terms_reject_writes
     let publication_id = preview.curriculum_sources[0].publication_id;
     assert!(!preview.source_hash.is_empty());
     assert!(!preview.proposals.is_empty());
-    assert!(
-        preview
-            .proposals
-            .iter()
-            .any(|proposal| !proposal.default_groups.is_empty())
-    );
+    assert!(preview
+        .proposals
+        .iter()
+        .any(|proposal| !proposal.default_groups.is_empty()));
     let choices = default_preparation_choices(&preview);
 
     let mismatched = offerings::apply_from_curriculum(
@@ -2087,8 +2075,8 @@ async fn self_registration_activity_uses_common_delivery() {
 }
 
 #[tokio::test]
-async fn student_activity_registration_without_academic_date_boundaries_is_term_scoped_eligible_and_revisioned()
- {
+async fn student_activity_registration_without_academic_date_boundaries_is_term_scoped_eligible_and_revisioned(
+) {
     let pool =
         prepare_delivery_runtime_fixture("academic_delivery_student_activity_registration").await;
     let context = planning_runtime_context(&pool).await;
@@ -2244,13 +2232,11 @@ async fn student_activity_registration_without_academic_date_boundaries_is_term_
     let closed = activities::list_registration_options(&pool, student_id, query.clone())
         .await
         .unwrap();
-    assert!(
-        closed
-            .iter()
-            .filter(|item| item.id == offering.id)
-            .flat_map(|item| &item.groups)
-            .all(|group| !group.registration_open)
-    );
+    assert!(closed
+        .iter()
+        .filter(|item| item.id == offering.id)
+        .flat_map(|item| &item.groups)
+        .all(|group| !group.registration_open));
     assert!(matches!(
         activities::enroll(&pool, student_id, first_group.id, query.clone()).await,
         Err(AppError::Conflict(_))
@@ -2385,16 +2371,12 @@ async fn offering_list_batch_hydrates_mixed_snapshots_and_targets() {
     assert!(values.iter().any(|offering| offering.id == course.id));
     assert!(values.iter().any(|offering| offering.id == activity.id));
     assert!(values.iter().all(|offering| !offering.targets.is_empty()));
-    assert!(
-        values
-            .iter()
-            .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Course(_)))
-    );
-    assert!(
-        values
-            .iter()
-            .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Activity(_)))
-    );
+    assert!(values
+        .iter()
+        .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Course(_))));
+    assert!(values
+        .iter()
+        .any(|offering| matches!(&offering.snapshot, LearningOfferingSnapshot::Activity(_))));
     assert!(values.iter().all(|offering| matches!(
         (offering.kind, &offering.snapshot),
         (
@@ -2546,12 +2528,10 @@ async fn delivery_overview_batches_labels_and_group_coverage() {
     )
     .await
     .expect("organization overview should load");
-    assert!(
-        !outside_scope
-            .offerings
-            .iter()
-            .any(|item| item.offering.id == current_offering.id)
-    );
+    assert!(!outside_scope
+        .offerings
+        .iter()
+        .any(|item| item.offering.id == current_offering.id));
 }
 
 #[tokio::test]
@@ -2689,36 +2669,24 @@ async fn homeroom_delivery_classification_is_pinned_and_independent_of_requireme
         .find(|room| room.homeroom.id == context.homeroom_id)
         .unwrap()
         .items;
-    assert!(
-        items
-            .iter()
-            .any(|item| item.subject_type.as_deref() == Some("BASIC")
-                && item.requirement_kind
-                    == school_academic_core::models::RequirementKind::Elective)
-    );
-    assert!(
-        items
-            .iter()
-            .any(|item| item.subject_type.as_deref() == Some("ADDITIONAL")
-                && item.requirement_kind
-                    == school_academic_core::models::RequirementKind::Required)
-    );
-    assert!(
-        items
-            .iter()
-            .any(|item| item.subject_type.as_deref() == Some("LEGACY-UNKNOWN"))
-    );
-    assert!(
-        items
-            .iter()
-            .any(|item| item.resource_kind == LearningOfferingKind::Activity)
-    );
-    assert!(
-        items
-            .iter()
-            .filter(|item| item.resource_kind == LearningOfferingKind::Activity)
-            .all(|item| item.subject_type.is_none())
-    );
+    assert!(items
+        .iter()
+        .any(|item| item.subject_type.as_deref() == Some("BASIC")
+            && item.requirement_kind == school_academic_core::models::RequirementKind::Elective));
+    assert!(items
+        .iter()
+        .any(|item| item.subject_type.as_deref() == Some("ADDITIONAL")
+            && item.requirement_kind == school_academic_core::models::RequirementKind::Required));
+    assert!(items
+        .iter()
+        .any(|item| item.subject_type.as_deref() == Some("LEGACY-UNKNOWN")));
+    assert!(items
+        .iter()
+        .any(|item| item.resource_kind == LearningOfferingKind::Activity));
+    assert!(items
+        .iter()
+        .filter(|item| item.resource_kind == LearningOfferingKind::Activity)
+        .all(|item| item.subject_type.is_none()));
 }
 
 #[tokio::test]
@@ -2771,12 +2739,10 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
     let opening = current_workspace(&pool, context.year_id, context.term_id)
         .await
         .unwrap();
-    assert!(
-        applied
-            .offering_ids
-            .iter()
-            .all(|id| opening.offerings.iter().any(|item| item.id == *id))
-    );
+    assert!(applied
+        .offering_ids
+        .iter()
+        .all(|id| opening.offerings.iter().any(|item| item.id == *id)));
 
     let filter = AcademicResourceListFilter {
         includes_school_owned: true,
@@ -2799,12 +2765,11 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         .count();
     assert!(central_count > 0);
     assert_eq!(room.ready_count, central_count);
-    assert!(
-        room.items
-            .iter()
-            .filter(|item| item.group_mode == super::models::HomeroomGroupMode::Central)
-            .all(|item| item.teacher_state == super::models::HomeroomTeacherState::Deferred)
-    );
+    assert!(room
+        .items
+        .iter()
+        .filter(|item| item.group_mode == super::models::HomeroomGroupMode::Central)
+        .all(|item| item.teacher_state == super::models::HomeroomTeacherState::Deferred));
     assert!(room.items.iter().all(|item| match item.resource_kind {
         LearningOfferingKind::Course => {
             item.standard_periods_per_week
@@ -2861,11 +2826,10 @@ async fn homeroom_delivery_workspace_maps_curriculum_offerings_and_group_coverag
         .find(|room| room.homeroom.id == context.homeroom_id)
         .unwrap();
     assert_eq!(room.ready_count, central_count + 1);
-    assert!(
-        room.items
-            .iter()
-            .any(|item| item.offering_id == Some(offering_id) && item.groups.len() == 1)
-    );
+    assert!(room
+        .items
+        .iter()
+        .any(|item| item.offering_id == Some(offering_id) && item.groups.len() == 1));
 }
 
 #[tokio::test]
@@ -3002,43 +2966,31 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
                 .standard_periods_per_week
                 .is_some_and(|periods| periods > 0)
     }));
-    assert!(
-        options
-            .catalog_versions
-            .iter()
-            .filter(|item| item.kind == LearningOfferingKind::Activity)
-            .all(|item| item.standard_periods_per_week.is_none())
-    );
-    assert!(
-        options
-            .grade_levels
-            .iter()
-            .any(|item| item.id == context.grade_level_id && !item.name.is_empty())
-    );
-    assert!(
-        options
-            .study_programs
-            .iter()
-            .any(|item| item.id == context.study_program_id && !item.name.is_empty())
-    );
-    assert!(
-        options
-            .homerooms
-            .iter()
-            .any(|item| item.id == context.homeroom_id && item.grade_level.is_some())
-    );
-    assert!(
-        options
-            .teachers
-            .iter()
-            .any(|item| item.id == context.teacher_id && !item.name.trim().is_empty())
-    );
-    assert!(
-        options
-            .learning_groups
-            .iter()
-            .any(|item| item.id == group.id && item.learning_offering_id == offering.id)
-    );
+    assert!(options
+        .catalog_versions
+        .iter()
+        .filter(|item| item.kind == LearningOfferingKind::Activity)
+        .all(|item| item.standard_periods_per_week.is_none()));
+    assert!(options
+        .grade_levels
+        .iter()
+        .any(|item| item.id == context.grade_level_id && !item.name.is_empty()));
+    assert!(options
+        .study_programs
+        .iter()
+        .any(|item| item.id == context.study_program_id && !item.name.is_empty()));
+    assert!(options
+        .homerooms
+        .iter()
+        .any(|item| item.id == context.homeroom_id && item.grade_level.is_some()));
+    assert!(options
+        .teachers
+        .iter()
+        .any(|item| item.id == context.teacher_id && !item.name.trim().is_empty()));
+    assert!(options
+        .learning_groups
+        .iter()
+        .any(|item| item.id == group.id && item.learning_offering_id == offering.id));
     assert!(options.rooms.iter().all(|item| !item.name_th.is_empty()));
 
     let scoped = workspaces::delivery_management_options(
@@ -3055,18 +3007,14 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
     )
     .await
     .expect("organization-scoped options should load");
-    assert!(
-        scoped
-            .catalog_versions
-            .iter()
-            .all(|item| owned_catalog_ids.contains(&item.id))
-    );
-    assert!(
-        scoped
-            .catalog_versions
-            .iter()
-            .any(|item| item.id == context.subject_version_id)
-    );
+    assert!(scoped
+        .catalog_versions
+        .iter()
+        .all(|item| owned_catalog_ids.contains(&item.id)));
+    assert!(scoped
+        .catalog_versions
+        .iter()
+        .any(|item| item.id == context.subject_version_id));
     assert!(
         scoped
             .study_programs
@@ -3090,12 +3038,10 @@ async fn delivery_management_options_are_scoped_and_human_readable() {
         "offering scope must not authorize school curriculum choices"
     );
     assert!(!without_curriculum.catalog_versions.is_empty());
-    assert!(
-        without_curriculum
-            .catalog_versions
-            .iter()
-            .all(|item| owned_catalog_ids.contains(&item.id))
-    );
+    assert!(without_curriculum
+        .catalog_versions
+        .iter()
+        .all(|item| owned_catalog_ids.contains(&item.id)));
     assert_eq!(
         without_curriculum
             .catalog_versions
@@ -3149,12 +3095,10 @@ async fn roster_preview_exposes_minimal_display_data_without_hashing_names() {
     let student = preview.students.first().expect("fixture roster student");
     assert!(!student.display_name.trim().is_empty());
     assert!(!student.grade_level_name.trim().is_empty());
-    assert!(
-        student
-            .homeroom_name
-            .as_deref()
-            .is_some_and(|name| !name.is_empty())
-    );
+    assert!(student
+        .homeroom_name
+        .as_deref()
+        .is_some_and(|name| !name.is_empty()));
     let student_json = serde_json::to_value(student).expect("student should serialize");
     assert!(student_json.get("studentCode").is_some());
     for forbidden in [
@@ -3176,12 +3120,10 @@ async fn roster_preview_exposes_minimal_display_data_without_hashing_names() {
         .unwrap();
     let renamed = groups::preview_roster(&pool, group.id).await.unwrap();
     assert_eq!(renamed.source_hash, preview.source_hash);
-    assert!(
-        renamed
-            .students
-            .iter()
-            .any(|item| item.display_name.contains("ชื่อใหม่"))
-    );
+    assert!(renamed
+        .students
+        .iter()
+        .any(|item| item.display_name.contains("ชื่อใหม่")));
 }
 
 #[tokio::test]
@@ -3379,16 +3321,12 @@ async fn list_groups_for_term_preserves_access_union_and_relations() {
     )
     .await
     .unwrap();
-    assert!(
-        !organization_unit
-            .iter()
-            .any(|group| group.id == course_group_a.id)
-    );
-    assert!(
-        organization_unit
-            .iter()
-            .any(|group| group.id == activity_group.id)
-    );
+    assert!(!organization_unit
+        .iter()
+        .any(|group| group.id == course_group_a.id));
+    assert!(organization_unit
+        .iter()
+        .any(|group| group.id == activity_group.id));
 
     let organization_tree = groups::list_for_term(
         &pool,
@@ -3598,15 +3536,13 @@ async fn manual_activity_activation_creates_reviewed_groups_atomically_or_stays_
     let mut invalid = request;
     invalid.create_homeroom_groups = true;
     invalid.targets[0].homeroom_id = Some(Uuid::new_v4());
-    assert!(
-        offerings::create(
-            &pool,
-            context.teacher_id,
-            CreateLearningOfferingRequest::Activity(invalid)
-        )
-        .await
-        .is_err()
-    );
+    assert!(offerings::create(
+        &pool,
+        context.teacher_id,
+        CreateLearningOfferingRequest::Activity(invalid)
+    )
+    .await
+    .is_err());
     let after: i64 = sqlx::query_scalar("SELECT count(*) FROM learning_offerings")
         .fetch_one(&pool)
         .await
@@ -3981,19 +3917,17 @@ async fn current_assigned_discovery_requires_active_staff_and_keeps_saved_manage
         assigned_actor_id: Some(actor.user_id),
         ..Default::default()
     };
-    assert!(
-        offerings::list(
-            &pool,
-            LearningOfferingQuery {
-                academic_term_id: context.term_id
-            },
-            &assigned
-        )
-        .await
-        .unwrap()
-        .iter()
-        .any(|row| row.id == offering.id)
-    );
+    assert!(offerings::list(
+        &pool,
+        LearningOfferingQuery {
+            academic_term_id: context.term_id
+        },
+        &assigned
+    )
+    .await
+    .unwrap()
+    .iter()
+    .any(|row| row.id == offering.id));
     assert_ne!(
         access::learning_offering_access(
             &pool,
@@ -4017,24 +3951,20 @@ async fn current_assigned_discovery_requires_active_staff_and_keeps_saved_manage
             .execute(&pool)
             .await
             .unwrap();
-        assert!(
-            offerings::list(
-                &pool,
-                LearningOfferingQuery {
-                    academic_term_id: context.term_id
-                },
-                &assigned
-            )
+        assert!(offerings::list(
+            &pool,
+            LearningOfferingQuery {
+                academic_term_id: context.term_id
+            },
+            &assigned
+        )
+        .await
+        .unwrap()
+        .is_empty());
+        assert!(groups::list_for_term(&pool, context.term_id, &assigned)
             .await
             .unwrap()
-            .is_empty()
-        );
-        assert!(
-            groups::list_for_term(&pool, context.term_id, &assigned)
-                .await
-                .unwrap()
-                .is_empty()
-        );
+            .is_empty());
         assert!(
             current::workspace(&pool, context.year_id, context.term_id, &assigned)
                 .await

@@ -21,8 +21,8 @@ async fn grants(pool: &PgPool) -> Value {
 }
 
 #[tokio::test]
-async fn retired_publication_grants_remain_inactive_without_management_conversion_or_receipt_changes()
- {
+async fn retired_publication_grants_remain_inactive_without_management_conversion_or_receipt_changes(
+) {
     let pool = predecessor("current_ops_retired_permissions").await;
     for (module, code) in [
         ("academic_timetable", RETIRED[0]),

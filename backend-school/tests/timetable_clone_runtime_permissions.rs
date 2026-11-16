@@ -5,11 +5,11 @@ use school_academic_timetable::{
 };
 use school_errors::AppError;
 use school_test_db::cutover_test_support::{
-    CutoverFixture, apply_migrations_through, apply_phase_b_runtime_migrations,
-    seed_academic_cutover_fixture,
+    apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
+    CutoverFixture,
 };
 use serde_json::Value;
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use uuid::Uuid;
 
 async fn seed_source_graph(pool: &PgPool) {

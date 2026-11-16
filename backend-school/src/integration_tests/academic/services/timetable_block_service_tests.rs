@@ -130,12 +130,10 @@ async fn timetable_term_days_control_wildcard_period_preview_and_writes() {
         .await
         .unwrap();
     assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
-    assert!(
-        preview
-            .conflicts
-            .iter()
-            .any(|row| row.code == "TIMETABLE_DAY_NOT_ALLOWED")
-    );
+    assert!(preview
+        .conflicts
+        .iter()
+        .any(|row| row.code == "TIMETABLE_DAY_NOT_ALLOWED"));
     assert!(matches!(
         timetable_block_service::create_structural_blocks(
             &pool,
@@ -725,11 +723,9 @@ async fn timetable_workspace_classification_uses_pinned_subject_revision() {
         .filter(|group| group.learning_offering_id == pinned_offering.id)
         .collect::<Vec<_>>();
     assert_eq!(groups.len(), pinned_offering.groups.len());
-    assert!(
-        groups
-            .iter()
-            .all(|group| group.subject_type.as_deref() == Some("BASIC"))
-    );
+    assert!(groups
+        .iter()
+        .all(|group| group.subject_type.as_deref() == Some("BASIC")));
     assert_eq!(
         serde_json::to_value(&before.learning_groups).unwrap(),
         serde_json::to_value(&after.learning_groups).unwrap()
@@ -905,18 +901,14 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
     )
     .await
     .expect("canonical block workspace must hydrate in bounded queries");
-    assert!(
-        workspace
-            .blocks
-            .iter()
-            .any(|candidate| candidate.id == block.id)
-    );
-    assert!(
-        workspace
-            .ordinary_demands
-            .iter()
-            .any(|demand| demand.learning_group_id == group_id)
-    );
+    assert!(workspace
+        .blocks
+        .iter()
+        .any(|candidate| candidate.id == block.id));
+    assert!(workspace
+        .ordinary_demands
+        .iter()
+        .any(|demand| demand.learning_group_id == group_id));
     let workspace_group = workspace
         .learning_groups
         .iter()
@@ -1235,14 +1227,12 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         ("TIMETABLE_SWAP_RETURN_ROOM_CONFLICT", preferred_room_id),
         ("TIMETABLE_SWAP_RETURN_HOMEROOM_CONFLICT", homeroom_ids[0]),
     ] {
-        assert!(
-            preview
-                .conflicts
-                .iter()
-                .any(|conflict| conflict.code == code
-                    && conflict.target_id == Some(id)
-                    && conflict.existing_block_id == Some(third.id))
-        );
+        assert!(preview
+            .conflicts
+            .iter()
+            .any(|conflict| conflict.code == code
+                && conflict.target_id == Some(id)
+                && conflict.existing_block_id == Some(third.id)));
     }
     let mut create_request = preview_request.clone();
     create_request.source = TimetableBlockPlacementSource::OrdinaryDemand {
@@ -1271,12 +1261,10 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         .await
         .unwrap();
     assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
-    assert!(
-        preview
-            .conflicts
-            .iter()
-            .any(|row| row.code == "TIMETABLE_GROUP_CONFLICT")
-    );
+    assert!(preview
+        .conflicts
+        .iter()
+        .any(|row| row.code == "TIMETABLE_GROUP_CONFLICT"));
 
     let mut move_request = preview_request;
     move_request.source = TimetableBlockPlacementSource::ExistingBlock {
@@ -1291,12 +1279,10 @@ async fn ordinary_block_keeps_exact_instructors_and_rejects_cross_block_conflict
         .unwrap();
     assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
     assert_eq!(preview.conflicts.len(), 3);
-    assert!(
-        preview
-            .conflicts
-            .iter()
-            .any(|row| row.code == "TIMETABLE_HOMEROOM_CONFLICT")
-    );
+    assert!(preview
+        .conflicts
+        .iter()
+        .any(|row| row.code == "TIMETABLE_HOMEROOM_CONFLICT"));
 }
 
 #[tokio::test]
@@ -1332,14 +1318,12 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     );
     assert!(activities.iter().all(|group| group.subject_type.is_none()));
     let json = serde_json::to_value(&workspace).unwrap();
-    assert!(
-        json["learningGroups"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|group| group["offeringKind"] == "activity")
-            .all(|group| group.get("subjectType") == Some(&serde_json::Value::Null))
-    );
+    assert!(json["learningGroups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|group| group["offeringKind"] == "activity")
+        .all(|group| group.get("subjectType") == Some(&serde_json::Value::Null)));
     let period_ids:Vec<Uuid>=sqlx::query_scalar("SELECT id FROM bell_schedule_periods WHERE bell_schedule_id=$1 AND is_active ORDER BY order_index,id LIMIT 2").bind(bell_schedule_id).fetch_all(&pool).await.unwrap();
     let homeroom_ids: Vec<Uuid> = sqlx::query_scalar(
         "SELECT id FROM homerooms WHERE academic_year_id=$1 AND is_active ORDER BY id LIMIT 2",
@@ -1421,12 +1405,10 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     )
     .await
     .unwrap();
-    assert!(
-        !excluded
-            .groups
-            .iter()
-            .any(|entry| entry.learning_group_id == group.learning_group_id)
-    );
+    assert!(!excluded
+        .groups
+        .iter()
+        .any(|entry| entry.learning_group_id == group.learning_group_id));
     assert_eq!(
         excluded
             .sync_states
@@ -1471,12 +1453,10 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     )
     .await
     .unwrap();
-    assert!(
-        restored
-            .groups
-            .iter()
-            .any(|entry| entry.learning_group_id == group.learning_group_id)
-    );
+    assert!(restored
+        .groups
+        .iter()
+        .any(|entry| entry.learning_group_id == group.learning_group_id));
     let physical_room_id: Uuid =
         sqlx::query_scalar("SELECT id FROM rooms WHERE status='ACTIVE' ORDER BY id LIMIT 1")
             .fetch_one(&pool)
@@ -1557,12 +1537,10 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
     .await
     .unwrap();
     assert_eq!(changed.homerooms.len(), homeroom_ids.len() - 1);
-    assert!(
-        !changed
-            .homerooms
-            .iter()
-            .any(|target| target.id == removed.id)
-    );
+    assert!(!changed
+        .homerooms
+        .iter()
+        .any(|target| target.id == removed.id));
     let date = school_academic_timetable::services::timetable_service::bangkok_today();
     let mut timetable_date = date;
     while daily_teaching_service::day_code_from_date(timetable_date) != "WED" {
@@ -1595,17 +1573,15 @@ async fn synchronized_published_groups_and_structural_per_target_removal_are_can
         projected_entry.room_code.as_deref(),
         Some("INTERNAL-SCI-002")
     );
-    assert!(
-        daily
-            .teachers
-            .iter()
-            .find(|teacher| teacher.id == teacher_id)
-            .unwrap()
-            .periods
-            .iter()
-            .flat_map(|period| &period.entries)
-            .any(|entry| entry.learning_group_id == Some(group.learning_group_id))
-    );
+    assert!(daily
+        .teachers
+        .iter()
+        .find(|teacher| teacher.id == teacher_id)
+        .unwrap()
+        .periods
+        .iter()
+        .flat_map(|period| &period.entries)
+        .any(|entry| entry.learning_group_id == Some(group.learning_group_id)));
 }
 
 #[tokio::test]
@@ -1737,12 +1713,10 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
         assert_eq!(conflicts[0].existing_block_id, Some(third.id));
         assert_eq!(conflicts[0].target_id, Some(target_id));
     }
-    assert!(
-        preview
-            .conflicts
-            .iter()
-            .all(|row| row.message.starts_with("คาบที่สลับกลับ: "))
-    );
+    assert!(preview
+        .conflicts
+        .iter()
+        .all(|row| row.message.starts_with("คาบที่สลับกลับ: ")));
     let swap = SwapTimetableBlocksRequest {
         timetable_id: timetable,
         block_a_id: source.id,
@@ -1849,12 +1823,10 @@ async fn timetable_placement_preview_checks_both_swap_legs_and_preserves_blocks(
         .await
         .unwrap();
     assert_eq!(preview.state, TimetableBlockPlacementState::Blocked);
-    assert!(
-        preview
-            .conflicts
-            .iter()
-            .any(|row| row.code == "TIMETABLE_TEACHER_CONFLICT")
-    );
+    assert!(preview
+        .conflicts
+        .iter()
+        .any(|row| row.code == "TIMETABLE_TEACHER_CONFLICT"));
     timetable_block_service::deactivate_block(
         &pool,
         &school_academic_timetable::collaboration::TimetableMutationContext::for_tests(

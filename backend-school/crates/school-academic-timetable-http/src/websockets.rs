@@ -88,7 +88,10 @@ fn parse_ws_params(
         if !seen.insert(key.to_string()) {
             return Err(AppError::BadRequest("Invalid WebSocket query".to_string()));
         }
-        if !matches!(key.as_ref(), "academicTermId" | "timetableId" | "school_subdomain" | "schoolSubdomain") {
+        if !matches!(
+            key.as_ref(),
+            "academicTermId" | "timetableId" | "school_subdomain" | "schoolSubdomain"
+        ) {
             return Err(AppError::BadRequest("Invalid WebSocket query".into()));
         }
         if key == "academicTermId" {
