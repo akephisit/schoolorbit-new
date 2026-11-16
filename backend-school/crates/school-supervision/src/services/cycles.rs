@@ -23,10 +23,6 @@ struct SupervisionCycleRow {
     title: String,
     description: Option<String>,
     template_id: Uuid,
-    booking_opens_at: Option<DateTime<Utc>>,
-    booking_closes_at: Option<DateTime<Utc>>,
-    starts_at: DateTime<Utc>,
-    ends_at: DateTime<Utc>,
     status: String,
     created_by: Option<Uuid>,
     created_at: DateTime<Utc>,
@@ -58,7 +54,7 @@ pub async fn list_cycles(
             "supervision.services.cycles.list_cycles",
             r#"
         SELECT id, academic_year_id, academic_term_id, title, description,
-               template_id, booking_opens_at, booking_closes_at, starts_at, ends_at,
+               template_id,
                status, created_by, created_at, updated_at
         FROM supervision_cycles
         WHERE academic_year_id = $1
@@ -102,7 +98,7 @@ async fn get_cycle_with_connection(
             "supervision.services.cycles.get_cycle_with_connection",
             r#"
         SELECT id, academic_year_id, academic_term_id, title, description,
-               template_id, booking_opens_at, booking_closes_at, starts_at, ends_at,
+               template_id,
                status, created_by, created_at, updated_at
         FROM supervision_cycles
         WHERE id = $1
@@ -129,12 +125,6 @@ pub async fn create_cycle(
     input: CreateSupervisionCycleRequest,
     created_by: Uuid,
 ) -> Result<SupervisionCycle, AppError> {
-    validate_cycle_schedule(
-        input.booking_opens_at,
-        input.booking_closes_at,
-        input.starts_at,
-        input.ends_at,
-    )?;
     validate_cycle_targets(&input.targets)?;
 
     let mut tx =
@@ -156,9 +146,9 @@ pub async fn create_cycle(
             r#"
         INSERT INTO supervision_cycles (
             academic_year_id, academic_term_id, title, description, template_id,
-            booking_opens_at, booking_closes_at, starts_at, ends_at, status, created_by
+            status, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
         )
@@ -167,10 +157,6 @@ pub async fn create_cycle(
         .bind(&input.title)
         .bind(&input.description)
         .bind(input.template_id)
-        .bind(input.booking_opens_at)
-        .bind(input.booking_closes_at)
-        .bind(input.starts_at)
-        .bind(input.ends_at)
         .bind(status.as_str())
         .bind(created_by)
         .fetch_one()
@@ -221,13 +207,8 @@ pub async fn update_cycle(
     let title = input.title.unwrap_or(current.title);
     let description = input.description.or(current.description);
     let template_id = input.template_id.unwrap_or(current.template_id);
-    let booking_opens_at = input.booking_opens_at.or(current.booking_opens_at);
-    let booking_closes_at = input.booking_closes_at.or(current.booking_closes_at);
-    let starts_at = input.starts_at.unwrap_or(current.starts_at);
-    let ends_at = input.ends_at.unwrap_or(current.ends_at);
     let status = input.status.unwrap_or(current.status);
 
-    validate_cycle_schedule(booking_opens_at, booking_closes_at, starts_at, ends_at)?;
     if let Some(targets) = &input.targets {
         validate_cycle_targets(targets)?;
     }
@@ -248,8 +229,7 @@ pub async fn update_cycle(
         UPDATE supervision_cycles
         SET academic_year_id = $2, academic_term_id = $3,
             title = $4, description = $5, template_id = $6,
-            booking_opens_at = $7, booking_closes_at = $8,
-            starts_at = $9, ends_at = $10, status = $11
+            status = $7
         WHERE id = $1
         "#,
         )
@@ -259,10 +239,6 @@ pub async fn update_cycle(
         .bind(&title)
         .bind(&description)
         .bind(template_id)
-        .bind(booking_opens_at)
-        .bind(booking_closes_at)
-        .bind(starts_at)
-        .bind(ends_at)
         .bind(status.as_str())
         .execute()
         .await
@@ -302,29 +278,6 @@ pub async fn update_cycle(
     })?;
 
     get_cycle(pool, id).await
-}
-
-fn validate_cycle_schedule(
-    booking_opens_at: Option<DateTime<Utc>>,
-    booking_closes_at: Option<DateTime<Utc>>,
-    starts_at: DateTime<Utc>,
-    ends_at: DateTime<Utc>,
-) -> Result<(), AppError> {
-    if starts_at > ends_at {
-        return Err(AppError::ValidationError(
-            "วันเริ่มรอบนิเทศต้องอยู่ก่อนวันสิ้นสุด".to_string(),
-        ));
-    }
-
-    if let (Some(open), Some(close)) = (booking_opens_at, booking_closes_at) {
-        if open > close {
-            return Err(AppError::ValidationError(
-                "เวลาเปิดจองต้องอยู่ก่อนเวลาปิดจอง".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
 }
 
 fn validate_cycle_targets(targets: &[CreateSupervisionCycleTargetRequest]) -> Result<(), AppError> {
@@ -514,10 +467,6 @@ fn cycle_from_row_with_targets(
         title: row.title,
         description: row.description,
         template_id: row.template_id,
-        booking_opens_at: row.booking_opens_at,
-        booking_closes_at: row.booking_closes_at,
-        starts_at: row.starts_at,
-        ends_at: row.ends_at,
         status: parse_cycle_status(&row.status)?,
         created_by: row.created_by,
         created_at: row.created_at,

@@ -183,10 +183,6 @@ async fn insert_fixture(pool: &PgPool) -> SupervisionFixture {
             title: "Characterization cycle".to_string(),
             description: Some("Preserves workflow and transaction behavior".to_string()),
             template_id: template.id,
-            booking_opens_at: Some(now - Duration::days(1)),
-            booking_closes_at: Some(now + Duration::days(7)),
-            starts_at: now - Duration::days(1),
-            ends_at: now + Duration::days(30),
             status: Some(SupervisionCycleStatus::Open),
             targets: vec![
                 CreateSupervisionCycleTargetRequest {
@@ -298,10 +294,6 @@ async fn supervision_lifecycle_cycles_reject_closed_contexts_without_losing_targ
         title: "Lifecycle cycle".into(),
         description: None,
         template_id: fixture.template.id,
-        booking_opens_at: fixture.cycle.booking_opens_at,
-        booking_closes_at: fixture.cycle.booking_closes_at,
-        starts_at: fixture.cycle.starts_at,
-        ends_at: fixture.cycle.ends_at,
         status: Some(SupervisionCycleStatus::Open),
         targets: vec![CreateSupervisionCycleTargetRequest {
             target_type: SupervisionTargetType::School,

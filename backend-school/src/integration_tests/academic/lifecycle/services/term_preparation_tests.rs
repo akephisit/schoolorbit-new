@@ -359,16 +359,8 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         .date_naive();
     let date_mappings = vec![
         TermPreparationDateMapping {
-            source_date: chrono::NaiveDate::from_ymd_opt(2025, 5, 1).unwrap(),
-            target_date: offering_date,
-        },
-        TermPreparationDateMapping {
             source_date: chrono::NaiveDate::from_ymd_opt(2025, 9, 15).unwrap(),
             target_date: offering_date + chrono::Duration::days(137),
-        },
-        TermPreparationDateMapping {
-            source_date: chrono::NaiveDate::from_ymd_opt(2025, 10, 31).unwrap(),
-            target_date: offering_date + chrono::Duration::days(183),
         },
     ];
     let source_facts_sql = r#"SELECT jsonb_build_object(
@@ -659,11 +651,10 @@ async fn selected_module_preparation_is_atomic_replay_safe_and_omits_operational
         exam_dates,
         vec![offering_date + chrono::Duration::days(137)]
     );
-    let cycle_dates:Vec<(chrono::NaiveDate,chrono::NaiveDate)> = sqlx::query_as("SELECT (starts_at AT TIME ZONE 'UTC')::date,(ends_at AT TIME ZONE 'UTC')::date FROM supervision_cycles WHERE academic_term_id=$1 ORDER BY starts_at,id").bind(target_term_id).fetch_all(&pool).await.unwrap();
-    assert_eq!(
-        cycle_dates,
-        vec![(offering_date, offering_date + chrono::Duration::days(183))]
-    );
+    let cycles: Vec<String> = sqlx::query_scalar("SELECT status FROM supervision_cycles WHERE academic_term_id=$1 ORDER BY id")
+        .bind(target_term_id).fetch_all(&pool).await.unwrap();
+    assert_eq!(cycles, vec!["draft".to_string()]);
+    assert!(workspace.date_requirements.iter().all(|requirement| !requirement.required_by.contains(&TermPreparationModule::Supervision)));
     let source_after: serde_json::Value = sqlx::query_scalar(source_facts_sql)
         .bind(source_term_id)
         .fetch_one(&pool)

@@ -105,7 +105,7 @@ test('cycles starts with its own skeleton, keeps template choices lazy, and patc
 	await page.getByRole('dialog').getByRole('button', { name: 'ยกเลิก', exact: true }).click();
 	await page
 		.getByRole('row', { name: /รอบแรก/ })
-		.getByRole('button', { name: 'ปิดรอบ' })
+		.getByRole('button', { name: 'ปิดรับคำขอ' })
 		.click();
 	await expect(
 		page.getByRole('row', { name: /รอบแรก/ }).getByRole('button', { name: 'เปิดอีกครั้ง' })
@@ -217,12 +217,12 @@ test('a pending cycle mutation does not block or patch the next academic year', 
 	await page.goto(path('cycles'));
 	await page
 		.getByRole('row', { name: /รอบแรก/ })
-		.getByRole('button', { name: 'ปิดรอบ' })
+		.getByRole('button', { name: 'ปิดรับคำขอ' })
 		.click();
 	await navigate(page, path('cycles', nextYear));
 	await expect(page.getByText('รอบปีใหม่', { exact: true })).toBeVisible();
 	await expect(
-		page.getByRole('row', { name: /รอบปีใหม่/ }).getByRole('button', { name: 'ปิดรอบ' })
+		page.getByRole('row', { name: /รอบปีใหม่/ }).getByRole('button', { name: 'ปิดรับคำขอ' })
 	).toBeEnabled();
 	api.release();
 	await expect(page.getByText('รอบแรก', { exact: true })).toHaveCount(0);

@@ -75,7 +75,7 @@ test('teaching supervision booking uses a weekly timetable grid with exact obser
 	assert.match(supervisionModels, /pub\s+observed_at:\s*DateTime<Utc>/);
 	assert.match(supervisionModels, /pub\s+observed_at:\s*Option<DateTime<Utc>>/);
 	assert.match(supervisionService, /day_of_week_matches_observed_at/);
-	assert.match(supervisionService, /validate_observed_at_in_cycle/);
+	assert.doesNotMatch(supervisionPage, /bookingOpensAt|bookingClosesAt|cycle\.startsAt|cycle\.endsAt|bookingDateInCycle|canNavigateBookingWeek/);
 	assert.match(migration, /ADD COLUMN observed_at timestamp with time zone/);
 	assert.match(migration, /DROP COLUMN manual_observed_at/);
 });
@@ -257,12 +257,11 @@ test('teaching supervision approval workflow skips review submission', async () 
 	assert.match(supervisionDetailPage, /async function approveResult\(\)/);
 	assert.match(supervisionDetailPage, />\s*รับรองผล\s*</);
 	assert.match(supervisionDetailPage, />\s*อนุมัติผล\s*</);
-	assert.match(supervisionPage, /รอครูรับทราบ/);
+	assert.match(await readRepoFile('frontend-school/src/lib/supervision/supervision-presentation.ts'), /รอครูรับทราบ/);
 	assert.doesNotMatch(supervisionPage, /ส่งตรวจทาน/);
 	assert.doesNotMatch(supervisionPage, /ส่งกลับผล/);
 	assert.doesNotMatch(supervisionPage, /returnResult/);
-	assert.match(supervisionDetailPage, /subject_group_certified:\s*'รับรองผล'/);
-	assert.match(supervisionDetailPage, /academic_approved:\s*'อนุมัติผล'/);
+	assert.doesNotMatch(supervisionDetailPage, /actionKindLabel|<Card\.Title>ประวัติ<\/Card\.Title>/);
 	assert.doesNotMatch(supervisionDetailPage, /ส่งตรวจทาน/);
 	assert.match(supervisionHandlers, /\/observations\/\{id\}\/certify/);
 	assert.doesNotMatch(supervisionHandlers, /submit-review/);
@@ -307,8 +306,8 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(detailPage, /PageShell/);
 	assert.match(detailPage, /LoadingButton/);
 	assert.match(detailPage, /replaceObservation\(updated/);
-	assert.match(detailPage, /observation\.actions/);
-	assert.match(detailPage, /actionKindLabel/);
+	assert.match(detailPage, /currentReturnReason\(observation\)/);
+	assert.doesNotMatch(detailPage, /actionKindLabel|<Card\.Title>ประวัติ<\/Card\.Title>/);
 	assert.match(parentPage, /href=\{observationDetailHref\(observation\)\}/);
 });
 

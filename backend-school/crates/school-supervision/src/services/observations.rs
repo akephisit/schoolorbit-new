@@ -113,10 +113,6 @@ struct CycleForRequestRow {
     academic_term_id: Option<Uuid>,
     template_id: Uuid,
     status: String,
-    booking_opens_at: Option<DateTime<Utc>>,
-    booking_closes_at: Option<DateTime<Utc>>,
-    starts_at: DateTime<Utc>,
-    ends_at: DateTime<Utc>,
 }
 
 pub async fn list_observations(
@@ -413,11 +409,16 @@ pub async fn update_requested_observation(
     let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if !teacher_can_edit_requested_observation(current.status) {
         return Err(AppError::ValidationError(
-            "แก้ไขคำขอนิเทศได้เฉพาะสถานะรออนุมัติ".to_string(),
+            "แก้ไขคำขอนิเทศได้เฉพาะสถานะรออนุมัติหรือส่งกลับ".to_string(),
         ));
     }
 
     let cycle = load_cycle_for_request(&mut *tx, current.cycle_id).await?;
+    if current.status == SupervisionObservationStatus::Returned {
+        validate_cycle_accepts_requests(&cycle)?;
+        ensure_no_submitted_evaluators(&current)?;
+        ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
+    }
     let lesson = resolve_lesson_input(
         &mut tx,
         &cycle,
@@ -443,7 +444,9 @@ pub async fn update_requested_observation(
             observed_at = $8,
             manual_period_label = $9,
             manual_reason = $10,
-            lesson_snapshot = $11
+            lesson_snapshot = $11,
+            status = 'requested',
+            requested_at = CASE WHEN status = 'returned' THEN now() ELSE requested_at END
         WHERE id = $1
         "#,
         )
@@ -467,6 +470,16 @@ pub async fn update_requested_observation(
             );
             AppError::InternalServerError("ไม่สามารถแก้ไขคำขอนิเทศได้".to_string())
         })?;
+
+    insert_observation_action(
+        &mut tx,
+        observation_id,
+        Some(actor_user_id),
+        if current.status == SupervisionObservationStatus::Returned { "requested" } else { "updated" },
+        Some(current.status),
+        Some(SupervisionObservationStatus::Requested),
+        None,
+    ).await?;
 
     tx.commit().await?;
     get_observation(pool, observation_id).await
@@ -659,6 +672,8 @@ pub async fn approve_observation_request(
             "อนุมัติคำขอได้เฉพาะรายการที่รออนุมัติหรือถูกส่งกลับ".to_string(),
         ));
     }
+
+    ensure_no_submitted_evaluators(&observation)?;
 
     if input
         .evaluators
@@ -1094,8 +1109,7 @@ async fn load_cycle_for_request(
         .query_as::<CycleForRequestRow>(
             "supervision.services.observations.load_cycle_for_request",
             r#"
-        SELECT id, academic_year_id, academic_term_id, template_id, status,
-               booking_opens_at, booking_closes_at, starts_at, ends_at
+        SELECT id, academic_year_id, academic_term_id, template_id, status
         FROM supervision_cycles
         WHERE id = $1
         "#,
@@ -1225,25 +1239,6 @@ fn validate_cycle_accepts_requests(cycle: &CycleForRequestRow) -> Result<(), App
         return Err(AppError::ValidationError("รอบนิเทศยังไม่เปิดให้จอง".to_string()));
     }
 
-    let now = Utc::now();
-    if cycle
-        .booking_opens_at
-        .is_some_and(|opens_at| now < opens_at)
-    {
-        return Err(AppError::ValidationError(
-            "ยังไม่ถึงเวลาเปิดจองนิเทศ".to_string(),
-        ));
-    }
-    if cycle
-        .booking_closes_at
-        .is_some_and(|closes_at| now > closes_at)
-    {
-        return Err(AppError::ValidationError("หมดเวลาจองนิเทศแล้ว".to_string()));
-    }
-    if now < cycle.starts_at || now > cycle.ends_at {
-        return Err(AppError::ValidationError("อยู่นอกช่วงเวลารอบนิเทศ".to_string()));
-    }
-
     Ok(())
 }
 
@@ -1307,7 +1302,6 @@ async fn resolve_lesson_input(
 ) -> Result<ResolvedLessonInput, AppError> {
     match (timetable_block_group_id, observed_at, manual_lesson) {
         (Some(block_group_id), Some(observed_at), None) => {
-            validate_observed_at_in_cycle(cycle, observed_at)?;
             let timetable_id =
                 timetable_service::get_for_term_on_connection(connection, academic_term_id)
                     .await?
@@ -1350,7 +1344,6 @@ async fn resolve_lesson_input(
         )),
         (None, _, Some(manual)) => {
             validate_manual_lesson(&manual)?;
-            validate_observed_at_in_cycle(cycle, manual.observed_at)?;
             Ok(ResolvedLessonInput {
                 timetable_block_group_id: None,
                 learning_group_id: None,
@@ -1368,19 +1361,6 @@ async fn resolve_lesson_input(
             "ต้องเลือกคาบจากตารางสอนหรือระบุคาบแบบกำหนดเองอย่างใดอย่างหนึ่ง".to_string(),
         )),
     }
-}
-
-fn validate_observed_at_in_cycle(
-    cycle: &CycleForRequestRow,
-    observed_at: DateTime<Utc>,
-) -> Result<(), AppError> {
-    if observed_at < cycle.starts_at || observed_at > cycle.ends_at {
-        return Err(AppError::ValidationError(
-            "วันที่นิเทศอยู่นอกช่วงรอบนิเทศ".to_string(),
-        ));
-    }
-
-    Ok(())
 }
 
 fn bangkok_observation_date(observed_at: DateTime<Utc>) -> NaiveDate {
@@ -1536,6 +1516,13 @@ async fn load_timetable_block_group_lesson_snapshot(
     })
 }
 
+fn ensure_no_submitted_evaluators(observation: &SupervisionObservation) -> Result<(), AppError> {
+    if observation.evaluators.iter().any(|evaluator| evaluator.status == crate::models::SupervisionEvaluatorStatus::Submitted) {
+        return Err(AppError::ValidationError("รายการนี้มีผลประเมินที่ส่งแล้ว ไม่สามารถส่งกลับ ส่งคำขอใหม่ หรือกำหนดผู้ประเมินใหม่ได้".into()));
+    }
+    Ok(())
+}
+
 pub(super) enum ObservationTransitionPolicy {
     Manager,
     RequestedTeacher,
@@ -1569,12 +1556,15 @@ pub(super) async fn set_observation_status(
     }
     require_observation_write(&mut tx, observation_id).await?;
     let current = get_observation_with_connection(&mut tx, observation_id).await?;
+    if to_status == SupervisionObservationStatus::Returned {
+        ensure_no_submitted_evaluators(&current)?;
+    }
     match policy {
         ObservationTransitionPolicy::RequestedTeacher
             if !teacher_can_edit_requested_observation(current.status) =>
         {
             return Err(AppError::ValidationError(
-                "ยกเลิกคำขอนิเทศได้เฉพาะสถานะรออนุมัติ".into(),
+                "ยกเลิกคำขอนิเทศได้เฉพาะสถานะรออนุมัติหรือส่งกลับ".into(),
             ));
         }
         ObservationTransitionPolicy::Certification => {
@@ -1673,10 +1663,6 @@ pub struct LessonResolutionCycle {
     pub academic_term_id: Option<Uuid>,
     pub template_id: Uuid,
     pub status: String,
-    pub booking_opens_at: Option<DateTime<Utc>>,
-    pub booking_closes_at: Option<DateTime<Utc>>,
-    pub starts_at: DateTime<Utc>,
-    pub ends_at: DateTime<Utc>,
 }
 
 #[cfg(feature = "integration-test-support")]
@@ -1713,10 +1699,6 @@ pub async fn resolve_lesson_input_for_test(
             academic_term_id: cycle.academic_term_id,
             template_id: cycle.template_id,
             status: cycle.status.clone(),
-            booking_opens_at: cycle.booking_opens_at,
-            booking_closes_at: cycle.booking_closes_at,
-            starts_at: cycle.starts_at,
-            ends_at: cycle.ends_at,
         },
         academic_term_id,
         actor_user_id,

@@ -1,6 +1,7 @@
 import type {
 	SupervisionObservation,
-	SupervisionObservationStatus
+	SupervisionObservationStatus,
+	SupervisionCycleStatus
 } from '../../../src/lib/api/supervision';
 import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
@@ -32,6 +33,7 @@ export async function mock(
 	page: Page,
 	options: {
 		permissions?: string[];
+		cycleStatus?: SupervisionCycleStatus;
 		hold?:
 			| 'cycles'
 			| 'teacher-status'
@@ -73,9 +75,10 @@ export async function mock(
 ) {
 	const reads: string[] = [];
 	const writes: string[] = [];
+	const payloads: unknown[] = [];
 	const held = gate();
 	const counts = new Map<string, number>();
-	let cycleStatus = 'open';
+	let cycleStatus = options.cycleStatus ?? 'open';
 	let observationStatus = options.observationStatus ?? 'requested';
 	const observation = (academicYearId = year): SupervisionObservation => ({
 		canManage: options.canManage ?? true,
@@ -150,7 +153,10 @@ export async function mock(
 			if (method === 'GET') {
 				reads.push(resource);
 				counts.set(resource, (counts.get(resource) ?? 0) + 1);
-			} else writes.push(`${method} ${resource}`);
+			} else {
+				writes.push(`${method} ${resource}`);
+				if (route.request().postData()) payloads.push(route.request().postDataJSON());
+			}
 			if (resource === '/api/auth/me')
 				return reply(route, {
 					id: id(20),
@@ -206,8 +212,6 @@ export async function mock(
 						: url.searchParams.get('academicYearId') === nextYear
 							? 'รอบปีใหม่'
 							: 'รอบแรก',
-					startsAt: '2026-09-01T00:00:00Z',
-					endsAt: '2026-12-01T00:00:00Z',
 					status: cycleStatus,
 					createdAt: '2026-09-01T00:00:00Z',
 					updatedAt: '2026-09-01T00:00:00Z',
@@ -316,6 +320,12 @@ export async function mock(
 									: 'planned';
 				return reply(route, observation());
 			}
+			if (method === 'PATCH' && resource === `/api/supervision/observations/${id(30)}/request`) {
+				observationStatus = 'requested';
+				return reply(route, { ...observation(), status: observationStatus });
+			}
+			if (resource === '/api/supervision/cycles' && method === 'POST')
+				return reply(route, { ...cycles()[0], ...route.request().postDataJSON() });
 			if (resource === '/api/supervision/cycles' && method === 'GET')
 				return reply(route, { items: cycles() });
 			if (resource === '/api/supervision/templates/summaries')
@@ -365,6 +375,7 @@ export async function mock(
 	return {
 		reads,
 		writes,
+		payloads,
 		observation: () => structuredClone(observation()),
 		release: held.release,
 		count: (resource: string) => counts.get(resource) ?? 0

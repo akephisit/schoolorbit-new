@@ -1235,26 +1235,6 @@ async fn date_requirements(
                 .insert(TermPreparationModule::Exams);
         }
     }
-    if normalized
-        .modules
-        .contains(&TermPreparationModule::Supervision)
-    {
-        let rows: Vec<DateSeed> = DbSession::new(&mut **tx).query_as("academic_lifecycle.services.term_preparation.date_requirements",
-            r#"SELECT DISTINCT source_date,'รอบนิเทศ ' || to_char(source_date,'DD/MM/YYYY') AS source_label FROM (
-                   SELECT starts_at::date AS source_date FROM supervision_cycles WHERE academic_term_id=$1
-                   UNION SELECT ends_at::date FROM supervision_cycles WHERE academic_term_id=$1
-                   UNION SELECT booking_opens_at::date FROM supervision_cycles WHERE academic_term_id=$1 AND booking_opens_at IS NOT NULL
-                   UNION SELECT booking_closes_at::date FROM supervision_cycles WHERE academic_term_id=$1 AND booking_closes_at IS NOT NULL
-               ) dates ORDER BY source_date"#,
-        ).bind(context.source_term_id).fetch_all().await?;
-        for row in rows {
-            seeds
-                .entry(row.source_date)
-                .or_insert((row.source_label, BTreeSet::new()))
-                .1
-                .insert(TermPreparationModule::Supervision);
-        }
-    }
     let provided = normalized
         .mappings
         .dates
