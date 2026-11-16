@@ -214,3 +214,22 @@ mod tests {
         assert!(validate_row_version(0).is_err());
     }
 }
+
+/// Map persisted cross-domain duty guards without depending upward on Timetable.
+pub(crate) fn map_write_guard(error: sqlx::Error) -> AppError {
+    match &error {
+        sqlx::Error::Database(database)
+            if matches!(
+                database.message(),
+                "TEACHING_COVERAGE_SOURCE_RESERVED"
+                    | "TEACHING_COVERAGE_TEACHER_RESERVED"
+                    | "TEACHING_COVERAGE_OVERLAP"
+            ) =>
+        {
+            AppError::Conflict(
+                "มีหน้าที่สอนลงวันที่ที่รับไว้แล้ว กรุณาปรับแผนสอนแทนก่อนแก้ผู้สอนหรือรายชื่อนักเรียน".into(),
+            )
+        }
+        _ => AppError::DbError(error),
+    }
+}

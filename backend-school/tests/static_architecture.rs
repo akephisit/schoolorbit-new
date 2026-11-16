@@ -1329,6 +1329,9 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         (
             "school-staff-leave",
             &[
+                "school-academic-core",
+                "school-academic-delivery",
+                "school-academic-timetable",
                 "school-authorization",
                 "school-database",
                 "school-errors",

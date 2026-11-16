@@ -3110,3 +3110,25 @@ resolve the dependency through reviewed forward work and retry the canonical run
 `SUPERVISION_CYCLE159_RECONCILIATION_FAILED` retains maintenance and blocks cutover.
 After commit retain a compatible 159-or-later writer and repair forward; older
 binaries still require the removed fields and cannot write this schema.
+
+
+## Dated teaching coverage for staff absence
+
+Apply [migration 160](../backend-school/migrations/160_staff_leave_teaching_coverage.sql)
+with the matching School backend and generated frontend contracts under the existing
+maintenance/all-tenant migration gates. It adds coverage evidence, settings and dated duties;
+it does not rewrite existing Leave documents, signatures, revisions or file links. Requests
+without coverage context remain explicitly marked as pre-feature evidence. Editable requests
+need an explicit valid academic year/term when newly submitted.
+
+Configure the nullable half-day boundary in Leave settings before morning/afternoon coverage
+is submitted. There is no seeded noon or date-based academic-context inference. Future source
+and actual teaching-group edits can be refused while accepted dated duties depend on them;
+return/replan the request through Leave rather than editing stored snapshots or disabling guards.
+An approved cancellation releases an entirely future exchange pair together. Once either leg
+has begun, its owed counterpart remains operative. Materialized Attendance rows and results
+remain unchanged by coverage approval or cancellation.
+
+Use the coverage fixtures in [Testing](TESTING.md) for a disposable rehearsal. After migration,
+retain a 160-compatible writer and repair forward; do not restore an older migration timeline
+or delete immutable confirmation/duty evidence to resolve an operational conflict.

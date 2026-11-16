@@ -49,8 +49,36 @@ pub fn require_session(
 }
 pub struct SessionAccess {
     assigned_groups: std::collections::HashSet<uuid::Uuid>,
+    dated_sources: Vec<school_academic_timetable::services::dated_teaching::AttendanceDatedGrant>,
 }
 impl SessionAccess {
+    pub(crate) fn dated_source_keys(&self, date: chrono::NaiveDate) -> Vec<String> {
+        self.dated_sources
+            .iter()
+            .filter(|g| g.date == date)
+            .flat_map(|g| g.source_keys())
+            .collect()
+    }
+    fn dated_access(&self, actor: &ActorContext, session: &AttendanceSession) -> bool {
+        self.dated_sources.iter().any(|g| {
+            g.date == session.date && g.source_keys().contains(&session.source_key) && {
+                if session.roster.is_empty() {
+                    session.teacher_ids.contains(&actor.user_id)
+                        && session.learning_group_id == g.actual_group_id
+                } else {
+                    let pupils = session
+                        .roster
+                        .iter()
+                        .map(|p| p.student_id)
+                        .collect::<std::collections::BTreeSet<_>>();
+                    !pupils.is_empty()
+                        && pupils == g.source_pupils.iter().copied().collect()
+                        && (session.learning_group_id == Some(g.source_group_id)
+                            || session.learning_group_id == g.actual_group_id)
+                }
+            }
+        })
+    }
     pub(crate) fn assigned_group_ids(&self) -> Vec<uuid::Uuid> {
         self.assigned_groups.iter().copied().collect()
     }
@@ -65,7 +93,8 @@ impl SessionAccess {
         }
         let assigned = session
             .learning_group_id
-            .is_some_and(|group| self.assigned_groups.contains(&group));
+            .is_some_and(|group| self.assigned_groups.contains(&group))
+            || self.dated_access(actor, session);
         let allowed = if write {
             write_school(actor)
                 || (actor.has_permission(codes::ATTENDANCE_UPDATE_ASSIGNED) && assigned)
@@ -90,6 +119,7 @@ pub async fn session_access_on_connection(
 ) -> Result<SessionAccess, AppError> {
     if read_school(actor) && write_school(actor) {
         return Ok(SessionAccess {
+            dated_sources: Default::default(),
             assigned_groups: Default::default(),
         });
     }
@@ -109,7 +139,15 @@ pub async fn session_access_on_connection(
         actor.user_id,
     )
     .await?;
+    let dated_sources =
+        school_academic_timetable::services::dated_teaching::attendance_grants_on_connection(
+            connection,
+            term,
+            actor.user_id,
+        )
+        .await?;
     Ok(SessionAccess {
+        dated_sources,
         assigned_groups: groups.learning_group_ids.into_iter().collect(),
     })
 }

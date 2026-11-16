@@ -53,6 +53,7 @@
 		safeLeaveReturn(effectiveUrl.searchParams.get('returnTo'), leaveHome(effectiveKind))
 	);
 	const creator = $derived($can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN));
+	let coverageRevision = $state<number | undefined>();
 	let emergencyReason = $state(''),
 		coverageDirty = $state(false),
 		detailsDirty = $state(false);
@@ -73,6 +74,10 @@
 	}
 	function refreshed() {
 		if (id) region.retry((signal) => getLeaveRequest(id, { signal }));
+	}
+	function coverageSaved(result: LeaveRequestDetail) {
+		coverageRevision = result.request.revision;
+		region.patch(result);
 	}
 	function saved(result: LeaveRequestDetail, proceed: boolean) {
 		region.patch(result);
@@ -162,6 +167,7 @@
 				detail={detail ?? undefined}
 				{optionsSource}
 				{settingsSource}
+				{coverageRevision}
 				ondirty={(value) => (detailsDirty = value)}
 				oncancel={() => goto(backHref)}
 				onsaved={saved}
@@ -176,7 +182,7 @@
 					/>{/if}
 				<CoverageEditor
 					{detail}
-					onsaved={(result) => region.patch(result)}
+					onsaved={coverageSaved}
 					onrefresh={refreshed}
 					ondirty={(value) => (coverageDirty = value)}
 				/>

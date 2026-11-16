@@ -188,6 +188,7 @@ export type SaveLeaveCoverageSettingsRequest = Schemas['SaveLeaveCoverageSetting
 export type PreviewLeaveCoverageRequest = Schemas['PreviewLeaveCoverageRequest'];
 export type LeaveCoveragePlan = Schemas['LeaveCoveragePlan'];
 export type LeaveCoverageLesson = Schemas['LeaveCoverageLesson'];
+export type LeaveCoverageAssignment = Schemas['LeaveCoverageAssignment'];
 export type LeaveCoverageSelection = Schemas['LeaveCoverageSelection'];
 export type LeaveCoverageCandidate = Schemas['LeaveCoverageCandidate'];
 export type LeaveCoverageCandidates = Schemas['LeaveCoverageCandidates'];

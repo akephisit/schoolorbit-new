@@ -42,7 +42,7 @@ pub async fn workspace_in_transaction(
         ),
         (
             "timetable",
-            "มีร่างตารางสอนที่ยังไม่เผยแพร่",
+            "มีภาระสอนแทนหรือสอนคืนที่จองหรืออนุมัติไว้และยังไม่สิ้นสุด",
             &timetable,
             link(
                 codes::ACADEMIC_TIMETABLE_READ_SCHOOL,

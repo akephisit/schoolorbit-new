@@ -16,6 +16,8 @@
 		coverageSelections,
 		coverageLessonLabels,
 		coverageCounts,
+		coverageSelectionMatches,
+		coverageReturnCaption,
 		coverageStateLabels,
 		coverageConsentLabels
 	} from '#lib/staff-leave/coverage.js';
@@ -84,6 +86,13 @@
 	$effect.pre(() => {
 		const incoming = detail;
 		untrack(() => {
+			if (
+				baseRevision !== incoming.request.revision ||
+				sourceDigest !== incoming.coverage.sourceDigest
+			) {
+				clearPicker();
+				selected = [];
+			}
 			if (!dirty) {
 				assignments = coverageSelections(incoming.coverage);
 				baseRevision = incoming.request.revision;
@@ -372,17 +381,17 @@
 													: (choiceLabels[lesson.lessonKey]?.offeringName ?? 'วิชาที่เลือก'))}
 										</p>
 										<p class="text-muted-foreground">
-											{lesson.assignment &&
-											lesson.assignment.replacementTeacherId === assignment.replacementTeacherId &&
-											!dirty
+											{lesson.assignment && coverageSelectionMatches(lesson, assignment)
 												? coverageConsentLabels[lesson.assignment.consent]
 												: 'รอบันทึกและตอบรับ'}
 										</p>
 										{#if lesson.assignment?.returnDate && assignment.returnLessonKey === lesson.assignment.returnLessonKey}<p
 											>
-												สอนคืน {leaveDate(lesson.assignment.returnDate)} · {lesson.assignment
-													.returnLesson?.offeringName ?? ''} · {lesson.assignment.returnLesson
-													?.periodName ?? ''}
+												สอน{coverageReturnCaption(
+													lesson,
+													lesson.assignment,
+													leaveDate(lesson.assignment.returnDate)
+												)}
 											</p>{/if}
 										{#if allowed}<Button
 												variant="ghost"

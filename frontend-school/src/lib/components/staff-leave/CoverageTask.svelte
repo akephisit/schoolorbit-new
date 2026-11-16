@@ -2,7 +2,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { confirmLeaveCoverage, type LeaveCoverageTask } from '#lib/api/staff-leave.js';
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
-	import { coverageConsentLabels } from '#lib/staff-leave/coverage.js';
+	import { coverageConsentLabels, coverageReturnCaption } from '#lib/staff-leave/coverage.js';
 	import { leaveDate } from '#lib/staff-leave/presentation.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -105,10 +105,11 @@
 							{lesson.assignment.taughtActivity}
 						</p>{/if}
 					{#if lesson.assignment.returnDate}<p class="text-sm text-muted-foreground">
-							สอนคืนสำหรับนักเรียนกลุ่มเดียวกัน/ห้องเดียวกัน {leaveDate(
-								lesson.assignment.returnDate
-							)} · {lesson.assignment.returnLesson?.periodName ?? ''} · {lesson.assignment
-								.returnLesson?.offeringName ?? ''}
+							ผู้ขอจะสอน{coverageReturnCaption(
+								lesson,
+								lesson.assignment,
+								leaveDate(lesson.assignment.returnDate)
+							)}
 						</p>{/if}
 				</li>{/if}{/each}
 	</ul>

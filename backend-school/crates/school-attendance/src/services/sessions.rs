@@ -136,9 +136,9 @@ pub(crate) async fn list_on_connection(
     let access =
         policy::session_access_on_connection(connection, actor, q.academic_term_id).await?;
     let sql = format!(
-        "SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND ($3 OR ($6 AND ((kind='lesson' AND learning_group_id=ANY($5)) OR (kind<>'lesson' AND $4=ANY(teacher_ids))))) ORDER BY start_time,title,id"
+        "SELECT {COLUMNS} FROM attendance_sessions WHERE academic_term_id=$1 AND date=$2 AND ($3 OR ($6 AND ((kind='lesson' AND (learning_group_id=ANY($5) OR source_key=ANY($7))) OR (kind<>'lesson' AND $4=ANY(teacher_ids))))) ORDER BY start_time,title,id"
     );
-    Ok(DbSession::new(&mut *connection)
+    let rows: Vec<AttendanceSession> = DbSession::new(&mut *connection)
         .query_as(
             "attendance.services.sessions.list",
             sqlx::AssertSqlSafe(sql),
@@ -152,8 +152,13 @@ pub(crate) async fn list_on_connection(
             school_permissions::registry::codes::ATTENDANCE_READ_ASSIGNED,
             school_permissions::registry::codes::ATTENDANCE_UPDATE_ASSIGNED,
         ]))
+        .bind(access.dated_source_keys(q.date))
         .fetch_all()
-        .await?)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .filter(|s| access.require_session(actor, s, false).is_ok())
+        .collect())
 }
 pub async fn ensure(
     pool: &PgPool,

@@ -235,7 +235,23 @@ async fn seeds_with_choices_on_connection(
         )
         .await?;
     let saved_sources = lesson_source_facts_on_connection(connection, term, date, date).await?;
-    let sources = lesson_sources_for_date(&blocks, &saved_sources, date);
+    let mut sources = lesson_sources_for_date(&blocks, &saved_sources, date);
+    for duty in school_academic_timetable::services::dated_teaching::approved_on_connection(
+        connection, term, date,
+    )
+    .await?
+    {
+        if let Some(group) = duty.source_snapshot.learning_group_id {
+            sources.extend(current_lesson_sources(
+                &[(
+                    duty.source_snapshot.allocation_id,
+                    group,
+                    duty.source_snapshot.bell_schedule_period_id,
+                )],
+                &saved_sources,
+            ));
+        }
+    }
     let student_map: HashMap<_, _> = students.iter().map(|s| (s.student_id, s)).collect();
     for block in blocks {
         if block.block_kind == TimetableBlockKind::Structural {
@@ -298,6 +314,14 @@ async fn seeds_with_choices_on_connection(
                 session,
                 students: roster,
             });
+        }
+    }
+    for saved in materialized_lesson_seeds_on_connection(connection, term, date).await? {
+        if let Some(seed) = seeds.iter_mut().find(|s| {
+            s.session.kind == AttendanceKind::Lesson
+                && s.session.source_key == saved.session.source_key
+        }) {
+            *seed = saved;
         }
     }
     Ok((seeds, lesson_choices))

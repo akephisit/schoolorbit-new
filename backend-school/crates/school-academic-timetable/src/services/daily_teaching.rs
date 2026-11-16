@@ -196,7 +196,7 @@ pub async fn get_daily_teaching_overview_on_connection(
         .fetch_all()
         .await?;
     let include_empty_teachers = query.include_empty_teachers.unwrap_or(false);
-    let teachers: Vec<TeacherSeed> = DbSession::new(connection)
+    let mut teachers: Vec<TeacherSeed> = DbSession::new(connection)
         .query_as(
             "academic_timetable.services.daily_teaching.get_daily_teaching_overview_on_connection",
             r#"SELECT DISTINCT user_account.id,
@@ -345,6 +345,52 @@ pub async fn get_daily_teaching_overview_on_connection(
             }
         }
     }
+    let duties =
+        super::dated_teaching::approved_on_connection(connection, query.academic_term_id, date)
+            .await?;
+    for duty in &duties {
+        let source = &duty.source_snapshot;
+        if let Some(mut replacement) = entries
+            .iter()
+            .find(|e| {
+                e.teacher_id == duty.original_teacher_id && e.entry_id == source.allocation_id
+            })
+            .cloned()
+        {
+            entries.retain(|e| {
+                !(e.teacher_id == duty.original_teacher_id && e.entry_id == source.allocation_id)
+            });
+            replacement.teacher_id = duty.teacher_id;
+            entries.push(replacement);
+        }
+        let content = &duty.teaching_content;
+        for entry in entries
+            .iter_mut()
+            .filter(|e| e.entry_id == source.allocation_id && e.teacher_id == duty.teacher_id)
+        {
+            entry.learning_group_id = content.learning_group_id;
+            entry.offering_id = content.offering_id;
+            entry.offering_name = content.offering_name.clone().or(content.activity.clone());
+            entry.offering_code = None;
+            entry.learning_group_name = content.learning_group_name.clone();
+            entry.subject_id = content.subject_id;
+            entry.subject_version_display_label = None;
+            entry.activity_id = content.activity_id;
+            entry.activity_version_display_label = None;
+            entry.activity_scheduling_mode = content.scheduling_mode;
+            entry.title = content.activity.clone();
+            if content.activity.is_some() {
+                entry.entry_type = "activity".into();
+            }
+        }
+        if !teachers.iter().any(|t| t.id == duty.teacher_id) {
+            teachers.push(TeacherSeed {
+                id: duty.teacher_id,
+                display_name: duty.teacher_name.clone(),
+            });
+        }
+    }
+    teachers.sort_by(|a, b| a.display_name.cmp(&b.display_name).then(a.id.cmp(&b.id)));
     Ok(build_overview(
         date,
         day,

@@ -196,7 +196,8 @@ pub(super) async fn apply_curriculum_generated_group(
         .bind(proposal.name.trim())
         .bind(proposal.group_key.trim())
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     for homeroom_id in homeroom_ids {
         DbSession::new(&mut **transaction)
             .query(
@@ -212,7 +213,8 @@ pub(super) async fn apply_curriculum_generated_group(
             .bind(academic_year_id)
             .bind(homeroom_id)
             .execute()
-            .await?;
+            .await
+            .map_err(super::map_write_guard)?;
     }
     Ok(GeneratedGroupApplyOutcome {
         id: group_id,
@@ -394,11 +396,11 @@ pub(super) async fn create_target_homeroom_groups(
         SELECT group_id,$1,$2,$3,'ROOM-' || group_id::text,name \
         FROM unnest($4::uuid[],$5::text[]) AS input(group_id,name)")
         .bind(offering_id).bind(term_id).bind(year_id).bind(&group_ids).bind(&names)
-        .execute().await?;
+        .execute().await.map_err(super::map_write_guard)?;
     DbSession::new(&mut **transaction).query("academic_delivery.services.groups.create_target_homeroom_groups", "INSERT INTO learning_group_homerooms (id,learning_group_id,academic_term_id,academic_year_id,homeroom_id,coverage_source) \
         SELECT gen_random_uuid(),group_id,$1,$2,room_id,'manual' \
         FROM unnest($3::uuid[],$4::uuid[]) AS input(group_id,room_id)")
-        .bind(term_id).bind(year_id).bind(&group_ids).bind(&room_ids).execute().await?;
+        .bind(term_id).bind(year_id).bind(&group_ids).bind(&room_ids).execute().await.map_err(super::map_write_guard)?;
     Ok(())
 }
 
@@ -448,7 +450,8 @@ pub async fn create(
         .bind(request.capacity)
         .bind(request.registration_open)
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     replace_preferred_rooms_in_transaction(
         &mut transaction,
         id,
@@ -497,7 +500,7 @@ pub async fn update(
         .bind(id)
         .bind(request.registration_open)
         .execute()
-        .await?;
+        .await.map_err(super::map_write_guard)?;
     replace_preferred_rooms_in_transaction(
         &mut transaction,
         id,
@@ -565,7 +568,7 @@ pub async fn replace_teachers(
         transaction.commit().await?;
         return Ok(accepted);
     }
-    DbSession::new(&mut *transaction).query("academic_delivery.groups.remove_teachers", "DELETE FROM learning_group_teachers WHERE learning_group_id=$1 AND NOT(teacher_id=ANY($2))").bind(id).bind(&teacher_ids).execute().await?;
+    DbSession::new(&mut *transaction).query("academic_delivery.groups.remove_teachers", "DELETE FROM learning_group_teachers WHERE learning_group_id=$1 AND NOT(teacher_id=ANY($2))").bind(id).bind(&teacher_ids).execute().await.map_err(super::map_write_guard)?;
     for teacher in request.teachers {
         DbSession::new(&mut *transaction)
             .query(
@@ -583,7 +586,7 @@ pub async fn replace_teachers(
             .bind(teacher.role)
             .bind(actor_user_id)
             .execute()
-            .await?;
+            .await.map_err(super::map_write_guard)?;
     }
     assessments
         .fill_missing_coordinators(
@@ -624,7 +627,8 @@ pub async fn replace_homerooms(
         )
         .bind(id)
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     for homeroom_id in homeroom_ids {
         DbSession::new(&mut *transaction)
             .query(
@@ -640,7 +644,8 @@ pub async fn replace_homerooms(
             .bind(group.academic_year_id)
             .bind(homeroom_id)
             .execute()
-            .await?;
+            .await
+            .map_err(super::map_write_guard)?;
     }
     DbSession::new(&mut *transaction)
         .query(
@@ -649,7 +654,7 @@ pub async fn replace_homerooms(
         )
         .bind(id)
         .execute()
-        .await?;
+        .await.map_err(super::map_write_guard)?;
     let accepted = get_on_connection(&mut transaction, id).await?;
     transaction.commit().await?;
     Ok(accepted)
@@ -754,7 +759,8 @@ pub async fn apply_roster(
                     .bind(term.operation_date)
                     .bind(current_student.id)
                     .execute()
-                    .await?;
+                    .await
+                    .map_err(super::map_write_guard)?;
             }
         }
         for (student_year_id, (student_id, roster_source)) in desired {
@@ -788,7 +794,8 @@ pub async fn apply_roster(
                     .bind(roster_source)
                     .bind(term.operation_date)
                     .execute()
-                    .await?;
+                    .await
+                    .map_err(super::map_write_guard)?;
             }
         }
     }
@@ -799,7 +806,7 @@ pub async fn apply_roster(
         )
         .bind(group_id)
         .execute()
-        .await?;
+        .await.map_err(super::map_write_guard)?;
     validate_publishable_roster(&mut transaction, &group).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[group_id]).await?;
     let accepted = get_on_connection(&mut transaction, group_id).await?;
@@ -985,7 +992,8 @@ async fn lock_offering_then_group(
         )
         .bind(offering_id)
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     let group = lock_group(transaction, id).await?;
     if group.learning_offering_id != offering_id || group.academic_term_id != academic_term_id {
         return Err(AppError::Conflict(
@@ -1163,7 +1171,8 @@ async fn replace_preferred_rooms_in_transaction(
         )
         .bind(group_id)
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     for (index, room_id) in room_ids.iter().enumerate() {
         DbSession::new(&mut **transaction)
             .query(
@@ -1182,7 +1191,8 @@ async fn replace_preferred_rooms_in_transaction(
                 })?,
             )
             .execute()
-            .await?;
+            .await
+            .map_err(super::map_write_guard)?;
     }
     Ok(())
 }
@@ -1196,7 +1206,7 @@ async fn increment_group_revision(
     )
     .bind(group_id)
     .execute()
-    .await?;
+    .await.map_err(super::map_write_guard)?;
     Ok(())
 }
 
@@ -1595,11 +1605,9 @@ mod tests {
             candidates: Vec::new(),
             registration_type: None,
         };
-        assert!(
-            build_roster_preview(Uuid::new_v4(), source(), Vec::new())
-                .students
-                .is_empty()
-        );
+        assert!(build_roster_preview(Uuid::new_v4(), source(), Vec::new())
+            .students
+            .is_empty());
         let preview = build_roster_preview(Uuid::new_v4(), source(), vec![preview_current(1, 10)]);
         assert_eq!(preview.students.len(), 1);
         assert_eq!(preview.students[0].student_id, Uuid::from_u128(10));

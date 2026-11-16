@@ -11,4 +11,5 @@ pub mod timetable_template_service;
 
 pub mod deletion;
 
+pub mod dated_obligations;
 pub mod dated_teaching;

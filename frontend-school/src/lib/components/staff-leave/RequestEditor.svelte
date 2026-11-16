@@ -43,7 +43,8 @@
 		oncancel,
 		onsaved,
 		onrefresh,
-		ondirty
+		ondirty,
+		coverageRevision
 	}: {
 		kind: LeaveKind;
 		detail?: LeaveRequestDetail;
@@ -53,8 +54,10 @@
 		onsaved: (detail: LeaveRequestDetail, proceed: boolean) => void;
 		onrefresh?: () => void;
 		ondirty?: (value: boolean) => void;
+		coverageRevision?: number;
 	} = $props();
 	let draft = $state<LeaveDraft>(untrack(() => leaveDraft(detail)));
+	let savedBasis = untrack(() => JSON.stringify(leaveDraft(detail)));
 	const settingsRegion = new LeaveRegion<LeaveCoverageSettings | null>();
 	let contextInitialized = false;
 	const settings = $derived(settingsRegion.value);
@@ -100,6 +103,15 @@
 	$effect(() => ondirty?.(changed));
 	let expectedRevision = $state(untrack(() => detail?.request.revision ?? 0));
 	let conflict = $state(false);
+	$effect.pre(() => {
+		const revision = coverageRevision;
+		const current = detail;
+		if (revision === undefined || !current || revision !== current.request.revision) return;
+		untrack(() => {
+			if (!conflict && savedBasis === JSON.stringify(leaveDraft(current)))
+				expectedRevision = revision;
+		});
+	});
 	let requestedReconciliation = false;
 	const stale = $derived(!!detail && expectedRevision !== detail.request.revision);
 	$effect.pre(() => {
@@ -191,7 +203,10 @@
 						period
 					})
 				: await createLeaveRequest({ requestId, period });
-			if (!disposed) expectedRevision = result.request.revision;
+			if (!disposed) {
+				expectedRevision = result.request.revision;
+				savedBasis = JSON.stringify(leaveDraft(result));
+			}
 			if (!disposed)
 				onsaved(
 					result,
@@ -215,7 +230,10 @@
 				type="button"
 				variant="outline"
 				onclick={() => {
-					if (detail) expectedRevision = detail.request.revision;
+					if (detail) {
+						expectedRevision = detail.request.revision;
+						savedBasis = JSON.stringify(leaveDraft(detail));
+					}
 					conflict = false;
 					error = '';
 				}}>ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง</Button

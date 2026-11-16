@@ -1,10 +1,28 @@
 import type {
 	LeaveCoverageLesson,
+	LeaveCoverageAssignment,
 	LeaveCoveragePlan,
 	LeaveCoverageSelection,
 	LeaveCoverageSettings,
 	DatedTeachingLesson
 } from '#lib/api/staff-leave.js';
+
+export function coverageSelectionMatches(
+	lesson: LeaveCoverageLesson,
+	selection: LeaveCoverageSelection | undefined
+): boolean {
+	const saved = lesson.assignment;
+	return (
+		!!saved &&
+		!!selection &&
+		selection.lessonKey === lesson.lessonKey &&
+		selection.replacementTeacherId === saved.replacementTeacherId &&
+		selection.mode === saved.mode &&
+		(selection.taughtOfferingId ?? null) === (saved.taughtOfferingId ?? null) &&
+		(selection.taughtActivity ?? null) === (saved.taughtActivity ?? null) &&
+		(selection.returnLessonKey ?? null) === (saved.returnLessonKey ?? null)
+	);
+}
 
 export function coverageCounts(
 	lessons: LeaveCoverageLesson[],
@@ -19,16 +37,7 @@ export function coverageCounts(
 		confirmed: lessons.filter((lesson) => {
 			if (lesson.assignment?.consent !== 'confirmed') return false;
 			if (!selected) return true;
-			const value = selected.get(lesson.lessonKey),
-				saved = lesson.assignment;
-			return (
-				value &&
-				value.replacementTeacherId === saved.replacementTeacherId &&
-				value.mode === saved.mode &&
-				value.taughtOfferingId === saved.taughtOfferingId &&
-				value.taughtActivity === saved.taughtActivity &&
-				value.returnLessonKey === saved.returnLessonKey
-			);
+			return coverageSelectionMatches(lesson, selected.get(lesson.lessonKey));
 		}).length
 	};
 }
@@ -92,4 +101,19 @@ export function coverageLessonLabels(
 		...(lesson.roomName ? [lesson.roomName] : [])
 	];
 	return { title, details: details.join(' · ') };
+}
+
+export function coverageReturnCaption(
+	lesson: Pick<LeaveCoverageLesson, 'offeringName'>,
+	assignment: Pick<LeaveCoverageAssignment, 'returnLesson'>,
+	dateLabel: string
+): string {
+	const slot = assignment.returnLesson;
+	const parts = [
+		dateLabel,
+		slot?.periodName,
+		slot ? `${slot.startTime.slice(0, 5)}–${slot.endTime.slice(0, 5)}` : null
+	].filter((value): value is string => !!value?.trim());
+	const displaced = slot?.offeringName?.trim();
+	return `${lesson.offeringName?.trim() || 'กิจกรรมตามตาราง'} คืน ${parts.join(' · ')}${displaced ? ` (แทนคาบ${displaced})` : ''}`;
 }

@@ -2,6 +2,8 @@ import { test, expect, type Page } from '@playwright/test';
 import {
 	mockTeachingCoverage,
 	coveragePlan,
+	teachingLesson,
+	coverageYear,
 	englishOfferingId
 } from './fixtures/staff-leave-coverage';
 import { leaveId } from './fixtures/staff-leave';
@@ -106,9 +108,12 @@ for (const theme of ['light', 'dark'] as const)
 			expect(api.returnLesson.homeroomIds).toEqual(
 				api.detail().coverage.days[0].lessons[0].homeroomIds
 			);
-			await expect(page.getByTestId('leave-coverage-editor')).toContainText('สอนคืน');
+			await expect(page.getByTestId('leave-coverage-editor')).toContainText('สอนคณิตศาสตร์ คืน');
+			await expect(page.getByTestId('leave-coverage-editor')).toContainText(
+				'10:00–10:50 (แทนคาบภาษาอังกฤษ)'
+			);
 			await expect(page.getByTestId('leave-coverage-editor')).toContainText('ภาษาอังกฤษ');
-			await page.getByText('สอนคืน', { exact: false }).first().scrollIntoViewIfNeeded();
+			await page.getByText('สอนคณิตศาสตร์ คืน', { exact: false }).first().scrollIntoViewIfNeeded();
 			await page.screenshot({
 				path: testInfo.outputPath(`reciprocal-${theme}-${width}.png`),
 				fullPage: true
@@ -323,7 +328,16 @@ for (const theme of ['light', 'dark'] as const)
 					taughtActivity: null,
 					returnLessonKey: 'return-english',
 					returnDate: '2026-10-22',
-					returnLesson: null,
+					returnLesson:
+						lesson.lessonKey === 'lesson-1'
+							? {
+									...teachingLesson(9, '2026-10-22'),
+									teacherId: actor,
+									learningGroupId: id(871),
+									offeringId: englishOfferingId,
+									offeringName: 'ภาษาอังกฤษ'
+								}
+							: null,
 					consent: 'pending',
 					confirmedAt: null,
 					taughtLearningGroupId: id(871)
@@ -333,6 +347,11 @@ for (const theme of ['light', 'dark'] as const)
 		await page.goto('/staff/leave/assigned');
 		await expect(page.getByTestId('leave-assigned-task')).toContainText('ภาษาอังกฤษ');
 		await expect(page.getByTestId('leave-assigned-task')).not.toContainText('เข้ารับการตรวจรักษา');
+		await expect(page.getByTestId('leave-assigned-task')).toContainText('ผู้ขอจะสอนคณิตศาสตร์ คืน');
+		await expect(page.getByTestId('leave-assigned-task')).not.toContainText('· ·');
+		await expect(page.getByTestId('leave-assigned-task')).toContainText(
+			'10:00–10:50 (แทนคาบภาษาอังกฤษ)'
+		);
 		await page
 			.getByRole('button', { name: 'ปฏิเสธคาบที่เลือก', exact: true })
 			.scrollIntoViewIfNeeded();
@@ -377,4 +396,126 @@ test('declined coverage returns request to revision without withdrawal and prese
 	expect(api.calls.some((call) => call.path.endsWith('/cancel'))).toBe(false);
 	await page.getByRole('link', { name: 'แก้ไขฉบับร่าง', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(`${leaveId}/edit`));
+});
+
+test('editing saved exit date time and valid academic context consumes reconciled plan then can select save and send', async ({
+	page
+}) => {
+	const initial = coveragePlan();
+	initial.days = initial.days.slice(0, 1);
+	const updated = coveragePlan();
+	updated.academicTermId = id(801);
+	updated.sourceDigest = 'digest-reconciled-details';
+	updated.planHash = 'plan-after-details';
+	updated.revision = 3;
+	updated.days = [
+		{
+			date: '2026-10-21',
+			lessons: [
+				{
+					...teachingLesson(4, '2026-10-21'),
+					startTime: '11:00:00',
+					endTime: '11:50:00',
+					assignment: null
+				}
+			]
+		}
+	];
+	const api = await mockTeachingCoverage(page, {
+		plan: initial,
+		kind: 'exit',
+		updatedCoverage: updated
+	});
+	api.settings.contexts.push({
+		academicYearId: coverageYear,
+		academicYearName: '2569',
+		academicTermId: id(801),
+		academicTermName: '2'
+	});
+	await page.goto(editPath);
+	await page.getByRole('button', { name: 'เลือกทุกคาบ', exact: true }).click();
+	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
+	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
+	await page.locator('#coverage-activity').fill('กิจกรรมก่อนเปลี่ยนช่วงเวลา');
+	await page.getByRole('button', { name: 'ใช้กับ 2 คาบที่เลือก', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
+	await expect(page.getByTestId('leave-coverage-editor')).toContainText('เลือกครู 2/2');
+
+	let releaseOld = () => {},
+		startedOld = () => {},
+		finishedOld = () => {};
+	const oldGate = new Promise<void>((resolve) => (releaseOld = resolve));
+	const oldStarted = new Promise<void>((resolve) => (startedOld = resolve));
+	const oldFinished = new Promise<void>((resolve) => (finishedOld = resolve));
+	let holdOld = true;
+	await page.route('**/coverage/candidates', async (route) => {
+		if (!holdOld) return route.fallback();
+		holdOld = false;
+		startedOld();
+		await oldGate;
+		await route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify({
+				success: true,
+				data: { candidates: api.teachers, subjectGroups: [], gradeLevels: [], hasMore: false }
+			})
+		});
+		finishedOld();
+	});
+	await page.getByRole('checkbox', { name: 'เลือก 2026-10-19 คาบ 1', exact: true }).check();
+	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
+	await oldStarted;
+	await page.getByRole('button', { name: '1. รายละเอียด', exact: true }).click();
+	await expect(
+		page.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง', exact: true })
+	).toHaveCount(0);
+	for (const field of ['leave-start-date', 'leave-end-date']) {
+		await page.locator(`#${field}`).click();
+		await page
+			.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+			.filter({ hasText: /^21$/ })
+			.click();
+	}
+	await page.locator('#leave-start-time').fill('11:00');
+	await page.locator('#leave-end-time').fill('12:00');
+	await choose(page, 'leave-academic-term', '2');
+	await page.getByRole('button', { name: 'บันทึกและจัดคาบสอนต่อ', exact: true }).click();
+	const editor = page.getByTestId('leave-coverage-editor');
+	await expect(editor).toContainText('เลือกครู 0/1');
+	releaseOld();
+	await oldFinished;
+	await expect(page.getByRole('list', { name: 'ครูที่ว่าง', exact: true })).toHaveCount(0);
+	await expect(editor).toContainText('11:00–11:50');
+	await expect(
+		page.getByRole('checkbox', { name: 'เลือก 2026-10-21 คาบ 4', exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByRole('checkbox', { name: 'เลือก 2026-10-19 คาบ 1', exact: true })
+	).toHaveCount(0);
+	expect(
+		api.calls.find((call) => call.path === `/api/staff-leave/requests/${leaveId}`)!.body.period
+	).toMatchObject({
+		startDate: '2026-10-21',
+		endDate: '2026-10-21',
+		startTime: '11:00:00',
+		endTime: '12:00:00',
+		academicTermId: id(801)
+	});
+	await page.getByRole('checkbox', { name: 'เลือก 2026-10-21 คาบ 4', exact: true }).check();
+	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
+	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
+	await page.locator('#coverage-activity').fill('กิจกรรมหลังเปลี่ยนช่วงเวลา');
+	await page.getByRole('button', { name: 'ใช้กับ 1 คาบที่เลือก', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
+	expect(
+		api.calls.filter((call) => call.path.endsWith('/coverage/candidates')).at(-1)!.body
+	).toMatchObject({
+		sourceDigest: 'digest-reconciled-details',
+		lessonKeys: ['lesson-4'],
+		expectedRevision: 3
+	});
+	expect(api.calls.some((call) => call.path.endsWith('/coverage/preview'))).toBe(false);
+	await page.getByRole('button', { name: 'ตรวจสอบคำขอ', exact: true }).click();
+	await page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true }).click();
+	await expect(page.getByTestId('leave-detail')).toContainText('รอพิจารณา');
 });

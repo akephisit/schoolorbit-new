@@ -873,6 +873,15 @@ public identity/career provider fixtures run with
 cover active-Staff eligibility, explicit-date winner ordering, nullable facts, same-connection
 visibility and rollback. Its invalid-code unit preserves the original typed validation error.
 
+Dated teaching coverage keeps pure Leave policy/consent/replay cases in the Leave package.
+Run `./scripts/test_backend_school.sh --integration staff_leave_coverage -- --test-threads=2`
+for the application-level reciprocal/own-subject, concurrent reservation, source guards,
+legacy migration/signature/file preservation, Daily Teaching and Attendance fixtures. Run
+`./scripts/test_backend_school.sh permission_coverage_staff_leave_coverage_uses_real_session_tenant_and_csrf_boundary -- --test-threads=1`
+for the real cookie, CSRF, permission and tenant boundary. Use the shared local Cargo resource
+profile documented above. Browser fixtures supplement these database cases; they do not prove
+reservation, consent, roster or historical preservation behavior.
+
 `school-file-contracts` owns the unchanged provider-neutral values, `PlatformFile` and the File
 authorization contract; serialization/schema tests remain with those definitions. Its consumers
 import contracts directly. `school-file-platform` owns file inspection, purpose/object-key policy, repository,

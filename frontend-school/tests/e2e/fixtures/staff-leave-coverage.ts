@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import { mockLeave, leaveId } from './staff-leave';
+import { mockLeave, leaveId, exitTypeId } from './staff-leave';
 import { PERMISSIONS } from '../../../src/lib/permissions/registry.generated';
 import { actor, firstStaff, secondStaff, id } from './staff-home-route-data';
 import type {
@@ -9,7 +9,9 @@ import type {
 	LeaveCoverageSelection,
 	LeaveCoverageCandidate,
 	DatedTeachingLesson,
-	LeaveCoverageTask
+	LeaveCoverageTask,
+	UpdateLeaveRequest,
+	LeaveKind
 } from '../../../src/lib/api/staff-leave';
 
 export const coverageYear = id(1),
@@ -74,6 +76,8 @@ export async function mockTeachingCoverage(
 		failSave?: boolean;
 		missingBoundary?: boolean;
 		manager?: boolean;
+		updatedCoverage?: LeaveCoveragePlan;
+		kind?: LeaveKind;
 	} = {}
 ) {
 	const plan = options.plan ?? coveragePlan();
@@ -92,7 +96,38 @@ export async function mockTeachingCoverage(
 	});
 	const detail = api.detail();
 	detail.request.endDate = '2026-10-20';
+	if (options.kind === 'exit') {
+		detail.request = {
+			...detail.request,
+			kind: 'exit',
+			typeId: exitTypeId,
+			typeName: 'ออกนอกโรงเรียน',
+			unit: 'minute',
+			startTime: '09:00:00',
+			endTime: '11:00:00',
+			endDate: detail.request.startDate,
+			amount: 120
+		};
+		if (detail.policy)
+			detail.policy = {
+				...detail.policy,
+				typeId: exitTypeId,
+				unit: 'minute',
+				countingMode: 'calendar_days',
+				maxPerRequest: 120,
+				annualLimit: null,
+				evidenceFromAmount: null
+			};
+	}
+	if (options.assigned) {
+		detail.request.ownerId = firstStaff;
+		for (const day of detail.coverage.days)
+			for (const lesson of day.lessons) lesson.teacherId = firstStaff;
+	}
 	if (options.manager) {
+		detail.request.ownerId = id(11);
+		for (const day of detail.coverage.days)
+			for (const lesson of day.lessons) lesson.teacherId = id(11);
 		detail.coverage.canManage = true;
 		detail.coverage.emergencyReason = 'ปฏิบัติหน้าที่เร่งด่วน';
 		detail.coverage.state = 'emergency';
@@ -228,6 +263,22 @@ export async function mockTeachingCoverage(
 							lesson.assignment.confirmedAt = '2026-10-18T03:00:00Z';
 						}
 				return reply(route, task());
+			}
+			if (
+				path === `/api/staff-leave/requests/${leaveId}` &&
+				method === 'PUT' &&
+				options.updatedCoverage
+			) {
+				const input = request.postDataJSON() as UpdateLeaveRequest;
+				detail.request = {
+					...detail.request,
+					...input.period,
+					revision: detail.request.revision + 1
+				};
+				if (detail.request.kind === 'exit') detail.request.amount = 60;
+				detail.evidenceFileIds = input.period.evidenceFileIds ?? [];
+				detail.coverage = structuredClone(options.updatedCoverage);
+				return reply(route, detail);
 			}
 			if (path.endsWith('/coverage') && method === 'PUT') {
 				if (options.failSave && !failed) {

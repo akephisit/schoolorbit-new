@@ -32,6 +32,11 @@ pub(crate) fn canonical_ids(ids: &[Uuid]) -> Vec<Uuid> {
 pub(crate) fn map_write_error(error: sqlx::Error) -> AppError {
     let message = match &error {
         sqlx::Error::Database(database) => match database.message() {
+            "TEACHING_COVERAGE_SOURCE_RESERVED"
+            | "TEACHING_COVERAGE_TEACHER_RESERVED"
+            | "TEACHING_COVERAGE_OVERLAP" => {
+                Some("มีหน้าที่สอนลงวันที่ที่รับไว้แล้ว กรุณาปรับแผนสอนแทนก่อนแก้รายการนี้")
+            }
             "ACADEMIC_TIMETABLE_GROUP_CONFLICT" => Some("กลุ่มเรียนนี้มีรายการในวันและคาบดังกล่าวแล้ว"),
             "ACADEMIC_TIMETABLE_HOMEROOM_CONFLICT" => Some("ห้องประจำชั้นนี้มีรายการในวันและคาบดังกล่าวแล้ว"),
             "ACADEMIC_TIMETABLE_ROOM_CONFLICT" => Some("ห้องเรียนนี้ถูกใช้ในวันและคาบดังกล่าวแล้ว"),

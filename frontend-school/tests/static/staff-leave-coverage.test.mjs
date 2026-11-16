@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	coverageCounts,
+	coverageReturnCaption,
+	coverageSelectionMatches,
 	coverageSelections,
 	coverageReady,
 	validDefaultContext,
@@ -109,5 +111,61 @@ test('optional absent assignment is unselected and group labels retain custom id
 			roomName: null
 		}),
 		{ title: 'กลุ่มเลือกเสรี A', details: 'ภาษาอังกฤษ · ม.2/1' }
+	);
+});
+
+test('unchanged confirmed rows tolerate omitted optional fields while only edited rows lose displayed consent', () => {
+	const first = {
+		lessonKey: 'first',
+		assignment: {
+			replacementTeacherId: 'teacher',
+			mode: 'substitution',
+			consent: 'confirmed',
+			taughtOfferingId: 'english'
+		}
+	};
+	const second = {
+		lessonKey: 'second',
+		assignment: {
+			replacementTeacherId: 'teacher',
+			mode: 'substitution',
+			consent: 'confirmed',
+			taughtActivity: 'reading'
+		}
+	};
+	const selections = coverageSelections({ days: [{ lessons: [first, second] }] });
+	assert.equal(coverageSelectionMatches(first, selections[0]), true);
+	selections[1].taughtActivity = 'changed activity';
+	assert.equal(coverageSelectionMatches(second, selections[1]), false);
+	assert.deepEqual(coverageCounts([first, second], selections), {
+		total: 2,
+		selected: 2,
+		confirmed: 1
+	});
+});
+
+test('reciprocal caption distinguishes actual return teaching from displaced slot and omits unknown parts', () => {
+	assert.equal(
+		coverageReturnCaption({ offeringName: 'คณิตศาสตร์' }, { returnLesson: null }, '22 ต.ค. 2569'),
+		'คณิตศาสตร์ คืน 22 ต.ค. 2569'
+	);
+	assert.equal(
+		coverageReturnCaption(
+			{ offeringName: 'คณิตศาสตร์' },
+			{
+				returnLesson: {
+					periodName: 'คาบ 9',
+					startTime: '10:00:00',
+					endTime: '10:50:00',
+					offeringName: 'ภาษาอังกฤษ'
+				}
+			},
+			'22 ต.ค. 2569'
+		),
+		'คณิตศาสตร์ คืน 22 ต.ค. 2569 · คาบ 9 · 10:00–10:50 (แทนคาบภาษาอังกฤษ)'
+	);
+	assert.equal(
+		coverageReturnCaption({ offeringName: null }, {}, '22 ต.ค. 2569'),
+		'กิจกรรมตามตาราง คืน 22 ต.ค. 2569'
 	);
 });

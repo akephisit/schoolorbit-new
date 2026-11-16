@@ -221,7 +221,9 @@ pub async fn save_template(
 #[async_trait::async_trait]
 pub trait ProcessSourcePort: Send + Sync {
     /// Source-authenticated original applicant; action events retain the real initiating actor.
-    fn process_owner(&self,actor:&ActorContext)->Uuid{actor.user_id}
+    fn process_owner(&self, actor: &ActorContext) -> Uuid {
+        actor.user_id
+    }
 
     fn may_reassign_others(&self, _actor: &ActorContext, _instance: &ProcessInstance) -> bool {
         false
@@ -1128,12 +1130,52 @@ pub async fn withdraw_source_in_transaction(
 
 /// Applicant requests a new exact source plan before any administrative decision.
 /// This uses the same engine state, assignment closure and append-only audit path.
-pub async fn return_source_for_revision_in_transaction(tx:&mut Transaction<'_,Postgres>,actor:&ActorContext,source:&dyn ProcessSourcePort,id:Uuid,key:Uuid)->Result<ProcessInstance,AppError>{
- let mut instance=load_locked(tx,id).await?;source.validate_existing(tx,actor,&instance).await?;
- if instance.created_by!=actor.user_id||instance.status!=ProcessStatus::Active||instance.current_step!=0||instance.steps.iter().any(|s|s.recipients.iter().any(|r|r.completed_at.is_some())){return Err(stale())}
- let acted:bool=DbSession::new(&mut **tx).scalar("workflow.process.return_source_for_revision","SELECT EXISTS(SELECT 1 FROM process_action_events WHERE instance_id=$1 AND event->>'action' IN ('review','approve'))").bind(id).fetch_one().await?;if acted{return Err(stale())}
- for step in &instance.steps {crate::work::close_process_item_in_transaction(tx,step.work_item_id).await?;}
- DbSession::new(&mut **tx).query("workflow.process.return_source_cancel_notifications","UPDATE process_notification_sources SET cancelled_at=now() WHERE instance_id=$1 AND cancelled_at IS NULL").bind(id).execute().await?;
- let expected_revision=instance.revision;instance.status=ProcessStatus::RevisionRequested;instance.revision+=1;
- append_event(tx,actor,&instance,&ProcessActionRequest{request_id:key,expected_revision,action:ProcessAction::ReturnForRevision,annotations:vec![],comment:Some("ปรับแผนสอนหลังผู้รับหน้าที่ปฏิเสธ".into()),evidence_file_ids:vec![],signature:None,reassign_user_id:None,reassign_from_user_id:None,assignment_id:None,routing:None}).await?;store(tx,&instance).await?;Ok(instance)
+pub async fn return_source_for_revision_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: &ActorContext,
+    source: &dyn ProcessSourcePort,
+    id: Uuid,
+    key: Uuid,
+) -> Result<ProcessInstance, AppError> {
+    let mut instance = load_locked(tx, id).await?;
+    source.validate_existing(tx, actor, &instance).await?;
+    if instance.created_by != actor.user_id
+        || instance.status != ProcessStatus::Active
+        || instance.current_step != 0
+        || instance
+            .steps
+            .iter()
+            .any(|s| s.recipients.iter().any(|r| r.completed_at.is_some()))
+    {
+        return Err(stale());
+    }
+
+    for step in &instance.steps {
+        crate::work::close_process_item_in_transaction(tx, step.work_item_id).await?;
+    }
+    DbSession::new(&mut **tx).query("workflow.process.return_source_cancel_notifications","UPDATE process_notification_sources SET cancelled_at=now() WHERE instance_id=$1 AND cancelled_at IS NULL").bind(id).execute().await?;
+    let expected_revision = instance.revision;
+    instance.status = ProcessStatus::RevisionRequested;
+    instance.revision += 1;
+    append_event(
+        tx,
+        actor,
+        &instance,
+        &ProcessActionRequest {
+            request_id: key,
+            expected_revision,
+            action: ProcessAction::ReturnForRevision,
+            annotations: vec![],
+            comment: Some("ปรับแผนสอนหลังผู้รับหน้าที่ปฏิเสธ".into()),
+            evidence_file_ids: vec![],
+            signature: None,
+            reassign_user_id: None,
+            reassign_from_user_id: None,
+            assignment_id: None,
+            routing: None,
+        },
+    )
+    .await?;
+    store(tx, &instance).await?;
+    Ok(instance)
 }
