@@ -10,9 +10,18 @@ test('manual cycle states and observation stages have distinct Thai meanings', (
 	assert.equal(supervisionStatusLabel('open'), 'เปิดรับคำขอ');
 	assert.equal(supervisionStatusLabel('closed'), 'ปิดรับคำขอ');
 	assert.equal(supervisionStatusLabel('completed'), 'เสร็จสิ้น');
-	assert.equal(observationWorkflow({ status: 'returned', evaluators: [] }).nextAction, 'แก้ไขและส่งใหม่');
-	assert.equal(observationWorkflow({ status: 'requested', evaluators: [] }).nextOwner, 'ผู้รับผิดชอบตรวจคำขอ');
-	assert.equal(observationWorkflow({ status: 'approved', evaluators: [] }).nextOwner, 'ผู้มีสิทธิ์อนุมัติผล');
+	assert.equal(
+		observationWorkflow({ status: 'returned', evaluators: [] }).nextAction,
+		'แก้ไขและส่งใหม่'
+	);
+	assert.equal(
+		observationWorkflow({ status: 'requested', evaluators: [] }).nextOwner,
+		'ผู้รับผิดชอบตรวจคำขอ'
+	);
+	assert.equal(
+		observationWorkflow({ status: 'approved', evaluators: [] }).nextOwner,
+		'ผู้มีสิทธิ์อนุมัติผล'
+	);
 	assert.equal(observationWorkflow({ status: 'published', evaluators: [] }).stage, 4);
 	assert.equal(observationWorkflow({ status: 'completed', evaluators: [] }).stage, 5);
 	assert.equal(observationWorkflow({ status: 'cancelled', evaluators: [] }).stage, -1);

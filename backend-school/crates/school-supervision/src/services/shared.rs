@@ -71,7 +71,10 @@ pub fn resolve_supervision_target_rule<'a>(
 }
 
 pub fn teacher_can_edit_requested_observation(status: SupervisionObservationStatus) -> bool {
-    matches!(status, SupervisionObservationStatus::Requested | SupervisionObservationStatus::Returned)
+    matches!(
+        status,
+        SupervisionObservationStatus::Requested | SupervisionObservationStatus::Returned
+    )
 }
 
 pub fn manager_can_edit_observation(status: SupervisionObservationStatus) -> bool {

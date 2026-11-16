@@ -65,6 +65,15 @@ async fn migrated_pool(name: &str) -> PgPool {
 }
 
 async fn migrated_pool_with_connections(name: &str, connections: u32) -> PgPool {
+    migrated_pool_through(
+        name,
+        connections,
+        school_migrations::latest_migration_version(),
+    )
+    .await
+}
+
+async fn migrated_pool_through(name: &str, connections: u32, version: i64) -> PgPool {
     let pool = create_named_test_pool_with_max_connections(name, connections).await;
     apply_migrations_through(&pool, 40)
         .await
@@ -75,7 +84,7 @@ async fn migrated_pool_with_connections(name: &str, connections: u32) -> PgPool 
     apply_phase_b_runtime_migrations(&pool)
         .await
         .expect("canonical supervision fixture migrations should run");
-    apply_migrations_through(&pool, school_migrations::latest_migration_version())
+    apply_migrations_through(&pool, version)
         .await
         .expect("current supervision fixture migrations should run");
     pool
@@ -1127,6 +1136,17 @@ async fn completed_evaluations_flow_through_certification_approval_acknowledgeme
     )
     .await;
 
+    services::update_cycle(
+        &pool,
+        fixture.cycle.id,
+        UpdateSupervisionCycleRequest {
+            status: Some(SupervisionCycleStatus::Closed),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
     services::submit_my_evaluation(
         &pool,
         fixture.evaluator_id,
@@ -1970,5 +1990,691 @@ async fn physical_current_placement_removal_detaches_saved_supervision_and_prese
     assert_eq!(
         serde_json::to_value(&after.actions).unwrap(),
         serde_json::to_value(&before.actions).unwrap()
+    );
+}
+
+#[test]
+fn cycle_requests_reject_all_retired_schedule_fields() {
+    let create = serde_json::json!({
+        "academicYearId": Uuid::new_v4(), "title": "Manual cycle", "templateId": Uuid::new_v4(),
+        "status": "open", "targets": []
+    });
+    assert!(serde_json::from_value::<CreateSupervisionCycleRequest>(create.clone()).is_ok());
+    for field in ["bookingOpensAt", "bookingClosesAt", "startsAt", "endsAt"] {
+        let mut legacy = create.clone();
+        legacy[field] = serde_json::json!("2025-01-01T00:00:00Z");
+        assert!(
+            serde_json::from_value::<CreateSupervisionCycleRequest>(legacy).is_err(),
+            "{field}"
+        );
+        let mut update = serde_json::json!({});
+        update[field] = serde_json::json!("2025-01-01T00:00:00Z");
+        assert!(
+            serde_json::from_value::<UpdateSupervisionCycleRequest>(update).is_err(),
+            "{field}"
+        );
+    }
+}
+
+fn corrected_request(fixture: &SupervisionFixture) -> UpdateRequestedObservationRequest {
+    let mut manual = observation_input(fixture).manual_lesson.unwrap();
+    manual.reason = "Corrected after return".into();
+    UpdateRequestedObservationRequest {
+        timetable_block_group_id: None,
+        observed_at: None,
+        manual_lesson: Some(manual),
+    }
+}
+
+#[tokio::test]
+async fn manual_cycle_status_alone_controls_new_bookings_and_retains_actual_observation_dates() {
+    let pool = migrated_pool("supervision_manual_booking").await;
+    let mut fixture = insert_fixture(&pool).await;
+    for status in [
+        SupervisionCycleStatus::Draft,
+        SupervisionCycleStatus::Closed,
+        SupervisionCycleStatus::Archived,
+    ] {
+        services::update_cycle(
+            &pool,
+            fixture.cycle.id,
+            UpdateSupervisionCycleRequest {
+                status: Some(status),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            services::request_observation(&pool, fixture.teacher_id, observation_input(&fixture))
+                .await,
+            Err(AppError::ValidationError(_))
+        ));
+    }
+    services::update_cycle(
+        &pool,
+        fixture.cycle.id,
+        UpdateSupervisionCycleRequest {
+            status: Some(SupervisionCycleStatus::Open),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    // Actual lesson dates remain facts; neither old nor future dates select the booking context.
+    for observed_at in ["2000-01-03T03:00:00Z", "2100-01-04T03:00:00Z"] {
+        fixture.observed_at = observed_at.parse().unwrap();
+        let requested = request_observation(&pool, &fixture).await;
+        assert_eq!(requested.observed_at, fixture.observed_at);
+        assert_eq!(requested.academic_term_id, fixture.academic_term_id);
+    }
+}
+
+#[tokio::test]
+async fn own_returned_save_resubmits_atomically_and_preserves_return_evidence() {
+    let pool = migrated_pool("supervision_returned_resubmit").await;
+    let fixture = insert_fixture(&pool).await;
+    let requested = request_observation(&pool, &fixture).await;
+    let edited = services::update_requested_observation(
+        &pool,
+        fixture.teacher_id,
+        requested.id,
+        corrected_request(&fixture),
+    )
+    .await
+    .unwrap();
+    assert_eq!(edited.status, SupervisionObservationStatus::Requested);
+    assert_eq!(
+        serde_json::to_value(&edited.actions).unwrap(),
+        serde_json::to_value(&requested.actions).unwrap(),
+        "ordinary pending edits do not add history events"
+    );
+    services::return_observation_request(
+        &pool,
+        fixture.actor_id,
+        requested.id,
+        ReturnObservationRequest {
+            comment: Some("Please correct the lesson".into()),
+        },
+    )
+    .await
+    .unwrap();
+    let returned = services::get_observation(&pool, requested.id)
+        .await
+        .unwrap();
+    assert_eq!(returned.status, SupervisionObservationStatus::Returned);
+    let before = serde_json::to_value(&returned).unwrap();
+    assert!(matches!(
+        services::update_requested_observation(
+            &pool,
+            fixture.second_evaluator_id,
+            requested.id,
+            corrected_request(&fixture)
+        )
+        .await,
+        Err(AppError::Forbidden(_))
+    ));
+    for status in [
+        SupervisionCycleStatus::Draft,
+        SupervisionCycleStatus::Closed,
+        SupervisionCycleStatus::Archived,
+    ] {
+        services::update_cycle(
+            &pool,
+            fixture.cycle.id,
+            UpdateSupervisionCycleRequest {
+                status: Some(status),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            services::update_requested_observation(
+                &pool,
+                fixture.teacher_id,
+                requested.id,
+                corrected_request(&fixture)
+            )
+            .await,
+            Err(AppError::ValidationError(_))
+        ));
+        assert_eq!(
+            serde_json::to_value(
+                services::get_observation(&pool, requested.id)
+                    .await
+                    .unwrap()
+            )
+            .unwrap(),
+            before
+        );
+    }
+    services::update_cycle(
+        &pool,
+        fixture.cycle.id,
+        UpdateSupervisionCycleRequest {
+            status: Some(SupervisionCycleStatus::Open),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=$1")
+        .bind(fixture.academic_term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(matches!(
+        services::update_requested_observation(
+            &pool,
+            fixture.teacher_id,
+            requested.id,
+            corrected_request(&fixture)
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    assert_eq!(
+        serde_json::to_value(
+            services::get_observation(&pool, requested.id)
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        before
+    );
+    sqlx::query("UPDATE academic_terms SET status='active' WHERE id=$1")
+        .bind(fixture.academic_term_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resubmitted = services::update_requested_observation(
+        &pool,
+        fixture.teacher_id,
+        requested.id,
+        corrected_request(&fixture),
+    )
+    .await
+    .unwrap();
+    assert_eq!(resubmitted.status, SupervisionObservationStatus::Requested);
+    assert_eq!(
+        resubmitted.manual_lesson.unwrap().reason,
+        "Corrected after return"
+    );
+    assert!(resubmitted
+        .actions
+        .iter()
+        .any(|action| action.action_kind == "request_returned"
+            && action.comment.as_deref() == Some("Please correct the lesson")));
+    assert!(resubmitted.actions.iter().any(|action| action.from_status
+        == Some(SupervisionObservationStatus::Returned)
+        && action.to_status == Some(SupervisionObservationStatus::Requested)));
+    approve_with(&pool, &fixture, requested.id, vec![fixture.evaluator_id]).await;
+    assert!(matches!(
+        services::update_requested_observation(
+            &pool,
+            fixture.teacher_id,
+            requested.id,
+            corrected_request(&fixture)
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    let planned = services::get_observation(&pool, requested.id)
+        .await
+        .unwrap();
+    services::return_observation_request(
+        &pool,
+        fixture.actor_id,
+        requested.id,
+        ReturnObservationRequest {
+            comment: Some("Correct planned lesson".into()),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(
+            services::submit_my_evaluation(
+                &pool,
+                fixture.evaluator_id,
+                requested.id,
+                evaluation_responses(&fixture.template, 4.0)
+            )
+            .await,
+            Err(AppError::ValidationError(_))
+        ),
+        "a returned request cannot acquire a new submitted evaluation"
+    );
+    let resubmitted_planned = services::update_requested_observation(
+        &pool,
+        fixture.teacher_id,
+        requested.id,
+        corrected_request(&fixture),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        resubmitted_planned.status,
+        SupervisionObservationStatus::Requested
+    );
+    assert_eq!(
+        serde_json::to_value(&resubmitted_planned.evaluators).unwrap(),
+        serde_json::to_value(&planned.evaluators).unwrap(),
+        "saving correction retains existing evaluator identities until approval"
+    );
+    let another = request_observation(&pool, &fixture).await;
+    services::return_observation_request(
+        &pool,
+        fixture.actor_id,
+        another.id,
+        ReturnObservationRequest { comment: None },
+    )
+    .await
+    .unwrap();
+    let cancelled = services::cancel_requested_observation(&pool, fixture.teacher_id, another.id)
+        .await
+        .unwrap();
+    assert_eq!(cancelled.status, SupervisionObservationStatus::Cancelled);
+}
+
+#[tokio::test]
+async fn submitted_evidence_blocks_return_resubmit_and_reapproval_without_mutation() {
+    let pool = migrated_pool("supervision_return_submitted").await;
+    let fixture = insert_fixture(&pool).await;
+    let requested = request_observation(&pool, &fixture).await;
+    approve_with(
+        &pool,
+        &fixture,
+        requested.id,
+        vec![fixture.evaluator_id, fixture.second_evaluator_id],
+    )
+    .await;
+    services::submit_my_evaluation(
+        &pool,
+        fixture.evaluator_id,
+        requested.id,
+        evaluation_responses(&fixture.template, 4.0),
+    )
+    .await
+    .unwrap();
+    let review_before = serde_json::to_value(
+        services::get_observation_review(&pool, requested.id)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        services::return_observation_request(
+            &pool,
+            fixture.actor_id,
+            requested.id,
+            ReturnObservationRequest {
+                comment: Some("Unsafe return".into())
+            }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert_eq!(
+        serde_json::to_value(
+            services::get_observation_review(&pool, requested.id)
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        review_before
+    );
+    // A legacy returned row can already contain submissions; every new path must retain it exactly.
+    sqlx::query("UPDATE supervision_observations SET status='returned' WHERE id=$1")
+        .bind(requested.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let legacy_before = serde_json::to_value(
+        services::get_observation_review(&pool, requested.id)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        services::update_requested_observation(
+            &pool,
+            fixture.teacher_id,
+            requested.id,
+            corrected_request(&fixture)
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        services::approve_observation_request(
+            &pool,
+            fixture.actor_id,
+            requested.id,
+            ApproveObservationRequest {
+                evaluators: vec![EvaluatorAssignmentInput {
+                    evaluator_user_id: fixture.second_evaluator_id,
+                    role_label: None,
+                    is_required: Some(true)
+                }]
+            }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert_eq!(
+        serde_json::to_value(
+            services::get_observation_review(&pool, requested.id)
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        legacy_before
+    );
+}
+
+#[tokio::test]
+async fn return_and_evaluation_submission_serialize_without_stranding_or_erasing_evidence() {
+    let pool = migrated_pool_with_connections("supervision_return_submit_race", 3).await;
+    let fixture = insert_fixture(&pool).await;
+    let requested = request_observation(&pool, &fixture).await;
+    approve_with(
+        &pool,
+        &fixture,
+        requested.id,
+        vec![fixture.evaluator_id, fixture.second_evaluator_id],
+    )
+    .await;
+    let (returned, submitted) = tokio::join!(
+        services::return_observation_request(
+            &pool,
+            fixture.actor_id,
+            requested.id,
+            ReturnObservationRequest {
+                comment: Some("Correct lesson".into())
+            }
+        ),
+        services::submit_my_evaluation(
+            &pool,
+            fixture.evaluator_id,
+            requested.id,
+            evaluation_responses(&fixture.template, 4.0)
+        ),
+    );
+    let final_state = services::get_observation(&pool, requested.id)
+        .await
+        .unwrap();
+    match (returned, submitted) {
+        (Ok(_), Err(AppError::ValidationError(_))) => {
+            assert_eq!(final_state.status, SupervisionObservationStatus::Returned);
+            assert!(final_state
+                .evaluators
+                .iter()
+                .all(|evaluator| evaluator.status != SupervisionEvaluatorStatus::Submitted));
+            services::update_requested_observation(
+                &pool,
+                fixture.teacher_id,
+                requested.id,
+                corrected_request(&fixture),
+            )
+            .await
+            .unwrap();
+        }
+        (Err(AppError::ValidationError(_)), Ok(_)) => {
+            assert_eq!(final_state.status, SupervisionObservationStatus::Planned);
+            assert!(final_state
+                .evaluators
+                .iter()
+                .any(
+                    |evaluator| evaluator.evaluator_user_id == fixture.evaluator_id
+                        && evaluator.status == SupervisionEvaluatorStatus::Submitted
+                ));
+            assert!(!final_state
+                .actions
+                .iter()
+                .any(|action| action.action_kind == "request_returned"));
+        }
+        other => panic!("exactly one serialized transition must win: {other:?}"),
+    }
+}
+
+async fn supervision_graph_snapshot(pool: &PgPool) -> serde_json::Value {
+    sqlx::query_scalar(r#"SELECT jsonb_build_object(
+        'cycles', (SELECT jsonb_agg(to_jsonb(cycle)-'booking_opens_at'-'booking_closes_at'-'starts_at'-'ends_at' ORDER BY id) FROM supervision_cycles cycle),
+        'targets', (SELECT jsonb_agg(to_jsonb(target) ORDER BY id) FROM supervision_cycle_targets target),
+        'observations', (SELECT jsonb_agg(to_jsonb(observation) ORDER BY id) FROM supervision_observations observation),
+        'evaluators', (SELECT jsonb_agg(to_jsonb(evaluator) ORDER BY id) FROM supervision_evaluators evaluator),
+        'responses', (SELECT jsonb_agg(to_jsonb(response) ORDER BY id) FROM supervision_evaluator_responses response),
+        'actions', (SELECT jsonb_agg(to_jsonb(action) ORDER BY id) FROM supervision_actions action)
+    )"#).fetch_one(pool).await.unwrap()
+}
+
+#[tokio::test]
+async fn supervision_manual_cycle_migration_preserves_populated_graph_and_refuses_dependencies_atomically(
+) {
+    let pool = migrated_pool_through("supervision_manual_migration159", 1, 158).await;
+    // The historical fixture already has a planned observation and a nonempty cycle.
+    // Add every manual status plus submitted evaluator evidence before the destructive boundary.
+    sqlx::raw_sql(r#"
+        INSERT INTO supervision_cycles(academic_year_id,academic_term_id,title,description,template_id,booking_opens_at,booking_closes_at,starts_at,ends_at,status,created_by)
+        SELECT academic_year_id,academic_term_id,'Retained '||value,description,template_id,'2001-01-01 00:00:00+00'::timestamptz,'2099-12-31 00:00:00+00'::timestamptz,starts_at,ends_at,value,created_by
+        FROM supervision_cycles CROSS JOIN unnest(ARRAY['draft','closed','archived']) AS value;
+        INSERT INTO supervision_cycle_targets(cycle_id,target_type,required_observations,priority)
+        SELECT id,'school',2,10 FROM supervision_cycles;
+        INSERT INTO supervision_template_sections(id,template_id,title,sort_order)
+        VALUES('a0000000-0000-0000-0000-000000000159','87000000-0000-0000-0000-000000000001','Retained section',1);
+        INSERT INTO supervision_template_items(id,section_id,label,item_type,required,sort_order)
+        VALUES('a1000000-0000-0000-0000-000000000159','a0000000-0000-0000-0000-000000000159','Retained evidence','rating',true,1);
+        INSERT INTO supervision_evaluators(id,observation_id,evaluator_user_id,status,submitted_at)
+        VALUES('a2000000-0000-0000-0000-000000000159','89000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000001','submitted',now());
+        INSERT INTO supervision_evaluator_responses(observation_id,evaluator_id,template_item_id,rating_score,text_response)
+        VALUES('89000000-0000-0000-0000-000000000001','a2000000-0000-0000-0000-000000000159','a1000000-0000-0000-0000-000000000159',4,'Retain exactly');
+        INSERT INTO supervision_actions(observation_id,actor_user_id,action_kind,from_status,to_status,comment)
+        VALUES('89000000-0000-0000-0000-000000000001','50000000-0000-0000-0000-000000000001','request_returned','requested','returned','Retained return reason');
+        CREATE VIEW supervision159_unexpected_dependency AS SELECT starts_at FROM supervision_cycles;
+    "#).execute(&pool).await.unwrap();
+    let before = supervision_graph_snapshot(&pool).await;
+    let error = apply_migrations_through(&pool, 159)
+        .await
+        .expect_err("RESTRICT must refuse an unknown dependent view");
+    assert!(error.to_string().contains("159"), "{error}");
+    let retired_columns: i64 = sqlx::query_scalar("SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='supervision_cycles' AND column_name=ANY($1)")
+        .bind(vec!["booking_opens_at", "booking_closes_at", "starts_at", "ends_at"])
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        retired_columns, 4,
+        "all dropped columns roll back on dependency refusal"
+    );
+    let checks: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_constraint WHERE conrelid='supervision_cycles'::regclass AND conname IN ('supervision_cycles_window_check','supervision_cycles_booking_window_check')").fetch_one(&pool).await.unwrap();
+    assert_eq!(checks, 2, "named check removals also roll back");
+    let recorded: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version=159)")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(!recorded);
+    assert_eq!(supervision_graph_snapshot(&pool).await, before);
+    sqlx::query("DROP VIEW supervision159_unexpected_dependency")
+        .execute(&pool)
+        .await
+        .unwrap();
+    apply_migrations_through(&pool, 159).await.unwrap();
+    apply_migrations_through(&pool, 159)
+        .await
+        .expect("native migration replay is idempotent");
+    assert_eq!(supervision_graph_snapshot(&pool).await, before);
+    let cycle: serde_json::Value = sqlx::query_scalar(
+        "SELECT to_jsonb(cycle) FROM supervision_cycles cycle ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for field in [
+        "booking_opens_at",
+        "booking_closes_at",
+        "starts_at",
+        "ends_at",
+    ] {
+        assert!(
+            cycle.get(field).is_none(),
+            "retired column {field} must be physically absent"
+        );
+    }
+    let statuses: Vec<String> =
+        sqlx::query_scalar("SELECT DISTINCT status FROM supervision_cycles ORDER BY status")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(statuses, vec!["archived", "closed", "draft", "open"]);
+}
+
+#[tokio::test]
+async fn returned_resubmission_rolls_back_lesson_and_status_if_audit_write_fails() {
+    let pool = migrated_pool("supervision_resubmit_atomic").await;
+    let fixture = insert_fixture(&pool).await;
+    let requested = request_observation(&pool, &fixture).await;
+    services::return_observation_request(
+        &pool,
+        fixture.actor_id,
+        requested.id,
+        ReturnObservationRequest {
+            comment: Some("Correction required".into()),
+        },
+    )
+    .await
+    .unwrap();
+    let before = serde_json::to_value(
+        services::get_observation(&pool, requested.id)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    sqlx::raw_sql(r#"
+        CREATE FUNCTION supervision159_refuse_resubmit_action() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            IF NEW.from_status='returned' AND NEW.to_status='requested' THEN
+                RAISE EXCEPTION 'owned resubmission atomicity fixture';
+            END IF;
+            RETURN NEW;
+        END $$;
+        CREATE TRIGGER supervision159_refuse_resubmit_action BEFORE INSERT ON supervision_actions
+        FOR EACH ROW EXECUTE FUNCTION supervision159_refuse_resubmit_action();
+    "#).execute(&pool).await.unwrap();
+    assert!(services::update_requested_observation(
+        &pool,
+        fixture.teacher_id,
+        requested.id,
+        corrected_request(&fixture)
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        serde_json::to_value(
+            services::get_observation(&pool, requested.id)
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn optional_evaluators_may_submit_after_required_completion_until_certification() {
+    let pool = migrated_pool("supervision_optional_before_certification").await;
+    let fixture = insert_fixture(&pool).await;
+    let late_optional = test_user(&pool, "late-optional").await;
+    let requested = request_observation(&pool, &fixture).await;
+    services::approve_observation_request(
+        &pool,
+        fixture.actor_id,
+        requested.id,
+        ApproveObservationRequest {
+            evaluators: [
+                (fixture.evaluator_id, true),
+                (fixture.second_evaluator_id, false),
+                (late_optional, false),
+            ]
+            .into_iter()
+            .map(|(evaluator_user_id, required)| EvaluatorAssignmentInput {
+                evaluator_user_id,
+                role_label: None,
+                is_required: Some(required),
+            })
+            .collect(),
+        },
+    )
+    .await
+    .unwrap();
+    let required_complete = services::submit_my_evaluation(
+        &pool,
+        fixture.evaluator_id,
+        requested.id,
+        evaluation_responses(&fixture.template, 4.0),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        required_complete.status,
+        SupervisionObservationStatus::EvaluatorsSubmitted
+    );
+    let optional_complete = services::submit_my_evaluation(
+        &pool,
+        fixture.second_evaluator_id,
+        requested.id,
+        evaluation_responses(&fixture.template, 2.0),
+    )
+    .await
+    .expect("an assigned optional evaluator may contribute until certification");
+    assert_eq!(
+        optional_complete.status,
+        SupervisionObservationStatus::EvaluatorsSubmitted
+    );
+    assert!(optional_complete
+        .evaluators
+        .iter()
+        .any(
+            |evaluator| evaluator.evaluator_user_id == fixture.second_evaluator_id
+                && !evaluator.is_required
+                && evaluator.status == SupervisionEvaluatorStatus::Submitted
+        ));
+    let review = services::get_observation_review(&pool, requested.id)
+        .await
+        .unwrap();
+    assert_eq!(review.average_rating, Some(3.0));
+    let certified = services::certify_observation(&pool, fixture.actor_id, requested.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        certified.status,
+        SupervisionObservationStatus::Approved,
+        "an outstanding optional evaluator does not block certification"
+    );
+    let before = serde_json::to_value(
+        services::get_observation_review(&pool, requested.id)
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        services::submit_my_evaluation(
+            &pool,
+            late_optional,
+            requested.id,
+            evaluation_responses(&fixture.template, 1.0),
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert_eq!(
+        serde_json::to_value(
+            services::get_observation_review(&pool, requested.id)
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        before,
+        "certification freezes both existing and missing optional evidence"
     );
 }

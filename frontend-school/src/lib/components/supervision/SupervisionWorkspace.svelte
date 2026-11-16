@@ -377,8 +377,7 @@
 			canManageRequests ||
 			canApprove
 	);
-	const openCycles = $derived(cycles.filter((cycle) => cycle.status === 'open'));
-	const activeBookingCycles = $derived(openCycles.filter((cycle) => cycleAcceptsBookings(cycle)));
+	const activeBookingCycles = $derived(cycles.filter(cycleAcceptsBookings));
 	const currentBookingCycle = $derived(
 		activeBookingCycles.find((cycle) => cycle.id === selectedCycleId) ??
 			activeBookingCycles[0] ??
@@ -411,9 +410,7 @@
 		)
 	);
 	const activeAssignedObservations = $derived(
-		assignedObservations.filter(
-			(observation) => currentUserEvaluator(observation)?.status !== 'submitted'
-		)
+		assignedObservations.filter(canSubmitAssignedEvaluation)
 	);
 	const submittedAssignedObservations = $derived(
 		assignedObservations.filter(
@@ -1070,7 +1067,7 @@
 			const blocks = await getMyTimetable(
 				{
 					academicTermId: termId,
-					date: cycle ? defaultBookingWeekStartDate(cycle) : currentLocalDate()
+					date: currentLocalDate()
 				},
 				{ signal }
 			);
@@ -1252,6 +1249,17 @@
 
 	function currentUserEvaluator(observation: SupervisionObservation) {
 		return observation.evaluators.find((evaluator) => evaluator.evaluatorUserId === currentUserId);
+	}
+
+	function canSubmitAssignedEvaluation(observation: SupervisionObservation): boolean {
+		const evaluator = currentUserEvaluator(observation);
+		return Boolean(
+			evaluator &&
+			evaluator.status !== 'submitted' &&
+			(observation.status === 'planned' ||
+				observation.status === 'in_progress' ||
+				(observation.status === 'evaluators_submitted' && !evaluator.isRequired))
+		);
 	}
 
 	function requireMutationData<T>(
@@ -1479,6 +1487,9 @@
 
 	async function approveRequest(observationId: string) {
 		if (!canManageRequests) return;
+		const current = observations.find((item) => item.id === observationId);
+		if (!current || current.evaluators.some((evaluator) => evaluator.status === 'submitted'))
+			return;
 		const evaluatorIds = selectedRequestEvaluatorIds(observationId);
 		if (evaluatorIds.length === 0) {
 			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คนก่อนอนุมัติ');
@@ -1510,6 +1521,9 @@
 
 	async function returnRequest(id: string) {
 		if (!canManageRequests) return;
+		const current = observations.find((item) => item.id === id);
+		if (!current || current.evaluators.some((evaluator) => evaluator.status === 'submitted'))
+			return;
 		savingAction = `return-request:${id}`;
 		const sourceRevision = managementRevision;
 		try {
@@ -1531,6 +1545,7 @@
 
 	function prepareEvaluationDraft(observation: SupervisionObservation) {
 		if (!canEvaluate || !canReadObservations) return;
+		if (!canSubmitAssignedEvaluation(observation)) return;
 		evaluationObservationId = observation.id;
 		responseDrafts = {};
 		evaluationDialogOpen = true;
@@ -1640,6 +1655,8 @@
 	async function saveEvaluation() {
 		if (
 			!canEvaluate ||
+			!selectedEvaluation ||
+			!canSubmitAssignedEvaluation(selectedEvaluation) ||
 			evaluationTemplateLoading ||
 			evaluationTemplateError ||
 			!selectedEvaluationTemplate
@@ -2342,7 +2359,7 @@
 											<Alert.Root>
 												<Alert.Title>ยังไม่มีรอบที่เปิดให้จอง</Alert.Title>
 												<Alert.Description>
-													เมื่อฝ่ายวิชาการเปิดรอบนิเทศในช่วงเวลาปัจจุบัน ตารางจองจะแสดงอัตโนมัติ
+													เมื่อผู้ดูแลเปลี่ยนสถานะรอบนิเทศเป็นเปิดรับคำขอ ตารางจองจะแสดงอัตโนมัติ
 												</Alert.Description>
 											</Alert.Root>
 										{:else if timetableBlockGroupsForSelectedCycle().length === 0}
@@ -2598,7 +2615,13 @@
 														data-sveltekit-preload-data="tap"
 													>
 														<Eye class="h-4 w-4" />
-														{observation.status === 'returned' ? 'แก้ไขและส่งใหม่' : 'รายละเอียด'}
+														{observation.status === 'returned' &&
+														canRequest &&
+														!observation.evaluators.some(
+															(evaluator) => evaluator.status === 'submitted'
+														)
+															? 'แก้ไขและส่งใหม่'
+															: 'รายละเอียด'}
 													</Button>
 													{#if observation.status === 'published'}
 														<Dialog.Root>
@@ -2878,7 +2901,10 @@
 													variant="outline"
 													loading={savingAction === `return-request:${observation.id}`}
 													loadingLabel="กำลังส่งกลับ..."
-													disabled={mutationBusy}
+													disabled={mutationBusy ||
+														observation.evaluators.some(
+															(evaluator) => evaluator.status === 'submitted'
+														)}
 													onclick={() => returnRequest(observation.id)}
 												>
 													ส่งกลับคำขอ
@@ -2888,6 +2914,9 @@
 													loading={savingAction === `approve-request:${observation.id}`}
 													loadingLabel="กำลังอนุมัติ..."
 													disabled={mutationBusy ||
+														observation.evaluators.some(
+															(evaluator) => evaluator.status === 'submitted'
+														) ||
 														selectedRequestEvaluatorIds(observation.id).length === 0}
 												>
 													อนุมัติและมอบหมาย
@@ -2928,7 +2957,7 @@
 						{#if observationsLoaded && observationsReadable}
 							{#if activeAssignedObservations.length === 0}
 								<PageState
-									title="ยังไม่มีรายการที่ได้รับมอบหมาย"
+									title="ยังไม่มีรายการที่ต้องประเมิน"
 									description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน หรือเมื่อมีงานที่ยังไม่ได้ส่งผล"
 								/>
 							{:else}
@@ -3030,7 +3059,7 @@
 							{#if submittedAssignedObservations.length > 0}
 								<div class="space-y-3 border-t pt-4">
 									<div>
-										<h3 class="text-sm font-semibold">ประวัติการประเมินที่ส่งแล้ว</h3>
+										<h3 class="text-sm font-semibold">ผลประเมินที่ส่งแล้ว</h3>
 										<p class="text-xs text-muted-foreground">
 											รายการที่ส่งผลประเมินแล้วจะเก็บไว้ตรวจสอบย้อนหลัง ไม่แสดงปนกับคิวที่ต้องทำ
 										</p>
@@ -3171,42 +3200,51 @@
 														></Table.Cell
 													>
 													<Table.Cell class="text-right">
-														{#if cycle.status === 'draft'}
-															<LoadingButton
-																size="sm"
-																onclick={() => setCycleStatus(cycle, 'open')}
-																loading={savingAction === `cycle-status:${cycle.id}:open`}
-																loadingLabel="กำลังเปิด..."
-																disabled={mutationBusy}
-															>
-																เปิดรับคำขอ
-															</LoadingButton>
-														{:else if cycle.status === 'open'}
-															<LoadingButton
-																size="sm"
-																variant="outline"
-																onclick={() => setCycleStatus(cycle, 'closed')}
-																loading={savingAction === `cycle-status:${cycle.id}:closed`}
-																loadingLabel="กำลังปิด..."
-																disabled={mutationBusy}
-															>
-																ปิดรับคำขอ
-															</LoadingButton>
-														{:else if cycle.status === 'closed'}
-															<LoadingButton
-																size="sm"
-																variant="outline"
-																onclick={() => setCycleStatus(cycle, 'open')}
-																loading={savingAction === `cycle-status:${cycle.id}:open`}
-																loadingLabel="กำลังเปิด..."
-																disabled={mutationBusy}
-															>
-																เปิดรับคำขอ
-															</LoadingButton>
-														<LoadingButton size="sm" variant="outline" onclick={() => setCycleStatus(cycle, 'archived')} loading={savingAction === `cycle-status:${cycle.id}:archived`} loadingLabel="กำลังเก็บ..." disabled={mutationBusy}>เก็บถาวร</LoadingButton>
-{:else}
-															<span class="text-sm text-muted-foreground">-</span>
-														{/if}
+														<div class="flex flex-wrap justify-end gap-2">
+															{#if cycle.status === 'draft'}
+																<LoadingButton
+																	size="sm"
+																	onclick={() => setCycleStatus(cycle, 'open')}
+																	loading={savingAction === `cycle-status:${cycle.id}:open`}
+																	loadingLabel="กำลังเปิด..."
+																	disabled={mutationBusy}
+																>
+																	เปิดรับคำขอ
+																</LoadingButton>
+															{:else if cycle.status === 'open'}
+																<LoadingButton
+																	size="sm"
+																	variant="outline"
+																	onclick={() => setCycleStatus(cycle, 'closed')}
+																	loading={savingAction === `cycle-status:${cycle.id}:closed`}
+																	loadingLabel="กำลังปิด..."
+																	disabled={mutationBusy}
+																>
+																	ปิดรับคำขอ
+																</LoadingButton>
+															{:else if cycle.status === 'closed'}
+																<LoadingButton
+																	size="sm"
+																	variant="outline"
+																	onclick={() => setCycleStatus(cycle, 'open')}
+																	loading={savingAction === `cycle-status:${cycle.id}:open`}
+																	loadingLabel="กำลังเปิด..."
+																	disabled={mutationBusy}
+																>
+																	เปิดรับคำขอ
+																</LoadingButton>
+																<LoadingButton
+																	size="sm"
+																	variant="outline"
+																	onclick={() => setCycleStatus(cycle, 'archived')}
+																	loading={savingAction === `cycle-status:${cycle.id}:archived`}
+																	loadingLabel="กำลังเก็บ..."
+																	disabled={mutationBusy}>เก็บถาวร</LoadingButton
+																>
+															{:else}
+																<span class="text-sm text-muted-foreground">-</span>
+															{/if}
+														</div>
 													</Table.Cell>
 												</Table.Row>
 											{/each}
@@ -3755,78 +3793,96 @@
 			<Dialog.Title>สร้างรอบนิเทศ</Dialog.Title>
 			<Dialog.Description>รอบนิเทศจะผูกกับปีและภาคเรียนที่เลือกบนแถบด้านบน</Dialog.Description>
 		</Dialog.Header>
-		<div class="grid gap-4 py-2 lg:grid-cols-2">
-			<div class="rounded-lg border bg-muted/30 p-3 lg:col-span-2">
-				<p class="text-xs font-medium text-muted-foreground">บริบทของรอบนิเทศ</p>
-				<p class="mt-1 font-medium">
-					{academicYearId ? academicYearLabel(academicYearId) : 'ยังไม่ได้เลือกปีการศึกษา'} ·
-					{academicTermLabel(academicTermId)}
-				</p>
-			</div>
-			<div class="space-y-2 lg:col-span-2">
-				<Label>ชื่อรอบนิเทศ</Label>
-				<Input bind:value={cycleForm.title} placeholder="เช่น นิเทศการสอน ภาคเรียนที่ 1" />
-			</div>
-			<div class="space-y-2 lg:col-span-2">
-				<Label>แบบประเมิน</Label>
-				{#if routeData}{@render managementFeedback(
-						templatesLoaded,
-						templatesLoading,
-						templatesError,
-						retryManagementTemplates
-					)}{/if}
-				{#if !routeData || templatesLoaded}
-					<Select.Root type="single" bind:value={cycleForm.templateId}>
-						<Select.Trigger class="w-full">
-							{templateChoices.find((template) => template.id === cycleForm.templateId)?.title ??
-								'เลือกแบบประเมิน'}
+		<form
+			onsubmit={(event) => {
+				event.preventDefault();
+				void createCycle();
+			}}
+		>
+			<div class="grid gap-4 py-2 lg:grid-cols-2">
+				<div class="rounded-lg border bg-muted/30 p-3 lg:col-span-2">
+					<p class="text-xs font-medium text-muted-foreground">บริบทของรอบนิเทศ</p>
+					<p class="mt-1 font-medium">
+						{academicYearId ? academicYearLabel(academicYearId) : 'ยังไม่ได้เลือกปีการศึกษา'} ·
+						{academicTermLabel(academicTermId)}
+					</p>
+				</div>
+				<div class="space-y-2 lg:col-span-2">
+					<Label for="supervision-cycle-title">ชื่อรอบนิเทศ</Label>
+					<Input
+						id="supervision-cycle-title"
+						bind:value={cycleForm.title}
+						placeholder="เช่น นิเทศการสอน ภาคเรียนที่ 1"
+					/>
+				</div>
+				<div class="space-y-2 lg:col-span-2">
+					<Label for="supervision-cycle-template">แบบประเมิน</Label>
+					{#if routeData}{@render managementFeedback(
+							templatesLoaded,
+							templatesLoading,
+							templatesError,
+							retryManagementTemplates
+						)}{/if}
+					{#if !routeData || templatesLoaded}
+						<Select.Root type="single" bind:value={cycleForm.templateId}>
+							<Select.Trigger id="supervision-cycle-template" class="w-full">
+								{templateChoices.find((template) => template.id === cycleForm.templateId)?.title ??
+									'เลือกแบบประเมิน'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each templateChoices as template (template.id)}
+									<Select.Item value={template.id}>{template.title}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{/if}
+				</div>
+				<div class="space-y-2 lg:col-span-2">
+					<Label for="supervision-cycle-status">สถานะรอบ</Label>
+					<Select.Root type="single" bind:value={cycleForm.status}>
+						<Select.Trigger id="supervision-cycle-status" class="w-full">
+							{cycleStatusCreateOptions.find((option) => option.value === cycleForm.status)
+								?.label ?? 'เลือกสถานะรอบ'}
 						</Select.Trigger>
 						<Select.Content>
-							{#each templateChoices as template (template.id)}
-								<Select.Item value={template.id}>{template.title}</Select.Item>
+							{#each cycleStatusCreateOptions as option (option.value)}
+								<Select.Item value={option.value}>
+									<span class="flex flex-col items-start">
+										<span>{option.label}</span>
+										<span class="text-xs text-muted-foreground">{option.description}</span>
+									</span>
+								</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
-				{/if}
+					<p class="text-xs text-muted-foreground">
+						ครูที่มีสิทธิ์ส่งคำขอได้เมื่อรอบมีสถานะเปิดรับคำขอ ผู้ดูแลเปลี่ยนสถานะได้ด้วยตนเอง
+					</p>
+				</div>
+				<div class="space-y-2 lg:col-span-2">
+					<Label for="supervision-cycle-description">รายละเอียด</Label>
+					<Textarea
+						id="supervision-cycle-description"
+						bind:value={cycleForm.description}
+						rows={2}
+						placeholder="รายละเอียดเพิ่มเติม"
+					/>
+				</div>
 			</div>
-			<div class="space-y-2 lg:col-span-2">
-				<Label>สถานะรอบ</Label>
-				<Select.Root type="single" bind:value={cycleForm.status}>
-					<Select.Trigger class="w-full">
-						{cycleStatusCreateOptions.find((option) => option.value === cycleForm.status)?.label ??
-							'เลือกสถานะรอบ'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each cycleStatusCreateOptions as option (option.value)}
-							<Select.Item value={option.value}>
-								<span class="flex flex-col items-start">
-									<span>{option.label}</span>
-									<span class="text-xs text-muted-foreground">{option.description}</span>
-								</span>
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<p class="text-xs text-muted-foreground">
-					ครูที่มีสิทธิ์ส่งคำขอได้เมื่อรอบมีสถานะเปิดรับคำขอ ผู้ดูแลเปลี่ยนสถานะได้ด้วยตนเอง
-				</p>
-			</div>
-			<div class="space-y-2 lg:col-span-2">
-				<Label>รายละเอียด</Label>
-				<Textarea bind:value={cycleForm.description} rows={2} placeholder="รายละเอียดเพิ่มเติม" />
-			</div>
-		</div>
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (createCycleDialogOpen = false)}>ยกเลิก</Button>
-			<LoadingButton
-				onclick={createCycle}
-				disabled={routeData && (!templatesLoaded || templatesLoading || !!templatesError)}
-				loading={savingAction === 'create-cycle'}
-				loadingLabel="กำลังสร้าง..."
-			>
-				สร้างรอบนิเทศ
-			</LoadingButton>
-		</Dialog.Footer>
+			<Dialog.Footer>
+				<Button type="button" variant="outline" onclick={() => (createCycleDialogOpen = false)}
+					>ยกเลิก</Button
+				>
+				<LoadingButton
+					type="submit"
+					disabled={routeData && (!templatesLoaded || templatesLoading || !!templatesError)}
+					loading={savingAction === 'create-cycle'}
+					loadingLabel="กำลังสร้าง..."
+				>
+					สร้างรอบนิเทศ
+				</LoadingButton>
+			</Dialog.Footer>
+		</form>
 	</Dialog.Content>
 </Dialog.Root>
 

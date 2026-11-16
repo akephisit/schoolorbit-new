@@ -63,6 +63,7 @@
 	import { cn } from '#lib/utils.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
@@ -108,6 +109,7 @@
 	let templateError = $state('');
 	let reviewOpen = $state(false);
 	let editTimetableError = $state('');
+	let lessonSaveError = $state('');
 	let editTimetableLoaded = $state(false);
 	let evaluatorAvailabilityError = $state('');
 	let evaluatorAvailabilityLoaded = $state(false);
@@ -174,14 +176,17 @@
 	const canApproveResult = $derived(
 		Boolean(observation && canApproveSchool && observation.status === 'approved')
 	);
-	const canEditOwnRequested = $derived(
+	const canCancelOwnRequest = $derived(
 		Boolean(
 			observation &&
 			observation.observedUserId === currentUserId &&
 			(observation.status === 'requested' || observation.status === 'returned') &&
-			!observation.evaluators.some((evaluator) => evaluator.status === 'submitted') &&
 			$can.has(PERMISSIONS.SUPERVISION_REQUEST_OWN)
 		)
+	);
+	const canEditOwnRequested = $derived(
+		canCancelOwnRequest &&
+			!observation?.evaluators.some((evaluator) => evaluator.status === 'submitted')
 	);
 	const isReturnedOwnRequest = $derived(canEditOwnRequested && observation?.status === 'returned');
 	const canEditLesson = $derived(
@@ -197,7 +202,7 @@
 	const canCancelObservation = $derived(
 		Boolean(
 			observation &&
-			(canEditOwnRequested ||
+			(canCancelOwnRequest ||
 				(canManageObservation &&
 					!['published', 'acknowledged', 'completed', 'cancelled'].includes(observation.status)))
 		)
@@ -889,6 +894,7 @@
 
 	async function openLessonEditor() {
 		if (!observation || !canEditLesson) return;
+		lessonSaveError = '';
 		selectedEditTimetableBlockGroupId = observation.timetableBlockGroupId ?? '';
 		selectedEditTimetableDate = formatDateInput(observation.observedAt);
 		editWeekStartDate = toLocalDateInputValue(startOfWeek(new Date(observation.observedAt)));
@@ -956,6 +962,7 @@
 		const submittedId = observation.id;
 		const workflowRevision = lessonWorkflowRevision;
 		const resubmitting = isReturnedOwnRequest;
+		lessonSaveError = '';
 		savingAction = 'lesson';
 		try {
 			const response =
@@ -969,7 +976,9 @@
 			toast.success(resubmitting ? 'แก้ไขและส่งคำขอใหม่แล้ว' : 'แก้ไขคาบนิเทศแล้ว');
 		} catch (saveError) {
 			if (sourceEpoch !== contextEpoch) return;
-			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขรายการนิเทศไม่สำเร็จ');
+			const message = saveError instanceof Error ? saveError.message : 'แก้ไขรายการนิเทศไม่สำเร็จ';
+			if (workflowRevision === lessonWorkflowRevision) lessonSaveError = message;
+			else toast.error(message);
 		} finally {
 			if (sourceEpoch === contextEpoch) savingAction = null;
 		}
@@ -1058,7 +1067,7 @@
 		savingAction = 'cancel';
 		try {
 			const response =
-				canManageObservation && !canEditOwnRequested
+				canManageObservation && !canCancelOwnRequest
 					? await cancelSupervisionObservation(submittedId, { reason: cancelReason || null })
 					: await cancelRequestedSupervisionObservation(submittedId);
 			if (sourceEpoch !== contextEpoch) return;
@@ -1734,6 +1743,11 @@
 				</div>
 			</div>
 		</div>
+		{#if lessonSaveError}<Alert.Root variant="destructive"
+				><Alert.Title>บันทึกรายการไม่สำเร็จ</Alert.Title><Alert.Description
+					>{lessonSaveError}</Alert.Description
+				></Alert.Root
+			>{/if}
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (editLessonOpen = false)}>ยกเลิก</Button>
 			<LoadingButton
@@ -1759,9 +1773,7 @@
 	<Dialog.Content class="sm:max-w-2xl" aria-busy={loadingEvaluatorAvailability}>
 		<Dialog.Header>
 			<Dialog.Title>แก้ผู้ประเมิน</Dialog.Title>
-			<Dialog.Description>
-				ผู้ประเมินที่ส่งผลแล้วจะถูกเก็บไว้เพื่อรักษาประวัติและผลประเมิน
-			</Dialog.Description>
+			<Dialog.Description>ผู้ประเมินที่ส่งผลแล้วจะถูกเก็บไว้เพื่อรักษาผลประเมิน</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-3">
 			{#if loadingEvaluatorAvailability}<div role="status" aria-label="กำลังโหลด">
@@ -1868,9 +1880,7 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>ยกเลิกรายการนิเทศ</Dialog.Title>
-			<Dialog.Description>
-				ระบบจะเปลี่ยนสถานะเป็นยกเลิกเพื่อเก็บประวัติ ไม่ลบข้อมูลออกจากฐานข้อมูล
-			</Dialog.Description>
+			<Dialog.Description>รายการจะเปลี่ยนเป็นยกเลิกและหยุดดำเนินการต่อ</Dialog.Description>
 		</Dialog.Header>
 		<div class="space-y-2">
 			<Label>เหตุผล</Label>

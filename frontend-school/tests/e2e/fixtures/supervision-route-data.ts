@@ -1,7 +1,9 @@
 import type {
 	SupervisionObservation,
 	SupervisionObservationStatus,
-	SupervisionCycleStatus
+	SupervisionCycleStatus,
+	SupervisionEvaluator,
+	UpdateRequestedObservationRequest
 } from '../../../src/lib/api/supervision';
 import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
@@ -80,6 +82,7 @@ export async function mock(
 	const counts = new Map<string, number>();
 	let cycleStatus = options.cycleStatus ?? 'open';
 	let observationStatus = options.observationStatus ?? 'requested';
+	let observationPatch: Partial<SupervisionObservation> = {};
 	const observation = (academicYearId = year): SupervisionObservation => ({
 		canManage: options.canManage ?? true,
 		canReview: options.canReview ?? true,
@@ -112,7 +115,8 @@ export async function mock(
 			}
 		],
 		actions: [],
-		...options.observation
+		...options.observation,
+		...observationPatch
 	});
 	let templateTitle = 'แบบประเมินทดสอบ';
 	const detail = () => ({
@@ -318,10 +322,40 @@ export async function mock(
 								: resource.includes('/evaluations/')
 									? 'evaluators_submitted'
 									: 'planned';
+				if (resource.includes('/evaluations/'))
+					observationPatch = {
+						...observationPatch,
+						evaluators: observation().evaluators.map((evaluator): SupervisionEvaluator =>
+							evaluator.evaluatorUserId === id(20)
+								? { ...evaluator, status: 'submitted' }
+								: evaluator
+						)
+					};
 				return reply(route, observation());
+			}
+			if (method === 'DELETE' && resource === `/api/supervision/observations/${id(30)}/request`) {
+				observationStatus = 'cancelled';
+				return reply(route, { ...observation(), status: observationStatus });
 			}
 			if (method === 'PATCH' && resource === `/api/supervision/observations/${id(30)}/request`) {
 				observationStatus = 'requested';
+				const payload: UpdateRequestedObservationRequest = route.request().postDataJSON();
+				if (payload.manualLesson) {
+					const lesson = payload.manualLesson;
+					observationPatch = {
+						...observationPatch,
+						manualLesson: lesson,
+						observedAt: lesson.observedAt,
+						lessonSnapshot: {
+							source: 'manual',
+							subjectName: lesson.subjectName,
+							classroomLabel: lesson.classroomLabel,
+							roomLabel: lesson.roomLabel,
+							periodLabel: lesson.periodLabel,
+							observedAt: lesson.observedAt
+						}
+					};
+				}
 				return reply(route, { ...observation(), status: observationStatus });
 			}
 			if (resource === '/api/supervision/cycles' && method === 'POST')

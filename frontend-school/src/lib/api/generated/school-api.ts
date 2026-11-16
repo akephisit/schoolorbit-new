@@ -11537,20 +11537,12 @@ export interface components {
 					/** Format: uuid */
 					academicYearId: string;
 					/** Format: date-time */
-					bookingClosesAt?: string | null;
-					/** Format: date-time */
-					bookingOpensAt?: string | null;
-					/** Format: date-time */
 					createdAt: string;
 					/** Format: uuid */
 					createdBy?: string | null;
 					description?: string | null;
-					/** Format: date-time */
-					endsAt: string;
 					/** Format: uuid */
 					id: string;
-					/** Format: date-time */
-					startsAt: string;
 					status: components['schemas']['SupervisionCycleStatus'];
 					targets: components['schemas']['SupervisionCycleTarget'][];
 					/** Format: uuid */
@@ -12926,20 +12918,12 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: date-time */
-				bookingClosesAt?: string | null;
-				/** Format: date-time */
-				bookingOpensAt?: string | null;
-				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				createdBy?: string | null;
 				description?: string | null;
-				/** Format: date-time */
-				endsAt: string;
 				/** Format: uuid */
 				id: string;
-				/** Format: date-time */
-				startsAt: string;
 				status: components['schemas']['SupervisionCycleStatus'];
 				targets: components['schemas']['SupervisionCycleTarget'][];
 				/** Format: uuid */
@@ -19438,15 +19422,7 @@ export interface components {
 			academicTermId?: string | null;
 			/** Format: uuid */
 			academicYearId: string;
-			/** Format: date-time */
-			bookingClosesAt?: string | null;
-			/** Format: date-time */
-			bookingOpensAt?: string | null;
 			description?: string | null;
-			/** Format: date-time */
-			endsAt: string;
-			/** Format: date-time */
-			startsAt: string;
 			status?: components['schemas']['SupervisionCycleStatus'] | null;
 			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][];
 			/** Format: uuid */
@@ -21577,20 +21553,12 @@ export interface components {
 				/** Format: uuid */
 				academicYearId: string;
 				/** Format: date-time */
-				bookingClosesAt?: string | null;
-				/** Format: date-time */
-				bookingOpensAt?: string | null;
-				/** Format: date-time */
 				createdAt: string;
 				/** Format: uuid */
 				createdBy?: string | null;
 				description?: string | null;
-				/** Format: date-time */
-				endsAt: string;
 				/** Format: uuid */
 				id: string;
-				/** Format: date-time */
-				startsAt: string;
 				status: components['schemas']['SupervisionCycleStatus'];
 				targets: components['schemas']['SupervisionCycleTarget'][];
 				/** Format: uuid */
@@ -25211,20 +25179,12 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			/** Format: date-time */
-			bookingClosesAt?: string | null;
-			/** Format: date-time */
-			bookingOpensAt?: string | null;
-			/** Format: date-time */
 			createdAt: string;
 			/** Format: uuid */
 			createdBy?: string | null;
 			description?: string | null;
-			/** Format: date-time */
-			endsAt: string;
 			/** Format: uuid */
 			id: string;
-			/** Format: date-time */
-			startsAt: string;
 			status: components['schemas']['SupervisionCycleStatus'];
 			targets: components['schemas']['SupervisionCycleTarget'][];
 			/** Format: uuid */
@@ -27320,15 +27280,7 @@ export interface components {
 			academicTermId?: string | null;
 			/** Format: uuid */
 			academicYearId?: string | null;
-			/** Format: date-time */
-			bookingClosesAt?: string | null;
-			/** Format: date-time */
-			bookingOpensAt?: string | null;
 			description?: string | null;
-			/** Format: date-time */
-			endsAt?: string | null;
-			/** Format: date-time */
-			startsAt?: string | null;
 			status?: components['schemas']['SupervisionCycleStatus'] | null;
 			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][] | null;
 			/** Format: uuid */

@@ -471,15 +471,18 @@ pub async fn update_requested_observation(
             AppError::InternalServerError("ไม่สามารถแก้ไขคำขอนิเทศได้".to_string())
         })?;
 
-    insert_observation_action(
-        &mut tx,
-        observation_id,
-        Some(actor_user_id),
-        if current.status == SupervisionObservationStatus::Returned { "requested" } else { "updated" },
-        Some(current.status),
-        Some(SupervisionObservationStatus::Requested),
-        None,
-    ).await?;
+    if current.status == SupervisionObservationStatus::Returned {
+        insert_observation_action(
+            &mut tx,
+            observation_id,
+            Some(actor_user_id),
+            "requested",
+            Some(SupervisionObservationStatus::Returned),
+            Some(SupervisionObservationStatus::Requested),
+            None,
+        )
+        .await?;
+    }
 
     tx.commit().await?;
     get_observation(pool, observation_id).await
@@ -1517,8 +1520,14 @@ async fn load_timetable_block_group_lesson_snapshot(
 }
 
 fn ensure_no_submitted_evaluators(observation: &SupervisionObservation) -> Result<(), AppError> {
-    if observation.evaluators.iter().any(|evaluator| evaluator.status == crate::models::SupervisionEvaluatorStatus::Submitted) {
-        return Err(AppError::ValidationError("รายการนี้มีผลประเมินที่ส่งแล้ว ไม่สามารถส่งกลับ ส่งคำขอใหม่ หรือกำหนดผู้ประเมินใหม่ได้".into()));
+    if observation
+        .evaluators
+        .iter()
+        .any(|evaluator| evaluator.status == crate::models::SupervisionEvaluatorStatus::Submitted)
+    {
+        return Err(AppError::ValidationError(
+            "รายการนี้มีผลประเมินที่ส่งแล้ว ไม่สามารถส่งกลับ ส่งคำขอใหม่ หรือกำหนดผู้ประเมินใหม่ได้".into(),
+        ));
     }
     Ok(())
 }

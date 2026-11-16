@@ -506,16 +506,16 @@ fn teacher_status_from_row(
 fn teacher_status_next_step_label(status: Option<SupervisionObservationStatus>) -> String {
     match status {
         None => "ยังไม่จองคาบนิเทศ",
-        Some(SupervisionObservationStatus::Requested) => "รอหัวหน้าหน่วยงานอนุมัติคำขอ",
+        Some(SupervisionObservationStatus::Requested) => "รอผู้รับผิดชอบตรวจคำขอ",
         Some(SupervisionObservationStatus::Planned | SupervisionObservationStatus::InProgress) => {
             "รอผู้ประเมินส่งผล"
         }
         Some(
             SupervisionObservationStatus::EvaluatorsSubmitted
             | SupervisionObservationStatus::UnderReview,
-        ) => "รอหัวหน้ากลุ่มสาระรับรองผล",
-        Some(SupervisionObservationStatus::Returned) => "รอครูแก้ไขคำขอ",
-        Some(SupervisionObservationStatus::Approved) => "รอฝ่ายวิชาการอนุมัติผล",
+        ) => "รอผู้มีสิทธิ์รับรองผล",
+        Some(SupervisionObservationStatus::Returned) => "รอครูแก้ไขและส่งใหม่",
+        Some(SupervisionObservationStatus::Approved) => "รอผู้มีสิทธิ์อนุมัติผล",
         Some(SupervisionObservationStatus::Published) => "รอครูรับทราบผล",
         Some(
             SupervisionObservationStatus::Acknowledged | SupervisionObservationStatus::Completed,

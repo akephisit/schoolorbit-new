@@ -35,13 +35,15 @@ pub async fn apply(
     mappings: &HashMap<(TermPreparationMappingKind, Uuid), Uuid>,
     _dates: &HashMap<NaiveDate, NaiveDate>,
 ) -> Result<TermPreparationModuleOutcome, AppError> {
-    let cycles: Vec<SourceCycle> = DbSession::new(&mut **tx).query_as("supervision.services.term_preparation.apply",
-        r#"SELECT id,title,description,template_id
+    let cycles: Vec<SourceCycle> = DbSession::new(&mut **tx)
+        .query_as(
+            "supervision.services.term_preparation.apply",
+            r#"SELECT id,title,description,template_id
            FROM supervision_cycles WHERE academic_term_id=$1 ORDER BY id"#,
-    )
-    .bind(context.source_term_id)
-    .fetch_all()
-    .await?;
+        )
+        .bind(context.source_term_id)
+        .fetch_all()
+        .await?;
     let source_ids = cycles.iter().map(|cycle| cycle.id).collect::<Vec<_>>();
     let targets: Vec<SourceTarget> = if source_ids.is_empty() {
         Vec::new()

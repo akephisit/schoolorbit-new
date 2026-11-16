@@ -39,7 +39,7 @@ test('explicit overview renders teacher status while cycle options are pending',
 	await expect(
 		page
 			.getByTestId('supervision-cycle-selector')
-			.getByRole('button', { name: 'รอบแรก', exact: true })
+			.getByRole('combobox', { name: 'รอบแรก', exact: true })
 	).toBeVisible();
 });
 
@@ -75,7 +75,7 @@ test('overview cycle selection and Back supersede pending status without broad r
 	await expect(page.getByText('ครู รอบแรก')).toBeVisible();
 	await page
 		.getByTestId('supervision-cycle-selector')
-		.getByRole('button', { name: 'รอบแรก', exact: true })
+		.getByRole('combobox', { name: 'รอบแรก', exact: true })
 		.click();
 	await page.getByRole('option', { name: /รอบที่สอง/ }).click();
 	await expect(page).toHaveURL(new RegExp(`cycleId=${secondCycle}`));
@@ -99,7 +99,7 @@ test('cycles starts with its own skeleton, keeps template choices lazy, and patc
 	await expect(page.getByTestId('supervision-cycles-ready')).toBeVisible();
 	await page.getByRole('button', { name: 'สร้างรอบนิเทศ', exact: true }).first().click();
 	await expect(
-		page.getByRole('dialog').getByRole('button', { name: 'แบบประเมินทดสอบ', exact: true })
+		page.getByRole('dialog').getByRole('combobox', { name: 'แบบประเมินทดสอบ', exact: true })
 	).toBeVisible();
 	expect(api.count('/api/supervision/templates/summaries')).toBe(1);
 	await page.getByRole('dialog').getByRole('button', { name: 'ยกเลิก', exact: true }).click();
@@ -108,7 +108,7 @@ test('cycles starts with its own skeleton, keeps template choices lazy, and patc
 		.getByRole('button', { name: 'ปิดรับคำขอ' })
 		.click();
 	await expect(
-		page.getByRole('row', { name: /รอบแรก/ }).getByRole('button', { name: 'เปิดอีกครั้ง' })
+		page.getByRole('row', { name: /รอบแรก/ }).getByRole('button', { name: 'เปิดรับคำขอ' })
 	).toBeVisible();
 	expect(api.count('/api/supervision/cycles')).toBe(1);
 });

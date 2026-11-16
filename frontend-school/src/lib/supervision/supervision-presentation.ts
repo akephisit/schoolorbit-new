@@ -42,7 +42,11 @@ const workflowByStatus = {
 	returned: { stage: 0, nextOwner: 'ครูผู้ขอรับนิเทศ', nextAction: 'แก้ไขและส่งใหม่' },
 	planned: { stage: 1, nextOwner: 'ผู้ประเมิน', nextAction: 'นิเทศและส่งผลประเมิน' },
 	in_progress: { stage: 1, nextOwner: 'ผู้ประเมิน', nextAction: 'ส่งผลประเมินที่ยังค้าง' },
-	evaluators_submitted: { stage: 2, nextOwner: 'ผู้มีสิทธิ์รับรองผล', nextAction: 'ตรวจและรับรองผล' },
+	evaluators_submitted: {
+		stage: 2,
+		nextOwner: 'ผู้มีสิทธิ์รับรองผล',
+		nextAction: 'ตรวจและรับรองผล'
+	},
 	under_review: { stage: 2, nextOwner: 'ผู้มีสิทธิ์รับรองผล', nextAction: 'ตรวจและรับรองผล' },
 	approved: { stage: 3, nextOwner: 'ผู้มีสิทธิ์อนุมัติผล', nextAction: 'ตรวจและอนุมัติผล' },
 	published: { stage: 4, nextOwner: 'ครูผู้รับการนิเทศ', nextAction: 'อ่านและรับทราบผล' },

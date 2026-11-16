@@ -130,7 +130,11 @@ test('evaluation rubric is lazy and a typed submit patches only the observation'
 });
 
 test('closing evaluation supersedes its pending rubric', async ({ page }) => {
-	const api = await mock(page, { permissions: assigned, hold: 'detail' });
+	const api = await mock(page, {
+		permissions: assigned,
+		hold: 'detail',
+		observationStatus: 'planned'
+	});
 	await page.goto(path('evaluate'));
 	await page.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true }).click();
 	await expect(page.getByRole('dialog').getByRole('status')).toBeVisible();

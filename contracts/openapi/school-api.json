@@ -11447,20 +11447,6 @@
                       "format": "uuid",
                       "type": "string"
                     },
-                    "bookingClosesAt": {
-                      "format": "date-time",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "bookingOpensAt": {
-                      "format": "date-time",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "createdAt": {
                       "format": "date-time",
                       "type": "string"
@@ -11478,16 +11464,8 @@
                         "null"
                       ]
                     },
-                    "endsAt": {
-                      "format": "date-time",
-                      "type": "string"
-                    },
                     "id": {
                       "format": "uuid",
-                      "type": "string"
-                    },
-                    "startsAt": {
-                      "format": "date-time",
                       "type": "string"
                     },
                     "status": {
@@ -11516,8 +11494,6 @@
                     "academicYearId",
                     "title",
                     "templateId",
-                    "startsAt",
-                    "endsAt",
                     "status",
                     "createdAt",
                     "updatedAt",
@@ -16696,20 +16672,6 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "bookingClosesAt": {
-                "format": "date-time",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "bookingOpensAt": {
-                "format": "date-time",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -16727,16 +16689,8 @@
                   "null"
                 ]
               },
-              "endsAt": {
-                "format": "date-time",
-                "type": "string"
-              },
               "id": {
                 "format": "uuid",
-                "type": "string"
-              },
-              "startsAt": {
-                "format": "date-time",
                 "type": "string"
               },
               "status": {
@@ -16765,8 +16719,6 @@
               "academicYearId",
               "title",
               "templateId",
-              "startsAt",
-              "endsAt",
               "status",
               "createdAt",
               "updatedAt",
@@ -40730,6 +40682,7 @@
         "type": "object"
       },
       "CreateSupervisionCycleRequest": {
+        "additionalProperties": false,
         "properties": {
           "academicTermId": {
             "format": "uuid",
@@ -40742,33 +40695,11 @@
             "format": "uuid",
             "type": "string"
           },
-          "bookingClosesAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "bookingOpensAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "description": {
             "type": [
               "string",
               "null"
             ]
-          },
-          "endsAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "startsAt": {
-            "format": "date-time",
-            "type": "string"
           },
           "status": {
             "oneOf": [
@@ -40797,9 +40728,7 @@
         "required": [
           "academicYearId",
           "title",
-          "templateId",
-          "startsAt",
-          "endsAt"
+          "templateId"
         ],
         "type": "object"
       },
@@ -48297,20 +48226,6 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "bookingClosesAt": {
-                  "format": "date-time",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "bookingOpensAt": {
-                  "format": "date-time",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "createdAt": {
                   "format": "date-time",
                   "type": "string"
@@ -48328,16 +48243,8 @@
                     "null"
                   ]
                 },
-                "endsAt": {
-                  "format": "date-time",
-                  "type": "string"
-                },
                 "id": {
                   "format": "uuid",
-                  "type": "string"
-                },
-                "startsAt": {
-                  "format": "date-time",
                   "type": "string"
                 },
                 "status": {
@@ -48366,8 +48273,6 @@
                 "academicYearId",
                 "title",
                 "templateId",
-                "startsAt",
-                "endsAt",
                 "status",
                 "createdAt",
                 "updatedAt",
@@ -61564,20 +61469,6 @@
             "format": "uuid",
             "type": "string"
           },
-          "bookingClosesAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "bookingOpensAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -61595,16 +61486,8 @@
               "null"
             ]
           },
-          "endsAt": {
-            "format": "date-time",
-            "type": "string"
-          },
           "id": {
             "format": "uuid",
-            "type": "string"
-          },
-          "startsAt": {
-            "format": "date-time",
             "type": "string"
           },
           "status": {
@@ -61633,8 +61516,6 @@
           "academicYearId",
           "title",
           "templateId",
-          "startsAt",
-          "endsAt",
           "status",
           "createdAt",
           "updatedAt",
@@ -69428,6 +69309,7 @@
         "type": "object"
       },
       "UpdateSupervisionCycleRequest": {
+        "additionalProperties": false,
         "properties": {
           "academicTermId": {
             "format": "uuid",
@@ -69443,35 +69325,7 @@
               "null"
             ]
           },
-          "bookingClosesAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "bookingOpensAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "description": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "endsAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "startsAt": {
-            "format": "date-time",
             "type": [
               "string",
               "null"
