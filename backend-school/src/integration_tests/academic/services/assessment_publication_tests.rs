@@ -1,7 +1,7 @@
 use school_academic_assessment::assessment::services;
 use school_test_db::cutover_test_support::{
-    CutoverFixture, apply_migrations_through, record_passing_phase_a_reconciliation_marker,
-    seed_academic_cutover_fixture,
+    apply_migrations_through, record_passing_phase_a_reconciliation_marker,
+    seed_academic_cutover_fixture, CutoverFixture,
 };
 use sqlx::PgPool;
 use uuid::Uuid;

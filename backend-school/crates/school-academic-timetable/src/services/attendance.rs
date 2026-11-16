@@ -40,11 +40,12 @@ pub async fn blocks_on_connection(
     date: NaiveDate,
 ) -> Result<Vec<TimetableBlock>, AppError> {
     let day = day_code_from_date(date);
-    Ok(current_pattern_on_connection(connection, term)
+    let blocks = current_pattern_on_connection(connection, term)
         .await?
         .into_iter()
         .filter(|block| block.day_of_week == day)
-        .collect())
+        .collect();
+    super::dated_teaching::apply_blocks_on_connection(connection, term, date, blocks).await
 }
 #[cfg(test)]
 mod tests {

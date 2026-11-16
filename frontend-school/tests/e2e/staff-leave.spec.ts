@@ -42,7 +42,7 @@ test('reader loads list without create, routing or signature reads and keeps URL
 	const api = await mockLeave(page, { permissions: [PERMISSIONS.STAFF_LEAVE_READ_OWN] });
 	await page.goto('/staff/leave');
 	await expect(page.getByTestId('leave-requests')).toContainText('ลาป่วย');
-	await expect(page.getByRole('button', { name: 'สร้างคำขอการลา' })).toHaveCount(0);
+	await expect(page.getByRole('link', { name: 'สร้างคำขอการลา' })).toHaveCount(0);
 	expect(api.count('/api/staff-leave/options')).toBe(0);
 	expect(api.count('/api/staff-leave/routing-options')).toBe(0);
 	await page.getByRole('link', { name: 'ถัดไป', exact: true }).click();
@@ -94,7 +94,7 @@ test('create is lazy, resolves policy, saves server-derived half-day draft then 
 	const api = await mockLeave(page);
 	await page.goto('/staff/leave');
 	expect(api.count('/api/staff-leave/options')).toBe(0);
-	await page.getByRole('button', { name: 'สร้างคำขอการลา', exact: true }).click();
+	await page.getByRole('link', { name: 'สร้างคำขอการลา', exact: true }).click();
 	await page.locator('#leave-type').click();
 	await page.getByRole('option', { name: 'ลาป่วย', exact: true }).click();
 	await chooseDate(page, 'leave-start-date');
@@ -103,7 +103,8 @@ test('create is lazy, resolves policy, saves server-derived half-day draft then 
 	await page.getByLabel('เหตุผล *', { exact: true }).fill('ตรวจรักษาช่วงเช้า');
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(leaveId));
-	await expect(page.getByTestId('leave-detail')).toContainText('0.5 วัน');
+	await page.getByRole('button', { name: '3. ตรวจสอบและส่ง', exact: true }).click();
+	await expect(page.getByTestId('leave-review-step')).toContainText('0.5 วัน');
 	const created = api.writes.find((write) => write.path === '/api/staff-leave/requests')!;
 	expect(created.payload.period).not.toHaveProperty('amount');
 	expect(created.payload.period).toMatchObject({
@@ -112,13 +113,13 @@ test('create is lazy, resolves policy, saves server-derived half-day draft then 
 	});
 	await page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true }).click();
 	await expect(page.getByTestId('leave-detail')).toContainText('รอพิจารณา');
-	expect(api.count(`/api/staff-leave/requests/${leaveId}`)).toBe(1);
+	expect(api.count(`/api/staff-leave/requests/${leaveId}`)).toBe(2);
 });
 
 test('unconfigured applicable profile gives clear error and does not save', async ({ page }) => {
 	const api = await mockLeave(page, { missingPolicy: true });
 	await page.goto(leaveDetailPath);
-	await page.getByRole('button', { name: 'แก้ไขฉบับร่าง' }).click();
+	await page.getByRole('link', { name: 'แก้ไขฉบับร่าง' }).click();
 	await expect(page.getByTestId('leave-effective-policy')).toContainText(
 		'ยังไม่มีนโยบายสำหรับประเภทบุคลากรนี้'
 	);
@@ -129,14 +130,14 @@ test('unconfigured applicable profile gives clear error and does not save', asyn
 test('draft survives save failure and exact retry keeps the mutation key', async ({ page }) => {
 	const api = await mockLeave(page, { failMutation: 503 });
 	await page.goto(leaveDetailPath);
-	await page.getByRole('button', { name: 'แก้ไขฉบับร่าง' }).click();
+	await page.getByRole('link', { name: 'แก้ไขฉบับร่าง' }).click();
 	await expect(page.getByTestId('leave-effective-policy')).toContainText('นโยบายฉบับ');
 	await page.getByLabel('เหตุผล *', { exact: true }).fill('ข้อมูลที่ต้องเก็บไว้');
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
 	await expect(page.getByTestId('leave-request-editor')).toContainText('บริการไม่พร้อม');
 	await expect(page.getByLabel('เหตุผล *', { exact: true })).toHaveValue('ข้อมูลที่ต้องเก็บไว้');
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
-	await expect(page.getByTestId('leave-detail')).toContainText('ข้อมูลที่ต้องเก็บไว้');
+	await expect(page.getByLabel('เหตุผล *', { exact: true })).toHaveValue('ข้อมูลที่ต้องเก็บไว้');
 	expect(api.writes[0].payload.requestId).toBe(api.writes[1].payload.requestId);
 });
 
@@ -318,7 +319,7 @@ test('stale draft reconciles only detail and requires accepting latest revision 
 }) => {
 	const api = await mockLeave(page, { failMutation: 409 });
 	await page.goto(leaveDetailPath);
-	await page.getByRole('button', { name: 'แก้ไขฉบับร่าง' }).click();
+	await page.getByRole('link', { name: 'แก้ไขฉบับร่าง' }).click();
 	await expect(page.getByTestId('leave-effective-policy')).toContainText('นโยบายฉบับ');
 	await page.getByLabel('เหตุผล *', { exact: true }).fill('เหตุผลที่เก็บไว้หลังข้อมูลเก่า');
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
@@ -332,8 +333,10 @@ test('stale draft reconciles only detail and requires accepting latest revision 
 	);
 	await page.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง' }).click();
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
-	await expect(page.getByTestId('leave-detail')).toContainText('เหตุผลที่เก็บไว้หลังข้อมูลเก่า');
-	expect(api.count(`/api/staff-leave/requests/${leaveId}`)).toBe(2);
+	await expect(page.getByLabel('เหตุผล *', { exact: true })).toHaveValue(
+		'เหตุผลที่เก็บไว้หลังข้อมูลเก่า'
+	);
+	expect(api.count(`/api/staff-leave/requests/${leaveId}`)).toBe(3);
 	expect(api.count('/api/staff-leave/options')).toBe(1);
 	expect(api.writes[1].payload.expectedRevision).toBe(2);
 	expect(api.writes[1].payload.requestId).not.toBe(api.writes[0].payload.requestId);
@@ -429,18 +432,20 @@ test('evidence upload is lazy and stays linked after save then can be removed fr
 	const api = await mockLeave(page);
 	await page.goto(leaveDetailPath);
 	expect(api.uploads).toHaveLength(0);
-	await page.getByRole('button', { name: 'แก้ไขฉบับร่าง' }).click();
+	await page.getByRole('link', { name: 'แก้ไขฉบับร่าง' }).click();
 	await expect(page.getByTestId('leave-effective-policy')).toContainText('นโยบายฉบับ');
 	await page
 		.locator('#leave-evidence')
 		.setInputFiles({ name: 'evidence.png', mimeType: 'image/png', buffer: syntheticPng });
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
+	await expect(page.getByTestId('leave-request-editor')).toContainText('หลักฐานเดิม 1');
+	await page.getByRole('link', { name: 'เปิดรายละเอียดคำขอ' }).click();
 	await expect(page.getByRole('button', { name: 'ดาวน์โหลดหลักฐาน 1' })).toBeVisible();
 	expect(api.uploads).toEqual([{ purpose: 'staff_leave_evidence', resourceId: leaveId }]);
-	await page.getByRole('button', { name: 'แก้ไขฉบับร่าง' }).click();
+	await page.getByRole('link', { name: 'แก้ไขฉบับร่าง' }).click();
 	await page.getByRole('button', { name: 'นำออกจากฉบับร่าง' }).click();
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
-	await expect(page.getByRole('button', { name: 'ดาวน์โหลดหลักฐาน 1' })).toHaveCount(0);
+	await expect(page.getByTestId('leave-request-editor')).not.toContainText('หลักฐานเดิม 1');
 	expect(api.writes.at(-1)!.payload.period).toMatchObject({ evidenceFileIds: [] });
 });
 
@@ -458,7 +463,7 @@ for (const theme of ['light', 'dark'] as const)
 			await page.goto('/staff/leave');
 			await expect(page.getByTestId('leave-requests')).toContainText('ลาป่วย');
 			await page.screenshot({ path: testInfo.outputPath(`list-${theme}-${width}.png`) });
-			await page.getByRole('button', { name: 'สร้างคำขอการลา' }).click();
+			await page.getByRole('link', { name: 'สร้างคำขอการลา' }).click();
 			await page.locator('#leave-type').click();
 			await page.getByRole('option', { name: 'ลาป่วย', exact: true }).click();
 			await chooseDate(page, 'leave-start-date');
@@ -495,7 +500,7 @@ for (const theme of ['light', 'dark'] as const)
 			await navigate(page, '/staff/exit-permissions');
 			await expect(page.getByTestId('leave-requests')).toContainText('90 นาที');
 			await page.screenshot({ path: testInfo.outputPath(`exit-list-${theme}-${width}.png`) });
-			await page.getByRole('button', { name: 'สร้างคำขอออกนอกโรงเรียน', exact: true }).click();
+			await page.getByRole('link', { name: 'สร้างคำขอออกนอกโรงเรียน', exact: true }).click();
 			await page.locator('#leave-type').click();
 			await page.getByRole('option', { name: 'ออกนอกโรงเรียน', exact: true }).click();
 			await chooseDate(page, 'leave-start-date');
@@ -546,7 +551,7 @@ test('exit menu uses planned times and the editable school-local minute profile'
 	const api = await mockLeave(page);
 	await page.goto('/staff/exit-permissions');
 	await expect(page.getByTestId('leave-requests')).toContainText('90 นาที');
-	await page.getByRole('button', { name: 'สร้างคำขอออกนอกโรงเรียน' }).click();
+	await page.getByRole('link', { name: 'สร้างคำขอออกนอกโรงเรียน' }).click();
 	await page.locator('#leave-type').click();
 	await page.getByRole('option', { name: 'ออกนอกโรงเรียน', exact: true }).click();
 	await chooseDate(page, 'leave-start-date');
@@ -555,7 +560,8 @@ test('exit menu uses planned times and the editable school-local minute profile'
 	await page.locator('#leave-end-time').fill('10:30');
 	await page.getByLabel('เหตุผล *', { exact: true }).fill('ประสานงานราชการตามกำหนด');
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง' }).click();
-	await expect(page.getByTestId('leave-detail')).toContainText('90 นาที');
+	await page.getByRole('button', { name: '3. ตรวจสอบและส่ง', exact: true }).click();
+	await expect(page.getByTestId('leave-review-step')).toContainText('90 นาที');
 	expect(api.writes[0].payload.period).toMatchObject({
 		typeId: exitTypeId,
 		startTime: '09:00:00',
@@ -694,7 +700,7 @@ test('pending submit disables repeated mutations and keeps the request summary v
 		await expect(
 			page.getByRole('button', { name: 'กำลังดำเนินการ...', exact: true })
 		).toBeDisabled();
-		await expect(page.getByRole('button', { name: 'แก้ไขฉบับร่าง', exact: true })).toBeDisabled();
+		await expect(page.getByRole('link', { name: 'แก้ไขฉบับร่าง', exact: true })).toBeDisabled();
 		await expect(page.getByTestId('leave-detail')).toContainText('เข้ารับการตรวจรักษา');
 		expect(api.writes.filter((write) => write.path.endsWith('/submit'))).toHaveLength(1);
 	} finally {

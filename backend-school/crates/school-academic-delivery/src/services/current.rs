@@ -1,6 +1,6 @@
 //! Live Delivery projections. Normalized rows are the sole authority.
 use crate::models::{
-    LearningOfferingQuery, LearningOfferingSnapshot, LearningTeacherRole, current::*,
+    current::*, LearningOfferingQuery, LearningOfferingSnapshot, LearningTeacherRole,
 };
 use school_authorization::AcademicResourceListFilter;
 use school_database::DbSession;

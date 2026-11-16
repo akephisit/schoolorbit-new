@@ -227,16 +227,14 @@ async fn bulk_group_setup_preserves_exceptions_and_applies_only_explicit_current
             .collect::<Vec<_>>(),
         preserved
     );
-    assert!(
-        result
-            .groups
-            .iter()
-            .find(|g| g.id == f.group_ids[1])
-            .unwrap()
-            .teacher_assignments
-            .iter()
-            .any(|a| a.teacher_id == selected_teacher && a.role == LearningTeacherRole::Primary)
-    );
+    assert!(result
+        .groups
+        .iter()
+        .find(|g| g.id == f.group_ids[1])
+        .unwrap()
+        .teacher_assignments
+        .iter()
+        .any(|a| a.teacher_id == selected_teacher && a.role == LearningTeacherRole::Primary));
     assert_eq!(
         serde_json::to_value(groups::get(&f.pool, f.group_ids[2]).await.unwrap()).unwrap(),
         untouched
@@ -262,12 +260,10 @@ async fn bulk_group_setup_preserves_exceptions_and_applies_only_explicit_current
         "only explicitly selected groups receive exact current dated memberships"
     );
     let membership_facts: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM learning_group_students m WHERE learning_group_id=ANY($1)").bind(&f.group_ids).fetch_one(&f.pool).await.unwrap();
-    assert!(
-        result
-            .roster_tracking
-            .iter()
-            .all(|config| config.tracking.mode == RosterTrackingMode::Homeroom)
-    );
+    assert!(result
+        .roster_tracking
+        .iter()
+        .all(|config| config.tracking.mode == RosterTrackingMode::Homeroom));
     let mut replace = request(&f, selected_teacher).await;
     replace
         .primary_teacher
@@ -283,15 +279,13 @@ async fn bulk_group_setup_preserves_exceptions_and_applies_only_explicit_current
     )
     .await
     .unwrap();
-    assert!(
-        replacement
-            .response
-            .groups
-            .iter()
-            .flat_map(|group| &group.teacher_assignments)
-            .filter(|assignment| assignment.teacher_id == selected_teacher)
-            .all(|assignment| assignment.id.get_version_num() == 7)
-    );
+    assert!(replacement
+        .response
+        .groups
+        .iter()
+        .flat_map(|group| &group.teacher_assignments)
+        .filter(|assignment| assignment.teacher_id == selected_teacher)
+        .all(|assignment| assignment.id.get_version_num() == 7));
     assert_eq!(membership_facts, sqlx::query_scalar::<_,serde_json::Value>("SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM learning_group_students m WHERE learning_group_id=ANY($1)").bind(&f.group_ids).fetch_one(&f.pool).await.unwrap(), "teacher-only replacement preserves every saved membership identity, span and status");
     let first_after = replacement
         .response
@@ -308,12 +302,10 @@ async fn bulk_group_setup_preserves_exceptions_and_applies_only_explicit_current
             .collect::<Vec<_>>(),
         preserved
     );
-    assert!(
-        first_after
-            .teacher_assignments
-            .iter()
-            .any(|a| a.teacher_id == selected_teacher && a.role == LearningTeacherRole::Primary)
-    );
+    assert!(first_after
+        .teacher_assignments
+        .iter()
+        .any(|a| a.teacher_id == selected_teacher && a.role == LearningTeacherRole::Primary));
     let no_op = request(&f, selected_teacher).await;
     assert!(matches!(
         bulk_group_setup::apply(
@@ -351,17 +343,15 @@ async fn bulk_group_setup_rejects_stale_scope_and_any_blocked_target_atomically(
             _ => invalid.1.groups.clear(),
         }
         let before = facts(&f).await;
-        assert!(
-            bulk_group_setup::apply(
-                &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
-                &f.pool,
-                f.context.teacher_id,
-                f.offering_id,
-                invalid.1
-            )
-            .await
-            .is_err()
-        );
+        assert!(bulk_group_setup::apply(
+            &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
+            &f.pool,
+            f.context.teacher_id,
+            f.offering_id,
+            invalid.1
+        )
+        .await
+        .is_err());
         assert_eq!(facts(&f).await, before);
     }
     let first = groups::get(&f.pool, f.group_ids[0]).await.unwrap();
@@ -403,17 +393,15 @@ async fn bulk_group_setup_rejects_stale_scope_and_any_blocked_target_atomically(
         mode: RosterTrackingMode::Homeroom,
         effective_from: Some(NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()),
     });
-    assert!(
-        bulk_group_setup::apply(
-            &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
-            &f.pool,
-            f.context.teacher_id,
-            f.offering_id,
-            bad_tracking
-        )
-        .await
-        .is_err()
-    );
+    assert!(bulk_group_setup::apply(
+        &crate::adapters::assessment_current::ASSESSMENT_CURRENT,
+        &f.pool,
+        f.context.teacher_id,
+        f.offering_id,
+        bad_tracking
+    )
+    .await
+    .is_err());
     assert_eq!(facts(&f).await, before);
     sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
         .bind(selected_teacher)

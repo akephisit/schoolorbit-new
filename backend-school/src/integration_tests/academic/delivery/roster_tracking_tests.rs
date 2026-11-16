@@ -305,26 +305,20 @@ async fn room_tracking_annual_membership_actual_spans_preserve_real_transfer() {
             && p.end_date == Some(before)
             && p.status == HomeroomPlacementStatus::Ended
     ));
-    assert!(
-        placements
-            .iter()
-            .any(|p| p.placement_scope == HomeroomPlacementScope::Dated
-                && p.start_date == Some(transfer)
-                && p.homeroom_id == f.other
-                && p.status == HomeroomPlacementStatus::Current)
-    );
-    assert!(
-        members(&f, f.groups[0])
-            .await
-            .iter()
-            .any(|m| m.id == learner.id && m.left_at == Some(before))
-    );
-    assert!(
-        members(&f, f.groups[2])
-            .await
-            .iter()
-            .any(|m| m.id == shared.id && m.left_at.is_none())
-    );
+    assert!(placements
+        .iter()
+        .any(|p| p.placement_scope == HomeroomPlacementScope::Dated
+            && p.start_date == Some(transfer)
+            && p.homeroom_id == f.other
+            && p.status == HomeroomPlacementStatus::Current));
+    assert!(members(&f, f.groups[0])
+        .await
+        .iter()
+        .any(|m| m.id == learner.id && m.left_at == Some(before)));
+    assert!(members(&f, f.groups[2])
+        .await
+        .iter()
+        .any(|m| m.id == shared.id && m.left_at.is_none()));
     assert_eq!(
         serde_json::to_value(members(&f, f.groups[3]).await).unwrap(),
         manual
@@ -364,11 +358,9 @@ async fn room_tracking_annual_membership_actual_spans_preserve_real_transfer() {
             2,
             "one source/destination group plus the shared group on {day}"
         );
-        assert!(
-            pupil
-                .iter()
-                .all(|p| p.student_academic_year_id == learner.student_academic_year_id)
-        );
+        assert!(pupil
+            .iter()
+            .all(|p| p.student_academic_year_id == learner.student_academic_year_id));
         let mut actual: Vec<_> = pupil.iter().map(|p| p.learning_group_id).collect();
         actual.sort();
         let mut expected = vec![
@@ -515,11 +507,9 @@ async fn room_tracking_transfers_reentries_and_deactivation_preserve_manual_and_
     .unwrap();
     let history = members(&f, f.groups[0]).await;
     assert_eq!(history.len(), 2);
-    assert!(
-        history
-            .iter()
-            .any(|m| m.id == old.id && m.left_at == Some(f.day))
-    );
+    assert!(history
+        .iter()
+        .any(|m| m.id == old.id && m.left_at == Some(f.day)));
     assert!(history.iter().any(|m| m.id != old.id
         && m.joined_at == f.day + Duration::days(2)
         && m.left_at.is_none()));
@@ -541,12 +531,10 @@ async fn room_tracking_transfers_reentries_and_deactivation_preserve_manual_and_
     )
     .await
     .unwrap();
-    assert!(
-        members(&f, f.groups[0])
-            .await
-            .iter()
-            .all(|m| m.left_at.is_some())
-    );
+    assert!(members(&f, f.groups[0])
+        .await
+        .iter()
+        .all(|m| m.left_at.is_some()));
     assert_eq!(
         serde_json::to_value(members(&f, f.groups[3]).await).unwrap(),
         manual
@@ -747,11 +735,9 @@ async fn room_tracking_future_cancellation_keeps_identity_and_allows_reentry_on_
         );
         let history = members(&f, group.id).await;
         assert_eq!(history.len(), attempt + 1);
-        assert!(
-            history
-                .iter()
-                .any(|m| m.left_at.is_none() && m.joined_at == begins)
-        );
+        assert!(history
+            .iter()
+            .any(|m| m.left_at.is_none() && m.joined_at == begins));
         if attempt == 0 {
             let old_id = history[0].id;
             move_student(&f, f.other, None, student_year, f.day + Duration::days(1))

@@ -50,17 +50,15 @@ async fn learner_current_empty_group_remains_an_obligation_without_publication_o
             expected
         );
     }
-    assert!(
-        evidence::groups_with_established_history_on_connection(
-            &mut conn,
-            ctx.academic_term_id,
-            ctx.academic_year_id,
-            &[empty]
-        )
-        .await
-        .unwrap()
-        .is_empty()
-    );
+    assert!(evidence::groups_with_established_history_on_connection(
+        &mut conn,
+        ctx.academic_term_id,
+        ctx.academic_year_id,
+        &[empty]
+    )
+    .await
+    .unwrap()
+    .is_empty());
     drop(conn);
     let queue = read_lock_readiness(
         &pool,
@@ -74,11 +72,10 @@ async fn learner_current_empty_group_remains_an_obligation_without_publication_o
         .iter()
         .find(|r| r.subject_id == subject && r.domain == DC)
         .unwrap();
-    assert!(
-        row.groups
-            .iter()
-            .any(|r| r.learning_group_id == empty && !r.ready)
-    );
+    assert!(row
+        .groups
+        .iter()
+        .any(|r| r.learning_group_id == empty && !r.ready));
     assert_eq!(
         before,
         facts(&pool).await,

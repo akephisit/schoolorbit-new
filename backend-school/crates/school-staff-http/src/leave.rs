@@ -161,12 +161,12 @@ pub async fn update_request(
     let result = service::update(&context.tenant.pool, &context.actor, id, input).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
-#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/staff-leave/requests/{id}/submit",operation_id="submitStaffLeaveRequest",tag="staff-leave",params(("id"=Uuid,Path,description="Staff leave resource ID")),request_body=LeaveMutationRequest,responses((status=200, description = "Staff leave request submission result returned",body=ApiResponse<LeaveRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/staff-leave/requests/{id}/submit",operation_id="submitStaffLeaveRequest",tag="staff-leave",params(("id"=Uuid,Path,description="Staff leave resource ID")),request_body=school_staff_leave::coverage_models::SubmitLeaveRequest,responses((status=200, description = "Staff leave request submission result returned",body=ApiResponse<LeaveRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn submit_request(
     State(state): State<LeaveHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Json(input): Json<LeaveMutationRequest>,
+    Json(input): Json<school_staff_leave::coverage_models::SubmitLeaveRequest>,
 ) -> Result<Json<ApiResponse<LeaveRequestDetail>>, HttpError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let result = service::submit(&context.tenant.pool, &context.actor, id, input).await?;
@@ -254,4 +254,5 @@ pub fn routes() -> Router<LeaveHttpState> {
             axum::routing::post(cancel_request),
         )
         .route("/staff-leave/usage", axum::routing::get(usage))
+        .merge(super::leave_coverage::routes())
 }

@@ -129,13 +129,14 @@ pub(crate) async fn refresh_content_revision_on_connection(
 ) -> Result<Timetable, AppError> {
     get_by_id_on_connection(connection, current.id).await
 }
-/// A current board has no unpublished work or publication prerequisite for closure.
+/// Weekly boards have no publication prerequisite; accepted dated teaching
+/// promises must remain writable until their actual interval has ended.
 pub async fn pending_term_work(
-    _tx: &mut Transaction<'_, Postgres>,
-    _year: Uuid,
-    _term: Uuid,
+    tx: &mut Transaction<'_, Postgres>,
+    year: Uuid,
+    term: Uuid,
 ) -> Result<Vec<school_academic_core::ports::PendingTermWork>, AppError> {
-    Ok(Vec::new())
+    super::dated_obligations::pending_on_connection(tx, year, Some(term)).await
 }
 
 #[cfg(test)]

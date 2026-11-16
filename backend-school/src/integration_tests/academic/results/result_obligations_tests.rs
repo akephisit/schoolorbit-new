@@ -28,18 +28,16 @@ async fn results_current_obligations_use_exact_term_without_date_or_publication_
         );
     }
     let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
-    assert!(
-        current_obligation_group_ids_on_connection(
-            &mut conn,
-            ctx.academic_term_id,
-            ctx.academic_year_id,
-            date,
-            &[]
-        )
-        .await
-        .unwrap()
-        .is_empty()
-    );
+    assert!(current_obligation_group_ids_on_connection(
+        &mut conn,
+        ctx.academic_term_id,
+        ctx.academic_year_id,
+        date,
+        &[]
+    )
+    .await
+    .unwrap()
+    .is_empty());
     for (year, ids) in [
         (Uuid::new_v4(), vec![group]),
         (ctx.academic_year_id, vec![group, Uuid::new_v4()]),
@@ -72,13 +70,11 @@ async fn results_current_obligations_use_exact_term_without_date_or_publication_
     ));
     drop(conn);
     let queue = readiness(&pool, &actor, &ctx).await.unwrap();
-    assert!(
-        queue
-            .courses
-            .iter()
-            .flat_map(|s| &s.groups)
-            .any(|g| g.learning_group_id == unused && !g.ready)
-    );
+    assert!(queue
+        .courses
+        .iter()
+        .flat_map(|s| &s.groups)
+        .any(|g| g.learning_group_id == unused && !g.ready));
     let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_object('groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM learning_groups g),'scores',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM learning_group_student_scores s),'locks',(SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM academic_course_result_locks l))").fetch_one(&pool).await.unwrap();
     assert_eq!(before, after);
 }
@@ -118,13 +114,11 @@ async fn results_current_allocation_preserves_saved_identity_and_filters_inactiv
         current::workspace_on_connection(&mut conn, ctx.academic_year_id, ctx.academic_term_id)
             .await
             .unwrap();
-    assert!(
-        workspace
-            .offerings
-            .iter()
-            .flat_map(|o| &o.groups)
-            .filter(|g| g.id == group)
-            .flat_map(|g| &g.teachers)
-            .any(|a| a.assignment_id == original && !a.is_active)
-    );
+    assert!(workspace
+        .offerings
+        .iter()
+        .flat_map(|o| &o.groups)
+        .filter(|g| g.id == group)
+        .flat_map(|g| &g.teachers)
+        .any(|a| a.assignment_id == original && !a.is_active));
 }

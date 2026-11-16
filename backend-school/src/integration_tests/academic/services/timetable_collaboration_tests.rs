@@ -1,13 +1,14 @@
 //! Real session middleware, native socket transport and HTTP share one domain authority.
 use std::{sync::Arc, time::Duration};
 
-use axum::{Router, extract::FromRef, middleware::from_fn_with_state, routing::get};
+use axum::{extract::FromRef, middleware::from_fn_with_state, routing::get, Router};
 use futures::{SinkExt, StreamExt};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::{net::TcpListener, task::JoinHandle};
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async,
-    tungstenite::{Message, client::IntoClientRequest},
+    connect_async,
+    tungstenite::{client::IntoClientRequest, Message},
+    MaybeTlsStream, WebSocketStream,
 };
 use uuid::Uuid;
 
@@ -18,7 +19,7 @@ use school_academic_timetable::{
 };
 use school_academic_timetable_http::{
     state::{AcademicTimetableHttpState, AcademicWebSocketState},
-    websockets::{WebSocketManager, timetable_websocket_handler},
+    websockets::{timetable_websocket_handler, WebSocketManager},
 };
 
 use super::timetable_block_service_tests::{current_timetable, migrated_pool};
@@ -778,7 +779,7 @@ async fn held_write(
 #[tokio::test]
 async fn accepted_pg_write_keeps_public_exclusion_after_caller_abort_disconnect_and_ttl() {
     use school_academic_timetable::{
-        collaboration::{LEASE_TTL, MutationScope, TimetableSignal},
+        collaboration::{MutationScope, TimetableSignal, LEASE_TTL},
         models::collaboration::TimetableServerMessage,
     };
     let fixture = Fixture::new("collaboration_pg_pinned_cancel").await;
@@ -829,16 +830,15 @@ async fn accepted_pg_write_keeps_public_exclusion_after_caller_abort_disconnect_
         reservations[0].reservation_id.to_string(),
         claim["payload"]["reservationId"]
     );
-    assert!(
-        room.begin_commit(
+    assert!(room
+        .begin_commit(
             Uuid::parse_str(ACTOR).unwrap(),
             fixture.session_id,
             None,
             &crate::adapters::lesson_sources::LESSON_SOURCE_DETACHMENT,
             MutationScope::Blocks(vec![fixture.block.id])
         )
-        .is_err()
-    );
+        .is_err());
     barrier.commit().await.unwrap();
     let patch = event(&mut peer, "TimetablePatched").await;
     assert_eq!(
@@ -920,13 +920,11 @@ async fn gated_native_join_ignores_committed_signal_already_in_state_sync() {
     let sync = event(&mut joining, "TimetableStateSync").await;
     let patch = event(&mut existing, "TimetablePatched").await;
     assert_eq!(sync["seq"], patch["seq"]);
-    assert!(
-        sync["payload"]["workspace"]["blocks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|block| block["note"] == "committed while joining")
-    );
+    assert!(sync["payload"]["workspace"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|block| block["note"] == "committed while joining"));
     // A queued Committed(snapshot.seq) has no projected history for this new tab. It must be
     // skipped, while subsequent frames still work, rather than causing a false journal gap.
     let reply = command(
@@ -968,19 +966,17 @@ async fn upstream_change_invalidates_warm_room_without_members_before_next_join(
     );
     let (mut joined, after) = fixture.socket().await;
     assert_ne!(before["epoch"], after["epoch"]);
-    assert!(
-        after["payload"]["workspace"]["blocks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|block| block["note"] == "upstream fixture update")
-    );
+    assert!(after["payload"]["workspace"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|block| block["note"] == "upstream fixture update"));
     joined.close(None).await.unwrap();
 }
 
 #[tokio::test]
-async fn real_pg_commit_followed_by_publication_failure_reconciles_and_cold_read_fences_late_writer()
- {
+async fn real_pg_commit_followed_by_publication_failure_reconciles_and_cold_read_fences_late_writer(
+) {
     use school_academic_timetable::collaboration::MutationScope;
     let fixture = Fixture::new("collaboration_commit_failure_cold_fence").await;
     let (mut socket, original) = fixture.socket().await;
@@ -1089,13 +1085,11 @@ async fn real_pg_commit_followed_by_publication_failure_reconciles_and_cold_read
     assert!(!Arc::ptr_eq(&old_room, &recovered));
     let (mut joined, latest) = fixture.socket().await;
     assert_ne!(original["epoch"], latest["epoch"]);
-    assert!(
-        latest["payload"]["workspace"]["blocks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|block| block["note"] == "late writer resolved")
-    );
+    assert!(latest["payload"]["workspace"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|block| block["note"] == "late writer resolved"));
     joined.close(None).await.unwrap();
 }
 
@@ -1157,8 +1151,8 @@ async fn actual_pg_deferred_commit_timeout_invalidates_without_emitting_successf
 }
 
 #[tokio::test]
-async fn assigned_multi_instructor_block_is_visible_but_both_memory_and_http_deny_unmanageable_teacher()
- {
+async fn assigned_multi_instructor_block_is_visible_but_both_memory_and_http_deny_unmanageable_teacher(
+) {
     let mut fixture = Fixture::new("collaboration_multi_instructor_scope").await;
     let pool = &fixture.auth.tenant_a_pool;
     let teacher = fixture
@@ -1728,14 +1722,12 @@ async fn real_cold_fill_overlapping_upstream_change_cannot_install_stale_valid_p
         "overlapping cache fill must be refused rather than made valid"
     );
     let (mut socket, snapshot) = fixture.socket().await;
-    assert!(
-        snapshot["payload"]["workspace"]["rooms"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|room| room["id"] == room_id.to_string()
-                && room["name"] == "Changed during canonical fill")
-    );
+    assert!(snapshot["payload"]["workspace"]["rooms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|room| room["id"] == room_id.to_string()
+            && room["name"] == "Changed during canonical fill"));
     socket.close(None).await.unwrap();
 }
 
@@ -1819,13 +1811,11 @@ async fn actual_facility_producers_invalidate_active_and_empty_rooms_only_after_
     event(&mut socket, "TimetableReconcileRequired").await;
     let (mut refreshed, created) = fixture.socket().await;
     assert_ne!(created["epoch"], initial["epoch"]);
-    assert!(
-        created["payload"]["workspace"]["rooms"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|room| room["id"] == room_id.to_string())
-    );
+    assert!(created["payload"]["workspace"]["rooms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|room| room["id"] == room_id.to_string()));
     refreshed.close(None).await.unwrap();
     let cached = fixture.room();
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -1847,13 +1837,11 @@ async fn actual_facility_producers_invalidate_active_and_empty_rooms_only_after_
     assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
     let (mut joined, inactive) = fixture.socket().await;
     assert_ne!(inactive["epoch"], created["epoch"]);
-    assert!(
-        inactive["payload"]["workspace"]["rooms"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|room| room["id"] != room_id.to_string())
-    );
+    assert!(inactive["payload"]["workspace"]["rooms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|room| room["id"] != room_id.to_string()));
     let response = fixture
         .request(
             reqwest::Method::DELETE,
@@ -1944,12 +1932,10 @@ async fn scoped_lookup_gain_and_loss_match_fresh_authorized_http_projection() {
     let csrf = fixture.auth.csrf(session);
     let (mut manager, manager_sync) = fixture.socket().await;
     let (mut scoped, initial) = fixture.socket_with_cookie(&cookie).await;
-    assert!(
-        initial["payload"]["workspace"]["blocks"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
+    assert!(initial["payload"]["workspace"]["blocks"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(
         initial["payload"]["workspace"]["staff"]
             .as_array()
@@ -2276,13 +2262,11 @@ async fn workspace_cap_fixture(kind: &str) {
         );
         let school = school.json::<Value>().await.unwrap();
         assert!(school["data"]["staff"].as_array().unwrap().len() < 2000);
-        assert!(
-            school["data"]["staff"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|entry| entry["id"] == teacher.to_string())
-        );
+        assert!(school["data"]["staff"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["id"] == teacher.to_string()));
     } else {
         assert_eq!(
             school.status(),
@@ -2492,13 +2476,11 @@ async fn native_edit_room_options_hide_occupied_rooms_and_refresh_without_postgr
     }
     let (mut scoped, sync) = fixture.socket_with_cookie(&cookie).await;
     for hidden in &hidden {
-        assert!(
-            !sync["payload"]["workspace"]["blocks"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|block| block["id"] == hidden.id.to_string())
-        );
+        assert!(!sync["payload"]["workspace"]["blocks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|block| block["id"] == hidden.id.to_string()));
     }
     let visible_rooms = sync["payload"]["workspace"]["rooms"]
         .as_array()
@@ -2514,12 +2496,10 @@ async fn native_edit_room_options_hide_occupied_rooms_and_refresh_without_postgr
     let options = room_options_event(&mut scoped, reservation, &[room_ids[0], room_ids[2]]).await;
     assert_eq!(
         options["availableRoomIds"],
-        json!(
-            visible_rooms
-                .iter()
-                .filter(|id| **id != room_ids[1])
-                .collect::<Vec<_>>()
-        ),
+        json!(visible_rooms
+            .iter()
+            .filter(|id| **id != room_ids[1])
+            .collect::<Vec<_>>()),
         "public room order retained"
     );
     let peer_claim = command(&mut peer, "ClientClaim", json!({"requestId":Uuid::new_v4(),"purpose":"drag","source":{"kind":"existing_block","blockId":hidden[1].id,"rowVersion":hidden[1].row_version}})).await;
@@ -2530,11 +2510,9 @@ async fn native_edit_room_options_hide_occupied_rooms_and_refresh_without_postgr
     assert_eq!(target["payload"]["accepted"], true, "{target}");
     let reserved = room_options_event(&mut scoped, reservation, &[room_ids[0]]).await;
     assert!(!reserved.to_string().contains(&hidden[0].id.to_string()));
-    assert!(
-        !reserved
-            .to_string()
-            .contains(peer_claim["payload"]["leaseToken"].as_str().unwrap())
-    );
+    assert!(!reserved
+        .to_string()
+        .contains(peer_claim["payload"]["leaseToken"].as_str().unwrap()));
     let release = command(
         &mut peer,
         "ClientRelease",
@@ -2803,20 +2781,16 @@ async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
         assert!(!before["rooms"].as_array().unwrap().is_empty());
         assert!(!before["homerooms"].as_array().unwrap().is_empty());
         assert!(!before["blocks"].as_array().unwrap().is_empty());
-        assert!(
-            before["rooms"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|room| room["code"].is_string())
-        );
-        assert!(
-            before["homerooms"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|room| room["roomNumber"].is_string())
-        );
+        assert!(before["rooms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|room| room["code"].is_string()));
+        assert!(before["homerooms"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|room| room["roomNumber"].is_string()));
         assert_eq!(before["timetable"]["id"], fixture.timetable.to_string());
         assert_eq!(
             before["timetable"]["academicTermId"],
@@ -2878,20 +2852,16 @@ async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
         let response = response.json::<Value>().await.unwrap();
         let workspace = &response["data"];
         match field {
-            "room_code" => assert!(
-                workspace["rooms"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|room| room.get("code").is_some_and(Value::is_null))
-            ),
-            "homeroom_number" => assert!(
-                workspace["homerooms"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|room| room.get("roomNumber").is_some_and(Value::is_null))
-            ),
+            "room_code" => assert!(workspace["rooms"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|room| room.get("code").is_some_and(Value::is_null))),
+            "homeroom_number" => assert!(workspace["homerooms"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|room| room.get("roomNumber").is_some_and(Value::is_null))),
             "current_aggregate" => {
                 assert_eq!(workspace["timetable"]["id"], fixture.timetable.to_string());
                 assert!(workspace["timetable"].get("createdBy").is_none());
@@ -2959,19 +2929,15 @@ async fn actual_nullable_workspace_frames_pass_the_frontend_decoder() {
             assert!(!changes["upsertedRooms"].as_array().unwrap().is_empty());
             assert!(!changes["upsertedHomerooms"].as_array().unwrap().is_empty());
             if field == "room_code" {
-                assert!(
-                    changes["upsertedRooms"][0]
-                        .get("code")
-                        .is_some_and(Value::is_null)
-                );
+                assert!(changes["upsertedRooms"][0]
+                    .get("code")
+                    .is_some_and(Value::is_null));
             } else {
-                assert!(
-                    changes["upsertedHomerooms"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .any(|room| room.get("roomNumber").is_some_and(Value::is_null))
-                );
+                assert!(changes["upsertedHomerooms"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|room| room.get("roomNumber").is_some_and(Value::is_null)));
             }
             outcomes.push((
                 field,
@@ -3294,13 +3260,11 @@ async fn actual_delivery_http_reconciles_native_demand_and_revokes_removed_curre
             .collect::<Vec<Value>>()
     };
     assert_eq!(eligible_teachers(&old_initial), vec![json!(old)]);
-    assert!(
-        old_initial["payload"]["workspace"]["blocks"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|block| block["id"] == fixture.block.id.to_string())
-    );
+    assert!(old_initial["payload"]["workspace"]["blocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|block| block["id"] == fixture.block.id.to_string()));
     let (offering_revision, weekly): (i64, i32) = sqlx::query_as(
         "SELECT row_version,weekly_period_target FROM learning_offerings WHERE id=$1",
     )
@@ -3370,13 +3334,11 @@ async fn actual_delivery_http_reconciles_native_demand_and_revokes_removed_curre
             .all(|block| block["id"] != fixture.block.id.to_string()),
         "saved instructor facts cannot preserve revoked current group access"
     );
-    assert!(
-        removed_sync["payload"]["workspace"]["ordinaryDemands"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|row| row["learningGroupId"] != group.to_string())
-    );
+    assert!(removed_sync["payload"]["workspace"]["ordinaryDemands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|row| row["learningGroupId"] != group.to_string()));
     let denied = command(
         &mut removed,
         "ClientClaim",

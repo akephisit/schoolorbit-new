@@ -8,11 +8,15 @@
 		type LeaveKind,
 		type LeaveRequestDetail,
 		type LeavePersonalOptions,
+		getLeaveCoverageSettings,
+		type LeaveCoverageSettings,
 		type LeavePolicyVersion
 	} from '#lib/api/staff-leave.js';
 	import { uploadFile } from '#lib/api/files.js';
 	import { ApiClientError } from '#lib/api/client.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
+	import { LeaveRegion } from '#lib/staff-leave/region.svelte.js';
+	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
 	import {
 		leaveDraft,
@@ -21,6 +25,7 @@
 		type LeaveDraft
 	} from '#lib/staff-leave/drafts.js';
 	import { leaveAmount, leaveDate, leaveUnitLabels } from '#lib/staff-leave/presentation.js';
+	import { validDefaultContext } from '#lib/staff-leave/coverage.js';
 	import { PERSONNEL_TYPE_LABELS } from '#lib/forms/staff-career.js';
 	import { LoadingButton, PageState, PageSkeleton } from '#lib/components/app-state/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -33,20 +38,58 @@
 	let {
 		kind,
 		detail,
+		optionsSource,
+		settingsSource,
 		oncancel,
 		onsaved,
-		onrefresh
+		onrefresh,
+		ondirty,
+		coverageRevision
 	}: {
 		kind: LeaveKind;
 		detail?: LeaveRequestDetail;
+		settingsSource: Promise<RouteLoadResult<LeaveCoverageSettings | null>>;
+		optionsSource: Promise<RouteLoadResult<LeavePersonalOptions | null>>;
 		oncancel: () => void;
-		onsaved: (detail: LeaveRequestDetail) => void;
+		onsaved: (detail: LeaveRequestDetail, proceed: boolean) => void;
 		onrefresh?: () => void;
+		ondirty?: (value: boolean) => void;
+		coverageRevision?: number;
 	} = $props();
 	let draft = $state<LeaveDraft>(untrack(() => leaveDraft(detail)));
-	let options = $state<LeavePersonalOptions | null>(null),
-		optionsError = $state(''),
-		optionsLoading = $state(true);
+	let savedBasis = untrack(() => JSON.stringify(leaveDraft(detail)));
+	const settingsRegion = new LeaveRegion<LeaveCoverageSettings | null>();
+	let contextInitialized = false;
+	const settings = $derived(settingsRegion.value);
+	const years = $derived([
+		...new Map(
+			(settings?.contexts ?? []).map((context) => [
+				context.academicYearId,
+				{ value: context.academicYearId, label: context.academicYearName }
+			])
+		).values()
+	]);
+	$effect.pre(() => settingsRegion.consume(settingsSource));
+	$effect.pre(() => {
+		const value = settingsRegion.value;
+		if (!value) return;
+		untrack(() => {
+			if (!contextInitialized) {
+				const defaults = validDefaultContext(value);
+				if (!draft.academicYearId && !draft.academicTermId && defaults) {
+					draft.academicYearId = defaults.academicYearId;
+					draft.academicTermId = defaults.academicTermId;
+				}
+				contextInitialized = true;
+			}
+			draft.halfDayBoundary = value.halfDayBoundary ?? null;
+		});
+	});
+	const optionsRegion = new LeaveRegion<LeavePersonalOptions | null>();
+	const options = $derived(optionsRegion.value);
+	const optionsError = $derived(optionsRegion.error);
+	const optionsLoading = $derived(optionsRegion.loading);
+	$effect.pre(() => optionsRegion.consume(optionsSource));
 	let policy = $state<LeavePolicyVersion | null>(null),
 		policyError = $state(''),
 		policyLoading = $state(false);
@@ -54,8 +97,21 @@
 		error = $state(''),
 		pending = $state(false);
 	let files = $state<File[]>([]);
+	const changed = $derived(
+		JSON.stringify(draft) !== JSON.stringify(leaveDraft(detail)) || files.length > 0
+	);
+	$effect(() => ondirty?.(changed));
 	let expectedRevision = $state(untrack(() => detail?.request.revision ?? 0));
 	let conflict = $state(false);
+	$effect.pre(() => {
+		const revision = coverageRevision;
+		const current = detail;
+		if (revision === undefined || !current || revision !== current.request.revision) return;
+		untrack(() => {
+			if (!conflict && savedBasis === JSON.stringify(leaveDraft(current)))
+				expectedRevision = revision;
+		});
+	});
 	let requestedReconciliation = false;
 	const stale = $derived(!!detail && expectedRevision !== detail.request.revision);
 	$effect.pre(() => {
@@ -100,27 +156,17 @@
 			if (policyRequest.isCurrent(ticket.revision) && !disposed) policyLoading = false;
 		}
 	}
-	async function loadOptions() {
-		optionsLoading = true;
-		optionsError = '';
-		try {
-			const result = await getLeaveOptions({ signal: controller.signal });
-			if (!disposed) options = result;
-		} catch (cause) {
-			if (!disposed) optionsError = cause instanceof Error ? cause.message : 'โหลดประเภทไม่สำเร็จ';
-		} finally {
-			if (!disposed) optionsLoading = false;
-		}
+	function loadOptions() {
+		optionsRegion.retry((signal) => getLeaveOptions({ signal }));
 	}
 	$effect.pre(() => {
-		untrack(() => {
-			void loadOptions();
-			void resolvePolicy();
-		});
+		untrack(() => void resolvePolicy());
 	});
 	onDestroy(() => {
 		disposed = true;
 		controller.abort();
+		optionsRegion.dispose();
+		settingsRegion.dispose();
 		policyRequest.abort();
 	});
 	async function save(event: SubmitEvent) {
@@ -131,6 +177,10 @@
 		error = '';
 		if (Object.keys(errors).length || !policy) {
 			if (!policy) error = 'เลือกประเภทและวันที่ที่มีนโยบายใช้ได้ก่อนบันทึก';
+			return;
+		}
+		if (!settings) {
+			error = 'โหลดบริบทปีและภาคเรียนก่อนบันทึก';
 			return;
 		}
 		pending = true;
@@ -153,7 +203,15 @@
 						period
 					})
 				: await createLeaveRequest({ requestId, period });
-			if (!disposed) onsaved(result);
+			if (!disposed) {
+				expectedRevision = result.request.revision;
+				savedBasis = JSON.stringify(leaveDraft(result));
+			}
+			if (!disposed)
+				onsaved(
+					result,
+					event.submitter instanceof HTMLButtonElement && event.submitter.value === 'next'
+				);
 		} catch (cause) {
 			if (!disposed) {
 				error = cause instanceof Error ? cause.message : 'บันทึกคำขอไม่สำเร็จ';
@@ -172,7 +230,10 @@
 				type="button"
 				variant="outline"
 				onclick={() => {
-					if (detail) expectedRevision = detail.request.revision;
+					if (detail) {
+						expectedRevision = detail.request.revision;
+						savedBasis = JSON.stringify(leaveDraft(detail));
+					}
 					conflict = false;
 					error = '';
 				}}>ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง</Button
@@ -193,6 +254,50 @@
 			{#if options?.personnelType}<p class="text-sm text-muted-foreground">
 					{PERSONNEL_TYPE_LABELS[options.personnelType]} · ตรวจเกณฑ์ตามวันที่เริ่มคำขอ
 				</p>{/if}
+			<section class="space-y-3 rounded-lg border p-3" aria-busy={settingsRegion.loading}>
+				<h2 class="font-medium">ปีและภาคเรียนของคาบสอน</h2>
+				{#if settingsRegion.error}<PageState
+						variant="error"
+						title="โหลดบริบทไม่สำเร็จ"
+						description={settingsRegion.error}
+						actionLabel="ลองอีกครั้ง"
+						onaction={() => settingsRegion.retry((signal) => getLeaveCoverageSettings({ signal }))}
+					/>{/if}
+				{#if settingsRegion.loading && !settings}<PageSkeleton variant="form" />{:else if settings}
+					<div class="grid gap-3 sm:grid-cols-2">
+						<Choice
+							id="leave-academic-year"
+							label="ปีการศึกษา"
+							bind:value={draft.academicYearId}
+							options={years}
+							disabled={pending}
+							onchange={() => (draft.academicTermId = '')}
+						/>
+						<Choice
+							id="leave-academic-term"
+							label="ภาคเรียน"
+							bind:value={draft.academicTermId}
+							options={settings.contexts
+								.filter((context) => context.academicYearId === draft.academicYearId)
+								.map((context) => ({
+									value: context.academicTermId,
+									label: context.academicTermName
+								}))}
+							disabled={pending || !draft.academicYearId}
+						/>
+					</div>
+					{#if validDefaultContext(settings)}<p class="text-xs text-muted-foreground">
+							ค่าเริ่มต้นของโรงเรียน: {validDefaultContext(settings)?.academicYearName} · {validDefaultContext(
+								settings
+							)?.academicTermName}
+						</p>{/if}
+					<p class="text-xs text-muted-foreground">
+						เวลาสิ้นสุดช่วงเช้าของโรงเรียน: {settings.halfDayBoundary?.slice(0, 5) ??
+							'ยังไม่กำหนด — ติดต่อผู้ดูแลก่อนจัดคาบครึ่งวัน'}
+					</p>
+				{/if}
+			</section>
+
 			<div>
 				<Choice
 					id="leave-type"
@@ -367,6 +472,13 @@
 			loading={pending}
 			disabled={!policy || policyLoading || !typeChoices.length || stale || conflict}
 			>บันทึกฉบับร่าง</LoadingButton
+		><LoadingButton
+			type="submit"
+			name="workflowAction"
+			value="next"
+			loading={pending}
+			disabled={!policy || policyLoading || !typeChoices.length || stale || conflict}
+			>บันทึกและจัดคาบสอนต่อ</LoadingButton
 		>
 	</div>
 </form>

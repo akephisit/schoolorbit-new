@@ -1,4 +1,5 @@
 //! Exact current offering/group cleanup. Application composition owns transaction order.
+use super::timetable_block_conflicts::map_write_error;
 use crate::collaboration::CommitPermit;
 use school_academic_delivery::models::current::DeliveryDeletionScope;
 use school_database::DbSession;
@@ -18,6 +19,7 @@ pub async fn deletion_impact_on_connection(
     connection: &mut PgConnection,
     scope: &DeliveryDeletionScope,
 ) -> Result<TimetableDeletionImpact, AppError> {
+    ensure_scope_has_no_future_duties(connection, scope).await?;
     Ok(DbSession::new(connection).query_as("academic_timetable.deletion.impact", r#"
         WITH affected AS (
           SELECT block.* FROM academic_timetable_blocks block
@@ -47,6 +49,7 @@ pub async fn delete_in_transaction(
     scope: &DeliveryDeletionScope,
     permit: Option<&CommitPermit>,
 ) -> Result<(), AppError> {
+    ensure_scope_has_no_future_duties(&mut **tx, scope).await?;
     let current =
         super::timetable_service::get_for_term_on_connection(&mut **tx, scope.academic_term_id)
             .await?;
@@ -66,17 +69,18 @@ pub async fn delete_in_transaction(
         )
         .bind(current.id)
         .execute()
-        .await?;
+        .await
+        .map_err(map_write_error)?;
     let block_ids: Vec<Uuid> = DbSession::new(&mut **tx).scalar("academic_timetable.deletion.exact_blocks", "SELECT block.id FROM academic_timetable_blocks block WHERE block.timetable_id=$1 AND block.learning_offering_id=$2 AND ($4 OR EXISTS(SELECT 1 FROM academic_timetable_block_groups child WHERE child.block_id=block.id AND child.learning_group_id=ANY($3)) OR EXISTS(SELECT 1 FROM academic_timetable_block_group_sync child WHERE child.block_id=block.id AND child.learning_group_id=ANY($3))) ORDER BY block.id FOR UPDATE").bind(current.id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).fetch_all().await?;
     // Sync has a restrictive FK to its linked allocation; remove exact scope first.
-    DbSession::new(&mut **tx).query("academic_timetable.deletion.sync", "DELETE FROM academic_timetable_block_group_sync WHERE academic_year_id=$1 AND academic_term_id=$2 AND learning_offering_id=$3 AND ($5 OR learning_group_id=ANY($4))").bind(scope.academic_year_id).bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).execute().await?;
-    DbSession::new(&mut **tx).query("academic_timetable.deletion.groups", "DELETE FROM academic_timetable_block_groups WHERE academic_year_id=$1 AND academic_term_id=$2 AND learning_offering_id=$3 AND ($5 OR learning_group_id=ANY($4))").bind(scope.academic_year_id).bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).execute().await?;
+    DbSession::new(&mut **tx).query("academic_timetable.deletion.sync", "DELETE FROM academic_timetable_block_group_sync WHERE academic_year_id=$1 AND academic_term_id=$2 AND learning_offering_id=$3 AND ($5 OR learning_group_id=ANY($4))").bind(scope.academic_year_id).bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).execute().await.map_err(map_write_error)?;
+    DbSession::new(&mut **tx).query("academic_timetable.deletion.groups", "DELETE FROM academic_timetable_block_groups WHERE academic_year_id=$1 AND academic_term_id=$2 AND learning_offering_id=$3 AND ($5 OR learning_group_id=ANY($4))").bind(scope.academic_year_id).bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).execute().await.map_err(map_write_error)?;
     DbSession::new(&mut **tx).query("academic_timetable.deletion.blocks", r#"
         DELETE FROM academic_timetable_blocks block
         WHERE block.id=ANY($1) AND block.learning_offering_id=$2
           AND ($3 OR (block.scheduling_mode IS DISTINCT FROM 'synchronized'
             AND NOT EXISTS(SELECT 1 FROM academic_timetable_block_groups child WHERE child.block_id=block.id)))
-    "#).bind(&block_ids).bind(scope.learning_offering_id).bind(scope.delete_offering).execute().await?;
+    "#).bind(&block_ids).bind(scope.learning_offering_id).bind(scope.delete_offering).execute().await.map_err(map_write_error)?;
     Ok(())
 }
 
@@ -108,7 +112,8 @@ pub(crate) async fn remove_blocks_in_transaction(
         )
         .bind(block_ids)
         .execute()
-        .await?;
+        .await
+        .map_err(map_write_error)?;
     DbSession::new(&mut **tx)
         .query(
             "academic_timetable.removal.blocks",
@@ -116,7 +121,8 @@ pub(crate) async fn remove_blocks_in_transaction(
         )
         .bind(block_ids)
         .execute()
-        .await?;
+        .await
+        .map_err(map_write_error)?;
     for block in &mut blocks {
         block.is_active = false;
         block.row_version += 1;
@@ -137,7 +143,7 @@ pub(crate) async fn remove_groups_in_transaction(
         permit.require_timetable(timetable)?;
     }
     permit.detach_timetable_sources(tx, block_group_ids).await?;
-    DbSession::new(&mut **tx).query("academic_timetable.removal.unlink_group_sync", "UPDATE academic_timetable_block_group_sync SET linked_block_group_id=NULL,status='WAITING_FOR_DATA',conflict_code=NULL,conflict_message=NULL,row_version=row_version+1,updated_at=now() WHERE linked_block_group_id=ANY($1)").bind(block_group_ids).execute().await?;
+    DbSession::new(&mut **tx).query("academic_timetable.removal.unlink_group_sync", "UPDATE academic_timetable_block_group_sync SET linked_block_group_id=NULL,status='WAITING_FOR_DATA',conflict_code=NULL,conflict_message=NULL,row_version=row_version+1,updated_at=now() WHERE linked_block_group_id=ANY($1)").bind(block_group_ids).execute().await.map_err(map_write_error)?;
     DbSession::new(&mut **tx)
         .query(
             "academic_timetable.removal.groups",
@@ -145,6 +151,21 @@ pub(crate) async fn remove_groups_in_transaction(
         )
         .bind(block_group_ids)
         .execute()
-        .await?;
+        .await
+        .map_err(map_write_error)?;
     Ok(())
+}
+
+async fn ensure_scope_has_no_future_duties(
+    connection: &mut PgConnection,
+    scope: &DeliveryDeletionScope,
+) -> Result<(), AppError> {
+    let reserved:bool=DbSession::new(connection).scalar("academic_timetable.deletion.dated_duty_guard",r#"SELECT EXISTS(SELECT 1 FROM academic_teaching_coverage_duties d WHERE d.academic_year_id=$1 AND d.academic_term_id=$2 AND d.state<>'released' AND d.occurrence_date>=(clock_timestamp() AT TIME ZONE 'Asia/Bangkok')::date AND (d.learning_group_id=ANY($4) OR d.taught_learning_group_id=ANY($4) OR ($5 AND ((d.source_snapshot->>'offeringId')::uuid=$3 OR d.taught_offering_id=$3))))"#).bind(scope.academic_year_id).bind(scope.academic_term_id).bind(scope.learning_offering_id).bind(&scope.learning_group_ids).bind(scope.delete_offering).fetch_one().await?;
+    if reserved {
+        Err(AppError::Conflict(
+            "รายวิชาหรือกลุ่มนี้มีหน้าที่สอนลงวันที่ที่รับไว้แล้ว กรุณาปรับแผนสอนแทนก่อนลบ".into(),
+        ))
+    } else {
+        Ok(())
+    }
 }

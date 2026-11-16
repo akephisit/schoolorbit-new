@@ -3,6 +3,7 @@ use crate::models::{
     LifecycleFinding, LifecycleSeverity, YearLifecycleWorkspace, YearTransitionAction as Action,
 };
 use school_academic_core::models::AcademicTermStatus as Term;
+use school_academic_timetable::services::dated_obligations;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
@@ -40,6 +41,7 @@ pub(crate) async fn year_workspace_in_transaction(
 ) -> Result<YearLifecycleWorkspace, AppError> {
     let context = year_transitions::read_context(tx, year).await?;
     let terms = year_transitions::read_terms(tx, year).await?;
+    let teaching = dated_obligations::pending_on_connection(tx, year, None).await?;
     let mut findings = vec![];
     let open = terms
         .iter()
@@ -78,6 +80,15 @@ pub(crate) async fn year_workspace_in_transaction(
             resolution_url: None,
         });
     }
+    if !teaching.is_empty() {
+        findings.push(LifecycleFinding {
+            code: "year.teaching_obligations".into(),
+            severity: LifecycleSeverity::Blocking,
+            count: teaching.len(),
+            message: "มีภาระสอนแทนหรือสอนคืนที่ยังไม่สิ้นสุด รวมถึงภาคเรียนไม่บังคับ กรุณาตรวจสอบการจัดสอนในคำขอลาหรือขอออกนอกสถานศึกษา".into(),
+            resolution_url: None,
+        });
+    }
     findings.sort_by(|a, b| a.code.cmp(&b.code));
     let can_close = !findings
         .iter()
@@ -87,7 +98,7 @@ pub(crate) async fn year_workspace_in_transaction(
         .iter()
         .map(|row| (&row.code, row.severity, row.count))
         .collect();
-    let source_checksum = super::checksum(&(&context, &terms, finding_state))?;
+    let source_checksum = super::checksum(&(&context, &terms, &teaching, finding_state))?;
     let available_actions = [Action::BeginClosing, Action::CancelClosing, Action::Close]
         .into_iter()
         .filter(|action| {

@@ -1,14 +1,14 @@
 //! Destructive requests use the production router, central session admission and real owners.
 use super::*;
 use crate::integration_tests::auth::session_http_tests::protected_router::{
-    ProtectedFixture, request,
+    request, ProtectedFixture,
 };
 use axum::{
     body::Body,
     http::{Method, Request, StatusCode},
 };
 use school_auth::session_crypto::RawSessionToken;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tower::ServiceExt;
 
 struct Composed {
@@ -376,11 +376,15 @@ async fn current_composed_http_group_deletion_removes_exact_children_and_preserv
         expected_versions, after["versions"],
         "only durable deletion state changes; physical object cleanup remains queued"
     );
-    assert!(after["fileOperations"].as_array().unwrap().iter().any(
-        |operation| operation["file_id"] == f.evidence_file.to_string()
-            && operation["operation_type"] == "delete_object"
-            && operation["status"] == "pending"
-    ));
+    assert!(after["fileOperations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+            |operation| operation["file_id"] == f.evidence_file.to_string()
+                && operation["operation_type"] == "delete_object"
+                && operation["status"] == "pending"
+        ));
     assert!(after["results"].is_null());
     assert!(after["corrections"].is_null());
     let term = after["termResults"].as_array().unwrap();
@@ -389,12 +393,10 @@ async fn current_composed_http_group_deletion_removes_exact_children_and_preserv
     let annual = after["yearResults"].as_array().unwrap();
     assert_eq!(annual.len(), 1);
     assert!(annual[0]["official_gpa"].is_null());
-    assert!(
-        term[0]["snapshot"]["results"]["courses"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
+    assert!(term[0]["snapshot"]["results"]["courses"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(
         annual[0]["snapshot"]["terms"][0]["revision"]["snapshot"]["results"]["courses"]
             .as_array()
@@ -424,29 +426,23 @@ async fn current_composed_http_group_deletion_removes_exact_children_and_preserv
     };
     assert_eq!(manual(&before), manual(&after));
 
-    assert!(
-        after["groups"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|g| g["id"] == f.sibling.to_string())
-    );
-    assert!(
-        !after["groups"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|g| g["id"] == f.group.to_string())
-    );
-    assert!(
-        sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM learning_offerings WHERE id=$1)"
-        )
-        .bind(f.offering)
-        .fetch_one(&f.fixture.tenant_a_pool)
-        .await
+    assert!(after["groups"]
+        .as_array()
         .unwrap()
-    );
+        .iter()
+        .any(|g| g["id"] == f.sibling.to_string()));
+    assert!(!after["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|g| g["id"] == f.group.to_string()));
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM learning_offerings WHERE id=$1)"
+    )
+    .bind(f.offering)
+    .fetch_one(&f.fixture.tenant_a_pool)
+    .await
+    .unwrap());
     let retained = |facts: &Value, key: &str, id: Uuid| {
         facts[key]
             .as_array()
@@ -464,13 +460,11 @@ async fn current_composed_http_group_deletion_removes_exact_children_and_preserv
         retained(&before, "notices", f.consumed),
         retained(&after, "notices", f.consumed)
     );
-    assert!(
-        !after["sessions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|s| s["id"] == f.session.to_string())
-    );
+    assert!(!after["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|s| s["id"] == f.session.to_string()));
     let pending = retained(&after, "notices", f.pending);
     assert_eq!(pending["presentation_outcome"], "skipped");
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT COALESCE(sum(points),0)::bigint FROM behavior_daily_totals WHERE academic_term_id=$1 AND source='lesson' AND side='deduction'").bind(f.term).fetch_one(&f.fixture.tenant_a_pool).await.unwrap(),4,"canonical cap replay releases allowance to retained actual source");
@@ -614,13 +608,13 @@ async fn current_composed_http_abort_keeps_accepted_delete_and_serializes_queued
     let status = response.status();
     let body = json_response(response).await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert!(
-        !sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM learning_groups WHERE id=$1)")
-            .bind(f.group)
-            .fetch_one(&f.fixture.tenant_a_pool)
-            .await
-            .unwrap()
-    );
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM learning_groups WHERE id=$1)"
+    )
+    .bind(f.group)
+    .fetch_one(&f.fixture.tenant_a_pool)
+    .await
+    .unwrap());
     assert_eq!(
         offerings::get(&completion.pool, f.offering)
             .await
@@ -628,13 +622,13 @@ async fn current_composed_http_abort_keeps_accepted_delete_and_serializes_queued
             .weekly_period_target,
         7
     );
-    assert!(
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM learning_groups WHERE id=$1)")
-            .bind(f.sibling)
-            .fetch_one(&f.fixture.tenant_a_pool)
-            .await
-            .unwrap()
-    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM learning_groups WHERE id=$1)"
+    )
+    .bind(f.sibling)
+    .fetch_one(&f.fixture.tenant_a_pool)
+    .await
+    .unwrap());
 }
 
 async fn wait_for_sql_lock(pool: &PgPool, fragment: &str) {
@@ -746,13 +740,13 @@ async fn cleanup_race(explicit_term: bool) {
         StatusCode::CONFLICT,
         "cleanup changes still-safe source evidence before digest acceptance: {body}"
     );
-    assert!(
-        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM learning_groups WHERE id=$1)")
-            .bind(f.group)
-            .fetch_one(&f.fixture.tenant_a_pool)
-            .await
-            .unwrap()
-    );
+    assert!(sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM learning_groups WHERE id=$1)"
+    )
+    .bind(f.group)
+    .fetch_one(&f.fixture.tenant_a_pool)
+    .await
+    .unwrap());
     let current = f.preview().await;
     assert_ne!(preview["sourceDigest"], current["sourceDigest"]);
     assert_eq!(current["impact"]["derivedBehaviorEvents"], 0);

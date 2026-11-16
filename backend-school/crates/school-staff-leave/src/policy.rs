@@ -168,6 +168,9 @@ mod tests {
     }
     fn period() -> LeavePeriodInput {
         LeavePeriodInput {
+            academic_year_id: None,
+            academic_term_id: None,
+            half_day_boundary: None,
             type_id: uuid::Uuid::new_v4(),
             start_date: NaiveDate::from_ymd_opt(2026, 10, 19).unwrap(),
             end_date: NaiveDate::from_ymd_opt(2026, 10, 21).unwrap(),

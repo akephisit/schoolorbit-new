@@ -2,7 +2,7 @@
 #[path = "../src/adapters/lesson_sources.rs"]
 mod lesson_sources;
 use school_test_db::create_named_test_pool_with_max_connections;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -103,20 +103,16 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
         "only positions changed, so both tables share a graph"
     );
     let historical_snapshot = cutover_snapshot(&pool, deliveries[0]).await;
-    assert!(
-        !historical_snapshot["offerings"]
-            .as_array()
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        historical_snapshot["offerings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .flat_map(|offering| offering["groups"].as_array().unwrap())
-            .all(|group| !group["teachers"].as_array().unwrap().is_empty())
-    );
+    assert!(!historical_snapshot["offerings"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(historical_snapshot["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|offering| offering["groups"].as_array().unwrap())
+        .all(|group| !group["teachers"].as_array().unwrap().is_empty()));
     let tables: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM academic_timetable_versions WHERE delivery_version_id=$1",
     )
@@ -140,11 +136,9 @@ async fn delivery_version_migration_preserves_graph_and_supports_many_timetables
             .execute(&pool)
             .await
             .unwrap_err();
-    assert!(
-        immutable
-            .to_string()
-            .contains("ACADEMIC_DELIVERY_VERSION_IMMUTABLE")
-    );
+    assert!(immutable
+        .to_string()
+        .contains("ACADEMIC_DELIVERY_VERSION_IMMUTABLE"));
     apply_migrations_through(&pool, 89)
         .await
         .expect("canonical cleanup has fresh evidence");
@@ -199,11 +193,9 @@ async fn delivery_version_migration_rejects_unmapped_source_without_partial_back
     let draft = add_placement_version(&pool, false, false).await;
     apply_migrations_through(&pool, 86).await.unwrap();
     let failure = apply_migrations_through(&pool, 87).await.unwrap_err();
-    assert!(
-        failure
-            .to_string()
-            .contains("DELIVERY_VERSION_SOURCE_UNMAPPABLE")
-    );
+    assert!(failure
+        .to_string()
+        .contains("DELIVERY_VERSION_SOURCE_UNMAPPABLE"));
     let untouched: bool = sqlx::query_scalar(
         "SELECT delivery_version_id IS NULL FROM academic_timetable_versions WHERE id=$1",
     )
@@ -231,11 +223,9 @@ async fn delivery_version_cutover_refuses_missing_and_stale_evidence() {
         .await
         .unwrap();
     let failure = apply_migrations_through(&pool, 88).await.unwrap_err();
-    assert!(
-        failure
-            .to_string()
-            .contains("DELIVERY_VERSION_FRESH_RECONCILIATION_REQUIRED")
-    );
+    assert!(failure
+        .to_string()
+        .contains("DELIVERY_VERSION_FRESH_RECONCILIATION_REQUIRED"));
     let legacy_still_exists: bool =
         sqlx::query_scalar("SELECT to_regclass('academic_timetable_version_targets') IS NOT NULL")
             .fetch_one(&pool)
@@ -244,11 +234,9 @@ async fn delivery_version_cutover_refuses_missing_and_stale_evidence() {
     assert!(legacy_still_exists);
     sqlx::query("UPDATE academic_delivery_version_migration_audit SET passed=false WHERE migration_version=87").execute(&pool).await.unwrap();
     let failure = apply_migrations_through(&pool, 88).await.unwrap_err();
-    assert!(
-        failure
-            .to_string()
-            .contains("DELIVERY_VERSION_FRESH_RECONCILIATION_REQUIRED")
-    );
+    assert!(failure
+        .to_string()
+        .contains("DELIVERY_VERSION_FRESH_RECONCILIATION_REQUIRED"));
 }
 
 #[tokio::test]
@@ -286,11 +274,9 @@ async fn migration_refuses_changed_pure_draft_targets_then_retries_after_evidenc
     sqlx::query("UPDATE academic_timetable_version_targets SET weekly_period_target=weekly_period_target+1 WHERE timetable_version_id=$1").bind(draft).execute(&pool).await.unwrap();
     apply_migrations_through(&pool, 86).await.unwrap();
     let error = apply_migrations_through(&pool, 87).await.unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("DELIVERY_DRAFT_TARGETS_UNMAPPABLE")
-    );
+    assert!(error
+        .to_string()
+        .contains("DELIVERY_DRAFT_TARGETS_UNMAPPABLE"));
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_delivery_versions")
         .fetch_one(&pool)
         .await
@@ -321,11 +307,9 @@ async fn historical_placed_groups_without_dated_assignment_evidence_block_migrat
     tx.commit().await.unwrap();
     apply_migrations_through(&pool, 86).await.unwrap();
     let error = apply_migrations_through(&pool, 87).await.unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("DELIVERY_VERSION_HISTORICAL_GROUP_UNMAPPABLE")
-    );
+    assert!(error
+        .to_string()
+        .contains("DELIVERY_VERSION_HISTORICAL_GROUP_UNMAPPABLE"));
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM academic_delivery_versions")
         .fetch_one(&pool)
         .await
@@ -446,20 +430,16 @@ async fn explicit_legacy_target_inclusions_become_opening_commands_without_rewri
     let (pinned,pending):(Uuid,Uuid)=sqlx::query_as("SELECT timetable.delivery_version_id,revision.target_delivery_version_id FROM academic_timetable_versions timetable JOIN academic_term_change_sets revision ON revision.id=$2 WHERE timetable.id=$1")
         .bind(draft).bind(revision).fetch_one(&pool).await.unwrap();
     assert_ne!(pinned, pending);
-    assert!(
-        !cutover_snapshot(&pool, pinned).await["offerings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|offering| offering["id"] == json!(added))
-    );
-    assert!(
-        cutover_snapshot(&pool, pending).await["offerings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|offering| offering["id"] == json!(added))
-    );
+    assert!(!cutover_snapshot(&pool, pinned).await["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|offering| offering["id"] == json!(added)));
+    assert!(cutover_snapshot(&pool, pending).await["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|offering| offering["id"] == json!(added)));
     let item:(Uuid,Uuid,String)=sqlx::query_as("SELECT id,learning_offering_id,action_kind FROM academic_term_change_items WHERE change_set_id=$1")
         .bind(revision).fetch_one(&pool).await.unwrap();
     assert_eq!(
@@ -509,14 +489,12 @@ async fn pre_effective_groups_are_preserved_when_a_timetable_was_published_early
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert!(
-        cutover_snapshot(&pool, source).await["offerings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .flat_map(|offering| offering["groups"].as_array().unwrap())
-            .any(|item| item["id"] == json!(group))
-    );
+    assert!(cutover_snapshot(&pool, source).await["offerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|offering| offering["groups"].as_array().unwrap())
+        .any(|item| item["id"] == json!(group)));
     assert!(cutover_complete(&pool).await);
 }
 
@@ -556,11 +534,13 @@ async fn late_imported_groups_use_exact_dated_placement_evidence_and_preserve_id
         assignments.len()
     );
     for (id, teacher, role) in assignments {
-        assert!(imported["teachers"].as_array().unwrap().iter().any(
-            |assignment| assignment["assignmentId"] == json!(id)
+        assert!(imported["teachers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|assignment| assignment["assignmentId"] == json!(id)
                 && assignment["teacherId"] == json!(teacher)
-                && assignment["role"] == json!(role)
-        ));
+                && assignment["role"] == json!(role)));
     }
     let after: Vec<(Uuid, Uuid, Uuid)> = sqlx::query_as(
         "SELECT id,block_id,learning_group_id FROM academic_timetable_block_groups ORDER BY id",
@@ -637,8 +617,8 @@ async fn zero_independent_activity_periods_preserve_current_facts_until_explicit
     current_zero_periods("independent").await;
 }
 #[tokio::test]
-async fn zero_synchronized_activity_periods_preserve_current_facts_until_explicit_placement_removal()
- {
+async fn zero_synchronized_activity_periods_preserve_current_facts_until_explicit_placement_removal(
+) {
     current_zero_periods("synchronized").await;
 }
 
@@ -735,18 +715,16 @@ async fn current_zero_periods(mode: &str) {
     }
 
     let placed:Value=sqlx::query_scalar("SELECT jsonb_build_object('blocks',(SELECT jsonb_agg(to_jsonb(b) ORDER BY id) FROM academic_timetable_blocks b WHERE timetable_id=$1),'groups',(SELECT jsonb_agg(to_jsonb(g) ORDER BY g.id) FROM academic_timetable_block_groups g JOIN academic_timetable_blocks b ON b.id=g.block_id WHERE b.timetable_id=$1),'instructors',(SELECT jsonb_agg(to_jsonb(i) ORDER BY i.id) FROM academic_timetable_block_group_instructors i JOIN academic_timetable_block_groups g ON g.id=i.block_group_id JOIN academic_timetable_blocks b ON b.id=g.block_id WHERE b.timetable_id=$1),'sync',(SELECT jsonb_agg(to_jsonb(s) ORDER BY s.id) FROM academic_timetable_block_group_sync s JOIN academic_timetable_blocks b ON b.id=s.block_id WHERE b.timetable_id=$1))").bind(table).fetch_one(&pool).await.unwrap();
-    assert!(
-        offerings::update_weekly_period_target(
-            &pool,
-            offering,
-            UpdateWeeklyPeriodTargetRequest {
-                row_version: source.row_version,
-                weekly_period_target: -1
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(offerings::update_weekly_period_target(
+        &pool,
+        offering,
+        UpdateWeeklyPeriodTargetRequest {
+            row_version: source.row_version,
+            weekly_period_target: -1
+        }
+    )
+    .await
+    .is_err());
     assert_eq!(zero_target_facts(&pool).await, facts);
     offerings::update_weekly_period_target(
         &pool,

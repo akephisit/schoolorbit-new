@@ -160,8 +160,17 @@ async fn project(
     } else {
         (Vec::new(), Vec::new(), Vec::new())
     };
+    let dated_today =
+        school_academic_timetable::services::dated_teaching::apply_blocks_on_connection(
+            connection,
+            term,
+            now.date_naive(),
+            blocks.clone(),
+        )
+        .await?;
     let group_ids = blocks
         .iter()
+        .chain(dated_today.iter())
         .flat_map(|block| &block.groups)
         .filter(|group| group.is_active)
         .map(|group| group.learning_group_id)
@@ -242,13 +251,13 @@ async fn project(
             }
             if date == now.date_naive() {
                 let sources = lesson_sources_for_date(
-                    &blocks,
+                    &dated_today,
                     sources_by_date.get(&date).map_or(&[], Vec::as_slice),
                     date,
                 );
                 let day =
                     school_academic_timetable::services::daily_teaching::day_code_from_date(date);
-                for block in blocks.iter().filter(|b| {
+                for block in dated_today.iter().filter(|b| {
                     b.day_of_week == day
                         && b.block_kind != TimetableBlockKind::Structural
                         && b.start_time <= now.time()

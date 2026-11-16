@@ -372,3 +372,21 @@ mod pool_facade_tests {
         pool.close().await;
     }
 }
+
+/// Names only for the bounded Leave coverage picker. The caller authorizes the
+/// absence resource; this provider exposes no private profile or absence data.
+pub async fn coverage_candidates_on_connection(
+    connection: &mut sqlx::PgConnection,
+    search: Option<&str>,
+) -> Result<Vec<(Uuid, String)>, AppError> {
+    if search.is_some_and(|s| s.chars().count() > 100) {
+        return Err(AppError::ValidationError("คำค้นยาวเกินไป".into()));
+    }
+    let rows=DbSession::new(connection).query_as("staff.services.staff_directory_query.coverage_candidates","SELECT id,display_name FROM user_display_names WHERE user_type='staff' AND status='active' AND ($1::text IS NULL OR concat_ws(' ',title,first_name,last_name,title_en,first_name_en,last_name_en) ILIKE '%'||$1||'%') ORDER BY CASE WHEN nullif(btrim(first_name),'') IS NOT NULL AND nullif(btrim(last_name),'') IS NOT NULL THEN first_name ELSE first_name_en END,CASE WHEN nullif(btrim(first_name),'') IS NOT NULL AND nullif(btrim(last_name),'') IS NOT NULL THEN last_name ELSE last_name_en END,id LIMIT 5001").bind(search.map(str::trim).filter(|s|!s.is_empty())).fetch_all().await?;
+    if rows.len() > 5000 {
+        return Err(AppError::ValidationError(
+            "บุคลากรเกินขนาด กรุณาระบุคำค้นให้แคบลง".into(),
+        ));
+    }
+    Ok(rows)
+}

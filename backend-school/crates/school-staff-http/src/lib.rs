@@ -3,3 +3,5 @@ pub mod achievement;
 pub mod file_transfer;
 pub mod http;
 pub mod leave;
+
+pub mod leave_coverage;

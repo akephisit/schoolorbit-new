@@ -1,6 +1,6 @@
 use crate::collaboration::{CommitPermit, MutationScope, TimetableMutationContext};
 use school_database::DbSession;
-use sqlx::{FromRow, PgPool, types::Json};
+use sqlx::{types::Json, FromRow, PgPool};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -881,8 +881,8 @@ fn require_name(name: &str) -> Result<&str, AppError> {
 mod tests {
     use super::{canonical_entry_types, eligible_template_group_instructors};
     use school_academic_delivery::models::{
-        LearningTeacherRole,
         current::{DeliveryGroup, DeliveryTeacher},
+        LearningTeacherRole,
     };
     use std::collections::HashSet;
     use uuid::Uuid;

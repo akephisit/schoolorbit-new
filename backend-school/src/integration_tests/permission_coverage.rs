@@ -72,6 +72,12 @@ pub(crate) fn coverage_router(f: &ProtectedFixture) -> Router {
             auth_runtime: f.runtime.clone(),
             file_platform: platform.clone(),
         })
+        .merge(school_staff_http::leave::routes().with_state(
+            school_staff_http::leave::LeaveHttpState {
+                auth_runtime: f.runtime.clone(),
+                work_event_channel: events.clone(),
+            },
+        ))
         .merge(
             school_navigation::http::routes::protected_system_routes().with_state(
                 school_navigation::http::state::NavigationHttpState {
@@ -1409,4 +1415,96 @@ async fn permission_coverage_score_track_roster_is_minimal_filtered_and_complete
     let (status, body) = coverage_request(&app, &f, &scorer, Method::GET, &path, Value::Null).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_ne!(body["success"], true);
+}
+
+#[tokio::test]
+async fn permission_coverage_staff_leave_coverage_uses_real_session_tenant_and_csrf_boundary() {
+    let f = fixture("permission_coverage_leave_boundary").await;
+    let reader = coverage_actor(&f, &[codes::STAFF_LEAVE_READ_ASSIGNED], 81).await;
+    let manager = coverage_actor(&f, &[codes::STAFF_LEAVE_MANAGE_SCHOOL], 82).await;
+    let denied = coverage_actor(&f, &[], 83).await;
+    let app = coverage_router(&f);
+    let (status, body) = coverage_request(
+        &app,
+        &f,
+        &reader,
+        Method::GET,
+        "/api/staff-leave/coverage/assigned",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"]["items"], json!([]));
+    assert_eq!(
+        coverage_request(
+            &app,
+            &f,
+            &denied,
+            Method::GET,
+            "/api/staff-leave/coverage/assigned",
+            json!({})
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, body) = coverage_request(
+        &app,
+        &f,
+        &manager,
+        Method::PUT,
+        "/api/staff-leave/coverage/settings",
+        json!({"requestId":Uuid::new_v4(),"expectedRevision":1,"halfDayBoundary":"11:30:00"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"]["halfDayBoundary"], json!("11:30:00"));
+    let missing_csrf = Request::builder()
+        .method(Method::PUT)
+        .uri("/api/staff-leave/coverage/settings")
+        .header(header::ORIGIN, "https://tenant-a.schoolorbit.test")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(
+            header::COOKIE,
+            format!(
+                "{}={}",
+                school_auth::config::SESSION_COOKIE_NAME,
+                manager.token.encode().expose_for_cookie()
+            ),
+        )
+        .body(Body::from(
+            json!({"requestId":Uuid::new_v4(),"expectedRevision":2,"halfDayBoundary":null})
+                .to_string(),
+        ))
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(missing_csrf).await.unwrap().status(),
+        StatusCode::FORBIDDEN
+    );
+    let crossed = Request::builder()
+        .uri("/api/staff-leave/coverage/assigned")
+        .header(header::ORIGIN, "https://tenant-b.schoolorbit.test")
+        .header(
+            header::COOKIE,
+            format!(
+                "{}={}",
+                school_auth::config::SESSION_COOKIE_NAME,
+                reader.token.encode().expose_for_cookie()
+            ),
+        )
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(crossed).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let anonymous = Request::builder()
+        .uri("/api/staff-leave/coverage/assigned")
+        .header(header::ORIGIN, "https://tenant-a.schoolorbit.test")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.oneshot(anonymous).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
 }

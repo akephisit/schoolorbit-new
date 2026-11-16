@@ -15,9 +15,9 @@ use super::invigilation::{
 };
 use super::rounds_and_days::bump_round_revision;
 use super::shared::{
-    CandidateRoomSession, CandidateSession, ExamWriteTarget, exam_session_conflict_lock_keys,
-    has_same_classroom_conflict, has_same_room_conflict, require_exam_write,
-    validate_session_window, validation_error_to_app_error,
+    exam_session_conflict_lock_keys, has_same_classroom_conflict, has_same_room_conflict,
+    require_exam_write, validate_session_window, validation_error_to_app_error,
+    CandidateRoomSession, CandidateSession, ExamWriteTarget,
 };
 
 #[derive(Debug, sqlx::FromRow)]

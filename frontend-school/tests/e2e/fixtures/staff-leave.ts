@@ -6,7 +6,8 @@ import type {
 	LeaveType,
 	LeavePeriodInput,
 	LeaveActionRequest,
-	SaveLeavePolicyRequest
+	SaveLeavePolicyRequest,
+	LeaveCoveragePlan
 } from '../../../src/lib/api/staff-leave';
 import { PERMISSIONS } from '../../../src/lib/permissions/registry.generated';
 
@@ -38,6 +39,7 @@ export async function mockLeave(
 		missingPolicy?: boolean;
 		requireSignature?: boolean;
 		failMutation?: number;
+		coverage?: LeaveCoveragePlan;
 	} = {}
 ) {
 	await mockStaffHome(page, { permissions: options.permissions ?? leavePermissions });
@@ -106,7 +108,10 @@ export async function mockLeave(
 		amount: 2,
 		unit: 'half_day',
 		reason: 'เข้ารับการตรวจรักษา',
-		createdAt: now
+		createdAt: now,
+		academicYearId: id(1),
+		academicTermId: id(800),
+		halfDayBoundary: '11:30:00'
 	};
 	let purpose: LeaveRequestDetail['processPurpose'] =
 		options.status === 'cancellation_pending' ? 'cancellation' : 'request';
@@ -129,6 +134,20 @@ export async function mockLeave(
 		const canEdit = ['draft', 'returned'].includes(request.status) && options.role !== 'reviewer';
 		const active = ['submitted', 'cancellation_pending'].includes(request.status);
 		return {
+			coverage: options.coverage ?? {
+				revision: 0,
+				planHash: 'plan-zero',
+				state: 'confirmed',
+				sourceDigest: 'digest-zero',
+				academicYearId: id(1),
+				academicTermId: id(800),
+				halfDayBoundary: '11:30:00',
+				timetableState: 'ready',
+				days: [{ date: request.startDate, lessons: [] }],
+				canManage: canEdit,
+				emergencyReason: null,
+				blockingReason: null
+			},
 			request: { ...request },
 			policy: { ...policy },
 			processPurpose: purpose,
@@ -268,6 +287,21 @@ export async function mockLeave(
 				);
 			}
 			if (method === 'GET') {
+				if (path === `${base}/coverage/settings`)
+					return reply(route, {
+						revision: 1,
+						halfDayBoundary: '11:30:00',
+						contexts: [
+							{
+								academicYearId: id(1),
+								academicYearName: '2569',
+								academicTermId: id(800),
+								academicTermName: '1'
+							}
+						],
+						defaultAcademicYearId: id(1),
+						defaultAcademicTermId: id(800)
+					});
 				if (path === `${base}/types`) return reply(route, [...types]);
 				if (path === `${base}/options`)
 					return reply(route, {

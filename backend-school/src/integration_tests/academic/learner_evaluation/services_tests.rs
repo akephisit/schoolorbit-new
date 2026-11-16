@@ -423,13 +423,11 @@ async fn learner_coordinator_configuration_remains_editable_while_entry_closed()
         user_id: manager.user_id,
         permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL.into()],
     };
-    assert!(
-        list_subjects(&pool, &reader, &ctx)
-            .await
-            .unwrap()
-            .iter()
-            .any(|s| s.subject_id == subject)
-    );
+    assert!(list_subjects(&pool, &reader, &ctx)
+        .await
+        .unwrap()
+        .iter()
+        .any(|s| s.subject_id == subject));
     assert!(matches!(
         save_criterion(
             &pool,
@@ -545,16 +543,14 @@ async fn learner_review_coordinator_keeps_configuration_after_assignment_expires
         .unwrap();
     assert!(!workspace.can_manage);
     assert!(!workspace.can_confirm);
-    assert!(
-        summary_for_actor(
-            &pool,
-            &coordinator,
-            &ctx,
-            workspace.students[0].student_academic_year_id
-        )
-        .await
-        .is_ok()
-    );
+    assert!(summary_for_actor(
+        &pool,
+        &coordinator,
+        &ctx,
+        workspace.students[0].student_academic_year_id
+    )
+    .await
+    .is_ok());
     let input = ResponseInput {
         subject_term_criterion_id: workspace.criteria[0].id,
         student_academic_year_id: workspace.students[0].student_academic_year_id,
@@ -577,13 +573,11 @@ async fn learner_review_coordinator_keeps_configuration_after_assignment_expires
         .await,
         Err(AppError::Forbidden(_))
     ));
-    assert!(
-        list_subjects(&pool, &coordinator, &ctx)
-            .await
-            .unwrap()
-            .iter()
-            .any(|s| s.learning_group_id == group && !s.assigned)
-    );
+    assert!(list_subjects(&pool, &coordinator, &ctx)
+        .await
+        .unwrap()
+        .iter()
+        .any(|s| s.learning_group_id == group && !s.assigned));
     sqlx::query("UPDATE course_assessment_plans p SET assessment_coordinator_id=NULL FROM course_offering_details d WHERE d.learning_offering_id=p.learning_offering_id AND d.subject_id=$1 AND d.academic_term_id=$2").bind(subject).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
     assert!(matches!(
         get_configuration(&pool, &coordinator, subject, DC, &ctx).await,
@@ -631,11 +625,9 @@ async fn learner_review_coordinator_reads_sibling_rooms_only_within_the_subject(
     .await
     .unwrap();
     let discovered = list_subjects(&pool, &coordinator, &ctx).await.unwrap();
-    assert!(
-        discovered
-            .iter()
-            .any(|s| s.learning_group_id == sibling && !s.assigned)
-    );
+    assert!(discovered
+        .iter()
+        .any(|s| s.learning_group_id == sibling && !s.assigned));
     assert!(!discovered.iter().any(|s| s.learning_group_id == unrelated));
     let workspace = get_workspace(&pool, &coordinator, sibling, DC, &ctx)
         .await
@@ -676,32 +668,24 @@ async fn learner_review_coordinator_reads_sibling_rooms_only_within_the_subject(
         Err(AppError::Forbidden(_))
     ));
     let student = own.students[0].student_academic_year_id;
-    assert!(
-        summary_for_actor(&pool, &coordinator, &ctx, student)
-            .await
-            .is_ok()
-    );
+    assert!(summary_for_actor(&pool, &coordinator, &ctx, student)
+        .await
+        .is_ok());
     // A new current teaching assignment grants assigned access immediately,
     // independently of the coordinator's original subject scope.
     sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role) VALUES(uuidv7(),$1,$2,$3,$4,'primary')")
         .bind(unrelated).bind(ctx.academic_term_id).bind(ctx.academic_year_id).bind(coordinator.user_id).execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO learning_group_students(id,learning_group_id,academic_term_id,academic_year_id,student_academic_year_id,student_id,membership_status,roster_source,joined_at) SELECT uuidv7(),$1,academic_term_id,academic_year_id,student_academic_year_id,student_id,'active','manual',joined_at FROM learning_group_students WHERE learning_group_id=$2 AND student_academic_year_id=$3 AND membership_status='active'")
         .bind(unrelated).bind(group).bind(student).execute(&pool).await.unwrap();
-    assert!(
-        summary_for_actor(&pool, &coordinator, &ctx, student)
-            .await
-            .is_ok()
-    );
-    assert!(
-        get_workspace(&pool, &coordinator, unrelated, DC, &ctx)
-            .await
-            .is_ok()
-    );
-    assert!(
-        summary_for_actor(&pool, &manager, &ctx, student)
-            .await
-            .is_ok()
-    );
+    assert!(summary_for_actor(&pool, &coordinator, &ctx, student)
+        .await
+        .is_ok());
+    assert!(get_workspace(&pool, &coordinator, unrelated, DC, &ctx)
+        .await
+        .is_ok());
+    assert!(summary_for_actor(&pool, &manager, &ctx, student)
+        .await
+        .is_ok());
 }
 
 // Catches copying non-applicable catalog criteria and deleting catalog identities used by subjects.
@@ -743,18 +727,14 @@ async fn learner_catalog_applicability_and_referenced_removal() {
     let config = get_configuration(&pool, &actor, subject, DC, &ctx)
         .await
         .unwrap();
-    assert!(
-        config
-            .criteria
-            .iter()
-            .any(|c| c.school_criterion_id == Some(included.id))
-    );
-    assert!(
-        !config
-            .criteria
-            .iter()
-            .any(|c| c.school_criterion_id == Some(excluded.id))
-    );
+    assert!(config
+        .criteria
+        .iter()
+        .any(|c| c.school_criterion_id == Some(included.id)));
+    assert!(!config
+        .criteria
+        .iter()
+        .any(|c| c.school_criterion_id == Some(excluded.id)));
     remove_catalog(&pool, &actor, &ctx, included.id, included.row_version)
         .await
         .unwrap();
@@ -833,12 +813,10 @@ async fn learner_current_primary_is_revalidated_for_confirmation_and_lock() {
     .await
     .unwrap();
     assert!(outcome.lock.is_none());
-    assert!(
-        outcome
-            .blockers
-            .iter()
-            .any(|b| b.learning_group_id == group && b.reason == "stale_group_confirmation")
-    );
+    assert!(outcome
+        .blockers
+        .iter()
+        .any(|b| b.learning_group_id == group && b.reason == "stale_group_confirmation"));
     let teacher = ActorContext {
         user_id: actor.user_id,
         permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_ASSIGNED.into()],
@@ -863,11 +841,9 @@ fn learner_summary_empty_coverage_is_not_complete() {
     assert_eq!(summaries.len(), 2);
     assert!(summaries.iter().all(|domain| !domain.complete));
     assert!(summaries.iter().all(|domain| domain.average.is_none()));
-    assert!(
-        summaries
-            .iter()
-            .all(|domain| domain.quality_level.is_none())
-    );
+    assert!(summaries
+        .iter()
+        .all(|domain| domain.quality_level.is_none()));
 }
 
 // Catches cell-weighted averaging, label-based catalog merging, rounded threshold comparison,
@@ -938,12 +914,10 @@ async fn learner_summary_closed_term_keeps_missing_domain_results() {
     let before = summarize_student_term(&pool, &ctx, student).await.unwrap();
     for domain in &before.domains {
         assert!(!domain.complete);
-        assert!(
-            domain
-                .missing_subjects
-                .iter()
-                .any(|row| row.subject_id == subject)
-        );
+        assert!(domain
+            .missing_subjects
+            .iter()
+            .any(|row| row.subject_id == subject));
     }
     sqlx::query("UPDATE academic_terms SET status='closed' WHERE id=(SELECT academic_term_id FROM learning_groups WHERE id=$1)")
         .bind(group)
@@ -953,12 +927,10 @@ async fn learner_summary_closed_term_keeps_missing_domain_results() {
     let after = summarize_student_term(&pool, &ctx, student).await.unwrap();
     for domain in &after.domains {
         assert!(!domain.complete);
-        assert!(
-            domain
-                .missing_subjects
-                .iter()
-                .any(|row| row.subject_id == subject)
-        );
+        assert!(domain
+            .missing_subjects
+            .iter()
+            .any(|row| row.subject_id == subject));
         assert!(domain.average.is_none());
         assert!(domain.quality_level.is_none());
     }
@@ -1002,21 +974,17 @@ async fn learner_config_copies_once_and_empty_initialization_persists() {
                 .deleted
         );
     }
-    assert!(
-        get_configuration(&pool, &actor, subject, DC, &ctx)
-            .await
-            .unwrap()
-            .criteria
-            .is_empty()
-    );
+    assert!(get_configuration(&pool, &actor, subject, DC, &ctx)
+        .await
+        .unwrap()
+        .criteria
+        .is_empty());
     sqlx::query("UPDATE academic_learner_evaluation_criteria SET lifecycle='inactive' WHERE domain='reading_thinking_writing'").execute(&pool).await.unwrap();
-    assert!(
-        get_configuration(&pool, &actor, subject, RTW, &ctx)
-            .await
-            .unwrap()
-            .criteria
-            .is_empty()
-    );
+    assert!(get_configuration(&pool, &actor, subject, RTW, &ctx)
+        .await
+        .unwrap()
+        .criteria
+        .is_empty());
     save_catalog(
         &pool,
         &actor,
@@ -1030,13 +998,11 @@ async fn learner_config_copies_once_and_empty_initialization_persists() {
     )
     .await
     .unwrap();
-    assert!(
-        get_configuration(&pool, &actor, subject, RTW, &ctx)
-            .await
-            .unwrap()
-            .criteria
-            .is_empty()
-    );
+    assert!(get_configuration(&pool, &actor, subject, RTW, &ctx)
+        .await
+        .unwrap()
+        .criteria
+        .is_empty());
 }
 
 // Catches leaking window or authorization across domains, stale controls, and batch partial writes.
@@ -1099,25 +1065,21 @@ async fn learner_windows_authorization_and_batch_atomicity() {
         student_academic_year_id: Uuid::new_v4(),
         ..input.clone()
     };
-    assert!(
-        save_responses(
-            &pool,
-            &teacher,
-            group,
-            DC,
-            &ctx,
-            vec![input.clone(), invalid]
-        )
+    assert!(save_responses(
+        &pool,
+        &teacher,
+        group,
+        DC,
+        &ctx,
+        vec![input.clone(), invalid]
+    )
+    .await
+    .is_err());
+    assert!(get_workspace(&pool, &teacher, group, DC, &ctx)
         .await
-        .is_err()
-    );
-    assert!(
-        get_workspace(&pool, &teacher, group, DC, &ctx)
-            .await
-            .unwrap()
-            .responses
-            .is_empty()
-    );
+        .unwrap()
+        .responses
+        .is_empty());
     let saved = save_responses(&pool, &teacher, group, DC, &ctx, vec![input.clone()])
         .await
         .unwrap();
@@ -1438,11 +1400,10 @@ async fn learner_all_room_lock_is_atomic_and_domains_are_independent() {
     assert_eq!(dc.subjects[0].criteria.len(), 8);
     let rtw = summary.domains.iter().find(|d| d.domain == RTW).unwrap();
     assert!(!rtw.complete);
-    assert!(
-        rtw.missing_subjects
-            .iter()
-            .any(|s| s.subject_id == subject && s.reason == "subject_domain_not_locked")
-    );
+    assert!(rtw
+        .missing_subjects
+        .iter()
+        .any(|s| s.subject_id == subject && s.reason == "subject_domain_not_locked"));
 }
 
 // Catches learner-evaluation corrections requiring the course-result permission, mutating the
@@ -1653,19 +1614,17 @@ async fn learner_aggregation_policy_activation_is_immutable_and_immediately_effe
     .await
     .unwrap();
     assert_eq!(created.lifecycle, "draft");
-    assert!(
-        create_policy(
-            &pool,
-            &actor,
-            &ctx,
-            AggregationPolicyInput {
-                name: "Invalid".into(),
-                bands: bands[..3].to_vec(),
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(create_policy(
+        &pool,
+        &actor,
+        &ctx,
+        AggregationPolicyInput {
+            name: "Invalid".into(),
+            bands: bands[..3].to_vec(),
+        },
+    )
+    .await
+    .is_err());
     let activated = activate_policy(&pool, &actor, &ctx, created.id, created.row_version)
         .await
         .unwrap();
@@ -1693,19 +1652,17 @@ async fn learner_aggregation_policy_activation_is_immutable_and_immediately_effe
         permissions: vec![codes::ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL.into()],
     };
     assert!(list_policies(&pool, &reader, &ctx).await.is_ok());
-    assert!(
-        create_policy(
-            &pool,
-            &reader,
-            &ctx,
-            AggregationPolicyInput {
-                name: "Denied".into(),
-                bands,
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(create_policy(
+        &pool,
+        &reader,
+        &ctx,
+        AggregationPolicyInput {
+            name: "Denied".into(),
+            bands,
+        },
+    )
+    .await
+    .is_err());
 }
 
 // Exercises the actual emitted OpenAPI operations, including required year/term context.
@@ -1753,11 +1710,9 @@ fn learner_endpoint_contract_requires_full_context_and_typed_domains() {
                 assert_eq!(parameter["required"], true);
             }
             if let Some(domain) = parameters.iter().find(|p| p["name"] == "domain") {
-                assert!(
-                    domain["schema"]
-                        .to_string()
-                        .contains("LearnerEvaluationDomain")
-                );
+                assert!(domain["schema"]
+                    .to_string()
+                    .contains("LearnerEvaluationDomain"));
             }
             assert!(
                 operation["responses"]["200"]["content"]["application/json"]["schema"]

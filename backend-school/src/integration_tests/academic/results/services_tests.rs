@@ -186,12 +186,10 @@ fn results_exact_inclusive_policy_and_teacher_contract() {
             serde_json::from_value::<CourseOutcomeSelection>(serde_json::json!(selection)).is_err()
         );
     }
-    assert!(
-        serde_json::from_value::<GradingPolicyInput>(
-            serde_json::json!({"name":"x","bands":bands(),"method":"group"})
-        )
-        .is_err()
-    );
+    assert!(serde_json::from_value::<GradingPolicyInput>(
+        serde_json::json!({"name":"x","bands":bands(),"method":"group"})
+    )
+    .is_err());
     for outcome in ["pass", "fail"] {
         assert!(serde_json::from_value::<ActivityOutcome>(serde_json::json!(outcome)).is_ok());
     }
@@ -254,7 +252,7 @@ async fn fixture_with_unused_group(
 // predecessor lesson before052, then let the canonical cutover retain that actual source.
 async fn seed_results_activity_predecessor(pool: &sqlx::PgPool) {
     use school_test_db::cutover_test_support::{
-        CutoverFixture, record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture,
+        record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture, CutoverFixture,
     };
     apply_migrations_through(pool, 40).await.unwrap();
     seed_academic_cutover_fixture(pool, CutoverFixture::Passing)
@@ -346,13 +344,11 @@ async fn results_readiness_is_scoped_for_assigned_teachers() {
     let queue = readiness(&pool, &actor, &ctx).await.unwrap();
 
     assert!(!queue.courses.is_empty());
-    assert!(
-        queue
-            .courses
-            .iter()
-            .flat_map(|subject| subject.groups.iter())
-            .all(|group| group.assigned)
-    );
+    assert!(queue
+        .courses
+        .iter()
+        .flat_map(|subject| subject.groups.iter())
+        .all(|group| group.assigned));
     assert!(queue.activities.iter().all(|group| group.assigned));
 }
 
@@ -414,15 +410,13 @@ async fn results_current_teacher_replacement_revokes_assigned_scope_and_preserve
         get_course_workspace(&pool, &assigned, &ctx, group).await,
         Err(AppError::Forbidden(_))
     ));
-    assert!(
-        readiness(&pool, &assigned, &ctx)
-            .await
-            .unwrap()
-            .courses
-            .iter()
-            .flat_map(|s| &s.groups)
-            .all(|g| g.learning_group_id != group)
-    );
+    assert!(readiness(&pool, &assigned, &ctx)
+        .await
+        .unwrap()
+        .courses
+        .iter()
+        .flat_map(|s| &s.groups)
+        .all(|g| g.learning_group_id != group));
     let replacement = ActorContext {
         user_id: other,
         permissions: assigned.permissions,
@@ -694,12 +688,10 @@ async fn results_term_preview_uses_effective_results_and_retains_closed_group_hi
         .await
         .unwrap();
     assert!(!initial.totals.coverage_complete);
-    assert!(
-        initial
-            .courses
-            .iter()
-            .any(|row| row.subject_id == subject && row.result_id.is_none())
-    );
+    assert!(initial
+        .courses
+        .iter()
+        .any(|row| row.subject_id == subject && row.result_id.is_none()));
     prepare_course_subject(&pool, &actor, &ctx, subject).await;
     let locked = lock_course_subject(&pool, &affairs, &ctx, subject)
         .await
@@ -971,13 +963,11 @@ async fn results_term_activity_preview_tracks_corrections_without_changing_gpa()
     let subject: Uuid = sqlx::query_scalar("SELECT d.subject_id FROM learning_groups g JOIN course_offering_details d ON d.learning_offering_id=g.learning_offering_id WHERE g.id=$1")
         .bind(course_group).fetch_one(&pool).await.unwrap();
     prepare_course_subject(&pool, &teacher, &ctx, subject).await;
-    assert!(
-        lock_course_subject(&pool, &affairs, &ctx, subject)
-            .await
-            .unwrap()
-            .lock
-            .is_some()
-    );
+    assert!(lock_course_subject(&pool, &affairs, &ctx, subject)
+        .await
+        .unwrap()
+        .lock
+        .is_some());
     let course_result_id: Uuid = sqlx::query_scalar("SELECT id FROM academic_course_results WHERE student_academic_year_id=$1 AND academic_term_id=$2 AND subject_id=$3")
         .bind(student).bind(ctx.academic_term_id).bind(subject).fetch_one(&pool).await.unwrap();
     correct_result(
@@ -1003,21 +993,17 @@ async fn results_term_activity_preview_tracks_corrections_without_changing_gpa()
         .await
         .unwrap();
     assert_eq!(initial.totals.provisional_gpa.as_deref(), Some("4.00"));
-    assert!(
-        initial
-            .activities
-            .iter()
-            .any(|row| row.learning_group_id == group && row.result_id.is_none())
-    );
+    assert!(initial
+        .activities
+        .iter()
+        .any(|row| row.learning_group_id == group && row.result_id.is_none()));
     assert!(!initial.activity_totals.coverage_complete);
     prepare_activity_group(&pool, &teacher, &ctx, group).await;
-    assert!(
-        lock_activity_group(&pool, &affairs, &ctx, group)
-            .await
-            .unwrap()
-            .lock
-            .is_some()
-    );
+    assert!(lock_activity_group(&pool, &affairs, &ctx, group)
+        .await
+        .unwrap()
+        .lock
+        .is_some());
     let passed = preview_student_term(&pool, &affairs, student, &query)
         .await
         .unwrap();
@@ -1233,23 +1219,19 @@ async fn results_bulk_activity_lock_skips_groups_that_are_not_ready() {
     let outcome = lock_all_ready_activities(&pool, &academic_affairs_actor(&teacher), &ctx)
         .await
         .unwrap();
-    assert!(
-        outcome
-            .locked
-            .iter()
-            .any(|lock| lock.learning_group_id == ready_group)
-    );
+    assert!(outcome
+        .locked
+        .iter()
+        .any(|lock| lock.learning_group_id == ready_group));
     let skipped = outcome
         .skipped
         .iter()
         .find(|group| group.learning_group_id == incomplete_group)
         .expect("the incomplete group must remain visible in the bulk result");
-    assert!(
-        skipped
-            .blockers
-            .iter()
-            .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher)
-    );
+    assert!(skipped
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher));
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM academic_activity_result_locks WHERE learning_group_id=$1",
@@ -1671,12 +1653,10 @@ async fn results_course_confirmation_blank_and_monotonic_phase_sources() {
         .unwrap();
     assert!(!stale.confirmation_is_current);
     assert_eq!(stale.confirmation.as_ref().unwrap().row_version, original);
-    assert!(
-        stale
-            .blockers
-            .iter()
-            .any(|b| b.code == ResultBlockerCode::StalePhaseConfirmation)
-    );
+    assert!(stale
+        .blockers
+        .iter()
+        .any(|b| b.code == ResultBlockerCode::StalePhaseConfirmation));
     assert!(
         !confirm_group_results(&pool, &actor, &ctx, group, confirm_input(&stale))
             .await
@@ -1705,21 +1685,19 @@ async fn results_course_selection_requires_all_current_phase_confirmations() {
         .unwrap();
     let student = workspace.students[0].student_academic_year_id;
 
-    assert!(
-        save_selection(
-            &pool,
-            &actor,
-            &ctx,
-            group,
-            SelectionInput {
-                student_academic_year_id: student,
-                selection: CourseOutcomeSelection::ExplicitZero,
-                row_version: None,
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(save_selection(
+        &pool,
+        &actor,
+        &ctx,
+        group,
+        SelectionInput {
+            student_academic_year_id: student,
+            selection: CourseOutcomeSelection::ExplicitZero,
+            row_version: None,
+        },
+    )
+    .await
+    .is_err());
     assert_eq!(
         sqlx::query_scalar::<_, i64>(
             "SELECT count(*) FROM learning_group_result_overrides WHERE learning_group_id=$1",
@@ -1766,36 +1744,32 @@ async fn results_policy_activation_and_selection_versions() {
         .await
         .unwrap();
     assert!(!read_only.can_manage);
-    assert!(
-        save_selection(
-            &pool,
-            &non_primary_manager,
-            &ctx,
-            group,
-            SelectionInput {
-                student_academic_year_id: student,
-                selection: CourseOutcomeSelection::Incomplete,
-                row_version: v,
-            },
-        )
-        .await
-        .is_err()
-    );
-    assert!(
-        save_selection(
-            &pool,
-            &actor,
-            &ctx,
-            group,
-            SelectionInput {
-                student_academic_year_id: student,
-                selection: CourseOutcomeSelection::Incomplete,
-                row_version: None
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(save_selection(
+        &pool,
+        &non_primary_manager,
+        &ctx,
+        group,
+        SelectionInput {
+            student_academic_year_id: student,
+            selection: CourseOutcomeSelection::Incomplete,
+            row_version: v,
+        },
+    )
+    .await
+    .is_err());
+    assert!(save_selection(
+        &pool,
+        &actor,
+        &ctx,
+        group,
+        SelectionInput {
+            student_academic_year_id: student,
+            selection: CourseOutcomeSelection::Incomplete,
+            row_version: None
+        }
+    )
+    .await
+    .is_err());
     let ws = confirm_group_results(&pool, &actor, &ctx, group, confirm_input(&ws))
         .await
         .unwrap();
@@ -1858,28 +1832,24 @@ async fn results_policy_activation_and_selection_versions() {
         permissions: vec![codes::ACADEMIC_RESULT_READ_SCHOOL.into()],
     };
     assert!(list_policies(&pool, &reader, &ctx).await.is_ok());
-    assert!(
-        create_policy(
-            &pool,
-            &reader,
-            &ctx,
-            GradingPolicyInput {
-                name: "Denied".into(),
-                bands: bands()
-            }
-        )
-        .await
-        .is_err()
-    );
+    assert!(create_policy(
+        &pool,
+        &reader,
+        &ctx,
+        GradingPolicyInput {
+            name: "Denied".into(),
+            bands: bands()
+        }
+    )
+    .await
+    .is_err());
     let wrong = ResultContext {
         academic_year_id: Uuid::new_v4(),
         ..ctx
     };
-    assert!(
-        get_course_workspace(&pool, &actor, &wrong, group)
-            .await
-            .is_err()
-    );
+    assert!(get_course_workspace(&pool, &actor, &wrong, group)
+        .await
+        .is_err());
 }
 
 // Catches policy activation bypassing the offering/group lock order used by Assessment,
@@ -2020,12 +1990,10 @@ async fn results_activity_completeness_assignment_and_roster_staleness() {
     let blank = save_activity_outcomes(&pool, &actor, &ctx, group, ActivityBatchInput { cells })
         .await
         .unwrap();
-    assert!(
-        blank
-            .blockers
-            .iter()
-            .any(|b| b.code == ResultBlockerCode::MissingActivityOutcome)
-    );
+    assert!(blank
+        .blockers
+        .iter()
+        .any(|b| b.code == ResultBlockerCode::MissingActivityOutcome));
     assert!(
         !confirm_activity(&pool, &actor, &ctx, group, input(&blank))
             .await
@@ -2070,18 +2038,14 @@ async fn results_activity_completeness_assignment_and_roster_staleness() {
         .find(|candidate| candidate.learning_group_id == sibling)
         .unwrap();
     assert!(!skipped.ready);
-    assert!(
-        skipped
-            .blockers
-            .iter()
-            .any(|item| item.code == ResultBlockerCode::MissingPrimaryTeacher)
-    );
-    assert!(
-        skipped
-            .blockers
-            .iter()
-            .any(|item| item.code == ResultBlockerCode::MissingGroupConfirmation)
-    );
+    assert!(skipped
+        .blockers
+        .iter()
+        .any(|item| item.code == ResultBlockerCode::MissingPrimaryTeacher));
+    assert!(skipped
+        .blockers
+        .iter()
+        .any(|item| item.code == ResultBlockerCode::MissingGroupConfirmation));
     sqlx::query("INSERT INTO learning_group_teachers (id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role) SELECT uuidv7(),$1,academic_term_id,academic_year_id,teacher_id,role FROM learning_group_teachers WHERE learning_group_id=$2 AND teacher_id=$3")
         .bind(sibling)
         .bind(group)
@@ -2144,12 +2108,10 @@ async fn results_activity_completeness_assignment_and_roster_staleness() {
         .await
         .unwrap();
     assert!(!no_primary.confirmation_is_current);
-    assert!(
-        no_primary
-            .blockers
-            .iter()
-            .any(|item| item.code == ResultBlockerCode::MissingPrimaryTeacher)
-    );
+    assert!(no_primary
+        .blockers
+        .iter()
+        .any(|item| item.code == ResultBlockerCode::MissingPrimaryTeacher));
     delivery_groups::replace_teachers(
         &pool,
         actor.user_id,
@@ -2187,11 +2149,9 @@ async fn results_activity_completeness_assignment_and_roster_staleness() {
         user_id: Uuid::new_v4(),
         permissions: vec![codes::ACADEMIC_RESULT_MANAGE_SCHOOL.into()],
     };
-    assert!(
-        confirm_activity(&pool, &other, &ctx, group, input(&stale))
-            .await
-            .is_err()
-    );
+    assert!(confirm_activity(&pool, &other, &ctx, group, input(&stale))
+        .await
+        .is_err());
     let invalid = ActivityBatchInput {
         cells: vec![
             ActivityCellInput {
@@ -2206,11 +2166,9 @@ async fn results_activity_completeness_assignment_and_roster_staleness() {
             },
         ],
     };
-    assert!(
-        save_activity_outcomes(&pool, &actor, &ctx, group, invalid)
-            .await
-            .is_err()
-    );
+    assert!(save_activity_outcomes(&pool, &actor, &ctx, group, invalid)
+        .await
+        .is_err());
     assert_eq!(
         get_activity_workspace(&pool, &actor, &ctx, group)
             .await
@@ -2252,27 +2210,25 @@ async fn results_activity_entry_requires_current_assignment() {
         .await
         .unwrap();
     assert!(!workspace.can_manage);
-    assert!(
-        save_activity_outcomes(
-            &pool,
-            &actor,
-            &ctx,
-            group,
-            ActivityBatchInput {
-                cells: workspace
-                    .students
-                    .iter()
-                    .map(|student| ActivityCellInput {
-                        student_academic_year_id: student.student_academic_year_id,
-                        outcome: Some(ActivityOutcome::Pass),
-                        row_version: None,
-                    })
-                    .collect(),
-            },
-        )
-        .await
-        .is_err()
-    );
+    assert!(save_activity_outcomes(
+        &pool,
+        &actor,
+        &ctx,
+        group,
+        ActivityBatchInput {
+            cells: workspace
+                .students
+                .iter()
+                .map(|student| ActivityCellInput {
+                    student_academic_year_id: student.student_academic_year_id,
+                    outcome: Some(ActivityOutcome::Pass),
+                    row_version: None,
+                })
+                .collect(),
+        },
+    )
+    .await
+    .is_err());
 }
 
 // Readiness must not call a phase current merely because its stored row was
@@ -2296,12 +2252,10 @@ async fn results_readiness_detects_roster_stale_phase_confirmations() {
         .flat_map(|subject| &subject.groups)
         .find(|candidate| candidate.learning_group_id == group)
         .unwrap();
-    assert!(
-        group
-            .blockers
-            .iter()
-            .any(|blocker| blocker.code == ResultBlockerCode::StalePhaseConfirmation)
-    );
+    assert!(group
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::StalePhaseConfirmation));
 }
 
 // The readiness queue independently verifies the Gradebook source snapshot, so
@@ -2326,12 +2280,10 @@ async fn results_readiness_detects_score_source_stale_phase_confirmations() {
         .flat_map(|subject| &subject.groups)
         .find(|candidate| candidate.learning_group_id == group)
         .unwrap();
-    assert!(
-        group
-            .blockers
-            .iter()
-            .any(|blocker| blocker.code == ResultBlockerCode::StalePhaseConfirmation)
-    );
+    assert!(group
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::StalePhaseConfirmation));
 }
 
 // A retained confirmation identity is not approval: readiness compares its
@@ -2377,12 +2329,10 @@ async fn results_readiness_detects_stale_course_selection_snapshot() {
         .flat_map(|subject| &subject.groups)
         .find(|candidate| candidate.learning_group_id == group)
         .unwrap();
-    assert!(
-        group
-            .blockers
-            .iter()
-            .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation)
-    );
+    assert!(group
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation));
 }
 
 // A transient participant must permanently stale the activity approval even
@@ -2546,16 +2496,14 @@ async fn results_readiness_returns_course_blockers_after_primary_removal() {
         .flat_map(|subject| &subject.groups)
         .find(|candidate| candidate.learning_group_id == group)
         .unwrap();
-    assert!(
-        row.blockers
-            .iter()
-            .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher)
-    );
-    assert!(
-        row.blockers
-            .iter()
-            .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation)
-    );
+    assert!(row
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher));
+    assert!(row
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation));
 }
 
 #[tokio::test]
@@ -2622,16 +2570,14 @@ async fn results_readiness_returns_activity_blockers_after_primary_removal() {
         .iter()
         .find(|candidate| candidate.learning_group_id == group)
         .unwrap();
-    assert!(
-        row.blockers
-            .iter()
-            .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher)
-    );
-    assert!(
-        row.blockers
-            .iter()
-            .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation)
-    );
+    assert!(row
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::MissingPrimaryTeacher));
+    assert!(row
+        .blockers
+        .iter()
+        .any(|blocker| blocker.code == ResultBlockerCode::StaleGroupConfirmation));
 }
 
 // The GET starts from an older source snapshot while the retained confirmation

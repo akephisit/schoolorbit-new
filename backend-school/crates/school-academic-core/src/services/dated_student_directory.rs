@@ -91,3 +91,47 @@ pub async fn locked_students_on_connection(
         .await?;
     students_on_connection(connection, term, date).await
 }
+
+/// Bounded grade facts for a consumer's authoritative dated pupil membership.
+pub async fn grades_for_students_on_connection(
+    connection: &mut PgConnection,
+    year: Uuid,
+    students: &[Uuid],
+) -> Result<Vec<(Uuid, Uuid)>, AppError> {
+    if students.len() > 100000 {
+        return Err(AppError::ValidationError("รายชื่อนักเรียนเกินขนาด".into()));
+    }
+    if students.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(DbSession::new(connection).query_as("academic_core.dated_student_directory.coverage_student_grades","SELECT student_id,grade_level_id FROM student_academic_years WHERE academic_year_id=$1 AND student_id=ANY($2) ORDER BY student_id").bind(year).bind(students).fetch_all().await?)
+}
+/// Explicit group homeroom coverage may describe a prepared, still-empty group.
+pub async fn grades_for_homerooms_on_connection(
+    connection: &mut PgConnection,
+    year: Uuid,
+    homerooms: &[Uuid],
+) -> Result<Vec<(Uuid, Uuid)>, AppError> {
+    if homerooms.len() > 20000 {
+        return Err(AppError::ValidationError("ห้องเรียนเกินขนาด".into()));
+    }
+    if homerooms.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(DbSession::new(connection).query_as("academic_core.dated_student_directory.coverage_homeroom_grades","SELECT id,grade_level_id FROM homerooms WHERE academic_year_id=$1 AND id=ANY($2) ORDER BY id").bind(year).bind(homerooms).fetch_all().await?)
+}
+
+/// Labels for already-authorized actual grade facts, including retained grades
+/// whose year setup is incomplete. This never expands an offering's eligibility.
+pub async fn labels_for_grades_on_connection(
+    connection: &mut PgConnection,
+    grades: &[Uuid],
+) -> Result<Vec<(Uuid, String)>, AppError> {
+    if grades.len() > 1000 {
+        return Err(AppError::ValidationError("ระดับชั้นเกินขนาด".into()));
+    }
+    if grades.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(DbSession::new(connection).query_as("academic_core.dated_student_directory.actual_grade_labels","SELECT id,CASE level_type WHEN 'kindergarten' THEN 'อ.' WHEN 'primary' THEN 'ป.' ELSE 'ม.' END||year::text FROM grade_levels WHERE id=ANY($1) ORDER BY level_type,year,id").bind(grades).fetch_all().await?)
+}

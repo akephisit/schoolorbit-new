@@ -10,6 +10,9 @@ import type { StaffPersonnelType } from '#lib/forms/staff-career.js';
 
 export interface LeaveDraft {
 	typeId: string;
+	academicYearId: string;
+	academicTermId: string;
+	halfDayBoundary: string | null;
 	startDate?: string;
 	endDate?: string;
 	startTime: string;
@@ -22,6 +25,9 @@ export function leaveDraft(detail?: LeaveRequestDetail): LeaveDraft {
 	const source = detail?.request;
 	return {
 		typeId: source?.typeId ?? '',
+		academicYearId: source?.academicYearId ?? '',
+		academicTermId: source?.academicTermId ?? '',
+		halfDayBoundary: source?.halfDayBoundary ?? null,
 		startDate: source?.startDate,
 		endDate: source?.endDate,
 		startTime: source?.startTime?.slice(0, 5) ?? '',
@@ -59,6 +65,9 @@ export function leaveDraftErrors(
 export function leavePeriodInput(draft: LeaveDraft, unit: LeaveUnit): LeavePeriodInput {
 	return {
 		typeId: draft.typeId,
+		academicYearId: draft.academicYearId || null,
+		academicTermId: draft.academicTermId || null,
+		halfDayBoundary: draft.halfDayBoundary,
 		startDate: draft.startDate ?? '',
 		endDate: draft.endDate ?? '',
 		startTime: unit === 'minute' ? `${draft.startTime}:00` : null,

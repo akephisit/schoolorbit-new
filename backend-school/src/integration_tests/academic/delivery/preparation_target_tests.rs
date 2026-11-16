@@ -347,11 +347,9 @@ async fn preparation_current_extension_preserves_manual_a_and_creates_b_groups()
         .await
         .unwrap()
         .targets;
-    assert!(
-        targets
-            .iter()
-            .any(|target| target.homeroom_id == Some(f.room_b))
-    );
+    assert!(targets
+        .iter()
+        .any(|target| target.homeroom_id == Some(f.room_b)));
 }
 
 #[tokio::test]
@@ -403,12 +401,10 @@ async fn preparation_current_generated_group_mismatch_keeps_defer_groups_policy(
         proposal(&preview).offering_action,
         CurriculumPreviewAction::Retain
     );
-    assert!(
-        proposal(&preview)
-            .conflicts
-            .iter()
-            .any(|x| x.code == "generated_group_target_mismatch")
-    );
+    assert!(proposal(&preview)
+        .conflicts
+        .iter()
+        .any(|x| x.code == "generated_group_target_mismatch"));
     let old_groups =
         serde_json::to_value(groups::list(&f.pool, f.offering_id).await.unwrap()).unwrap();
     let result = offerings::apply_from_curriculum(
@@ -423,14 +419,12 @@ async fn preparation_current_generated_group_mismatch_keeps_defer_groups_policy(
         old_groups,
         serde_json::to_value(groups::list(&f.pool, f.offering_id).await.unwrap()).unwrap()
     );
-    assert!(
-        offerings::get(&f.pool, f.offering_id)
-            .await
-            .unwrap()
-            .targets
-            .iter()
-            .any(|x| x.homeroom_id == Some(f.room_b))
-    );
+    assert!(offerings::get(&f.pool, f.offering_id)
+        .await
+        .unwrap()
+        .targets
+        .iter()
+        .any(|x| x.homeroom_id == Some(f.room_b)));
 }
 
 #[tokio::test]

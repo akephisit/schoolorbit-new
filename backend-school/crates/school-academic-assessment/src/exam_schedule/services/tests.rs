@@ -320,7 +320,7 @@ fn current_round_update_requires_revision_and_rejects_retired_publication_fields
     .is_err());
     let request: UpdateExamRoundRequest =
         serde_json::from_value(serde_json::json!({"name":" Final ","rowVersion":2})).unwrap();
-    assert_eq!(request.row_version,2);
+    assert_eq!(request.row_version, 2);
     assert!(normalize_update_round_request(request).is_ok());
 }
 

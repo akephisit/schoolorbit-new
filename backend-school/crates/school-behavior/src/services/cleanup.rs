@@ -6,7 +6,7 @@ use crate::{
 use chrono::{DateTime, NaiveDate, Utc};
 use school_database::DbSession;
 use school_errors::AppError;
-use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Transaction, types::Json};
+use sqlx::{types::Json, PgConnection, PgPool, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -733,16 +733,14 @@ mod tests {
     #[test]
     fn reason_and_scope_validation() {
         assert!(validate_reason("").is_err());
-        assert!(
-            normalize_scope(BehaviorCleanupScope {
-                start: None,
-                end: None,
-                academic_year_id: None,
-                academic_term_id: None,
-                sides: vec![],
-                sources: vec![BehaviorSource::Manual]
-            })
-            .is_err()
-        );
+        assert!(normalize_scope(BehaviorCleanupScope {
+            start: None,
+            end: None,
+            academic_year_id: None,
+            academic_term_id: None,
+            sides: vec![],
+            sources: vec![BehaviorSource::Manual]
+        })
+        .is_err());
     }
 }

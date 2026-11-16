@@ -262,9 +262,7 @@
 			"notes": "Loader starts term-scoped plan summaries and phase controls concurrently; each region renders and retries independently. Offering detail is lazy in the editor; save patches its summary. Tap preload avoids false-positive traffic for the bounded 500-offering plan read.",
 			"browserMount": {
 				"reason": "Dirty-draft registration and timer cleanup only; route promises own plans and phase controls.",
-				"tests": [
-					"tests/static/academic-assessment-structure.test.mjs"
-				],
+				"tests": ["tests/static/academic-assessment-structure.test.mjs"],
 				"eventReads": []
 			}
 		},
@@ -364,10 +362,7 @@
 					"tests/static/learning-delivery-workspace.test.mjs",
 					"tests/e2e/delivery-current-seed-realtime.spec.ts"
 				],
-				"eventReads": [
-					"subscribe:getDeliveryWorkspace",
-					"subscribe:getHomeroomDeliveryWorkspace"
-				]
+				"eventReads": ["subscribe:getDeliveryWorkspace", "subscribe:getHomeroomDeliveryWorkspace"]
 			}
 		},
 		{
@@ -386,10 +381,7 @@
 					"tests/static/delivery-offering-route-loading.test.mjs",
 					"tests/e2e/delivery-current-seed-realtime.spec.ts"
 				],
-				"eventReads": [
-					"subscribe:getLearningOffering",
-					"subscribe:listLearningGroups"
-				]
+				"eventReads": ["subscribe:getLearningOffering", "subscribe:listLearningGroups"]
 			}
 		},
 		{
@@ -531,9 +523,7 @@
 			"notes": "Term roster and policy reads start independently after layout-owned current-user permissions settle. Explicit selected revision history starts separately; preview starts immediately for an explicit policy or after the policy list for a default policy. URL selection, per-region skeleton/error/retry, stale-policy fallback, and focused lock/policy mutation patches are verified. Unbounded year/term roster uses tap preload.",
 			"browserMount": {
 				"reason": "Dirty lock/policy registration only; roster, policies, preview and history are independent route regions.",
-				"tests": [
-					"tests/static/academic-aggregate-region-loading.test.mjs"
-				],
+				"tests": ["tests/static/academic-aggregate-region-loading.test.mjs"],
 				"eventReads": []
 			}
 		},
@@ -548,9 +538,7 @@
 			"notes": "Year roster starts after layout-owned current-user permissions settle; explicit selected annual preview and history start independently without waiting for roster. URL selection, per-region skeleton/error/retry, retained refresh, and typed lock patch are verified. Unbounded year roster uses tap preload.",
 			"browserMount": {
 				"reason": "Dirty lock registration only; roster, preview and history are route-owned.",
-				"tests": [
-					"tests/static/academic-aggregate-region-loading.test.mjs"
-				],
+				"tests": ["tests/static/academic-aggregate-region-loading.test.mjs"],
 				"eventReads": []
 			}
 		},
@@ -670,10 +658,7 @@
 					"tests/static/timetable-idle-reconcile.test.mjs",
 					"tests/e2e/timetable-teacher-board.spec.ts"
 				],
-				"eventReads": [
-					"subscribe:getTimetable",
-					"subscribe:getTimetableBlockWorkspace"
-				]
+				"eventReads": ["subscribe:getTimetable", "subscribe:getTimetableBlockWorkspace"]
 			}
 		},
 		{
@@ -687,9 +672,7 @@
 			"notes": "Route-owned independent template and version lists with focused retry; no data preload until the global template list is bounded. Selected template detail and mutations remain interaction-lazy.",
 			"browserMount": {
 				"reason": "Dirty template registration only; templates and versions start independently in the loader.",
-				"tests": [
-					"tests/static/timetable-board-templates-route-loading.test.mjs"
-				],
+				"tests": ["tests/static/timetable-board-templates-route-loading.test.mjs"],
 				"eventReads": []
 			}
 		},
@@ -714,9 +697,7 @@
 			"notes": "Independent permission-gated year summary, setup snapshot and bounded history reads start in route. Roster options, preview, direct period checks and retention eligibility stay action-lazy; drafts survive source closure refresh.",
 			"browserMount": {
 				"reason": "Dirty dialog registration and disposal only; readiness promises come from the loader.",
-				"tests": [
-					"tests/static/academic-lifecycle-region-loading.test.mjs"
-				],
+				"tests": ["tests/static/academic-lifecycle-region-loading.test.mjs"],
 				"eventReads": []
 			}
 		},
@@ -1151,6 +1132,16 @@
 			"notes": "Route-owned planned exit list; URL status and pagination with exact-permission lazy creation. No actual departure or return tracking."
 		},
 		{
+			"route": "staff/exit-permissions/new",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff-leave",
+			"notes": "Exact-permission route-owned request options and optional saved detail; shared workflow keeps draft across steps and disposes it on identity or route change."
+		},
+		{
 			"route": "staff/facility/buildings",
 			"wave": "staff",
 			"dataOwner": "route",
@@ -1181,6 +1172,26 @@
 			"notes": "Route-owned request list; URL status and pagination, identity/filter keys dispose old regions; creation options and policy reads only after opening create workflow."
 		},
 		{
+			"route": "staff/leave/assigned",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff-leave",
+			"notes": "Assigned-read-only route owns bounded redacted teaching tasks; exact update-assigned consent, plan revision/idempotency and identity-keyed disposal. No request detail/evidence reads."
+		},
+		{
+			"route": "staff/leave/new",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff-leave",
+			"notes": "Exact-permission route-owned request options and optional saved detail; shared workflow keeps draft across steps and disposes it on identity or route change."
+		},
+		{
 			"route": "staff/leave/reports",
 			"wave": "personnel",
 			"dataOwner": "route",
@@ -1199,6 +1210,16 @@
 			"status": "complete",
 			"backendOwner": "school-staff leave + school-workflow",
 			"notes": "Route-owned authorized request detail/history; identity/id keys prevent stale detail, mutations patch typed detail and signatures/evidence use private Files operations."
+		},
+		{
+			"route": "staff/leave/requests/[id]/edit",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff-leave",
+			"notes": "Exact-permission route-owned request options and optional saved detail; shared workflow keeps draft across steps and disposes it on identity or route change."
 		},
 		{
 			"route": "staff/leave/settings",

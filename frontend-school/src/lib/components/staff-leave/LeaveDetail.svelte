@@ -5,6 +5,7 @@
 		getLeaveRequest,
 		submitLeaveRequest,
 		cancelLeaveRequest,
+		replanLeaveCoverage,
 		type LeaveRequestDetail,
 		type ProcessAction
 	} from '#lib/api/staff-leave.js';
@@ -38,15 +39,15 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import PrivateFileImage from '#lib/components/files/PrivateFileImage.svelte';
-	import RequestEditor from './RequestEditor.svelte';
+	import CoverageEditor from './CoverageEditor.svelte';
+	import { coverageReady } from '#lib/staff-leave/coverage.js';
 	import LeaveActionForm from './LeaveActionForm.svelte';
 	let { source, id }: { source: Promise<RouteLoadResult<LeaveRequestDetail | null>>; id: string } =
 		$props();
 	const region = new LeaveRegion<LeaveRequestDetail | null>(),
 		submitIntent = new LeaveMutationIntent(),
 		cancelIntent = new LeaveMutationIntent();
-	let editing = $state(false),
-		cancelling = $state(false),
+	let cancelling = $state(false),
 		cancelReason = $state(''),
 		action = $state<ProcessAction | null>(null),
 		pending = $state(''),
@@ -54,6 +55,11 @@
 	let downloadPending = $state<string | null>(null),
 		disposed = false;
 	const detail = $derived(region.value);
+	const hasReciprocal = $derived(
+		detail?.coverage.days.some((day) =>
+			day.lessons.some((lesson) => lesson.assignment?.mode === 'reciprocal')
+		) ?? false
+	);
 	const backHref = $derived(
 		safeLeaveReturn(
 			page.url.searchParams.get('returnTo'),
@@ -81,7 +87,7 @@
 		if (!detail || pending || !creator) return;
 		pending = 'submit';
 		error = '';
-		const basis = { expectedRevision: detail.request.revision };
+		const basis = { expectedRevision: detail.request.revision, emergencyReason: null };
 		try {
 			const result = await submitLeaveRequest(id, { requestId: submitIntent.for(basis), ...basis });
 			if (!disposed) region.patch(result);
@@ -91,6 +97,24 @@
 			if (!disposed) pending = '';
 		}
 	}
+	async function replan() {
+		if (!detail || pending || !creator) return;
+		pending = 'replan';
+		error = '';
+		const basis = { expectedRevision: detail.request.revision };
+		try {
+			const result = await replanLeaveCoverage(id, {
+				requestId: submitIntent.for({ operation: 'replan', ...basis }),
+				...basis
+			});
+			if (!disposed) region.patch(result);
+		} catch (cause) {
+			if (!disposed) error = cause instanceof Error ? cause.message : 'นำคำขอกลับมาแก้ไขไม่สำเร็จ';
+		} finally {
+			if (!disposed) pending = '';
+		}
+	}
+
 	async function cancel(event: SubmitEvent) {
 		event.preventDefault();
 		if (!detail || pending || !creator) return;
@@ -150,11 +174,12 @@
 			{#if detail.canEdit && creator}<Button
 					variant="outline"
 					disabled={!!pending}
-					onclick={() => (editing = true)}>แก้ไขฉบับร่าง</Button
+					href={`/staff/leave/requests/${id}/edit?returnTo=${encodeURIComponent(backHref)}`}
+					>แก้ไขฉบับร่าง</Button
 				>{/if}
 			{#if detail.canSubmit && creator}<LoadingButton
 					loading={pending === 'submit'}
-					disabled={!!pending}
+					disabled={!!pending || !coverageReady(detail.coverage)}
 					onclick={submit}
 					>{detail.request.status === 'returned'
 						? 'ส่งคำขออีกครั้ง'
@@ -187,6 +212,41 @@
 				onaction={refreshed}
 			/>{/if}
 		{#if region.loading && !detail}<PageSkeleton variant="detail" />{:else if detail}
+			{#if detail.coverage.days.some( (day) => day.lessons.some((lesson) => lesson.assignment?.consent === 'declined') ) && creator && detail.request.status === 'submitted'}<div
+					class="flex flex-wrap items-center gap-3 rounded-lg border p-3"
+				>
+					<p class="text-sm">มีครูปฏิเสธคาบสอน นำคำขอกลับมาจัดแผนใหม่แล้วส่งอีกครั้งได้</p>
+					<LoadingButton loading={pending === 'replan'} disabled={!!pending} onclick={replan}
+						>นำกลับมาจัดแผนใหม่</LoadingButton
+					>
+				</div>{/if}
+			{#if detail.coverage.emergencyReason}<div
+					class="rounded-lg border border-primary/20 bg-primary/5 p-3"
+				>
+					<h2 class="font-medium">คำขอเร่งด่วน</h2>
+					<p class="whitespace-pre-wrap break-words text-sm">{detail.coverage.emergencyReason}</p>
+				</div>{/if}
+			{#if hasReciprocal && detail.request.status === 'cancelled'}<p
+					class="rounded-lg border p-3 text-sm"
+				>
+					หากเริ่มแลกคาบแล้ว คาบคู่แลกที่เหลือยังคงมีผล
+				</p>{/if}
+			{#if detail.canEdit && creator}<div class="flex justify-end">
+					<Button
+						variant="outline"
+						href={`/staff/leave/requests/${id}/edit?step=coverage&returnTo=${encodeURIComponent(backHref)}`}
+						>จัดคาบสอนตามตารางล่าสุด</Button
+					>
+				</div>{/if}
+
+			<CoverageEditor
+				{detail}
+				readonly={!detail.coverage.canManage ||
+					(!detail.canEdit && !$can.has(PERMISSIONS.STAFF_LEAVE_MANAGE_SCHOOL))}
+				onsaved={(result) => region.patch(result)}
+				onrefresh={refreshed}
+			/>
+
 			<div id="staff-leave-print" class="leave-layout">
 				<h2 class="hidden print:block text-lg font-semibold">{detail.request.typeName}</h2>
 				<div class="leave-primary">
@@ -427,24 +487,6 @@
 	</section>
 </PageShell>
 
-<Dialog.Root bind:open={editing}
-	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"
-		><Dialog.Header
-			><Dialog.Title>แก้ไขฉบับร่าง</Dialog.Title><Dialog.Description
-				>ปรับข้อมูลและหลักฐานก่อนส่งพิจารณา</Dialog.Description
-			></Dialog.Header
-		>{#if editing && detail?.canEdit && creator}<RequestEditor
-				kind={detail.request.kind}
-				{detail}
-				onrefresh={refreshed}
-				oncancel={() => (editing = false)}
-				onsaved={(result) => {
-					region.patch(result);
-					editing = false;
-				}}
-			/>{/if}</Dialog.Content
-	></Dialog.Root
->
 <Dialog.Root bind:open={cancelling}
 	><Dialog.Content
 		><Dialog.Header
@@ -459,6 +501,11 @@
 			></Dialog.Header
 		>
 		<form onsubmit={cancel} class="space-y-4">
+			{#if hasReciprocal && detail?.request.status === 'approved'}<p
+					class="text-sm text-muted-foreground"
+				>
+					หากเริ่มแลกคาบแล้ว คาบคู่แลกที่เหลือยังคงมีผล
+				</p>{/if}
 			{#if error}<PageState
 					variant="error"
 					title="ยกเลิกคำขอไม่สำเร็จ"

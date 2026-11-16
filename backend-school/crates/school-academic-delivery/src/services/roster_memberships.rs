@@ -265,7 +265,8 @@ pub async fn remove_membership(
         .bind(request.left_at)
         .bind(membership_id)
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     increment_group_revision(&mut transaction, group.id).await?;
     invalidate_group_academic_confirmations(&mut transaction, &[group.id]).await?;
     transaction.commit().await?;
@@ -314,7 +315,8 @@ async fn lock_group_context(
         )
         .bind(offering_id)
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     DbSession::new(&mut **transaction)
         .query_as(
             "academic_delivery.services.roster_memberships.lock_group_context",
@@ -352,7 +354,7 @@ async fn increment_group_revision(
     )
     .bind(group_id)
     .execute()
-    .await?;
+    .await.map_err(super::map_write_guard)?;
     Ok(())
 }
 
@@ -382,7 +384,7 @@ fn map_membership_overlap(error: sqlx::Error) -> AppError {
             "วันที่เริ่มใหม่ซ้อนกับประวัติการอยู่ในกลุ่มเดิม ต้องเริ่มหลังวันสิ้นสุดเดิมอย่างน้อย 1 วัน".to_string(),
         )
     } else {
-        AppError::DbError(error)
+        super::map_write_guard(error)
     }
 }
 

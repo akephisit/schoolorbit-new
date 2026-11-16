@@ -193,7 +193,7 @@ pub(super) async fn save_configurations(
     effective_from: Option<NaiveDate>,
 ) -> Result<(), AppError> {
     DbSession::new(connection).query("academic_delivery.services.roster_tracking.save_configurations", "INSERT INTO learning_group_roster_tracking(learning_group_id,mode,effective_from) SELECT id,$2,$3 FROM unnest($1::uuid[]) id ON CONFLICT(learning_group_id) DO UPDATE SET mode=EXCLUDED.mode,effective_from=EXCLUDED.effective_from")
-        .bind(ids).bind(mode).bind(effective_from).execute().await?;
+        .bind(ids).bind(mode).bind(effective_from).execute().await.map_err(super::map_write_guard)?;
     Ok(())
 }
 
@@ -220,7 +220,8 @@ pub async fn update(
         )
         .bind(offering)
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     let version: i64 = DbSession::new(&mut *tx)
         .scalar(
             "academic_delivery.services.roster_tracking.update",
@@ -246,7 +247,8 @@ pub async fn update(
         )
         .bind(id)
         .execute()
-        .await?;
+        .await
+        .map_err(super::map_write_guard)?;
     tx.commit().await?;
     get(pool, id).await
 }
@@ -332,7 +334,8 @@ pub async fn sync_group(
         .bind(&old_ids)
         .bind(&left_dates)
         .execute()
-        .await?
+        .await
+        .map_err(super::map_write_guard)?
         .rows_affected();
     let student_years: Vec<_> = rows.iter().map(|row| row.0).collect();
     let students: Vec<_> = rows.iter().map(|row| row.1).collect();
@@ -356,7 +359,7 @@ pub async fn sync_group(
         FROM learning_groups g CROSS JOIN unnest($2::uuid[],$3::uuid[],$4::date[]) candidate(student_year,student_id,joined_at)
         WHERE g.id=$1 AND NOT EXISTS(SELECT 1 FROM learning_group_students m
             WHERE m.learning_group_id=g.id AND m.student_id=candidate.student_id AND m.membership_status='active')"#)
-        .bind(id).bind(&student_years).bind(&students).bind(&joined_dates).execute().await?.rows_affected();
+        .bind(id).bind(&student_years).bind(&students).bind(&joined_dates).execute().await.map_err(super::map_write_guard)?.rows_affected();
     let changed = ended + inserted;
     let exceeded: bool=DbSession::new(&mut **tx).scalar("academic_delivery.services.roster_tracking.sync_group", "SELECT LEAST(g.capacity,a.capacity) IS NOT NULL AND (SELECT count(*) FROM learning_group_students WHERE learning_group_id=$1 AND membership_status='active')>LEAST(g.capacity,a.capacity) FROM learning_groups g LEFT JOIN activity_offering_details a ON a.learning_offering_id=g.learning_offering_id WHERE g.id=$1").bind(id).fetch_one().await?;
     if exceeded {
@@ -372,7 +375,8 @@ pub async fn sync_group(
             )
             .bind(id)
             .execute()
-            .await?;
+            .await
+            .map_err(super::map_write_guard)?;
         invalidate_group_academic_confirmations(tx, &[id]).await?;
     }
     Ok(())

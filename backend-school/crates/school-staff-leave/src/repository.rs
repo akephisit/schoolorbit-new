@@ -216,6 +216,9 @@ pub(super) async fn history(
 }
 pub(super) fn period_from(r: &Record) -> LeavePeriodInput {
     LeavePeriodInput {
+        academic_year_id: r.document.academic_year_id,
+        academic_term_id: r.document.academic_term_id,
+        half_day_boundary: r.document.half_day_boundary,
         type_id: r.document.type_id,
         start_date: r.document.start_date,
         end_date: r.document.end_date,
@@ -241,6 +244,9 @@ mod tests {
         };
         let mut r = Record {
             document: Json(LeaveRequestSummary {
+                academic_year_id: None,
+                academic_term_id: None,
+                half_day_boundary: None,
                 id: Uuid::new_v4(),
                 type_id: Uuid::new_v4(),
                 type_name: "test".into(),
