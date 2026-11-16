@@ -80,6 +80,7 @@ export async function mock(
 	const payloads: unknown[] = [];
 	const held = gate();
 	const counts = new Map<string, number>();
+	let authFirstName = 'นิเทศ';
 	let authPermissions = options.permissions ?? [
 		'supervision.manage.school',
 		'supervision.read.school'
@@ -169,8 +170,8 @@ export async function mock(
 				return reply(route, {
 					id: id(20),
 					username: 'E2E-supervision',
-					firstName: 'นิเทศ',
-					displayName: 'นิเทศ ทดสอบ',
+					firstName: authFirstName,
+					displayName: `${authFirstName} ทดสอบ`,
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
@@ -408,6 +409,9 @@ export async function mock(
 		}
 	);
 	return {
+		setFirstName: (firstName: string) => {
+			authFirstName = firstName;
+		},
 		setPermissions: (permissions: string[]) => {
 			authPermissions = [...permissions];
 		},

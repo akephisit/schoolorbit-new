@@ -39,11 +39,8 @@ async function controlledAuthRefresh(
 		);
 		gate.resolve();
 		await (await auth).finished();
-		await page.evaluate(
-			() =>
-				new Promise<void>((resolve) =>
-					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-				)
+		await expect(page.getByRole('button', { name: 'เปิดเมนูบัญชี', exact: true })).toContainText(
+			'ตท'
 		);
 	};
 }
@@ -136,6 +133,7 @@ test('detail revalidation retains identity and recovers each dependent error loc
 	await expect(template).toHaveAttribute('aria-busy', 'false');
 	await expect(detail.getByText('region ไม่พร้อม', { exact: true })).toHaveCount(0);
 	const authReads = api.count('/api/auth/me');
+	api.setFirstName('ตรวจสอบ');
 	await refreshSameIdentity();
 	expect(api.count('/api/auth/me')).toBeGreaterThan(authReads);
 	await expect(detail.getByText('region ไม่พร้อม', { exact: true })).toHaveCount(0);
@@ -287,6 +285,7 @@ test('same-identity authentication reconciliation preserves a held local retry',
 }) => {
 	const { api, refresh, detail } = await heldIdentityRetry(page, 'reconcile_required');
 	const authReads = api.count('/api/auth/me');
+	api.setFirstName('ตรวจสอบ');
 	await refresh();
 	expect(api.count('/api/auth/me')).toBeGreaterThan(authReads);
 	await expect(detail).toHaveAttribute('aria-busy', 'true');
@@ -309,6 +308,7 @@ test('changed read permissions clear identity data and reject a held response wi
 }) => {
 	const { api, refresh } = await heldIdentityRetry(page, 'permission_changed');
 	api.setPermissions(['supervision.evaluate.assigned']);
+	api.setFirstName('ตรวจสอบ');
 	await refresh();
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toHaveCount(0);
 	api.release();
