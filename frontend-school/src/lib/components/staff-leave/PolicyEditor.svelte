@@ -6,7 +6,6 @@
 		type LeaveType,
 		type LeavePolicyVersion,
 		type LeaveRoutingOptions,
-		type LeaveUnit,
 		type ProcessTemplateStep,
 		type SaveLeavePolicyRequest
 	} from '#lib/api/staff-leave.js';
@@ -40,11 +39,15 @@
 	let {
 		type,
 		initialPolicy,
+		fixedQuotaMonth,
+		quotaMonthConflict = false,
 		oncancel,
 		onsaved
 	}: {
 		type: LeaveType;
 		initialPolicy?: LeavePolicyVersion;
+		fixedQuotaMonth?: number;
+		quotaMonthConflict?: boolean;
 		oncancel: () => void;
 		onsaved: (policy: LeavePolicyVersion) => void;
 	} = $props();
@@ -52,12 +55,32 @@
 	let effectiveFrom = $state<string | undefined>(initial.effectiveFrom),
 		sourceReference = $state(initial.sourceReference),
 		personnelTypes = $state<StaffPersonnelType[]>(initial.personnelTypes);
-	let unit = $state<LeaveUnit>(initial.unit);
+	const unit = initial.unit;
+	let unresolvedLimits = $state({ ...initial.unresolvedLimits });
+	type LimitField = keyof typeof initial.unresolvedLimits;
+	const unsafeLimitMessage =
+		'ค่าเดิมเกินช่วงจำนวนที่แสดงได้อย่างแม่นยำ จึงไม่นำมาคัดลอก กรุณากรอกจำนวนเต็มใหม่หรือนำเงื่อนไขนี้ออกอย่างชัดเจน';
+	function acknowledgeLimit(field: LimitField, value: string) {
+		if (!unresolvedLimits[field] || !value.trim()) return;
+		try {
+			policyLimitInput(value);
+			unresolvedLimits[field] = false;
+		} catch {
+			/* Keep the unresolved original until a valid replacement is entered. */
+		}
+	}
+	function removeUnresolvedLimit(field: LimitField) {
+		if (pending) return;
+		if (field === 'maxPerRequest') maxPerRequest = '';
+		else if (field === 'annualLimit') annualLimit = '';
+		else evidenceFromAmount = '';
+		unresolvedLimits[field] = false;
+	}
 	let countingMode = $state<'calendar_days' | 'working_days'>(initial.countingMode),
 		weekdays = $state<number[]>(initial.weekdays),
 		excludedDates = $state<string[]>(initial.excludedDates),
 		dateToExclude = $state<string | undefined>();
-	let quotaMonth = $state(initial.quotaMonth),
+	let quotaMonth = $state(untrack(() => fixedQuotaMonth ?? initial.quotaMonth)),
 		maxPerRequest = $state(initial.maxPerRequest),
 		annualLimit = $state(initial.annualLimit),
 		evidenceRequired = $state(initial.evidenceRequired),
@@ -75,7 +98,7 @@
 	const controller = new AbortController(),
 		intent = new LeaveMutationIntent();
 	const amountLabel = $derived(unit === 'minute' ? 'นาที' : 'วัน');
-	const amountStep = $derived(unit === 'half_day' ? '0.5' : '1');
+	const amountStep = '1';
 	const recipientOptions = $derived(
 		options
 			? [
@@ -171,6 +194,14 @@
 		event.preventDefault();
 		if (pending) return;
 		error = '';
+		if (quotaMonthConflict) {
+			void revealError(
+				'รอบปีสิทธิ์ในเกณฑ์เดิมไม่ตรงกัน ติดต่อผู้ดูแลเพื่อตรวจสอบข้อมูลก่อนเพิ่มเกณฑ์',
+				'limits',
+				'#policy-year-month'
+			);
+			return;
+		}
 		if (!effectiveFrom || !sourceReference.trim() || !personnelTypes.length) {
 			void revealError(
 				'กรอกวันที่มีผล แหล่งอ้างอิง และเลือกประเภทบุคลากร',
@@ -212,16 +243,20 @@
 			);
 			return;
 		}
-		for (const [value, id, targetSection] of [
-			[maxPerRequest, 'policy-max', 'limits'],
-			[annualLimit, 'policy-annual', 'limits'],
-			[evidenceFromAmount, 'policy-evidence-threshold', 'evidence']
+		for (const [field, value, id, targetSection] of [
+			['maxPerRequest', maxPerRequest, 'policy-max', 'limits'],
+			['annualLimit', annualLimit, 'policy-annual', 'limits'],
+			['evidenceFromAmount', evidenceFromAmount, 'policy-evidence-threshold', 'evidence']
 		] as const) {
+			if (unresolvedLimits[field]) {
+				void revealError(unsafeLimitMessage, targetSection, `#${id}`);
+				return;
+			}
 			try {
-				policyLimitInput(value, unit);
+				policyLimitInput(value);
 			} catch {
 				void revealError(
-					`กรอกจำนวน${amountLabel}ให้ถูกต้อง${unit === 'half_day' ? ' โดยเพิ่มครั้งละ 0.5 วัน' : ' โดยใช้จำนวนเต็ม'}`,
+					`กรอกจำนวน${amountLabel}ให้ถูกต้อง โดยใช้จำนวนเต็ม`,
 					targetSection,
 					`#${id}`
 				);
@@ -241,10 +276,10 @@
 				workingWeekdays: countingMode === 'working_days' ? weekdays : [],
 				excludedDates: countingMode === 'working_days' ? excludedDates : [],
 				quotaYearStartMonth: quotaMonth,
-				maxPerRequest: policyLimitInput(maxPerRequest, unit),
-				annualLimit: policyLimitInput(annualLimit, unit),
+				maxPerRequest: policyLimitInput(maxPerRequest),
+				annualLimit: policyLimitInput(annualLimit),
 				evidenceRequired,
-				evidenceFromAmount: policyLimitInput(evidenceFromAmount, unit),
+				evidenceFromAmount: policyLimitInput(evidenceFromAmount),
 				minimumNoticeDays: minimumNoticeDays === '' ? null : Number(minimumNoticeDays),
 				steps: steps.map((step) => ({ ...step, title: step.title.trim() }))
 			};
@@ -265,6 +300,25 @@
 	class="space-y-4"
 	data-testid="leave-policy-editor"
 >
+	{#if initialPolicy?.unit === 'half_day'}<div
+			class="space-y-1 rounded-lg border bg-primary/5 p-3 text-sm"
+			data-testid="leave-policy-day-successor"
+		>
+			<p>กำลังสร้างเกณฑ์ลาเต็มวันฉบับใหม่ของประเภทเดิม เกณฑ์เดิมและรอบปีสิทธิ์จะยังคงอยู่</p>
+			<p>
+				แสดงจำนวนวันจากเกณฑ์เดิมตามจริง ค่าที่เป็นเศษวันต้องแก้เป็นจำนวนเต็มหรือนำออกอย่างชัดเจน
+				ระบบไม่ปัดค่าให้
+			</p>
+		</div>{/if}
+	{#if fixedQuotaMonth !== undefined}<p class="text-xs text-muted-foreground">
+			ใช้รอบปีเริ่มเดิมของประเภทคำขอนี้ โดยไม่เริ่มสิทธิ์ใหม่
+		</p>{/if}
+	{#if quotaMonthConflict}<PageState
+			variant="error"
+			title="รอบปีสิทธิ์ของเกณฑ์เดิมไม่ตรงกัน"
+			description="ติดต่อผู้ดูแลเพื่อตรวจสอบข้อมูล ไม่สามารถเพิ่มเกณฑ์โดยเลือกรอบปีใหม่แทนข้อมูลเดิม"
+		/>{/if}
+
 	<Tabs.Root bind:value={section}
 		><Tabs.List class="grid h-auto w-full grid-cols-2 sm:grid-cols-4" aria-label="ส่วนของเกณฑ์"
 			><Tabs.Trigger value="general">ขอบเขต</Tabs.Trigger><Tabs.Trigger value="limits"
@@ -320,18 +374,11 @@
 		<Tabs.Content value="limits" class="space-y-3 pt-3">
 			<h3 class="font-semibold">หน่วยและวิธีนับ</h3>
 			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="space-y-2">
+					<Label>หน่วย</Label>
+					<p class="text-sm">{unit === 'day' ? 'วันเต็ม' : 'นาที'}</p>
+				</div>
 				<Choice
-					id="policy-unit"
-					label="หน่วย *"
-					bind:value={unit}
-					options={type.kind === 'exit'
-						? [{ value: 'minute', label: 'นาที' }]
-						: [
-								{ value: 'day', label: 'วันเต็ม' },
-								{ value: 'half_day', label: 'วัน (รองรับครึ่งวัน)' }
-							]}
-					disabled={pending}
-				/><Choice
 					id="policy-counting"
 					label="วิธีนับวัน *"
 					bind:value={countingMode}
@@ -397,12 +444,31 @@
 						min={amountStep}
 						step={amountStep}
 						value={maxPerRequest}
-						oninput={(event) => (maxPerRequest = event.currentTarget.value)}
+						oninput={(event) => {
+							maxPerRequest = event.currentTarget.value;
+							acknowledgeLimit('maxPerRequest', maxPerRequest);
+						}}
+						aria-invalid={unresolvedLimits.maxPerRequest}
+						aria-describedby={unresolvedLimits.maxPerRequest ? 'policy-max-unsafe' : undefined}
 						disabled={pending}
-						placeholder="ไม่กำหนด"
+						placeholder={unresolvedLimits.maxPerRequest ? 'ต้องระบุใหม่' : 'ไม่กำหนด'}
 					/>{#if type.kind === 'exit'}<p class="text-xs text-muted-foreground">
 							120 นาทีเป็นตัวอย่างของโรงเรียน แก้ไขได้
 						</p>{/if}
+					{#if unresolvedLimits.maxPerRequest}<div
+							id="policy-max-unsafe"
+							class="space-y-2 text-sm"
+							data-testid="policy-max-unsafe"
+						>
+							<p class="text-destructive">{unsafeLimitMessage}</p>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={pending}
+								onclick={() => removeUnresolvedLimit('maxPerRequest')}>นำเงื่อนไขนี้ออก</Button
+							>
+						</div>{/if}
 				</div>
 				<div class="space-y-2">
 					<Label for="policy-annual">สิทธิที่โรงเรียนกำหนดต่อรอบปี ({amountLabel})</Label><Input
@@ -411,10 +477,29 @@
 						min={amountStep}
 						step={amountStep}
 						value={annualLimit}
-						oninput={(event) => (annualLimit = event.currentTarget.value)}
+						oninput={(event) => {
+							annualLimit = event.currentTarget.value;
+							acknowledgeLimit('annualLimit', annualLimit);
+						}}
+						aria-invalid={unresolvedLimits.annualLimit}
+						aria-describedby={unresolvedLimits.annualLimit ? 'policy-annual-unsafe' : undefined}
 						disabled={pending}
-						placeholder="ไม่กำหนด"
+						placeholder={unresolvedLimits.annualLimit ? 'ต้องระบุใหม่' : 'ไม่กำหนด'}
 					/>
+					{#if unresolvedLimits.annualLimit}<div
+							id="policy-annual-unsafe"
+							class="space-y-2 text-sm"
+							data-testid="policy-annual-unsafe"
+						>
+							<p class="text-destructive">{unsafeLimitMessage}</p>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={pending}
+								onclick={() => removeUnresolvedLimit('annualLimit')}>นำเงื่อนไขนี้ออก</Button
+							>
+						</div>{/if}
 				</div>
 				<Choice
 					id="policy-year-month"
@@ -427,7 +512,7 @@
 							new Date(2026, index, 1)
 						)
 					}))}
-					disabled={pending}
+					disabled={pending || fixedQuotaMonth !== undefined}
 				/>
 			</div>
 		</Tabs.Content>
@@ -449,10 +534,31 @@
 						min={amountStep}
 						step={amountStep}
 						value={evidenceFromAmount}
-						oninput={(event) => (evidenceFromAmount = event.currentTarget.value)}
+						oninput={(event) => {
+							evidenceFromAmount = event.currentTarget.value;
+							acknowledgeLimit('evidenceFromAmount', evidenceFromAmount);
+						}}
+						aria-invalid={unresolvedLimits.evidenceFromAmount}
+						aria-describedby={unresolvedLimits.evidenceFromAmount
+							? 'policy-evidence-threshold-unsafe'
+							: undefined}
 						disabled={pending || evidenceRequired}
-						placeholder="ไม่กำหนด"
+						placeholder={unresolvedLimits.evidenceFromAmount ? 'ต้องระบุใหม่' : 'ไม่กำหนด'}
 					/>
+					{#if unresolvedLimits.evidenceFromAmount}<div
+							id="policy-evidence-threshold-unsafe"
+							class="space-y-2 text-sm"
+							data-testid="policy-evidence-threshold-unsafe"
+						>
+							<p class="text-destructive">{unsafeLimitMessage}</p>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={pending}
+								onclick={() => removeUnresolvedLimit('evidenceFromAmount')}>นำเงื่อนไขนี้ออก</Button
+							>
+						</div>{/if}
 				</div>
 				<div class="space-y-2">
 					<Label for="policy-notice">ยื่นล่วงหน้าอย่างน้อย (วัน)</Label><Input
@@ -600,6 +706,8 @@
 		class="sticky bottom-0 -mx-1 flex flex-wrap justify-end gap-2 border-t bg-background px-1 pt-3 pb-1"
 	>
 		<Button type="button" variant="outline" disabled={pending} onclick={oncancel}>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending}>บันทึกเกณฑ์ฉบับใหม่</LoadingButton>
+		><LoadingButton type="submit" loading={pending} disabled={quotaMonthConflict}
+			>บันทึกเกณฑ์ฉบับใหม่</LoadingButton
+		>
 	</div>
 </form>

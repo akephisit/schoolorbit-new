@@ -16,11 +16,22 @@ macro_rules! leave_enum {
     };
 }
 leave_enum!(LeaveKind { Leave, Exit });
+// Original units retained for immutable policy/request evidence.
 leave_enum!(LeaveUnit {
     Day,
     HalfDay,
     Minute
 });
+// Units accepted by current policy writes and normalized usage reports.
+leave_enum!(LeavePolicyUnit { Day, Minute });
+impl From<LeavePolicyUnit> for LeaveUnit {
+    fn from(unit: LeavePolicyUnit) -> Self {
+        match unit {
+            LeavePolicyUnit::Day => Self::Day,
+            LeavePolicyUnit::Minute => Self::Minute,
+        }
+    }
+}
 leave_enum!(LeaveCountingMode {
     CalendarDays,
     WorkingDays
@@ -77,7 +88,7 @@ pub struct SaveLeavePolicyRequest {
     pub source_reference: String,
     pub enabled: bool,
     pub personnel_types: Vec<StaffPersonnelType>,
-    pub unit: LeaveUnit,
+    pub unit: LeavePolicyUnit,
     pub counting_mode: LeaveCountingMode,
     /// ISO weekdays 1=Monday through 7=Sunday. Required for working_days.
     pub working_weekdays: Vec<u32>,
@@ -124,6 +135,24 @@ pub struct LeavePeriodInput {
     pub academic_year_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub academic_term_id: Option<Uuid>,
+    pub type_id: Uuid,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub start_time: Option<NaiveTime>,
+    pub end_time: Option<NaiveTime>,
+    pub reason: String,
+    #[serde(default)]
+    pub evidence_file_ids: Vec<Uuid>,
+}
+// This codec is intentionally unchanged: original submission hashes include
+// its legacy field order and null/omitted boundary representation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct StoredLeavePeriod {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub academic_year_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub academic_term_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub half_day_boundary: Option<NaiveTime>,
     pub type_id: Uuid,
@@ -135,6 +164,23 @@ pub struct LeavePeriodInput {
     pub reason: String,
     #[serde(default)]
     pub evidence_file_ids: Vec<Uuid>,
+}
+impl From<LeavePeriodInput> for StoredLeavePeriod {
+    fn from(period: LeavePeriodInput) -> Self {
+        Self {
+            academic_year_id: period.academic_year_id,
+            academic_term_id: period.academic_term_id,
+            half_day_boundary: None,
+            type_id: period.type_id,
+            start_date: period.start_date,
+            end_date: period.end_date,
+            start_time: period.start_time,
+            end_time: period.end_time,
+            day_portion: LeaveDayPortion::FullDay,
+            reason: period.reason,
+            evidence_file_ids: period.evidence_file_ids,
+        }
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
@@ -234,6 +280,7 @@ pub struct LeaveHistoryEntry {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LeaveRequestDetail {
+    pub submission_blocking_reason: Option<String>,
     pub coverage: super::coverage_models::LeaveCoveragePlan,
     pub request: LeaveRequestSummary,
     pub policy: Option<LeavePolicyVersion>,
@@ -283,11 +330,13 @@ pub struct LeaveUsageItem {
     pub display_name: String,
     pub type_id: Uuid,
     pub type_name: String,
-    pub unit: LeaveUnit,
+    pub unit: LeavePolicyUnit,
+    /// Daily amounts use scale2; minute amounts use scale1. Values are exact integer strings.
+    pub amount_scale: i32,
     pub quota_year_start: NaiveDate,
-    pub approved_amount: i64,
-    pub reserved_amount: i64,
-    pub annual_limit: Option<i64>,
+    pub approved_amount: String,
+    pub reserved_amount: String,
+    pub annual_limit: Option<String>,
     pub policy_version_id: Uuid,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

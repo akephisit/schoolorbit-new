@@ -11,8 +11,7 @@
 		void $userPermissions;
 		return appIdentityKey();
 	});
-	const settingsSource = $derived(leaveSource(data.coverageSettings, identity));
 	const source = $derived(leaveSource(data.types, identity));
 </script>
 
-{#key identity}<LeaveSettings {source} {settingsSource} />{/key}
+{#key identity}<LeaveSettings {source} />{/key}

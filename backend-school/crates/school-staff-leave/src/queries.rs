@@ -154,6 +154,20 @@ pub async fn detail(
         vec![]
     };
     let history=DbSession::new(&mut *tx).scalar::<Json<LeaveHistoryEntry>>("staff.leave.queries.detail", "SELECT entry FROM staff_leave_history WHERE request_id=$1 ORDER BY (entry->>'revision')::bigint,id").bind(id).fetch_all().await?.into_iter().map(|e|e.0).collect();
+    let submission_blocking_reason = if can_edit {
+        require_current_record(&r.document)
+            .and_then(|()| match &policy {
+                Some(p) => require_current_policy(r.document.kind, p),
+                None => Err(invalid("ไม่พบเกณฑ์ที่ใช้กับวันที่และประเภทบุคลากรนี้")),
+            })
+            .err()
+            .map(|e| match e {
+                AppError::ValidationError(message) => message,
+                _ => "กรุณาตรวจสอบช่วงคำขอและเกณฑ์ปัจจุบัน".into(),
+            })
+    } else {
+        None
+    };
     let result = LeaveRequestDetail {
         coverage,
         process_purpose: if r.document.status == LeaveStatus::CancellationPending {
@@ -162,7 +176,10 @@ pub async fn detail(
             LeaveProcessPurpose::Request
         },
         can_edit,
-        can_submit: can_edit && policy.as_ref().is_some_and(|p| p.enabled),
+        can_submit: can_edit
+            && submission_blocking_reason.is_none()
+            && policy.as_ref().is_some_and(|p| p.enabled),
+        submission_blocking_reason,
         can_act,
         can_cancel: own
             && matches!(
@@ -256,7 +273,41 @@ pub async fn usage_on_connection(
             "exit"
         }
     });
-    let items:Vec<LeaveUsageItem>=DbSession::new(connection).scalar::<Json<LeaveUsageItem>>("staff.leave.queries.usage_on_connection", "SELECT jsonb_build_object('userId',r.owner_id,'displayName',max(r.document->>'ownerName'),'typeId',r.type_id,'typeName',max(r.document->>'typeName'),'unit',max(r.document->>'unit'),'quotaYearStart',r.quota_year_start,'approvedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status IN ('approved','cancellation_pending')),0),'reservedAmount',coalesce(sum(r.amount) FILTER(WHERE r.status='submitted'),0),'annualLimit',(array_agg(p.document ORDER BY p.version DESC))[1]->'annualLimit','policyVersionId',(array_agg(p.id ORDER BY p.version DESC))[1]) FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id WHERE ($1 OR r.owner_id=$2) AND (r.document->>'startDate')::date BETWEEN $3 AND $4 AND ($5::text IS NULL OR r.document->>'kind'=$5) AND r.status IN ('submitted','approved','cancellation_pending') GROUP BY r.owner_id,r.type_id,r.quota_year_start ORDER BY r.owner_id,r.type_id,r.quota_year_start LIMIT 5001").bind(actor.has_permission(codes::STAFF_LEAVE_DOWNLOAD_SCHOOL)).bind(actor.user_id).bind(q.from).bind(q.to).bind(kind).fetch_all().await?.into_iter().map(|r|r.0).collect();
+    #[derive(sqlx::FromRow)]
+    struct UsageRow {
+        document: Json<LeaveUsageItem>,
+        compatible: bool,
+    }
+    let rows:Vec<UsageRow>=DbSession::new(connection).query_as("staff.leave.queries.usage_on_connection",r#"
+      WITH ledger AS (
+        SELECT r.owner_id,r.type_id,r.quota_year_start,r.document->>'ownerName' display_name,r.document->>'typeName' type_name,r.status,
+          CASE WHEN r.document->>'unit' IN ('day','half_day') THEN 'day' ELSE 'minute' END canonical_unit,
+          r.document->>'unit' IN ('day','half_day','minute') AND p.document->>'unit' IN ('day','half_day','minute') valid_unit,
+          r.amount::numeric*CASE WHEN r.document->>'unit'='day' THEN 2 ELSE 1 END amount_scaled,
+          p.document policy,p.version,p.id policy_id
+        FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id
+        WHERE ($1 OR r.owner_id=$2) AND (r.document->>'startDate')::date BETWEEN $3 AND $4
+          AND ($5::text IS NULL OR r.document->>'kind'=$5) AND r.status IN ('submitted','approved','cancellation_pending')
+      ), grouped AS (
+        SELECT owner_id,type_id,quota_year_start,max(display_name) display_name,max(type_name) type_name,
+          max(canonical_unit) unit,bool_and(valid_unit) AND count(DISTINCT canonical_unit)=1 compatible,
+          coalesce(sum(amount_scaled) FILTER(WHERE status IN ('approved','cancellation_pending')),0)::text approved,
+          coalesce(sum(amount_scaled) FILTER(WHERE status='submitted'),0)::text reserved,
+          (array_agg(policy ORDER BY version DESC))[1] policy,(array_agg(policy_id ORDER BY version DESC))[1] policy_id
+        FROM ledger GROUP BY owner_id,type_id,quota_year_start
+      ) SELECT jsonb_build_object('userId',owner_id,'displayName',display_name,'typeId',type_id,'typeName',type_name,
+          'unit',unit,'amountScale',CASE WHEN unit='day' THEN 2 ELSE 1 END,'quotaYearStart',quota_year_start,
+          'approvedAmount',approved,'reservedAmount',reserved,'annualLimit',CASE WHEN policy->>'annualLimit' IS NULL THEN NULL
+            ELSE ((policy->>'annualLimit')::numeric*CASE WHEN policy->>'unit'='day' THEN 2 ELSE 1 END)::text END,
+          'policyVersionId',policy_id) document,compatible FROM grouped
+      ORDER BY owner_id,type_id,quota_year_start LIMIT 5001
+    "#).bind(actor.has_permission(codes::STAFF_LEAVE_DOWNLOAD_SCHOOL)).bind(actor.user_id).bind(q.from).bind(q.to).bind(kind).fetch_all().await?;
+    if rows.iter().any(|r| !r.compatible) {
+        return Err(invalid(
+            "หน่วยในบัญชีสิทธิ์เดิมไม่เข้ากัน กรุณาให้ผู้ดูแลตรวจสอบโดยไม่แปลงวันเป็นนาที",
+        ));
+    }
+    let items = rows.into_iter().map(|r| r.document.0).collect::<Vec<_>>();
     if items.len() > 5000 {
         return Err(invalid("รายงานมีรายการมากเกินไป กรุณาลดช่วงวันที่"));
     }

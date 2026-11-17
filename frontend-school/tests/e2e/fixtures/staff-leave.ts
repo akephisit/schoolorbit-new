@@ -7,7 +7,8 @@ import type {
 	LeavePeriodInput,
 	LeaveActionRequest,
 	SaveLeavePolicyRequest,
-	LeaveCoveragePlan
+	LeaveCoveragePlan,
+	LeaveUsageItem
 } from '../../../src/lib/api/staff-leave';
 import { PERMISSIONS } from '../../../src/lib/permissions/registry.generated';
 
@@ -33,10 +34,15 @@ export async function mockLeave(
 		permissions?: string[];
 		role?: 'owner' | 'reviewer';
 		status?: LeaveRequestDetail['request']['status'];
-		hold?: 'requests' | 'detail' | 'types' | 'usage' | 'mutation';
-		fail?: 'requests' | 'detail' | 'types' | 'usage' | 'options';
+		hold?: 'requests' | 'detail' | 'types' | 'usage' | 'policies' | 'mutation';
+		fail?: 'requests' | 'detail' | 'types' | 'usage' | 'options' | 'policies';
 		empty?: boolean;
 		missingPolicy?: boolean;
+		legacyPolicy?: boolean;
+		legacyPartial?: boolean;
+		quotaMonth?: number;
+		policyHistory?: LeavePolicyVersion[];
+		usageItems?: LeaveUsageItem[];
 		requireSignature?: boolean;
 		failMutation?: number;
 		coverage?: LeaveCoveragePlan;
@@ -63,15 +69,15 @@ export async function mockLeave(
 		sourceReference: 'คำสั่งโรงเรียนทดสอบ 1/2569',
 		personnelTypes: ['contract_employee'],
 		enabled: true,
-		unit: 'half_day',
+		unit: options.legacyPolicy ? 'half_day' : 'day',
 		countingMode: 'working_days',
 		workingWeekdays: [1, 2, 3, 4, 5],
 		excludedDates: ['2026-10-23'],
-		quotaYearStartMonth: 1,
-		maxPerRequest: 10,
-		annualLimit: 40,
+		quotaYearStartMonth: options.quotaMonth ?? 1,
+		maxPerRequest: 5,
+		annualLimit: options.legacyPolicy ? 40 : 20,
 		evidenceRequired: false,
-		evidenceFromAmount: 6,
+		evidenceFromAmount: 3,
 		minimumNoticeDays: null,
 		steps: [
 			{
@@ -104,15 +110,15 @@ export async function mockLeave(
 		endDate: '2026-10-19',
 		startTime: null,
 		endTime: null,
-		dayPortion: 'full_day',
-		amount: 2,
-		unit: 'half_day',
+		dayPortion: options.legacyPartial ? 'morning' : 'full_day',
+		amount: 1,
+		unit: options.legacyPartial ? 'half_day' : 'day',
 		reason: 'เข้ารับการตรวจรักษา',
 		createdAt: now,
 		academicYearId: id(1),
-		academicTermId: id(800),
-		halfDayBoundary: '11:30:00'
+		academicTermId: id(800)
 	};
+	let requestPolicy = structuredClone(policy);
 	let purpose: LeaveRequestDetail['processPurpose'] =
 		options.status === 'cancellation_pending' ? 'cancellation' : 'request';
 	const history: LeaveRequestDetail['history'] = [
@@ -141,7 +147,6 @@ export async function mockLeave(
 				sourceDigest: 'digest-zero',
 				academicYearId: id(1),
 				academicTermId: id(800),
-				halfDayBoundary: '11:30:00',
 				timetableState: 'ready',
 				days: [{ date: request.startDate, lessons: [] }],
 				canManage: canEdit,
@@ -149,13 +154,17 @@ export async function mockLeave(
 				blockingReason: null
 			},
 			request: { ...request },
-			policy: { ...policy },
+			policy: { ...requestPolicy },
 			processPurpose: purpose,
 			history: structuredClone(history),
 			evidenceFileIds: [...evidenceFileIds],
 			contentHash: 'a'.repeat(64),
 			canEdit,
-			canSubmit: canEdit,
+			canSubmit: canEdit && requestPolicy.unit !== 'half_day' && request.unit !== 'half_day',
+			submissionBlockingReason:
+				canEdit && (requestPolicy.unit === 'half_day' || request.unit === 'half_day')
+					? 'ให้ผู้ดูแลสร้างนโยบายเต็มวันสำหรับประเภทเดิม แล้วบันทึกคำขอเป็นเต็มวันก่อนส่ง'
+					: null,
 			canCancel:
 				options.role !== 'reviewer' &&
 				['draft', 'returned', 'submitted', 'approved'].includes(request.status),
@@ -224,8 +233,10 @@ export async function mockLeave(
 			...period,
 			typeName: type.name,
 			kind: type.kind,
-			unit: type.kind === 'exit' ? 'minute' : 'half_day',
-			amount: type.kind === 'exit' ? 90 : period.dayPortion === 'full_day' ? 2 : 1,
+			unit: type.kind === 'exit' ? 'minute' : 'day',
+			dayPortion: 'full_day',
+			amount: type.kind === 'exit' ? 90 : 1,
+			policyVersionId: policy.id,
 			personnelType: 'contract_employee'
 		};
 		evidenceFileIds = period.evidenceFileIds ?? [];
@@ -239,6 +250,7 @@ export async function mockLeave(
 				annualLimit: null,
 				evidenceFromAmount: null
 			};
+		requestPolicy = structuredClone(policy);
 	}
 	await page.route(
 		(url) => url.pathname.startsWith(base) || url.pathname.startsWith('/api/files'),
@@ -259,17 +271,19 @@ export async function mockLeave(
 			const region =
 				method !== 'GET'
 					? 'mutation'
-					: path === `${base}/requests`
-						? 'requests'
-						: path === `${base}/types`
-							? 'types'
-							: path === `${base}/usage`
-								? 'usage'
-								: path === `${base}/options`
-									? 'options'
-									: path.includes('/requests/')
-										? 'detail'
-										: '';
+					: path.endsWith('/policies')
+						? 'policies'
+						: path === `${base}/requests`
+							? 'requests'
+							: path === `${base}/types`
+								? 'types'
+								: path === `${base}/usage`
+									? 'usage'
+									: path === `${base}/options`
+										? 'options'
+										: path.includes('/requests/')
+											? 'detail'
+											: '';
 			if (options.hold === region) await held;
 			if (options.fail === region && !failedRead) {
 				failedRead = true;
@@ -287,10 +301,8 @@ export async function mockLeave(
 				);
 			}
 			if (method === 'GET') {
-				if (path === `${base}/coverage/settings`)
+				if (path === `${base}/coverage/options`)
 					return reply(route, {
-						revision: 1,
-						halfDayBoundary: '11:30:00',
 						contexts: [
 							{
 								academicYearId: id(1),
@@ -317,6 +329,12 @@ export async function mockLeave(
 				if (path.endsWith('/effective-policy')) {
 					if (options.missingPolicy)
 						return reply(route, 'ยังไม่มีนโยบายสำหรับประเภทบุคลากรนี้', 404);
+					if (!path.includes(exitTypeId) && policy.unit === 'half_day')
+						return reply(
+							route,
+							'ให้ผู้ดูแลสร้างนโยบายเต็มวันสำหรับประเภทเดิม โดยคงเดือนเริ่มโควตาเดิม',
+							422
+						);
 					return reply(
 						route,
 						path.includes(exitTypeId)
@@ -332,7 +350,7 @@ export async function mockLeave(
 							: policy
 					);
 				}
-				if (path.endsWith('/policies')) return reply(route, [policy]);
+				if (path.endsWith('/policies')) return reply(route, options.policyHistory ?? [policy]);
 				if (path === `${base}/requests`) {
 					if (options.empty) return reply(route, { items: [], hasMore: false });
 					const kind = url.searchParams.get('kind');
@@ -362,20 +380,21 @@ export async function mockLeave(
 						to: url.searchParams.get('to'),
 						items: options.empty
 							? []
-							: [
+							: (options.usageItems ?? [
 									{
 										userId: actor,
 										displayName: '=ชื่อสูตรทดสอบ',
 										typeId: leaveTypeId,
 										typeName: 'ลาป่วย',
-										unit: 'half_day',
+										unit: 'day',
+										amountScale: 2,
 										quotaYearStart: '2026-01-01',
-										approvedAmount: 3,
-										reservedAmount: 1,
-										annualLimit: 40,
+										approvedAmount: '3',
+										reservedAmount: '1',
+										annualLimit: '40',
 										policyVersionId: leavePolicyId
 									}
-								]
+								])
 					});
 				if (path.endsWith(secondLeaveId))
 					return reply(route, {
@@ -472,6 +491,7 @@ export async function mockLeave(
 		fileReads,
 		count: (path: string) => counts.get(path) ?? 0,
 		detail,
+		setPolicy: (value: LeavePolicyVersion) => (policy = structuredClone(value)),
 		setStatus: (status: LeaveRequestDetail['request']['status']) => (request.status = status),
 		setCurrentStep: (index: number) => (currentStep = index)
 	};

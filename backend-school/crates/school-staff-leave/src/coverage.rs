@@ -1,6 +1,6 @@
 //! Leave owns selected plans and exact-plan consent. Timetable owns dated occupancy.
 use super::{coverage_models::*, models::*, policy::*, repository::*};
-use chrono::{NaiveDate, NaiveTime, Timelike, Utc};
+use chrono::{NaiveDate, NaiveTime, Utc};
 use school_academic_timetable::services::dated_teaching as duties;
 use school_authorization::ActorContext;
 use school_database::DbSession;
@@ -18,7 +18,7 @@ fn own_access(actor: &ActorContext) -> Result<(), AppError> {
     actor.require_permission(codes::STAFF_LEAVE_CREATE_OWN)?;
     actor.require_any_permission(&[codes::STAFF_LEAVE_READ_OWN, codes::STAFF_LEAVE_READ_SCHOOL])
 }
-fn settings_access(actor: &ActorContext) -> Result<(), AppError> {
+fn coverage_access(actor: &ActorContext) -> Result<(), AppError> {
     actor.require_any_permission(&[
         codes::STAFF_LEAVE_CREATE_OWN,
         codes::STAFF_LEAVE_MANAGE_SCHOOL,
@@ -83,34 +83,23 @@ pub(super) async fn lock_action_context(
         );
     lock_request_context_mode(tx, id, !retiring).await
 }
-pub(super) fn explicit_context(period: &LeavePeriodInput) -> Result<(Uuid, Uuid), AppError> {
+pub(super) fn explicit_context(period: &StoredLeavePeriod) -> Result<(Uuid, Uuid), AppError> {
     match (period.academic_year_id, period.academic_term_id) {
         (Some(y), Some(t)) => Ok((y, t)),
         _ => Err(invalid("กรุณาเลือกปีการศึกษาและภาคเรียนอย่างชัดเจน")),
     }
 }
-pub async fn settings(
+pub async fn options(
     pool: &PgPool,
     actor: &ActorContext,
-) -> Result<LeaveCoverageSettings, AppError> {
-    settings_access(actor)?;
+) -> Result<LeaveCoverageOptions, AppError> {
+    coverage_access(actor)?;
     let mut connection =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.leave.coverage.settings")
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "staff.leave.coverage.options")
             .await?;
-    settings_on_connection(&mut connection).await
-}
-async fn settings_on_connection(
-    connection: &mut PgConnection,
-) -> Result<LeaveCoverageSettings, AppError> {
-    let (revision, half_day_boundary): (i64, Option<NaiveTime>) = DbSession::new(connection)
-        .query_as(
-            "staff.leave.coverage.settings.read",
-            "SELECT revision,half_day_boundary FROM staff_leave_coverage_settings WHERE singleton",
-        )
-        .fetch_one()
-        .await?;
     let options =
-        school_academic_core::services::context::list_options_on_connection(connection).await?;
+        school_academic_core::services::context::list_options_on_connection(&mut connection)
+            .await?;
     let contexts = options
         .terms
         .iter()
@@ -131,9 +120,7 @@ async fn settings_on_connection(
         Some(c.academic_year_id) == options.default_academic_year_id
             && Some(c.academic_term_id) == options.default_academic_term_id
     });
-    Ok(LeaveCoverageSettings {
-        revision,
-        half_day_boundary,
+    Ok(LeaveCoverageOptions {
         default_academic_year_id: if valid_default {
             options.default_academic_year_id
         } else {
@@ -147,45 +134,10 @@ async fn settings_on_connection(
         contexts,
     })
 }
-pub async fn save_settings(
-    pool: &PgPool,
-    actor: &ActorContext,
-    input: SaveLeaveCoverageSettingsRequest,
-) -> Result<LeaveCoverageSettings, AppError> {
-    actor.require_permission(codes::STAFF_LEAVE_MANAGE_SCHOOL)?;
-    if input
-        .half_day_boundary
-        .is_some_and(|t| t.second() != 0 || t.nanosecond() != 0 || t == NaiveTime::MIN)
-    {
-        return Err(invalid("เวลาแบ่งครึ่งวันต้องเป็นนาทีและอยู่ระหว่างวัน"));
-    }
-    let mut tx =
-        school_tenancy::TenantPool::begin_observed(pool, "staff.leave.coverage.save_settings")
-            .await?;
-    if claim(
-        &mut tx,
-        actor.user_id,
-        input.request_id,
-        "coverage_settings",
-        Uuid::nil(),
-        &input,
-    )
-    .await?
-    .is_none()
-    {
-        let changed=DbSession::new(&mut *tx).query("staff.leave.coverage.settings.update","UPDATE staff_leave_coverage_settings SET revision=revision+1,half_day_boundary=$1 WHERE singleton AND revision=$2").bind(input.half_day_boundary).bind(input.expected_revision).execute().await?;
-        if changed.rows_affected() != 1 {
-            return Err(stale());
-        }
-    }
-    let result = settings_on_connection(&mut tx).await?;
-    tx.commit().await?;
-    Ok(result)
-}
 pub(super) async fn interval(
-    connection: &mut PgConnection,
-    period: &LeavePeriodInput,
-    verify_setting: bool,
+    _connection: &mut PgConnection,
+    period: &StoredLeavePeriod,
+    _verify_setting: bool,
 ) -> Result<(NaiveTime, NaiveTime), AppError> {
     if let (Some(start), Some(end)) = (period.start_time, period.end_time) {
         if start >= end {
@@ -196,23 +148,17 @@ pub(super) async fn interval(
     if period.day_portion == LeaveDayPortion::FullDay {
         return Ok((NaiveTime::MIN, end_of_day()?));
     }
-    let boundary = period
-        .half_day_boundary
-        .ok_or_else(|| invalid("โรงเรียนต้องตั้งค่าเวลาแบ่งครึ่งวันก่อนจัดสอนแทน"))?;
-    if verify_setting {
-        let configured:Option<NaiveTime>=DbSession::new(connection).scalar("staff.leave.coverage.boundary","SELECT half_day_boundary FROM staff_leave_coverage_settings WHERE singleton FOR SHARE").fetch_one().await?;
-        if configured != Some(boundary) {
-            return Err(invalid("เวลาแบ่งครึ่งวันเปลี่ยนแล้ว กรุณาใช้ค่าตั้งโรงเรียนล่าสุด"));
-        }
-    }
+    let boundary = period.half_day_boundary.ok_or_else(|| {
+        invalid("คำขอเดิมไม่มีขอบเขตเวลาที่บันทึกไว้ จึงไม่สามารถสร้างหน้าที่สอนใหม่จากช่วงครึ่งวันเดิมได้")
+    })?;
     Ok(if period.day_portion == LeaveDayPortion::Morning {
         (NaiveTime::MIN, boundary)
     } else {
         (boundary, end_of_day()?)
     })
 }
-fn empty_plan(period: &LeavePeriodInput, state: LeaveCoverageState) -> LeaveCoveragePlan {
-    LeaveCoveragePlan {
+fn empty_plan(period: &StoredLeavePeriod, state: LeaveCoverageState) -> StoredLeaveCoveragePlan {
+    StoredLeaveCoveragePlan {
         revision: 0,
         plan_hash: String::new(),
         state,
@@ -230,8 +176,8 @@ fn empty_plan(period: &LeavePeriodInput, state: LeaveCoverageState) -> LeaveCove
 pub(super) async fn preview_on_connection(
     connection: &mut PgConnection,
     owner: Uuid,
-    period: &LeavePeriodInput,
-) -> Result<LeaveCoveragePlan, AppError> {
+    period: &StoredLeavePeriod,
+) -> Result<StoredLeaveCoveragePlan, AppError> {
     let (year, term) = explicit_context(period)?;
     let (start, end) = interval(connection, period, true).await?;
     let snapshot = duties::snapshot_on_connection(
@@ -276,21 +222,32 @@ pub async fn preview(
     input: PreviewLeaveCoverageRequest,
 ) -> Result<LeaveCoveragePlan, AppError> {
     own_access(actor)?;
-    let (year, term) = explicit_context(&input.period)?;
+    let period: StoredLeavePeriod = input.period.into();
+    let (year, term) = explicit_context(&period)?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.coverage.preview").await?;
     duties::lock_context(&mut tx, year, term).await?;
     staff_name(&mut tx, actor.user_id).await?;
-    let result = preview_on_connection(&mut tx, actor.user_id, &input.period).await?;
+    let typ: Json<LeaveType> = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.leave.coverage.preview_type",
+            "SELECT document FROM staff_leave_types WHERE id=$1",
+        )
+        .bind(period.type_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
+    require_current_shape(&period, typ.kind)?;
+    let result = preview_on_connection(&mut tx, actor.user_id, &period).await?;
     tx.commit().await?;
-    Ok(result)
+    Ok(result.into())
 }
 pub(super) async fn stored_plan(
     connection: &mut PgConnection,
     id: Uuid,
-) -> Result<Option<LeaveCoveragePlan>, AppError> {
+) -> Result<Option<StoredLeaveCoveragePlan>, AppError> {
     Ok(DbSession::new(connection)
-        .scalar::<Json<LeaveCoveragePlan>>(
+        .scalar::<Json<StoredLeaveCoveragePlan>>(
             "staff.leave.coverage.plan",
             "SELECT document FROM staff_leave_coverage_plans WHERE request_id=$1",
         )
@@ -299,7 +256,7 @@ pub(super) async fn stored_plan(
         .await?
         .map(|p| p.0))
 }
-fn complete(plan: &LeaveCoveragePlan) -> bool {
+fn complete(plan: &StoredLeaveCoveragePlan) -> bool {
     plan.timetable_state == LeaveCoverageTimetableState::Ready
         && plan
             .days
@@ -307,11 +264,11 @@ fn complete(plan: &LeaveCoveragePlan) -> bool {
             .flat_map(|d| &d.lessons)
             .all(|l| l.assignment.is_some())
 }
-pub(super) async fn detail_on_connection(
+async fn detail_stored_on_connection(
     connection: &mut PgConnection,
     actor: &ActorContext,
     r: &Record,
-) -> Result<LeaveCoveragePlan, AppError> {
+) -> Result<StoredLeaveCoveragePlan, AppError> {
     let Some(mut plan) = stored_plan(connection, r.document.id).await? else {
         if r.document.academic_term_id.is_none() {
             return Ok(empty_plan(
@@ -363,6 +320,15 @@ pub(super) async fn detail_on_connection(
         && r.instance_id.is_none();
     Ok(plan)
 }
+pub(super) async fn detail_on_connection(
+    connection: &mut PgConnection,
+    actor: &ActorContext,
+    r: &Record,
+) -> Result<LeaveCoveragePlan, AppError> {
+    Ok(detail_stored_on_connection(connection, actor, r)
+        .await?
+        .into())
+}
 pub(super) async fn approval_ready(
     connection: &mut PgConnection,
     r: &Record,
@@ -394,6 +360,7 @@ async fn editable_plan(
             .is_some_and(|p| p.emergency_reason.is_some());
     if !manager {
         owner_edit(actor, &r)?;
+        require_current_shape(&period_from(&r), r.document.kind)?;
     }
     if r.document.revision != revision {
         return Err(stale());
@@ -406,7 +373,7 @@ async fn current_plan(
     id: Uuid,
     revision: i64,
     digest: &str,
-) -> Result<(Record, LeaveCoveragePlan), AppError> {
+) -> Result<(Record, StoredLeaveCoveragePlan), AppError> {
     let r = editable_plan(tx, actor, id, revision).await?;
     let plan = preview_on_connection(&mut **tx, r.document.owner_id, &period_from(&r)).await?;
     if plan.source_digest.as_deref() != Some(digest) {
@@ -582,7 +549,7 @@ pub async fn candidates(
     id: Uuid,
     input: LeaveCoverageCandidatesRequest,
 ) -> Result<LeaveCoverageCandidates, AppError> {
-    settings_access(actor)?;
+    coverage_access(actor)?;
     if input.lesson_keys.is_empty()
         || input.lesson_keys.len() > 500
         || input
@@ -830,7 +797,7 @@ pub async fn return_lessons(
     id: Uuid,
     input: LeaveCoverageReturnLessonsRequest,
 ) -> Result<LeaveCoverageReturnLessons, AppError> {
-    settings_access(actor)?;
+    coverage_access(actor)?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.coverage.return_lessons")
             .await?;
@@ -894,7 +861,7 @@ async fn effective_confirmations(
 ) -> Result<Vec<ConfirmationEvidence>, AppError> {
     Ok(DbSession::new(connection).query_as("staff.leave.coverage.effective_consents","SELECT DISTINCT ON(c.assignment_id,c.teacher_id) c.assignment_id,c.teacher_id,c.decision,c.accepted_at,c.id AS confirmation_id,c.plan_revision AS confirmation_plan_revision FROM staff_leave_coverage_assignment_revisions a JOIN staff_leave_coverage_confirmations c ON c.request_id=a.request_id AND c.assignment_id=a.assignment_id AND c.teacher_id=a.teacher_id AND c.assignment_hash=a.assignment_hash WHERE a.request_id=$1 AND a.plan_revision=$2 AND (c.plan_revision=$2 OR c.decision='confirmed') ORDER BY c.assignment_id,c.teacher_id,(c.plan_revision=$2) DESC,c.accepted_at DESC,c.id").bind(id).bind(revision).fetch_all().await?)
 }
-fn apply_confirmations(plan: &mut LeaveCoveragePlan, receipts: &[ConfirmationEvidence]) {
+fn apply_confirmations(plan: &mut StoredLeaveCoveragePlan, receipts: &[ConfirmationEvidence]) {
     for a in plan
         .days
         .iter_mut()
@@ -919,14 +886,14 @@ fn apply_confirmations(plan: &mut LeaveCoveragePlan, receipts: &[ConfirmationEvi
 async fn persist_plan(
     connection: &mut PgConnection,
     id: Uuid,
-    plan: &mut LeaveCoveragePlan,
+    plan: &mut StoredLeaveCoveragePlan,
 ) -> Result<(), AppError> {
     persist_plan_mode(connection, id, plan, false).await
 }
 async fn persist_plan_mode(
     connection: &mut PgConnection,
     id: Uuid,
-    plan: &mut LeaveCoveragePlan,
+    plan: &mut StoredLeaveCoveragePlan,
     retain_only_exact: bool,
 ) -> Result<(), AppError> {
     let (year, term) = match (plan.academic_year_id, plan.academic_term_id) {
@@ -1038,7 +1005,7 @@ pub async fn save(
     id: Uuid,
     input: SaveLeaveCoverageRequest,
 ) -> Result<LeaveRequestDetail, AppError> {
-    settings_access(actor)?;
+    coverage_access(actor)?;
     if input.assignments.len() > 3000 {
         return Err(invalid("แผนสอนมีจำนวนคาบเกินขนาด"));
     }
@@ -1288,7 +1255,7 @@ pub async fn save(
 pub(super) async fn reserve(
     tx: &mut Transaction<'_, Postgres>,
     r: &Record,
-    plan: &LeaveCoveragePlan,
+    plan: &StoredLeaveCoveragePlan,
 ) -> Result<(), AppError> {
     validate_audiences(&mut **tx, r, plan).await?;
     let period = period_from(r);
@@ -1401,7 +1368,7 @@ pub(super) async fn prepare_submission(
     tx: &mut Transaction<'_, Postgres>,
     r: &Record,
     emergency_reason: Option<&str>,
-) -> Result<LeaveCoveragePlan, AppError> {
+) -> Result<StoredLeaveCoveragePlan, AppError> {
     let fresh = preview_on_connection(&mut **tx, r.document.owner_id, &period_from(r)).await?;
     if fresh.timetable_state != LeaveCoverageTimetableState::Ready {
         return Err(invalid("ยังไม่มีตารางเรียนในภาคเรียนนี้ กรุณาจัดตารางก่อนยื่นคำขอ"));
@@ -1584,7 +1551,7 @@ pub async fn confirm(
 async fn invalid_assignment_keys(
     connection: &mut PgConnection,
     r: &Record,
-    plan: &LeaveCoveragePlan,
+    plan: &StoredLeaveCoveragePlan,
 ) -> Result<BTreeSet<String>, AppError> {
     let (year, term) = explicit_context(&period_from(r))?;
     let source = school_academic_delivery::services::current::complete_workspace_on_connection(
@@ -1730,7 +1697,7 @@ async fn invalid_assignment_keys(
 async fn validate_audiences(
     connection: &mut PgConnection,
     r: &Record,
-    plan: &LeaveCoveragePlan,
+    plan: &StoredLeaveCoveragePlan,
 ) -> Result<(), AppError> {
     if !invalid_assignment_keys(connection, r, plan)
         .await?
@@ -1745,7 +1712,7 @@ async fn validate_audiences(
 pub(super) async fn revalidate(
     tx: &mut Transaction<'_, Postgres>,
     r: &Record,
-    plan: &LeaveCoveragePlan,
+    plan: &StoredLeaveCoveragePlan,
 ) -> Result<(), AppError> {
     validate_audiences(&mut **tx, r, plan).await?;
     let period = period_from(r);
@@ -1894,7 +1861,7 @@ mod tests {
     use super::*;
     #[test]
     fn explicit_context_never_infers_from_date() {
-        let p:LeavePeriodInput=serde_json::from_value(serde_json::json!({"typeId":Uuid::nil(),"startDate":"2026-11-17","endDate":"2026-11-17","startTime":null,"endTime":null,"dayPortion":"full_day","reason":"test"})).unwrap();
+        let p:StoredLeavePeriod=serde_json::from_value(serde_json::json!({"typeId":Uuid::nil(),"startDate":"2026-11-17","endDate":"2026-11-17","startTime":null,"endTime":null,"dayPortion":"full_day","reason":"test"})).unwrap();
         assert!(explicit_context(&p).is_err());
         assert!(!serde_json::to_string(&p)
             .unwrap()
@@ -1978,7 +1945,7 @@ async fn teacher_free_with_absences(
 pub(super) async fn lock_updated_contexts(
     tx: &mut Transaction<'_, Postgres>,
     id: Uuid,
-    period: &LeavePeriodInput,
+    period: &StoredLeavePeriod,
 ) -> Result<(), AppError> {
     let supplied = explicit_context(period)?;
     let previous = request_context(&mut **tx, id).await?;
@@ -2002,8 +1969,8 @@ pub(super) async fn lock_updated_contexts(
 async fn reconcile_plan_on_connection(
     connection: &mut PgConnection,
     r: &Record,
-    previous: Option<&LeaveCoveragePlan>,
-) -> Result<LeaveCoveragePlan, AppError> {
+    previous: Option<&StoredLeaveCoveragePlan>,
+) -> Result<StoredLeaveCoveragePlan, AppError> {
     let mut fresh =
         match preview_on_connection(connection, r.document.owner_id, &period_from(r)).await {
             Ok(p) => p,
@@ -2093,7 +2060,7 @@ pub async fn refresh(
     id: Uuid,
     input: LeaveMutationRequest,
 ) -> Result<LeaveRequestDetail, AppError> {
-    settings_access(actor)?;
+    coverage_access(actor)?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.coverage.refresh").await?;
     lock_request_context(&mut tx, id).await?;

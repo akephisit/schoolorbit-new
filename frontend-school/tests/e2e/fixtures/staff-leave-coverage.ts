@@ -5,7 +5,7 @@ import { actor, firstStaff, secondStaff, id } from './staff-home-route-data';
 import type {
 	LeaveCoveragePlan,
 	LeaveCoverageLesson,
-	LeaveCoverageSettings,
+	LeaveCoverageOptions,
 	LeaveCoverageSelection,
 	LeaveCoverageCandidate,
 	DatedTeachingLesson,
@@ -56,7 +56,6 @@ export function coveragePlan(): LeaveCoveragePlan {
 		sourceDigest: 'timetable-digest',
 		academicYearId: coverageYear,
 		academicTermId: coverageTerm,
-		halfDayBoundary: '11:30:00',
 		timetableState: 'ready',
 		days: [
 			{ date: '2026-10-19', lessons: lessons.slice(0, 2) },
@@ -74,7 +73,6 @@ export async function mockTeachingCoverage(
 		status?: 'draft' | 'returned' | 'submitted';
 		assigned?: boolean;
 		failSave?: boolean;
-		missingBoundary?: boolean;
 		manager?: boolean;
 		updatedCoverage?: LeaveCoveragePlan;
 		kind?: LeaveKind;
@@ -100,6 +98,7 @@ export async function mockTeachingCoverage(
 	});
 	const detail = api.detail();
 	detail.request.endDate = '2026-10-20';
+	detail.request.amount = 2;
 	if (options.kind === 'exit') {
 		detail.request = {
 			...detail.request,
@@ -164,9 +163,7 @@ export async function mockTeachingCoverage(
 	const refreshReceipts = new Set<string>();
 	let workflowStarts = 0;
 	const reads: string[] = [];
-	const settings: LeaveCoverageSettings = {
-		revision: 1,
-		halfDayBoundary: options.missingBoundary ? null : '11:30:00',
+	const coverageOptions: LeaveCoverageOptions = {
 		contexts: [
 			{
 				academicYearId: coverageYear,
@@ -237,13 +234,7 @@ export async function mockTeachingCoverage(
 			const body = method === 'GET' ? {} : request.postDataJSON();
 			if (method !== 'GET') calls.push({ path, body });
 			else reads.push(path);
-			if (path.endsWith('/coverage/settings')) {
-				if (method === 'PUT') {
-					settings.revision++;
-					settings.halfDayBoundary = body.halfDayBoundary;
-				}
-				return reply(route, settings);
-			}
+			if (path.endsWith('/coverage/options')) return reply(route, coverageOptions);
 			if (path.endsWith('/coverage/assigned'))
 				return reply(route, { items: options.assigned ? [task()] : [], hasMore: false });
 
@@ -423,7 +414,7 @@ export async function mockTeachingCoverage(
 		api,
 		calls,
 		reads,
-		settings,
+		coverageOptions,
 		detail: () => detail,
 		teachers,
 		returnLesson,

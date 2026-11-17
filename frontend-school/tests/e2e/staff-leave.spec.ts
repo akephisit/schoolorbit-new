@@ -88,7 +88,7 @@ test('failed initial list retries only its region', async ({ page }) => {
 	expect(api.count('/api/staff-leave/options')).toBe(0);
 });
 
-test('create is lazy, resolves policy, saves server-derived half-day draft then submits', async ({
+test('create is lazy, resolves policy, saves server-derived whole-day draft then submits', async ({
 	page
 }) => {
 	const api = await mockLeave(page);
@@ -99,16 +99,17 @@ test('create is lazy, resolves policy, saves server-derived half-day draft then 
 	await page.getByRole('option', { name: 'ลาป่วย', exact: true }).click();
 	await chooseDate(page, 'leave-start-date');
 	await expect(page.getByTestId('leave-effective-policy')).toContainText('คำสั่งโรงเรียนทดสอบ');
-	await page.getByRole('radio', { name: 'ครึ่งวันเช้า', exact: true }).click();
+	await expect(page.getByRole('radio', { name: /ครึ่งวัน/ })).toHaveCount(0);
 	await page.getByLabel('เหตุผล *', { exact: true }).fill('ตรวจรักษาช่วงเช้า');
 	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
 	await expect(page).toHaveURL(new RegExp(leaveId));
 	await page.getByRole('button', { name: '3. ตรวจสอบและส่ง', exact: true }).click();
-	await expect(page.getByTestId('leave-review-step')).toContainText('0.5 วัน');
+	await expect(page.getByTestId('leave-review-step')).toContainText('1 วัน');
 	const created = api.writes.find((write) => write.path === '/api/staff-leave/requests')!;
 	expect(created.payload.period).not.toHaveProperty('amount');
+	expect(created.payload.period).not.toHaveProperty('dayPortion');
+	expect(created.payload.period).not.toHaveProperty('halfDayBoundary');
 	expect(created.payload.period).toMatchObject({
-		dayPortion: 'morning',
 		reason: 'ตรวจรักษาช่วงเช้า'
 	});
 	await page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true }).click();
@@ -565,8 +566,7 @@ test('exit menu uses planned times and the editable school-local minute profile'
 	expect(api.writes[0].payload.period).toMatchObject({
 		typeId: exitTypeId,
 		startTime: '09:00:00',
-		endTime: '10:30:00',
-		dayPortion: 'full_day'
+		endTime: '10:30:00'
 	});
 	await expect(page.getByText(/กลับเข้าโรงเรียน|มาสาย|เกินเวลา/)).toHaveCount(0);
 });
@@ -647,10 +647,15 @@ test('policy sections retain all edits and reveal hidden invalid fields before s
 	await page.keyboard.press('Enter');
 	await expect(page.locator('#policy-max')).toHaveValue('7.5');
 	await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+	await expect(page.locator('#policy-max')).toBeFocused();
+	await expect(page.locator('#policy-max')).toHaveValue('7.5');
+	expect(api.writes).toHaveLength(0);
+	await page.locator('#policy-max').fill('8');
+	await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
 	await expect(page.getByTestId('leave-policies')).toContainText('เกณฑ์ทดสอบการเก็บฉบับร่าง');
 	expect(api.writes.at(-1)!.payload).toMatchObject({
 		sourceReference: 'เกณฑ์ทดสอบการเก็บฉบับร่าง',
-		maxPerRequest: 15,
+		maxPerRequest: 8,
 		minimumNoticeDays: 2,
 		steps: [expect.objectContaining({ title: 'ผู้พิจารณาตามเกณฑ์ใหม่' })]
 	});
@@ -735,3 +740,302 @@ test('school leave download grant prints an assigned request', async ({ page }) 
 	await page.goto(leaveDetailPath);
 	await expect(page.getByRole('button', { name: 'พิมพ์คำขอ', exact: true })).toBeVisible();
 });
+
+test('legacy winning policy blocks creation without losing type date or reason and accepts an explicit Day successor', async ({
+	page
+}) => {
+	const api = await mockLeave(page, { legacyPolicy: true });
+	await page.goto('/staff/leave/new');
+	await page.locator('#leave-type').click();
+	await page.getByRole('option', { name: 'ลาป่วย', exact: true }).click();
+	await chooseDate(page, 'leave-start-date');
+	await page.getByLabel('เหตุผล *', { exact: true }).fill('เก็บเหตุผลระหว่างรอเกณฑ์เต็มวัน');
+	await expect(page.getByTestId('leave-effective-policy')).toContainText(
+		'ให้ผู้ดูแลสร้างนโยบายเต็มวันสำหรับประเภทเดิม'
+	);
+	await expect(page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true })).toBeDisabled();
+	await expect(page.locator('#leave-type')).toContainText('ลาป่วย');
+	await expect(page.locator('#leave-start-date')).not.toContainText('เลือกวันที่');
+	expect(api.writes).toHaveLength(0);
+	api.setPolicy({
+		...api.detail().policy!,
+		unit: 'day',
+		maxPerRequest: 3,
+		annualLimit: 20,
+		evidenceFromAmount: 2,
+		version: 2
+	});
+	await page.getByRole('button', { name: 'ตรวจสอบอีกครั้ง', exact: true }).click();
+	await expect(page.getByTestId('leave-effective-policy')).toContainText('นโยบายฉบับ 2');
+	await expect(page.getByLabel('เหตุผล *', { exact: true })).toHaveValue(
+		'เก็บเหตุผลระหว่างรอเกณฑ์เต็มวัน'
+	);
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
+	await expect(page).toHaveURL(new RegExp(leaveId));
+	expect(api.writes[0].payload.period).not.toHaveProperty('dayPortion');
+	expect(api.detail().request.unit).toBe('day');
+});
+
+test('old morning draft remains evidence until the owner explicitly saves a whole-day replacement', async ({
+	page
+}) => {
+	const api = await mockLeave(page, { legacyPolicy: true, legacyPartial: true });
+	const original = structuredClone(api.detail());
+	await page.goto(leaveDetailPath);
+	await expect(page.getByTestId('leave-detail')).toContainText('0.5 วัน');
+	await expect(page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true })).toHaveCount(0);
+	await page.getByRole('link', { name: 'แก้ไขฉบับร่าง', exact: true }).click();
+	await expect(page.getByTestId('leave-whole-day-conversion')).toContainText('ช่วงเช้า · 0.5 วัน');
+	await expect(page.getByTestId('leave-whole-day-conversion')).toContainText(
+		'ฉบับแก้ไขเป็นการลาเต็มวัน'
+	);
+	await expect(page.getByRole('radio', { name: /ครึ่งวัน/ })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true })).toBeDisabled();
+	api.setPolicy({
+		...original.policy!,
+		unit: 'day',
+		maxPerRequest: 3,
+		annualLimit: 20,
+		evidenceFromAmount: 2,
+		version: 2
+	});
+	await page.getByRole('button', { name: 'ตรวจสอบอีกครั้ง', exact: true }).click();
+	expect(api.detail().request).toEqual(original.request);
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
+	await expect(page.getByTestId('leave-whole-day-conversion')).toHaveCount(0);
+	expect(api.detail().request).toMatchObject({
+		unit: 'day',
+		dayPortion: 'full_day',
+		amount: 1,
+		revision: 2
+	});
+	expect(api.detail().history).toEqual(original.history);
+	expect(original.request).toMatchObject({ unit: 'half_day', dayPortion: 'morning', amount: 1 });
+	expect(api.writes[0].payload.period).not.toHaveProperty('halfDayBoundary');
+	expect(api.writes[0].payload.period).not.toHaveProperty('dayPortion');
+});
+
+test('legacy policy successor keeps exact fractional caps and fixed quota month until explicit whole-day correction', async ({
+	page
+}) => {
+	const api = await mockLeave(page, { legacyPolicy: true, quotaMonth: 10 });
+	const original = structuredClone(api.detail().policy!);
+	await page.goto('/staff/leave/settings');
+	await page.getByRole('button', { name: 'ดูเกณฑ์ ลาป่วย', exact: true }).click();
+	await expect(page.getByTestId('leave-policies')).toContainText('2.5 วัน');
+	await page.getByRole('button', { name: 'สร้างฉบับใหม่จากฉบับนี้', exact: true }).click();
+	await expect(page.getByTestId('leave-policy-day-successor')).toContainText('ระบบไม่ปัดค่าให้');
+	await expect(page.locator('#policy-unit')).toHaveCount(0);
+	await chooseDate(page, 'policy-effective');
+	await page.getByRole('tab', { name: 'จำนวน / การนับ', exact: true }).click();
+	await expect(page.locator('#policy-max')).toHaveValue('2.5');
+	await expect(page.locator('#policy-annual')).toHaveValue('20');
+	await expect(page.locator('#policy-year-month')).toContainText('ตุลาคม');
+	await expect(page.locator('#policy-year-month')).toBeDisabled();
+	await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+	await expect(page.locator('#policy-max')).toBeFocused();
+	expect(api.writes).toHaveLength(0);
+	await page.locator('#policy-max').fill('3');
+	await page.getByRole('tab', { name: 'หลักฐาน', exact: true }).click();
+	await expect(page.locator('#policy-evidence-threshold')).toHaveValue('1.5');
+	await page.locator('#policy-evidence-threshold').fill('');
+	await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+	await expect(page.getByTestId('leave-policy-editor')).toHaveCount(0);
+	expect(api.writes.at(-1)!.payload).toMatchObject({
+		unit: 'day',
+		maxPerRequest: 3,
+		annualLimit: 20,
+		evidenceFromAmount: null,
+		quotaYearStartMonth: 10
+	});
+	expect(original).toMatchObject({
+		unit: 'half_day',
+		maxPerRequest: 5,
+		evidenceFromAmount: 3,
+		quotaYearStartMonth: 10
+	});
+	await page.getByRole('button', { name: 'เพิ่มเกณฑ์ฉบับใหม่', exact: true }).click();
+	await page.getByRole('tab', { name: 'จำนวน / การนับ', exact: true }).click();
+	await expect(page.locator('#policy-year-month')).toContainText('ตุลาคม');
+	await expect(page.locator('#policy-year-month')).toBeDisabled();
+});
+
+test('new policy cannot choose a replacement quota month from missing or inconsistent history', async ({
+	page
+}) => {
+	const api = await mockLeave(page, { fail: 'policies' });
+	const first = api.detail().policy!;
+	await page.goto('/staff/leave/settings');
+	await page.getByRole('button', { name: 'ดูเกณฑ์ ลาป่วย', exact: true }).click();
+	await expect(page.getByTestId('leave-policies')).toContainText('บริการ policies ไม่พร้อม');
+	await expect(
+		page.getByRole('button', { name: 'เพิ่มเกณฑ์ฉบับใหม่', exact: true })
+	).toBeDisabled();
+	await page.route('**/api/staff-leave/types/*/policies', (route) =>
+		route.fulfill({
+			contentType: 'application/json',
+			body: JSON.stringify({
+				success: true,
+				data: [first, { ...first, id: secondLeaveId, version: 2, quotaYearStartMonth: 10 }]
+			})
+		})
+	);
+	await page.getByRole('button', { name: 'ลองอีกครั้ง', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มเกณฑ์ฉบับใหม่', exact: true }).click();
+	await expect(page.getByTestId('leave-policy-editor')).toContainText(
+		'รอบปีสิทธิ์ของเกณฑ์เดิมไม่ตรงกัน'
+	);
+	await expect(
+		page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true })
+	).toBeDisabled();
+	expect(api.writes).toHaveLength(0);
+});
+
+for (const width of [1440, 390])
+	test(`exact scaled usage preserves large mixed historical totals and CSV at ${width}`, async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width, height: 900 });
+		await mockLeave(page, {
+			usageItems: [
+				{
+					userId: actor,
+					displayName: 'ครูยอดสะสม',
+					typeId: leaveTypeId,
+					typeName: 'ลาป่วย',
+					policyVersionId: leaveId,
+					quotaYearStart: '2026-01-01',
+					unit: 'day',
+					amountScale: 2,
+					approvedAmount: '9007199254740993',
+					reservedAmount: '1',
+					annualLimit: '9007199254740994'
+				},
+				{
+					userId: actor,
+					displayName: 'ครูออกนอกโรงเรียน',
+					typeId: exitTypeId,
+					typeName: 'ออกนอกโรงเรียน',
+					policyVersionId: secondLeaveId,
+					quotaYearStart: '2026-01-01',
+					unit: 'minute',
+					amountScale: 1,
+					approvedAmount: '9007199254740993',
+					reservedAmount: '0',
+					annualLimit: null
+				}
+			]
+		});
+		await page.goto('/staff/leave/reports?from=2026-10-01&to=2026-10-31');
+		const report = page.getByTestId('leave-usage');
+		await expect(report).toContainText('4503599627370496.5 วัน');
+		await expect(report).toContainText('4503599627370497 วัน');
+		await expect(report).toContainText('9007199254740993 นาที');
+		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+			true
+		);
+		const downloadPromise = page.waitForEvent('download');
+		await page.getByRole('button', { name: 'ดาวน์โหลด CSV', exact: true }).click();
+		const stream = await (await downloadPromise).createReadStream(),
+			chunks: Buffer[] = [];
+		for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+		const csv = Buffer.concat(chunks).toString('utf8');
+		expect(csv).toContain('"4503599627370496.5 วัน","0.5 วัน","4503599627370497 วัน"');
+		expect(csv).toContain('"9007199254740993 นาที","0 นาที","ไม่กำหนด"');
+		await page.screenshot({
+			path: testInfo.outputPath(`whole-day-exact-usage-${width}.png`),
+			fullPage: true
+		});
+	});
+
+for (const correction of ['replacement', 'removal'] as const)
+	test(`unsafe original policy caps require explicit ${correction} before a Day successor can save`, async ({
+		page
+	}, testInfo) => {
+		const width = correction === 'replacement' ? 1440 : 390;
+		await page.setViewportSize({ width, height: 900 });
+		if (correction === 'removal')
+			await page.addInitScript(() =>
+				localStorage.setItem('ui-preferences', JSON.stringify({ theme: 'dark' }))
+			);
+		const api = await mockLeave(page, { legacyPolicy: true, quotaMonth: 10 });
+		const rawOriginal = JSON.stringify({
+			success: true,
+			data: [
+				{
+					...api.detail().policy!,
+					maxPerRequest: 'UNSAFE_INTEGER',
+					annualLimit: 'UNSAFE_INTEGER',
+					evidenceFromAmount: 'UNSAFE_INTEGER'
+				}
+			]
+		}).replaceAll('"UNSAFE_INTEGER"', '9007199254740993');
+		await page.route('**/api/staff-leave/types/*/policies', (route) =>
+			route.request().method() === 'GET'
+				? route.fulfill({ contentType: 'application/json', body: rawOriginal })
+				: route.fallback()
+		);
+		await page.goto('/staff/leave/settings');
+		await page.getByRole('button', { name: 'ดูเกณฑ์ ลาป่วย', exact: true }).click();
+		await page.getByRole('button', { name: 'สร้างฉบับใหม่จากฉบับนี้', exact: true }).click();
+		await chooseDate(page, 'policy-effective');
+		await page.getByRole('tab', { name: 'จำนวน / การนับ', exact: true }).click();
+		const editor = page.getByTestId('leave-policy-editor');
+		await expect(editor).not.toContainText('4503599627370496');
+		for (const id of ['policy-max', 'policy-annual']) {
+			await expect(page.locator(`#${id}`)).toHaveValue('');
+			await expect(page.locator(`#${id}`)).toHaveAttribute('placeholder', 'ต้องระบุใหม่');
+			await expect(page.locator(`#${id}`)).toHaveAttribute('aria-invalid', 'true');
+		}
+		await page.locator('#policy-max').fill('');
+		await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+		await expect(page.locator('#policy-max')).toBeFocused();
+		await expect(editor).toContainText('ค่าเดิมเกินช่วงจำนวนที่แสดงได้อย่างแม่นยำ');
+		expect(api.writes).toHaveLength(0);
+		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+			true
+		);
+		await page.screenshot({
+			path: testInfo.outputPath(`unsafe-policy-${correction}-${width}.png`)
+		});
+		if (correction === 'replacement') await page.locator('#policy-max').fill('3');
+		else
+			await page
+				.getByTestId('policy-max-unsafe')
+				.getByRole('button', { name: 'นำเงื่อนไขนี้ออก', exact: true })
+				.click();
+		await page.locator('#policy-annual').fill('');
+		await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+		await expect(page.locator('#policy-annual')).toBeFocused();
+		expect(api.writes).toHaveLength(0);
+		if (correction === 'replacement') await page.locator('#policy-annual').fill('20');
+		else
+			await page
+				.getByTestId('policy-annual-unsafe')
+				.getByRole('button', { name: 'นำเงื่อนไขนี้ออก', exact: true })
+				.click();
+		await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+		await expect(page.getByRole('tab', { name: 'หลักฐาน', exact: true })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(page.locator('#policy-evidence-threshold')).toBeFocused();
+		await expect(page.locator('#policy-evidence-threshold')).toHaveValue('');
+		expect(api.writes).toHaveLength(0);
+		if (correction === 'replacement') await page.locator('#policy-evidence-threshold').fill('2');
+		else
+			await page
+				.getByTestId('policy-evidence-threshold-unsafe')
+				.getByRole('button', { name: 'นำเงื่อนไขนี้ออก', exact: true })
+				.click();
+		await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+		await expect(editor).toHaveCount(0);
+		expect(api.writes.at(-1)!.payload).toMatchObject({
+			unit: 'day',
+			quotaYearStartMonth: 10,
+			maxPerRequest: correction === 'replacement' ? 3 : null,
+			annualLimit: correction === 'replacement' ? 20 : null,
+			evidenceFromAmount: correction === 'replacement' ? 2 : null
+		});
+		expect(api.writes).toHaveLength(1);
+	});

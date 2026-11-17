@@ -15,10 +15,6 @@ async fn fixture(name: &str) -> (PgPool, ActorContext, ActorContext, ActorContex
     sqlx::query("INSERT INTO bell_schedules(id,academic_year_id,code,name) VALUES('16000000-0000-0000-0000-000000000002','16000000-0000-0000-0000-000000000001','COVERAGE','Coverage')").execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO academic_terms(id,academic_year_id,name,sequence_no,code,term_type,included_in_year_result,blocks_year_closure,status,bell_schedule_id,school_days) VALUES('16000000-0000-0000-0000-000000000003','16000000-0000-0000-0000-000000000001','Coverage',1,'COVERAGE','regular',true,true,'planning','16000000-0000-0000-0000-000000000002','MON,TUE,WED,THU,FRI')").execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO academic_timetables(academic_year_id,academic_term_id,bell_schedule_id) VALUES('16000000-0000-0000-0000-000000000001','16000000-0000-0000-0000-000000000003','16000000-0000-0000-0000-000000000002')").execute(&pool).await.unwrap();
-    sqlx::query("UPDATE staff_leave_coverage_settings SET half_day_boundary=TIME '11:30'")
-        .execute(&pool)
-        .await
-        .unwrap();
     let mut actors = vec![];
     for name in ["Requester", "Reviewer", "Other"] {
         let id = Uuid::now_v7();
@@ -60,15 +56,10 @@ async fn create(pool: &PgPool, a: &ActorContext, t: Uuid, day: u32) -> LeaveRequ
 #[tokio::test]
 async fn leave_policy_versions_are_category_specific_and_submission_pins_exact_snapshot() {
     let (pool, owner, admin, _) = fixture("leave_versions").await;
-    let (t, p1) = typ(&pool, &admin, "versioned", LeaveUnit::HalfDay, None).await;
+    let (t, p1) = typ(&pool, &admin, "versioned", LeaveUnit::Day, None).await;
     let d = create(&pool, &owner, t.id, 1).await;
     let d = submit(&pool, &owner, &d).await;
-    let mut newer = policy(
-        p1.type_revision,
-        admin.user_id,
-        LeaveUnit::HalfDay,
-        Some(20),
-    );
+    let mut newer = policy(p1.type_revision, admin.user_id, LeaveUnit::Day, Some(20));
     newer.source_reference = "แก้ไขเกณฑ์วันเดิม".into();
     let p2 = service::save_policy(&pool, &admin, t.id, newer)
         .await
@@ -89,12 +80,7 @@ async fn leave_policy_versions_are_category_specific_and_submission_pins_exact_s
             .id,
         p1.id
     );
-    let mut other = policy(
-        p2.type_revision,
-        admin.user_id,
-        LeaveUnit::HalfDay,
-        Some(10),
-    );
+    let mut other = policy(p2.type_revision, admin.user_id, LeaveUnit::Day, Some(10));
     other.personnel_types = vec![StaffPersonnelType::GovernmentEmployee];
     service::save_policy(&pool, &admin, t.id, other)
         .await
@@ -224,77 +210,65 @@ async fn leave_concurrent_quota_reservations_allow_only_one_and_rollback_failed_
     assert_eq!(receipts, 1);
 }
 #[tokio::test]
-async fn leave_overlaps_union_types_and_allows_distinct_half_sessions() {
-    let (pool, owner, admin, _) = fixture("leave_overlap_sessions").await;
-    let (t, _) = typ(&pool, &admin, "half", LeaveUnit::HalfDay, None).await;
-    let (other, _) = typ(&pool, &admin, "other", LeaveUnit::Day, None).await;
-    let mut am = period(t.id, 1);
-    am.day_portion = LeaveDayPortion::Morning;
-    let d = service::create(
-        &pool,
-        &owner,
-        CreateLeaveRequest {
-            request_id: Uuid::now_v7(),
-            period: am.clone(),
-        },
-    )
-    .await
-    .unwrap();
+async fn leave_full_day_overlaps_union_types_and_exit_intervals_are_exact() {
+    let (pool, owner, admin, _) = fixture("leave_current_overlap").await;
+    let (first, _) = typ(&pool, &admin, "full", LeaveUnit::Day, None).await;
+    let (second, _) = typ(&pool, &admin, "other", LeaveUnit::Day, None).await;
+    let d = create(&pool, &owner, first.id, 1).await;
     submit(&pool, &owner, &d).await;
-    am.day_portion = LeaveDayPortion::Afternoon;
-    let d = service::create(
-        &pool,
-        &owner,
-        CreateLeaveRequest {
-            request_id: Uuid::now_v7(),
-            period: am,
-        },
-    )
-    .await
-    .unwrap();
-    submit(&pool, &owner, &d).await;
-    let d = create(&pool, &owner, other.id, 1).await;
+    let other = create(&pool, &owner, second.id, 1).await;
     assert!(service::submit(
         &pool,
         &owner,
-        d.request.id,
+        other.request.id,
         LeaveMutationRequest {
             request_id: Uuid::now_v7(),
-            expected_revision: 1
+            expected_revision: other.request.revision
         }
     )
     .await
     .is_err());
-    let mut third = period(t.id, 2);
-    third.day_portion = LeaveDayPortion::Morning;
-    let a = service::create(
-        &pool,
-        &owner,
-        CreateLeaveRequest {
-            request_id: Uuid::now_v7(),
-            period: third.clone(),
-        },
-    )
-    .await
-    .unwrap();
-    let b = service::create(
-        &pool,
-        &owner,
-        CreateLeaveRequest {
-            request_id: Uuid::now_v7(),
-            period: third,
-        },
-    )
-    .await
-    .unwrap();
-    let (ar, br) = tokio::join!(
+    let (exit, _) = typ(&pool, &admin, "exit_exact", LeaveUnit::Minute, None).await;
+    for (start, end, ok) in [
+        (9 * 60, 10 * 60, true),
+        (10 * 60, 11 * 60, true),
+        (9 * 60 + 30, 10 * 60 + 30, false),
+    ] {
+        let mut p = period(exit.id, 2);
+        p.start_time = chrono::NaiveTime::from_hms_opt(start / 60, start % 60, 0);
+        p.end_time = chrono::NaiveTime::from_hms_opt(end / 60, end % 60, 0);
+        let d = service::create(
+            &pool,
+            &owner,
+            CreateLeaveRequest {
+                request_id: Uuid::now_v7(),
+                period: p,
+            },
+        )
+        .await
+        .unwrap();
+        let result = service::submit(
+            &pool,
+            &owner,
+            d.request.id,
+            LeaveMutationRequest {
+                request_id: Uuid::now_v7(),
+                expected_revision: d.request.revision,
+            },
+        )
+        .await;
+        assert_eq!(result.is_ok(), ok);
+    }
+    let a = create(&pool, &owner, first.id, 3).await;
+    let b = create(&pool, &owner, second.id, 3).await;
+    let (a, b) = tokio::join!(
         service::submit(
             &pool,
             &owner,
             a.request.id,
             LeaveMutationRequest {
                 request_id: Uuid::now_v7(),
-                expected_revision: 1
+                expected_revision: a.request.revision
             }
         ),
         service::submit(
@@ -303,11 +277,11 @@ async fn leave_overlaps_union_types_and_allows_distinct_half_sessions() {
             b.request.id,
             LeaveMutationRequest {
                 request_id: Uuid::now_v7(),
-                expected_revision: 1
+                expected_revision: b.request.revision
             }
         )
     );
-    assert_ne!(ar.is_ok(), br.is_ok());
+    assert_ne!(a.is_ok(), b.is_ok());
 }
 #[tokio::test]
 async fn leave_approved_cancellation_uses_audited_second_process_and_releases_usage_only_after_approval(
@@ -1069,7 +1043,8 @@ async fn leave_cancellation_uses_current_routing_for_frozen_category_without_rew
     )
     .await
     .unwrap();
-    assert_eq!(report.items[0].approved_amount, 1);
+    assert_eq!(report.items[0].approved_amount, "2");
+    assert_eq!(report.items[0].amount_scale, 2);
     assert_eq!(report.items[0].policy_version_id, original_policy.id);
     let finished = service::act(
         &pool,
@@ -1166,12 +1141,11 @@ async fn leave_future_approved_request_uses_pinned_cancellation_route_until_a_cu
 }
 
 #[tokio::test]
-async fn coverage_missing_timetable_is_not_zero_and_halfday_uses_configured_boundary() {
+async fn coverage_missing_timetable_is_not_zero_and_partial_fields_are_rejected() {
     use school_staff_leave::{coverage, coverage_models::*};
-    let (pool, owner, admin, _) = fixture("coverage_missing_vs_zero").await;
-    let (t, _) = typ(&pool, &admin, "coverage_empty", LeaveUnit::HalfDay, None).await;
-    let mut input = period(t.id, 17);
-    input.day_portion = LeaveDayPortion::Morning;
+    let (pool, owner, admin, _) = fixture("coverage_full_day_missing_vs_zero").await;
+    let (t, _) = typ(&pool, &admin, "coverage_empty", LeaveUnit::Day, None).await;
+    let input = period(t.id, 17);
     let preview = coverage::preview(
         &pool,
         &owner,
@@ -1184,82 +1158,71 @@ async fn coverage_missing_timetable_is_not_zero_and_halfday_uses_configured_boun
     assert_eq!(preview.timetable_state, LeaveCoverageTimetableState::Ready);
     assert_eq!(preview.days.len(), 1);
     assert!(preview.days[0].lessons.is_empty());
-    input.half_day_boundary = Some(chrono::NaiveTime::from_hms_opt(12, 0, 0).unwrap());
-    assert!(coverage::preview(
-        &pool,
-        &owner,
-        PreviewLeaveCoverageRequest {
-            period: input.clone()
-        }
-    )
-    .await
-    .is_err());
-    input.half_day_boundary = None;
-    assert!(coverage::preview(
-        &pool,
-        &owner,
-        PreviewLeaveCoverageRequest {
-            period: input.clone()
-        }
-    )
-    .await
-    .is_err());
-    input.half_day_boundary = Some(chrono::NaiveTime::from_hms_opt(11, 30, 0).unwrap());
+    for (field, value) in [
+        ("dayPortion", serde_json::json!("morning")),
+        ("dayPortion", serde_json::json!("full_day")),
+        ("halfDayBoundary", serde_json::json!("11:30:00")),
+        ("halfDayBoundary", serde_json::Value::Null),
+    ] {
+        let mut forged = serde_json::to_value(&input).unwrap();
+        forged[field] = value;
+        assert!(
+            serde_json::from_value::<LeavePeriodInput>(forged).is_err(),
+            "retired field {field} must never be an active input"
+        );
+    }
     sqlx::query("DELETE FROM academic_timetables")
         .execute(&pool)
         .await
         .unwrap();
-    let missing = coverage::preview(&pool, &owner, PreviewLeaveCoverageRequest { period: input })
-        .await
-        .unwrap();
     assert_eq!(
-        missing.timetable_state,
+        coverage::preview(&pool, &owner, PreviewLeaveCoverageRequest { period: input })
+            .await
+            .unwrap()
+            .timetable_state,
         LeaveCoverageTimetableState::Missing
     );
 }
-
 #[tokio::test]
-async fn coverage_settings_permissions_revision_and_replay_preserve_nullable_default() {
-    use school_staff_leave::{coverage, coverage_models::*};
-    let (pool, owner, admin, _) = fixture("coverage_settings_concurrency").await;
-    let settings = coverage::settings(&pool, &owner).await.unwrap();
-    let input = SaveLeaveCoverageSettingsRequest {
-        request_id: Uuid::now_v7(),
-        expected_revision: settings.revision,
-        half_day_boundary: None,
-    };
-    assert!(coverage::save_settings(&pool, &owner, input.clone())
+async fn coverage_options_keep_context_defaults_without_a_mutable_boundary() {
+    use school_staff_leave::coverage;
+    let (pool, owner, admin, mut other) = fixture("coverage_current_options").await;
+    assert!(coverage::options(&pool, &owner)
         .await
-        .is_err());
-    let saved = coverage::save_settings(&pool, &admin, input.clone())
+        .unwrap()
+        .contexts
+        .is_empty());
+    // Fixture contexts start hidden. Only Core-visible contexts belong in lookup.
+    sqlx::query("UPDATE academic_years SET is_visible=true")
+        .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(saved.revision, settings.revision + 1);
-    assert_eq!(saved.half_day_boundary, None);
-    let replay = coverage::save_settings(&pool, &admin, input.clone())
+    sqlx::query("UPDATE academic_terms SET is_visible=true")
+        .execute(&pool)
         .await
         .unwrap();
-    assert_eq!(saved.revision, replay.revision);
-    assert!(coverage::save_settings(
-        &pool,
-        &admin,
-        SaveLeaveCoverageSettingsRequest {
-            request_id: Uuid::now_v7(),
-            ..input.clone()
-        }
-    )
-    .await
-    .is_err());
-    assert!(coverage::save_settings(
-        &pool,
-        &admin,
-        SaveLeaveCoverageSettingsRequest {
-            half_day_boundary: Some(chrono::NaiveTime::from_hms_opt(10, 0, 0).unwrap()),
-            ..input
-        }
-    )
-    .await
-    .is_err());
+    let options = coverage::options(&pool, &owner).await.unwrap();
+    assert_eq!(options.contexts.len(), 1);
+    assert!(options.default_academic_year_id.is_none());
+    assert!(options.default_academic_term_id.is_none());
+    let admin_options = coverage::options(&pool, &admin).await.unwrap();
+    assert_eq!(
+        admin_options.contexts[0].academic_term_id,
+        options.contexts[0].academic_term_id
+    );
+    other
+        .permissions
+        .retain(|p| p != codes::STAFF_LEAVE_CREATE_OWN);
+    assert!(coverage::options(&pool, &other).await.is_err());
+    let value = serde_json::to_value(options).unwrap();
+    assert!(value.get("halfDayBoundary").is_none());
+    assert!(value.get("revision").is_none());
+    let table: Option<String> =
+        sqlx::query_scalar("SELECT to_regclass('staff_leave_coverage_settings')::text")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(table.is_none());
 }
 
 async fn structural_coverage_slots(pool: &PgPool, teacher: Uuid, count: i32) {

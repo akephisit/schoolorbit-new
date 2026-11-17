@@ -1,5 +1,5 @@
 import type { LeaveUsageReport } from '#lib/api/staff-leave.js';
-import { leaveAmount } from './presentation.js';
+import { leaveUsageAmount } from './presentation.js';
 
 /** Keep user-controlled CSV cells literal in spreadsheet applications. */
 export function leaveCsvCell(value: string | number): string {
@@ -24,9 +24,9 @@ export function leaveUsageCsv(report: LeaveUsageReport): string {
 			item.displayName,
 			item.typeName,
 			item.quotaYearStart,
-			leaveAmount(item.approvedAmount, item.unit),
-			leaveAmount(item.reservedAmount, item.unit),
-			item.annualLimit == null ? 'ไม่กำหนด' : leaveAmount(item.annualLimit, item.unit)
+			leaveUsageAmount(item.approvedAmount, item),
+			leaveUsageAmount(item.reservedAmount, item),
+			item.annualLimit == null ? 'ไม่กำหนด' : leaveUsageAmount(item.annualLimit, item)
 		]);
 	return `\uFEFF${rows.map((row) => row.map(leaveCsvCell).join(',')).join('\r\n')}`;
 }

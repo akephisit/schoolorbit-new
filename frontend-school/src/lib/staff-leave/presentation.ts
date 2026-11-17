@@ -1,4 +1,10 @@
-import type { LeaveKind, LeaveStatus, LeaveUnit, ProcessAction } from '#lib/api/staff-leave.js';
+import type {
+	LeaveKind,
+	LeaveStatus,
+	LeaveUnit,
+	LeaveUsageItem,
+	ProcessAction
+} from '#lib/api/staff-leave.js';
 import type { BadgeVariant } from '#lib/components/ui/badge/index.js';
 
 export const leaveKindLabels: Record<LeaveKind, string> = {
@@ -7,11 +13,24 @@ export const leaveKindLabels: Record<LeaveKind, string> = {
 };
 export const leaveUnitLabels: Record<LeaveUnit, string> = {
 	day: 'วัน',
-	half_day: 'วัน (รองรับครึ่งวัน)',
+	half_day: 'วัน (ข้อมูลเดิมหน่วยครึ่งวัน)',
 	minute: 'นาที'
 };
 export function leaveAmount(amount: number, unit: LeaveUnit): string {
 	return `${unit === 'half_day' ? amount / 2 : amount} ${unit === 'minute' ? 'นาที' : 'วัน'}`;
+}
+/** Render the server-scaled report quantity without converting its integer string to Number. */
+export function leaveUsageAmount(
+	amount: string,
+	item: Pick<LeaveUsageItem, 'unit' | 'amountScale'>
+): string {
+	if (item.amountScale !== 1 && item.amountScale !== 2)
+		throw new Error('หน่วยย่อยของรายงานไม่ถูกต้อง');
+	const value = BigInt(amount),
+		scale = BigInt(item.amountScale);
+	const absolute = value < 0n ? -value : value;
+	const fraction = absolute % scale === 0n ? '' : '.5';
+	return `${value < 0n ? '-' : ''}${absolute / scale}${fraction} ${item.unit === 'minute' ? 'นาที' : 'วัน'}`;
 }
 export const leaveStatusLabels: Record<LeaveStatus, string> = {
 	draft: 'ฉบับร่าง',

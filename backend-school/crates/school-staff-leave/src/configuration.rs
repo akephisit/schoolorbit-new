@@ -227,6 +227,16 @@ pub async fn effective_policy(
     )
     .await?;
     let (_, p) = resolve_policy(&mut tx, actor.user_id, id, date).await?;
+    let typ: Json<LeaveType> = DbSession::new(&mut *tx)
+        .scalar(
+            "staff.leave.configuration.effective_policy_kind",
+            "SELECT document FROM staff_leave_types WHERE id=$1",
+        )
+        .bind(id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
+    require_current_policy(typ.kind, &p)?;
     tx.commit().await?;
     Ok(p)
 }
@@ -270,10 +280,15 @@ pub async fn save_policy(
     if old.revision != input.expected_revision {
         return Err(stale());
     }
-    let incompatible:bool=DbSession::new(&mut *tx).scalar("staff.leave.configuration.save_policy", "SELECT EXISTS(SELECT 1 FROM staff_leave_policies WHERE type_id=$1 AND (document->>'unit'<>$2 OR (document->>'quotaYearStartMonth')::int<>$3))").bind(id).bind(serde_json::to_value(input.unit).map_err(|_|invalid("หน่วยไม่ถูกต้อง"))?.as_str()).bind(input.quota_year_start_month as i32).fetch_one().await?;
+    if input.unit != active_unit(old.kind) {
+        return Err(invalid(
+            "คำขอลาต้องใช้หน่วยวัน และคำขอออกนอกสถานศึกษาต้องใช้หน่วยนาที",
+        ));
+    }
+    let incompatible:bool=DbSession::new(&mut *tx).scalar("staff.leave.configuration.save_policy", "SELECT EXISTS(SELECT 1 FROM staff_leave_policies WHERE type_id=$1 AND ((CASE document->>'unit' WHEN 'half_day' THEN 'day' ELSE document->>'unit' END)<>$2 OR (document->>'quotaYearStartMonth')::int<>$3))").bind(id).bind(serde_json::to_value(input.unit).map_err(|_|invalid("หน่วยไม่ถูกต้อง"))?.as_str()).bind(input.quota_year_start_month as i32).fetch_one().await?;
     if incompatible {
         return Err(invalid(
-            "ไม่สามารถเปลี่ยนหน่วยหรือเดือนเริ่มปีของประเภทที่มีเกณฑ์แล้ว กรุณาสร้างประเภทใหม่",
+            "ไม่สามารถเปลี่ยนเดือนเริ่มปีสิทธิ์หรือแปลงวันเป็นนาทีได้ กรุณาตรวจสอบเกณฑ์เดิมของประเภทนี้",
         ));
     }
     let version: i64 = DbSession::new(&mut *tx)
@@ -293,7 +308,7 @@ pub async fn save_policy(
         source_reference: input.source_reference,
         enabled: input.enabled,
         personnel_types: input.personnel_types,
-        unit: input.unit,
+        unit: input.unit.into(),
         counting_mode: input.counting_mode,
         working_weekdays: input.working_weekdays,
         excluded_dates: input.excluded_dates,

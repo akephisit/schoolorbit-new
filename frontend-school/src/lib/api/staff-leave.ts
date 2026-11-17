@@ -4,6 +4,8 @@ import type { components, operations } from '#lib/api/generated/school-api.js';
 type Schemas = components['schemas'];
 export type LeaveKind = Schemas['LeaveKind'];
 export type LeaveUnit = Schemas['LeaveUnit'];
+export type LeavePolicyUnit = Schemas['LeavePolicyUnit'];
+export type LeaveUsageItem = Schemas['LeaveUsageItem'];
 export type LeaveStatus = Schemas['LeaveStatus'];
 export type LeaveType = Schemas['LeaveType'];
 export type LeavePolicyVersion = Schemas['LeavePolicyVersion'];
@@ -183,8 +185,7 @@ export async function getLeaveUsage(
 	);
 }
 
-export type LeaveCoverageSettings = Schemas['LeaveCoverageSettings'];
-export type SaveLeaveCoverageSettingsRequest = Schemas['SaveLeaveCoverageSettingsRequest'];
+export type LeaveCoverageOptions = Schemas['LeaveCoverageOptions'];
 export type PreviewLeaveCoverageRequest = Schemas['PreviewLeaveCoverageRequest'];
 export type LeaveCoveragePlan = Schemas['LeaveCoveragePlan'];
 export type LeaveCoverageLesson = Schemas['LeaveCoverageLesson'];
@@ -204,20 +205,12 @@ export type DatedTeachingLesson = Schemas['DatedTeachingLesson'];
 export type LeaveCoverageTaskQuery = NonNullable<
 	operations['listAssignedStaffLeaveCoverage']['parameters']['query']
 >;
-export async function getLeaveCoverageSettings(
+export async function getLeaveCoverageOptions(
 	options: ApiRequestOptions = {}
-): Promise<LeaveCoverageSettings> {
+): Promise<LeaveCoverageOptions> {
 	return requireApiData(
-		await apiClient.get<LeaveCoverageSettings>(`${base}/coverage/settings`, options),
-		'โหลดบริบทและเวลาครึ่งวันไม่สำเร็จ'
-	);
-}
-export async function saveLeaveCoverageSettings(
-	input: SaveLeaveCoverageSettingsRequest
-): Promise<LeaveCoverageSettings> {
-	return requireApiData(
-		await apiClient.put<LeaveCoverageSettings>(`${base}/coverage/settings`, input),
-		'บันทึกเวลาครึ่งวันไม่สำเร็จ'
+		await apiClient.get<LeaveCoverageOptions>(`${base}/coverage/options`, options),
+		'โหลดบริบทปีและภาคเรียนไม่สำเร็จ'
 	);
 }
 export async function previewLeaveCoverage(

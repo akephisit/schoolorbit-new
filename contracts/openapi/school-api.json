@@ -12536,6 +12536,50 @@
         ],
         "type": "object"
       },
+      "ApiResponse_LeaveCoverageOptions": {
+        "properties": {
+          "data": {
+            "additionalProperties": false,
+            "properties": {
+              "contexts": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCoverageContext"
+                },
+                "type": "array"
+              },
+              "defaultAcademicTermId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "defaultAcademicYearId": {
+                "format": "uuid",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "contexts"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_LeaveCoveragePlan": {
         "properties": {
           "data": {
@@ -12571,12 +12615,6 @@
                 "type": "array"
               },
               "emergencyReason": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "halfDayBoundary": {
                 "type": [
                   "string",
                   "null"
@@ -12639,61 +12677,6 @@
             },
             "required": [
               "lessons"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_LeaveCoverageSettings": {
-        "properties": {
-          "data": {
-            "additionalProperties": false,
-            "properties": {
-              "contexts": {
-                "items": {
-                  "$ref": "#/components/schemas/LeaveCoverageContext"
-                },
-                "type": "array"
-              },
-              "defaultAcademicTermId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "defaultAcademicYearId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "halfDayBoundary": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "revision": {
-                "format": "int64",
-                "type": "integer"
-              }
-            },
-            "required": [
-              "revision",
-              "contexts"
             ],
             "type": "object"
           },
@@ -13044,6 +13027,12 @@
               },
               "request": {
                 "$ref": "#/components/schemas/LeaveRequestSummary"
+              },
+              "submissionBlockingReason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -50249,6 +50238,35 @@
         ],
         "type": "string"
       },
+      "LeaveCoverageOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "contexts": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCoverageContext"
+            },
+            "type": "array"
+          },
+          "defaultAcademicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "defaultAcademicYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contexts"
+        ],
+        "type": "object"
+      },
       "LeaveCoveragePlan": {
         "additionalProperties": false,
         "properties": {
@@ -50282,12 +50300,6 @@
             "type": "array"
           },
           "emergencyReason": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "halfDayBoundary": {
             "type": [
               "string",
               "null"
@@ -50406,46 +50418,6 @@
           "lessonKey",
           "replacementTeacherId",
           "mode"
-        ],
-        "type": "object"
-      },
-      "LeaveCoverageSettings": {
-        "additionalProperties": false,
-        "properties": {
-          "contexts": {
-            "items": {
-              "$ref": "#/components/schemas/LeaveCoverageContext"
-            },
-            "type": "array"
-          },
-          "defaultAcademicTermId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "defaultAcademicYearId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "halfDayBoundary": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "revision": {
-            "format": "int64",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "revision",
-          "contexts"
         ],
         "type": "object"
       },
@@ -50651,9 +50623,6 @@
               "null"
             ]
           },
-          "dayPortion": {
-            "$ref": "#/components/schemas/LeaveDayPortion"
-          },
           "endDate": {
             "format": "date",
             "type": "string"
@@ -50670,12 +50639,6 @@
               "type": "string"
             },
             "type": "array"
-          },
-          "halfDayBoundary": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "reason": {
             "type": "string"
@@ -50699,7 +50662,6 @@
           "typeId",
           "startDate",
           "endDate",
-          "dayPortion",
           "reason"
         ],
         "type": "object"
@@ -50727,6 +50689,13 @@
           "types"
         ],
         "type": "object"
+      },
+      "LeavePolicyUnit": {
+        "enum": [
+          "day",
+          "minute"
+        ],
+        "type": "string"
       },
       "LeavePolicyVersion": {
         "properties": {
@@ -50926,6 +50895,12 @@
           },
           "request": {
             "$ref": "#/components/schemas/LeaveRequestSummary"
+          },
+          "submissionBlockingReason": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -51243,16 +51218,19 @@
       },
       "LeaveUsageItem": {
         "properties": {
+          "amountScale": {
+            "description": "Daily amounts use scale2; minute amounts use scale1. Values are exact integer strings.",
+            "format": "int32",
+            "type": "integer"
+          },
           "annualLimit": {
-            "format": "int64",
             "type": [
-              "integer",
+              "string",
               "null"
             ]
           },
           "approvedAmount": {
-            "format": "int64",
-            "type": "integer"
+            "type": "string"
           },
           "displayName": {
             "type": "string"
@@ -51266,8 +51244,7 @@
             "type": "string"
           },
           "reservedAmount": {
-            "format": "int64",
-            "type": "integer"
+            "type": "string"
           },
           "typeId": {
             "format": "uuid",
@@ -51277,7 +51254,7 @@
             "type": "string"
           },
           "unit": {
-            "$ref": "#/components/schemas/LeaveUnit"
+            "$ref": "#/components/schemas/LeavePolicyUnit"
           },
           "userId": {
             "format": "uuid",
@@ -51290,6 +51267,7 @@
           "typeId",
           "typeName",
           "unit",
+          "amountScale",
           "quotaYearStart",
           "approvedAmount",
           "reservedAmount",
@@ -58961,30 +58939,6 @@
         ],
         "type": "object"
       },
-      "SaveLeaveCoverageSettingsRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "expectedRevision": {
-            "format": "int64",
-            "type": "integer"
-          },
-          "halfDayBoundary": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "requestId": {
-            "format": "uuid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "requestId",
-          "expectedRevision"
-        ],
-        "type": "object"
-      },
       "SaveLeavePolicyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -59065,7 +59019,7 @@
             "type": "array"
           },
           "unit": {
-            "$ref": "#/components/schemas/LeaveUnit"
+            "$ref": "#/components/schemas/LeavePolicyUnit"
           },
           "workingWeekdays": {
             "description": "ISO weekdays 1=Monday through 7=Sunday. Required for working_days.",
@@ -113227,25 +113181,15 @@
         ]
       }
     },
-    "/api/staff-leave/coverage/preview": {
-      "post": {
-        "operationId": "previewStaffLeaveCoverage",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PreviewLeaveCoverageRequest"
-              }
-            }
-          },
-          "required": true
-        },
+    "/api/staff-leave/coverage/options": {
+      "get": {
+        "operationId": "getStaffLeaveCoverageOptions",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LeaveCoveragePlan"
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageOptions"
                 }
               }
             },
@@ -113307,82 +113251,14 @@
         ]
       }
     },
-    "/api/staff-leave/coverage/settings": {
-      "get": {
-        "operationId": "getStaffLeaveCoverageSettings",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageSettings"
-                }
-              }
-            },
-            "description": "Teaching coverage result"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Malformed request"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Permission denied"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Stale coverage or conflicting duty"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid coverage selection"
-          }
-        },
-        "tags": [
-          "staff-leave"
-        ]
-      },
-      "put": {
-        "operationId": "saveStaffLeaveCoverageSettings",
+    "/api/staff-leave/coverage/preview": {
+      "post": {
+        "operationId": "previewStaffLeaveCoverage",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SaveLeaveCoverageSettingsRequest"
+                "$ref": "#/components/schemas/PreviewLeaveCoverageRequest"
               }
             }
           },
@@ -113393,7 +113269,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_LeaveCoverageSettings"
+                  "$ref": "#/components/schemas/ApiResponse_LeaveCoveragePlan"
                 }
               }
             },

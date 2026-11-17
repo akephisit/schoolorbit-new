@@ -67,7 +67,10 @@ pub fn quota_year(date: NaiveDate, start_month: u32) -> Result<NaiveDate, AppErr
     )
     .ok_or_else(|| invalid("ปีสิทธิ์ไม่ถูกต้อง"))
 }
-pub fn amount(period: &LeavePeriodInput, policy: &LeavePolicyVersion) -> Result<i64, AppError> {
+pub(crate) fn historical_amount(
+    period: &StoredLeavePeriod,
+    policy: &LeavePolicyVersion,
+) -> Result<i64, AppError> {
     if period.reason.trim().is_empty()
         || period.reason.chars().count() > 4000
         || period.evidence_file_ids.len() > 20
@@ -138,6 +141,93 @@ pub fn amount(period: &LeavePeriodInput, policy: &LeavePolicyVersion) -> Result<
     }
     Ok(amount)
 }
+pub(crate) fn active_unit(kind: LeaveKind) -> LeavePolicyUnit {
+    match kind {
+        LeaveKind::Leave => LeavePolicyUnit::Day,
+        LeaveKind::Exit => LeavePolicyUnit::Minute,
+    }
+}
+pub(crate) fn require_current_policy(
+    kind: LeaveKind,
+    policy: &LeavePolicyVersion,
+) -> Result<(), AppError> {
+    if policy.unit == LeaveUnit::HalfDay {
+        return Err(invalid("โรงเรียนต้องกำหนดเกณฑ์หน่วยวันฉบับใหม่สำหรับวันที่และประเภทบุคลากรนี้ก่อนยื่นคำขอ ไม่สามารถแปลงเกณฑ์ครึ่งวันเดิมโดยอัตโนมัติ"));
+    }
+    if policy.unit != LeaveUnit::from(active_unit(kind)) {
+        return Err(invalid(
+            "คำขอลาต้องใช้เกณฑ์หน่วยวัน และคำขอออกนอกสถานศึกษาต้องใช้เกณฑ์หน่วยนาที",
+        ));
+    }
+    Ok(())
+}
+pub(crate) fn require_current_shape(
+    period: &StoredLeavePeriod,
+    kind: LeaveKind,
+) -> Result<(), AppError> {
+    if period.day_portion != LeaveDayPortion::FullDay {
+        return Err(invalid("กรุณาบันทึกช่วงคำขอใหม่อย่างชัดเจน ระบบรับเฉพาะการลาเต็มวันหรือการออกนอกสถานศึกษาที่ระบุเวลา โดยเก็บฉบับเดิมเป็นหลักฐาน"));
+    }
+    match kind {
+        LeaveKind::Leave if period.start_time.is_some() || period.end_time.is_some() => {
+            Err(invalid("คำขอลารับเฉพาะเต็มวันโดยไม่ระบุเวลา"))
+        }
+        LeaveKind::Exit => {
+            let (Some(start), Some(end)) = (period.start_time, period.end_time) else {
+                return Err(invalid("คำขอออกนอกสถานศึกษาต้องระบุเวลาเริ่มและสิ้นสุด"));
+            };
+            if period.start_date != period.end_date
+                || end <= start
+                || start.second() != 0
+                || end.second() != 0
+                || start.nanosecond() != 0
+                || end.nanosecond() != 0
+            {
+                Err(invalid(
+                    "คำขอออกนอกสถานศึกษาต้องอยู่ในวันเดียวและระบุช่วงเวลาเป็นนาทีอย่างถูกต้อง",
+                ))
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
+}
+pub(crate) fn require_current_record(request: &LeaveRequestSummary) -> Result<(), AppError> {
+    if request.unit != LeaveUnit::from(active_unit(request.kind)) {
+        return Err(invalid("คำขอฉบับเดิมใช้หน่วยที่เลิกใช้แล้ว กรุณาบันทึกช่วงเต็มวันหรือเวลาออกนอกสถานศึกษาใหม่ภายใต้เกณฑ์ปัจจุบันก่อนส่งอีกครั้ง"));
+    }
+    let period = StoredLeavePeriod {
+        academic_year_id: request.academic_year_id,
+        academic_term_id: request.academic_term_id,
+        half_day_boundary: request.half_day_boundary,
+        type_id: request.type_id,
+        start_date: request.start_date,
+        end_date: request.end_date,
+        start_time: request.start_time,
+        end_time: request.end_time,
+        day_portion: request.day_portion,
+        reason: request.reason.clone(),
+        evidence_file_ids: vec![],
+    };
+    require_current_shape(&period, request.kind)
+}
+pub(crate) fn amount(
+    period: &StoredLeavePeriod,
+    policy: &LeavePolicyVersion,
+    kind: LeaveKind,
+) -> Result<i64, AppError> {
+    require_current_policy(kind, policy)?;
+    require_current_shape(period, kind)?;
+    historical_amount(period, policy)
+}
+pub(crate) fn quota_scale(unit: LeaveUnit) -> i128 {
+    if unit == LeaveUnit::Day {
+        2
+    } else {
+        1
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,8 +256,8 @@ mod tests {
             created_at: chrono::Utc::now(),
         }
     }
-    fn period() -> LeavePeriodInput {
-        LeavePeriodInput {
+    fn period() -> StoredLeavePeriod {
+        StoredLeavePeriod {
             academic_year_id: None,
             academic_term_id: None,
             half_day_boundary: None,
@@ -185,22 +275,31 @@ mod tests {
     fn leave_counts_configured_holidays_and_calendar_days() {
         let mut p = policy(LeaveUnit::Day);
         let r = period();
-        assert_eq!(amount(&r, &p).unwrap(), 2);
+        assert_eq!(amount(&r, &p, LeaveKind::Leave).unwrap(), 2);
         p.counting_mode = LeaveCountingMode::CalendarDays;
-        assert_eq!(amount(&r, &p).unwrap(), 3);
+        assert_eq!(amount(&r, &p, LeaveKind::Leave).unwrap(), 3);
     }
     #[test]
-    fn leave_minutes_are_server_derived_and_half_day_is_precise() {
+    fn exact_exit_minutes_and_historical_half_day_evidence_remain_distinct() {
         let mut r = period();
         r.end_date = r.start_date;
         r.start_time = chrono::NaiveTime::from_hms_opt(9, 0, 0);
         r.end_time = chrono::NaiveTime::from_hms_opt(11, 0, 0);
-        assert_eq!(amount(&r, &policy(LeaveUnit::Minute)).unwrap(), 120);
+        assert_eq!(
+            amount(&r, &policy(LeaveUnit::Minute), LeaveKind::Exit).unwrap(),
+            120
+        );
         r.start_time = None;
         r.end_time = None;
-        assert_eq!(amount(&r, &policy(LeaveUnit::HalfDay)).unwrap(), 2);
+        assert_eq!(
+            historical_amount(&r, &policy(LeaveUnit::HalfDay)).unwrap(),
+            2
+        );
         r.day_portion = LeaveDayPortion::Morning;
-        assert_eq!(amount(&r, &policy(LeaveUnit::HalfDay)).unwrap(), 1);
+        assert_eq!(
+            historical_amount(&r, &policy(LeaveUnit::HalfDay)).unwrap(),
+            1
+        );
     }
     #[test]
     fn leave_scope_union_keeps_own_and_assigned() {
@@ -221,7 +320,7 @@ mod tests {
         let mut r = period();
         r.start_date = NaiveDate::from_ymd_opt(2026, 9, 30).unwrap();
         r.end_date = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
-        assert!(amount(&r, &policy(LeaveUnit::Day)).is_err());
+        assert!(amount(&r, &policy(LeaveUnit::Day), LeaveKind::Leave).is_err());
     }
 }
 

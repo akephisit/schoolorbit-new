@@ -15,11 +15,12 @@ pub async fn create(
     actor: &ActorContext,
     input: CreateLeaveRequest,
 ) -> Result<LeaveRequestDetail, AppError> {
+    let period: StoredLeavePeriod = input.period.clone().into();
     actor.require_permission(codes::STAFF_LEAVE_CREATE_OWN)?;
     actor.require_any_permission(&[codes::STAFF_LEAVE_READ_OWN, codes::STAFF_LEAVE_READ_SCHOOL])?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.create").await?;
-    let (year, term) = coverage::explicit_context(&input.period)?;
+    let (year, term) = coverage::explicit_context(&period)?;
     school_academic_timetable::services::dated_teaching::lock_context(&mut tx, year, term).await?;
     let id = Uuid::now_v7();
     if let Some(replay) = claim(
@@ -35,7 +36,7 @@ pub async fn create(
         tx.commit().await?;
         return detail(pool, actor, replay).await;
     }
-    if !input.period.evidence_file_ids.is_empty() {
+    if !period.evidence_file_ids.is_empty() {
         return Err(invalid("กรุณาสร้างร่างก่อนแนบหลักฐาน"));
     }
     let typ: Json<LeaveType> = DbSession::new(&mut *tx)
@@ -43,22 +44,22 @@ pub async fn create(
             "staff.leave.lifecycle.create",
             "SELECT document FROM staff_leave_types WHERE id=$1 FOR SHARE",
         )
-        .bind(input.period.type_id)
+        .bind(period.type_id)
         .fetch_optional()
         .await?
         .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
     if typ.archived {
         return Err(invalid("ประเภทคำขอถูกจัดเก็บแล้ว"));
     }
-    let (cat, p) = resolve_policy(&mut tx, actor.user_id, typ.id, input.period.start_date).await?;
+    let (cat, p) = resolve_policy(&mut tx, actor.user_id, typ.id, period.start_date).await?;
     if !p.enabled {
         return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
     }
-    let quantity = amount(&input.period, &p)?;
+    let quantity = amount(&period, &p, typ.kind)?;
     let s = LeaveRequestSummary {
-        academic_year_id: input.period.academic_year_id,
-        academic_term_id: input.period.academic_term_id,
-        half_day_boundary: input.period.half_day_boundary,
+        academic_year_id: period.academic_year_id,
+        academic_term_id: period.academic_term_id,
+        half_day_boundary: period.half_day_boundary,
         id,
         type_id: typ.id,
         type_name: typ.name.clone(),
@@ -69,14 +70,14 @@ pub async fn create(
         revision: 1,
         policy_version_id: None,
         personnel_type: Some(cat),
-        start_date: input.period.start_date,
-        end_date: input.period.end_date,
-        start_time: input.period.start_time,
-        end_time: input.period.end_time,
-        day_portion: input.period.day_portion,
+        start_date: period.start_date,
+        end_date: period.end_date,
+        start_time: period.start_time,
+        end_time: period.end_time,
+        day_portion: period.day_portion,
         amount: quantity,
         unit: p.unit,
-        reason: input.period.reason,
+        reason: period.reason,
         created_at: Utc::now(),
     };
     let hash = process::payload_hash(&s)?;
@@ -100,11 +101,12 @@ pub async fn update(
     id: Uuid,
     input: UpdateLeaveRequest,
 ) -> Result<LeaveRequestDetail, AppError> {
+    let period: StoredLeavePeriod = input.period.clone().into();
     actor.require_permission(codes::STAFF_LEAVE_CREATE_OWN)?;
     actor.require_any_permission(&[codes::STAFF_LEAVE_READ_OWN, codes::STAFF_LEAVE_READ_SCHOOL])?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.lifecycle.update").await?;
-    coverage::lock_updated_contexts(&mut tx, id, &input.period).await?;
+    coverage::lock_updated_contexts(&mut tx, id, &period).await?;
     if claim(
         &mut tx,
         actor.user_id,
@@ -124,32 +126,32 @@ pub async fn update(
     if r.document.revision != input.expected_revision {
         return Err(stale());
     }
-    if input.period.type_id != r.document.type_id {
+    if period.type_id != r.document.type_id {
         return Err(invalid("ไม่สามารถเปลี่ยนประเภทของร่าง กรุณาสร้างใหม่"));
     }
     let (cat, p) = resolve_policy(
         &mut tx,
         actor.user_id,
         r.document.type_id,
-        input.period.start_date,
+        period.start_date,
     )
     .await?;
-    super::files::validate_evidence(&mut tx, actor.user_id, id, &input.period.evidence_file_ids)
-        .await?;
-    let n = amount(&input.period, &p)?;
-    r.document.academic_year_id = input.period.academic_year_id;
-    r.document.academic_term_id = input.period.academic_term_id;
-    r.document.half_day_boundary = input.period.half_day_boundary;
-    r.document.start_date = input.period.start_date;
-    r.document.end_date = input.period.end_date;
-    r.document.start_time = input.period.start_time;
-    r.document.end_time = input.period.end_time;
-    r.document.day_portion = input.period.day_portion;
-    r.document.reason = input.period.reason;
+    super::files::validate_evidence(&mut tx, actor.user_id, id, &period.evidence_file_ids).await?;
+    let n = amount(&period, &p, r.document.kind)?;
+    r.document.academic_year_id = period.academic_year_id;
+    r.document.academic_term_id = period.academic_term_id;
+    // Retain originally captured context for exact old assignment evidence.
+    // Current inputs cannot set or replace this value; FullDay controls scope.
+    r.document.start_date = period.start_date;
+    r.document.end_date = period.end_date;
+    r.document.start_time = period.start_time;
+    r.document.end_time = period.end_time;
+    r.document.day_portion = period.day_portion;
+    r.document.reason = period.reason;
     r.document.amount = n;
     r.document.unit = p.unit;
     r.document.personnel_type = Some(cat);
-    r.evidence_file_ids = input.period.evidence_file_ids;
+    r.evidence_file_ids = period.evidence_file_ids;
     r.document.revision += 1;
     coverage::reconcile_updated_plan(&mut tx, &r).await?;
     let plan = coverage::stored_plan(&mut tx, id).await?;
@@ -395,7 +397,8 @@ pub async fn submit(
     if !p.enabled {
         return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
     }
-    let quantity = amount(&period_from(&r), &p)?;
+    require_current_record(&r.document)?;
+    let quantity = amount(&period_from(&r), &p, typ.kind)?;
     if (p.evidence_required || p.evidence_from_amount.is_some_and(|n| quantity >= n))
         && r.evidence_file_ids.is_empty()
     {
@@ -430,8 +433,21 @@ pub async fn submit(
         ))
         .execute()
         .await?;
-    let used:i64=DbSession::new(&mut *tx).scalar("staff.leave.lifecycle.submit", "SELECT coalesce(sum(amount),0)::bigint FROM staff_leave_requests WHERE owner_id=$1 AND type_id=$2 AND quota_year_start=$3 AND status IN ('submitted','approved','cancellation_pending') AND id<>$4").bind(r.document.owner_id).bind(r.document.type_id).bind(year).bind(id).fetch_one().await?;
-    if p.annual_limit.is_some_and(|cap| used + quantity > cap) {
+    let (used,compatible):(String,bool)=DbSession::new(&mut *tx).query_as("staff.leave.lifecycle.submit_quota", "SELECT coalesce(sum(amount::numeric * CASE document->>'unit' WHEN 'day' THEN 2 ELSE 1 END),0)::text,coalesce(bool_and(CASE WHEN $5 THEN document->>'unit' IN ('day','half_day') ELSE document->>'unit'='minute' END),true) FROM staff_leave_requests WHERE owner_id=$1 AND type_id=$2 AND quota_year_start=$3 AND status IN ('submitted','approved','cancellation_pending') AND id<>$4").bind(r.document.owner_id).bind(r.document.type_id).bind(year).bind(id).bind(p.unit==LeaveUnit::Day).fetch_one().await?;
+    if !compatible {
+        return Err(invalid(
+            "หน่วยในบัญชีสิทธิ์เดิมไม่เข้ากัน กรุณาให้ผู้ดูแลตรวจสอบโดยไม่แปลงวันเป็นนาที",
+        ));
+    }
+    let used = used
+        .parse::<i128>()
+        .map_err(|_| invalid("ยอดสิทธิ์เกินขอบเขตที่รองรับ"))?;
+    let total = used
+        .checked_add(i128::from(quantity) * quota_scale(p.unit))
+        .ok_or_else(|| invalid("ยอดสิทธิ์เกินขอบเขตที่รองรับ"))?;
+    if p.annual_limit
+        .is_some_and(|cap| total > i128::from(cap) * quota_scale(p.unit))
+    {
         return Err(invalid("ยอดอนุมัติและคำขอที่รอพิจารณารวมกันเกินสิทธิ์ตามเกณฑ์โรงเรียน"));
     }
     let plan = coverage::prepare_submission(&mut tx, &r, input.emergency_reason.as_deref()).await?;
@@ -744,7 +760,7 @@ pub async fn cancel(
     detail(pool, actor, id).await
 }
 fn periods_overlap(
-    a: &LeavePeriodInput,
+    a: &StoredLeavePeriod,
     ap: &LeavePolicyVersion,
     b: &LeaveRequestSummary,
     bp: &LeavePolicyVersion,

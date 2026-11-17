@@ -2551,9 +2551,16 @@ Staff leave and planned school exit use
 preflight and complete isolated lifecycle/authorization/ledger integration target. Signature consent
 and revision binding use
 `./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`.
-Policies count school-configured calendar or working dates; half-day granularity represents a full
-counted day as two units. Quota-year crossing requires separate requests. No statutory entitlement
-is seeded by these fixtures.
+Policies count school-configured calendar or working dates. Active Leave requests use whole days;
+Exit requests require an explicit same-day minute interval. Historical half-day amounts retain their
+original evidence. Daily usage reports expose exact integer strings with amountScale 2, and minute
+reports use scale 1; quota comparison uses the same basis. Quota-year crossing requires separate
+requests. No statutory entitlement is seeded by these fixtures.
+
+Run `./scripts/test_backend_school.sh --package school-staff-leave full_day_ -- --test-threads=1`
+for migration161 preservation, unchanged captured-boundary consent, explicit partial-to-full revision,
+signed action replay, exact mixed-unit quota races and large caps without integer/float loss. The
+application coverage target also rejects retired fields/settings and wrong-kind or missing Exit times.
 
 Directed routing uses synthetic staff and document fixtures in
 `frontend-school/tests/e2e/correspondence-directed.spec.ts`. After building the School frontend

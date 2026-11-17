@@ -16,24 +16,13 @@ use school_staff_leave::{
 };
 use uuid::Uuid;
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/staff-leave/coverage/settings",operation_id="getStaffLeaveCoverageSettings",tag="staff-leave",responses((status=200,description="Teaching coverage result",body=ApiResponse<LeaveCoverageSettings>),(status=400,description="Malformed request",body=ApiErrorResponse),(status=422,description="Invalid coverage selection",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=409,description="Stale coverage or conflicting duty",body=ApiErrorResponse))))]
-pub async fn settings(
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/staff-leave/coverage/options",operation_id="getStaffLeaveCoverageOptions",tag="staff-leave",responses((status=200,description="Teaching coverage result",body=ApiResponse<LeaveCoverageOptions>),(status=400,description="Malformed request",body=ApiErrorResponse),(status=422,description="Invalid coverage selection",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=409,description="Stale coverage or conflicting duty",body=ApiErrorResponse))))]
+pub async fn options(
     State(state): State<LeaveHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-) -> Result<Json<ApiResponse<LeaveCoverageSettings>>, HttpError> {
+) -> Result<Json<ApiResponse<LeaveCoverageOptions>>, HttpError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let result = coverage::settings(&context.tenant.pool, &context.actor).await?;
-    Ok(Json(ApiResponse::ok(result)))
-}
-
-#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/staff-leave/coverage/settings",operation_id="saveStaffLeaveCoverageSettings",tag="staff-leave",request_body=SaveLeaveCoverageSettingsRequest,responses((status=200,description="Teaching coverage result",body=ApiResponse<LeaveCoverageSettings>),(status=400,description="Malformed request",body=ApiErrorResponse),(status=422,description="Invalid coverage selection",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=409,description="Stale coverage or conflicting duty",body=ApiErrorResponse))))]
-pub async fn save_settings(
-    State(state): State<LeaveHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Json(input): Json<SaveLeaveCoverageSettingsRequest>,
-) -> Result<Json<ApiResponse<LeaveCoverageSettings>>, HttpError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let result = coverage::save_settings(&context.tenant.pool, &context.actor, input).await?;
+    let result = coverage::options(&context.tenant.pool, &context.actor).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
 
@@ -133,10 +122,7 @@ pub async fn assigned(
 
 pub fn routes() -> Router<LeaveHttpState> {
     Router::new()
-        .route(
-            "/staff-leave/coverage/settings",
-            axum::routing::get(settings).put(save_settings),
-        )
+        .route("/staff-leave/coverage/options", axum::routing::get(options))
         .route(
             "/staff-leave/coverage/preview",
             axum::routing::post(preview),

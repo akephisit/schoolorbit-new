@@ -8,8 +8,8 @@
 		type LeaveKind,
 		type LeaveRequestDetail,
 		type LeavePersonalOptions,
-		getLeaveCoverageSettings,
-		type LeaveCoverageSettings,
+		getLeaveCoverageOptions,
+		type LeaveCoverageOptions,
 		type LeavePolicyVersion
 	} from '#lib/api/staff-leave.js';
 	import { uploadFile } from '#lib/api/files.js';
@@ -32,14 +32,13 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
-	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import Choice from './Choice.svelte';
 	let {
 		kind,
 		detail,
 		optionsSource,
-		settingsSource,
+		coverageOptionsSource,
 		oncancel,
 		onsaved,
 		onrefresh,
@@ -48,7 +47,7 @@
 	}: {
 		kind: LeaveKind;
 		detail?: LeaveRequestDetail;
-		settingsSource: Promise<RouteLoadResult<LeaveCoverageSettings | null>>;
+		coverageOptionsSource: Promise<RouteLoadResult<LeaveCoverageOptions | null>>;
 		optionsSource: Promise<RouteLoadResult<LeavePersonalOptions | null>>;
 		oncancel: () => void;
 		onsaved: (detail: LeaveRequestDetail, proceed: boolean) => void;
@@ -58,20 +57,25 @@
 	} = $props();
 	let draft = $state<LeaveDraft>(untrack(() => leaveDraft(detail)));
 	let savedBasis = untrack(() => JSON.stringify(leaveDraft(detail)));
-	const settingsRegion = new LeaveRegion<LeaveCoverageSettings | null>();
+	const contextRegion = new LeaveRegion<LeaveCoverageOptions | null>();
 	let contextInitialized = false;
-	const settings = $derived(settingsRegion.value);
+	const expectedUnit = $derived(kind === 'exit' ? 'minute' : 'day');
+	const historicalPartial = $derived(
+		detail?.request.kind === 'leave' &&
+			(detail.request.dayPortion === 'morning' || detail.request.dayPortion === 'afternoon')
+	);
+	const contextOptions = $derived(contextRegion.value);
 	const years = $derived([
 		...new Map(
-			(settings?.contexts ?? []).map((context) => [
+			(contextOptions?.contexts ?? []).map((context) => [
 				context.academicYearId,
 				{ value: context.academicYearId, label: context.academicYearName }
 			])
 		).values()
 	]);
-	$effect.pre(() => settingsRegion.consume(settingsSource));
+	$effect.pre(() => contextRegion.consume(coverageOptionsSource));
 	$effect.pre(() => {
-		const value = settingsRegion.value;
+		const value = contextRegion.value;
 		if (!value) return;
 		untrack(() => {
 			if (!contextInitialized) {
@@ -82,7 +86,6 @@
 				}
 				contextInitialized = true;
 			}
-			draft.halfDayBoundary = value.halfDayBoundary ?? null;
 		});
 	});
 	const optionsRegion = new LeaveRegion<LeavePersonalOptions | null>();
@@ -148,7 +151,14 @@
 			const result = await getEffectiveLeavePolicy(draft.typeId, draft.startDate, {
 				signal: ticket.signal
 			});
-			if (policyRequest.isCurrent(ticket.revision) && !disposed) policy = result;
+			if (policyRequest.isCurrent(ticket.revision) && !disposed) {
+				if (result.unit === expectedUnit) policy = result;
+				else
+					policyError =
+						kind === 'leave'
+							? 'ประเภทนี้ยังไม่มีเกณฑ์ลาเต็มวันที่ใช้ได้ ติดต่อผู้ดูแลให้สร้างเกณฑ์ฉบับใหม่ของประเภทเดิมก่อนบันทึก'
+							: 'ประเภทนี้ยังไม่มีเกณฑ์ออกนอกโรงเรียนแบบนาทีที่ใช้ได้';
+			}
 		} catch (cause) {
 			if (policyRequest.isCurrent(ticket.revision) && !disposed)
 				policyError = cause instanceof Error ? cause.message : 'ยังไม่มีนโยบายที่ใช้ได้';
@@ -166,7 +176,7 @@
 		disposed = true;
 		controller.abort();
 		optionsRegion.dispose();
-		settingsRegion.dispose();
+		contextRegion.dispose();
 		policyRequest.abort();
 	});
 	async function save(event: SubmitEvent) {
@@ -175,11 +185,11 @@
 		if (stale || conflict) return;
 		errors = leaveDraftErrors(draft, policy);
 		error = '';
-		if (Object.keys(errors).length || !policy) {
+		if (Object.keys(errors).length || !policy || policy.unit !== expectedUnit) {
 			if (!policy) error = 'เลือกประเภทและวันที่ที่มีนโยบายใช้ได้ก่อนบันทึก';
 			return;
 		}
-		if (!settings) {
+		if (!contextOptions) {
 			error = 'โหลดบริบทปีและภาคเรียนก่อนบันทึก';
 			return;
 		}
@@ -193,7 +203,7 @@
 					files = files.filter((value) => value !== file);
 				}
 			}
-			const period = leavePeriodInput(draft, policy.unit);
+			const period = leavePeriodInput(draft, expectedUnit);
 			const basis = detail ? { expectedRevision, period } : { period };
 			const requestId = intent.for(basis);
 			const result = detail
@@ -224,6 +234,22 @@
 </script>
 
 <form onsubmit={save} class="space-y-4" data-testid="leave-request-editor">
+	{#if historicalPartial && detail}<section
+			class="space-y-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"
+			data-testid="leave-whole-day-conversion"
+		>
+			<h2 class="font-medium">การแก้ไขฉบับเดิมจะเปลี่ยนเป็นลาเต็มวัน</h2>
+			<p>
+				ข้อมูลเดิม: {leaveDate(detail.request.startDate)} · {detail.request.dayPortion === 'morning'
+					? 'ช่วงเช้า'
+					: 'ช่วงบ่าย'} · {leaveAmount(detail.request.amount, detail.request.unit)}
+			</p>
+			<p>
+				เมื่อบันทึก ระบบจะสร้างฉบับแก้ไขเป็นการลาเต็มวันตามวันที่เลือก
+				โดยเก็บหลักฐานและประวัติฉบับเดิมไว้ ต้องมีเกณฑ์ลาเต็มวันที่ใช้ได้ก่อนบันทึก
+			</p>
+		</section>{/if}
+
 	{#if stale}<div class="space-y-2 rounded-md border p-3 text-sm">
 			<p>คำขอมีการเปลี่ยนแปลง ตรวจสอบข้อมูลล่าสุดก่อนบันทึกฉบับร่างที่แก้ไข</p>
 			<Button
@@ -254,16 +280,18 @@
 			{#if options?.personnelType}<p class="text-sm text-muted-foreground">
 					{PERSONNEL_TYPE_LABELS[options.personnelType]} · ตรวจเกณฑ์ตามวันที่เริ่มคำขอ
 				</p>{/if}
-			<section class="space-y-3 rounded-lg border p-3" aria-busy={settingsRegion.loading}>
+			<section class="space-y-3 rounded-lg border p-3" aria-busy={contextRegion.loading}>
 				<h2 class="font-medium">ปีและภาคเรียนของคาบสอน</h2>
-				{#if settingsRegion.error}<PageState
+				{#if contextRegion.error}<PageState
 						variant="error"
 						title="โหลดบริบทไม่สำเร็จ"
-						description={settingsRegion.error}
+						description={contextRegion.error}
 						actionLabel="ลองอีกครั้ง"
-						onaction={() => settingsRegion.retry((signal) => getLeaveCoverageSettings({ signal }))}
+						onaction={() => contextRegion.retry((signal) => getLeaveCoverageOptions({ signal }))}
 					/>{/if}
-				{#if settingsRegion.loading && !settings}<PageSkeleton variant="form" />{:else if settings}
+				{#if contextRegion.loading && !contextOptions}<PageSkeleton
+						variant="form"
+					/>{:else if contextOptions}
 					<div class="grid gap-3 sm:grid-cols-2">
 						<Choice
 							id="leave-academic-year"
@@ -277,7 +305,7 @@
 							id="leave-academic-term"
 							label="ภาคเรียน"
 							bind:value={draft.academicTermId}
-							options={settings.contexts
+							options={contextOptions.contexts
 								.filter((context) => context.academicYearId === draft.academicYearId)
 								.map((context) => ({
 									value: context.academicTermId,
@@ -286,15 +314,11 @@
 							disabled={pending || !draft.academicYearId}
 						/>
 					</div>
-					{#if validDefaultContext(settings)}<p class="text-xs text-muted-foreground">
-							ค่าเริ่มต้นของโรงเรียน: {validDefaultContext(settings)?.academicYearName} · {validDefaultContext(
-								settings
+					{#if validDefaultContext(contextOptions)}<p class="text-xs text-muted-foreground">
+							ค่าเริ่มต้นของโรงเรียน: {validDefaultContext(contextOptions)?.academicYearName} · {validDefaultContext(
+								contextOptions
 							)?.academicTermName}
 						</p>{/if}
-					<p class="text-xs text-muted-foreground">
-						เวลาสิ้นสุดช่วงเช้าของโรงเรียน: {settings.halfDayBoundary?.slice(0, 5) ??
-							'ยังไม่กำหนด — ติดต่อผู้ดูแลก่อนจัดคาบครึ่งวัน'}
-					</p>
 				{/if}
 			</section>
 
@@ -330,23 +354,7 @@
 					/>{#if errors.endDate}<p class="text-sm text-destructive">{errors.endDate}</p>{/if}
 				</div>
 			</div>
-			{#if policy?.unit === 'half_day'}<div class="space-y-2">
-					<Label>ช่วงวัน *</Label><ToggleGroup.Root
-						class="flex-wrap"
-						type="single"
-						aria-label="ช่วงวัน"
-						value={draft.dayPortion}
-						onValueChange={(value) => {
-							if (value === 'full_day' || value === 'morning' || value === 'afternoon')
-								draft.dayPortion = value;
-						}}
-						disabled={pending}
-						><ToggleGroup.Item value="full_day">เต็มวัน</ToggleGroup.Item><ToggleGroup.Item
-							value="morning">ครึ่งวันเช้า</ToggleGroup.Item
-						><ToggleGroup.Item value="afternoon">ครึ่งวันบ่าย</ToggleGroup.Item></ToggleGroup.Root
-					>
-				</div>{/if}
-			{#if policy?.unit === 'minute'}<div class="grid grid-cols-2 gap-3">
+			{#if kind === 'exit'}<div class="grid grid-cols-2 gap-3">
 					<div class="space-y-2">
 						<Label for="leave-start-time">เวลาเริ่ม *</Label><Input
 							id="leave-start-time"
