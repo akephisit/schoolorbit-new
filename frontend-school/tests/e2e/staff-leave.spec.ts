@@ -947,3 +947,95 @@ for (const width of [1440, 390])
 			fullPage: true
 		});
 	});
+
+for (const correction of ['replacement', 'removal'] as const)
+	test(`unsafe original policy caps require explicit ${correction} before a Day successor can save`, async ({
+		page
+	}, testInfo) => {
+		const width = correction === 'replacement' ? 1440 : 390;
+		await page.setViewportSize({ width, height: 900 });
+		if (correction === 'removal')
+			await page.addInitScript(() =>
+				localStorage.setItem('ui-preferences', JSON.stringify({ theme: 'dark' }))
+			);
+		const api = await mockLeave(page, { legacyPolicy: true, quotaMonth: 10 });
+		const rawOriginal = JSON.stringify({
+			success: true,
+			data: [
+				{
+					...api.detail().policy!,
+					maxPerRequest: 'UNSAFE_INTEGER',
+					annualLimit: 'UNSAFE_INTEGER',
+					evidenceFromAmount: 'UNSAFE_INTEGER'
+				}
+			]
+		}).replaceAll('"UNSAFE_INTEGER"', '9007199254740993');
+		await page.route('**/api/staff-leave/types/*/policies', (route) =>
+			route.request().method() === 'GET'
+				? route.fulfill({ contentType: 'application/json', body: rawOriginal })
+				: route.fallback()
+		);
+		await page.goto('/staff/leave/settings');
+		await page.getByRole('button', { name: 'ดูเกณฑ์ ลาป่วย', exact: true }).click();
+		await page.getByRole('button', { name: 'สร้างฉบับใหม่จากฉบับนี้', exact: true }).click();
+		await chooseDate(page, 'policy-effective');
+		await page.getByRole('tab', { name: 'จำนวน / การนับ', exact: true }).click();
+		const editor = page.getByTestId('leave-policy-editor');
+		await expect(editor).not.toContainText('4503599627370496');
+		for (const id of ['policy-max', 'policy-annual']) {
+			await expect(page.locator(`#${id}`)).toHaveValue('');
+			await expect(page.locator(`#${id}`)).toHaveAttribute('placeholder', 'ต้องระบุใหม่');
+			await expect(page.locator(`#${id}`)).toHaveAttribute('aria-invalid', 'true');
+		}
+		await page.locator('#policy-max').fill('');
+		await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+		await expect(page.locator('#policy-max')).toBeFocused();
+		await expect(editor).toContainText('ค่าเดิมเกินช่วงจำนวนที่แสดงได้อย่างแม่นยำ');
+		expect(api.writes).toHaveLength(0);
+		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+			true
+		);
+		await page.screenshot({
+			path: testInfo.outputPath(`unsafe-policy-${correction}-${width}.png`)
+		});
+		if (correction === 'replacement') await page.locator('#policy-max').fill('3');
+		else
+			await page
+				.getByTestId('policy-max-unsafe')
+				.getByRole('button', { name: 'นำเงื่อนไขนี้ออก', exact: true })
+				.click();
+		await page.locator('#policy-annual').fill('');
+		await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+		await expect(page.locator('#policy-annual')).toBeFocused();
+		expect(api.writes).toHaveLength(0);
+		if (correction === 'replacement') await page.locator('#policy-annual').fill('20');
+		else
+			await page
+				.getByTestId('policy-annual-unsafe')
+				.getByRole('button', { name: 'นำเงื่อนไขนี้ออก', exact: true })
+				.click();
+		await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+		await expect(page.getByRole('tab', { name: 'หลักฐาน', exact: true })).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await expect(page.locator('#policy-evidence-threshold')).toBeFocused();
+		await expect(page.locator('#policy-evidence-threshold')).toHaveValue('');
+		expect(api.writes).toHaveLength(0);
+		if (correction === 'replacement') await page.locator('#policy-evidence-threshold').fill('2');
+		else
+			await page
+				.getByTestId('policy-evidence-threshold-unsafe')
+				.getByRole('button', { name: 'นำเงื่อนไขนี้ออก', exact: true })
+				.click();
+		await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+		await expect(editor).toHaveCount(0);
+		expect(api.writes.at(-1)!.payload).toMatchObject({
+			unit: 'day',
+			quotaYearStartMonth: 10,
+			maxPerRequest: correction === 'replacement' ? 3 : null,
+			annualLimit: correction === 'replacement' ? 20 : null,
+			evidenceFromAmount: correction === 'replacement' ? 2 : null
+		});
+		expect(api.writes).toHaveLength(1);
+	});

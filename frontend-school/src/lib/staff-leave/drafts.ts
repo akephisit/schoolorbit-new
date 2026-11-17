@@ -67,13 +67,19 @@ export function leavePeriodInput(draft: LeaveDraft, unit: LeavePolicyUnit): Leav
 		evidenceFileIds: draft.evidenceFileIds
 	};
 }
-export function displayedPolicyLimit(amount: number | null | undefined, unit: LeaveUnit): string {
-	return amount == null ? '' : String(unit === 'half_day' ? amount / 2 : amount);
+/** Unsafe wire numbers have already lost their original integer; never divide or copy them. */
+export function displayedPolicyLimit(
+	amount: number | null | undefined,
+	unit: LeaveUnit
+): string | undefined {
+	if (amount == null) return '';
+	if (!Number.isSafeInteger(amount)) return undefined;
+	return String(unit === 'half_day' ? amount / 2 : amount);
 }
 export function policyLimitInput(raw: string): number | null {
 	if (!raw.trim()) return null;
 	const value = Number(raw);
-	if (!Number.isSafeInteger(value) || value < 1)
+	if (!/^\d+$/.test(raw.trim()) || !Number.isSafeInteger(value) || value < 1)
 		throw new Error('จำนวนต้องเป็นค่าบวกตามหน่วยที่เลือก');
 	return value;
 }
@@ -93,6 +99,16 @@ export function newLeavePolicyStep(): ProcessTemplateStep {
 }
 export function leavePolicyDraft(kind: LeaveKind, initial?: LeavePolicyVersion) {
 	const unit: LeavePolicyUnit = kind === 'exit' ? 'minute' : 'day';
+	const maxPerRequest = initial
+		? displayedPolicyLimit(initial.maxPerRequest, initial.unit)
+		: kind === 'exit'
+			? '120'
+			: '';
+	const annualLimit = displayedPolicyLimit(initial?.annualLimit, initial?.unit ?? unit);
+	const evidenceFromAmount = displayedPolicyLimit(
+		initial?.evidenceFromAmount,
+		initial?.unit ?? unit
+	);
 	return {
 		effectiveFrom: undefined as string | undefined,
 		sourceReference: initial?.sourceReference ?? '',
@@ -103,14 +119,15 @@ export function leavePolicyDraft(kind: LeaveKind, initial?: LeavePolicyVersion) 
 		weekdays: [...(initial?.workingWeekdays ?? [])],
 		excludedDates: [...(initial?.excludedDates ?? [])],
 		quotaMonth: initial?.quotaYearStartMonth ?? 1,
-		maxPerRequest: initial
-			? displayedPolicyLimit(initial.maxPerRequest, initial.unit)
-			: kind === 'exit'
-				? '120'
-				: '',
-		annualLimit: displayedPolicyLimit(initial?.annualLimit, initial?.unit ?? unit),
+		maxPerRequest: maxPerRequest ?? '',
+		annualLimit: annualLimit ?? '',
 		evidenceRequired: initial?.evidenceRequired ?? false,
-		evidenceFromAmount: displayedPolicyLimit(initial?.evidenceFromAmount, initial?.unit ?? unit),
+		evidenceFromAmount: evidenceFromAmount ?? '',
+		unresolvedLimits: {
+			maxPerRequest: maxPerRequest === undefined,
+			annualLimit: annualLimit === undefined,
+			evidenceFromAmount: evidenceFromAmount === undefined
+		},
 		minimumNoticeDays: initial?.minimumNoticeDays == null ? '' : String(initial.minimumNoticeDays),
 		steps: initial?.steps.map((step) => ({
 			...step,

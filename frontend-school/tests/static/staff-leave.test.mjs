@@ -48,6 +48,8 @@ test('historical half-day evidence stays exact while active policy amounts requi
 	assert.throws(() => policyLimitInput('0.25'));
 	assert.throws(() => policyLimitInput('-1'));
 	assert.throws(() => policyLimitInput('1.5'));
+	assert.throws(() => policyLimitInput('4503599627370496.5'));
+	assert.throws(() => policyLimitInput('9007199254740993'));
 });
 test('request payload omits client amounts and normalizes stale unit-dependent fields', () => {
 	const draft = {
@@ -192,4 +194,36 @@ test('scaled report strings preserve half-days and integers beyond Number precis
 	assert.equal(leaveUsageAmount('0', { unit: 'day', amountScale: 2 }), '0 วัน');
 	assert.equal(leaveUsageAmount('-1', { unit: 'day', amountScale: 2 }), '-0.5 วัน');
 	assert.throws(() => leaveUsageAmount('1', { unit: 'day', amountScale: 3 }));
+});
+
+test('unsafe original policy limits remain unresolved before half-day conversion even if the quotient looks safe', () => {
+	const roundedWireValue = JSON.parse('9007199254740993');
+	assert.equal(roundedWireValue, 9007199254740992);
+	assert.equal(Number.isSafeInteger(roundedWireValue / 2), true);
+	for (const unit of ['half_day', 'day', 'minute']) {
+		assert.equal(displayedPolicyLimit(roundedWireValue, unit), undefined);
+	}
+	for (const kind of ['leave', 'exit']) {
+		const draft = leavePolicyDraft(kind, {
+			unit: 'half_day',
+			maxPerRequest: roundedWireValue,
+			annualLimit: roundedWireValue,
+			evidenceFromAmount: roundedWireValue,
+			steps: []
+		});
+		assert.deepEqual(draft.unresolvedLimits, {
+			maxPerRequest: true,
+			annualLimit: true,
+			evidenceFromAmount: true
+		});
+		assert.equal(draft.maxPerRequest, '');
+		assert.equal(draft.annualLimit, '');
+		assert.equal(draft.evidenceFromAmount, '');
+	}
+	assert.equal(displayedPolicyLimit(Number.MAX_SAFE_INTEGER, 'half_day'), '4503599627370495.5');
+	assert.equal(displayedPolicyLimit(null, 'day'), '');
+	const safe = leavePolicyDraft('leave', { unit: 'half_day', maxPerRequest: 5, steps: [] });
+	assert.equal(safe.maxPerRequest, '2.5');
+	assert.equal(safe.unresolvedLimits.maxPerRequest, false);
+	assert.throws(() => policyLimitInput(safe.maxPerRequest));
 });

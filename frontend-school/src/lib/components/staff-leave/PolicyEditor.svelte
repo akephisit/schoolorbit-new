@@ -56,6 +56,26 @@
 		sourceReference = $state(initial.sourceReference),
 		personnelTypes = $state<StaffPersonnelType[]>(initial.personnelTypes);
 	const unit = initial.unit;
+	let unresolvedLimits = $state({ ...initial.unresolvedLimits });
+	type LimitField = keyof typeof initial.unresolvedLimits;
+	const unsafeLimitMessage =
+		'ค่าเดิมเกินช่วงจำนวนที่แสดงได้อย่างแม่นยำ จึงไม่นำมาคัดลอก กรุณากรอกจำนวนเต็มใหม่หรือนำเงื่อนไขนี้ออกอย่างชัดเจน';
+	function acknowledgeLimit(field: LimitField, value: string) {
+		if (!unresolvedLimits[field] || !value.trim()) return;
+		try {
+			policyLimitInput(value);
+			unresolvedLimits[field] = false;
+		} catch {
+			/* Keep the unresolved original until a valid replacement is entered. */
+		}
+	}
+	function removeUnresolvedLimit(field: LimitField) {
+		if (pending) return;
+		if (field === 'maxPerRequest') maxPerRequest = '';
+		else if (field === 'annualLimit') annualLimit = '';
+		else evidenceFromAmount = '';
+		unresolvedLimits[field] = false;
+	}
 	let countingMode = $state<'calendar_days' | 'working_days'>(initial.countingMode),
 		weekdays = $state<number[]>(initial.weekdays),
 		excludedDates = $state<string[]>(initial.excludedDates),
@@ -223,11 +243,15 @@
 			);
 			return;
 		}
-		for (const [value, id, targetSection] of [
-			[maxPerRequest, 'policy-max', 'limits'],
-			[annualLimit, 'policy-annual', 'limits'],
-			[evidenceFromAmount, 'policy-evidence-threshold', 'evidence']
+		for (const [field, value, id, targetSection] of [
+			['maxPerRequest', maxPerRequest, 'policy-max', 'limits'],
+			['annualLimit', annualLimit, 'policy-annual', 'limits'],
+			['evidenceFromAmount', evidenceFromAmount, 'policy-evidence-threshold', 'evidence']
 		] as const) {
+			if (unresolvedLimits[field]) {
+				void revealError(unsafeLimitMessage, targetSection, `#${id}`);
+				return;
+			}
 			try {
 				policyLimitInput(value);
 			} catch {
@@ -420,12 +444,31 @@
 						min={amountStep}
 						step={amountStep}
 						value={maxPerRequest}
-						oninput={(event) => (maxPerRequest = event.currentTarget.value)}
+						oninput={(event) => {
+							maxPerRequest = event.currentTarget.value;
+							acknowledgeLimit('maxPerRequest', maxPerRequest);
+						}}
+						aria-invalid={unresolvedLimits.maxPerRequest}
+						aria-describedby={unresolvedLimits.maxPerRequest ? 'policy-max-unsafe' : undefined}
 						disabled={pending}
-						placeholder="ไม่กำหนด"
+						placeholder={unresolvedLimits.maxPerRequest ? 'ต้องระบุใหม่' : 'ไม่กำหนด'}
 					/>{#if type.kind === 'exit'}<p class="text-xs text-muted-foreground">
 							120 นาทีเป็นตัวอย่างของโรงเรียน แก้ไขได้
 						</p>{/if}
+					{#if unresolvedLimits.maxPerRequest}<div
+							id="policy-max-unsafe"
+							class="space-y-2 text-sm"
+							data-testid="policy-max-unsafe"
+						>
+							<p class="text-destructive">{unsafeLimitMessage}</p>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={pending}
+								onclick={() => removeUnresolvedLimit('maxPerRequest')}>นำเงื่อนไขนี้ออก</Button
+							>
+						</div>{/if}
 				</div>
 				<div class="space-y-2">
 					<Label for="policy-annual">สิทธิที่โรงเรียนกำหนดต่อรอบปี ({amountLabel})</Label><Input
@@ -434,10 +477,29 @@
 						min={amountStep}
 						step={amountStep}
 						value={annualLimit}
-						oninput={(event) => (annualLimit = event.currentTarget.value)}
+						oninput={(event) => {
+							annualLimit = event.currentTarget.value;
+							acknowledgeLimit('annualLimit', annualLimit);
+						}}
+						aria-invalid={unresolvedLimits.annualLimit}
+						aria-describedby={unresolvedLimits.annualLimit ? 'policy-annual-unsafe' : undefined}
 						disabled={pending}
-						placeholder="ไม่กำหนด"
+						placeholder={unresolvedLimits.annualLimit ? 'ต้องระบุใหม่' : 'ไม่กำหนด'}
 					/>
+					{#if unresolvedLimits.annualLimit}<div
+							id="policy-annual-unsafe"
+							class="space-y-2 text-sm"
+							data-testid="policy-annual-unsafe"
+						>
+							<p class="text-destructive">{unsafeLimitMessage}</p>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={pending}
+								onclick={() => removeUnresolvedLimit('annualLimit')}>นำเงื่อนไขนี้ออก</Button
+							>
+						</div>{/if}
 				</div>
 				<Choice
 					id="policy-year-month"
@@ -472,10 +534,31 @@
 						min={amountStep}
 						step={amountStep}
 						value={evidenceFromAmount}
-						oninput={(event) => (evidenceFromAmount = event.currentTarget.value)}
+						oninput={(event) => {
+							evidenceFromAmount = event.currentTarget.value;
+							acknowledgeLimit('evidenceFromAmount', evidenceFromAmount);
+						}}
+						aria-invalid={unresolvedLimits.evidenceFromAmount}
+						aria-describedby={unresolvedLimits.evidenceFromAmount
+							? 'policy-evidence-threshold-unsafe'
+							: undefined}
 						disabled={pending || evidenceRequired}
-						placeholder="ไม่กำหนด"
+						placeholder={unresolvedLimits.evidenceFromAmount ? 'ต้องระบุใหม่' : 'ไม่กำหนด'}
 					/>
+					{#if unresolvedLimits.evidenceFromAmount}<div
+							id="policy-evidence-threshold-unsafe"
+							class="space-y-2 text-sm"
+							data-testid="policy-evidence-threshold-unsafe"
+						>
+							<p class="text-destructive">{unsafeLimitMessage}</p>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								disabled={pending}
+								onclick={() => removeUnresolvedLimit('evidenceFromAmount')}>นำเงื่อนไขนี้ออก</Button
+							>
+						</div>{/if}
 				</div>
 				<div class="space-y-2">
 					<Label for="policy-notice">ยื่นล่วงหน้าอย่างน้อย (วัน)</Label><Input
