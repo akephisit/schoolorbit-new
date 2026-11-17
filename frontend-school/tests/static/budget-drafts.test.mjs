@@ -151,3 +151,75 @@ test('partial payment uses request reservations and refunds use original payment
 	assert.throws(() => paymentAllocations({ a: '3.01' }, refundLimits));
 	assert.throws(() => paymentAllocations({ a: '0.00' }, refundLimits));
 });
+
+test('required activity dates preserve unknown legacy dates and inclusive project/year boundaries', async () => {
+	const { activityDrafts, activityDateError } = await load('drafts.ts');
+	const project = { startDate: '2026-10-01', endDate: '2027-09-30' };
+	const activity = newActivity(project);
+	assert.equal(activityDateError(activity, project), '');
+	assert.equal(activityInput(activity).startDate, project.startDate);
+	assert.ok(activityDateError({ ...activity, startDate: '2026-09-30' }, project));
+	assert.ok(activityDateError({ ...activity, endDate: '2027-10-01' }, project));
+	assert.ok(activityDateError({ ...activity, startDate: '2027-02-30' }, project));
+	const historical = activityDrafts({
+		activities: [{ id: 'a', title: 'เดิม', startDate: null, endDate: null, lines: [] }]
+	});
+	assert.equal(historical[0].startDate, '');
+	assert.ok(activityDateError(historical[0], project));
+	assert.ok(
+		projectErrors(
+			{
+				name: 'โครงการ',
+				fiscalYearId: 'year',
+				organizationUnitId: 'org',
+				...project,
+				endDate: '2027-10-01'
+			},
+			project
+		).endDate
+	);
+});
+
+test('monthly activity overlap includes exact month boundaries and excludes unknown dates', async () => {
+	const { activityMonths, activitiesInMonth } = await load('schedule.ts');
+	const rows = [
+		{ id: 'first', startDate: '2026-10-31', endDate: '2026-11-01' },
+		{ id: 'last', startDate: '2026-11-30', endDate: '2026-12-01' },
+		{ id: 'unknown', startDate: null, endDate: null }
+	];
+	assert.deepEqual(activityMonths(rows), ['2026-10', '2026-11', '2026-12']);
+	assert.deepEqual(
+		activitiesInMonth(rows, '2026-11').map((row) => row.id),
+		['first', 'last']
+	);
+	assert.deepEqual(
+		activitiesInMonth(rows, '2026-12').map((row) => row.id),
+		['last']
+	);
+});
+
+test('annual drafts distinguish unknown funding and receipts from explicit zero, preserving exact satang', async () => {
+	const { yearDraft, yearInput } = await load('year-drafts.ts');
+	const original = {
+		fiscalYear: { revision: 2, name: '2570', startDate: '2026-10-01', endDate: '2027-09-30' },
+		funds: [],
+		expenseCategories: [],
+		planSteps: [],
+		requestSteps: [],
+		adjustmentSteps: [],
+		authorizedFunding: null,
+		unitAllocations: [],
+		sourceBalances: [
+			{ fundId: 'unknown', receivedSatang: null },
+			{ fundId: 'zero', receivedSatang: '0' }
+		]
+	};
+	const draft = yearDraft(original);
+	assert.equal(yearInput(draft).authorizedFunding, null);
+	assert.equal(draft.received.unknown, '');
+	assert.equal(draft.received.zero, '0.00');
+	draft.funding = [{ fundId: 'zero', carryover: '90071992547409.93', annual: '0', reserve: '0' }];
+	assert.equal(yearInput(draft).authorizedFunding[0].carryoverSatang, '9007199254740993');
+	assert.equal(yearInput(draft).authorizedFunding[0].annualFundingSatang, '0');
+	assert.equal(original.authorizedFunding, null);
+});

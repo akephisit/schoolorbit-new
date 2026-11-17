@@ -5,7 +5,11 @@ export type BudgetCatalogs = Schemas['BudgetCatalogs'];
 export type BudgetCatalogItem = Schemas['BudgetCatalogItem'];
 export type BudgetFiscalYear = Schemas['BudgetFiscalYear'];
 export type BudgetSettings = Schemas['BudgetSettings'];
-export type SaveBudgetSettingsRequest = Schemas['SaveBudgetSettingsRequest'];
+export type BudgetYearSettings = Schemas['BudgetYearSettings'];
+export type SaveBudgetYearSettingsRequest = Schemas['SaveBudgetYearSettingsRequest'];
+export type CreateBudgetFiscalYearRequest = Schemas['CreateBudgetFiscalYearRequest'];
+export type SaveBudgetReceivedFundingRequest = Schemas['SaveBudgetReceivedFundingRequest'];
+export type BudgetDeletedResource = Schemas['BudgetDeletedResource'];
 export type BudgetProjectInput = Schemas['BudgetProjectInput'];
 export type CreateBudgetProjectRequest = Schemas['CreateBudgetProjectRequest'];
 export type SaveBudgetProjectRequest = Schemas['SaveBudgetProjectRequest'];
@@ -60,16 +64,41 @@ const post = async <T>(url: string, input: object): Promise<T> =>
 export const getBudgetCatalogs = (options: ApiRequestOptions = {}) =>
 	read<BudgetCatalogs>(`${base}/catalogs`, {
 		...options,
-		query: { includeInactive: true, ...options.query }
+		query: options.query
 	});
 export const getBudgetSettings = (options: ApiRequestOptions = {}) =>
 	read<BudgetSettings>(`${base}/settings`, options);
-export async function saveBudgetSettings(
-	input: SaveBudgetSettingsRequest
-): Promise<BudgetSettings> {
+export const getBudgetYearSettings = (id: string, options: ApiRequestOptions = {}) =>
+	read<BudgetYearSettings>(path('fiscal-years', id), options);
+export const createBudgetFiscalYear = (input: CreateBudgetFiscalYearRequest) =>
+	post<BudgetYearSettings>(`${base}/fiscal-years`, input);
+export async function saveBudgetYearSettings(id: string, input: SaveBudgetYearSettingsRequest) {
 	return requireApiData(
-		await apiClient.put<BudgetSettings>(`${base}/settings`, input),
+		await apiClient.put<BudgetYearSettings>(path('fiscal-years', id), input),
 		'บันทึกการตั้งค่าไม่สำเร็จ'
+	);
+}
+export async function saveBudgetReceivedFunding(
+	id: string,
+	input: SaveBudgetReceivedFundingRequest
+) {
+	return requireApiData(
+		await apiClient.put<BudgetYearSettings>(`${path('fiscal-years', id)}/funding`, input),
+		'บันทึกยอดรับเงินจริงไม่สำเร็จ'
+	);
+}
+export const closeBudgetFiscalYear = (id: string, input: BudgetMutationRequest) =>
+	post<BudgetYearSettings>(`${path('fiscal-years', id)}/close`, input);
+export async function deleteBudgetFiscalYear(id: string, input: BudgetMutationRequest) {
+	return requireApiData(
+		await apiClient.deleteWithBody<BudgetDeletedResource>(path('fiscal-years', id), input),
+		'ลบปีงบประมาณไม่สำเร็จ'
+	);
+}
+export async function deleteBudgetProject(id: string, input: BudgetMutationRequest) {
+	return requireApiData(
+		await apiClient.deleteWithBody<BudgetDeletedResource>(path('projects', id), input),
+		'ลบโครงการไม่สำเร็จ'
 	);
 }
 export const listBudgetProjects = (options: ApiRequestOptions = {}) =>

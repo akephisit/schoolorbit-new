@@ -185,7 +185,19 @@ async fn detail_tx(
         })
         .fetch_optional()
         .await?;
-    Ok(detail_from(a, r, i.as_ref(), outstanding.unwrap_or(0))?)
+    let mut result = detail_from(a, r, i.as_ref(), outstanding.unwrap_or(0))?;
+    let closed: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "budget.adjustments.year_closed",
+            "SELECT is_closed FROM budget_fiscal_years WHERE id=$1",
+        )
+        .bind(r.document.fiscal_year_id)
+        .fetch_one()
+        .await?;
+    if closed {
+        result.capabilities.freeze_operations();
+    }
+    Ok(result)
 }
 fn detail_from(
     a: &ActorContext,
@@ -295,6 +307,7 @@ pub async fn create(
         tx.commit().await?;
         return detail(pool, a, old).await;
     }
+    settings::require_open(&mut tx, doc.fiscal_year_id).await?;
     validate_refs(&mut tx, &doc).await?;
     DbSession::new(&mut *tx).query("budget.src.adjustments.create", "INSERT INTO budget_adjustments(id,owner_id,fiscal_year_id,from_project_id,to_project_id,revision,status,document) VALUES($1,$2,$3,$4,$5,1,'draft',$6)").bind(id).bind(a.user_id).bind(doc.fiscal_year_id).bind(doc.from.as_ref().map(|x|x.project_id)).bind(doc.to.as_ref().map(|x|x.project_id)).bind(Json(doc)).execute().await?;
     repository::history(
@@ -370,7 +383,9 @@ pub async fn save(
         tx.commit().await?;
         return detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, r.document.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
+    settings::require_open(&mut tx, doc.fiscal_year_id).await?;
     validate_refs(&mut tx, &doc).await?;
     r.document = Json(doc);
     r.revision += 1;
@@ -430,6 +445,7 @@ pub async fn submit(
         tx.commit().await?;
         return detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, r.document.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if !repository::parse_status(&r.status)?.editable() {
         return Err(repository::stale());
@@ -515,6 +531,16 @@ async fn apply(
         )
         .await?;
     }
+    if matches!(
+        doc.kind,
+        BudgetAdjustmentKind::Transfer
+            | BudgetAdjustmentKind::Loan
+            | BudgetAdjustmentKind::Repayment
+    ) {
+        if let (Some(from), Some(to)) = (&doc.from, &doc.to) {
+            settings::move_unit_quota(tx, a, r.id, doc.fiscal_year_id, from, to, amount).await?;
+        }
+    }
     settings::validate_limits(tx, doc.fiscal_year_id, true).await?;
     match doc.kind {
         BudgetAdjustmentKind::Loan => {
@@ -596,6 +622,7 @@ pub async fn act(
         tx.commit().await?;
         return detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, r.document.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if r.status != "submitted" {
         return Err(repository::stale());
@@ -769,9 +796,16 @@ async fn list_details(
         .await?
         .into_iter()
         .collect::<HashMap<_, _>>();
+    let closed_years: Vec<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "budget.adjustments.list_closed_years",
+            "SELECT id FROM budget_fiscal_years WHERE is_closed",
+        )
+        .fetch_all()
+        .await?;
     rows.iter()
         .map(|r| {
-            detail_from(
+            let mut result = detail_from(
                 a,
                 r,
                 r.instance_id.and_then(|id| instances.get(&id)),
@@ -783,7 +817,11 @@ async fn list_details(
                     })
                     .copied()
                     .unwrap_or(0),
-            )
+            )?;
+            if closed_years.contains(&r.document.fiscal_year_id) {
+                result.capabilities.freeze_operations();
+            }
+            Ok(result)
         })
         .collect()
 }

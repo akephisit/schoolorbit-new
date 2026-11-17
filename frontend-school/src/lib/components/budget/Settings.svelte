@@ -1,100 +1,147 @@
 <script lang="ts">
 	import { Settings2 } from '@lucide/svelte';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy } from 'svelte';
+	import { goto } from '$app/navigation';
 	import {
 		getBudgetSettings,
-		saveBudgetSettings,
+		getBudgetYearSettings,
+		createBudgetFiscalYear,
+		closeBudgetFiscalYear,
+		deleteBudgetFiscalYear,
 		type BudgetSettings,
-		type SaveBudgetSettingsRequest
+		type BudgetYearSettings
 	} from '#lib/api/budget.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { BudgetRegion } from '#lib/budget/region.svelte.js';
 	import { BudgetMutationIntent } from '#lib/budget/mutation-intent.js';
+	import { yearDraft, type YearDraft } from '#lib/budget/year-drafts.js';
 	import { message, validDate } from '#lib/budget/drafts.js';
+	import { destination, dateLabel } from '#lib/budget/presentation.js';
+	import { can } from '#lib/stores/permissions.js';
+	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
-	import RoutingEditor from './RoutingEditor.svelte';
-	import { toast } from 'svelte-sonner';
-	let { source }: { source: Promise<RouteLoadResult<BudgetSettings | null>> } = $props();
-	const region = new BudgetRegion<BudgetSettings | null>(),
+	import Choice from './Choice.svelte';
+	import YearSettings from './YearSettings.svelte';
+	let {
+		source,
+		indexSource,
+		selectedId
+	}: {
+		source: Promise<RouteLoadResult<BudgetYearSettings | null>>;
+		indexSource: Promise<RouteLoadResult<BudgetSettings | null>>;
+		selectedId: string;
+	} = $props();
+	const index = new BudgetRegion<BudgetSettings | null>(),
+		region = new BudgetRegion<BudgetYearSettings | null>(),
 		intent = new BudgetMutationIntent();
-	let draft = $state<
-			| (Omit<SaveBudgetSettingsRequest, 'requestId' | 'expectedRevision'> & {
-					expectedRevision: number;
-			  })
-			| null
-		>(null),
+	// Unsaved drafts live only in this authenticated workspace, indexed by their fiscal year.
+	let drafts = $state<Record<string, YearDraft>>({}),
+		creating = $state(false),
+		confirm = $state<'close' | 'delete' | null>(null),
 		pending = $state(false),
+		childPending = $state(false),
 		error = $state(''),
-		section = $state('fiscal-years'),
-		disposed = false;
+		confirmation = $state('');
+	let nextYear = $state({ name: '', startDate: '', endDate: '', copyFromFiscalYearId: '' });
+	let disposed = false;
+	const value = $derived(
+		region.value && (!selectedId || region.value.fiscalYear.id === selectedId) ? region.value : null
+	);
+	const manage = $derived($can.has(PERMISSIONS.BUDGET_MANAGE_SCHOOL));
 	$effect.pre(() => {
+		index.consume(indexSource);
 		region.consume(source);
+		confirm = null;
+		confirmation = '';
 	});
 	$effect(() => {
-		const value = region.value;
-		if (value)
-			untrack(() => {
-				if (!draft)
-					draft = {
-						expectedRevision: value.revision,
-						fiscalYears: structuredClone($state.snapshot(value.fiscalYears)),
-						funds: structuredClone($state.snapshot(value.funds)),
-						expenseCategories: structuredClone($state.snapshot(value.expenseCategories)),
-						planSteps: structuredClone($state.snapshot(value.planSteps)),
-						requestSteps: structuredClone($state.snapshot(value.requestSteps)),
-						adjustmentSteps: structuredClone($state.snapshot(value.adjustmentSteps))
-					};
-			});
+		if (value && !drafts[value.fiscalYear.id])
+			drafts[value.fiscalYear.id] = yearDraft(structuredClone($state.snapshot(value)));
 	});
 	onDestroy(() => {
 		disposed = true;
+		index.dispose();
 		region.dispose();
 	});
-	async function save(event: SubmitEvent) {
+	function patch(next: BudgetYearSettings) {
+		region.patch(next);
+		if (index.value)
+			index.patch({
+				fiscalYears: index.value.fiscalYears.map((year) =>
+					year.id === next.fiscalYear.id ? next.fiscalYear : year
+				)
+			});
+	}
+	async function create(event: SubmitEvent) {
 		event.preventDefault();
-		if (!draft || pending) return;
+		if (pending) return;
+		error = '';
+		if (
+			!nextYear.name.trim() ||
+			!validDate(nextYear.startDate) ||
+			!validDate(nextYear.endDate) ||
+			nextYear.startDate > nextYear.endDate
+		) {
+			error = 'กรอกชื่อและช่วงวันที่ปีงบประมาณให้ครบ';
+			return;
+		}
+		pending = true;
+		try {
+			const basis = {
+				...nextYear,
+				name: nextYear.name.trim(),
+				copyFromFiscalYearId: nextYear.copyFromFiscalYearId || null
+			};
+			const next = await createBudgetFiscalYear({
+				...basis,
+				requestId: intent.for({ operation: 'create', ...basis })
+			});
+			if (!disposed) {
+				index.patch({ fiscalYears: [...(index.value?.fiscalYears ?? []), next.fiscalYear] });
+				region.patch(next);
+				creating = false;
+				nextYear = { name: '', startDate: '', endDate: '', copyFromFiscalYearId: '' };
+				void goto(destination('/staff/budget/settings', { fiscalYearId: next.fiscalYear.id }));
+			}
+		} catch (cause) {
+			if (!disposed) error = message(cause);
+		} finally {
+			if (!disposed) pending = false;
+		}
+	}
+	async function lifecycle() {
+		if (!value || pending || confirmation !== value.fiscalYear.name) return;
+		const year = value.fiscalYear,
+			operation = confirm;
+		pending = true;
 		error = '';
 		try {
-			if (
-				draft.fiscalYears.some(
-					(year) =>
-						!year.name.trim() ||
-						!validDate(year.startDate) ||
-						!validDate(year.endDate) ||
-						year.startDate > year.endDate
-				)
-			)
-				throw new Error('กรอกชื่อและระยะเวลาปีงบประมาณให้ครบ');
-			if ([...draft.funds, ...draft.expenseCategories].some((item) => !item.name.trim()))
-				throw new Error('กรอกชื่อแหล่งเงินและหมวดรายจ่ายให้ครบ');
-			for (const steps of [draft.planSteps, draft.requestSteps, draft.adjustmentSteps])
-				if (
-					steps.length > 0 &&
-					(steps.at(-1)?.kind !== 'approve' ||
-						steps.some((step) => !step.title.trim() || !step.recipients?.length))
-				)
-					throw new Error('แต่ละกระบวนการต้องมีผู้พิจารณาครบและจบด้วยขั้นตอนอนุมัติ');
-			pending = true;
-			const value = await saveBudgetSettings({ ...draft, requestId: intent.for(draft) });
-			if (!disposed) {
-				region.patch(value);
-				toast.success('บันทึกการตั้งค่าแล้ว');
-				draft = {
-					...draft,
-					expectedRevision: value.revision,
-					fiscalYears: structuredClone($state.snapshot(value.fiscalYears)),
-					funds: structuredClone($state.snapshot(value.funds)),
-					expenseCategories: structuredClone($state.snapshot(value.expenseCategories))
-				};
+			const basis = { expectedRevision: year.revision };
+			const input = { ...basis, requestId: intent.for({ operation, id: year.id, ...basis }) };
+			if (operation === 'close') {
+				const next = await closeBudgetFiscalYear(year.id, input);
+				if (!disposed) {
+					patch(next);
+					delete drafts[year.id];
+				}
+			} else {
+				await deleteBudgetFiscalYear(year.id, input);
+				if (!disposed) {
+					delete drafts[year.id];
+					index.patch({
+						fiscalYears: index.value?.fiscalYears.filter((item) => item.id !== year.id) ?? []
+					});
+					region.patch(null);
+					void goto('/staff/budget/settings');
+				}
 			}
+			if (!disposed) confirm = null;
 		} catch (cause) {
 			if (!disposed) error = message(cause);
 		} finally {
@@ -105,171 +152,192 @@
 
 <PageShell
 	icon={Settings2}
-	description="จัดการปีงบประมาณ แหล่งเงิน หมวดรายจ่าย และขั้นตอนพิจารณา"
+	title="ตั้งค่างบประมาณ"
+	description="เลือกปีงบประมาณเพื่อจัดการกรอบเงิน การจัดสรร และขั้นตอนพิจารณาของปีนั้น"
 	backHref="/staff/budget"
 	backLabel="กลับภาพรวมงบประมาณ"
-	title="ตั้งค่างบประมาณ"
 	contentClass="space-y-6"
-	>{#if region.error}<PageState
+>
+	{#snippet actions()}{#if manage}<Button
+				onclick={() => {
+					creating = true;
+					error = '';
+				}}>เพิ่มปีงบประมาณ</Button
+			>{/if}{/snippet}
+	{#if index.error}<PageState
 			variant="error"
-			title="โหลดการตั้งค่าไม่สำเร็จ"
-			description={region.error}
+			title="โหลดปีงบประมาณไม่สำเร็จ"
+			description={index.error}
 			actionLabel="ลองอีกครั้ง"
-			onaction={() => region.retry((signal) => getBudgetSettings({ signal }))}
-		/>{/if}{#if !draft && region.loading}<PageSkeleton
-			variant="form"
-			rows={5}
-		/>{/if}{#if draft}<form
-			onsubmit={save}
-			class="max-w-5xl space-y-6"
-			data-testid="budget-settings"
-		>
-			<Tabs.Root bind:value={section}
-				><Tabs.List class="h-auto flex-wrap"
-					><Tabs.Trigger value="fiscal-years">ปีงบประมาณ</Tabs.Trigger><Tabs.Trigger value="funds"
-						>แหล่งเงิน</Tabs.Trigger
-					><Tabs.Trigger value="categories">หมวดรายจ่าย</Tabs.Trigger><Tabs.Trigger value="routing"
-						>ขั้นตอนพิจารณา</Tabs.Trigger
-					></Tabs.List
-				><Tabs.Content value="fiscal-years" class="space-y-4 pt-4"
-					><div class="space-y-1">
-						<h2 class="font-semibold">ปีงบประมาณ</h2>
-						<p class="text-sm text-muted-foreground">
-							กำหนดชื่อและช่วงวันที่สำหรับการวางแผนงบประมาณ
-						</p>
-					</div>
-					{#each draft.fiscalYears as year, index (index)}<Card.Root
-							><Card.Content class="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-4">
-								<div class="space-y-2">
-									<Label for={`budget-year-name-${index}`}>ชื่อปีงบประมาณ *</Label><Input
-										id={`budget-year-name-${index}`}
-										bind:value={year.name}
-										disabled={pending}
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label for={`budget-year-start-${index}`}>วันที่เริ่มต้น *</Label><DatePicker
-										id={`budget-year-start-${index}`}
-										value={year.startDate || undefined}
-										onValueChange={(value) => (year.startDate = value ?? '')}
-										ariaLabel={`วันที่เริ่มต้นปีงบประมาณ ${index + 1}`}
-										disabled={pending}
-									/>
-								</div>
-								<div class="space-y-2">
-									<Label for={`budget-year-end-${index}`}>วันที่สิ้นสุด *</Label><DatePicker
-										id={`budget-year-end-${index}`}
-										value={year.endDate || undefined}
-										onValueChange={(value) => (year.endDate = value ?? '')}
-										ariaLabel={`วันที่สิ้นสุดปีงบประมาณ ${index + 1}`}
-										disabled={pending}
-									/>
-								</div>
-								<div class="space-y-2">
-									<p class="text-sm font-medium">สถานะ</p>
-									<div class="flex h-9 items-center gap-2">
-										<Checkbox
-											id={`budget-year-active-${index}`}
-											bind:checked={year.active}
-											disabled={pending}
-										/><Label for={`budget-year-active-${index}`}>เปิดใช้งาน</Label
-										>{#if !year.id}<Button
-												type="button"
-												variant="ghost"
-												size="sm"
-												disabled={pending}
-												onclick={() => {
-													if (draft)
-														draft.fiscalYears = draft.fiscalYears.filter((_, i) => i !== index);
-												}}>นำออก</Button
-											>{/if}
-									</div>
-								</div>
-							</Card.Content></Card.Root
-						>{/each}<Button
-						type="button"
-						variant="outline"
-						disabled={pending}
-						onclick={() => {
-							if (draft)
-								draft.fiscalYears = [
-									...draft.fiscalYears,
-									{ name: '', startDate: '', endDate: '', active: true }
-								];
-						}}>เพิ่มปีงบประมาณ</Button
-					></Tabs.Content
-				>{#each [{ key: 'funds' as const, tab: 'funds', label: 'แหล่งเงิน' }, { key: 'expenseCategories' as const, tab: 'categories', label: 'หมวดรายจ่าย' }] as collection (collection.key)}<Tabs.Content
-						value={collection.tab}
-						class="space-y-4 pt-4"
-						><div class="space-y-1">
-							<h2 class="font-semibold">{collection.label}</h2>
-							<p class="text-sm text-muted-foreground">
-								จัดการรายการที่ใช้เลือกในแผนและการใช้เงินของโครงการ
-							</p>
-						</div>
-						{#each draft[collection.key] as item, index (index)}<Card.Root
-								><Card.Content
-									class="grid min-w-0 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]"
-								>
-									<Label class="sm:col-span-2" for={`budget-${collection.key}-${index}`}
-										>ชื่อ{collection.label} *</Label
-									><Input
-										id={`budget-${collection.key}-${index}`}
-										bind:value={item.name}
-										disabled={pending}
-									/>
-									<div class="flex w-full flex-wrap items-center justify-between gap-3">
-										<div class="flex items-center gap-2">
-											<Checkbox
-												id={`budget-${collection.key}-active-${index}`}
-												bind:checked={item.active}
-												disabled={pending}
-											/><Label for={`budget-${collection.key}-active-${index}`}>เปิดใช้งาน</Label>
-										</div>
-										{#if !item.id}<Button
-												type="button"
-												variant="ghost"
-												disabled={pending}
-												onclick={() => {
-													if (draft)
-														draft[collection.key] = draft[collection.key].filter(
-															(_, i) => i !== index
-														);
-												}}>นำออก</Button
-											>{/if}
-									</div>
-								</Card.Content></Card.Root
-							>{/each}<Button
-							type="button"
-							variant="outline"
-							disabled={pending}
-							onclick={() => {
-								if (draft)
-									draft[collection.key] = [...draft[collection.key], { name: '', active: true }];
-							}}>เพิ่ม{collection.label}</Button
-						></Tabs.Content
-					>{/each}<Tabs.Content value="routing" class="space-y-6 pt-4"
-					>{#if section === 'routing'}{#each [{ key: 'planSteps' as const, label: 'พิจารณาแผนโครงการ' }, { key: 'requestSteps' as const, label: 'พิจารณาคำขอใช้เงิน' }, { key: 'adjustmentSteps' as const, label: 'พิจารณาปรับงบประมาณ' }] as routing (routing.key)}<Card.Root
-								class="gap-4"
-							>
-								<Card.Header><Card.Title><h2>{routing.label}</h2></Card.Title></Card.Header
-								><Card.Content>
-									<RoutingEditor
-										bind:steps={draft[routing.key]}
-										prefix={`budget-${routing.key}`}
-										disabled={pending}
-									/>
-								</Card.Content></Card.Root
-							>{/each}{/if}</Tabs.Content
-				></Tabs.Root
-			>{#if error}<PageState
-					variant="error"
-					title="บันทึกการตั้งค่าไม่สำเร็จ"
-					description={error}
-				/>{/if}
-			<div class="flex flex-wrap justify-end gap-2 border-t pt-5">
-				<Button variant="outline" href="/staff/budget" disabled={pending}>กลับภาพรวม</Button>
-				<LoadingButton type="submit" loading={pending}>บันทึกการตั้งค่า</LoadingButton>
+			onaction={() => index.retry((signal) => getBudgetSettings({ signal }))}
+		/>{/if}
+	<div class="max-w-5xl space-y-6" data-testid="budget-settings">
+		<div class="flex flex-wrap items-end gap-3">
+			<div class="w-full sm:w-64">
+				<Choice
+					id="budget-settings-year"
+					label="ปีงบประมาณ"
+					value={selectedId || value?.fiscalYear.id || ''}
+					options={(index.value?.fiscalYears ?? []).map((year) => ({
+						value: year.id,
+						label: `${year.name}${year.isClosed ? ' · ปิดปีแล้ว' : ''}`
+					}))}
+					disabled={pending || childPending}
+					onchange={(fiscalYearId) => {
+						error = '';
+						void goto(destination('/staff/budget/settings', { fiscalYearId }));
+					}}
+				/>
 			</div>
-		</form>{/if}</PageShell
+			{#if value}<p class="text-sm text-muted-foreground">
+					{dateLabel(value.fiscalYear.startDate)} – {dateLabel(value.fiscalYear.endDate)} · {value
+						.fiscalYear.isClosed
+						? 'ปิดปีแล้ว'
+						: 'เปิดดำเนินการ'}
+				</p>{/if}
+		</div>
+		{#if region.error}<PageState
+				variant="error"
+				title="โหลดการตั้งค่าไม่สำเร็จ"
+				description={region.error}
+				actionLabel="ลองอีกครั้ง"
+				onaction={() => {
+					const id = selectedId || index.value?.fiscalYears[0]?.id;
+					if (id) region.retry((signal) => getBudgetYearSettings(id, { signal }));
+				}}
+			/>{/if}
+		{#if !value && (region.loading || index.loading)}<PageSkeleton
+				variant="form"
+				rows={5}
+			/>{:else if value && drafts[value.fiscalYear.id]}{#key value.fiscalYear.id}<YearSettings
+					{value}
+					bind:draft={drafts[value.fiscalYear.id]}
+					onpatch={patch}
+					onbusy={(busy) => (childPending = busy)}
+				/>{/key}{:else if !region.error}<PageState
+				title={selectedId ? 'ไม่พบปีงบประมาณที่เลือก' : 'ยังไม่มีปีงบประมาณ'}
+				description="เพิ่มปีงบประมาณเพื่อเริ่มตั้งค่าแหล่งเงินและวางแผนโครงการ"
+			/>{/if}
+		{#if value && manage}<div class="flex flex-wrap gap-2 border-t pt-4">
+				{#if !value.fiscalYear.isClosed}<Button
+						variant="outline"
+						disabled={pending || childPending || !value.fiscalYear.canClose}
+						onclick={() => {
+							confirm = 'close';
+							confirmation = '';
+							error = '';
+						}}>ปิดปีงบประมาณ</Button
+					>{/if}{#if value.fiscalYear.canDelete}<Button
+						variant="destructive"
+						disabled={pending || childPending}
+						onclick={() => {
+							confirm = 'delete';
+							confirmation = '';
+							error = '';
+						}}>ลบปีงบประมาณ</Button
+					>{/if}
+				{#if !value.fiscalYear.isClosed && !value.fiscalYear.canClose}<p
+						class="w-full text-sm text-muted-foreground"
+					>
+						ปิดปีได้เมื่อไม่มีรายการรอพิจารณา ยอดผูกพัน หรือเงินยืมค้างคืน
+					</p>{/if}
+			</div>{/if}
+	</div>
+</PageShell>
+<Dialog.Root bind:open={creating}
+	><Dialog.Content class="max-h-[90dvh] overflow-y-auto"
+		><Dialog.Header
+			><Dialog.Title>เพิ่มปีงบประมาณ</Dialog.Title><Dialog.Description
+				>คัดลอกเฉพาะแหล่งเงิน หมวดรายจ่าย และขั้นตอนพิจารณา
+				กรอกวงเงินของปีใหม่และยอดรับเงินจริงแยกต่างหาก</Dialog.Description
+			></Dialog.Header
+		>
+		<form onsubmit={create} class="space-y-4">
+			<div class="space-y-2">
+				<Label for="budget-new-year-name">ชื่อปีงบประมาณ *</Label><Input
+					id="budget-new-year-name"
+					bind:value={nextYear.name}
+					disabled={pending || childPending}
+				/>
+			</div>
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div class="space-y-2">
+					<Label for="budget-new-year-start">วันที่เริ่มต้น *</Label><DatePicker
+						id="budget-new-year-start"
+						ariaLabel="วันที่เริ่มต้นปีงบประมาณใหม่"
+						bind:value={nextYear.startDate}
+						disabled={pending || childPending}
+					/>
+				</div>
+				<div class="space-y-2">
+					<Label for="budget-new-year-end">วันที่สิ้นสุด *</Label><DatePicker
+						id="budget-new-year-end"
+						ariaLabel="วันที่สิ้นสุดปีงบประมาณใหม่"
+						bind:value={nextYear.endDate}
+						disabled={pending || childPending}
+					/>
+				</div>
+			</div>
+			<Choice
+				id="budget-copy-year"
+				label="คัดลอกการตั้งค่าจากปี"
+				bind:value={nextYear.copyFromFiscalYearId}
+				options={[
+					{ value: '', label: 'เริ่มต้นใหม่' },
+					...(index.value?.fiscalYears ?? []).map((year) => ({ value: year.id, label: year.name }))
+				]}
+				disabled={pending || childPending}
+			/>{#if error}<PageState
+					variant="error"
+					title="เพิ่มปีงบประมาณไม่สำเร็จ"
+					description={error}
+				/>{/if}<LoadingButton type="submit" loading={pending}>เพิ่มปีงบประมาณ</LoadingButton>
+		</form></Dialog.Content
+	></Dialog.Root
+>
+<Dialog.Root
+	open={confirm !== null}
+	onOpenChange={(open) => {
+		if (!open && !pending) confirm = null;
+	}}
+	><Dialog.Content
+		><Dialog.Header
+			><Dialog.Title
+				>{confirm === 'close' ? 'ปิดปีงบประมาณ' : 'ลบปีงบประมาณ'}
+				{value?.fiscalYear.name}</Dialog.Title
+			><Dialog.Description
+				>{#if confirm === 'close'}เมื่อปิดปีแล้ว จะดูข้อมูลได้อย่างเดียว ไม่สามารถแก้ไขแผน การจัดสรร
+					การรับเงิน หรือการใช้เงินได้อีก{:else}ลบปีนี้พร้อมการตั้งค่า
+					และโครงการที่ยังไม่เคยอนุมัติทั้งหมด ย้อนกลับไม่ได้{/if}</Dialog.Description
+			></Dialog.Header
+		>{#if value}{#if confirm === 'delete'}<p class="text-sm">
+					ขอบเขตที่จะลบ: {value.fiscalYear.deletionImpact.projects} โครงการ · {value.fiscalYear
+						.deletionImpact.activities} กิจกรรม · {value.fiscalYear.deletionImpact.planLines} รายการค่าใช้จ่าย
+					· {value.fiscalYear.deletionImpact.attempts} ครั้งที่เสนอแผน · {value.fiscalYear
+						.deletionImpact.workflowInstances} กระบวนการพิจารณา · {value.fiscalYear.deletionImpact
+						.historyEntries} รายการประวัติ รวมงานพิจารณาที่เกี่ยวข้องทั้งหมด
+				</p>{/if}<Label for="budget-year-confirm"
+				>พิมพ์ชื่อปี {value.fiscalYear.name} เพื่อยืนยัน</Label
+			><Input
+				id="budget-year-confirm"
+				bind:value={confirmation}
+				disabled={pending || childPending}
+			/>{#if error}<PageState
+					variant="error"
+					title="ดำเนินการไม่สำเร็จ"
+					description={error}
+				/>{/if}<Dialog.Footer
+				><Button
+					variant="outline"
+					disabled={pending || childPending}
+					onclick={() => (confirm = null)}>ยกเลิก</Button
+				><LoadingButton
+					variant={confirm === 'delete' ? 'destructive' : 'default'}
+					loading={pending}
+					disabled={confirmation !== value.fiscalYear.name}
+					onclick={lifecycle}
+					>{confirm === 'close' ? 'ยืนยันปิดปีงบประมาณ' : 'ยืนยันลบปีงบประมาณถาวร'}</LoadingButton
+				></Dialog.Footer
+			>{/if}</Dialog.Content
+	></Dialog.Root
 >

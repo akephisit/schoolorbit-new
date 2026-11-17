@@ -22,9 +22,11 @@ export const newProject = (): BudgetProjectInput => ({
 	startDate: '',
 	endDate: ''
 });
-export const newActivity = (): ActivityDraft => ({
+export const newActivity = (dates?: { startDate: string; endDate: string }): ActivityDraft => ({
 	key: crypto.randomUUID(),
 	title: '',
+	startDate: dates?.startDate ?? '',
+	endDate: dates?.endDate ?? '',
 	defaultFundId: null,
 	defaultExpenseCategoryId: null,
 	lines: []
@@ -63,6 +65,8 @@ export function activityDrafts(workspace: BudgetProjectWorkspace): ActivityDraft
 		id: activity.id,
 		key: activity.id,
 		title: activity.title,
+		startDate: activity.startDate ?? '',
+		endDate: activity.endDate ?? '',
 		defaultFundId: activity.defaultFundId,
 		defaultExpenseCategoryId: activity.defaultExpenseCategoryId,
 		lines: activity.lines.map((line) => ({
@@ -83,6 +87,8 @@ export function activityInput(activity: ActivityDraft): BudgetActivityInput {
 	return {
 		id: activity.id,
 		title: activity.title.trim(),
+		startDate: activity.startDate,
+		endDate: activity.endDate,
 		defaultFundId: activity.defaultFundId || null,
 		defaultExpenseCategoryId: activity.defaultExpenseCategoryId || null,
 		lines: activity.lines.map((line) => ({
@@ -119,7 +125,8 @@ export function validDate(value: string): boolean {
 	return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 export function projectErrors(
-	draft: BudgetProjectInput
+	draft: BudgetProjectInput,
+	year?: { startDate: string; endDate: string }
 ): Partial<Record<keyof BudgetProjectInput, string>> {
 	const errors: Partial<Record<keyof BudgetProjectInput, string>> = {};
 	if (!draft.name.trim()) errors.name = 'กรอกชื่อโครงการ';
@@ -130,7 +137,22 @@ export function projectErrors(
 	if (!validDate(draft.startDate)) errors.startDate = 'เลือกวันที่เริ่มต้น';
 	if (!validDate(draft.endDate) || draft.endDate < draft.startDate)
 		errors.endDate = 'วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่มต้น';
+	if (year && validDate(draft.startDate) && draft.startDate < year.startDate)
+		errors.startDate = 'วันที่เริ่มต้นต้องอยู่ในปีงบประมาณ';
+	if (year && validDate(draft.endDate) && draft.endDate > year.endDate)
+		errors.endDate = 'วันที่สิ้นสุดต้องอยู่ในปีงบประมาณ';
 	return errors;
+}
+export function activityDateError(
+	activity: Pick<ActivityDraft, 'startDate' | 'endDate'>,
+	project: { startDate: string; endDate: string }
+): string {
+	if (!validDate(activity.startDate) || !validDate(activity.endDate))
+		return 'เลือกวันที่เริ่มต้นและสิ้นสุดกิจกรรม';
+	if (activity.endDate < activity.startDate) return 'วันที่สิ้นสุดกิจกรรมต้องไม่ก่อนวันที่เริ่มต้น';
+	if (activity.startDate < project.startDate || activity.endDate > project.endDate)
+		return 'ช่วงเวลากิจกรรมต้องอยู่ภายในระยะเวลาโครงการ';
+	return '';
 }
 export function lineErrors(
 	line: LineDraft

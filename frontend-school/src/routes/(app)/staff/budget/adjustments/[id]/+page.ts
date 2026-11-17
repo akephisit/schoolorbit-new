@@ -24,7 +24,19 @@ export const load: PageLoad = ({ fetch, url, params, depends }) => {
 		record,
 		fromBudget: allocations.from,
 		toBudget: allocations.to,
-		catalogs: budgetRead(canReadBudget, () => getBudgetCatalogs({ requestFetch: fetch }), null),
+		catalogs: budgetRead(
+			canReadBudget,
+			async () => {
+				const result = await record;
+				return result.ok && result.data.value
+					? getBudgetCatalogs({
+							requestFetch: fetch,
+							query: { fiscalYearId: result.data.value.fiscalYearId }
+						})
+					: null;
+			},
+			null
+		),
 		process: budgetRead(
 			canReadBudget,
 			() => getBudgetProcess('adjustments', params.id, { requestFetch: fetch }),

@@ -54,3 +54,19 @@ pub async fn purge_source_in_transaction(
         .await?;
     Ok(())
 }
+
+/// Annual owner registration and sealed release authorize only exclusive new templates.
+pub async fn purge_year_template_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    template: Uuid,
+) -> Result<(), AppError> {
+    DbSession::new(&mut **tx)
+        .query(
+            "workflow.purge.year_template",
+            "SELECT workflow_finalize_year_template_removal($1)",
+        )
+        .bind(template)
+        .execute()
+        .await?;
+    Ok(())
+}

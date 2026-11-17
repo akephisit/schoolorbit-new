@@ -89,6 +89,8 @@ pub struct BudgetFiscalYear {
 #[serde(rename_all = "camelCase")]
 pub struct BudgetDeletionImpact {
     pub projects: i64,
+    pub activities: i64,
+    pub plan_lines: i64,
     pub attempts: i64,
     pub workflow_instances: i64,
     pub history_entries: i64,
@@ -122,7 +124,7 @@ pub struct BudgetSettings {
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CreateBudgetFiscalYearRequest {
     pub request_id: Uuid,
     pub name: String,
@@ -156,7 +158,7 @@ pub struct BudgetReceivedFundingInput {
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveBudgetReceivedFundingRequest {
     pub request_id: Uuid,
     pub expected_revision: i64,
@@ -164,7 +166,7 @@ pub struct SaveBudgetReceivedFundingRequest {
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SaveBudgetYearSettingsRequest {
     pub request_id: Uuid,
     pub expected_revision: i64,
@@ -370,6 +372,20 @@ pub struct BudgetCapabilities {
     pub can_adjust: bool,
     pub can_manage_settings: bool,
     pub can_export: bool,
+}
+
+impl BudgetCapabilities {
+    pub(crate) fn freeze_operations(&mut self) {
+        self.can_edit = false;
+        self.can_submit = false;
+        self.can_act = false;
+        self.can_amend = false;
+        self.can_create_request = false;
+        self.can_pay = false;
+        self.can_close = false;
+        self.can_adjust = false;
+        self.can_delete = false;
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

@@ -83,9 +83,10 @@
 	title={reports ? 'รายงานงบประมาณ' : 'ภาพรวมงบประมาณ'}
 	contentClass="space-y-6"
 >
-	{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_MANAGE_SCHOOL)}<Button
+	{#snippet actions()}{#if $can.hasAny(PERMISSIONS.BUDGET_MANAGE_SCHOOL, PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
 				variant="outline"
-				href="/staff/budget/settings"><Settings2 class="size-4" />ตั้งค่างบประมาณ</Button
+				href={destination('/staff/budget/settings', { fiscalYearId: query.fiscalYearId ?? '' })}
+				><Settings2 class="size-4" />ตั้งค่างบประมาณ</Button
 			>{/if}{#if reports && $can.hasAny(PERMISSIONS.BUDGET_DOWNLOAD_OWN, PERMISSIONS.BUDGET_DOWNLOAD_ORGANIZATION_UNIT, PERMISSIONS.BUDGET_DOWNLOAD_ORGANIZATION_TREE, PERMISSIONS.BUDGET_DOWNLOAD_SCHOOL)}<LoadingButton
 				loading={exporting}
 				disabled={!region.value}

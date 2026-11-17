@@ -548,21 +548,34 @@ pub async fn export_report(
 pub fn routes() -> Router<BudgetHttpState> {
     Router::new()
         .route("/budget/catalogs", axum::routing::get(get_catalogs))
+        .route("/budget/settings", axum::routing::get(get_settings))
         .route(
-            "/budget/settings",
-            axum::routing::get(get_settings),
+            "/budget/fiscal-years",
+            axum::routing::post(create_fiscal_year),
         )
-        .route("/budget/fiscal-years", axum::routing::post(create_fiscal_year))
-        .route("/budget/fiscal-years/{id}", axum::routing::get(get_year_settings).put(save_year_settings).delete(delete_fiscal_year))
-        .route("/budget/fiscal-years/{id}/funding", axum::routing::put(save_received_funding))
-        .route("/budget/fiscal-years/{id}/close", axum::routing::post(close_fiscal_year))
+        .route(
+            "/budget/fiscal-years/{id}",
+            axum::routing::get(get_year_settings)
+                .put(save_year_settings)
+                .delete(delete_fiscal_year),
+        )
+        .route(
+            "/budget/fiscal-years/{id}/funding",
+            axum::routing::put(save_received_funding),
+        )
+        .route(
+            "/budget/fiscal-years/{id}/close",
+            axum::routing::post(close_fiscal_year),
+        )
         .route(
             "/budget/projects",
             axum::routing::get(list_projects).post(create_project),
         )
         .route(
             "/budget/projects/{id}",
-            axum::routing::get(get_project).put(save_project).delete(delete_project),
+            axum::routing::get(get_project)
+                .put(save_project)
+                .delete(delete_project),
         )
         .route(
             "/budget/projects/{id}/submit",

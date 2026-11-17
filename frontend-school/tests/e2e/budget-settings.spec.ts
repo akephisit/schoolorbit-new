@@ -1,8 +1,8 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { mockBudget, budgetCatalogs, budgetOrgId } from './fixtures/budget';
+import { mockBudget, budgetCatalogs, budgetOrgId, budgetYearSettings } from './fixtures/budget';
 import { id, actor } from './fixtures/staff-home-route-data';
 import { PERMISSIONS } from '../../src/lib/permissions/registry.generated';
-import type { BudgetSettings } from '../../src/lib/api/budget';
+import type { BudgetYearSettings } from '../../src/lib/api/budget';
 import type { StaffLookupItem, OrganizationUnitLookupItem } from '../../src/lib/api/lookup';
 
 test.use({ serviceWorkers: 'block' });
@@ -173,14 +173,10 @@ for (const viewport of [
 					);
 				}
 				await page.getByRole('tab', { name: 'ปีงบประมาณ', exact: true }).click();
-				const year = page
-					.locator('[data-slot="card"]')
-					.filter({ has: page.getByLabel('ชื่อปีงบประมาณ *', { exact: true }) });
-				if (viewport.width > 390) {
-					const input = (await year.getByLabel('ชื่อปีงบประมาณ *', { exact: true }).boundingBox())!;
-					const check = (await year.getByRole('checkbox').boundingBox())!;
-					expect(Math.abs(input.y + input.height / 2 - check.y - check.height / 2)).toBeLessThan(1);
-				}
+				await expect(page.getByLabel('ชื่อปีงบประมาณ *', { exact: true })).toHaveValue('2570');
+				await expect(page.getByRole('checkbox', { name: 'เปิดใช้งาน', exact: true })).toHaveCount(
+					0
+				);
 				await page.getByRole('tab', { name: 'ขั้นตอนพิจารณา', exact: true }).click();
 				const plan = planEditor(page);
 				await plan.getByRole('button', { name: 'เพิ่มขั้นตอน', exact: true }).click();
@@ -373,9 +369,9 @@ test('failed save preserves names, recipients and policy; retry and reload use t
 test('existing selected labels hydrate while closed, unknown identities and hidden routing fields remain intact', async ({
 	page
 }) => {
-	const original: BudgetSettings = {
-		...structuredClone(budgetCatalogs),
-		revision: 7,
+	const original: BudgetYearSettings = {
+		...budgetYearSettings(),
+		fiscalYear: { ...budgetCatalogs.fiscalYears[0], revision: 7 },
 		requestSteps: [],
 		adjustmentSteps: [],
 		planSteps: [
@@ -418,11 +414,11 @@ test('existing selected labels hydrate while closed, unknown identities and hidd
 });
 
 function savedRouting(
-	recipients: NonNullable<BudgetSettings['planSteps'][number]['recipients']>
-): BudgetSettings {
+	recipients: NonNullable<BudgetYearSettings['planSteps'][number]['recipients']>
+): BudgetYearSettings {
 	return {
-		...structuredClone(budgetCatalogs),
-		revision: 7,
+		...budgetYearSettings(),
+		fiscalYear: { ...budgetCatalogs.fiscalYears[0], revision: 7 },
 		requestSteps: [],
 		adjustmentSteps: [],
 		planSteps: [

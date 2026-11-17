@@ -4425,6 +4425,70 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/budget/fiscal-years': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['createBudgetFiscalYear'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/fiscal-years/{id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getBudgetYearSettings'];
+		put: operations['saveBudgetYearSettings'];
+		post?: never;
+		delete: operations['deleteBudgetFiscalYear'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/fiscal-years/{id}/close': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['closeBudgetFiscalYear'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/budget/fiscal-years/{id}/funding': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put: operations['saveBudgetReceivedFunding'];
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/budget/projects': {
 		parameters: {
 			query?: never;
@@ -4451,7 +4515,7 @@ export interface paths {
 		get: operations['getBudgetProject'];
 		put: operations['saveBudgetProject'];
 		post?: never;
-		delete?: never;
+		delete: operations['deleteBudgetProject'];
 		options?: never;
 		head?: never;
 		patch?: never;
@@ -4721,7 +4785,7 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['getBudgetSettings'];
-		put: operations['saveBudgetSettings'];
+		put?: never;
 		post?: never;
 		delete?: never;
 		options?: never;
@@ -10019,6 +10083,14 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_BudgetDeletedResource: {
+			data: {
+				/** Format: uuid */
+				deletedId: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_BudgetHistoryPage: {
 			data: {
 				items: components['schemas']['BudgetHistoryEntry'][];
@@ -10071,6 +10143,8 @@ export interface components {
 				activities: components['schemas']['BudgetActivity'][];
 				balances: components['schemas']['BudgetBalance'][];
 				capabilities: components['schemas']['BudgetCapabilities'];
+				deletionImpact: components['schemas']['BudgetDeletionImpact'];
+				fiscalYearClosed: boolean;
 				project: components['schemas']['BudgetProjectSummary'];
 			};
 			message?: string;
@@ -10091,14 +10165,7 @@ export interface components {
 		};
 		ApiResponse_BudgetSettings: {
 			data: {
-				adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
-				expenseCategories: components['schemas']['BudgetCatalogItem'][];
 				fiscalYears: components['schemas']['BudgetFiscalYear'][];
-				funds: components['schemas']['BudgetCatalogItem'][];
-				planSteps: components['schemas']['ProcessTemplateStep'][];
-				requestSteps: components['schemas']['ProcessTemplateStep'][];
-				/** Format: int64 */
-				revision: number;
 			};
 			message?: string;
 			success: boolean;
@@ -10109,6 +10176,24 @@ export interface components {
 				evidenceFileIds: string[];
 				lines: components['schemas']['BudgetRequestLine'][];
 				request: components['schemas']['BudgetRequestSummary'];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_BudgetYearSettings: {
+			data: {
+				adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
+				authorizedFunding?: components['schemas']['BudgetAuthorizedFundingInput'][] | null;
+				canManage: boolean;
+				canRecordFunding: boolean;
+				expenseCategories: components['schemas']['BudgetCatalogItem'][];
+				fiscalYear: components['schemas']['BudgetFiscalYear'];
+				funds: components['schemas']['BudgetCatalogItem'][];
+				planSteps: components['schemas']['ProcessTemplateStep'][];
+				requestSteps: components['schemas']['ProcessTemplateStep'][];
+				sourceBalances: components['schemas']['BudgetSourceBalance'][];
+				unitAllocations: components['schemas']['BudgetUnitAllocationInput'][];
+				unitBalances: components['schemas']['BudgetUnitBalance'][];
 			};
 			message?: string;
 			success: boolean;
@@ -16914,9 +16999,13 @@ export interface components {
 			defaultExpenseCategoryId?: string | null;
 			/** Format: uuid */
 			defaultFundId?: string | null;
+			/** Format: date */
+			endDate?: string | null;
 			/** Format: uuid */
 			id: string;
 			lines: components['schemas']['BudgetPlanLine'][];
+			/** Format: date */
+			startDate?: string | null;
 			title: string;
 			totalSatang: string;
 		};
@@ -16925,9 +17014,13 @@ export interface components {
 			defaultExpenseCategoryId?: string | null;
 			/** Format: uuid */
 			defaultFundId?: string | null;
+			/** Format: date */
+			endDate: string;
 			/** Format: uuid */
 			id?: string | null;
 			lines: components['schemas']['BudgetPlanLineInput'][];
+			/** Format: date */
+			startDate: string;
 			title: string;
 		};
 		BudgetAdjustmentDetail: {
@@ -16984,6 +17077,13 @@ export interface components {
 			/** Format: uuid */
 			projectId: string;
 		};
+		BudgetAuthorizedFundingInput: {
+			annualFundingSatang: string;
+			carryoverSatang: string;
+			/** Format: uuid */
+			fundId: string;
+			reserveSatang: string;
+		};
 		BudgetBalance: {
 			/** Format: uuid */
 			activityId: string;
@@ -17007,6 +17107,7 @@ export interface components {
 			canAmend: boolean;
 			canClose: boolean;
 			canCreateRequest: boolean;
+			canDelete: boolean;
 			canEdit: boolean;
 			canExport: boolean;
 			canManageSettings: boolean;
@@ -17024,6 +17125,10 @@ export interface components {
 			/** Format: uuid */
 			id?: string | null;
 			name: string;
+		};
+		BudgetCatalogQuery: {
+			/** Format: uuid */
+			fiscalYearId?: string | null;
 		};
 		BudgetCatalogs: {
 			expenseCategories: components['schemas']['BudgetCatalogItem'][];
@@ -17064,6 +17169,24 @@ export interface components {
 			plannedSatang: string;
 			reservedSatang: string;
 		};
+		BudgetDeletedResource: {
+			/** Format: uuid */
+			deletedId: string;
+		};
+		BudgetDeletionImpact: {
+			/** Format: int64 */
+			activities: number;
+			/** Format: int64 */
+			attempts: number;
+			/** Format: int64 */
+			historyEntries: number;
+			/** Format: int64 */
+			planLines: number;
+			/** Format: int64 */
+			projects: number;
+			/** Format: int64 */
+			workflowInstances: number;
+		};
 		BudgetFileSnapshot: {
 			checksum: string;
 			/** Format: uuid */
@@ -17072,24 +17195,23 @@ export interface components {
 			versionId: string;
 		};
 		BudgetFiscalYear: {
-			active: boolean;
+			canClose: boolean;
+			canDelete: boolean;
+			/** Format: date-time */
+			closedAt?: string | null;
+			dateLocked: boolean;
+			deletionImpact: components['schemas']['BudgetDeletionImpact'];
 			/** Format: date */
 			endDate: string;
 			/** Format: uuid */
 			id: string;
+			isClosed: boolean;
 			name: string;
+			/** Format: int64 */
+			revision: number;
 			/** Format: date */
 			startDate: string;
-		};
-		BudgetFiscalYearInput: {
-			active: boolean;
-			/** Format: date */
-			endDate: string;
-			/** Format: uuid */
-			id?: string | null;
-			name: string;
-			/** Format: date */
-			startDate: string;
+			used: boolean;
 		};
 		BudgetHistoryEntry: {
 			action: string;
@@ -17271,7 +17393,14 @@ export interface components {
 			activities: components['schemas']['BudgetActivity'][];
 			balances: components['schemas']['BudgetBalance'][];
 			capabilities: components['schemas']['BudgetCapabilities'];
+			deletionImpact: components['schemas']['BudgetDeletionImpact'];
+			fiscalYearClosed: boolean;
 			project: components['schemas']['BudgetProjectSummary'];
+		};
+		BudgetReceivedFundingInput: {
+			/** Format: uuid */
+			fundId: string;
+			receivedSatang?: string | null;
 		};
 		BudgetRefund: {
 			allocations: components['schemas']['BudgetPaymentAllocationInput'][];
@@ -17353,14 +17482,20 @@ export interface components {
 		/** @enum {string} */
 		BudgetResourceKind: 'project' | 'request' | 'adjustment';
 		BudgetSettings: {
-			adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
-			expenseCategories: components['schemas']['BudgetCatalogItem'][];
 			fiscalYears: components['schemas']['BudgetFiscalYear'][];
-			funds: components['schemas']['BudgetCatalogItem'][];
-			planSteps: components['schemas']['ProcessTemplateStep'][];
-			requestSteps: components['schemas']['ProcessTemplateStep'][];
-			/** Format: int64 */
-			revision: number;
+		};
+		BudgetSourceBalance: {
+			allocatedSatang: string;
+			annualFundingSatang?: string | null;
+			authorizedSatang?: string | null;
+			carryoverSatang?: string | null;
+			committedSatang: string;
+			/** Format: uuid */
+			fundId: string;
+			receivedSatang?: string | null;
+			remainingSatang?: string | null;
+			reserveSatang?: string | null;
+			unallocatedSatang?: string | null;
 		};
 		BudgetSpendingRequestDetail: {
 			capabilities: components['schemas']['BudgetCapabilities'];
@@ -17377,6 +17512,36 @@ export interface components {
 		};
 		/** @enum {string} */
 		BudgetStatus: 'draft' | 'submitted' | 'returned' | 'approved' | 'rejected' | 'closed';
+		BudgetUnitAllocationInput: {
+			allocatedSatang: string;
+			/** Format: uuid */
+			fundId: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+		};
+		BudgetUnitBalance: {
+			allocatedSatang: string;
+			committedSatang: string;
+			/** Format: uuid */
+			fundId: string;
+			/** Format: uuid */
+			organizationUnitId: string;
+			remainingSatang: string;
+		};
+		BudgetYearSettings: {
+			adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
+			authorizedFunding?: components['schemas']['BudgetAuthorizedFundingInput'][] | null;
+			canManage: boolean;
+			canRecordFunding: boolean;
+			expenseCategories: components['schemas']['BudgetCatalogItem'][];
+			fiscalYear: components['schemas']['BudgetFiscalYear'];
+			funds: components['schemas']['BudgetCatalogItem'][];
+			planSteps: components['schemas']['ProcessTemplateStep'][];
+			requestSteps: components['schemas']['ProcessTemplateStep'][];
+			sourceBalances: components['schemas']['BudgetSourceBalance'][];
+			unitAllocations: components['schemas']['BudgetUnitAllocationInput'][];
+			unitBalances: components['schemas']['BudgetUnitBalance'][];
+		};
 		Building: {
 			code: string | null;
 			/** Format: date-time */
@@ -19198,6 +19363,17 @@ export interface components {
 			name: string;
 			/** Format: uuid */
 			owningOrganizationUnitId?: string | null;
+		};
+		CreateBudgetFiscalYearRequest: {
+			/** Format: uuid */
+			copyFromFiscalYearId?: string | null;
+			/** Format: date */
+			endDate: string;
+			name: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: date */
+			startDate: string;
 		};
 		CreateBudgetPaymentRequest: {
 			allocations: components['schemas']['BudgetPaymentAllocationInput'][];
@@ -24545,17 +24721,12 @@ export interface components {
 			/** Format: date */
 			startDate: string;
 		};
-		SaveBudgetSettingsRequest: {
-			adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
+		SaveBudgetReceivedFundingRequest: {
 			/** Format: int64 */
 			expectedRevision: number;
-			expenseCategories: components['schemas']['BudgetCatalogItemInput'][];
-			fiscalYears: components['schemas']['BudgetFiscalYearInput'][];
-			funds: components['schemas']['BudgetCatalogItemInput'][];
-			planSteps: components['schemas']['ProcessTemplateStep'][];
+			funds: components['schemas']['BudgetReceivedFundingInput'][];
 			/** Format: uuid */
 			requestId: string;
-			requestSteps: components['schemas']['ProcessTemplateStep'][];
 		};
 		SaveBudgetSpendingRequestRequest: {
 			/** Format: uuid */
@@ -24567,6 +24738,24 @@ export interface components {
 			/** Format: uuid */
 			requestId: string;
 			title: string;
+		};
+		SaveBudgetYearSettingsRequest: {
+			adjustmentSteps: components['schemas']['ProcessTemplateStep'][];
+			authorizedFunding?: components['schemas']['BudgetAuthorizedFundingInput'][] | null;
+			/** Format: date */
+			endDate: string;
+			/** Format: int64 */
+			expectedRevision: number;
+			expenseCategories: components['schemas']['BudgetCatalogItemInput'][];
+			funds: components['schemas']['BudgetCatalogItemInput'][];
+			name: string;
+			planSteps: components['schemas']['ProcessTemplateStep'][];
+			/** Format: uuid */
+			requestId: string;
+			requestSteps: components['schemas']['ProcessTemplateStep'][];
+			/** Format: date */
+			startDate: string;
+			unitAllocations: components['schemas']['BudgetUnitAllocationInput'][];
 		};
 		SaveCareCase: {
 			assignedUserIds: string[];
@@ -48646,7 +48835,9 @@ export interface operations {
 	};
 	getBudgetCatalogs: {
 		parameters: {
-			query?: never;
+			query?: {
+				fiscalYearId?: string;
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;
@@ -48770,6 +48961,431 @@ export interface operations {
 				};
 			};
 			/** @description Request conflicts with the current resource state */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	createBudgetFiscalYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['CreateBudgetFiscalYearRequest'];
+			};
+		};
+		responses: {
+			/** @description Budget operation result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetYearSettings'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Budget state conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getBudgetYearSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Budget operation result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetYearSettings'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Budget state conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveBudgetYearSettings: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBudgetYearSettingsRequest'];
+			};
+		};
+		responses: {
+			/** @description Budget operation result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetYearSettings'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Budget state conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteBudgetFiscalYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetMutationRequest'];
+			};
+		};
+		responses: {
+			/** @description Budget operation result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetDeletedResource'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Budget state conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	closeBudgetFiscalYear: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetMutationRequest'];
+			};
+		};
+		responses: {
+			/** @description Budget operation result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetYearSettings'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Budget state conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	saveBudgetReceivedFunding: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['SaveBudgetReceivedFundingRequest'];
+			};
+		};
+		responses: {
+			/** @description Budget operation result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetYearSettings'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Budget state conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -49053,6 +49669,78 @@ export interface operations {
 				};
 			};
 			/** @description Request conflicts with the current resource state */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	deleteBudgetProject: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Budget resource ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['BudgetMutationRequest'];
+			};
+		};
+		responses: {
+			/** @description Budget operation result */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_BudgetDeletedResource'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Resource not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Budget state conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -50357,75 +51045,6 @@ export interface operations {
 		requestBody?: never;
 		responses: {
 			/** @description Budget settings returned */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_BudgetSettings'];
-				};
-			};
-			/** @description Invalid input */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Permission denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Resource not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Request conflicts with the current resource state */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
-	saveBudgetSettings: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['SaveBudgetSettingsRequest'];
-			};
-		};
-		responses: {
-			/** @description Budget settings saved */
 			200: {
 				headers: {
 					[name: string]: unknown;

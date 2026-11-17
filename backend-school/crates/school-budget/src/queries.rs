@@ -70,6 +70,7 @@ pub async fn workspace(
 ) -> Result<BudgetProjectWorkspace, AppError> {
     let read_scope = policy::read_scope(pool, a, false).await?;
     let scope = policy::update_scope(pool, a).await?;
+    let delete_scope = policy::delete_scope(pool, a).await?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "budget.queries.workspace").await?;
     DbSession::new(&mut *tx)
@@ -102,13 +103,30 @@ pub async fn workspace(
             r.owner_id,
             r.document.project.organization_unit_id,
         );
-    let fiscal_year_closed: bool = DbSession::new(&mut *tx).scalar("budget.queries.year_closed", "SELECT is_closed FROM budget_fiscal_years WHERE id=$1").bind(r.document.project.fiscal_year_id).fetch_one().await?;
-    let delete_scope = policy::delete_scope_on_connection(&mut tx, a).await?;
-    capabilities.can_delete = !fiscal_year_closed && policy::direct(&delete_scope, a.user_id, r.owner_id, r.document.project.organization_unit_id) && crate::deletion::project_eligible(&mut tx, id).await?;
+    let fiscal_year_closed: bool = DbSession::new(&mut *tx)
+        .scalar(
+            "budget.queries.year_closed",
+            "SELECT is_closed FROM budget_fiscal_years WHERE id=$1",
+        )
+        .bind(r.document.project.fiscal_year_id)
+        .fetch_one()
+        .await?;
+    capabilities.can_delete = !fiscal_year_closed
+        && policy::direct(
+            &delete_scope,
+            a.user_id,
+            r.owner_id,
+            r.document.project.organization_unit_id,
+        )
+        && crate::deletion::project_eligible(&mut tx, id).await?;
     if fiscal_year_closed {
-        capabilities.can_edit=false; capabilities.can_submit=false; capabilities.can_act=false; capabilities.can_amend=false; capabilities.can_create_request=false; capabilities.can_pay=false; capabilities.can_close=false; capabilities.can_adjust=false;
+        capabilities.freeze_operations();
     }
-    let deletion_impact = if capabilities.can_delete { crate::deletion::project_impact(&mut tx, id).await? } else { BudgetDeletionImpact::default() };
+    let deletion_impact = if capabilities.can_delete {
+        crate::deletion::project_impact(&mut tx, id).await?
+    } else {
+        BudgetDeletionImpact::default()
+    };
     let project = summary(&mut tx, &r).await?;
     let accepted_plan = if r.accepted_version.is_some() {
         Some(repository::accepted(&mut tx, &r).await?)
@@ -306,6 +324,17 @@ pub async fn request_detail(
     );
     capabilities.can_pay = r.status == "approved" && capabilities.can_pay;
     capabilities.can_close = r.status == "approved" && capabilities.can_close;
+    let closed: bool = DbSession::new(&mut *tx)
+        .scalar(
+            "budget.queries.request_year_closed",
+            "SELECT is_closed FROM budget_fiscal_years WHERE id=$1",
+        )
+        .bind(p.document.project.fiscal_year_id)
+        .fetch_one()
+        .await?;
+    if closed {
+        capabilities.freeze_operations();
+    }
     let request = request_summary(&mut tx, &r).await?;
     tx.commit().await?;
     Ok(BudgetSpendingRequestDetail {

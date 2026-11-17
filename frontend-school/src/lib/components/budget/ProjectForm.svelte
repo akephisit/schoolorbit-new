@@ -76,7 +76,10 @@
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
 		if (pending) return;
-		errors = projectErrors(draft);
+		errors = projectErrors(
+			draft,
+			catalogs?.fiscalYears.find((year) => year.id === draft.fiscalYearId)
+		);
 		error = '';
 		if (Object.keys(errors).length) {
 			await tick();
@@ -136,7 +139,7 @@
 		required
 		bind:value={draft.fiscalYearId}
 		options={(catalogs?.fiscalYears ?? [])
-			.filter((year) => year.active || year.id === draft.fiscalYearId)
+			.filter((year) => !year.isClosed || year.id === draft.fiscalYearId)
 			.map((year) => ({ value: year.id, label: year.name }))}
 		disabled={pending || loading || !!workspace?.acceptedPlan}
 		error={errors.fiscalYearId}

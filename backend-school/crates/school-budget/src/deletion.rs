@@ -13,7 +13,10 @@ pub(crate) async fn project_eligible(
     id: Uuid,
 ) -> Result<bool, AppError> {
     Ok(DbSession::new(&mut **tx)
-        .scalar("budget.deletion.eligible", "SELECT budget_draft_project_deletable($1)")
+        .scalar(
+            "budget.deletion.eligible",
+            "SELECT budget_draft_project_deletable($1)",
+        )
         .bind(id)
         .fetch_one()
         .await?)
@@ -24,7 +27,11 @@ async fn purge_locked_project(
     project: &repository::ProjectRecord,
     expected_revision: Option<i64>,
 ) -> Result<(), AppError> {
-    repository::revision(project.revision, expected_revision.unwrap_or(project.revision))?;
+    settings::require_open(tx, project.document.project.fiscal_year_id).await?;
+    repository::revision(
+        project.revision,
+        expected_revision.unwrap_or(project.revision),
+    )?;
     if !project_eligible(tx, project.id).await? {
         return Err(AppError::Conflict(
             "ลบได้เฉพาะโครงการที่ไม่เคยอนุมัติและไม่มีรายการทางการเงิน".into(),
@@ -105,7 +112,8 @@ pub async fn delete_project(
     id: Uuid,
     input: BudgetMutationRequest,
 ) -> Result<BudgetDeletedResource, AppError> {
-    let mut tx = school_tenancy::TenantPool::begin_observed(pool, "budget.deletion.project").await?;
+    let mut tx =
+        school_tenancy::TenantPool::begin_observed(pool, "budget.deletion.project").await?;
     delete_project_in_transaction(&mut tx, actor, id, Some(input.expected_revision)).await?;
     tx.commit().await?;
     Ok(BudgetDeletedResource { deleted_id: id })
@@ -115,16 +123,18 @@ async fn impact(
     tx: &mut Transaction<'_, Postgres>,
     projects: &[Uuid],
 ) -> Result<BudgetDeletionImpact, AppError> {
-    let (count, attempts, instances, history): (i64, i64, i64, i64) = DbSession::new(&mut **tx)
+    let (count, activities, lines, attempts, instances, history): (i64, i64, i64, i64, i64, i64) = DbSession::new(&mut **tx)
         .query_as(
             "budget.deletion.impact",
-            "WITH owned AS (SELECT id FROM budget_projects WHERE id=ANY($1)), attempts AS (SELECT a.id FROM budget_project_attempts a JOIN owned p ON p.id=a.project_id), instances AS (SELECT i.id FROM process_instances i JOIN attempts a ON a.id=i.source_id WHERE i.source_module='budget' AND i.source_type='budget_project_plan') SELECT (SELECT count(*) FROM owned),(SELECT count(*) FROM attempts),(SELECT count(*) FROM instances),(SELECT count(*) FROM budget_history h JOIN owned p ON h.resource_id=p.id WHERE h.resource_kind='project')+(SELECT count(*) FROM budget_project_revisions r JOIN owned p ON r.project_id=p.id)+(SELECT count(*) FROM process_action_events e JOIN instances i ON i.id=e.instance_id)+(SELECT count(*) FROM process_action_history e JOIN instances i ON i.id=e.instance_id)+(SELECT count(*) FROM process_instance_revisions r JOIN instances i ON i.id=r.instance_id)",
+            "WITH owned AS (SELECT id FROM budget_projects WHERE id=ANY($1)), attempts AS (SELECT a.id FROM budget_project_attempts a JOIN owned p ON p.id=a.project_id), instances AS (SELECT i.id FROM process_instances i JOIN attempts a ON a.id=i.source_id WHERE i.source_module='budget' AND i.source_type='budget_project_plan') SELECT (SELECT count(*) FROM owned),(SELECT count(*) FROM budget_activities a JOIN owned p ON p.id=a.project_id),(SELECT count(*) FROM budget_plan_lines l JOIN owned p ON p.id=l.project_id),(SELECT count(*) FROM attempts),(SELECT count(*) FROM instances),(SELECT count(*) FROM budget_history h JOIN owned p ON h.resource_id=p.id WHERE h.resource_kind='project')+(SELECT count(*) FROM budget_project_revisions r JOIN owned p ON r.project_id=p.id)+(SELECT count(*) FROM process_action_events e JOIN instances i ON i.id=e.instance_id)+(SELECT count(*) FROM process_action_history e JOIN instances i ON i.id=e.instance_id)+(SELECT count(*) FROM process_instance_revisions r JOIN instances i ON i.id=r.instance_id)",
         )
         .bind(projects)
         .fetch_one()
         .await?;
     Ok(BudgetDeletionImpact {
         projects: count,
+        activities,
+        plan_lines: lines,
         attempts,
         workflow_instances: instances,
         history_entries: history,
@@ -143,9 +153,15 @@ pub(crate) async fn year_impact(
     fiscal_year_id: Uuid,
 ) -> Result<BudgetDeletionImpact, AppError> {
     let projects: Vec<Uuid> = DbSession::new(&mut **tx)
-        .scalar("budget.deletion.year_projects", "SELECT id FROM budget_projects WHERE fiscal_year_id=$1 ORDER BY id")
+        .scalar(
+            "budget.deletion.year_projects",
+            "SELECT id FROM budget_projects WHERE fiscal_year_id=$1 ORDER BY id",
+        )
         .bind(fiscal_year_id)
         .fetch_all()
         .await?;
-    impact(tx, &projects).await
+    let mut result = impact(tx, &projects).await?;
+    let configuration_history:i64=DbSession::new(&mut **tx).scalar("budget.deletion.year_configuration_impact", "SELECT (SELECT count(*) FROM budget_history WHERE resource_kind='settings' AND resource_id=$1)+(SELECT count(*) FROM process_template_versions v JOIN budget_year_template_ownership o ON o.template_id=v.template_id WHERE o.fiscal_year_id=$1)").bind(fiscal_year_id).fetch_one().await?;
+    result.history_entries += configuration_history;
+    Ok(result)
 }

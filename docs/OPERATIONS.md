@@ -2102,8 +2102,36 @@ Never edit an applied migration, its checksum or SQLx history to force readiness
 protected recovery point needs a reviewed procedure accounting for writes since that point; do not
 restore an old binary onto the advanced schema.
 
-First configure fiscal years, funding sources, expense categories and approval steps at
-`/staff/budget/settings` using an authorized settings account, then create projects at
+Migrations [162](../backend-school/migrations/162_annual_budget_control.sql) and
+[163](../backend-school/migrations/163_budget_draft_removal.sql) switch Budget to year-owned catalog
+and routing overlays while preserving stable IDs and immutable historical JSON. Every existing
+year remains open: the retired inactive flag only blocked new project selection and never proved
+financial closure. Authorized carryover/annual funding and actual received funding remain unknown
+until explicitly recorded; project totals must never be imported as guessed source funding. A
+manager confirms each source envelope, explicit reserve and unit allocations before new plan or
+adjustment approvals; Finance records actual received amounts independently. Existing accepted
+plan payments remain available in open years before that setup is complete. Approved cross-unit
+transfers, loans and repayments move the same unit quota atomically; source authorization, reserve
+and unallocated totals stay unchanged. Their annual revision update makes older settings drafts
+stale rather than silently overwriting the approved movement.
+
+The runtime role receives no privileges on the three private removal-scope tables and cannot mutate the opaque erased-intent denial keys that prevent stale CREATE
+requests from resurrecting removed work. These keys retain no business record or actor identifier.
+Verify the
+normal migration/grant reconciliation before enabling the matching application. Never grant a
+runtime bypass or disable immutable triggers to repair a refused deletion. Never-approved project
+removal erases all its exact draft/workflow/notification history, including previously submitted
+attempts; accepted projects and their amendment drafts remain protected. New annual routing
+templates carry private immutable ownership; removing a draft-only year removes its exclusive
+superseded/current templates and versions too. References from retained current or historical
+processes refuse that entire command; unowned legacy shared templates remain preserved. Closing a year is explicit
+and irreversible and refuses submitted processes, reservations or outstanding loans. Once either
+new migration applies, use the matching release and roll forward on failure; older binaries cannot
+consume the canonical year settings schema.
+
+First configure fiscal years, year-specific funding sources, expense categories, annual envelopes,
+unit allocations and approval steps at `/staff/budget/settings` using an authorized settings account,
+then create projects at
 `/staff/budget/projects`. Organization units/staff come from their existing directories. Fiscal
 year is independent of the academic header; fiscal year and responsible organization are fixed
 after the first accepted plan. The dashboard is `/staff/budget`, requests/payment work is under

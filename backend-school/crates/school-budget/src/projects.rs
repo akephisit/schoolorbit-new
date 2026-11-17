@@ -34,7 +34,7 @@ pub async fn create(
     drop(preflight);
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "budget.projects.create").await?;
-    settings::lock_years(&mut tx, &[input.fiscal_year_id], false).await?;
+    settings::lock_years(&mut tx, &[input.fiscal_year_id], true).await?;
     let id = Uuid::now_v7();
     if let Some(old) = repository::claim(
         &mut tx,
@@ -149,7 +149,29 @@ async fn activities(
         .bind(r.document.project.fiscal_year_id)
         .fetch_all()
         .await?;
+    let known_funds: Vec<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "budget.projects.known_funds",
+            "SELECT fund_id FROM budget_year_funds WHERE fiscal_year_id=$1",
+        )
+        .bind(r.document.project.fiscal_year_id)
+        .fetch_all()
+        .await?;
+    let known_categories: Vec<Uuid> = DbSession::new(&mut **tx).scalar("budget.projects.known_categories", "SELECT expense_category_id FROM budget_year_expense_categories WHERE fiscal_year_id=$1").bind(r.document.project.fiscal_year_id).fetch_all().await?;
     for item in input {
+        if item
+            .default_fund_id
+            .is_some_and(|id| !known_funds.contains(&id))
+            || item
+                .default_expense_category_id
+                .is_some_and(|id| !known_categories.contains(&id))
+            || item.lines.iter().any(|l| {
+                !known_funds.contains(&l.fund_id)
+                    || !known_categories.contains(&l.expense_category_id)
+            })
+        {
+            return Err(invalid("แหล่งเงินหรือหมวดรายจ่ายไม่ได้อยู่ในปีงบประมาณที่เลือก"));
+        }
         let id = item.id.unwrap_or_else(Uuid::now_v7);
         if !seen.insert(id) || item.id.is_some() && !existing_activities.contains(&id) {
             return Err(invalid("กิจกรรมซ้ำหรือไม่อยู่ในโครงการนี้"));
@@ -297,6 +319,7 @@ pub async fn save(
         tx.commit().await?;
         return queries::workspace(pool, a, id).await;
     }
+    settings::require_open(&mut tx, r.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if !r.status()?.editable() {
         return Err(repository::stale());
@@ -383,6 +406,7 @@ pub async fn submit(
         tx.commit().await?;
         return queries::workspace(pool, a, id).await;
     }
+    settings::require_open(&mut tx, r.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if !r.status()?.editable()
         || r.document.activities.is_empty()
@@ -545,6 +569,7 @@ pub async fn act(
         tx.commit().await?;
         return queries::workspace(pool, a, id).await;
     }
+    settings::require_open(&mut tx, r.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if r.status()? != BudgetStatus::Submitted {
         return Err(repository::stale());
@@ -610,6 +635,7 @@ pub async fn amend(
         tx.commit().await?;
         return queries::workspace(pool, a, id).await;
     }
+    settings::require_open(&mut tx, r.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if r.accepted_version.is_none()
         || !matches!(r.status()?, BudgetStatus::Approved | BudgetStatus::Rejected)

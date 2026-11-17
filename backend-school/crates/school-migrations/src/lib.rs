@@ -178,6 +178,10 @@ fn refusal_code(version: Option<i64>, error: &sqlx::Error) -> &'static str {
         return "unclassified";
     };
     match (version, database.message()) {
+        (Some(162), "BUDGET_YEAR_REFERENCE_UNMAPPABLE") => "BUDGET_YEAR_REFERENCE_UNMAPPABLE",
+        (Some(162), "BUDGET_YEAR_OVERLAY_RECONCILIATION_FAILED") => {
+            "BUDGET_YEAR_OVERLAY_RECONCILIATION_FAILED"
+        }
         (Some(157), "ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE") => {
             "ACADEMIC_CURRENT_ATTENDANCE_NOTICE_UNMAPPABLE"
         }
@@ -614,6 +618,7 @@ fn runtime_privilege_statement(runtime: &str) -> String {
          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{runtime}\";
          REVOKE ALL ON academic_result_removal_scope FROM \"{runtime}\";
          REVOKE ALL ON budget_draft_removal_scope, workflow_source_removal_scope, workflow_evidence_removal_scope FROM \"{runtime}\";
+         REVOKE INSERT, UPDATE, DELETE ON budget_erased_intents, budget_year_template_ownership FROM \"{runtime}\";
          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO \"{runtime}\";
          REVOKE INSERT, UPDATE, DELETE ON _sqlx_migrations FROM \"{runtime}\";
          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{runtime}\";
@@ -724,6 +729,26 @@ impl Default for MigrationTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn annual_budget162_refusal_codes_are_exact_version_bound_and_sanitized() {
+        for code in [
+            "BUDGET_YEAR_REFERENCE_UNMAPPABLE",
+            "BUDGET_YEAR_OVERLAY_RECONCILIATION_FAILED",
+        ] {
+            assert_eq!(refusal_code(Some(162), &native(code, "P0001")), code);
+            assert_eq!(
+                refusal_code(Some(161), &native(code, "P0001")),
+                "unclassified"
+            );
+            assert_eq!(
+                refusal_code(
+                    Some(162),
+                    &native(&format!("{code} private-sentinel"), "P0001")
+                ),
+                "unclassified"
+            );
+        }
+    }
     #[test]
     fn canonical_runner_future_remains_send_for_http_consumers() {
         fn accept<F: std::future::Future + Send>(_: F) {}
@@ -1107,3 +1132,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod budget_removal_privilege_tests;

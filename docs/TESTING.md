@@ -2345,12 +2345,43 @@ verification; unknown prior draft documents must never be fabricated. Select aff
 HTTP, API/permission-contract and workspace checks under `.rules` section 11 in addition to this
 domain suite; a package result alone does not prove browser or deployed behavior.
 
+Annual-control cases cover unconfigured versus explicit-zero authority, authorized carryover and
+annual funding, reserve versus unallocated funding, unit/source ceilings, concurrent approvals on
+different projects, concurrent cap reductions, fully allocated cross-unit quota movements,
+amendment replacement, year-copy isolation, actual-receipt corrections and
+retained financial evidence, nested activity dates, immutable used-year dates, closure obligations,
+closed-year mutation refusal and receipt replay. Migration 162 is rehearsed from a populated 161
+fixture with exact document/identity preservation, unknown-reference refusal, rollback and retry.
+Legacy inactive selection flags never become invented financial closures or receipt amounts.
+
+The changed providers and runtime privilege boundary have focused disposable PostgreSQL recipes:
+
+```bash
+./scripts/test_backend_school.sh --package school-workflow --test process_purge -- --test-threads=1
+./scripts/test_backend_school.sh --package school-notifications cancellation_tests -- --test-threads=1
+./scripts/test_backend_school.sh --package school-migrations annual_budget_runtime_grants -- --test-threads=1
+```
+
+Purge cases include real aggregate-to-process foreign keys, every prior attempt, exact owned
+work/notification/history removal, accepted-plan refusal, retained cross-year references and private
+scope protection under the actual generated runtime grants. Opaque erased-intent markers prevent
+original CREATE retries from recreating permanently deleted projects or fiscal years. Exclusive
+annual template cleanup includes superseded saves; forged ownership and retained current/historical
+process references refuse atomically. Approval-versus-deletion races exercise both lock-winning
+orders, preserving either the accepted financial graph or complete source removal. The Notifications case preserves other
+source kinds with the same UUID, unrelated recipients and terminal/missing-inbox identities. These
+checks do not certify production object-storage cleanup or authorize deletion of accepted projects.
+
 From `frontend-school`, using the pinned repository Node version and a ready loopback frontend:
 
 ```bash
 node --test tests/static/budget-money.test.mjs tests/static/budget-drafts.test.mjs
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/budget-workspace.spec.ts tests/e2e/budget-settings.spec.ts --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/budget-workspace.spec.ts tests/e2e/budget-settings.spec.ts tests/e2e/budget-annual-settings.spec.ts --project=chromium --workers=1
 ```
+
+Annual settings browser cases cover per-year draft isolation, finance-only unknown-versus-zero
+receipts, exact envelopes/reserve/unit edits, date locking, close freezes, copy-without-money, and
+scoped permanent deletion of submitted/returned/rejected drafts and draft-only years.
 
 Helper tests cover integer-satang strings beyond safe browser integers, at-most-three-decimal
 quantities, one exact half-up rounding step, mutation intent, drafts and pivot totals. The browser

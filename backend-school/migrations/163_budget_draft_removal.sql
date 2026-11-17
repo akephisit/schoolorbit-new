@@ -15,12 +15,22 @@ CREATE TABLE workflow_evidence_removal_scope (
     relation_name text NOT NULL, before_hash text NOT NULL,
     PRIMARY KEY(transaction_id,backend_pid,relation_name,before_hash)
 );
+-- Opaque technical denial keys prevent delayed CREATE retries from resurrecting erased work.
+-- No actor, resource, document, operation or business timestamp is retained.
+CREATE TABLE budget_erased_intents(intent_hash bytea PRIMARY KEY CHECK(octet_length(intent_hash)=32));
+CREATE FUNCTION budget_erased_intent_key(actor uuid,request uuid) RETURNS bytea
+LANGUAGE sql IMMUTABLE SET search_path=pg_catalog AS $$
+ SELECT sha256(convert_to(actor::text||':'||request::text,'UTF8'));
+$$;
+CREATE TRIGGER immutable_budget_erased_intents BEFORE UPDATE OR DELETE ON budget_erased_intents
+FOR EACH ROW EXECUTE FUNCTION preserve_budget_evidence();
 REVOKE ALL ON budget_draft_removal_scope,workflow_source_removal_scope,workflow_evidence_removal_scope FROM PUBLIC;
 DO $$ DECLARE runtime_role text; BEGIN
     IF current_user ~ '^so_[0-9a-fA-F]{32}_owner$' THEN
         runtime_role:=regexp_replace(current_user,'_owner$','_runtime');
         IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname=runtime_role) THEN
             EXECUTE format('REVOKE ALL ON budget_draft_removal_scope,workflow_source_removal_scope,workflow_evidence_removal_scope FROM %I',runtime_role);
+            EXECUTE format('REVOKE INSERT,UPDATE,DELETE ON budget_erased_intents FROM %I',runtime_role);
         END IF;
     END IF;
 END $$;
@@ -38,6 +48,17 @@ LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
         AND NOT EXISTS(SELECT 1 FROM budget_project_attempts a JOIN process_instances i
             ON i.source_module='budget' AND i.source_type='budget_project_plan' AND i.source_id=a.id
             WHERE a.project_id=p.id AND i.definition->>'status'='completed'));
+$$;
+
+CREATE FUNCTION budget_year_templates_referenced(selected_year uuid) RETURNS boolean
+LANGUAGE sql STABLE SET search_path FROM CURRENT AS $$
+ SELECT EXISTS(SELECT 1 FROM budget_year_template_ownership t WHERE t.fiscal_year_id=selected_year AND (
+   EXISTS(SELECT 1 FROM budget_fiscal_years y WHERE y.id<>selected_year AND (y.plan_template_id=t.template_id OR y.request_template_id=t.template_id OR y.adjustment_template_id=t.template_id))
+   OR EXISTS(SELECT 1 FROM process_instances i WHERE i.template_id=t.template_id AND NOT EXISTS(
+      SELECT 1 FROM budget_project_attempts a JOIN budget_projects p ON p.id=a.project_id WHERE a.id=i.source_id AND i.source_module='budget' AND i.source_type='budget_project_plan' AND p.fiscal_year_id=selected_year AND budget_draft_project_deletable(p.id)))
+   OR EXISTS(SELECT 1 FROM process_instance_revisions r JOIN process_instances i ON i.id=r.instance_id WHERE r.definition->>'templateId'=t.template_id::text AND NOT EXISTS(
+      SELECT 1 FROM budget_project_attempts a JOIN budget_projects p ON p.id=a.project_id WHERE a.id=i.source_id AND i.source_module='budget' AND i.source_type='budget_project_plan' AND p.fiscal_year_id=selected_year AND budget_draft_project_deletable(p.id)))
+ ));
 $$;
 
 CREATE FUNCTION budget_guard_draft_removal() RETURNS trigger
@@ -83,6 +104,13 @@ FOR EACH ROW EXECUTE FUNCTION budget_guard_draft_removal();
 CREATE TRIGGER guarded_budget_year_removal BEFORE DELETE ON budget_fiscal_years
 FOR EACH ROW EXECUTE FUNCTION budget_guard_draft_removal();
 
+DROP TRIGGER immutable_budget_year_template_ownership ON budget_year_template_ownership;
+CREATE TRIGGER immutable_budget_year_template_ownership BEFORE UPDATE OR DELETE ON budget_year_template_ownership
+FOR EACH ROW EXECUTE FUNCTION budget_guard_draft_removal();
+DROP TRIGGER immutable_process_versions ON process_template_versions;
+CREATE TRIGGER immutable_process_versions BEFORE UPDATE OR DELETE ON process_template_versions
+FOR EACH ROW EXECUTE FUNCTION workflow_guard_source_removal();
+
 DROP TRIGGER immutable_action_history ON process_action_history;
 CREATE TRIGGER immutable_action_history BEFORE UPDATE OR DELETE ON process_action_history
 FOR EACH ROW EXECUTE FUNCTION workflow_guard_source_removal();
@@ -105,6 +133,9 @@ BEGIN
     IF project_row.fiscal_year_id IS DISTINCT FROM selected_year THEN RAISE EXCEPTION 'BUDGET_STALE_REVISION'; END IF;
     IF project_row.revision IS DISTINCT FROM expected_revision THEN RAISE EXCEPTION 'BUDGET_STALE_REVISION'; END IF;
     IF NOT budget_draft_project_deletable(selected_project) THEN RAISE EXCEPTION 'BUDGET_PROJECT_NOT_DELETABLE'; END IF;
+    -- Release the immediate aggregate-to-workflow FK only inside this authorized transaction.
+    -- Seal the exact post-detachment root; a later refusal rolls the pointer back with all history.
+    UPDATE budget_projects SET instance_id=NULL WHERE id=selected_project RETURNING * INTO project_row;
     PERFORM 1 FROM budget_project_attempts WHERE project_id=selected_project ORDER BY id FOR UPDATE;
     INSERT INTO workflow_source_removal_scope
         SELECT pg_current_xact_id(),pg_backend_pid(),'budget','budget_project_plan',id
@@ -141,6 +172,10 @@ BEGIN
         OR EXISTS(SELECT 1 FROM budget_adjustments WHERE fiscal_year_id=selected_year)
         OR EXISTS(SELECT 1 FROM budget_adjustment_revisions WHERE document->>'fiscalYearId'=selected_year::text)
         OR EXISTS(SELECT 1 FROM budget_year_funds WHERE fiscal_year_id=selected_year AND received>0)
+       OR EXISTS(SELECT 1 FROM budget_history h CROSS JOIN LATERAL jsonb_array_elements(
+         CASE WHEN jsonb_typeof(h.document->'settings'->'funds')='array' THEN h.document->'settings'->'funds' ELSE '[]'::jsonb END) f
+         WHERE h.resource_kind='settings' AND h.resource_id=selected_year AND h.document->>'action'='funding_received_saved'
+           AND f->>'receivedSatang' ~ '^[0-9]+$' AND (f->>'receivedSatang')::numeric>0)
     THEN RAISE EXCEPTION 'BUDGET_YEAR_NOT_DELETABLE'; END IF;
     INSERT INTO budget_draft_removal_scope
         SELECT pg_current_xact_id(),pg_backend_pid(),selected_year,'budget_history',encode(sha256(convert_to(to_jsonb(h)::text,'UTF8')),'hex')
@@ -151,12 +186,63 @@ BEGIN
     INSERT INTO budget_draft_removal_scope VALUES(pg_current_xact_id(),pg_backend_pid(),selected_year,
         'budget_fiscal_years',encode(sha256(convert_to(to_jsonb(year_row)::text,'UTF8')),'hex')) ON CONFLICT DO NOTHING;
     DELETE FROM budget_history WHERE resource_kind='settings' AND resource_id=selected_year;
+    INSERT INTO budget_erased_intents SELECT budget_erased_intent_key(actor_id,request_id) FROM budget_receipts WHERE resource_id=selected_year ON CONFLICT DO NOTHING;
     DELETE FROM budget_receipts WHERE resource_id=selected_year;
     DELETE FROM budget_unit_allocations WHERE fiscal_year_id=selected_year;
     DELETE FROM budget_year_expense_categories WHERE fiscal_year_id=selected_year;
     DELETE FROM budget_year_funds WHERE fiscal_year_id=selected_year;
     DELETE FROM budget_fiscal_years WHERE id=selected_year;
     DELETE FROM budget_draft_removal_scope WHERE transaction_id=pg_current_xact_id() AND backend_pid=pg_backend_pid() AND project_id=selected_year;
+END $$;
+
+CREATE FUNCTION budget_prepare_year_template_removal(selected_year uuid) RETURNS SETOF uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT AS $$
+DECLARE owned_row record;
+BEGIN
+ PERFORM 1 FROM budget_fiscal_years WHERE id=selected_year AND NOT is_closed FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'BUDGET_YEAR_NOT_DELETABLE'; END IF;
+    IF EXISTS(SELECT 1 FROM budget_projects WHERE fiscal_year_id=selected_year)
+        OR EXISTS(SELECT 1 FROM budget_project_revisions WHERE document->'project'->>'fiscalYearId'=selected_year::text)
+        OR EXISTS(SELECT 1 FROM budget_plan_snapshots WHERE document->'project'->>'fiscalYearId'=selected_year::text)
+        OR EXISTS(SELECT 1 FROM budget_adjustments WHERE fiscal_year_id=selected_year)
+        OR EXISTS(SELECT 1 FROM budget_adjustment_revisions WHERE document->>'fiscalYearId'=selected_year::text)
+        OR EXISTS(SELECT 1 FROM budget_year_funds WHERE fiscal_year_id=selected_year AND received>0)
+       OR EXISTS(SELECT 1 FROM budget_history h CROSS JOIN LATERAL jsonb_array_elements(
+         CASE WHEN jsonb_typeof(h.document->'settings'->'funds')='array' THEN h.document->'settings'->'funds' ELSE '[]'::jsonb END) f
+         WHERE h.resource_kind='settings' AND h.resource_id=selected_year AND h.document->>'action'='funding_received_saved'
+           AND f->>'receivedSatang' ~ '^[0-9]+$' AND (f->>'receivedSatang')::numeric>0)
+    THEN RAISE EXCEPTION 'BUDGET_YEAR_NOT_DELETABLE'; END IF;
+
+ UPDATE budget_fiscal_years SET plan_template_id=NULL,request_template_id=NULL,adjustment_template_id=NULL WHERE id=selected_year;
+ FOR owned_row IN SELECT t.* FROM budget_year_template_ownership t WHERE fiscal_year_id=selected_year ORDER BY template_id FOR UPDATE LOOP
+   INSERT INTO workflow_source_removal_scope VALUES(pg_current_xact_id(),pg_backend_pid(),'budget','budget_year_template',owned_row.template_id) ON CONFLICT DO NOTHING;
+   INSERT INTO budget_draft_removal_scope VALUES(pg_current_xact_id(),pg_backend_pid(),selected_year,'budget_year_template_ownership',encode(sha256(convert_to(to_jsonb(owned_row)::text,'UTF8')),'hex')) ON CONFLICT DO NOTHING;
+   RETURN NEXT owned_row.template_id;
+ END LOOP;
+ DELETE FROM budget_year_template_ownership WHERE fiscal_year_id=selected_year;
+END $$;
+
+CREATE FUNCTION workflow_finalize_year_template_removal(selected_template uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT AS $$
+DECLARE owned_row record;
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM workflow_source_removal_scope WHERE transaction_id=pg_current_xact_id() AND backend_pid=pg_backend_pid()
+   AND source_module='budget' AND source_type='budget_year_template' AND source_id=selected_template)
+ THEN RAISE EXCEPTION 'WORKFLOW_TEMPLATE_REMOVAL_NOT_AUTHORIZED'; END IF;
+ PERFORM 1 FROM process_templates WHERE id=selected_template AND managed_source_module='budget' FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'WORKFLOW_TEMPLATE_REMOVAL_NOT_AUTHORIZED'; END IF;
+ IF EXISTS(SELECT 1 FROM process_instances WHERE template_id=selected_template)
+ OR EXISTS(SELECT 1 FROM process_instance_revisions WHERE definition->>'templateId'=selected_template::text)
+ OR EXISTS(SELECT 1 FROM budget_fiscal_years WHERE plan_template_id=selected_template OR request_template_id=selected_template OR adjustment_template_id=selected_template)
+ OR EXISTS(SELECT 1 FROM budget_year_template_ownership WHERE template_id=selected_template)
+ THEN RAISE EXCEPTION 'WORKFLOW_TEMPLATE_REMOVAL_REFERENCED'; END IF;
+ FOR owned_row IN SELECT v.* FROM process_template_versions v WHERE template_id=selected_template FOR UPDATE LOOP
+   INSERT INTO workflow_evidence_removal_scope VALUES(pg_current_xact_id(),pg_backend_pid(),'process_template_versions',encode(sha256(convert_to(to_jsonb(owned_row)::text,'UTF8')),'hex')) ON CONFLICT DO NOTHING;
+ END LOOP;
+ DELETE FROM process_template_versions WHERE template_id=selected_template;
+ DELETE FROM process_templates WHERE id=selected_template;
+ DELETE FROM workflow_source_removal_scope WHERE transaction_id=pg_current_xact_id() AND backend_pid=pg_backend_pid()
+   AND source_module='budget' AND source_type='budget_year_template' AND source_id=selected_template;
 END $$;
 
 -- The source owner creates the sealed identity before this provider locks work.
@@ -234,6 +320,7 @@ BEGIN
     THEN RAISE EXCEPTION 'BUDGET_PROJECT_REMOVAL_WORKFLOW_REMAINS'; END IF;
     DELETE FROM budget_project_revisions WHERE project_id=selected_project;
     DELETE FROM budget_history WHERE resource_kind='project' AND resource_id=selected_project;
+    INSERT INTO budget_erased_intents SELECT budget_erased_intent_key(actor_id,request_id) FROM budget_receipts WHERE resource_id=selected_project ON CONFLICT DO NOTHING;
     DELETE FROM budget_receipts WHERE resource_id=selected_project;
     DELETE FROM budget_plan_lines WHERE project_id=selected_project;
     DELETE FROM budget_activities WHERE project_id=selected_project;
@@ -247,9 +334,10 @@ REVOKE ALL ON FUNCTION budget_guard_draft_removal(),workflow_guard_source_remova
 DO $$ DECLARE owned_schema text:=current_schema(); f record; BEGIN
     FOR f IN SELECT p.oid::regprocedure identity FROM pg_proc p
         WHERE p.pronamespace=owned_schema::regnamespace AND p.proname=ANY(ARRAY[
-            'budget_draft_project_deletable','budget_guard_draft_removal','workflow_guard_source_removal',
+            'budget_draft_project_deletable','budget_year_templates_referenced','budget_guard_draft_removal','workflow_guard_source_removal',
             'budget_prepare_draft_removal','workflow_lock_source_removal','workflow_finalize_source_removal',
-            'budget_finalize_draft_removal','budget_finalize_draft_year_removal']) LOOP
+            'budget_finalize_draft_removal','budget_finalize_draft_year_removal',
+            'budget_prepare_year_template_removal','workflow_finalize_year_template_removal']) LOOP
         EXECUTE format('ALTER FUNCTION %s SET search_path TO pg_catalog,%I,pg_temp',f.identity,owned_schema);
     END LOOP;
 END $$;

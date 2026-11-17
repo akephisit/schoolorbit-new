@@ -5189,6 +5189,33 @@
         ],
         "type": "object"
       },
+      "ApiResponse_BudgetDeletedResource": {
+        "properties": {
+          "data": {
+            "properties": {
+              "deletedId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "deletedId"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_BudgetHistoryPage": {
         "properties": {
           "data": {
@@ -5380,11 +5407,19 @@
               "capabilities": {
                 "$ref": "#/components/schemas/BudgetCapabilities"
               },
+              "deletionImpact": {
+                "$ref": "#/components/schemas/BudgetDeletionImpact"
+              },
+              "fiscalYearClosed": {
+                "type": "boolean"
+              },
               "project": {
                 "$ref": "#/components/schemas/BudgetProjectSummary"
               }
             },
             "required": [
+              "fiscalYearClosed",
+              "deletionImpact",
               "project",
               "activities",
               "balances",
@@ -5453,55 +5488,15 @@
         "properties": {
           "data": {
             "properties": {
-              "adjustmentSteps": {
-                "items": {
-                  "$ref": "#/components/schemas/ProcessTemplateStep"
-                },
-                "type": "array"
-              },
-              "expenseCategories": {
-                "items": {
-                  "$ref": "#/components/schemas/BudgetCatalogItem"
-                },
-                "type": "array"
-              },
               "fiscalYears": {
                 "items": {
                   "$ref": "#/components/schemas/BudgetFiscalYear"
                 },
                 "type": "array"
-              },
-              "funds": {
-                "items": {
-                  "$ref": "#/components/schemas/BudgetCatalogItem"
-                },
-                "type": "array"
-              },
-              "planSteps": {
-                "items": {
-                  "$ref": "#/components/schemas/ProcessTemplateStep"
-                },
-                "type": "array"
-              },
-              "requestSteps": {
-                "items": {
-                  "$ref": "#/components/schemas/ProcessTemplateStep"
-                },
-                "type": "array"
-              },
-              "revision": {
-                "format": "int64",
-                "type": "integer"
               }
             },
             "required": [
-              "revision",
-              "fiscalYears",
-              "funds",
-              "expenseCategories",
-              "planSteps",
-              "requestSteps",
-              "adjustmentSteps"
+              "fiscalYears"
             ],
             "type": "object"
           },
@@ -5547,6 +5542,105 @@
               "lines",
               "evidenceFileIds",
               "capabilities"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_BudgetYearSettings": {
+        "properties": {
+          "data": {
+            "properties": {
+              "adjustmentSteps": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessTemplateStep"
+                },
+                "type": "array"
+              },
+              "authorizedFunding": {
+                "items": {
+                  "$ref": "#/components/schemas/BudgetAuthorizedFundingInput"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "canManage": {
+                "type": "boolean"
+              },
+              "canRecordFunding": {
+                "type": "boolean"
+              },
+              "expenseCategories": {
+                "items": {
+                  "$ref": "#/components/schemas/BudgetCatalogItem"
+                },
+                "type": "array"
+              },
+              "fiscalYear": {
+                "$ref": "#/components/schemas/BudgetFiscalYear"
+              },
+              "funds": {
+                "items": {
+                  "$ref": "#/components/schemas/BudgetCatalogItem"
+                },
+                "type": "array"
+              },
+              "planSteps": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessTemplateStep"
+                },
+                "type": "array"
+              },
+              "requestSteps": {
+                "items": {
+                  "$ref": "#/components/schemas/ProcessTemplateStep"
+                },
+                "type": "array"
+              },
+              "sourceBalances": {
+                "items": {
+                  "$ref": "#/components/schemas/BudgetSourceBalance"
+                },
+                "type": "array"
+              },
+              "unitAllocations": {
+                "items": {
+                  "$ref": "#/components/schemas/BudgetUnitAllocationInput"
+                },
+                "type": "array"
+              },
+              "unitBalances": {
+                "items": {
+                  "$ref": "#/components/schemas/BudgetUnitBalance"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "fiscalYear",
+              "funds",
+              "expenseCategories",
+              "planSteps",
+              "requestSteps",
+              "adjustmentSteps",
+              "unitAllocations",
+              "sourceBalances",
+              "unitBalances",
+              "canManage",
+              "canRecordFunding"
             ],
             "type": "object"
           },
@@ -30800,6 +30894,13 @@
               "null"
             ]
           },
+          "endDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -30809,6 +30910,13 @@
               "$ref": "#/components/schemas/BudgetPlanLine"
             },
             "type": "array"
+          },
+          "startDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "title": {
             "type": "string"
@@ -30841,6 +30949,10 @@
               "null"
             ]
           },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
           "id": {
             "format": "uuid",
             "type": [
@@ -30854,12 +30966,18 @@
             },
             "type": "array"
           },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
           "title": {
             "type": "string"
           }
         },
         "required": [
           "title",
+          "startDate",
+          "endDate",
           "lines"
         ],
         "type": "object"
@@ -31064,6 +31182,30 @@
         ],
         "type": "object"
       },
+      "BudgetAuthorizedFundingInput": {
+        "properties": {
+          "annualFundingSatang": {
+            "type": "string"
+          },
+          "carryoverSatang": {
+            "type": "string"
+          },
+          "fundId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reserveSatang": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "fundId",
+          "carryoverSatang",
+          "annualFundingSatang",
+          "reserveSatang"
+        ],
+        "type": "object"
+      },
       "BudgetBalance": {
         "properties": {
           "activityId": {
@@ -31136,6 +31278,9 @@
           "canCreateRequest": {
             "type": "boolean"
           },
+          "canDelete": {
+            "type": "boolean"
+          },
           "canEdit": {
             "type": "boolean"
           },
@@ -31153,6 +31298,7 @@
           }
         },
         "required": [
+          "canDelete",
           "canEdit",
           "canSubmit",
           "canAct",
@@ -31206,6 +31352,18 @@
           "name",
           "active"
         ],
+        "type": "object"
+      },
+      "BudgetCatalogQuery": {
+        "properties": {
+          "fiscalYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
         "type": "object"
       },
       "BudgetCatalogs": {
@@ -31360,6 +31518,55 @@
         ],
         "type": "object"
       },
+      "BudgetDeletedResource": {
+        "properties": {
+          "deletedId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deletedId"
+        ],
+        "type": "object"
+      },
+      "BudgetDeletionImpact": {
+        "properties": {
+          "activities": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "attempts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "historyEntries": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "planLines": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "projects": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "workflowInstances": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "projects",
+          "activities",
+          "planLines",
+          "attempts",
+          "workflowInstances",
+          "historyEntries"
+        ],
+        "type": "object"
+      },
       "BudgetFileSnapshot": {
         "properties": {
           "checksum": {
@@ -31383,63 +31590,63 @@
       },
       "BudgetFiscalYear": {
         "properties": {
-          "active": {
+          "canClose": {
             "type": "boolean"
           },
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "startDate": {
-            "format": "date",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "startDate",
-          "endDate",
-          "active"
-        ],
-        "type": "object"
-      },
-      "BudgetFiscalYearInput": {
-        "properties": {
-          "active": {
+          "canDelete": {
             "type": "boolean"
           },
-          "endDate": {
-            "format": "date",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
+          "closedAt": {
+            "format": "date-time",
             "type": [
               "string",
               "null"
             ]
           },
+          "dateLocked": {
+            "type": "boolean"
+          },
+          "deletionImpact": {
+            "$ref": "#/components/schemas/BudgetDeletionImpact"
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "isClosed": {
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
           },
           "startDate": {
             "format": "date",
             "type": "string"
+          },
+          "used": {
+            "type": "boolean"
           }
         },
         "required": [
+          "id",
+          "revision",
           "name",
           "startDate",
           "endDate",
-          "active"
+          "isClosed",
+          "used",
+          "dateLocked",
+          "canClose",
+          "canDelete",
+          "deletionImpact"
         ],
         "type": "object"
       },
@@ -32054,15 +32261,41 @@
           "capabilities": {
             "$ref": "#/components/schemas/BudgetCapabilities"
           },
+          "deletionImpact": {
+            "$ref": "#/components/schemas/BudgetDeletionImpact"
+          },
+          "fiscalYearClosed": {
+            "type": "boolean"
+          },
           "project": {
             "$ref": "#/components/schemas/BudgetProjectSummary"
           }
         },
         "required": [
+          "fiscalYearClosed",
+          "deletionImpact",
           "project",
           "activities",
           "balances",
           "capabilities"
+        ],
+        "type": "object"
+      },
+      "BudgetReceivedFundingInput": {
+        "properties": {
+          "fundId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "receivedSatang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "fundId"
         ],
         "type": "object"
       },
@@ -32336,55 +32569,77 @@
       },
       "BudgetSettings": {
         "properties": {
-          "adjustmentSteps": {
-            "items": {
-              "$ref": "#/components/schemas/ProcessTemplateStep"
-            },
-            "type": "array"
-          },
-          "expenseCategories": {
-            "items": {
-              "$ref": "#/components/schemas/BudgetCatalogItem"
-            },
-            "type": "array"
-          },
           "fiscalYears": {
             "items": {
               "$ref": "#/components/schemas/BudgetFiscalYear"
             },
             "type": "array"
-          },
-          "funds": {
-            "items": {
-              "$ref": "#/components/schemas/BudgetCatalogItem"
-            },
-            "type": "array"
-          },
-          "planSteps": {
-            "items": {
-              "$ref": "#/components/schemas/ProcessTemplateStep"
-            },
-            "type": "array"
-          },
-          "requestSteps": {
-            "items": {
-              "$ref": "#/components/schemas/ProcessTemplateStep"
-            },
-            "type": "array"
-          },
-          "revision": {
-            "format": "int64",
-            "type": "integer"
           }
         },
         "required": [
-          "revision",
-          "fiscalYears",
-          "funds",
-          "expenseCategories",
-          "planSteps",
-          "requestSteps",
-          "adjustmentSteps"
+          "fiscalYears"
+        ],
+        "type": "object"
+      },
+      "BudgetSourceBalance": {
+        "properties": {
+          "allocatedSatang": {
+            "type": "string"
+          },
+          "annualFundingSatang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authorizedSatang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "carryoverSatang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "committedSatang": {
+            "type": "string"
+          },
+          "fundId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "receivedSatang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "remainingSatang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reserveSatang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unallocatedSatang": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "fundId",
+          "allocatedSatang",
+          "committedSatang"
         ],
         "type": "object"
       },
@@ -32459,6 +32714,140 @@
           "closed"
         ],
         "type": "string"
+      },
+      "BudgetUnitAllocationInput": {
+        "properties": {
+          "allocatedSatang": {
+            "type": "string"
+          },
+          "fundId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationUnitId",
+          "fundId",
+          "allocatedSatang"
+        ],
+        "type": "object"
+      },
+      "BudgetUnitBalance": {
+        "properties": {
+          "allocatedSatang": {
+            "type": "string"
+          },
+          "committedSatang": {
+            "type": "string"
+          },
+          "fundId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "organizationUnitId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "remainingSatang": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationUnitId",
+          "fundId",
+          "allocatedSatang",
+          "committedSatang",
+          "remainingSatang"
+        ],
+        "type": "object"
+      },
+      "BudgetYearSettings": {
+        "properties": {
+          "adjustmentSteps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "authorizedFunding": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetAuthorizedFundingInput"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "canManage": {
+            "type": "boolean"
+          },
+          "canRecordFunding": {
+            "type": "boolean"
+          },
+          "expenseCategories": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCatalogItem"
+            },
+            "type": "array"
+          },
+          "fiscalYear": {
+            "$ref": "#/components/schemas/BudgetFiscalYear"
+          },
+          "funds": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCatalogItem"
+            },
+            "type": "array"
+          },
+          "planSteps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "requestSteps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "sourceBalances": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetSourceBalance"
+            },
+            "type": "array"
+          },
+          "unitAllocations": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetUnitAllocationInput"
+            },
+            "type": "array"
+          },
+          "unitBalances": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetUnitBalance"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "fiscalYear",
+          "funds",
+          "expenseCategories",
+          "planSteps",
+          "requestSteps",
+          "adjustmentSteps",
+          "unitAllocations",
+          "sourceBalances",
+          "unitBalances",
+          "canManage",
+          "canRecordFunding"
+        ],
+        "type": "object"
       },
       "Building": {
         "properties": {
@@ -39207,6 +39596,40 @@
         "required": [
           "academicYearId",
           "name"
+        ],
+        "type": "object"
+      },
+      "CreateBudgetFiscalYearRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "copyFromFiscalYearId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requestId",
+          "name",
+          "startDate",
+          "endDate"
         ],
         "type": "object"
       },
@@ -58537,62 +58960,28 @@
         ],
         "type": "object"
       },
-      "SaveBudgetSettingsRequest": {
+      "SaveBudgetReceivedFundingRequest": {
+        "additionalProperties": false,
         "properties": {
-          "adjustmentSteps": {
-            "items": {
-              "$ref": "#/components/schemas/ProcessTemplateStep"
-            },
-            "type": "array"
-          },
           "expectedRevision": {
             "format": "int64",
             "type": "integer"
           },
-          "expenseCategories": {
-            "items": {
-              "$ref": "#/components/schemas/BudgetCatalogItemInput"
-            },
-            "type": "array"
-          },
-          "fiscalYears": {
-            "items": {
-              "$ref": "#/components/schemas/BudgetFiscalYearInput"
-            },
-            "type": "array"
-          },
           "funds": {
             "items": {
-              "$ref": "#/components/schemas/BudgetCatalogItemInput"
-            },
-            "type": "array"
-          },
-          "planSteps": {
-            "items": {
-              "$ref": "#/components/schemas/ProcessTemplateStep"
+              "$ref": "#/components/schemas/BudgetReceivedFundingInput"
             },
             "type": "array"
           },
           "requestId": {
             "format": "uuid",
             "type": "string"
-          },
-          "requestSteps": {
-            "items": {
-              "$ref": "#/components/schemas/ProcessTemplateStep"
-            },
-            "type": "array"
           }
         },
         "required": [
           "requestId",
           "expectedRevision",
-          "fiscalYears",
-          "funds",
-          "expenseCategories",
-          "planSteps",
-          "requestSteps",
-          "adjustmentSteps"
+          "funds"
         ],
         "type": "object"
       },
@@ -58634,6 +59023,89 @@
           "title",
           "lines",
           "evidenceFileIds"
+        ],
+        "type": "object"
+      },
+      "SaveBudgetYearSettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "adjustmentSteps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "authorizedFunding": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetAuthorizedFundingInput"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expenseCategories": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCatalogItemInput"
+            },
+            "type": "array"
+          },
+          "funds": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetCatalogItemInput"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "planSteps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "requestSteps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessTemplateStep"
+            },
+            "type": "array"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "unitAllocations": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetUnitAllocationInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "requestId",
+          "expectedRevision",
+          "name",
+          "startDate",
+          "endDate",
+          "funds",
+          "expenseCategories",
+          "planSteps",
+          "requestSteps",
+          "adjustmentSteps",
+          "unitAllocations"
         ],
         "type": "object"
       },
@@ -99199,6 +99671,17 @@
     "/api/budget/catalogs": {
       "get": {
         "operationId": "getBudgetCatalogs",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "fiscalYearId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -99374,6 +99857,532 @@
               }
             },
             "description": "Request conflicts with the current resource state"
+          }
+        },
+        "tags": [
+          "budget"
+        ]
+      }
+    },
+    "/api/budget/fiscal-years": {
+      "post": {
+        "operationId": "createBudgetFiscalYear",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBudgetFiscalYearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BudgetYearSettings"
+                }
+              }
+            },
+            "description": "Budget operation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Budget state conflict"
+          }
+        },
+        "tags": [
+          "budget"
+        ]
+      }
+    },
+    "/api/budget/fiscal-years/{id}": {
+      "delete": {
+        "operationId": "deleteBudgetFiscalYear",
+        "parameters": [
+          {
+            "description": "Budget resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BudgetDeletedResource"
+                }
+              }
+            },
+            "description": "Budget operation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Budget state conflict"
+          }
+        },
+        "tags": [
+          "budget"
+        ]
+      },
+      "get": {
+        "operationId": "getBudgetYearSettings",
+        "parameters": [
+          {
+            "description": "Budget resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BudgetYearSettings"
+                }
+              }
+            },
+            "description": "Budget operation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Budget state conflict"
+          }
+        },
+        "tags": [
+          "budget"
+        ]
+      },
+      "put": {
+        "operationId": "saveBudgetYearSettings",
+        "parameters": [
+          {
+            "description": "Budget resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveBudgetYearSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BudgetYearSettings"
+                }
+              }
+            },
+            "description": "Budget operation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Budget state conflict"
+          }
+        },
+        "tags": [
+          "budget"
+        ]
+      }
+    },
+    "/api/budget/fiscal-years/{id}/close": {
+      "post": {
+        "operationId": "closeBudgetFiscalYear",
+        "parameters": [
+          {
+            "description": "Budget resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BudgetYearSettings"
+                }
+              }
+            },
+            "description": "Budget operation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Budget state conflict"
+          }
+        },
+        "tags": [
+          "budget"
+        ]
+      }
+    },
+    "/api/budget/fiscal-years/{id}/funding": {
+      "put": {
+        "operationId": "saveBudgetReceivedFunding",
+        "parameters": [
+          {
+            "description": "Budget resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveBudgetReceivedFundingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BudgetYearSettings"
+                }
+              }
+            },
+            "description": "Budget operation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Budget state conflict"
           }
         },
         "tags": [
@@ -99602,6 +100611,96 @@
       }
     },
     "/api/budget/projects/{id}": {
+      "delete": {
+        "operationId": "deleteBudgetProject",
+        "parameters": [
+          {
+            "description": "Budget resource ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_BudgetDeletedResource"
+                }
+              }
+            },
+            "description": "Budget operation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Budget state conflict"
+          }
+        },
+        "tags": [
+          "budget"
+        ]
+      },
       "get": {
         "operationId": "getBudgetProject",
         "parameters": [
@@ -101651,84 +102750,6 @@
               }
             },
             "description": "Budget settings returned"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid input"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Authentication required"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Permission denied"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Resource not found"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiErrorResponse"
-                }
-              }
-            },
-            "description": "Request conflicts with the current resource state"
-          }
-        },
-        "tags": [
-          "budget"
-        ]
-      },
-      "put": {
-        "operationId": "saveBudgetSettings",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SaveBudgetSettingsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_BudgetSettings"
-                }
-              }
-            },
-            "description": "Budget settings saved"
           },
           "400": {
             "content": {
