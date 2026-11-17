@@ -34,6 +34,10 @@ pub async fn authorize_create(
     if !upload_allowed(a, &r) {
         return Err(repository::denied());
     }
+    let closed: bool=DbSession::new(&mut *preflight).scalar("budget.files.create_year_closed", "SELECT y.is_closed FROM budget_fiscal_years y JOIN budget_projects p ON p.fiscal_year_id=y.id WHERE p.id=$1").bind(r.project_id).fetch_one().await?;
+    if closed {
+        return Err(AppError::Conflict("ปีงบประมาณปิดแล้ว".into()));
+    }
     Ok(a.user_id)
 }
 /// Called after external upload with refreshed session/permission context; never trusts pre-upload state.
@@ -54,6 +58,7 @@ pub async fn record_upload(
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "budget.files.record_upload").await?;
     let p = repository::lock_project(&mut tx, old.project_id).await?;
+    crate::settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     let r = repository::lock_request(&mut tx, id).await?;
     queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
     if !upload_allowed(a, &r) {
@@ -129,6 +134,7 @@ pub async fn delete_guard(
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "budget.files.delete_guard").await?;
     let p = repository::lock_project(&mut tx, old.project_id).await?;
+    crate::settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     let r = repository::lock_request(&mut tx, id).await?;
     queries::require_request_read_in_transaction(&mut tx, a, &r, &p, &read_scope).await?;
     if !upload_allowed(a, &r) {

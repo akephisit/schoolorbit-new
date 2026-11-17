@@ -70,7 +70,22 @@ pub(crate) async fn lock_projects(
     let mut ids = ids.to_vec();
     ids.sort();
     ids.dedup();
+    let years: Vec<Uuid> = DbSession::new(&mut **tx)
+        .scalar(
+            "budget.repository.lock_project_years",
+            "SELECT DISTINCT fiscal_year_id FROM budget_projects WHERE id=ANY($1)",
+        )
+        .bind(&ids)
+        .fetch_all()
+        .await?;
+    crate::settings::lock_years(tx, &years, true).await?;
     let rows=DbSession::new(&mut **tx).query_as::<ProjectRecord>("budget.src.repository.lock_projects", "SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=ANY($1) ORDER BY id FOR UPDATE").bind(&ids).fetch_all().await?;
+    if rows
+        .iter()
+        .any(|r| !years.contains(&r.document.project.fiscal_year_id))
+    {
+        return Err(stale());
+    }
     if rows.len() != ids.len() {
         return Err(AppError::NotFound("ไม่พบโครงการ".into()));
     }
@@ -102,6 +117,38 @@ pub(crate) async fn store_project(
         .await?;
     Ok(())
 }
+async fn reject_erased_intent(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    key: Uuid,
+) -> Result<(), AppError> {
+    let erased:bool=DbSession::new(&mut **tx).scalar("budget.repository.erased_intent", "SELECT EXISTS(SELECT 1 FROM budget_erased_intents WHERE intent_hash=budget_erased_intent_key($1,$2))").bind(actor).bind(key).fetch_one().await?;
+    if erased {
+        return Err(AppError::Conflict(
+            "คำขอนี้ถูกลบถาวรแล้ว กรุณาเริ่มรายการใหม่".into(),
+        ));
+    }
+    Ok(())
+}
+/// Immutable receipts can be inspected before resolving a source that may since have been removed.
+pub(crate) async fn replay<T: Serialize>(
+    tx: &mut Transaction<'_, Postgres>,
+    actor: Uuid,
+    key: Uuid,
+    operation: &str,
+    payload: &T,
+) -> Result<Option<Uuid>, AppError> {
+    reject_erased_intent(tx, actor, key).await?;
+    let old:Option<(String,String,Uuid)>=DbSession::new(&mut **tx).query_as("budget.repository.replay", "SELECT operation,payload_hash,resource_id FROM budget_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(key).fetch_optional().await?;
+    if let Some((old_operation, old_hash, id)) = old {
+        let hash = school_workflow::process::payload_hash(&(operation, payload))?;
+        if old_operation != operation || old_hash != hash {
+            return Err(AppError::Conflict("รหัสคำขอถูกใช้กับข้อมูลอื่นแล้ว".into()));
+        }
+        return Ok(Some(id));
+    }
+    Ok(None)
+}
 pub(crate) async fn claim<T: Serialize>(
     tx: &mut Transaction<'_, Postgres>,
     actor: Uuid,
@@ -110,12 +157,20 @@ pub(crate) async fn claim<T: Serialize>(
     id: Uuid,
     payload: &T,
 ) -> Result<Option<Uuid>, AppError> {
+    reject_erased_intent(tx, actor, key).await?;
     let hash = school_workflow::process::payload_hash(&(operation, payload))?;
     let inserted:Option<Uuid>=DbSession::new(&mut **tx).scalar("budget.src.repository.claim", "INSERT INTO budget_receipts(actor_id,request_id,operation,payload_hash,resource_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING resource_id").bind(actor).bind(key).bind(operation).bind(&hash).bind(id).fetch_optional().await?;
+    // A conflicting receipt may have been erased while INSERT waited; use a fresh
+    // READ COMMITTED statement before accepting any newly inserted intent.
+    reject_erased_intent(tx, actor, key).await?;
     if inserted.is_some() {
         return Ok(None);
     }
-    let old:(String,String,Uuid)=DbSession::new(&mut **tx).query_as("budget.src.repository.claim", "SELECT operation,payload_hash,resource_id FROM budget_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(key).fetch_one().await?;
+    let old:Option<(String,String,Uuid)>=DbSession::new(&mut **tx).query_as("budget.src.repository.claim", "SELECT operation,payload_hash,resource_id FROM budget_receipts WHERE actor_id=$1 AND request_id=$2").bind(actor).bind(key).fetch_optional().await?;
+    if old.is_none() {
+        reject_erased_intent(tx, actor, key).await?;
+    }
+    let old = old.ok_or_else(stale)?;
     if old.0 != operation || old.1 != hash {
         return Err(AppError::Conflict("รหัสคำขอถูกใช้กับข้อมูลอื่นแล้ว".into()));
     }

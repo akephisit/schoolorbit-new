@@ -81,7 +81,10 @@
 		readError = '';
 		try {
 			const [catalogValues, rows] = await Promise.all([
-				getBudgetCatalogs({ signal: ticket.signal }),
+				getBudgetCatalogs({
+					signal: ticket.signal,
+					query: { fiscalYearId: fiscalYearId || undefined }
+				}),
 				getBudgetDashboard({
 					signal: ticket.signal,
 					query: { fiscalYearId: fiscalYearId || undefined }
@@ -181,7 +184,7 @@
 				required
 				bind:value={fiscalYearId}
 				options={(catalogs?.fiscalYears ?? [])
-					.filter((year) => year.active || year.id === fiscalYearId)
+					.filter((year) => !year.isClosed || year.id === fiscalYearId)
 					.map((year) => ({ value: year.id, label: year.name }))}
 				disabled={pending || !!loan || !!detail}
 				onchange={() => {

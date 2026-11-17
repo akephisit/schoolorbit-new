@@ -10,5 +10,6 @@ pub mod directed;
 pub mod document_validation;
 pub mod process;
 pub mod process_models;
+pub mod process_purge;
 
 pub mod signatures;

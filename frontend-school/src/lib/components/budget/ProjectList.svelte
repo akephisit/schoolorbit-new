@@ -20,6 +20,7 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { PageState, TableSkeleton } from '#lib/components/app-state/index.js';
+	import ProjectDelete from './ProjectDelete.svelte';
 	import ProjectForm from './ProjectForm.svelte';
 	import Paging from './Paging.svelte';
 	import StatusBadge from './StatusBadge.svelte';
@@ -106,7 +107,17 @@
 											variant="outline"
 											href={`/staff/budget/projects/${project.id}?returnTo=${encodeURIComponent(page.url.pathname + page.url.search)}`}
 											>เปิดโครงการ</Button
-										></Table.Cell
+										>{#if project.acceptedVersion === null}<ProjectDelete
+												id={project.id}
+												ondeleted={() => {
+													if (region.value)
+														region.patch({
+															...region.value,
+															items: region.value.items.filter((item) => item.id !== project.id),
+															total: region.value.total - 1
+														});
+												}}
+											/>{/if}</Table.Cell
 									></Table.Row
 								>{/each}</Table.Body
 						></Table.Root

@@ -256,12 +256,17 @@ test('settings-only user saves a new fund with server-owned identity and no proj
 	await page.getByLabel('ชื่อแหล่งเงิน *', { exact: true }).last().fill('ทุนใหม่');
 	await page.getByRole('button', { name: 'บันทึกการตั้งค่า', exact: true }).click();
 	await expect(page.getByText('บันทึกการตั้งค่าแล้ว', { exact: true })).toBeVisible();
-	const saved = api.writes.find((write) => write.path.endsWith('/settings'))!;
+	const saved = api.writes.find((write) => write.path.includes('/fiscal-years/'))!;
 	expect((saved.payload.funds as { name: string; id?: string }[]).at(-1)).toEqual({
 		name: 'ทุนใหม่',
 		active: true
 	});
-	expect(api.reads.every((path) => path.startsWith('/api/budget/settings'))).toBe(true);
+	expect(
+		api.reads.every(
+			(path) =>
+				path.startsWith('/api/budget/settings') || path.startsWith('/api/budget/fiscal-years/')
+		)
+	).toBe(true);
 });
 
 test('assigned reviewer reads projects without creator or administration option reads', async ({

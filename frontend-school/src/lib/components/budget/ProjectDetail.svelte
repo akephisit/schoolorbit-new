@@ -32,6 +32,7 @@
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
+	import ProjectDelete from './ProjectDelete.svelte';
 	import ProjectForm from './ProjectForm.svelte';
 	import PlanEditor from './PlanEditor.svelte';
 	import PlanView from './PlanView.svelte';
@@ -138,7 +139,13 @@
 	backLabel="กลับรายการโครงการ"
 	contentClass="space-y-6"
 >
-	{#snippet actions()}{#if region.value}{@const value =
+	{#snippet actions()}{#if region.value}<ProjectDelete
+				{id}
+				workspace={region.value}
+				ondeleted={() => {
+					void goto(returnTo);
+				}}
+			/>{@const value =
 				region.value}{#if value.capabilities.canEdit && $can.hasAny(PERMISSIONS.BUDGET_UPDATE_OWN, PERMISSIONS.BUDGET_UPDATE_ORGANIZATION_UNIT, PERMISSIONS.BUDGET_UPDATE_ORGANIZATION_TREE, PERMISSIONS.BUDGET_UPDATE_SCHOOL)}<Button
 					variant="outline"
 					disabled={pending || editing}
@@ -155,6 +162,10 @@
 					onclick={() => (requestOpen = true)}>สร้างคำขอใช้เงิน</Button
 				>{/if}{/if}{/snippet}
 	<ReadAccessNotice />
+	{#if region.value?.fiscalYearClosed}<PageState
+			title="ปิดปีงบประมาณแล้ว"
+			description="ข้อมูลโครงการและการใช้เงินของปีนี้แสดงเพื่อดูย้อนหลัง"
+		/>{/if}
 	<section
 		class="space-y-4"
 		aria-label="แผนโครงการ"
@@ -222,7 +233,10 @@
 					title="โหลดชื่อแหล่งเงินและหมวดรายจ่ายไม่สำเร็จ"
 					description={catalogs.error}
 					actionLabel="ลองอีกครั้ง"
-					onaction={() => catalogs.retry((signal) => getBudgetCatalogs({ signal }))}
+					onaction={() =>
+						catalogs.retry((signal) =>
+							getBudgetCatalogs({ signal, query: { fiscalYearId: value.project.fiscalYearId } })
+						)}
 				/>{/if}
 			{#if value.acceptedPlan}<details class="space-y-3 rounded-xl border bg-card p-3 sm:p-4">
 					<summary class="cursor-pointer font-semibold"

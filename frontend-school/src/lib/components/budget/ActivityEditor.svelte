@@ -6,7 +6,8 @@
 		newLine,
 		catalogLine,
 		applyDefaults,
-		previewTotal
+		previewTotal,
+		activityDateError
 	} from '#lib/budget/drafts.js';
 	import { sumSatang, money } from '#lib/budget/money.js';
 	import { can } from '#lib/stores/permissions.js';
@@ -16,18 +17,22 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
+	import { dateLabel } from '#lib/budget/presentation.js';
 	import Choice from './Choice.svelte';
 	import LineEditor from './LineEditor.svelte';
 	import CatalogPicker from './CatalogPicker.svelte';
 	let {
 		activity = $bindable(),
 		catalogs,
+		project,
 		submitted = false,
 		disabled = false,
 		onremove
 	}: {
 		activity: ActivityDraft;
 		catalogs: BudgetCatalogs;
+		project: { startDate: string; endDate: string };
 		submitted?: boolean;
 		disabled?: boolean;
 		onremove: () => void;
@@ -52,6 +57,37 @@
 			</div>
 			<Button type="button" variant="ghost" {disabled} onclick={onremove}>ลบกิจกรรม</Button>
 		</div>
+		<fieldset class="grid gap-4 sm:grid-cols-2">
+			<legend class="mb-2 text-sm font-medium">ช่วงเวลากิจกรรม *</legend>
+			<div class="space-y-2">
+				<Label for={`${id}-start`}>วันที่เริ่มกิจกรรม *</Label><DatePicker
+					id={`${id}-start`}
+					ariaLabel={`วันที่เริ่มกิจกรรม ${activity.title || 'ใหม่'}`}
+					bind:value={activity.startDate}
+					minValue={project.startDate}
+					{disabled}
+				/>
+			</div>
+			<div class="space-y-2">
+				<Label for={`${id}-end`}>วันที่สิ้นสุดกิจกรรม *</Label><DatePicker
+					id={`${id}-end`}
+					ariaLabel={`วันที่สิ้นสุดกิจกรรม ${activity.title || 'ใหม่'}`}
+					bind:value={activity.endDate}
+					minValue={activity.startDate || project.startDate}
+					{disabled}
+				/>
+			</div>
+		</fieldset>
+		<p class="text-sm text-muted-foreground">
+			ภายในโครงการ {dateLabel(project.startDate)} – {dateLabel(project.endDate)}
+		</p>
+		{#if submitted && activityDateError(activity, project)}<p
+				role="alert"
+				class="text-sm text-destructive"
+			>
+				{activityDateError(activity, project)}
+			</p>{/if}
+
 		<div class="space-y-4 rounded-lg bg-muted/40 p-4">
 			<p class="text-sm font-medium">ค่าเริ่มต้นสำหรับรายการใหม่</p>
 			<div class="grid gap-3 sm:grid-cols-2">

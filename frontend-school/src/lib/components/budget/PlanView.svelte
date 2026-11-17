@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { BudgetActivity, BudgetCatalogs } from '#lib/api/budget.js';
+	import ActivitySchedule from './ActivitySchedule.svelte';
+	import { dateLabel } from '#lib/budget/presentation.js';
 	import { money } from '#lib/budget/money.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
@@ -10,12 +12,18 @@
 </script>
 
 <div class="space-y-4">
+	<ActivitySchedule {activities} />
 	{#each activities as activity (activity.id)}<Card.Root class="gap-0 overflow-hidden py-0"
 			><Card.Header class="gap-3 py-5">
 				<div class="flex flex-wrap items-center justify-between gap-2">
 					<Card.Title><h3>{activity.title}</h3></Card.Title>
 					<p class="text-sm tabular-nums">{money(activity.totalSatang)} บาท</p>
 				</div>
+				<p class="text-sm text-muted-foreground">
+					{activity.startDate && activity.endDate
+						? `${dateLabel(activity.startDate)} – ${dateLabel(activity.endDate)}`
+						: 'ยังไม่บันทึกวันที่กิจกรรม'}
+				</p>
 			</Card.Header>
 			<div class="border-t">
 				<Table.Root class="min-w-[48rem]"

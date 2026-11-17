@@ -70,6 +70,7 @@ pub async fn workspace(
 ) -> Result<BudgetProjectWorkspace, AppError> {
     let read_scope = policy::read_scope(pool, a, false).await?;
     let scope = policy::update_scope(pool, a).await?;
+    let delete_scope = policy::delete_scope(pool, a).await?;
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "budget.queries.workspace").await?;
     DbSession::new(&mut *tx)
@@ -102,6 +103,30 @@ pub async fn workspace(
             r.owner_id,
             r.document.project.organization_unit_id,
         );
+    let fiscal_year_closed: bool = DbSession::new(&mut *tx)
+        .scalar(
+            "budget.queries.year_closed",
+            "SELECT is_closed FROM budget_fiscal_years WHERE id=$1",
+        )
+        .bind(r.document.project.fiscal_year_id)
+        .fetch_one()
+        .await?;
+    capabilities.can_delete = !fiscal_year_closed
+        && policy::direct(
+            &delete_scope,
+            a.user_id,
+            r.owner_id,
+            r.document.project.organization_unit_id,
+        )
+        && crate::deletion::project_eligible(&mut tx, id).await?;
+    if fiscal_year_closed {
+        capabilities.freeze_operations();
+    }
+    let deletion_impact = if capabilities.can_delete {
+        crate::deletion::project_impact(&mut tx, id).await?
+    } else {
+        BudgetDeletionImpact::default()
+    };
     let project = summary(&mut tx, &r).await?;
     let accepted_plan = if r.accepted_version.is_some() {
         Some(repository::accepted(&mut tx, &r).await?)
@@ -111,6 +136,8 @@ pub async fn workspace(
     let balances = balances(&mut tx, id).await?;
     tx.commit().await?;
     Ok(BudgetProjectWorkspace {
+        fiscal_year_closed,
+        deletion_impact,
         project,
         activities: r.document.0.activities,
         accepted_plan,
@@ -297,6 +324,17 @@ pub async fn request_detail(
     );
     capabilities.can_pay = r.status == "approved" && capabilities.can_pay;
     capabilities.can_close = r.status == "approved" && capabilities.can_close;
+    let closed: bool = DbSession::new(&mut *tx)
+        .scalar(
+            "budget.queries.request_year_closed",
+            "SELECT is_closed FROM budget_fiscal_years WHERE id=$1",
+        )
+        .bind(p.document.project.fiscal_year_id)
+        .fetch_one()
+        .await?;
+    if closed {
+        capabilities.freeze_operations();
+    }
     let request = request_summary(&mut tx, &r).await?;
     tx.commit().await?;
     Ok(BudgetSpendingRequestDetail {
@@ -494,7 +532,7 @@ pub async fn dashboard(
         )
         .execute()
         .await?;
-    let rows:Vec<Json<BudgetDashboardRow>>=DbSession::new(&mut *tx).scalar("budget.src.queries.dashboard", sqlx::AssertSqlSafe(format!("WITH loan_totals AS (SELECT a.from_project_id AS project_id,(l.document->'from'->>'activityId')::uuid AS activity_id,(l.document->'from'->>'fundId')::uuid AS fund_id,(l.document->'from'->>'expenseCategoryId')::uuid AS expense_category_id,sum(l.amount-l.repaid)::bigint AS outstanding FROM budget_loans l JOIN budget_adjustments a ON a.id=l.id WHERE l.repaid<l.amount GROUP BY 1,2,3,4) SELECT jsonb_build_object('projectId',b.project_id,'projectName',s.document->'project'->>'name','activityId',b.activity_id,'activityTitle',coalesce((SELECT x->>'title' FROM jsonb_array_elements(s.document->'activities') x WHERE (x->>'id')::uuid=b.activity_id),(SELECT x->>'title' FROM budget_plan_snapshots old CROSS JOIN LATERAL jsonb_array_elements(old.document->'activities') x WHERE old.project_id=p.id AND (x->>'id')::uuid=b.activity_id ORDER BY old.version DESC LIMIT 1),'กิจกรรมเดิม'),'fundId',b.fund_id,'fundName',f.name,'expenseCategoryId',b.expense_category_id,'expenseCategoryName',c.name,'plannedSatang',b.planned::text,'adjustedSatang',b.adjusted::text,'currentSatang',(b.planned+b.adjusted)::text,'reservedSatang',b.reserved::text,'paidSatang',b.paid::text,'availableSatang',(b.planned+b.adjusted-b.reserved-b.paid)::text,'loanOutstandingSatang',coalesce(lt.outstanding,0)::text) FROM budget_allocations b JOIN budget_projects p ON p.id=b.project_id JOIN budget_plan_snapshots s ON s.id=p.accepted_snapshot_id JOIN budget_funds f ON f.id=b.fund_id JOIN budget_expense_categories c ON c.id=b.expense_category_id LEFT JOIN loan_totals lt ON lt.project_id=b.project_id AND lt.activity_id=b.activity_id AND lt.fund_id=b.fund_id AND lt.expense_category_id=b.expense_category_id WHERE {filter} ORDER BY p.id,b.activity_id,b.fund_id,b.expense_category_id LIMIT 10001"))).bind(s.school).bind(s.own).bind(a.user_id).bind(s.units).bind(s.assigned).bind(q.fiscal_year_id).bind(q.project_id).bind(q.organization_unit_id).bind(download.school).bind(download.own).bind(a.user_id).bind(download.units).bind(download.assigned).fetch_all().await?;
+    let rows:Vec<Json<BudgetDashboardRow>>=DbSession::new(&mut *tx).scalar("budget.src.queries.dashboard", sqlx::AssertSqlSafe(format!("WITH loan_totals AS (SELECT a.from_project_id AS project_id,(l.document->'from'->>'activityId')::uuid AS activity_id,(l.document->'from'->>'fundId')::uuid AS fund_id,(l.document->'from'->>'expenseCategoryId')::uuid AS expense_category_id,sum(l.amount-l.repaid)::bigint AS outstanding FROM budget_loans l JOIN budget_adjustments a ON a.id=l.id WHERE l.repaid<l.amount GROUP BY 1,2,3,4) SELECT jsonb_build_object('projectId',b.project_id,'projectName',s.document->'project'->>'name','activityId',b.activity_id,'activityTitle',coalesce((SELECT x->>'title' FROM jsonb_array_elements(s.document->'activities') x WHERE (x->>'id')::uuid=b.activity_id),(SELECT x->>'title' FROM budget_plan_snapshots old CROSS JOIN LATERAL jsonb_array_elements(old.document->'activities') x WHERE old.project_id=p.id AND (x->>'id')::uuid=b.activity_id ORDER BY old.version DESC LIMIT 1),'กิจกรรมเดิม'),'fundId',b.fund_id,'fundName',f.name,'expenseCategoryId',b.expense_category_id,'expenseCategoryName',c.name,'plannedSatang',b.planned::text,'adjustedSatang',b.adjusted::text,'currentSatang',(b.planned+b.adjusted)::text,'reservedSatang',b.reserved::text,'paidSatang',b.paid::text,'availableSatang',(b.planned+b.adjusted-b.reserved-b.paid)::text,'loanOutstandingSatang',coalesce(lt.outstanding,0)::text) FROM budget_allocations b JOIN budget_projects p ON p.id=b.project_id JOIN budget_plan_snapshots s ON s.id=p.accepted_snapshot_id JOIN budget_year_funds f ON f.fund_id=b.fund_id AND f.fiscal_year_id=p.fiscal_year_id JOIN budget_year_expense_categories c ON c.expense_category_id=b.expense_category_id AND c.fiscal_year_id=p.fiscal_year_id LEFT JOIN loan_totals lt ON lt.project_id=b.project_id AND lt.activity_id=b.activity_id AND lt.fund_id=b.fund_id AND lt.expense_category_id=b.expense_category_id WHERE {filter} ORDER BY p.id,b.activity_id,b.fund_id,b.expense_category_id LIMIT 10001"))).bind(s.school).bind(s.own).bind(a.user_id).bind(s.units).bind(s.assigned).bind(q.fiscal_year_id).bind(q.project_id).bind(q.organization_unit_id).bind(download.school).bind(download.own).bind(a.user_id).bind(download.units).bind(download.assigned).fetch_all().await?;
     tx.commit().await?;
     if rows.len() > 10000 {
         return Err(invalid("รายงานเกิน 10,000 แถว กรุณากรองปีงบประมาณหรือโครงการ"));

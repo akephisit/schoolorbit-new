@@ -1,3 +1,4 @@
+import type { components } from '../../../src/lib/api/generated/school-api.js';
 import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
 import type { StaffLookupItem, OrganizationUnitLookupItem } from '../../../src/lib/api/lookup';
@@ -10,7 +11,7 @@ import type {
 	BudgetCatalogs,
 	BudgetPayment,
 	BudgetAdjustmentDetail,
-	BudgetSettings,
+	BudgetYearSettings,
 	BudgetDashboard,
 	BudgetHistoryPage
 } from '../../../src/lib/api/budget';
@@ -99,7 +100,27 @@ export const budgetPermissions = [
 ];
 export const budgetCatalogs: BudgetCatalogs = {
 	fiscalYears: [
-		{ id: budgetYearId, name: '2570', startDate: '2026-10-01', endDate: '2027-09-30', active: true }
+		{
+			id: budgetYearId,
+			name: '2570',
+			startDate: '2026-10-01',
+			endDate: '2027-09-30',
+			revision: 1,
+			isClosed: false,
+			closedAt: null,
+			used: false,
+			dateLocked: false,
+			canClose: true,
+			canDelete: true,
+			deletionImpact: {
+				projects: 0,
+				activities: 0,
+				planLines: 0,
+				attempts: 0,
+				workflowInstances: 0,
+				historyEntries: 0
+			}
+		}
 	],
 	funds: [
 		{ id: budgetFundId, name: 'เงินอุดหนุน', active: true },
@@ -110,6 +131,33 @@ export const budgetCatalogs: BudgetCatalogs = {
 		{ id: equipmentId, name: 'ครุภัณฑ์', active: true }
 	]
 };
+export function budgetYearSettings(): BudgetYearSettings {
+	return {
+		fiscalYear: structuredClone(budgetCatalogs.fiscalYears[0]),
+		funds: structuredClone(budgetCatalogs.funds),
+		expenseCategories: structuredClone(budgetCatalogs.expenseCategories),
+		planSteps: [],
+		requestSteps: [],
+		adjustmentSteps: [],
+		authorizedFunding: null,
+		unitAllocations: [],
+		sourceBalances: budgetCatalogs.funds.map((fund) => ({
+			fundId: fund.id,
+			carryoverSatang: null,
+			annualFundingSatang: null,
+			authorizedSatang: null,
+			allocatedSatang: '0',
+			reserveSatang: null,
+			unallocatedSatang: null,
+			committedSatang: '0',
+			remainingSatang: null,
+			receivedSatang: null
+		})),
+		unitBalances: [],
+		canManage: true,
+		canRecordFunding: true
+	};
+}
 export function budgetWorkspace(approved = true): BudgetProjectWorkspace {
 	const activities = [
 		['กิจกรรมที่หนึ่ง', '358800', budgetFundId, materialsId],
@@ -118,6 +166,8 @@ export function budgetWorkspace(approved = true): BudgetProjectWorkspace {
 	].map(([title, total, fundId, expenseCategoryId], index) => ({
 		id: id(820 + index),
 		title,
+		startDate: '2026-10-01',
+		endDate: '2027-09-30',
 		defaultFundId: fundId,
 		defaultExpenseCategoryId: expenseCategoryId,
 		totalSatang: total,
@@ -157,6 +207,15 @@ export function budgetWorkspace(approved = true): BudgetProjectWorkspace {
 	};
 	return {
 		project,
+		fiscalYearClosed: false,
+		deletionImpact: {
+			projects: 1,
+			activities: 3,
+			planLines: 3,
+			attempts: 2,
+			workflowInstances: 2,
+			historyEntries: 6
+		},
 		activities,
 		acceptedPlan: approved
 			? {
@@ -177,6 +236,7 @@ export function budgetWorkspace(approved = true): BudgetProjectWorkspace {
 			: null,
 		balances: [],
 		capabilities: {
+			canDelete: !approved,
 			canEdit: !approved,
 			canSubmit: !approved,
 			canAct: false,
@@ -194,18 +254,21 @@ export async function mockBudget(
 	page: Page,
 	options: {
 		permissions?: string[];
-		settings?: BudgetSettings;
+		settings?: BudgetYearSettings;
+		yearSettings?: BudgetYearSettings[];
 		staffOptions?: StaffLookupItem[];
 		organizationOptions?: OrganizationUnitLookupItem[];
 		failLookup?: { kind: 'staff' | 'organization-units'; search?: string };
 		holdLookup?: { kind: 'staff' | 'organization-units'; search: string };
 		approved?: boolean;
+		projectStatus?: BudgetProjectWorkspace['project']['status'];
 		hold?: 'dashboard' | 'projects' | 'requests' | 'payments';
 		fail?: 'dashboard' | 'projects' | 'requests' | 'payments';
 		failMutation?: boolean;
 		withRequest?: boolean;
 		empty?: boolean;
 		holdMutation?: boolean;
+		holdYearCreateResponse?: boolean;
 		stalePlan?: boolean;
 		stalePayment?: boolean;
 		exportFiltered?: boolean;
@@ -217,20 +280,39 @@ export async function mockBudget(
 		permissions: options.permissions ?? budgetPermissions,
 		menuGroups: budgetMenuGroups
 	});
+	await page.route(
+		(url) => url.pathname === '/api/notifications',
+		(route) =>
+			reply(route, {
+				items: [],
+				limit: 20,
+				page: 1,
+				unread_count: 0
+			} satisfies components['schemas']['ListNotificationsResponse'])
+	);
 	await page.route('https://fonts.googleapis.com/**', (route) =>
 		route.fulfill({ status: 200, contentType: 'text/css', body: '' })
 	);
 	let workspace = budgetWorkspace(options.approved ?? true),
 		request: BudgetSpendingRequestDetail | null = null,
-		settings: BudgetSettings = options.settings
+		settings: BudgetYearSettings = options.settings
 			? structuredClone(options.settings)
-			: {
-					...structuredClone(budgetCatalogs),
-					revision: 1,
-					planSteps: [],
-					requestSteps: [],
-					adjustmentSteps: []
-				};
+			: budgetYearSettings();
+	if (options.projectStatus) workspace.project.status = options.projectStatus;
+	const yearSettings = new Map(
+		(options.yearSettings ?? [settings]).map((year) => [year.fiscalYear.id, structuredClone(year)])
+	);
+	const canManage = (options.permissions ?? budgetPermissions).includes(
+		PERMISSIONS.BUDGET_MANAGE_SCHOOL
+	);
+	const canRecordFunding = (options.permissions ?? budgetPermissions).includes(
+		PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL
+	);
+	for (const year of yearSettings.values()) {
+		year.canManage = canManage;
+		year.canRecordFunding = canRecordFunding;
+	}
+
 	const lookupReads: string[] = [],
 		lookupCompletions: string[] = [];
 	const retainedRows: BudgetDashboard['rows'] = [];
@@ -274,6 +356,7 @@ export async function mockBudget(
 			evidenceFileIds: [],
 			capabilities: {
 				...workspace.capabilities,
+				canDelete: false,
 				canEdit: false,
 				canSubmit: false,
 				canPay: true,
@@ -291,6 +374,19 @@ export async function mockBudget(
 			permissions = effectivePermissions();
 		workspace.capabilities = {
 			...workspace.capabilities,
+			canDelete:
+				requester &&
+				!workspace.acceptedPlan &&
+				permissions.some((permission) =>
+					(
+						[
+							PERMISSIONS.BUDGET_DELETE_OWN,
+							PERMISSIONS.BUDGET_DELETE_ORGANIZATION_UNIT,
+							PERMISSIONS.BUDGET_DELETE_ORGANIZATION_TREE,
+							PERMISSIONS.BUDGET_DELETE_SCHOOL
+						] as readonly string[]
+					).includes(permission)
+				),
 			canEdit:
 				requester &&
 				['draft', 'returned'].includes(workspace.project.status) &&
@@ -310,6 +406,7 @@ export async function mockBudget(
 		if (request)
 			request.capabilities = {
 				...request.capabilities,
+				canDelete: false,
 				canEdit: requester && ['draft', 'returned'].includes(request.request.status),
 				canSubmit: requester && ['draft', 'returned'].includes(request.request.status),
 				canAct: !requester && request.request.status === 'submitted',
@@ -319,6 +416,7 @@ export async function mockBudget(
 		for (const adjustment of adjustments)
 			adjustment.capabilities = {
 				...adjustment.capabilities,
+				canDelete: false,
 				canEdit: requester && ['draft', 'returned'].includes(adjustment.status),
 				canSubmit: requester && ['draft', 'returned'].includes(adjustment.status),
 				canAct: !requester && adjustment.status === 'submitted'
@@ -599,16 +697,71 @@ export async function mockBudget(
 				});
 			}
 		}
-		if (path.endsWith('/catalogs')) return reply(route, budgetCatalogs);
-		if (path.endsWith('/settings')) {
-			if (method === 'PUT')
+		if (path.endsWith('/catalogs')) {
+			const year = yearSettings.get(url.searchParams.get('fiscalYearId') ?? '');
+			return reply(route, {
+				fiscalYears: [...yearSettings.values()].map((item) => item.fiscalYear),
+				funds: year?.funds ?? [],
+				expenseCategories: year?.expenseCategories ?? []
+			});
+		}
+		if (path.endsWith('/settings'))
+			return reply(route, {
+				fiscalYears: [...yearSettings.values()].map((item) => item.fiscalYear)
+			});
+		if (path === '/api/budget/fiscal-years' && method === 'POST') {
+			const source = yearSettings.get(payload.copyFromFiscalYearId);
+			const next = budgetYearSettings();
+			next.fiscalYear = {
+				...next.fiscalYear,
+				id: id(950 + yearSettings.size),
+				name: payload.name,
+				startDate: payload.startDate,
+				endDate: payload.endDate
+			};
+			if (source) {
+				next.funds = structuredClone(source.funds);
+				next.expenseCategories = structuredClone(source.expenseCategories);
+				next.planSteps = structuredClone(source.planSteps);
+				next.requestSteps = structuredClone(source.requestSteps);
+				next.adjustmentSteps = structuredClone(source.adjustmentSteps);
+			}
+			yearSettings.set(next.fiscalYear.id, next);
+			if (options.holdYearCreateResponse) await held;
+			return reply(route, next);
+		}
+		if (path.startsWith('/api/budget/fiscal-years/')) {
+			const yearId = path.split('/')[4];
+			const current = yearSettings.get(yearId);
+			if (!current) return reply(route, 'ไม่พบปีงบประมาณ', 404);
+			if (method === 'DELETE') {
+				yearSettings.delete(yearId);
+				return reply(route, { deletedId: yearId });
+			}
+			if (path.endsWith('/close')) {
+				current.fiscalYear.isClosed = true;
+				current.fiscalYear.canClose = false;
+				current.fiscalYear.revision++;
+				return reply(route, current);
+			}
+			if (path.endsWith('/funding')) {
+				for (const fund of payload.funds) {
+					const row = current.sourceBalances.find((row) => row.fundId === fund.fundId);
+					if (row) row.receivedSatang = fund.receivedSatang;
+				}
+				current.fiscalYear.revision++;
+				return reply(route, current);
+			}
+			if (method === 'PUT') {
 				settings = {
-					...payload,
-					revision: settings.revision + 1,
-					fiscalYears: payload.fiscalYears.map((item: object, index: number) => ({
-						id: id(900 + index),
-						...item
-					})),
+					...current,
+					fiscalYear: {
+						...current.fiscalYear,
+						name: payload.name,
+						startDate: payload.startDate,
+						endDate: payload.endDate,
+						revision: current.fiscalYear.revision + 1
+					},
 					funds: payload.funds.map((item: object, index: number) => ({
 						id: id(920 + index),
 						...item
@@ -616,10 +769,21 @@ export async function mockBudget(
 					expenseCategories: payload.expenseCategories.map((item: object, index: number) => ({
 						id: id(940 + index),
 						...item
-					}))
+					})),
+					planSteps: payload.planSteps,
+					requestSteps: payload.requestSteps,
+					adjustmentSteps: payload.adjustmentSteps,
+					authorizedFunding: payload.authorizedFunding,
+					unitAllocations: payload.unitAllocations
 				};
-			return reply(route, settings);
+				yearSettings.set(yearId, settings);
+				return reply(route, settings);
+			}
+			return reply(route, current);
 		}
+		if (path === `/api/budget/projects/${budgetProjectId}` && method === 'DELETE')
+			return reply(route, { deletedId: budgetProjectId });
+
 		if (path.endsWith('/dashboard')) {
 			const result = dashboard();
 			if (options.empty) {
@@ -678,6 +842,7 @@ export async function mockBudget(
 				acceptedPlan: null,
 				capabilities: {
 					...workspace.capabilities,
+					canDelete: false,
 					canEdit: true,
 					canSubmit: true,
 					canAmend: false,
@@ -724,6 +889,7 @@ export async function mockBudget(
 			workspace.project.revision++;
 			workspace.capabilities = {
 				...workspace.capabilities,
+				canDelete: false,
 				canEdit: false,
 				canSubmit: false,
 				canAct: true
@@ -740,6 +906,7 @@ export async function mockBudget(
 			workspace.project.revision++;
 			workspace.capabilities = {
 				...workspace.capabilities,
+				canDelete: false,
 				canEdit: workspace.project.status === 'returned',
 				canSubmit: workspace.project.status === 'returned',
 				canAct: false,
@@ -762,6 +929,7 @@ export async function mockBudget(
 			workspace.project.revision++;
 			workspace.capabilities = {
 				...workspace.capabilities,
+				canDelete: false,
 				canEdit: true,
 				canSubmit: true,
 				canAmend: false
@@ -820,6 +988,7 @@ export async function mockBudget(
 				evidenceFileIds: payload.evidenceFileIds,
 				capabilities: {
 					...workspace.capabilities,
+					canDelete: false,
 					canEdit: true,
 					canSubmit: true,
 					canAct: false,
@@ -835,6 +1004,7 @@ export async function mockBudget(
 			request!.request.revision++;
 			request!.capabilities = {
 				...request!.capabilities,
+				canDelete: false,
 				canEdit: false,
 				canSubmit: false,
 				canAct: true
@@ -946,7 +1116,13 @@ export async function mockBudget(
 				status: 'draft',
 				loanOutstandingSatang: '0',
 				createdAt: '2026-10-20T01:00:00Z',
-				capabilities: { ...workspace.capabilities, canEdit: true, canSubmit: true, canAct: false }
+				capabilities: {
+					...workspace.capabilities,
+					canDelete: false,
+					canEdit: true,
+					canSubmit: true,
+					canAct: false
+				}
 			};
 			adjustments.push(value);
 			return reply(route, value);
@@ -969,6 +1145,7 @@ export async function mockBudget(
 	});
 	return {
 		reads,
+		yearSettings,
 		lookupReads,
 		lookupCompletions,
 		writes,

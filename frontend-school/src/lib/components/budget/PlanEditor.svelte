@@ -10,6 +10,7 @@
 	import {
 		activityDrafts,
 		activityInput,
+		activityDateError,
 		projectInput,
 		newActivity,
 		lineErrors,
@@ -56,7 +57,10 @@
 	async function load() {
 		readError = '';
 		try {
-			const value = await getBudgetCatalogs({ signal: controller.signal });
+			const value = await getBudgetCatalogs({
+				signal: controller.signal,
+				query: { fiscalYearId: workspace.project.fiscalYearId }
+			});
 			if (!disposed) catalogs = value;
 		} catch (cause) {
 			if (!disposed) readError = message(cause);
@@ -105,6 +109,7 @@
 			activities.some(
 				(activity) =>
 					!activity.title.trim() ||
+					!!activityDateError(activity, metadata) ||
 					activity.lines.some((line) => Object.keys(lineErrors(line)).length)
 			)
 		) {
@@ -183,6 +188,7 @@
 		{#each activities as activity, index (activity.key)}<ActivityEditor
 				bind:activity={activities[index]}
 				{catalogs}
+				project={metadata}
 				{submitted}
 				disabled={pending}
 				onremove={() => (activities = activities.filter((value) => value.key !== activity.key))}
@@ -192,7 +198,7 @@
 				type="button"
 				variant="outline"
 				disabled={pending}
-				onclick={() => (activities = [...activities, newActivity()])}>เพิ่มกิจกรรม</Button
+				onclick={() => (activities = [...activities, newActivity(metadata)])}>เพิ่มกิจกรรม</Button
 			>
 			<p class="tabular-nums">
 				รวมแผน <strong

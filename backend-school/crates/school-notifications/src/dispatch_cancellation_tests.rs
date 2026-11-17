@@ -162,3 +162,64 @@ async fn cancellation_rejects_forged_source_recipient_or_notification_before_any
     .unwrap();
     assert!(!consumed);
 }
+
+#[tokio::test]
+async fn source_removal_cancels_all_exact_kind_recipients_including_missing_and_terminal_inboxes() {
+    let (pool, user) = fixture("notification_exact_source_purge").await;
+    let other =
+        school_test_db::create_test_user(&pool, "purge-other@example.test", "Fixture-password-123")
+            .await
+            .unwrap();
+    let source = Uuid::new_v4();
+    let mut first = notice(user);
+    first.source = NotificationSource::Process { source_id: source };
+    let mut second = notice(other);
+    second.source = NotificationSource::Process { source_id: source };
+    let mut same_id_other_kind = notice(user);
+    same_id_other_kind.source = NotificationSource::Attendance { source_id: source };
+    let unrelated = notice(other);
+    let mut tx = pool.begin().await.unwrap();
+    create_in_transaction(
+        &mut tx,
+        &[
+            first.clone(),
+            second.clone(),
+            same_id_other_kind.clone(),
+            unrelated.clone(),
+        ],
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let candidates = pending(&pool).await.unwrap();
+    let terminal = candidates.iter().find(|i| i.id == second.id).unwrap();
+    assert!(consume(&pool, terminal, &Eligible).await.unwrap().is_some());
+    sqlx::query("DELETE FROM notifications WHERE id=$1")
+        .bind(first.notification_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let preserved: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM notification_receipts r WHERE id=ANY($1)",
+    )
+    .bind(vec![same_id_other_kind.id, unrelated.id])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    cancel_sources_in_transaction(&mut tx, NotificationSourceKind::Process, &[source], true)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let left:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM notification_receipts WHERE source_kind='process' AND source_id=$1)+(SELECT count(*) FROM notifications WHERE id=ANY($2))+(SELECT count(*) FROM notification_presentations WHERE receipt_id=ANY($3))").bind(source).bind(vec![first.notification_id,second.notification_id]).bind(vec![first.id,second.id]).fetch_one(&pool).await.unwrap();
+    assert_eq!(left, 0);
+    let after: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM notification_receipts r WHERE id=ANY($1)",
+    )
+    .bind(vec![same_id_other_kind.id, unrelated.id])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(preserved, after);
+    assert_eq!(pending(&pool).await.unwrap().len(), 2);
+}

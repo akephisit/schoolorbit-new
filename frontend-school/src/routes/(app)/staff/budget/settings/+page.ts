@@ -3,20 +3,32 @@ import { get } from 'svelte/store';
 import { can } from '#lib/stores/permissions.js';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
 import { budgetRead } from '#lib/budget/route-data.js';
-import { budgetFilters } from '#lib/budget/presentation.js';
-import { getBudgetSettings } from '#lib/api/budget.js';
+import { getBudgetSettings, getBudgetYearSettings } from '#lib/api/budget.js';
 export const _meta = {
 	academicContext: 'none' as const,
-	access: { user_type: 'staff', permission: PERMISSIONS.BUDGET_MANAGE_SCHOOL }
+	access: {
+		user_type: 'staff',
+		permission: [PERMISSIONS.BUDGET_MANAGE_SCHOOL, PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL]
+	}
 };
-export const load: PageLoad = ({ fetch, url, params, depends }) => {
+export const load: PageLoad = ({ fetch, url, depends }) => {
 	depends('school:app-identity');
-	const query = budgetFilters(url);
+	const selectedId = url.searchParams.get('fiscalYearId') ?? '';
+	const allowed = () =>
+		get(can).hasAny(PERMISSIONS.BUDGET_MANAGE_SCHOOL, PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL);
+	const index = budgetRead(allowed, () => getBudgetSettings({ requestFetch: fetch }), null);
 	return {
-		requestKey: JSON.stringify(query) + ('id' in params ? params.id : ''),
+		selectedId,
+		index,
 		record: budgetRead(
-			() => get(can).has(PERMISSIONS.BUDGET_MANAGE_SCHOOL),
-			() => getBudgetSettings({ requestFetch: fetch }),
+			allowed,
+			async () => {
+				const result = await index;
+				if (!result.ok || !result.data.value) return null;
+				const years = result.data.value.fiscalYears;
+				const id = selectedId || years.find((year) => !year.isClosed)?.id || years[0]?.id;
+				return id ? getBudgetYearSettings(id, { requestFetch: fetch }) : null;
+			},
 			null
 		)
 	};

@@ -1579,6 +1579,34 @@
     },
     {
       "module": "budget",
+      "action": "delete",
+      "scope": "own",
+      "name": "ลบโครงการที่ยังไม่เคยอนุมัติถาวร",
+      "description": "ลบโครงการที่ยังไม่เคยอนุมัติพร้อมประวัติและกระบวนงานทั้งหมด"
+    },
+    {
+      "module": "budget",
+      "action": "delete",
+      "scope": "organization_unit",
+      "name": "ลบโครงการที่ยังไม่เคยอนุมัติถาวร",
+      "description": "ลบโครงการที่ยังไม่เคยอนุมัติพร้อมประวัติและกระบวนงานทั้งหมด"
+    },
+    {
+      "module": "budget",
+      "action": "delete",
+      "scope": "organization_tree",
+      "name": "ลบโครงการที่ยังไม่เคยอนุมัติถาวร",
+      "description": "ลบโครงการที่ยังไม่เคยอนุมัติพร้อมประวัติและกระบวนงานทั้งหมด"
+    },
+    {
+      "module": "budget",
+      "action": "delete",
+      "scope": "school",
+      "name": "ลบโครงการที่ยังไม่เคยอนุมัติถาวร",
+      "description": "ลบโครงการที่ยังไม่เคยอนุมัติพร้อมประวัติและกระบวนงานทั้งหมด"
+    },
+    {
+      "module": "budget",
       "action": "approve",
       "scope": "assigned",
       "name": "พิจารณางบประมาณที่ได้รับมอบหมาย",

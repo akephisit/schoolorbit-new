@@ -80,7 +80,7 @@ async fn replace_lines(
         .iter()
         .map(|(p, _, _)| p.unit.clone())
         .collect::<Vec<_>>();
-    DbSession::new(&mut **tx).query("budget.src.requests.replace_lines", "INSERT INTO budget_request_lines(request_id,project_id,activity_id,plan_line_id,fund_id,expense_category_id,amount,description,unit,fund_name,expense_category_name) SELECT $1,$2,$3,x.id,x.fund,x.category,x.amount,x.description,x.unit,f.name,c.name FROM unnest($4::uuid[],$5::uuid[],$6::uuid[],$7::bigint[],$8::text[],$9::text[]) x(id,fund,category,amount,description,unit) JOIN budget_funds f ON f.id=x.fund JOIN budget_expense_categories c ON c.id=x.category").bind(r.id).bind(r.project_id).bind(r.activity_id).bind(ids).bind(funds).bind(categories).bind(amounts).bind(names).bind(units).execute().await?;
+    DbSession::new(&mut **tx).query("budget.src.requests.replace_lines", "INSERT INTO budget_request_lines(request_id,project_id,activity_id,plan_line_id,fund_id,expense_category_id,amount,description,unit,fund_name,expense_category_name) SELECT $1,$2,$3,x.id,x.fund,x.category,x.amount,x.description,x.unit,f.name,c.name FROM unnest($4::uuid[],$5::uuid[],$6::uuid[],$7::bigint[],$8::text[],$9::text[]) x(id,fund,category,amount,description,unit) JOIN budget_projects p ON p.id=$2 JOIN budget_year_funds f ON f.fund_id=x.fund AND f.fiscal_year_id=p.fiscal_year_id JOIN budget_year_expense_categories c ON c.expense_category_id=x.category AND c.fiscal_year_id=p.fiscal_year_id").bind(r.id).bind(r.project_id).bind(r.activity_id).bind(ids).bind(funds).bind(categories).bind(amounts).bind(names).bind(units).execute().await?;
     Ok(())
 }
 pub async fn create(
@@ -121,6 +121,7 @@ pub async fn create(
     if !input.evidence_file_ids.is_empty() {
         return Err(invalid("สร้างคำขอก่อนอัปโหลดหลักฐาน"));
     }
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     let plan = repository::accepted(&mut tx, &p).await?;
     let doc = BudgetSpendingRequestInput {
         activity_id: input.activity_id,
@@ -188,10 +189,12 @@ pub async fn save(
         tx.commit().await?;
         return queries::request_detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if !repository::parse_status(&r.status)?.editable() || input.activity_id != r.activity_id {
         return Err(repository::stale());
     }
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     let plan = repository::accepted(&mut tx, &p).await?;
     files::validate_evidence(&mut tx, a.user_id, id, &input.evidence_file_ids).await?;
     r.document = Json(BudgetSpendingRequestInput {
@@ -252,11 +255,13 @@ pub async fn submit(
         tx.commit().await?;
         return queries::request_detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if !repository::parse_status(&r.status)?.editable() {
         return Err(repository::stale());
     }
-    let route = settings::routing(&mut tx).await?;
+    let route = settings::routing(&mut tx, p.document.project.fiscal_year_id).await?;
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     let plan = repository::accepted(&mut tx, &p).await?;
     replace_lines(&mut tx, &r, &plan).await?;
     let evidence =
@@ -370,6 +375,7 @@ pub async fn act(
         tx.commit().await?;
         return queries::request_detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if r.status != "submitted" {
         return Err(repository::stale());
@@ -458,6 +464,7 @@ pub async fn pay(
         tx.commit().await?;
         return queries::request_detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if r.status != "approved" {
         return Err(repository::stale());
@@ -583,6 +590,7 @@ pub async fn refund(
         tx.commit().await?;
         return queries::request_detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if !matches!(r.status.as_str(), "approved" | "closed") {
         return Err(repository::stale());
@@ -726,6 +734,7 @@ pub async fn close(
         tx.commit().await?;
         return queries::request_detail(pool, a, id).await;
     }
+    settings::require_open(&mut tx, p.document.project.fiscal_year_id).await?;
     repository::revision(r.revision, input.expected_revision)?;
     if r.status != "approved" {
         return Err(repository::stale());

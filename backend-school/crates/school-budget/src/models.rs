@@ -72,12 +72,35 @@ pub struct BudgetCatalogItem {
 #[serde(rename_all = "camelCase")]
 pub struct BudgetFiscalYear {
     pub id: Uuid,
+    pub revision: i64,
     pub name: String,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
-    pub active: bool,
+    pub is_closed: bool,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub used: bool,
+    pub date_locked: bool,
+    pub can_close: bool,
+    pub can_delete: bool,
+    pub deletion_impact: BudgetDeletionImpact,
 }
-
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetDeletionImpact {
+    pub projects: i64,
+    pub activities: i64,
+    pub plan_lines: i64,
+    pub attempts: i64,
+    pub workflow_instances: i64,
+    pub history_entries: i64,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetDeletedResource {
+    pub deleted_id: Uuid,
+}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
@@ -86,32 +109,119 @@ pub struct BudgetCatalogs {
     pub funds: Vec<BudgetCatalogItem>,
     pub expense_categories: Vec<BudgetCatalogItem>,
 }
-
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema, utoipa::IntoParams))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetCatalogQuery {
+    pub fiscal_year_id: Option<Uuid>,
+}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetSettings {
-    pub revision: i64,
     pub fiscal_years: Vec<BudgetFiscalYear>,
-    pub funds: Vec<BudgetCatalogItem>,
-    pub expense_categories: Vec<BudgetCatalogItem>,
-    pub plan_steps: Vec<ProcessTemplateStep>,
-    pub request_steps: Vec<ProcessTemplateStep>,
-    pub adjustment_steps: Vec<ProcessTemplateStep>,
 }
-
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateBudgetFiscalYearRequest {
+    pub request_id: Uuid,
+    pub name: String,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub copy_from_fiscal_year_id: Option<Uuid>,
+}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
-pub struct SaveBudgetSettingsRequest {
+pub struct BudgetAuthorizedFundingInput {
+    pub fund_id: Uuid,
+    pub carryover_satang: String,
+    pub annual_funding_satang: String,
+    pub reserve_satang: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetUnitAllocationInput {
+    pub organization_unit_id: Uuid,
+    pub fund_id: Uuid,
+    pub allocated_satang: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetReceivedFundingInput {
+    pub fund_id: Uuid,
+    pub received_satang: Option<String>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SaveBudgetReceivedFundingRequest {
     pub request_id: Uuid,
     pub expected_revision: i64,
-    pub fiscal_years: Vec<BudgetFiscalYearInput>,
+    pub funds: Vec<BudgetReceivedFundingInput>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SaveBudgetYearSettingsRequest {
+    pub request_id: Uuid,
+    pub expected_revision: i64,
+    pub name: String,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
     pub funds: Vec<BudgetCatalogItemInput>,
     pub expense_categories: Vec<BudgetCatalogItemInput>,
     pub plan_steps: Vec<ProcessTemplateStep>,
     pub request_steps: Vec<ProcessTemplateStep>,
     pub adjustment_steps: Vec<ProcessTemplateStep>,
+    pub authorized_funding: Option<Vec<BudgetAuthorizedFundingInput>>,
+    pub unit_allocations: Vec<BudgetUnitAllocationInput>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetSourceBalance {
+    pub fund_id: Uuid,
+    pub carryover_satang: Option<String>,
+    pub annual_funding_satang: Option<String>,
+    pub authorized_satang: Option<String>,
+    pub allocated_satang: String,
+    pub reserve_satang: Option<String>,
+    pub unallocated_satang: Option<String>,
+    pub committed_satang: String,
+    pub remaining_satang: Option<String>,
+    pub received_satang: Option<String>,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetUnitBalance {
+    pub organization_unit_id: Uuid,
+    pub fund_id: Uuid,
+    pub allocated_satang: String,
+    pub committed_satang: String,
+    pub remaining_satang: String,
+}
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetYearSettings {
+    pub fiscal_year: BudgetFiscalYear,
+    pub funds: Vec<BudgetCatalogItem>,
+    pub expense_categories: Vec<BudgetCatalogItem>,
+    pub plan_steps: Vec<ProcessTemplateStep>,
+    pub request_steps: Vec<ProcessTemplateStep>,
+    pub adjustment_steps: Vec<ProcessTemplateStep>,
+    pub authorized_funding: Option<Vec<BudgetAuthorizedFundingInput>>,
+    pub unit_allocations: Vec<BudgetUnitAllocationInput>,
+    pub source_balances: Vec<BudgetSourceBalance>,
+    pub unit_balances: Vec<BudgetUnitBalance>,
+    pub can_manage: bool,
+    pub can_record_funding: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -157,6 +267,8 @@ pub struct SaveBudgetProjectRequest {
 pub struct BudgetActivityInput {
     pub id: Option<Uuid>,
     pub title: String,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
     pub default_fund_id: Option<Uuid>,
     pub default_expense_category_id: Option<Uuid>,
     pub lines: Vec<BudgetPlanLineInput>,
@@ -183,6 +295,10 @@ pub struct BudgetPlanLineInput {
 pub struct BudgetActivity {
     pub id: Uuid,
     pub title: String,
+    #[serde(default)]
+    pub start_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub end_date: Option<NaiveDate>,
     pub default_fund_id: Option<Uuid>,
     pub default_expense_category_id: Option<Uuid>,
     pub total_satang: String,
@@ -245,6 +361,7 @@ pub struct BudgetProjectSummary {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetCapabilities {
+    pub can_delete: bool,
     pub can_edit: bool,
     pub can_submit: bool,
     pub can_act: bool,
@@ -255,6 +372,20 @@ pub struct BudgetCapabilities {
     pub can_adjust: bool,
     pub can_manage_settings: bool,
     pub can_export: bool,
+}
+
+impl BudgetCapabilities {
+    pub(crate) fn freeze_operations(&mut self) {
+        self.can_edit = false;
+        self.can_submit = false;
+        self.can_act = false;
+        self.can_amend = false;
+        self.can_create_request = false;
+        self.can_pay = false;
+        self.can_close = false;
+        self.can_adjust = false;
+        self.can_delete = false;
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -288,6 +419,8 @@ pub struct BudgetBalance {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetProjectWorkspace {
+    pub fiscal_year_closed: bool,
+    pub deletion_impact: BudgetDeletionImpact,
     pub project: BudgetProjectSummary,
     pub activities: Vec<BudgetActivity>,
     pub accepted_plan: Option<BudgetPlanSnapshot>,
@@ -687,16 +820,6 @@ pub struct UpdateBudgetAdjustmentRequest {
 pub struct BudgetCatalogItemInput {
     pub id: Option<Uuid>,
     pub name: String,
-    pub active: bool,
-}
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct BudgetFiscalYearInput {
-    pub id: Option<Uuid>,
-    pub name: String,
-    pub start_date: NaiveDate,
-    pub end_date: NaiveDate,
     pub active: bool,
 }
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]

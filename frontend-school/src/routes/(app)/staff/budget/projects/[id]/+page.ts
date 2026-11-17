@@ -15,17 +15,30 @@ export const _meta = {
 export const load: PageLoad = ({ fetch, url, params, depends }) => {
 	depends('school:app-identity');
 	const query = { ...budgetFilters(url), projectId: params.id };
+	const record = budgetRead(
+		canReadBudget,
+		() => getBudgetProject(params.id, { requestFetch: fetch }),
+		null
+	);
 	return {
 		id: params.id,
 		query,
 		requestKey: params.id,
 		returnTo: safeReturn(url.searchParams.get('returnTo'), '/staff/budget/projects'),
-		record: budgetRead(
+		record,
+		catalogs: budgetRead(
 			canReadBudget,
-			() => getBudgetProject(params.id, { requestFetch: fetch }),
+			async () => {
+				const result = await record;
+				return result.ok && result.data.value
+					? getBudgetCatalogs({
+							requestFetch: fetch,
+							query: { fiscalYearId: result.data.value.project.fiscalYearId }
+						})
+					: null;
+			},
 			null
 		),
-		catalogs: budgetRead(canReadBudget, () => getBudgetCatalogs({ requestFetch: fetch }), null),
 		process: budgetRead(
 			canReadBudget,
 			() => getBudgetProcess('projects', params.id, { requestFetch: fetch }),

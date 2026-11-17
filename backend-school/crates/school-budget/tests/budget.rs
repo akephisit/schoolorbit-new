@@ -72,7 +72,7 @@ struct Fixture {
     owner: ActorContext,
     reviewer: ActorContext,
     other: ActorContext,
-    settings: BudgetSettings,
+    settings: BudgetYearSettings,
     unit: Uuid,
     catalog: Catalog,
 }
@@ -106,19 +106,29 @@ async fn fixture_with_connections(name: &str, max: u32) -> Fixture {
         step(reviewer.user_id, ProcessStepKind::Review),
         step(reviewer.user_id, ProcessStepKind::Approve),
     ];
-    let settings = settings::save(
+    let year = settings::create_year(
         &pool,
         &reviewer,
-        SaveBudgetSettingsRequest {
+        CreateBudgetFiscalYearRequest {
             request_id: Uuid::now_v7(),
-            expected_revision: 1,
-            fiscal_years: vec![BudgetFiscalYearInput {
-                id: None,
-                name: "2570".into(),
-                start_date: date(10, 1),
-                end_date: NaiveDate::from_ymd_opt(2027, 9, 30).unwrap(),
-                active: true,
-            }],
+            name: "2570".into(),
+            start_date: date(10, 1),
+            end_date: NaiveDate::from_ymd_opt(2027, 9, 30).unwrap(),
+            copy_from_fiscal_year_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let settings = settings::save_year(
+        &pool,
+        &reviewer,
+        year.fiscal_year.id,
+        SaveBudgetYearSettingsRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: year.fiscal_year.revision,
+            name: year.fiscal_year.name,
+            start_date: year.fiscal_year.start_date,
+            end_date: year.fiscal_year.end_date,
             funds: vec![
                 BudgetCatalogItemInput {
                     id: None,
@@ -146,10 +156,37 @@ async fn fixture_with_connections(name: &str, max: u32) -> Fixture {
             plan_steps: route.clone(),
             request_steps: route.clone(),
             adjustment_steps: route,
+            authorized_funding: None,
+            unit_allocations: vec![],
         },
     )
     .await
     .unwrap();
+    let mut funded = settings_input(&settings);
+    funded.authorized_funding = Some(
+        settings
+            .funds
+            .iter()
+            .map(|f| BudgetAuthorizedFundingInput {
+                fund_id: f.id,
+                carryover_satang: "0".into(),
+                annual_funding_satang: "1000000000".into(),
+                reserve_satang: "0".into(),
+            })
+            .collect(),
+    );
+    funded.unit_allocations = settings
+        .funds
+        .iter()
+        .map(|f| BudgetUnitAllocationInput {
+            organization_unit_id: unit,
+            fund_id: f.id,
+            allocated_satang: "1000000000".into(),
+        })
+        .collect();
+    let settings = settings::save_year(&pool, &reviewer, settings.fiscal_year.id, funded)
+        .await
+        .unwrap();
     let catalog = Catalog {
         item: Uuid::now_v7(),
         version: Uuid::now_v7(),
@@ -182,6 +219,8 @@ fn activity(title: &str, line: BudgetPlanLineInput) -> BudgetActivityInput {
     BudgetActivityInput {
         id: None,
         title: title.into(),
+        start_date: date(11, 1),
+        end_date: date(12, 30),
         default_fund_id: Some(line.fund_id),
         default_expense_category_id: Some(line.expense_category_id),
         lines: vec![line],
@@ -202,6 +241,8 @@ fn save_input(w: &BudgetProjectWorkspace) -> SaveBudgetProjectRequest {
             .map(|a| BudgetActivityInput {
                 id: Some(a.id),
                 title: a.title.clone(),
+                start_date: a.start_date.unwrap(),
+                end_date: a.end_date.unwrap(),
                 default_fund_id: a.default_fund_id,
                 default_expense_category_id: a.default_expense_category_id,
                 lines: a
@@ -230,7 +271,7 @@ async fn draft(f: &Fixture, activities: Vec<BudgetActivityInput>) -> BudgetProje
         CreateBudgetProjectRequest {
             request_id: Uuid::now_v7(),
             name: "โครงการคณิตศาสตร์".into(),
-            fiscal_year_id: f.settings.fiscal_years[0].id,
+            fiscal_year_id: f.settings.fiscal_year.id,
             organization_unit_id: f.unit,
             start_date: date(11, 1),
             end_date: date(12, 30),
@@ -409,7 +450,7 @@ async fn budget_plan_exact_example_snapshot_catalog_and_scope() {
         &f.pool,
         &f.owner,
         BudgetReportQuery {
-            fiscal_year_id: Some(f.settings.fiscal_years[0].id),
+            fiscal_year_id: Some(f.settings.fiscal_year.id),
             ..Default::default()
         },
         false,
@@ -776,7 +817,7 @@ async fn adjustment(
         SaveBudgetAdjustmentRequest {
             request_id: Uuid::now_v7(),
             kind,
-            fiscal_year_id: f.settings.fiscal_years[0].id,
+            fiscal_year_id: f.settings.fiscal_year.id,
             from,
             to,
             amount_satang: amount.into(),
@@ -882,7 +923,7 @@ async fn budget_movements_loans_repayments_and_no_double_debit() {
         SaveBudgetAdjustmentRequest {
             request_id: Uuid::now_v7(),
             kind: BudgetAdjustmentKind::Repayment,
-            fiscal_year_id: f.settings.fiscal_years[0].id,
+            fiscal_year_id: f.settings.fiscal_year.id,
             from: Some(bf),
             to: Some(af),
             amount_satang: "9999".into(),
@@ -932,6 +973,14 @@ async fn budget_movements_loans_repayments_and_no_double_debit() {
             .loan_outstanding_satang,
         "2000"
     );
+    assert_eq!(
+        settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+            .await
+            .unwrap()
+            .fiscal_year
+            .revision,
+        f.settings.fiscal_year.revision
+    );
     reconciled(&f).await;
 }
 #[tokio::test]
@@ -950,52 +999,37 @@ async fn budget_catalog_snapshots_and_settings_preserve_archived_references() {
         .await
         .unwrap();
     assert_eq!(w.activities[0].lines[0].unit_price_satang, "179400");
-    let old = settings::get(&f.pool, &f.reviewer).await.unwrap();
-    let mut update = SaveBudgetSettingsRequest {
-        request_id: Uuid::now_v7(),
-        expected_revision: old.revision,
-        fiscal_years: old
-            .fiscal_years
-            .iter()
-            .map(|x| BudgetFiscalYearInput {
-                id: Some(x.id),
-                name: x.name.clone(),
-                start_date: x.start_date,
-                end_date: x.end_date,
-                active: x.active,
-            })
-            .collect(),
-        funds: old
-            .funds
-            .iter()
-            .map(|x| BudgetCatalogItemInput {
-                id: Some(x.id),
-                name: x.name.clone(),
-                active: false,
-            })
-            .collect(),
-        expense_categories: old
-            .expense_categories
-            .iter()
-            .map(|x| BudgetCatalogItemInput {
-                id: Some(x.id),
-                name: x.name.clone(),
-                active: false,
-            })
-            .collect(),
-        plan_steps: old.plan_steps,
-        request_steps: old.request_steps,
-        adjustment_steps: old.adjustment_steps,
-    };
-    settings::save(&f.pool, &f.reviewer, update.clone())
+    let old = settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
         .await
         .unwrap();
+    let mut update = settings_input(&old);
+    for item in update
+        .funds
+        .iter_mut()
+        .chain(&mut update.expense_categories)
+    {
+        item.active = false;
+    }
+    settings::save_year(
+        &f.pool,
+        &f.reviewer,
+        f.settings.fiscal_year.id,
+        update.clone(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
-        settings::catalogs(&f.pool, &f.owner)
-            .await
-            .unwrap()
-            .funds
-            .len(),
+        settings::catalogs(
+            &f.pool,
+            &f.owner,
+            BudgetCatalogQuery {
+                fiscal_year_id: Some(f.settings.fiscal_year.id)
+            }
+        )
+        .await
+        .unwrap()
+        .funds
+        .len(),
         2
     );
     let saved = projects::save(&f.pool, &f.owner, w.project.id, save_input(&w), &f.catalog)
@@ -1007,21 +1041,25 @@ async fn budget_catalog_snapshots_and_settings_preserve_archived_references() {
     );
     update.request_id = Uuid::now_v7();
     update.expected_revision += 1;
-    update.fiscal_years[0].end_date = date(10, 31);
-    assert!(settings::save(&f.pool, &f.reviewer, update).await.is_err());
+    update.end_date = date(10, 31);
+    assert!(
+        settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+            .await
+            .is_err()
+    );
     reconciled(&f).await;
 }
 #[test]
 fn budget_wire_payloads_are_frontend_shaped_and_money_remains_strings() {
     let id = Uuid::now_v7();
-    let payload = serde_json::json!({"requestId":id,"expectedRevision":1,"fiscalYears":[{"name":"2570","startDate":"2026-10-01","endDate":"2027-09-30","active":true}],"funds":[{"name":"ทุน","active":true}],"expenseCategories":[],"planSteps":[],"requestSteps":[],"adjustmentSteps":[]});
-    let x: SaveBudgetSettingsRequest = serde_json::from_value(payload).unwrap();
+    let payload = serde_json::json!({"requestId":id,"expectedRevision":1,"name":"2570","startDate":"2026-10-01","endDate":"2027-09-30","authorizedFunding":null,"unitAllocations":[],"funds":[{"name":"ทุน","active":true}],"expenseCategories":[],"planSteps":[],"requestSteps":[],"adjustmentSteps":[]});
+    let x: SaveBudgetYearSettingsRequest = serde_json::from_value(payload).unwrap();
     assert!(x.funds[0].id.is_none());
     let payload = serde_json::json!({"requestId":id,"name":"โครงการ","fiscalYearId":id,"organizationUnitId":id,"startDate":"2026-11-01","endDate":"2026-12-01"});
     let _: CreateBudgetProjectRequest = serde_json::from_value(payload.clone()).unwrap();
     let mut payload = payload;
     payload["expectedRevision"] = 1.into();
-    payload["activities"] = serde_json::json!([{"title":"กิจกรรม","defaultFundId":null,"defaultExpenseCategoryId":null,"lines":[{"description":"รายการ","quantity":"1.005","unit":"ชิ้น","unitPriceSatang":"100","fundId":id,"expenseCategoryId":id}]}]);
+    payload["activities"] = serde_json::json!([{"title":"กิจกรรม","startDate":"2026-11-01","endDate":"2026-12-01","defaultFundId":null,"defaultExpenseCategoryId":null,"lines":[{"description":"รายการ","quantity":"1.005","unit":"ชิ้น","unitPriceSatang":"100","fundId":id,"expenseCategoryId":id}]}]);
     let x: SaveBudgetProjectRequest = serde_json::from_value(payload).unwrap();
     assert_eq!(x.activities[0].lines[0].unit_price_satang, "100");
     let _:SaveBudgetSpendingRequestRequest=serde_json::from_value(serde_json::json!({"requestId":id,"expectedRevision":1,"activityId":id,"title":"คำขอ","lines":[{"planLineId":id,"amountSatang":"100"}],"evidenceFileIds":[]})).unwrap();
@@ -1048,21 +1086,13 @@ async fn wait_blocked(pool: &PgPool, blocker: i32) {
     .await
     .unwrap();
 }
-fn settings_input(s: &BudgetSettings) -> SaveBudgetSettingsRequest {
-    SaveBudgetSettingsRequest {
+fn settings_input(s: &BudgetYearSettings) -> SaveBudgetYearSettingsRequest {
+    SaveBudgetYearSettingsRequest {
         request_id: Uuid::now_v7(),
-        expected_revision: s.revision,
-        fiscal_years: s
-            .fiscal_years
-            .iter()
-            .map(|x| BudgetFiscalYearInput {
-                id: Some(x.id),
-                name: x.name.clone(),
-                start_date: x.start_date,
-                end_date: x.end_date,
-                active: x.active,
-            })
-            .collect(),
+        expected_revision: s.fiscal_year.revision,
+        name: s.fiscal_year.name.clone(),
+        start_date: s.fiscal_year.start_date,
+        end_date: s.fiscal_year.end_date,
         funds: s
             .funds
             .iter()
@@ -1084,6 +1114,8 @@ fn settings_input(s: &BudgetSettings) -> SaveBudgetSettingsRequest {
         plan_steps: s.plan_steps.clone(),
         request_steps: s.request_steps.clone(),
         adjustment_steps: s.adjustment_steps.clone(),
+        authorized_funding: s.authorized_funding.clone(),
+        unit_allocations: s.unit_allocations.clone(),
     }
 }
 #[tokio::test]
@@ -1095,7 +1127,8 @@ async fn budget_settings_shared_guard_serializes_year_shrink_and_project_save() 
         .fetch_one(&mut *guard)
         .await
         .unwrap();
-    sqlx::query("SELECT singleton FROM budget_settings WHERE singleton FOR UPDATE")
+    sqlx::query("SELECT id FROM budget_fiscal_years WHERE id=$1 FOR UPDATE")
+        .bind(f.settings.fiscal_year.id)
         .fetch_one(&mut *guard)
         .await
         .unwrap();
@@ -1113,7 +1146,7 @@ async fn budget_settings_shared_guard_serializes_year_shrink_and_project_save() 
         tokio::spawn(async move { projects::save(&pool, &owner, id, input, &catalog).await });
     wait_blocked(&f.pool, pid).await;
     sqlx::query("UPDATE budget_fiscal_years SET end_date='2026-12-31' WHERE id=$1")
-        .bind(f.settings.fiscal_years[0].id)
+        .bind(f.settings.fiscal_year.id)
         .execute(&mut *guard)
         .await
         .unwrap();
@@ -1133,15 +1166,18 @@ async fn budget_settings_shared_guard_serializes_year_shrink_and_project_save() 
         .fetch_one(&mut *guard)
         .await
         .unwrap();
-    sqlx::query("SELECT singleton FROM budget_settings WHERE singleton FOR SHARE")
+    sqlx::query("SELECT id FROM budget_fiscal_years WHERE id=$1 FOR UPDATE")
+        .bind(f.settings.fiscal_year.id)
         .fetch_one(&mut *guard)
         .await
         .unwrap();
     let pool = f.pool.clone();
     let reviewer = f.reviewer.clone();
     let mut input = settings_input(&f.settings);
-    input.fiscal_years[0].end_date = date(10, 31);
-    let future = tokio::spawn(async move { settings::save(&pool, &reviewer, input).await });
+    input.end_date = date(10, 31);
+    let year = f.settings.fiscal_year.id;
+    let future =
+        tokio::spawn(async move { settings::save_year(&pool, &reviewer, year, input).await });
     wait_blocked(&f.pool, pid).await;
     guard.commit().await.unwrap();
     assert!(future.await.unwrap().is_err());
@@ -1226,7 +1262,7 @@ async fn budget_permission_combinations_refuse_before_commit_and_return_routes_a
         CreateBudgetProjectRequest {
             request_id: key,
             name: "denied".into(),
-            fiscal_year_id: f.settings.fiscal_years[0].id,
+            fiscal_year_id: f.settings.fiscal_year.id,
             organization_unit_id: f.unit,
             start_date: date(11, 1),
             end_date: date(12, 1)
@@ -1242,7 +1278,9 @@ async fn budget_permission_combinations_refuse_before_commit_and_return_routes_a
     assert_eq!(count, 0);
     let mut update = settings_input(&f.settings);
     update.plan_steps = vec![step(f.owner.user_id, ProcessStepKind::Approve)];
-    settings::save(&f.pool, &f.reviewer, update).await.unwrap();
+    settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+        .await
+        .unwrap();
     let w = draft(&f, vec![activity("กิจกรรม", line(&f, "10000", 0, 0))]).await;
     assert!(projects::submit(
         &f.pool,
@@ -1265,13 +1303,17 @@ async fn budget_permission_combinations_refuse_before_commit_and_return_routes_a
         .await
         .unwrap();
     assert_eq!(saved.project.status, BudgetStatus::Draft);
-    let current = settings::get(&f.pool, &f.reviewer).await.unwrap();
+    let current = settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+        .await
+        .unwrap();
     let mut update = settings_input(&current);
     update.plan_steps = vec![
         step(f.reviewer.user_id, ProcessStepKind::Review),
         step(f.reviewer.user_id, ProcessStepKind::Approve),
     ];
-    settings::save(&f.pool, &f.reviewer, update).await.unwrap();
+    settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+        .await
+        .unwrap();
     let mut w = projects::submit(
         &f.pool,
         &f.owner,
@@ -1578,7 +1620,9 @@ async fn budget_rejected_attempt_retains_assigned_reader_and_adjustment_snapshot
     };
     let mut update = settings_input(&f.settings);
     update.plan_steps = vec![step(assigned.user_id, ProcessStepKind::Approve)];
-    settings::save(&f.pool, &f.reviewer, update).await.unwrap();
+    settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+        .await
+        .unwrap();
     let w = projects::amend(
         &f.pool,
         &f.owner,
@@ -1682,7 +1726,9 @@ async fn budget_unactionable_recipient_is_refused_and_missing_ids_remain_not_fou
     let f = fixture("budget_routing_read_denial").await;
     let mut update = settings_input(&f.settings);
     update.plan_steps = vec![step(f.other.user_id, ProcessStepKind::Approve)];
-    settings::save(&f.pool, &f.reviewer, update).await.unwrap();
+    settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+        .await
+        .unwrap();
     let w = draft(&f, vec![activity("กิจกรรม", line(&f, "10000", 0, 0))]).await;
     let key = Uuid::now_v7();
     assert!(projects::submit(
@@ -1759,7 +1805,9 @@ async fn budget_delegated_submitter_cannot_review_but_third_party_can() {
     assert_eq!(sqlx::query("INSERT INTO user_roles(id,user_id,role_id,started_at) SELECT $1,$2,id,'2020-01-01' FROM roles WHERE code='ADMIN'").bind(Uuid::now_v7()).bind(third.user_id).execute(&f.pool).await.unwrap().rows_affected(),1);
     let mut update = settings_input(&f.settings);
     update.plan_steps = vec![step(third.user_id, ProcessStepKind::Approve)];
-    settings::save(&f.pool, &f.reviewer, update).await.unwrap();
+    settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+        .await
+        .unwrap();
     let w = projects::submit(
         &f.pool,
         &f.reviewer,
@@ -1825,7 +1873,9 @@ async fn budget_returned_routing_excludes_original_submitter_and_preserves_faile
     }
     let mut update = settings_input(&f.settings);
     update.plan_steps = vec![step(third.user_id, ProcessStepKind::Approve)];
-    settings::save(&f.pool, &f.reviewer, update).await.unwrap();
+    settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+        .await
+        .unwrap();
     let w = draft(&f, vec![activity("กิจกรรม", line(&f, "10000", 0, 0))]).await;
     // Manager A submits owner O's draft, and independent reviewer C returns it.
     let w = projects::submit(
@@ -1859,9 +1909,15 @@ async fn budget_returned_routing_excludes_original_submitter_and_preserves_faile
     )
     .await
     .unwrap();
-    let mut update = settings_input(&settings::get(&f.pool, &f.reviewer).await.unwrap());
+    let mut update = settings_input(
+        &settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+            .await
+            .unwrap(),
+    );
     update.plan_steps = vec![step(f.reviewer.user_id, ProcessStepKind::Approve)];
-    settings::save(&f.pool, &f.reviewer, update).await.unwrap();
+    settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+        .await
+        .unwrap();
     // B must not resubmit to original submitter A: Workflow retains A as creator.
     // Compare persisted process/steps, work, events, project, and source history.
     let snapshot_sql = "SELECT jsonb_build_object('process',(SELECT to_jsonb(i) FROM process_instances i WHERE id=$1),'work',(SELECT jsonb_agg(to_jsonb(w) ORDER BY id) FROM work_items w),'assignees',(SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM work_item_assignees a),'events',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM process_action_events e),'history',(SELECT jsonb_agg(to_jsonb(h) ORDER BY id) FROM budget_history h WHERE resource_id=$2),'project',(SELECT to_jsonb(p) FROM budget_projects p WHERE id=$2))";
@@ -1899,9 +1955,15 @@ async fn budget_returned_routing_excludes_original_submitter_and_preserves_faile
     assert_eq!(receipts, 0);
 
     // Restoring independent C remains actionable; the same process retains creator A.
-    let mut update = settings_input(&settings::get(&f.pool, &f.reviewer).await.unwrap());
+    let mut update = settings_input(
+        &settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+            .await
+            .unwrap(),
+    );
     update.plan_steps = vec![step(third.user_id, ProcessStepKind::Approve)];
-    settings::save(&f.pool, &f.reviewer, update).await.unwrap();
+    settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, update)
+        .await
+        .unwrap();
     let w = projects::submit(
         &f.pool,
         &resubmitter,
@@ -2076,4 +2138,1408 @@ async fn budget_concurrent_payments_cannot_exceed_remaining_reservation() {
         1
     );
     reconciled(&f).await;
+}
+
+async fn configure_limit(f: &Fixture, amount: &str, reserve: &str) -> BudgetYearSettings {
+    let current = settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+        .await
+        .unwrap();
+    let mut input = settings_input(&current);
+    for source in input.authorized_funding.as_mut().unwrap() {
+        source.annual_funding_satang = amount.into();
+        source.reserve_satang = reserve.into();
+    }
+    for unit in &mut input.unit_allocations {
+        unit.allocated_satang =
+            (amount.parse::<i64>().unwrap() - reserve.parse::<i64>().unwrap()).to_string();
+    }
+    settings::save_year(&f.pool, &f.reviewer, current.fiscal_year.id, input)
+        .await
+        .unwrap()
+}
+async fn pending_final(f: &Fixture, w: BudgetProjectWorkspace) -> BudgetProjectWorkspace {
+    let submitted = projects::submit(
+        &f.pool,
+        &f.owner,
+        w.project.id,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: w.project.revision,
+        },
+    )
+    .await
+    .unwrap();
+    let review = action(
+        f,
+        BudgetResourceKind::Project,
+        submitted.project.id,
+        submitted.project.revision,
+        ProcessAction::Review,
+    )
+    .await;
+    projects::act(&f.pool, &f.reviewer, submitted.project.id, review)
+        .await
+        .unwrap()
+}
+#[tokio::test]
+async fn annual_budget_source_creation_copy_and_actual_receipts_keep_distinct_authority_and_history(
+) {
+    let f = fixture("annual_sources_copy_receipts").await;
+    let year = f.settings.fiscal_year.id;
+    let mut input = settings_input(&f.settings);
+    input.funds.push(BudgetCatalogItemInput {
+        id: None,
+        name: "New source".into(),
+        active: true,
+    });
+    let with_new = settings::save_year(&f.pool, &f.reviewer, year, input)
+        .await
+        .unwrap();
+    let new = with_new
+        .funds
+        .iter()
+        .find(|s| s.name == "New source")
+        .unwrap()
+        .id;
+    let balance = with_new
+        .source_balances
+        .iter()
+        .find(|s| s.fund_id == new)
+        .unwrap();
+    assert_eq!(balance.authorized_satang.as_deref(), Some("0"));
+    assert_eq!(balance.received_satang, None);
+    let mut input = settings_input(&with_new);
+    let amount = input
+        .authorized_funding
+        .as_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|s| s.fund_id == new)
+        .unwrap();
+    amount.carryover_satang = "100".into();
+    amount.annual_funding_satang = "900".into();
+    amount.reserve_satang = "200".into();
+    input.unit_allocations.push(BudgetUnitAllocationInput {
+        organization_unit_id: f.unit,
+        fund_id: new,
+        allocated_satang: "700".into(),
+    });
+    let configured = settings::save_year(&f.pool, &f.reviewer, year, input)
+        .await
+        .unwrap();
+    let source = configured
+        .source_balances
+        .iter()
+        .find(|s| s.fund_id == new)
+        .unwrap();
+    assert_eq!(source.authorized_satang.as_deref(), Some("1000"));
+    assert_eq!(source.unallocated_satang.as_deref(), Some("100"));
+    assert_eq!(source.reserve_satang.as_deref(), Some("200"));
+    let finance = ActorContext {
+        user_id: f.reviewer.user_id,
+        permissions: vec![codes::BUDGET_PAYMENT_EXECUTE_SCHOOL.into()],
+    };
+    let received = settings::save_received(
+        &f.pool,
+        &finance,
+        year,
+        SaveBudgetReceivedFundingRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: configured.fiscal_year.revision,
+            funds: vec![BudgetReceivedFundingInput {
+                fund_id: new,
+                received_satang: Some("300".into()),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(received.fiscal_year.date_locked);
+    assert!(!received.can_manage);
+    assert!(received.can_record_funding);
+    assert_eq!(
+        received
+            .source_balances
+            .iter()
+            .find(|s| s.fund_id == new)
+            .unwrap()
+            .authorized_satang
+            .as_deref(),
+        Some("1000")
+    );
+    let corrected = settings::save_received(
+        &f.pool,
+        &finance,
+        year,
+        SaveBudgetReceivedFundingRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: received.fiscal_year.revision,
+            funds: vec![BudgetReceivedFundingInput {
+                fund_id: new,
+                received_satang: Some("0".into()),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(corrected.fiscal_year.date_locked);
+    assert!(settings::delete_year(
+        &f.pool,
+        &f.reviewer,
+        year,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: corrected.fiscal_year.revision
+        }
+    )
+    .await
+    .is_err());
+    let copy = settings::create_year(
+        &f.pool,
+        &f.reviewer,
+        CreateBudgetFiscalYearRequest {
+            request_id: Uuid::now_v7(),
+            name: "2571".into(),
+            start_date: NaiveDate::from_ymd_opt(2027, 10, 1).unwrap(),
+            end_date: NaiveDate::from_ymd_opt(2028, 9, 30).unwrap(),
+            copy_from_fiscal_year_id: Some(year),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(copy.authorized_funding.is_none());
+    assert!(copy.unit_allocations.is_empty());
+    assert!(copy
+        .source_balances
+        .iter()
+        .all(|s| s.authorized_satang.is_none() && s.received_satang.is_none()));
+    assert_eq!(copy.plan_steps.len(), configured.plan_steps.len());
+    let mut input = settings_input(&copy);
+    input
+        .funds
+        .iter_mut()
+        .find(|f| f.id == Some(new))
+        .unwrap()
+        .name = "Only next year".into();
+    settings::save_year(&f.pool, &f.reviewer, copy.fiscal_year.id, input)
+        .await
+        .unwrap();
+    assert_eq!(
+        settings::get_year(&f.pool, &f.reviewer, year)
+            .await
+            .unwrap()
+            .funds
+            .iter()
+            .find(|f| f.id == new)
+            .unwrap()
+            .name,
+        "New source"
+    );
+    let own = ActorContext {
+        user_id: f.owner.user_id,
+        permissions: vec![codes::BUDGET_READ_OWN.into()],
+    };
+    let catalogs = settings::catalogs(&f.pool, &own, BudgetCatalogQuery::default())
+        .await
+        .unwrap();
+    assert!(catalogs.funds.is_empty());
+    assert!(catalogs.fiscal_years.iter().all(|y| !y.can_delete
+        && !y.can_close
+        && y.deletion_impact.projects == 0
+        && y.deletion_impact.history_entries == 0));
+    assert!(settings::get_year(&f.pool, &own, year).await.is_err());
+}
+#[tokio::test]
+async fn annual_budget_concurrent_projects_and_cap_reduction_serialize_without_double_counting() {
+    let f = fixture("annual_concurrent_caps").await;
+    configure_limit(&f, "10000", "1000").await;
+    let one = draft(&f, vec![activity("One", line(&f, "6000", 0, 0))]).await;
+    let two = draft(&f, vec![activity("Two", line(&f, "6000", 0, 0))]).await;
+    let (one, two) = (pending_final(&f, one).await, pending_final(&f, two).await);
+    let a = action(
+        &f,
+        BudgetResourceKind::Project,
+        one.project.id,
+        one.project.revision,
+        ProcessAction::Approve,
+    )
+    .await;
+    let b = action(
+        &f,
+        BudgetResourceKind::Project,
+        two.project.id,
+        two.project.revision,
+        ProcessAction::Approve,
+    )
+    .await;
+    let (a, b) = tokio::join!(
+        projects::act(&f.pool, &f.reviewer, one.project.id, a),
+        projects::act(&f.pool, &f.reviewer, two.project.id, b)
+    );
+    assert_ne!(a.is_ok(), b.is_ok());
+    let accepted = a.or(b).unwrap();
+    let settings = settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        settings
+            .source_balances
+            .iter()
+            .find(|s| s.fund_id == f.settings.funds[0].id)
+            .unwrap()
+            .committed_satang,
+        "6000"
+    );
+    let mut input = settings_input(&settings);
+    input
+        .unit_allocations
+        .iter_mut()
+        .find(|u| u.fund_id == f.settings.funds[0].id)
+        .unwrap()
+        .allocated_satang = "5999".into();
+    assert!(
+        settings::save_year(&f.pool, &f.reviewer, settings.fiscal_year.id, input)
+            .await
+            .is_err()
+    );
+    let amendment = projects::amend(
+        &f.pool,
+        &f.owner,
+        accepted.project.id,
+        StartBudgetAmendmentRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: accepted.project.revision,
+            reason: "Same amount".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!amendment.capabilities.can_delete);
+    let amended = approve_plan(&f, amendment).await;
+    assert_eq!(amended.project.accepted_version, Some(2));
+    let source = settings::get_year(&f.pool, &f.reviewer, settings.fiscal_year.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        source
+            .source_balances
+            .iter()
+            .find(|s| s.fund_id == f.settings.funds[0].id)
+            .unwrap()
+            .committed_satang,
+        "6000"
+    );
+    reconciled(&f).await;
+}
+#[tokio::test]
+async fn annual_budget_unknown_funding_and_activity_dates_refuse_approval_without_partial_workflow()
+{
+    let f = fixture("annual_unknown_dates").await;
+    let mut w = draft(&f, vec![activity("Legacy", line(&f, "10000", 0, 0))]).await;
+    // Represent a preserved pre-cutover draft without fabricating historical activity dates.
+    sqlx::query("UPDATE budget_projects SET document=jsonb_set(document,'{activities,0}',(document->'activities'->0)-'startDate'-'endDate') WHERE id=$1").bind(w.project.id).execute(&f.pool).await.unwrap();
+    assert!(projects::submit(
+        &f.pool,
+        &f.owner,
+        w.project.id,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: w.project.revision
+        }
+    )
+    .await
+    .is_err());
+    let mut input = save_input(&w);
+    input.activities[0].start_date = date(10, 31);
+    assert!(
+        projects::save(&f.pool, &f.owner, w.project.id, input, &f.catalog)
+            .await
+            .is_err()
+    );
+    w = projects::save(&f.pool, &f.owner, w.project.id, save_input(&w), &f.catalog)
+        .await
+        .unwrap();
+    let pending = pending_final(&f, w).await;
+    // Existing year authorization is deliberately unknown after a legacy migration, never derived from project totals.
+    sqlx::query("UPDATE budget_fiscal_years SET funding_configured=false WHERE id=$1")
+        .bind(f.settings.fiscal_year.id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE budget_year_funds SET carryover=NULL,annual_funding=NULL,reserve=NULL WHERE fiscal_year_id=$1").bind(f.settings.fiscal_year.id).execute(&f.pool).await.unwrap();
+    let a = action(
+        &f,
+        BudgetResourceKind::Project,
+        pending.project.id,
+        pending.project.revision,
+        ProcessAction::Approve,
+    )
+    .await;
+    assert!(projects::act(&f.pool, &f.reviewer, pending.project.id, a)
+        .await
+        .is_err());
+    let current = queries::workspace(&f.pool, &f.owner, pending.project.id)
+        .await
+        .unwrap();
+    assert_eq!(current.project.status, BudgetStatus::Submitted);
+    assert!(current.accepted_plan.is_none());
+    assert!(current.balances.is_empty());
+    let process = queries::resource_process(
+        &f.pool,
+        &f.reviewer,
+        BudgetResourceKind::Project,
+        pending.project.id,
+    )
+    .await
+    .unwrap()
+    .process
+    .unwrap();
+    assert_eq!(process.status, ProcessStatus::Active);
+    let settings = settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+        .await
+        .unwrap();
+    let mut input = settings_input(&settings);
+    input.start_date = date(9, 30);
+    assert!(
+        settings::save_year(&f.pool, &f.reviewer, settings.fiscal_year.id, input)
+            .await
+            .is_err()
+    );
+    reconciled(&f).await;
+}
+#[tokio::test]
+async fn annual_budget_year_close_obligations_and_all_operational_mutations_are_frozen() {
+    let f = fixture("annual_close_freeze").await;
+    let draft = draft(&f, vec![activity("Close", line(&f, "10000", 0, 0))]).await;
+    let pending = pending_final(&f, draft).await;
+    let year = f.settings.fiscal_year.id;
+    let close = BudgetMutationRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: f.settings.fiscal_year.revision,
+    };
+    assert!(settings::close_year(&f.pool, &f.reviewer, year, close)
+        .await
+        .is_err());
+    let a = action(
+        &f,
+        BudgetResourceKind::Project,
+        pending.project.id,
+        pending.project.revision,
+        ProcessAction::Approve,
+    )
+    .await;
+    let approved = projects::act(&f.pool, &f.reviewer, pending.project.id, a)
+        .await
+        .unwrap();
+    let req = request(&f, &approved, 0, "4000").await;
+    let req = approve_request(&f, req).await;
+    let current = settings::get_year(&f.pool, &f.reviewer, year)
+        .await
+        .unwrap();
+    assert!(!current.fiscal_year.can_close);
+    assert!(settings::close_year(
+        &f.pool,
+        &f.reviewer,
+        year,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: current.fiscal_year.revision
+        }
+    )
+    .await
+    .is_err());
+    let payment = CreateBudgetPaymentRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: req.request.revision,
+        paid_on: date(11, 2),
+        voucher_number: "Annual-close-PV".into(),
+        note: None,
+        evidence_file_ids: vec![],
+        allocations: vec![BudgetPaymentAllocationInput {
+            plan_line_id: approved.activities[0].lines[0].id,
+            amount_satang: "4000".into(),
+        }],
+    };
+    let req = requests::pay(&f.pool, &f.reviewer, req.request.id, payment.clone())
+        .await
+        .unwrap();
+    let req = requests::close(
+        &f.pool,
+        &f.reviewer,
+        req.request.id,
+        CloseBudgetRequestRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: req.request.revision,
+            reason: "Release remaining".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let closed = settings::close_year(
+        &f.pool,
+        &f.reviewer,
+        year,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: current.fiscal_year.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(closed.fiscal_year.is_closed);
+    assert!(closed.fiscal_year.closed_at.is_some());
+    let replay = requests::pay(&f.pool, &f.reviewer, req.request.id, payment)
+        .await
+        .unwrap();
+    assert_eq!(replay.request.paid_satang, "4000");
+    assert_eq!(
+        queries::payments(
+            &f.pool,
+            &f.owner,
+            req.request.id,
+            BudgetListQuery::default()
+        )
+        .await
+        .unwrap()
+        .total,
+        1
+    );
+    assert!(requests::refund(
+        &f.pool,
+        &f.reviewer,
+        req.request.id,
+        Uuid::now_v7(),
+        RefundBudgetPaymentRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: req.request.revision,
+            refunded_on: date(11, 3),
+            reason: "Frozen".into(),
+            evidence_file_ids: vec![],
+            allocations: vec![BudgetPaymentAllocationInput {
+                plan_line_id: approved.activities[0].lines[0].id,
+                amount_satang: "1".into()
+            }]
+        }
+    )
+    .await
+    .is_err());
+    let w = queries::workspace(&f.pool, &f.owner, approved.project.id)
+        .await
+        .unwrap();
+    assert!(w.fiscal_year_closed);
+    assert!(
+        !w.capabilities.can_amend && !w.capabilities.can_create_request && !w.capabilities.can_pay
+    );
+    assert!(projects::amend(
+        &f.pool,
+        &f.owner,
+        w.project.id,
+        StartBudgetAmendmentRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: w.project.revision,
+            reason: "Frozen".into()
+        }
+    )
+    .await
+    .is_err());
+    assert!(
+        settings::save_year(&f.pool, &f.reviewer, year, settings_input(&closed))
+            .await
+            .is_err()
+    );
+    assert!(settings::save_received(
+        &f.pool,
+        &f.reviewer,
+        year,
+        SaveBudgetReceivedFundingRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: closed.fiscal_year.revision,
+            funds: vec![]
+        }
+    )
+    .await
+    .is_err());
+    assert!(
+        files::authorize_create(&f.pool, &f.owner, Some(req.request.id))
+            .await
+            .is_err()
+    );
+    assert!(adjustments::create(
+        &f.pool,
+        &f.reviewer,
+        SaveBudgetAdjustmentRequest {
+            request_id: Uuid::now_v7(),
+            kind: BudgetAdjustmentKind::Add,
+            fiscal_year_id: year,
+            from: None,
+            to: Some(allocation(&approved)),
+            amount_satang: "1".into(),
+            reason: "Frozen".into(),
+            loan_id: None
+        }
+    )
+    .await
+    .is_err());
+    assert!(settings::delete_year(
+        &f.pool,
+        &f.reviewer,
+        year,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: closed.fiscal_year.revision
+        }
+    )
+    .await
+    .is_err());
+    reconciled(&f).await;
+}
+#[tokio::test]
+async fn annual_budget_delete_requires_exact_delete_scope_and_removes_submitted_draft_year_atomically(
+) {
+    let f = fixture("annual_delete_permissions").await;
+    let w = draft(&f, vec![activity("Remove", line(&f, "10000", 0, 0))]).await;
+    let pending = pending_final(&f, w).await;
+    let update_only = ActorContext {
+        user_id: f.owner.user_id,
+        permissions: vec![
+            codes::BUDGET_READ_OWN.into(),
+            codes::BUDGET_UPDATE_OWN.into(),
+        ],
+    };
+    let mutation = BudgetMutationRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: pending.project.revision,
+    };
+    assert!(school_budget::deletion::delete_project(
+        &f.pool,
+        &update_only,
+        pending.project.id,
+        mutation.clone()
+    )
+    .await
+    .is_err());
+    let delete = ActorContext {
+        user_id: f.owner.user_id,
+        permissions: vec![
+            codes::BUDGET_READ_OWN.into(),
+            codes::BUDGET_DELETE_OWN.into(),
+        ],
+    };
+    let workspace = queries::workspace(&f.pool, &delete, pending.project.id)
+        .await
+        .unwrap();
+    assert!(workspace.capabilities.can_delete);
+    assert_eq!(workspace.deletion_impact.workflow_instances, 1);
+    let stale = BudgetMutationRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: pending.project.revision - 1,
+    };
+    assert!(
+        school_budget::deletion::delete_project(&f.pool, &delete, pending.project.id, stale)
+            .await
+            .is_err()
+    );
+    let year = settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+        .await
+        .unwrap();
+    assert!(year.fiscal_year.can_delete);
+    assert_eq!(year.fiscal_year.deletion_impact.projects, 1);
+    let templates: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT template_id FROM budget_year_template_ownership WHERE fiscal_year_id=$1",
+    )
+    .bind(year.fiscal_year.id)
+    .fetch_all(&f.pool)
+    .await
+    .unwrap();
+    assert!(
+        templates.len() >= 6,
+        "all initial and superseded routing sets are owned"
+    );
+    let deleted = settings::delete_year(
+        &f.pool,
+        &f.reviewer,
+        year.fiscal_year.id,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: year.fiscal_year.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(deleted.deleted_id, year.fiscal_year.id);
+    let templates_left:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM process_templates WHERE id=ANY($1))+(SELECT count(*) FROM process_template_versions WHERE template_id=ANY($1))+(SELECT count(*) FROM budget_year_template_ownership WHERE fiscal_year_id=$2)").bind(&templates).bind(year.fiscal_year.id).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(templates_left, 0);
+
+    let remains:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM budget_projects)+(SELECT count(*) FROM budget_project_revisions)+(SELECT count(*) FROM budget_history WHERE resource_id=$1)+(SELECT count(*) FROM process_instances WHERE source_module='budget')+(SELECT count(*) FROM budget_fiscal_years WHERE id=$1)").bind(year.fiscal_year.id).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(remains, 0);
+}
+
+#[tokio::test]
+async fn annual_budget_accepted_save_replay_survives_year_close_and_deleted_copy_source() {
+    let f = fixture("annual_closed_replay").await;
+    let year = f.settings.fiscal_year.id;
+    let input = settings_input(&f.settings);
+    let saved = settings::save_year(&f.pool, &f.reviewer, year, input.clone())
+        .await
+        .unwrap();
+    let closed = settings::close_year(
+        &f.pool,
+        &f.reviewer,
+        year,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: saved.fiscal_year.revision,
+        },
+    )
+    .await
+    .unwrap();
+    let replay = settings::save_year(&f.pool, &f.reviewer, year, input)
+        .await
+        .unwrap();
+    assert_eq!(replay.fiscal_year.revision, closed.fiscal_year.revision);
+    assert!(replay.fiscal_year.is_closed);
+    let source = settings::create_year(
+        &f.pool,
+        &f.reviewer,
+        CreateBudgetFiscalYearRequest {
+            request_id: Uuid::now_v7(),
+            name: "Empty source".into(),
+            start_date: date(1, 1),
+            end_date: date(12, 31),
+            copy_from_fiscal_year_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let intent = CreateBudgetFiscalYearRequest {
+        request_id: Uuid::now_v7(),
+        name: "Copied".into(),
+        start_date: date(1, 1),
+        end_date: date(12, 31),
+        copy_from_fiscal_year_id: Some(source.fiscal_year.id),
+    };
+    let copied = settings::create_year(&f.pool, &f.reviewer, intent.clone())
+        .await
+        .unwrap();
+    settings::delete_year(
+        &f.pool,
+        &f.reviewer,
+        source.fiscal_year.id,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: source.fiscal_year.revision,
+        },
+    )
+    .await
+    .unwrap();
+    let replay = settings::create_year(&f.pool, &f.reviewer, intent)
+        .await
+        .unwrap();
+    assert_eq!(replay.fiscal_year.id, copied.fiscal_year.id);
+}
+
+async fn pending_movement(
+    f: &Fixture,
+    kind: BudgetAdjustmentKind,
+    from: Option<BudgetAllocationRef>,
+    to: Option<BudgetAllocationRef>,
+    amount: &str,
+) -> BudgetAdjustmentDetail {
+    let draft = adjustments::create(
+        &f.pool,
+        &f.owner,
+        SaveBudgetAdjustmentRequest {
+            request_id: Uuid::now_v7(),
+            kind,
+            fiscal_year_id: f.settings.fiscal_year.id,
+            from,
+            to,
+            amount_satang: amount.into(),
+            reason: "Annual limit".into(),
+            loan_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let submitted = adjustments::submit(
+        &f.pool,
+        &f.owner,
+        draft.id,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: draft.revision,
+        },
+    )
+    .await
+    .unwrap();
+    let review = action(
+        f,
+        BudgetResourceKind::Adjustment,
+        submitted.id,
+        submitted.revision,
+        ProcessAction::Review,
+    )
+    .await;
+    adjustments::act(&f.pool, &f.reviewer, submitted.id, review)
+        .await
+        .unwrap()
+}
+#[tokio::test]
+async fn annual_budget_cross_unit_transfer_add_reduce_and_loan_obey_both_unit_caps() {
+    let f = fixture("annual_cross_unit_caps").await;
+    let other: Uuid = sqlx::query_scalar(
+        "SELECT id FROM organization_units WHERE id<>$1 AND is_active ORDER BY id LIMIT 1",
+    )
+    .bind(f.unit)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    let fund = f.settings.funds[0].id;
+    let mut input = settings_input(&f.settings);
+    let source = input
+        .authorized_funding
+        .as_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|s| s.fund_id == fund)
+        .unwrap();
+    source.annual_funding_satang = "17000".into();
+    source.reserve_satang = "1000".into();
+    input
+        .unit_allocations
+        .iter_mut()
+        .find(|u| u.fund_id == fund)
+        .unwrap()
+        .allocated_satang = "10000".into();
+    input.unit_allocations.push(BudgetUnitAllocationInput {
+        organization_unit_id: other,
+        fund_id: fund,
+        allocated_satang: "4000".into(),
+    });
+    let before = settings::save_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id, input)
+        .await
+        .unwrap();
+    let stale_settings = settings_input(&before);
+    let donor = draft(&f, vec![activity("Donor", line(&f, "10000", 0, 0))]).await;
+    let receiver = draft(&f, vec![activity("Receiver", line(&f, "4000", 0, 0))]).await;
+    let mut move_input = save_input(&receiver);
+    move_input.organization_unit_id = other;
+    let receiver = projects::save(
+        &f.pool,
+        &f.owner,
+        receiver.project.id,
+        move_input,
+        &f.catalog,
+    )
+    .await
+    .unwrap();
+    let donor = approve_plan(&f, donor).await;
+    let receiver = approve_plan(&f, receiver).await;
+    let mut wrong_to = allocation(&receiver);
+    wrong_to.fund_id = f.settings.funds[1].id;
+    let wrong = SaveBudgetAdjustmentRequest {
+        request_id: Uuid::now_v7(),
+        kind: BudgetAdjustmentKind::Transfer,
+        fiscal_year_id: before.fiscal_year.id,
+        from: Some(allocation(&donor)),
+        to: Some(wrong_to),
+        amount_satang: "1".into(),
+        reason: "Wrong source".into(),
+        loan_id: None,
+    };
+    assert!(adjustments::create(&f.pool, &f.owner, wrong.clone())
+        .await
+        .is_err());
+    assert!(adjustments::create(&f.pool, &f.other, wrong).await.is_err());
+    let pending = pending_movement(
+        &f,
+        BudgetAdjustmentKind::Transfer,
+        Some(allocation(&donor)),
+        Some(allocation(&receiver)),
+        "2000",
+    )
+    .await;
+    let approve = action(
+        &f,
+        BudgetResourceKind::Adjustment,
+        pending.id,
+        pending.revision,
+        ProcessAction::Approve,
+    )
+    .await;
+    sqlx::query("UPDATE budget_fiscal_years SET funding_configured=false WHERE id=$1")
+        .bind(before.fiscal_year.id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(
+        adjustments::act(&f.pool, &f.reviewer, pending.id, approve.clone())
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        queries::workspace(&f.pool, &f.owner, donor.project.id)
+            .await
+            .unwrap()
+            .balances[0]
+            .current_satang,
+        "10000"
+    );
+    assert_eq!(
+        queries::workspace(&f.pool, &f.owner, receiver.project.id)
+            .await
+            .unwrap()
+            .balances[0]
+            .current_satang,
+        "4000"
+    );
+    sqlx::query("UPDATE budget_fiscal_years SET funding_configured=true WHERE id=$1")
+        .bind(before.fiscal_year.id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    adjustments::act(&f.pool, &f.reviewer, pending.id, approve.clone())
+        .await
+        .unwrap();
+    adjustments::act(&f.pool, &f.reviewer, pending.id, approve)
+        .await
+        .unwrap();
+    let transferred = settings::get_year(&f.pool, &f.reviewer, before.fiscal_year.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        transferred.fiscal_year.revision,
+        before.fiscal_year.revision + 1
+    );
+    assert!(
+        settings::save_year(&f.pool, &f.reviewer, before.fiscal_year.id, stale_settings)
+            .await
+            .is_err()
+    );
+    let sender = transferred
+        .unit_balances
+        .iter()
+        .find(|u| u.fund_id == fund && u.organization_unit_id == f.unit)
+        .unwrap();
+    let recipient = transferred
+        .unit_balances
+        .iter()
+        .find(|u| u.fund_id == fund && u.organization_unit_id == other)
+        .unwrap();
+    assert_eq!(
+        (
+            sender.allocated_satang.as_str(),
+            sender.committed_satang.as_str()
+        ),
+        ("8000", "8000")
+    );
+    assert_eq!(
+        (
+            recipient.allocated_satang.as_str(),
+            recipient.committed_satang.as_str()
+        ),
+        ("6000", "6000")
+    );
+    let original = before
+        .source_balances
+        .iter()
+        .find(|s| s.fund_id == fund)
+        .unwrap();
+    let moved = transferred
+        .source_balances
+        .iter()
+        .find(|s| s.fund_id == fund)
+        .unwrap();
+    assert_eq!(original.allocated_satang, moved.allocated_satang);
+    assert_eq!(original.reserve_satang, moved.reserve_satang);
+    assert_eq!(original.unallocated_satang, moved.unallocated_satang);
+    assert_eq!(original.authorized_satang, moved.authorized_satang);
+    let audit:serde_json::Value=sqlx::query_scalar("SELECT document FROM budget_history WHERE resource_kind='settings' AND resource_id=$1 AND document->>'action'='unit_quota_transferred' ORDER BY revision DESC LIMIT 1").bind(before.fiscal_year.id).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(
+        audit["settings"]["adjustmentId"],
+        serde_json::json!(pending.id)
+    );
+    assert_eq!(audit["settings"]["fromBeforeSatang"], "10000");
+    assert_eq!(audit["settings"]["fromAfterSatang"], "8000");
+    let loan = adjustment(
+        &f,
+        BudgetAdjustmentKind::Loan,
+        Some(allocation(&donor)),
+        Some(allocation(&receiver)),
+        "500",
+        None,
+    )
+    .await;
+    let loan_year = settings::get_year(&f.pool, &f.reviewer, before.fiscal_year.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        loan_year
+            .unit_balances
+            .iter()
+            .find(|u| u.fund_id == fund && u.organization_unit_id == other)
+            .unwrap()
+            .allocated_satang,
+        "6500"
+    );
+    assert!(settings::close_year(
+        &f.pool,
+        &f.reviewer,
+        before.fiscal_year.id,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: loan_year.fiscal_year.revision
+        }
+    )
+    .await
+    .is_err());
+    adjustment(
+        &f,
+        BudgetAdjustmentKind::Repayment,
+        Some(allocation(&receiver)),
+        Some(allocation(&donor)),
+        "500",
+        Some(loan.id),
+    )
+    .await;
+    let current = settings::get_year(&f.pool, &f.reviewer, before.fiscal_year.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        current
+            .unit_balances
+            .iter()
+            .find(|u| u.fund_id == fund && u.organization_unit_id == other)
+            .unwrap()
+            .allocated_satang,
+        "6000"
+    );
+    let insufficient = pending_movement(
+        &f,
+        BudgetAdjustmentKind::Transfer,
+        Some(allocation(&donor)),
+        Some(allocation(&receiver)),
+        "8001",
+    )
+    .await;
+    let approve = action(
+        &f,
+        BudgetResourceKind::Adjustment,
+        insufficient.id,
+        insufficient.revision,
+        ProcessAction::Approve,
+    )
+    .await;
+    assert!(
+        adjustments::act(&f.pool, &f.reviewer, insufficient.id, approve)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        settings::get_year(&f.pool, &f.reviewer, before.fiscal_year.id)
+            .await
+            .unwrap()
+            .fiscal_year
+            .revision,
+        current.fiscal_year.revision
+    );
+    let over = pending_movement(
+        &f,
+        BudgetAdjustmentKind::Add,
+        None,
+        Some(allocation(&receiver)),
+        "1",
+    )
+    .await;
+    let approve = action(
+        &f,
+        BudgetResourceKind::Adjustment,
+        over.id,
+        over.revision,
+        ProcessAction::Approve,
+    )
+    .await;
+    assert!(adjustments::act(&f.pool, &f.reviewer, over.id, approve)
+        .await
+        .is_err());
+    let mut input = settings_input(&current);
+    input
+        .unit_allocations
+        .iter_mut()
+        .find(|u| u.fund_id == fund && u.organization_unit_id == other)
+        .unwrap()
+        .allocated_satang = "7000".into();
+    settings::save_year(&f.pool, &f.reviewer, current.fiscal_year.id, input)
+        .await
+        .unwrap();
+    adjustment(
+        &f,
+        BudgetAdjustmentKind::Add,
+        None,
+        Some(allocation(&receiver)),
+        "1000",
+        None,
+    )
+    .await;
+    adjustment(
+        &f,
+        BudgetAdjustmentKind::Reduce,
+        Some(allocation(&receiver)),
+        None,
+        "1000",
+        None,
+    )
+    .await;
+    assert_eq!(
+        queries::workspace(&f.pool, &f.owner, receiver.project.id)
+            .await
+            .unwrap()
+            .balances[0]
+            .current_satang,
+        "6000"
+    );
+    reconciled(&f).await;
+}
+#[tokio::test]
+async fn annual_budget_approval_racing_allocation_reduction_accepts_only_one_final_state() {
+    let f = fixture("annual_cap_reduction_race").await;
+    configure_limit(&f, "10000", "0").await;
+    let pending = pending_final(
+        &f,
+        draft(&f, vec![activity("Race", line(&f, "6000", 0, 0))]).await,
+    )
+    .await;
+    let approve = action(
+        &f,
+        BudgetResourceKind::Project,
+        pending.project.id,
+        pending.project.revision,
+        ProcessAction::Approve,
+    )
+    .await;
+    let current = settings::get_year(&f.pool, &f.reviewer, f.settings.fiscal_year.id)
+        .await
+        .unwrap();
+    let mut reduced = settings_input(&current);
+    reduced
+        .unit_allocations
+        .iter_mut()
+        .find(|u| u.fund_id == f.settings.funds[0].id)
+        .unwrap()
+        .allocated_satang = "5000".into();
+    let (approved, saved) = tokio::join!(
+        projects::act(&f.pool, &f.reviewer, pending.project.id, approve),
+        settings::save_year(&f.pool, &f.reviewer, current.fiscal_year.id, reduced)
+    );
+    assert_ne!(approved.is_ok(), saved.is_ok());
+    let final_state = settings::get_year(&f.pool, &f.reviewer, current.fiscal_year.id)
+        .await
+        .unwrap();
+    let unit = final_state
+        .unit_balances
+        .iter()
+        .find(|u| u.fund_id == f.settings.funds[0].id && u.organization_unit_id == f.unit)
+        .unwrap();
+    assert!(
+        unit.committed_satang.parse::<i64>().unwrap()
+            <= unit.allocated_satang.parse::<i64>().unwrap()
+    );
+    reconciled(&f).await;
+}
+
+#[tokio::test]
+async fn annual_budget_permanent_deletion_refuses_original_create_intent_without_business_history()
+{
+    let f = fixture("annual_no_resurrection").await;
+    let intent = CreateBudgetProjectRequest {
+        request_id: Uuid::now_v7(),
+        name: "Erase exactly".into(),
+        fiscal_year_id: f.settings.fiscal_year.id,
+        organization_unit_id: f.unit,
+        start_date: date(11, 1),
+        end_date: date(12, 30),
+    };
+    let project = projects::create(&f.pool, &f.owner, intent.clone())
+        .await
+        .unwrap();
+    school_budget::deletion::delete_project(
+        &f.pool,
+        &f.owner,
+        project.project.id,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: project.project.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(projects::create(&f.pool, &f.owner, intent.clone())
+        .await
+        .is_err());
+    let rows:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM budget_projects)+(SELECT count(*) FROM budget_receipts WHERE actor_id=$1 AND request_id=$2)+(SELECT count(*) FROM budget_history WHERE resource_id=$3)").bind(f.owner.user_id).bind(intent.request_id).bind(project.project.id).fetch_one(&f.pool).await.unwrap();
+    assert_eq!(rows, 0);
+    let year_intent = CreateBudgetFiscalYearRequest {
+        request_id: Uuid::now_v7(),
+        name: "Erase year".into(),
+        start_date: date(1, 1),
+        end_date: date(12, 31),
+        copy_from_fiscal_year_id: None,
+    };
+    let year = settings::create_year(&f.pool, &f.reviewer, year_intent.clone())
+        .await
+        .unwrap();
+    settings::delete_year(
+        &f.pool,
+        &f.reviewer,
+        year.fiscal_year.id,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: year.fiscal_year.revision,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        settings::create_year(&f.pool, &f.reviewer, year_intent.clone())
+            .await
+            .is_err()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM budget_fiscal_years")
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    let marker:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM budget_erased_intents WHERE intent_hash=budget_erased_intent_key($1,$2))").bind(f.owner.user_id).bind(intent.request_id).fetch_one(&f.pool).await.unwrap();
+    assert!(marker);
+    let fresh = CreateBudgetProjectRequest {
+        request_id: Uuid::now_v7(),
+        ..intent
+    };
+    assert!(projects::create(&f.pool, &f.owner, fresh).await.is_ok());
+}
+
+#[tokio::test]
+async fn annual_budget_template_ownership_refuses_forgery_and_retained_historical_references_atomically(
+) {
+    let f = fixture("annual_template_preservation").await;
+    let year = f.settings.fiscal_year.id;
+    let owned:Vec<Uuid>=sqlx::query_scalar("SELECT template_id FROM budget_year_template_ownership WHERE fiscal_year_id=$1 ORDER BY template_id").bind(year).fetch_all(&f.pool).await.unwrap();
+    assert!(owned.len() >= 6);
+    let other = settings::create_year(
+        &f.pool,
+        &f.reviewer,
+        CreateBudgetFiscalYearRequest {
+            request_id: Uuid::now_v7(),
+            name: "Retained".into(),
+            start_date: date(1, 1),
+            end_date: date(12, 31),
+            copy_from_fiscal_year_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    let error = sqlx::query("SELECT budget_register_year_template($1,$2)")
+        .bind(other.fiscal_year.id)
+        .bind(owned[0])
+        .execute(&f.pool)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.as_database_error().unwrap().message(),
+        "BUDGET_YEAR_TEMPLATE_REGISTRATION_REFUSED"
+    );
+    sqlx::query("UPDATE budget_fiscal_years SET plan_template_id=$2 WHERE id=$1")
+        .bind(other.fiscal_year.id)
+        .bind(owned[0])
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(
+        !settings::get_year(&f.pool, &f.reviewer, year)
+            .await
+            .unwrap()
+            .fiscal_year
+            .can_delete
+    );
+    assert!(settings::delete_year(
+        &f.pool,
+        &f.reviewer,
+        year,
+        BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: f.settings.fiscal_year.revision
+        }
+    )
+    .await
+    .is_err());
+    sqlx::query("UPDATE budget_fiscal_years SET plan_template_id=NULL WHERE id=$1")
+        .bind(other.fiscal_year.id)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let current: Uuid = sqlx::query_scalar(
+        "SELECT id FROM process_templates WHERE managed_source_module IS NULL ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    let instance = Uuid::now_v7();
+    sqlx::query("INSERT INTO process_instances(id,source_module,source_type,source_id,template_id,template_version,revision,definition,created_by) VALUES($1,'retained','fixture',$2,$3,1,1,'{}',$4)").bind(instance).bind(Uuid::now_v7()).bind(current).bind(f.owner.user_id).execute(&f.pool).await.unwrap();
+    sqlx::query("INSERT INTO process_instance_revisions(instance_id,revision,definition) VALUES($1,1,jsonb_build_object('templateId',$2::uuid))").bind(instance).bind(owned[0]).execute(&f.pool).await.unwrap();
+    assert!(
+        !settings::get_year(&f.pool, &f.reviewer, year)
+            .await
+            .unwrap()
+            .fiscal_year
+            .can_delete
+    );
+    let snapshot_sql="SELECT jsonb_build_object('year',(SELECT to_jsonb(y) FROM budget_fiscal_years y WHERE id=$1),'ownership',(SELECT jsonb_agg(to_jsonb(o) ORDER BY template_id) FROM budget_year_template_ownership o WHERE fiscal_year_id=$1),'templates',(SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM process_templates t WHERE id=ANY($2)),'versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY template_id,version) FROM process_template_versions v WHERE template_id=ANY($2)))";
+    let before: serde_json::Value = sqlx::query_scalar(snapshot_sql)
+        .bind(year)
+        .bind(&owned)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    let mut tx = f.pool.begin().await.unwrap();
+    let prepared: Vec<Uuid> = sqlx::query_scalar("SELECT budget_prepare_year_template_removal($1)")
+        .bind(year)
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+    let error =
+        school_workflow::process_purge::purge_year_template_in_transaction(&mut tx, prepared[0])
+            .await
+            .unwrap_err();
+    let AppError::DbError(native) = error else {
+        panic!("expected native provider refusal")
+    };
+    assert_eq!(
+        native.as_database_error().unwrap().message(),
+        "WORKFLOW_TEMPLATE_REMOVAL_REFERENCED"
+    );
+    tx.rollback().await.unwrap();
+    let after: serde_json::Value = sqlx::query_scalar(snapshot_sql)
+        .bind(year)
+        .bind(&owned)
+        .fetch_one(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn annual_budget_delete_racing_final_approval_preserves_exact_winner_in_both_lock_orders() {
+    let f = fixture("annual_delete_approve_race").await;
+    for approval_first in [true, false] {
+        let pending = pending_final(
+            &f,
+            draft(
+                &f,
+                vec![activity(
+                    "Concurrent permanent delete",
+                    line(&f, "10000", 0, 0),
+                )],
+            )
+            .await,
+        )
+        .await;
+        let id = pending.project.id;
+        let attempt: Uuid =
+            sqlx::query_scalar("SELECT attempt_id FROM budget_projects WHERE id=$1")
+                .bind(id)
+                .fetch_one(&f.pool)
+                .await
+                .unwrap();
+        let sources:Vec<Uuid>=sqlx::query_scalar("SELECT s.id FROM process_notification_sources s JOIN process_instances i ON i.id=s.instance_id WHERE i.source_module='budget' AND i.source_id=$1").bind(attempt).fetch_all(&f.pool).await.unwrap();
+        let inboxes:Vec<Uuid>=sqlx::query_scalar("SELECT notification_id FROM notification_receipts WHERE source_kind='process' AND source_id=ANY($1)").bind(&sources).fetch_all(&f.pool).await.unwrap();
+        let action = action(
+            &f,
+            BudgetResourceKind::Project,
+            id,
+            pending.project.revision,
+            ProcessAction::Approve,
+        )
+        .await;
+        let mutation = BudgetMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: pending.project.revision,
+        };
+        let mut guard = f.pool.begin().await.unwrap();
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *guard)
+            .await
+            .unwrap();
+        sqlx::query("SELECT id FROM budget_fiscal_years WHERE id=$1 FOR UPDATE")
+            .bind(f.settings.fiscal_year.id)
+            .fetch_one(&mut *guard)
+            .await
+            .unwrap();
+        let pool = f.pool.clone();
+        let approver = f.reviewer.clone();
+        let approve = async move { projects::act(&pool, &approver, id, action).await };
+        let pool = f.pool.clone();
+        let owner = f.owner.clone();
+        let remove = async move {
+            school_budget::deletion::delete_project(&pool, &owner, id, mutation).await
+        };
+        let (approve, remove) = if approval_first {
+            let approve = tokio::spawn(approve);
+            wait_blocked(&f.pool, pid).await;
+            let remove = tokio::spawn(remove);
+            (approve, remove)
+        } else {
+            let remove = tokio::spawn(remove);
+            wait_blocked(&f.pool, pid).await;
+            let approve = tokio::spawn(approve);
+            (approve, remove)
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                let n: i64 = sqlx::query_scalar(
+                    "WITH RECURSIVE blocked(pid) AS (SELECT pid FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)) UNION SELECT a.pid FROM pg_stat_activity a JOIN blocked b ON b.pid=ANY(pg_blocking_pids(a.pid))) SELECT count(DISTINCT pid) FROM blocked",
+                )
+                .bind(pid)
+                .fetch_one(&f.pool)
+                .await
+                .unwrap();
+                if n >= 2 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        guard.commit().await.unwrap();
+        let approved = approve.await.unwrap();
+        let removed = remove.await.unwrap();
+        if approval_first {
+            let approved = approved.unwrap();
+            assert!(removed.is_err());
+            assert_eq!(approved.project.status, BudgetStatus::Approved);
+            assert!(approved.accepted_plan.is_some());
+            assert_eq!(approved.balances[0].current_satang, "10000");
+            let snapshots: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM budget_plan_snapshots WHERE project_id=$1",
+            )
+            .bind(id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+            assert_eq!(snapshots, 1);
+            let retained: i64 =
+                sqlx::query_scalar("SELECT count(*) FROM notifications WHERE id=ANY($1)")
+                    .bind(&inboxes)
+                    .fetch_one(&f.pool)
+                    .await
+                    .unwrap();
+            assert_eq!(retained, inboxes.len() as i64);
+        } else {
+            assert!(approved.is_err());
+            assert_eq!(removed.unwrap().deleted_id, id);
+            let remaining:i64=sqlx::query_scalar("SELECT (SELECT count(*) FROM budget_projects WHERE id=$1)+(SELECT count(*) FROM budget_project_revisions WHERE project_id=$1)+(SELECT count(*) FROM budget_project_attempts WHERE project_id=$1)+(SELECT count(*) FROM budget_plan_snapshots WHERE project_id=$1)+(SELECT count(*) FROM budget_allocations WHERE project_id=$1)+(SELECT count(*) FROM budget_ledger WHERE project_id=$1)+(SELECT count(*) FROM budget_history WHERE resource_id=$1)+(SELECT count(*) FROM process_instances WHERE source_module='budget' AND source_id=$2)+(SELECT count(*) FROM work_items WHERE module_code='budget' AND source_resource_id=$2)+(SELECT count(*) FROM process_notification_sources WHERE id=ANY($3))+(SELECT count(*) FROM notification_receipts WHERE source_kind='process' AND source_id=ANY($3))+(SELECT count(*) FROM notifications WHERE id=ANY($4))").bind(id).bind(attempt).bind(&sources).bind(&inboxes).fetch_one(&f.pool).await.unwrap();
+            assert_eq!(remaining, 0);
+        }
+        reconciled(&f).await;
+    }
 }

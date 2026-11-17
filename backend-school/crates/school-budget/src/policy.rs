@@ -158,6 +158,62 @@ pub(crate) async fn update_scope_on_connection(
     Ok(s)
 }
 
+pub(crate) async fn delete_scope(pool: &PgPool, a: &ActorContext) -> Result<Scope, AppError> {
+    let s = delete_scope_seed(a);
+    if !s.school
+        && a.has_any_permission(&[
+            codes::BUDGET_DELETE_ORGANIZATION_UNIT,
+            codes::BUDGET_DELETE_ORGANIZATION_TREE,
+        ])
+    {
+        let mut connection =
+            school_tenancy::TenantPool::observed_checkout_pool(pool, "budget.policy.delete_scope")
+                .await?;
+        return delete_scope_on_connection(&mut connection, a).await;
+    }
+    Ok(s)
+}
+fn delete_scope_seed(a: &ActorContext) -> Scope {
+    let s = Scope {
+        school: a.has_permission(codes::BUDGET_DELETE_SCHOOL),
+        own: a.has_permission(codes::BUDGET_DELETE_OWN),
+        assigned: false,
+        units: vec![],
+    };
+    s
+}
+pub(crate) async fn delete_scope_on_connection(
+    connection: &mut sqlx::PgConnection,
+    a: &ActorContext,
+) -> Result<Scope, AppError> {
+    let mut s = delete_scope_seed(a);
+    if !s.school {
+        if a.has_permission(codes::BUDGET_DELETE_ORGANIZATION_UNIT) {
+            s.units.extend(
+                accessible_exact_units_for_permission_on_connection(
+                    connection,
+                    a.user_id,
+                    codes::BUDGET_DELETE_ORGANIZATION_UNIT,
+                )
+                .await?,
+            );
+        }
+        if a.has_permission(codes::BUDGET_DELETE_ORGANIZATION_TREE) {
+            s.units.extend(
+                accessible_tree_units_for_permission_on_connection(
+                    connection,
+                    a.user_id,
+                    codes::BUDGET_DELETE_ORGANIZATION_TREE,
+                )
+                .await?,
+            );
+        }
+        s.units.sort();
+        s.units.dedup();
+    }
+    Ok(s)
+}
+
 pub(crate) fn direct(s: &Scope, actor: Uuid, owner: Uuid, unit: Uuid) -> bool {
     s.school || (s.own && actor == owner) || s.units.contains(&unit)
 }
@@ -258,6 +314,7 @@ pub(crate) fn capabilities(
     accepted: bool,
 ) -> BudgetCapabilities {
     BudgetCapabilities {
+        can_delete: false,
         can_edit: editable,
         can_submit: editable,
         can_act: act,

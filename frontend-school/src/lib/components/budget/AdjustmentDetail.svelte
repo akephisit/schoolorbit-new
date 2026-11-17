@@ -192,7 +192,13 @@
 								title="โหลดปีงบประมาณและหมวดรายการไม่สำเร็จ"
 								description={catalogs.error}
 								actionLabel="ลองอีกครั้ง"
-								onaction={() => catalogs.retry((signal) => getBudgetCatalogs({ signal }))}
+								onaction={() =>
+									catalogs.retry((signal) =>
+										getBudgetCatalogs({
+											signal,
+											query: { fiscalYearId: region.value?.fiscalYearId }
+										})
+									)}
 							/>{/if}
 						{#if catalogs.loading && !catalogs.value}<PageSkeleton
 								variant="form"
