@@ -55,11 +55,14 @@
 	let catalogs = $state<BudgetCatalogs | null>(null),
 		dashboard = $state<BudgetDashboard | null>(null),
 		loading = $state(true),
+		catalogLoading = $state(true),
 		readError = $state(''),
+		catalogReadError = $state(''),
 		error = $state(''),
 		pending = $state(false),
 		disposed = false;
 	const request = new LatestRequest(),
+		catalogRequest = new LatestRequest(),
 		intent = new BudgetMutationIntent(),
 		expectedRevision = untrack(() => detail?.revision ?? 0);
 	const refs = $derived(
@@ -80,25 +83,30 @@
 	const destinationOptions = $derived(
 		refs.filter((item) => item.key !== fromKey && (!from || item.ref.fundId === from.ref.fundId))
 	);
+	async function loadCatalogs() {
+		const ticket = catalogRequest.begin();
+		catalogLoading = true;
+		catalogReadError = '';
+		try {
+			const value = await getBudgetCatalogs({ signal: ticket.signal });
+			if (!disposed && catalogRequest.isCurrent(ticket.revision)) catalogs = value;
+		} catch (cause) {
+			if (!disposed && catalogRequest.isCurrent(ticket.revision)) catalogReadError = message(cause);
+		} finally {
+			if (!disposed && catalogRequest.isCurrent(ticket.revision)) catalogLoading = false;
+		}
+	}
 	async function load() {
 		const ticket = request.begin();
 		loading = true;
 		readError = '';
+		dashboard = null;
 		try {
-			const [catalogValues, rows] = await Promise.all([
-				getBudgetCatalogs({
-					signal: ticket.signal,
-					query: { fiscalYearId: fiscalYearId || undefined }
-				}),
-				getBudgetDashboard({
-					signal: ticket.signal,
-					query: { fiscalYearId: fiscalYearId || undefined }
-				})
-			]);
-			if (!disposed && request.isCurrent(ticket.revision)) {
-				catalogs = catalogValues;
-				dashboard = rows;
-			}
+			const rows = await getBudgetDashboard({
+				signal: ticket.signal,
+				query: { fiscalYearId: fiscalYearId || undefined }
+			});
+			if (!disposed && request.isCurrent(ticket.revision)) dashboard = rows;
 		} catch (cause) {
 			if (!disposed && request.isCurrent(ticket.revision)) readError = message(cause);
 		} finally {
@@ -107,12 +115,14 @@
 	}
 	$effect.pre(() => {
 		untrack(() => {
+			void loadCatalogs();
 			void load();
 		});
 	});
 	onDestroy(() => {
 		disposed = true;
 		request.abort();
+		catalogRequest.abort();
 	});
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
@@ -160,12 +170,13 @@
 	class="w-full min-w-0 max-w-4xl space-y-6"
 	data-testid="budget-adjustment-form"
 >
-	{#if loading && !catalogs}<PageSkeleton variant="form" rows={4} />{/if}{#if readError}<PageState
+	{#if catalogLoading && !catalogs}<PageSkeleton variant="form" rows={2} />{/if}
+	{#if catalogReadError}<PageState
 			variant="error"
-			title="โหลดตัวเลือกงบประมาณไม่สำเร็จ"
-			description={readError}
+			title="โหลดปีงบประมาณไม่สำเร็จ"
+			description={catalogReadError}
 			actionLabel="ลองอีกครั้ง"
-			onaction={load}
+			onaction={loadCatalogs}
 		/>{/if}
 	<section class="space-y-4" aria-label="ข้อมูลการปรับงบ">
 		<h3 class="font-semibold">ข้อมูลการปรับงบ</h3>
@@ -188,9 +199,19 @@
 				label="ปีงบประมาณ"
 				required
 				bind:value={fiscalYearId}
-				options={(catalogs?.fiscalYears ?? [])
-					.filter((year) => !year.isClosed || year.id === fiscalYearId)
-					.map((year) => ({ value: year.id, label: year.name }))}
+				options={[
+					...(catalogs?.fiscalYears ?? [])
+						.filter((year) => !year.isClosed || year.id === fiscalYearId)
+						.map((year) => ({ value: year.id, label: year.name })),
+					...(catalogs && fiscalYearId && !selectedYear
+						? [
+								{
+									value: fiscalYearId,
+									label: 'ไม่พบปีงบประมาณที่เลือก'
+								}
+							]
+						: [])
+				]}
 				disabled={pending || !!loan || !!detail}
 				onchange={() => {
 					fromKey = '';
@@ -219,13 +240,21 @@
 							: 'ย้ายวงเงินจากต้นทางไปปลายทาง'}
 		</p>
 	</section>
-	<section class="space-y-4 border-t pt-6" aria-label="งบประมาณที่เกี่ยวข้อง">
+	<section class="space-y-4 border-t pt-6" aria-label="งบประมาณที่เกี่ยวข้อง" aria-busy={loading}>
 		<h3 class="font-semibold">งบประมาณที่เกี่ยวข้อง</h3>
 		<p class="text-sm text-muted-foreground">
 			เลือกจากรายการในแผนที่อนุมัติ {kind !== 'add' && kind !== 'reduce'
 				? 'ต้นทางและปลายทางต้องใช้แหล่งเงินเดียวกัน'
 				: 'ของปีงบประมาณนี้'}
 		</p>
+		{#if readError}<PageState
+				variant="error"
+				title="โหลดตัวเลือกงบประมาณไม่สำเร็จ"
+				description={readError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={load}
+			/>{/if}
+		{#if loading && !dashboard}<PageSkeleton variant="form" rows={2} />{/if}
 		{#if kind !== 'add'}<Choice
 				id="budget-adjustment-from"
 				label="งบประมาณต้นทาง"
@@ -274,7 +303,10 @@
 	{#if error}<PageState variant="error" title="บันทึกการปรับงบไม่สำเร็จ" description={error} />{/if}
 	<div class="flex flex-wrap justify-end gap-2 border-t pt-4">
 		<Button type="button" variant="outline" disabled={pending} onclick={oncancel}>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending} disabled={loading || !!readError}
+		><LoadingButton
+			type="submit"
+			loading={pending}
+			disabled={loading || catalogLoading || !!readError || !!catalogReadError}
 			>บันทึกฉบับร่าง</LoadingButton
 		>
 	</div>

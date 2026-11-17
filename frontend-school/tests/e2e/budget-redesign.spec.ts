@@ -219,6 +219,65 @@ for (const kind of ['projects', 'adjustments'] as const) {
 	}
 }
 
+test('missing adjustment year keeps the year index usable and recovers allocations after a scoped failure', async ({
+	page
+}) => {
+	const missingYearId = id(997);
+	const api = await mockBudget(page);
+	let failedAllocations = 0;
+	await page.route(
+		(url) =>
+			url.pathname === '/api/budget/dashboard' &&
+			url.searchParams.get('fiscalYearId') === missingYearId,
+		(route) => {
+			failedAllocations++;
+			return route.fulfill({
+				status: 503,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: false, error: 'อ่านวงเงินของปีที่เลือกไม่สำเร็จ' })
+			});
+		}
+	);
+	await page.goto(`/staff/budget/adjustments?fiscalYearId=${missingYearId}`);
+	await page.getByRole('button', { name: 'สร้างรายการปรับงบ', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(
+		dialog.getByText('ไม่พบปีงบประมาณที่เลือก กรุณาเลือกปีงบประมาณอีกครั้ง', { exact: true })
+	).toBeVisible();
+	await expect(
+		dialog.getByRole('heading', { name: 'โหลดตัวเลือกงบประมาณไม่สำเร็จ', exact: true })
+	).toBeVisible();
+	const selectedYear = dialog.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true });
+	await expect(selectedYear).not.toContainText('2570');
+	await dialog.getByLabel('จำนวนเงิน (บาท) *', { exact: true }).fill('12.34');
+	await dialog.getByLabel('เหตุผล *', { exact: true }).fill('เก็บเหตุผลระหว่างแก้ไขปี');
+	await selectedYear.click();
+	const validYear = page.getByRole('option', { name: '2570', exact: true });
+	await expect(validYear).toBeVisible();
+	await validYear.click();
+	await expect(selectedYear).toContainText('2570');
+	await expect(
+		dialog.getByRole('heading', { name: 'โหลดตัวเลือกงบประมาณไม่สำเร็จ', exact: true })
+	).toHaveCount(0);
+	await expect(
+		dialog.getByText('ไม่พบปีงบประมาณที่เลือก กรุณาเลือกปีงบประมาณอีกครั้ง', { exact: true })
+	).toHaveCount(0);
+	await expect(dialog.getByLabel('จำนวนเงิน (บาท) *', { exact: true })).toHaveValue('12.34');
+	await expect(dialog.getByLabel('เหตุผล *', { exact: true })).toHaveValue(
+		'เก็บเหตุผลระหว่างแก้ไขปี'
+	);
+	await dialog.getByRole('combobox', { name: 'งบประมาณปลายทาง', exact: true }).click();
+	await expect(page.getByRole('option').filter({ hasText: 'กิจกรรมที่หนึ่ง' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(dialog.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true })).toBeEnabled();
+	expect(failedAllocations).toBe(1);
+	expect(api.reads.some((read) => read === '/api/budget/catalogs')).toBe(true);
+	expect(
+		api.reads.some((read) => read === `/api/budget/dashboard?fiscalYearId=${budgetYearId}`)
+	).toBe(true);
+	expect(api.writes).toEqual([]);
+});
+
 test('request navigation reuses explicit return-year context without reading the project', async ({
 	page
 }) => {
