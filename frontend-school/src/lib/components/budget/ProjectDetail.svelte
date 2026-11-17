@@ -2,6 +2,7 @@
 	import { FolderOpen } from '@lucide/svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import ReadAccessNotice from './ReadAccessNotice.svelte';
+	import BudgetNavigation from './BudgetNavigation.svelte';
 	import { onDestroy } from 'svelte';
 	import { budgetUpdatePermissions } from '#lib/budget/access.js';
 	import { goto } from '$app/navigation';
@@ -161,6 +162,7 @@
 					disabled={pending}
 					onclick={() => (requestOpen = true)}>สร้างคำขอใช้เงิน</Button
 				>{/if}{/if}{/snippet}
+	<BudgetNavigation fiscalYearId={region.value?.project.fiscalYearId ?? query.fiscalYearId} />
 	<ReadAccessNotice />
 	{#if region.value?.fiscalYearClosed}<PageState
 			title="ปิดปีงบประมาณแล้ว"
@@ -183,19 +185,46 @@
 				variant="form"
 				rows={5}
 			/>{:else if region.value}{@const value = region.value}
-			<Card.Root
-				><Card.Content class="flex flex-wrap items-start justify-between gap-4">
-					<div class="space-y-2">
+			<Card.Root class="border-primary/15 bg-gradient-to-br from-primary/5 to-card">
+				<Card.Header>
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div class="space-y-2">
+							<Card.Title>ภาพรวมโครงการ</Card.Title>
+							<Card.Description>{value.project.organizationUnitName}</Card.Description>
+						</div>
 						<StatusBadge status={value.project.status} />
-						<p class="text-sm text-muted-foreground">
-							{value.project.organizationUnitName} · {dateLabel(value.project.startDate)} – {dateLabel(
-								value.project.endDate
-							)}
-						</p>
 					</div>
-					<p class="tabular-nums">งบแผน <strong>{money(value.project.totalSatang)} บาท</strong></p>
-				</Card.Content></Card.Root
-			>
+				</Card.Header>
+				<Card.Content class="space-y-4">
+					<dl class="grid gap-4 sm:grid-cols-3">
+						<div>
+							<dt class="text-sm text-muted-foreground">งบตามแผนฉบับนี้</dt>
+							<dd class="text-xl font-semibold tabular-nums">
+								{money(value.project.totalSatang)} บาท
+							</dd>
+						</div>
+						<div>
+							<dt class="text-sm text-muted-foreground">ระยะเวลาดำเนินการ</dt>
+							<dd class="break-words">
+								{dateLabel(value.project.startDate)} – {dateLabel(value.project.endDate)}
+							</dd>
+						</div>
+						<div>
+							<dt class="text-sm text-muted-foreground">กิจกรรมในแผนฉบับนี้</dt>
+							<dd>{value.activities.length} กิจกรรม</dd>
+						</div>
+					</dl>
+					<p class="border-t border-primary/10 pt-4 text-sm text-muted-foreground">
+						{#if value.fiscalYearClosed}ปิดปีงบประมาณแล้ว ดูแผนและรายการการเงินย้อนหลังได้ด้านล่าง
+						{:else if value.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}จัดกิจกรรมและค่าใช้จ่ายในแผนฉบับร่าง
+							แล้วส่งแผนพิจารณาเมื่อพร้อม
+						{:else if value.capabilities.canCreateRequest && $can.has(PERMISSIONS.BUDGET_CREATE_OWN)}แผนผ่านการอนุมัติแล้ว
+							สร้างคำขอใช้เงินจากรายการในแผนได้
+						{:else if value.project.status === 'submitted'}ติดตามผู้พิจารณาและขั้นตอนปัจจุบันในส่วนการพิจารณา
+						{:else}ตรวจสอบแผน ยอดงบประมาณ และประวัติการดำเนินการด้านล่าง{/if}
+					</p>
+				</Card.Content>
+			</Card.Root>
 			{#if error && !amendmentOpen}<PageState
 					variant="error"
 					title="ดำเนินการไม่สำเร็จ"
@@ -208,7 +237,11 @@
 					oncancel={() => (editing = false)}
 				/>{:else}<div class="flex flex-wrap items-center justify-between gap-3">
 					<h2 class="font-semibold">
-						{value.project.status === 'approved' ? 'แผนที่อนุมัติ' : 'แผนฉบับร่าง'}
+						{value.project.status === 'approved'
+							? 'แผนที่อนุมัติ'
+							: ['draft', 'returned'].includes(value.project.status)
+								? 'แผนฉบับร่าง'
+								: 'แผนโครงการ'}
 					</h2>
 					<div class="flex flex-wrap gap-2">
 						{#if value.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}<Button
@@ -253,7 +286,35 @@
 				</details>{/if}
 			{#if value.balances.length}<section class="space-y-3">
 					<h2 class="font-semibold">ยอดงบประมาณตามกิจกรรมและแหล่งเงิน</h2>
-					<Card.Root class="gap-0 overflow-hidden py-0"
+					<ul class="space-y-3 md:hidden" aria-label="ยอดงบประมาณรายกิจกรรม">
+						{#each value.balances as balance (`${balance.activityId}|${balance.fundId}|${balance.expenseCategoryId}`)}
+							<li class="space-y-3 rounded-xl border bg-card p-4">
+								<div>
+									<h3 class="break-words font-medium">
+										{(value.acceptedPlan?.activities ?? value.activities).find(
+											(activity) => activity.id === balance.activityId
+										)?.title ?? '—'}
+									</h3>
+									<p class="break-words text-sm text-muted-foreground">
+										{catalogs.value?.funds.find((item) => item.id === balance.fundId)?.name ?? '—'} ·
+										{catalogs.value?.expenseCategories.find(
+											(item) => item.id === balance.expenseCategoryId
+										)?.name ?? '—'}
+									</p>
+								</div>
+								<dl class="grid grid-cols-2 gap-3 text-sm">
+									{#each [{ label: 'งบปัจจุบัน', amount: balance.currentSatang }, { label: 'ผูกพัน', amount: balance.reservedSatang }, { label: 'จ่ายจริง', amount: balance.paidSatang }, { label: 'ใช้ได้', amount: balance.availableSatang }, { label: 'ยืมค้างคืน', amount: balance.loanOutstandingSatang }] as metric (metric.label)}<div
+										>
+											<dt class="text-muted-foreground">{metric.label}</dt>
+											<dd class="break-words font-medium tabular-nums">
+												{money(metric.amount)} บาท
+											</dd>
+										</div>{/each}
+								</dl>
+							</li>
+						{/each}
+					</ul>
+					<Card.Root class="hidden gap-0 overflow-hidden py-0 md:flex"
 						><div class="min-w-0">
 							<Table.Root class="min-w-[60rem]"
 								><Table.Header

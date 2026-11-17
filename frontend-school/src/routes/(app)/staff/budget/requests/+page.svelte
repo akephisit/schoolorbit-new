@@ -20,5 +20,9 @@
 		description="ติดตามคำขอใช้เงิน การพิจารณา และยอดจ่ายจากกิจกรรม"
 		icon={ReceiptText}
 		contentClass="space-y-6"
-		><RequestList source={budgetSource(data.record, identity)} query={data.query} /></PageShell
+		><RequestList
+			source={budgetSource(data.record, identity)}
+			catalogsSource={budgetSource(data.catalogs, identity)}
+			query={data.query}
+		/></PageShell
 	>{/key}

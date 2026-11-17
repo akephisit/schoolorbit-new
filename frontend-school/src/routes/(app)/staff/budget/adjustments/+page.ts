@@ -3,7 +3,7 @@ import type { PageLoad } from './$types';
 import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import { budgetRead } from '#lib/budget/route-data.js';
 import { budgetFilters } from '#lib/budget/presentation.js';
-import { listBudgetAdjustments } from '#lib/api/budget.js';
+import { listBudgetAdjustments, getBudgetCatalogs } from '#lib/api/budget.js';
 export const _meta = {
 	academicContext: 'none' as const,
 	access: { user_type: 'staff', permission: budgetRoutePermissions },
@@ -23,6 +23,7 @@ export const load: PageLoad = ({ fetch, url, params, depends }) => {
 	return {
 		requestKey: JSON.stringify(query) + ('id' in params ? params.id : ''),
 		query,
+		catalogs: budgetRead(canReadBudget, () => getBudgetCatalogs({ requestFetch: fetch }), null),
 		record: budgetRead(
 			canReadBudget,
 			() => listBudgetAdjustments({ requestFetch: fetch, query }),

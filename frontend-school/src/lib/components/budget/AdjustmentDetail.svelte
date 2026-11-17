@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ReadAccessNotice from './ReadAccessNotice.svelte';
+	import BudgetNavigation from './BudgetNavigation.svelte';
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
@@ -154,8 +155,11 @@
 					onclick={submit}>ส่งรายการพิจารณา</LoadingButton
 				>{/if}{#if region.value.kind === 'loan' && region.value.status === 'approved' && BigInt(region.value.loanOutstandingSatang) > 0n && $can.has(PERMISSIONS.BUDGET_ADJUSTMENT_CREATE_SCHOOL)}<Button
 					onclick={() => (repaying = true)}>คืนเงินยืม</Button
-				>{/if}{/if}{/snippet}<ReadAccessNotice />
+				>{/if}{/if}{/snippet}
+	<BudgetNavigation fiscalYearId={region.value?.fiscalYearId ?? ''} />
+	<ReadAccessNotice />
 	<section
+		class="space-y-4"
 		aria-label="รายละเอียดการปรับงบ"
 		aria-busy={region.loading}
 		data-testid="budget-adjustment-detail"
@@ -170,7 +174,7 @@
 				variant="form"
 				rows={4}
 			/>{:else if region.value}{@const detail = region.value}
-			<Card.Root
+			<Card.Root class="border-primary/15 bg-gradient-to-br from-primary/5 to-card"
 				><Card.Header
 					><div class="flex flex-wrap items-center justify-between gap-3">
 						<Card.Title>สรุปการปรับงบประมาณ</Card.Title><StatusBadge status={detail.status} />
@@ -214,6 +218,13 @@
 					{#if detail.kind === 'loan'}<p class="text-sm">
 							เงินยืมค้างคืน <strong>{money(detail.loanOutstandingSatang)} บาท</strong>
 						</p>{/if}
+					<p class="border-t border-primary/10 pt-4 text-sm text-muted-foreground">
+						{#if detail.capabilities.canEdit}ตรวจสอบประเภทรายการ ต้นทาง ปลายทาง และจำนวนเงิน
+							แล้วส่งรายการพิจารณา
+						{:else if detail.status === 'submitted'}ตรวจสอบงบประมาณที่เกี่ยวข้องและติดตามขั้นตอนการพิจารณาด้านล่าง
+						{:else if detail.kind === 'loan' && detail.status === 'approved'}ตรวจสอบยอดเงินยืมค้างคืนก่อนสร้างรายการคืนเงินยืม
+						{:else}ดูงบประมาณที่เกี่ยวข้อง ผลการพิจารณา และประวัติของรายการนี้ด้านล่าง{/if}
+					</p>
 					<div class="flex flex-wrap gap-2">
 						{#if detail.from}<Button
 								variant="outline"

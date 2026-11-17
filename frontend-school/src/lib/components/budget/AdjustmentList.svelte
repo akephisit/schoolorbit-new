@@ -3,7 +3,11 @@
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { listBudgetAdjustments, type BudgetAdjustmentPage } from '#lib/api/budget.js';
+	import {
+		listBudgetAdjustments,
+		type BudgetAdjustmentPage,
+		type BudgetCatalogs
+	} from '#lib/api/budget.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { BudgetRegion } from '#lib/budget/region.svelte.js';
 	import { adjustmentLabels, budgetFilters } from '#lib/budget/presentation.js';
@@ -18,14 +22,18 @@
 	import { PageState, TableSkeleton } from '#lib/components/app-state/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { ArrowLeftRight, Plus } from '@lucide/svelte';
+	import BudgetNavigation from './BudgetNavigation.svelte';
+	import ListFilters from './ListFilters.svelte';
 	import Paging from './Paging.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import AdjustmentForm from './AdjustmentForm.svelte';
 	let {
 		source,
+		catalogsSource,
 		query
 	}: {
 		source: Promise<RouteLoadResult<BudgetAdjustmentPage | null>>;
+		catalogsSource: Promise<RouteLoadResult<BudgetCatalogs | null>>;
 		query: ReturnType<typeof budgetFilters>;
 	} = $props();
 	const region = new BudgetRegion<BudgetAdjustmentPage | null>();
@@ -42,7 +50,14 @@
 	>{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_ADJUSTMENT_CREATE_SCHOOL) && $can.hasAny(...budgetReadPermissions)}<Button
 				onclick={() => (creating = true)}
 				><Plus class="size-4" aria-hidden="true" />สร้างรายการปรับงบ</Button
-			>{/if}{/snippet}<ReadAccessNotice />
+			>{/if}{/snippet}
+	<BudgetNavigation fiscalYearId={query.fiscalYearId} />
+	<ReadAccessNotice />
+	{#if $can.hasAny(...budgetReadPermissions)}<ListFilters
+			source={catalogsSource}
+			{query}
+			path="/staff/budget/adjustments"
+		/>{/if}
 	<section
 		aria-label="รายการปรับงบประมาณ"
 		aria-busy={region.loading}
@@ -67,8 +82,8 @@
 					/>{:else if region.value?.items.length}<div
 						class="min-w-0 overflow-hidden rounded-lg border"
 					>
-						<Table.Root class="min-w-[44rem]"
-							><Table.Header
+						<Table.Root class="block w-full sm:table sm:min-w-[44rem]"
+							><Table.Header class="sr-only sm:not-sr-only"
 								><Table.Row
 									><Table.Head>รายการ / เหตุผล</Table.Head><Table.Head class="text-right"
 										>จำนวนเงิน (บาท)</Table.Head
@@ -76,16 +91,23 @@
 										>สถานะ</Table.Head
 									><Table.Head>รายละเอียด</Table.Head></Table.Row
 								></Table.Header
-							><Table.Body
+							><Table.Body class="block sm:table-row-group"
 								>{#each region.value.items as item (item.id)}<Table.Row
-										><Table.Cell class="min-w-48"
+										class="grid grid-cols-2 gap-x-4 gap-y-2 p-4 sm:table-row sm:p-0"
+										><Table.Cell class="col-span-2 min-w-0"
 											><p class="font-medium">{adjustmentLabels[item.kind]}</p>
 											<p class="text-sm text-muted-foreground">{item.reason}</p></Table.Cell
-										><Table.Cell class="whitespace-nowrap text-right tabular-nums"
+										><Table.Cell
+											class="col-span-2 flex justify-between gap-3 whitespace-nowrap tabular-nums sm:table-cell sm:text-right"
+											><span class="text-sm text-muted-foreground sm:hidden">จำนวนเงิน (บาท)</span
 											>{money(item.amountSatang)}</Table.Cell
-										><Table.Cell class="whitespace-nowrap text-right tabular-nums"
+										><Table.Cell
+											class="col-span-2 flex justify-between gap-3 whitespace-nowrap tabular-nums sm:table-cell sm:text-right"
+											><span class="text-sm text-muted-foreground sm:hidden">ยืมค้างคืน (บาท)</span
 											>{item.kind === 'loan' ? money(item.loanOutstandingSatang) : '—'}</Table.Cell
-										><Table.Cell><StatusBadge status={item.status} /></Table.Cell><Table.Cell
+										><Table.Cell class="self-center"
+											><StatusBadge status={item.status} /></Table.Cell
+										><Table.Cell class="text-right"
 											><Button
 												size="sm"
 												variant="outline"
@@ -97,8 +119,12 @@
 							></Table.Root
 						>
 					</div>{:else if region.value && !region.error}<PageState
-						title="ยังไม่มีรายการปรับงบประมาณ"
-						description="รายการเพิ่ม ลด โอน ยืม และคืนเงินยืมจะแสดงที่นี่"
+						title={query.fiscalYearId || query.status
+							? 'ไม่พบรายการปรับงบตามตัวกรอง'
+							: 'ยังไม่มีรายการปรับงบประมาณ'}
+						description={query.fiscalYearId || query.status
+							? 'ลองเปลี่ยนปีงบประมาณหรือสถานะเพื่อดูรายการอื่น'
+							: 'รายการเพิ่ม ลด โอน ยืม และคืนเงินยืมจะแสดงที่นี่'}
 					/>{/if}
 			</Card.Content></Card.Root
 		>
@@ -118,6 +144,7 @@
 				>ระบุงบประมาณและเหตุผลก่อนส่งพิจารณา</Dialog.Description
 			></Dialog.Header
 		>{#if creating}<AdjustmentForm
+			initialFiscalYearId={query.fiscalYearId}
 				oncancel={() => (creating = false)}
 				onsaved={(value) => {
 					creating = false;

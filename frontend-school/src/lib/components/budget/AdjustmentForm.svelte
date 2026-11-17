@@ -24,11 +24,13 @@
 	import Choice from './Choice.svelte';
 	let {
 		detail,
+		initialFiscalYearId = '',
 		loan,
 		oncancel,
 		onsaved
 	}: {
 		detail?: BudgetAdjustmentDetail;
+		initialFiscalYearId?: string;
 		loan?: BudgetAdjustmentDetail;
 		oncancel: () => void;
 		onsaved: (value: BudgetAdjustmentDetail) => void;
@@ -39,7 +41,9 @@
 	let kind = $state<SaveBudgetAdjustmentRequest['kind']>(
 			untrack(() => detail?.kind ?? (loan ? 'repayment' : 'add'))
 		),
-		fiscalYearId = $state(untrack(() => detail?.fiscalYearId ?? loan?.fiscalYearId ?? '')),
+		fiscalYearId = $state(
+			untrack(() => detail?.fiscalYearId ?? loan?.fiscalYearId ?? initialFiscalYearId)
+		),
 		fromKey = $state(untrack(() => refKey(detail?.from ?? loan?.to))),
 		toKey = $state(untrack(() => refKey(detail?.to ?? loan?.from))),
 		amount = $state(
@@ -71,6 +75,7 @@
 			available: row.availableSatang
 		}))
 	);
+	const selectedYear = $derived(catalogs?.fiscalYears.find((year) => year.id === fiscalYearId));
 	const from = $derived(refs.find((item) => item.key === fromKey));
 	const destinationOptions = $derived(
 		refs.filter((item) => item.key !== fromKey && (!from || item.ref.fundId === from.ref.fundId))
@@ -194,9 +199,33 @@
 				}}
 			/>
 		</div>
+		{#if catalogs && fiscalYearId && (!selectedYear || selectedYear.isClosed)}<p
+				class="text-sm text-warning"
+				role="status"
+			>
+				{selectedYear?.isClosed
+					? 'ปีงบประมาณที่เลือกปิดแล้ว เลือกปีที่เปิดใช้งานเพื่อสร้างรายการ'
+					: 'ไม่พบปีงบประมาณที่เลือก กรุณาเลือกปีงบประมาณอีกครั้ง'}
+			</p>{/if}
+		<p class="text-sm text-muted-foreground">
+			{kind === 'add'
+				? 'เพิ่มวงเงินให้รายการงบประมาณปลายทาง'
+				: kind === 'reduce'
+					? 'ลดวงเงินจากรายการงบประมาณต้นทาง'
+					: kind === 'loan'
+						? 'ย้ายวงเงินชั่วคราวจากต้นทางไปปลายทาง และติดตามยอดยืมค้างคืน'
+						: kind === 'repayment'
+							? 'คืนวงเงินให้ต้นทางของรายการยืมเดิม'
+							: 'ย้ายวงเงินจากต้นทางไปปลายทาง'}
+		</p>
 	</section>
 	<section class="space-y-4 border-t pt-6" aria-label="งบประมาณที่เกี่ยวข้อง">
 		<h3 class="font-semibold">งบประมาณที่เกี่ยวข้อง</h3>
+		<p class="text-sm text-muted-foreground">
+			เลือกจากรายการในแผนที่อนุมัติ {kind !== 'add' && kind !== 'reduce'
+				? 'ต้นทางและปลายทางต้องใช้แหล่งเงินเดียวกัน'
+				: 'ของปีงบประมาณนี้'}
+		</p>
 		{#if kind !== 'add'}<Choice
 				id="budget-adjustment-from"
 				label="งบประมาณต้นทาง"

@@ -75,9 +75,8 @@ test('failed project read retries its region and read-only users do not load cre
 	await expect(page.getByTestId('budget-projects')).toContainText('โครงการคณิตศาสตร์');
 	await expect(page.getByRole('button', { name: 'สร้างโครงการ', exact: true })).toHaveCount(0);
 	expect(api.reads.filter((path) => path.startsWith('/api/budget/projects')).length).toBe(2);
-	expect(api.reads.some((path) => path.includes('/catalogs') || path.includes('/settings'))).toBe(
-		false
-	);
+	expect(api.reads.some((path) => path.includes('/settings') || path.includes('/lookup/'))).toBe(false);
+	expect(api.reads.filter((path) => path.startsWith('/api/budget/catalogs'))).toHaveLength(1);
 });
 
 test('minimal project to plan approval, activity request, partial payment and close', async ({
@@ -278,7 +277,7 @@ test('assigned reviewer reads projects without creator or administration option 
 	await page.goto('/staff/budget/projects');
 	await expect(page.getByTestId('budget-projects')).toContainText('โครงการคณิตศาสตร์');
 	await expect(page.getByRole('button', { name: 'สร้างโครงการ', exact: true })).toHaveCount(0);
-	expect(api.reads.every((path) => path.startsWith('/api/budget/projects'))).toBe(true);
+	expect(api.reads.every((path) => path.startsWith('/api/budget/projects') || path.startsWith('/api/budget/catalogs'))).toBe(true);
 });
 
 test('project and catalogs render while the independent request region waits', async ({ page }) => {
@@ -722,7 +721,7 @@ for (const viewport of [
 					await expect(page.locator('.school-page-shell h1')).toHaveCount(1);
 					await expect(
 						page.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
-					).toHaveCount(0);
+					).toHaveCount(1);
 					if (name === 'projects' || name === 'requests' || name === 'adjustments') {
 						const pagination = page.getByRole('navigation', {
 							name: 'หน้ารายการงบประมาณ',
