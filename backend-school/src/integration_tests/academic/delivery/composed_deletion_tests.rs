@@ -97,6 +97,7 @@ impl Composed {
             'files',(SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM files f),
             'versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM file_versions v),
             'fileOperations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM file_operations o),
+            'periods',(SELECT jsonb_agg(to_jsonb(p) ORDER BY observation_id,position,id) FROM supervision_observation_periods p),
             'observations',(SELECT jsonb_agg(to_jsonb(o) ORDER BY id) FROM supervision_observations o))")
             .fetch_one(&self.fixture.tenant_a_pool).await.unwrap()
     }
@@ -231,7 +232,7 @@ async fn composed_with_points(name: &str, points: i32) -> Composed {
         .bind(annual).bind(student_year).bind(year).bind(Uuid::new_v4()).bind(annual_snapshot).bind(actor).execute(&fixture.tenant_a_pool).await.unwrap();
     sqlx::query("INSERT INTO academic_annual_result_term_sources(annual_revision_id,academic_year_id,academic_term_id,student_academic_year_id,term_aggregate_revision_id) VALUES($1,$2,$3,$4,$5)").bind(annual).bind(year).bind(term).bind(student_year).bind(aggregate).execute(&fixture.tenant_a_pool).await.unwrap();
     // Saved Supervision evaluation/context survives source detachment.
-    assert_eq!(sqlx::query("UPDATE supervision_observations SET learning_group_id=$1,timetable_block_group_id=(SELECT id FROM academic_timetable_block_groups WHERE learning_group_id=$1 ORDER BY id LIMIT 1),lesson_snapshot=$2 WHERE academic_term_id=$3")
+    assert_eq!(sqlx::query("UPDATE supervision_observation_periods SET learning_group_id=$1,learning_offering_id=(SELECT learning_offering_id FROM learning_groups WHERE id=$1),timetable_block_group_id=(SELECT id FROM academic_timetable_block_groups WHERE learning_group_id=$1 ORDER BY id LIMIT 1),lesson_snapshot=$2 WHERE academic_term_id=$3")
         .bind(group).bind(json!({"savedSubject":"Actual saved lesson","savedPeriod":"08:00-09:00"})).bind(term).execute(&fixture.tenant_a_pool).await.unwrap().rows_affected(),1);
     sqlx::query("INSERT INTO supervision_evaluators(observation_id,evaluator_user_id,status,submitted_at) SELECT id,observed_user_id,'submitted',now() FROM supervision_observations WHERE academic_term_id=$1 ON CONFLICT(observation_id,evaluator_user_id) DO UPDATE SET status='submitted',submitted_at=EXCLUDED.submitted_at").bind(term).execute(&fixture.tenant_a_pool).await.unwrap();
     // A genuine manual score is never part of Attendance-derived reconciliation.
@@ -411,8 +412,19 @@ async fn current_composed_http_group_deletion_removes_exact_children_and_preserv
     {
         assert_eq!(old["id"], new["id"]);
         assert_eq!(old["status"], new["status"]);
+    }
+    for (old, new) in before["periods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(after["periods"].as_array().unwrap())
+    {
+        assert_eq!(old["id"], new["id"]);
+        assert_eq!(old["observation_id"], new["observation_id"]);
+        assert_eq!(old["observed_at"], new["observed_at"]);
         assert_eq!(old["lesson_snapshot"], new["lesson_snapshot"]);
         assert!(new["learning_group_id"].is_null());
+        assert!(new["learning_offering_id"].is_null());
         assert!(new["timetable_block_group_id"].is_null());
     }
     let manual = |facts: &Value| {

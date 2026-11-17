@@ -61,6 +61,39 @@ export function createAcademicContextStore({
 	let revision = 0;
 	let sessionGeneration = 0;
 	let optionsRevision = 0;
+	type RepairNavigation = {
+		generation: number;
+		sourceUrl: string;
+		targetUrl: string;
+		promise: Promise<void>;
+	};
+	let repairNavigation: RepairNavigation | null = null;
+
+	function repairUrl(source: URL, target: URL): Promise<void> {
+		if (
+			repairNavigation?.generation === sessionGeneration &&
+			repairNavigation.sourceUrl === source.href &&
+			repairNavigation.targetUrl === target.href
+		)
+			return repairNavigation.promise;
+		// A same-identity refresh can sync the original URL while goto is still pending.
+		// Share that navigation only; each sync revision still owns its publication.
+		const operation: RepairNavigation = {
+			generation: sessionGeneration,
+			sourceUrl: source.href,
+			targetUrl: target.href,
+			promise: Promise.resolve()
+				.then(() => {
+					if (operation.generation !== sessionGeneration || repairNavigation !== operation) return;
+					return navigate(target, { replace: true, reset: false });
+				})
+				.finally(() => {
+					if (repairNavigation === operation) repairNavigation = null;
+				})
+		};
+		repairNavigation = operation;
+		return operation.promise;
+	}
 
 	function optionsForSession(): Promise<AcademicContextOptionsResponse> {
 		if (cachedOptions) return cachedOptions;
@@ -122,6 +155,7 @@ export function createAcademicContextStore({
 
 	async function sync(routeId: string | null, url: URL): Promise<void> {
 		const currentRevision = ++revision;
+		if (repairNavigation && repairNavigation.sourceUrl !== url.href) repairNavigation = null;
 		latestRouteId = routeId;
 		latestUrl = new URL(url);
 		const requirement = getAcademicContextRequirement(routeId);
@@ -158,10 +192,7 @@ export function createAcademicContextStore({
 		if (resolved.replaceUrl) {
 			latestUrl = new URL(resolved.replaceUrl);
 			try {
-				await navigate(resolved.replaceUrl, {
-					replace: true,
-					reset: false
-				});
+				await repairUrl(url, resolved.replaceUrl);
 			} catch {
 				if (currentRevision !== revision) return;
 				state.set({
@@ -223,6 +254,7 @@ export function createAcademicContextStore({
 	}
 
 	function reset(): void {
+		repairNavigation = null;
 		revision += 1;
 		sessionGeneration += 1;
 		optionsRevision += 1;

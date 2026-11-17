@@ -348,7 +348,12 @@ test('presence-only updates retain existing participant order while joins append
 		connections: [{ connectionId: userId }]
 	}));
 	for (const user of users)
-		h.session.apply({ epoch: 'epoch-one', seq: 0, type: 'TimetablePresenceChanged', payload: user });
+		h.session.apply({
+			epoch: 'epoch-one',
+			seq: 0,
+			type: 'TimetablePresenceChanged',
+			payload: user
+		});
 	for (const user of [users[0], users[3], users[1], users[2]]) {
 		h.session.apply({
 			epoch: 'epoch-one',
@@ -366,7 +371,12 @@ test('presence-only updates retain existing participant order while joins append
 		userId: timetableIds.user,
 		connections: [{ connectionId: timetableIds.user }]
 	};
-	h.session.apply({ epoch: 'epoch-one', seq: 0, type: 'TimetablePresenceChanged', payload: joined });
+	h.session.apply({
+		epoch: 'epoch-one',
+		seq: 0,
+		type: 'TimetablePresenceChanged',
+		payload: joined
+	});
 	assert.deepEqual(
 		h.session.state.users.map((value) => value.userId),
 		[...users.map((value) => value.userId), joined.userId]

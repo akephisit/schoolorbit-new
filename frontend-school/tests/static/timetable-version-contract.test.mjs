@@ -64,30 +64,48 @@ test('typed timetable wrapper exposes only canonical block resources', async () 
 });
 
 test('academic timetable resolves the current term table and keeps read mode distinct from editing', async () => {
- const page=await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
- const loader=await read('src/routes/(app)/staff/academic/timetable/+page.ts');
- const header=await read('src/lib/components/academic/timetable/TimetableWorkspaceHeader.svelte');
- assert.match(loader,/getTimetable\(academicTermId/);
- assert.match(loader,/timetableId: timetable.id/);
- assert.match(page,/controller\?\.canEdit/);
- assert.match(page,/shallow:\s*true/);
- assert.match(header,/ตารางสอนปัจจุบัน/);assert.match(header,/โหมดดู/);
- assert.match(page,/timetableId:\s*controller\.workspace\.timetable\.id/);
- assert.doesNotMatch(loader+page,/listTimetableVersions|cloneTimetableVersion|publishTimetableVersion/);
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	const loader = await read('src/routes/(app)/staff/academic/timetable/+page.ts');
+	const header = await read(
+		'src/lib/components/academic/timetable/TimetableWorkspaceHeader.svelte'
+	);
+	assert.match(loader, /getTimetable\(academicTermId/);
+	assert.match(loader, /timetableId: timetable.id/);
+	assert.match(page, /controller\?\.canEdit/);
+	assert.match(page, /shallow:\s*true/);
+	assert.match(header, /ตารางสอนปัจจุบัน/);
+	assert.match(header, /โหมดดู/);
+	assert.match(page, /timetableId:\s*controller\.workspace\.timetable\.id/);
+	assert.doesNotMatch(
+		loader + page,
+		/listTimetableVersions|cloneTimetableVersion|publishTimetableVersion/
+	);
 });
 
 test('direct board persistence retains every create, move and swap path with teacher export', async () => {
- const page=await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
- for(const operation of ['createOrdinaryTimetableBlock','createSynchronizedTimetableBlock','updateTimetableBlock','swapTimetableBlocks'])assert.match(page,new RegExp(`await ${operation}\\(`));
- assert.match(page,/downloadTeacherLoadWorkbook/);assert.match(page,/controller\.workspace\.blocks/);
- assert.doesNotMatch(page,/cloneTimetableVersion|previewTimetablePublication|publishTimetableVersion/);
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	for (const operation of [
+		'createOrdinaryTimetableBlock',
+		'createSynchronizedTimetableBlock',
+		'updateTimetableBlock',
+		'swapTimetableBlocks'
+	])
+		assert.match(page, new RegExp(`await ${operation}\\(`));
+	assert.match(page, /downloadTeacherLoadWorkbook/);
+	assert.match(page, /controller\.workspace\.blocks/);
+	assert.doesNotMatch(
+		page,
+		/cloneTimetableVersion|previewTimetablePublication|publishTimetableVersion/
+	);
 });
 
 test('placement feedback remains independent from the accepted write and pending preview', async () => {
- const page=await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
- assert.match(page,/canEdit/);assert.match(page,/previewTimetableBlockPlacement/);
- assert.match(page,/persistOptimisticPlacement/);assert.match(page,/placementFailureMessage/);
- assert.doesNotMatch(page,/controller\?\.canEdit\s*&&\s*!busy\s*&&\s*!previewing/);
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	assert.match(page, /canEdit/);
+	assert.match(page, /previewTimetableBlockPlacement/);
+	assert.match(page, /persistOptimisticPlacement/);
+	assert.match(page, /placementFailureMessage/);
+	assert.doesNotMatch(page, /controller\?\.canEdit\s*&&\s*!busy\s*&&\s*!previewing/);
 });
 
 test('block placement contract models ordinary synchronized and existing sources', async () => {
@@ -150,20 +168,34 @@ test('whole-school view derives from the same canonical workspace without a seco
 });
 
 test('current singleton contract has explicit creation and no source-alignment or publication endpoints', async () => {
- const loader=await read('src/routes/(app)/staff/academic/timetable/+page.ts');
- const openapi=JSON.parse(await read('../contracts/openapi/school-api.json'));
- assert.equal(openapi.paths['/api/academic/timetable'].get.operationId,'getTimetable');
- assert.equal(openapi.paths['/api/academic/timetable'].post.operationId,'createTimetable');
- assert.deepEqual(openapi.components.schemas.CreateTimetableRequest.required,['academicTermId']);
- for(const path of Object.keys(openapi.paths))assert.doesNotMatch(path,/timetable-versions|timetable.*delivery-source|timetable.*publication-preview/);
- assert.doesNotMatch(loader,/createTimetable|updateTimetableDeliverySource/);
+	const loader = await read('src/routes/(app)/staff/academic/timetable/+page.ts');
+	const openapi = JSON.parse(await read('../contracts/openapi/school-api.json'));
+	assert.equal(openapi.paths['/api/academic/timetable'].get.operationId, 'getTimetable');
+	assert.equal(openapi.paths['/api/academic/timetable'].post.operationId, 'createTimetable');
+	assert.deepEqual(openapi.components.schemas.CreateTimetableRequest.required, ['academicTermId']);
+	for (const path of Object.keys(openapi.paths))
+		assert.doesNotMatch(
+			path,
+			/timetable-versions|timetable.*delivery-source|timetable.*publication-preview/
+		);
+	assert.doesNotMatch(loader, /createTimetable|updateTimetableDeliverySource/);
 });
 
 test('unknown dispatched saves stay fenced until a deliberate authoritative read without automatic replay', async () => {
- const page=await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
- assert.match(page,/outcome: mutationSent \? 'unknown' : 'not_submitted'/);
- assert.match(page,/await waitForSaves\(\)/);
- const discard=page.slice(page.indexOf('async function discardFailedSave'),page.indexOf('function lockedTeacherTargetIds'));
- assert.match(discard,/await reload/);assert.doesNotMatch(discard,/createOrdinaryTimetableBlock|updateTimetableBlock|swapTimetableBlocks/);
- assert.doesNotMatch(page,/TIMETABLE_DELIVERY_SOURCE_OUTDATED|ensureLatestDeliverySource|updateTimetableDeliverySource/);
+	const page = await read('src/routes/(app)/staff/academic/timetable/+page.svelte');
+	assert.match(page, /outcome: mutationSent \? 'unknown' : 'not_submitted'/);
+	assert.match(page, /await waitForSaves\(\)/);
+	const discard = page.slice(
+		page.indexOf('async function discardFailedSave'),
+		page.indexOf('function lockedTeacherTargetIds')
+	);
+	assert.match(discard, /await reload/);
+	assert.doesNotMatch(
+		discard,
+		/createOrdinaryTimetableBlock|updateTimetableBlock|swapTimetableBlocks/
+	);
+	assert.doesNotMatch(
+		page,
+		/TIMETABLE_DELIVERY_SOURCE_OUTDATED|ensureLatestDeliverySource|updateTimetableDeliverySource/
+	);
 });

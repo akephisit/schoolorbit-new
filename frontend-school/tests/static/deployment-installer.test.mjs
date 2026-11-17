@@ -439,16 +439,35 @@ test('School deployment remains in maintenance until exact current157 and retain
 	assert.match(verification, /\.gradebookResultsCutover\.status == "cutoverCompleted"/);
 	assert.match(verification, /\.gradebookResultsCutover\.passed == true/);
 	assert.match(verification, /all\(\.gradebookResultsCutover\.checks\[\]; \.passed == true\)/);
- assert.match(migrationHandler,/currentOperationsCutover/);
- assert.match(verification,/\.currentOperationsCutover\.migrationVersion == 157/);
- assert.match(verification,/\.currentOperationsCutover\.status == "cutoverCompleted"/);
- assert.match(verification,/\.currentOperationsCutover\.passed == true/);
- assert.match(verification,/\.currentOperationsCutover\.checks \| type == "array" and length == 8/);
- assert.match(verification,/all\(\.currentOperationsCutover\.checks\[\]; \.passed == true and \.mismatchCount == 0\)/);
- assert.deepEqual([...verification.matchAll(/"(CURRENT_[A-Z_]+)"/g)].map(match=>match[1]),[
-  'CURRENT_CATALOG_PINS_PRESERVED','CURRENT_DELIVERY_GRAPH_RECONCILED','CURRENT_FACTS_PRESERVED','CURRENT_LEGACY_SCHEMA_REMOVED','CURRENT_SCOPE_GUARDS_ENABLED','CURRENT_SUPERVISION_PRESERVED','CURRENT_TEACHERS_RECONCILED','CURRENT_TIMETABLE_IDS_RECONCILED'
- ]);
- assert.doesNotMatch(verification,/deliveryTimetableCutover|assessmentCurrentCutover|migrationVersion == (?:88|151)/);
+	assert.match(migrationHandler, /currentOperationsCutover/);
+	assert.match(verification, /\.currentOperationsCutover\.migrationVersion == 157/);
+	assert.match(verification, /\.currentOperationsCutover\.status == "cutoverCompleted"/);
+	assert.match(verification, /\.currentOperationsCutover\.passed == true/);
+	assert.match(
+		verification,
+		/\.currentOperationsCutover\.checks \| type == "array" and length == 8/
+	);
+	assert.match(
+		verification,
+		/all\(\.currentOperationsCutover\.checks\[\]; \.passed == true and \.mismatchCount == 0\)/
+	);
+	assert.deepEqual(
+		[...verification.matchAll(/"(CURRENT_[A-Z_]+)"/g)].map((match) => match[1]),
+		[
+			'CURRENT_CATALOG_PINS_PRESERVED',
+			'CURRENT_DELIVERY_GRAPH_RECONCILED',
+			'CURRENT_FACTS_PRESERVED',
+			'CURRENT_LEGACY_SCHEMA_REMOVED',
+			'CURRENT_SCOPE_GUARDS_ENABLED',
+			'CURRENT_SUPERVISION_PRESERVED',
+			'CURRENT_TEACHERS_RECONCILED',
+			'CURRENT_TIMETABLE_IDS_RECONCILED'
+		]
+	);
+	assert.doesNotMatch(
+		verification,
+		/deliveryTimetableCutover|assessmentCurrentCutover|migrationVersion == (?:88|151)/
+	);
 
 	assert.match(verification, /maintenance remains enabled/);
 
@@ -461,17 +480,62 @@ test('School deployment remains in maintenance until exact current157 and retain
 	}
 });
 
-test('academic smoke reads nullable current timetables and bounds HTTP and native WS to the exact context',async()=>{
- const smoke=await readRepo('scripts/smoke_test.sh'),openapi=JSON.parse(await readRepo('contracts/openapi/school-api.json'));
- const year='00000000-0000-0000-0000-000000000001',term='00000000-0000-0000-0000-000000000002',other='00000000-0000-0000-0000-000000000003',id='00000000-0000-0000-0000-000000000004';
- const current={id,academicYearId:year,academicTermId:term,bellScheduleId:'00000000-0000-0000-0000-000000000005',rowVersion:1,createdAt:'2026-05-01T00:00:00Z',updatedAt:'2026-05-01T00:00:00Z'};
- const directory=await mkdtemp(path.join(os.tmpdir(),'schoolorbit-current-smoke-'));
- try{
-  await writeFile(path.join(directory,'context.json'),JSON.stringify({success:true,data:{defaultAcademicYearId:year,defaultAcademicTermId:term,years:[{isVisible:true,id:year,year:2569,name:'2569',status:'active'}],terms:[term,other].map((id,index)=>({isVisible:true,id,academicYearId:year,sequence:index+1,code:String(index+1),name:`Term ${index+1}`,termType:'regular',includedInYearResult:true,blocksYearClosure:true,status:index?'planning':'active'}))}}));
-  await writeFile(path.join(directory,'current.json'),JSON.stringify({success:true,data:current}));
-  await writeFile(path.join(directory,'workspace.json'),JSON.stringify({success:true,data:{timetable:current,deliveryRowVersion:1,totalBlockCount:0}}));
-  const start=smoke.indexOf('run_academic_context_smoke() {'),end=smoke.indexOf('# Academic Core maintenance read-only smoke end',start);assert.ok(start>=0&&end>start);
-  const program=`
+test('academic smoke reads nullable current timetables and bounds HTTP and native WS to the exact context', async () => {
+	const smoke = await readRepo('scripts/smoke_test.sh'),
+		openapi = JSON.parse(await readRepo('contracts/openapi/school-api.json'));
+	const year = '00000000-0000-0000-0000-000000000001',
+		term = '00000000-0000-0000-0000-000000000002',
+		other = '00000000-0000-0000-0000-000000000003',
+		id = '00000000-0000-0000-0000-000000000004';
+	const current = {
+		id,
+		academicYearId: year,
+		academicTermId: term,
+		bellScheduleId: '00000000-0000-0000-0000-000000000005',
+		rowVersion: 1,
+		createdAt: '2026-05-01T00:00:00Z',
+		updatedAt: '2026-05-01T00:00:00Z'
+	};
+	const directory = await mkdtemp(path.join(os.tmpdir(), 'schoolorbit-current-smoke-'));
+	try {
+		await writeFile(
+			path.join(directory, 'context.json'),
+			JSON.stringify({
+				success: true,
+				data: {
+					defaultAcademicYearId: year,
+					defaultAcademicTermId: term,
+					years: [{ isVisible: true, id: year, year: 2569, name: '2569', status: 'active' }],
+					terms: [term, other].map((id, index) => ({
+						isVisible: true,
+						id,
+						academicYearId: year,
+						sequence: index + 1,
+						code: String(index + 1),
+						name: `Term ${index + 1}`,
+						termType: 'regular',
+						includedInYearResult: true,
+						blocksYearClosure: true,
+						status: index ? 'planning' : 'active'
+					}))
+				}
+			})
+		);
+		await writeFile(
+			path.join(directory, 'current.json'),
+			JSON.stringify({ success: true, data: current })
+		);
+		await writeFile(
+			path.join(directory, 'workspace.json'),
+			JSON.stringify({
+				success: true,
+				data: { timetable: current, deliveryRowVersion: 1, totalBlockCount: 0 }
+			})
+		);
+		const start = smoke.indexOf('run_academic_context_smoke() {'),
+			end = smoke.indexOf('# Academic Core maintenance read-only smoke end', start);
+		assert.ok(start >= 0 && end > start);
+		const program = `
  tmp_dir=$1
  timetable_websocket_smoke(){ printf 'WS\\t%s\\t%s\\t%s\\t%s\\n' "$2" "$3" "$4" "$5" >>"$tmp_dir/requests"; }
  academic_context_get(){
@@ -485,25 +549,86 @@ test('academic smoke reads nullable current timetables and bounds HTTP and nativ
  }
  pass(){ :; }
  fail(){ printf '%s\\n' "$1" >&2; exit 1; }
- ${smoke.slice(start,end)}
+ ${smoke.slice(start, end)}
  run_academic_context_smoke
  `;
-  const {stdout}=await execFileAsync('bash',['-euc',program,'current-smoke-test',directory]);
-  const requests=(await readFile(path.join(directory,'requests'),'utf8')).trim().split('\n').map(line=>line.split('\t'));
-  const gets=requests.filter(([kind,key])=>kind==='GET'&&/^timetable-\d+$/.test(key));assert.equal(gets.length,2);
-  for(const[index,[,key,href]]of gets.entries()){const url=new URL(href,'https://school.test');assert.equal(url.pathname,'/api/academic/timetable');assert.deepEqual(Object.fromEntries(url.searchParams),{academicTermId:index?other:term});assert.equal(key,`timetable-${index+1}`);}
-  const workspace=requests.filter(([kind,key])=>kind==='GET'&&key.startsWith('timetable-workspace-'));assert.equal(workspace.length,1);const url=new URL(workspace[0][2],'https://school.test');assert.equal(url.pathname,'/api/academic/timetable-blocks/workspace');assert.deepEqual(Object.fromEntries(url.searchParams),{academicYearId:year,academicTermId:term,timetableId:id});
-  for(const field of openapi.paths[url.pathname].get.parameters.filter(parameter=>parameter.in==='query'&&parameter.required))assert.ok(url.searchParams.has(field.name));
-  const sockets=requests.filter(([kind])=>kind==='WS');assert.deepEqual(sockets, [['WS',year,term,'',''],['WS',year,term,id,path.join(directory,'academic-timetable-workspace-1.body')],['WS',year,other,'','']]);
-  assert.ok(requests.findIndex(([kind,,selected])=>kind==='WS'&&selected===term)<requests.findIndex(([kind,key])=>kind==='GET'&&key==='timetable-1'));
-  assert.match(stdout,/SKIP academic current timetable context 2: no current timetable; current-room protocol unrun\./);
-  assert.doesNotMatch(program,/timetable-versions|timetableVersionId|deliveryVersionId|\/publish|\/clone/);
-  for(const invalid of [[current],{...current,academicTermId:other},{...current,rowVersion:0},{...current,id:'not-a-uuid'}]){
-   await writeFile(path.join(directory,'requests'),'');await writeFile(path.join(directory,'current.json'),JSON.stringify({success:true,data:invalid}));
-   await assert.rejects(execFileAsync('bash',['-euc',program,'invalid-current-smoke',directory]),error=>error.code===1&&error.stderr.includes('expected an exact singleton or null'));
-   assert.doesNotMatch(await readFile(path.join(directory,'requests'),'utf8'),/timetable-workspace-/,'invalid evidence cannot authorize a current-room read');
-  }
- }finally{await rm(directory,{recursive:true,force:true});}
+		const { stdout } = await execFileAsync('bash', [
+			'-euc',
+			program,
+			'current-smoke-test',
+			directory
+		]);
+		const requests = (await readFile(path.join(directory, 'requests'), 'utf8'))
+			.trim()
+			.split('\n')
+			.map((line) => line.split('\t'));
+		const gets = requests.filter(([kind, key]) => kind === 'GET' && /^timetable-\d+$/.test(key));
+		assert.equal(gets.length, 2);
+		for (const [index, [, key, href]] of gets.entries()) {
+			const url = new URL(href, 'https://school.test');
+			assert.equal(url.pathname, '/api/academic/timetable');
+			assert.deepEqual(Object.fromEntries(url.searchParams), {
+				academicTermId: index ? other : term
+			});
+			assert.equal(key, `timetable-${index + 1}`);
+		}
+		const workspace = requests.filter(
+			([kind, key]) => kind === 'GET' && key.startsWith('timetable-workspace-')
+		);
+		assert.equal(workspace.length, 1);
+		const url = new URL(workspace[0][2], 'https://school.test');
+		assert.equal(url.pathname, '/api/academic/timetable-blocks/workspace');
+		assert.deepEqual(Object.fromEntries(url.searchParams), {
+			academicYearId: year,
+			academicTermId: term,
+			timetableId: id
+		});
+		for (const field of openapi.paths[url.pathname].get.parameters.filter(
+			(parameter) => parameter.in === 'query' && parameter.required
+		))
+			assert.ok(url.searchParams.has(field.name));
+		const sockets = requests.filter(([kind]) => kind === 'WS');
+		assert.deepEqual(sockets, [
+			['WS', year, term, '', ''],
+			['WS', year, term, id, path.join(directory, 'academic-timetable-workspace-1.body')],
+			['WS', year, other, '', '']
+		]);
+		assert.ok(
+			requests.findIndex(([kind, , selected]) => kind === 'WS' && selected === term) <
+				requests.findIndex(([kind, key]) => kind === 'GET' && key === 'timetable-1')
+		);
+		assert.match(
+			stdout,
+			/SKIP academic current timetable context 2: no current timetable; current-room protocol unrun\./
+		);
+		assert.doesNotMatch(
+			program,
+			/timetable-versions|timetableVersionId|deliveryVersionId|\/publish|\/clone/
+		);
+		for (const invalid of [
+			[current],
+			{ ...current, academicTermId: other },
+			{ ...current, rowVersion: 0 },
+			{ ...current, id: 'not-a-uuid' }
+		]) {
+			await writeFile(path.join(directory, 'requests'), '');
+			await writeFile(
+				path.join(directory, 'current.json'),
+				JSON.stringify({ success: true, data: invalid })
+			);
+			await assert.rejects(
+				execFileAsync('bash', ['-euc', program, 'invalid-current-smoke', directory]),
+				(error) => error.code === 1 && error.stderr.includes('expected an exact singleton or null')
+			);
+			assert.doesNotMatch(
+				await readFile(path.join(directory, 'requests'), 'utf8'),
+				/timetable-workspace-/,
+				'invalid evidence cannot authorize a current-room read'
+			);
+		}
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
 });
 
 test('backend-school deployment validates the admin network alias before maintenance activation', async () => {

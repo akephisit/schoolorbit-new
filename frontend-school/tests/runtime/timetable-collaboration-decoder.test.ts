@@ -44,13 +44,7 @@ for (const field of metadataCases) {
 		}
 	});
 	test(`required nullable ${field.name} still rejects missing and malformed non-null metadata`, () => {
-		for (const value of [
-			undefined,
-			1,
-			false,
-			{},
-			[]
-		]) {
+		for (const value of [undefined, 1, false, {}, []]) {
 			assert.equal(
 				decodeDraftEvent(
 					JSON.stringify({

@@ -1,3 +1,4 @@
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
 import {
 	listSupervisionCycles,
 	listSupervisionTemplateSummaries,
@@ -12,7 +13,7 @@ import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {
-	academicContext: 'term_optional' as const,
+	academicContext: 'term_required' as const,
 	menu: {
 		title: 'นิเทศการสอน',
 		icon: 'ClipboardCheck',
@@ -24,7 +25,9 @@ export const _meta = {
 	}
 };
 
-export const load: PageLoad = ({ fetch, url }) => {
+export const load: PageLoad = ({ fetch, url, depends }) => {
+	depends('school:app-identity');
+	const routeIdentity = waitForAuthenticatedUser().then((user) => (user ? appIdentityKey() : ''));
 	const academicYearId = url.searchParams.get('academicYearId');
 	const academicTermId = url.searchParams.get('academicTermId');
 	const access = waitForSupervisionAccess(PERMISSION_MODULES.SUPERVISION);
@@ -32,38 +35,44 @@ export const load: PageLoad = ({ fetch, url }) => {
 		access,
 		waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS)
 	]).then(([route, read]) => route && read);
-	const observations = academicYearId
-		? captureRouteLoad(
-				observationAccess.then(async (readable) => ({
-					readable,
-					items: readable
-						? await listSupervisionObservations(
-								{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
-								{ requestFetch: fetch }
-							)
-						: []
-				})),
-				'โหลดรายการนิเทศไม่สำเร็จ'
-			)
-		: null;
+	const observations =
+		academicYearId && academicTermId
+			? captureRouteLoad(
+					observationAccess.then(async (readable) => ({
+						readable,
+						items: readable
+							? await listSupervisionObservations(
+									{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
+									{ requestFetch: fetch }
+								)
+							: []
+					})),
+					'โหลดรายการนิเทศไม่สำเร็จ'
+				)
+			: null;
 	const cycleAccess = access;
-	const cycles = academicYearId
-		? captureRouteLoad(
-				cycleAccess.then((allowed) =>
-					allowed
-						? listSupervisionCycles(academicYearId, academicTermId, { requestFetch: fetch })
-						: []
-				),
-				'โหลดรอบนิเทศไม่สำเร็จ'
-			)
-		: null;
-	const templates = captureRouteLoad(
-		observationAccess.then((allowed) =>
-			allowed ? listSupervisionTemplateSummaries({ requestFetch: fetch }) : []
-		),
-		'โหลดข้อมูลแบบประเมินไม่สำเร็จ'
-	);
+	const cycles =
+		academicYearId && academicTermId
+			? captureRouteLoad(
+					cycleAccess.then((allowed) =>
+						allowed
+							? listSupervisionCycles(academicYearId, academicTermId, { requestFetch: fetch })
+							: []
+					),
+					'โหลดรอบนิเทศไม่สำเร็จ'
+				)
+			: null;
+	const templates =
+		academicYearId && academicTermId
+			? captureRouteLoad(
+					observationAccess.then((allowed) =>
+						allowed ? listSupervisionTemplateSummaries({ requestFetch: fetch }) : []
+					),
+					'โหลดข้อมูลแบบประเมินไม่สำเร็จ'
+				)
+			: null;
 	return {
+		identity: routeIdentity,
 		title: _meta.menu.title,
 		section: 'mine' as const,
 		academicYearId,

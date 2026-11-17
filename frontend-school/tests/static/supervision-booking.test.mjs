@@ -43,59 +43,55 @@ test('teaching supervision names canonical timetable block-group references end 
 	assert.doesNotMatch(generatedSchoolApi, /timetableEntryId/);
 });
 
-test('teaching supervision booking uses a weekly timetable grid with exact observed dates', async () => {
-	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
-	const supervisionPage = await readRepoFile(
+test('teaching supervision booking uses canonical dated options and an ordered range without manual input', async () => {
+	const api = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
+	const page = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
-	const supervisionModels = await readRepoFile(
-		'backend-school/crates/school-supervision/src/models.rs'
+	const picker = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionLessonPicker.svelte'
 	);
-	const supervisionService = await readSupervisionServices();
-	const migration = await readRepoFile('backend-school/migrations/008_supervision_observed_at.sql');
-
+	const range = await readRepoFile('frontend-school/src/lib/supervision/booking-range.ts');
+	assert.match(api, /operations\['getSupervisionBookingOptions'\]/);
+	assert.match(api, /\/api\/supervision\/booking-options/);
+	assert.match(page, /<SupervisionLessonPicker/);
 	assert.match(
-		supervisionApi,
-		/RequestSupervisionObservationRequest =[\s\S]*operations\['requestSupervisionObservation'\]/
+		page,
+		/observations=\{myObservations.filter\([\s\S]*item.cycleId === currentBookingCycle.id/
 	);
-	assert.match(supervisionPage, /currentBookingCycle/);
-	assert.match(supervisionPage, /bookingWeekStartDate/);
-	assert.match(supervisionPage, /selectedBookingDate/);
-	assert.match(supervisionPage, /goToPreviousBookingWeek/);
-	assert.match(supervisionPage, /goToNextBookingWeek/);
-	assert.match(supervisionPage, /timetableObservedAt\(/);
-	assert.match(supervisionPage, /observationForTimetableCell\(/);
-	assert.match(supervisionPage, /statusLabel\(cellObservation\.status\)/);
-	assert.match(supervisionPage, /observedAt:[\s\S]*manualMode[\s\S]*timetableObservedAt/);
-	assert.doesNotMatch(
-		supervisionPage,
-		/<Select\.Root\s+type="single"\s+bind:value=\{selectedCycleId\}/
-	);
-
-	assert.match(supervisionModels, /pub\s+observed_at:\s*DateTime<Utc>/);
-	assert.match(supervisionModels, /pub\s+observed_at:\s*Option<DateTime<Utc>>/);
-	assert.match(supervisionService, /day_of_week_matches_observed_at/);
-	assert.doesNotMatch(
-		supervisionPage,
-		/bookingOpensAt|bookingClosesAt|cycle\.startsAt|cycle\.endsAt|bookingDateInCycle|canNavigateBookingWeek/
-	);
-	assert.match(migration, /ADD COLUMN observed_at timestamp with time zone/);
-	assert.match(migration, /DROP COLUMN manual_observed_at/);
+	assert.match(picker, /weekStartDate/);
+	assert.match(picker, /changeWeek\(-1\)/);
+	assert.match(picker, /changeWeek\(1\)/);
+	assert.match(picker, /timetableBlockGroupIds: ordered.map/);
+	assert.match(picker, /observedDate: ordered\[0\].observedDate/);
+	assert.match(picker, /expectedSourceDigest: selectionDigest/);
+	assert.match(picker, /bookedObservationFor/);
+	assert.match(range, /observation.periods.some/);
+	assert.match(range, /item.homeroomId !== first.homeroomId/);
+	assert.doesNotMatch(page, /manualMode|manualLessonDate|getMyTimetable|combineLocalDateTime/);
+	assert.doesNotMatch(picker, /manualLesson:|type="time"|toISOString\(\)/);
+	assert.doesNotMatch(page, /bookingOpensAt|bookingClosesAt|cycle.startsAt|cycle.endsAt/);
 });
 
-test('teaching supervision booking gives term-local setup guidance without blocking other sections', async () => {
-	const routePage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
-	);
-
-	assert.match(routePage, /AcademicPrerequisiteNotice/);
-	assert.match(routePage, /academicTermId/);
-	assert.match(routePage, /\/staff\/academic\/timetable/);
+test('teaching supervision booking relies on required route context while management remains year-wide', async () => {
+	const root = 'frontend-school/src/routes/(app)/staff/academic/supervision';
+	const routePage = await readRepoFile(`${root}/+page.svelte`);
+	const routeLoader = await readRepoFile(`${root}/+page.ts`);
+	assert.match(routeLoader, /academicContext:\s*'term_required'/);
 	assert.match(routePage, /<SupervisionWorkspace section="mine"/);
-	assert.doesNotMatch(
-		routePage,
-		/getLearningDeliveryManagementOptions|getCurriculumProgramWorkspace/
-	);
+	assert.doesNotMatch(routePage, /AcademicPrerequisiteNotice|bookingTermPrerequisite/);
+	for (const child of [
+		'evaluate',
+		'requests',
+		'cycles',
+		'templates',
+		'overview',
+		'approvals',
+		'[id]'
+	]) {
+		const loader = await readRepoFile(`${root}/${child}/+page.ts`);
+		assert.match(loader, /academicContext:\s*'term_optional'/, child);
+	}
 });
 
 test('teaching supervision templates expose a read-only form preview', async () => {
@@ -294,19 +290,20 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(supervisionApi, /getSupervisionObservationTimetableOptions/);
 	assert.match(supervisionApi, /cancelSupervisionObservation/);
 	assert.match(supervisionApi, /SupervisionAction = Schemas\['SupervisionAction'\]/);
-	assert.match(detailRoute, /_meta\s*=\s*\{\s*access:/);
+	assert.match(
+		detailRoute,
+		/_meta\s*=\s*\{\s*academicContext:\s*'term_optional' as const,\s*access:/
+	);
 	assert.doesNotMatch(detailRoute, /menu:/);
 	assert.match(detailPage, /getSupervisionObservation/);
 	assert.match(detailPage, /updateSupervisionObservation/);
 	assert.match(detailPage, /replaceSupervisionObservationEvaluators/);
 	assert.match(detailPage, /getSupervisionEvaluatorAvailability/);
-	assert.match(detailPage, /getSupervisionObservationTimetableOptions/);
 	assert.match(detailPage, /availableEvaluators/);
-	assert.match(detailPage, /editTimetableBlockGroups/);
-	assert.match(detailPage, /selectLessonTimetableBlockGroup/);
-	assert.match(detailPage, /selectedEditTimetableBlockGroupId/);
-	assert.match(detailPage, /editTimetableObservedAt/);
-	assert.match(detailPage, /timetableBlockGroupId:\s*selectedEditTimetableBlockGroupId/);
+	assert.match(detailPage, /<SupervisionLessonPicker/);
+	assert.match(detailPage, /<SupervisionSavedPeriods/);
+	assert.match(detailPage, /saveLessonEdit\(selection: SupervisionLessonSelection\)/);
+	assert.doesNotMatch(detailPage, /lessonForm|supervision-manual-|manualLesson:/);
 	assert.doesNotMatch(detailPage, /การแก้จากหน้ารายละเอียดจะบันทึกเป็นคาบกำหนดเอง/);
 	assert.match(detailPage, /cancelSupervisionObservation/);
 	assert.match(detailPage, /PageShell/);

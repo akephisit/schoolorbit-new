@@ -1,14 +1,10 @@
 import { expect, test } from '@playwright/test';
-import type {
-	LessonSnapshot,
-	UpdateSupervisionObservationRequest,
-	SupervisionTimetableOption,
-	ManualLesson
-} from '../../src/lib/api/supervision';
-import { mock, id, year } from './fixtures/supervision-route-data';
+import type { LessonSnapshot } from '../../src/lib/api/supervision';
+import { mock, id, year, savedPeriod, timetableOption } from './fixtures/supervision-route-data';
+
 test.use({ serviceWorkers: 'block' });
-const path = `/staff/academic/supervision/${id(30)}?academicYearId=${year}`,
-	resource = `/api/supervision/observations/${id(30)}`;
+const path = `/staff/academic/supervision/${id(30)}?academicYearId=${year}`;
+const resource = `/api/supervision/observations/${id(30)}`;
 const rich: LessonSnapshot = {
 	source: 'timetable',
 	timetableBlockGroupId: id(80),
@@ -23,185 +19,150 @@ const minimal: LessonSnapshot = {
 	timetableBlockGroupId: id(80),
 	observedAt: '2026-10-01T09:00:00Z'
 };
-const current: SupervisionTimetableOption = {
-	blockGroupId: id(81),
-	blockId: id(82),
-	bellSchedulePeriodId: id(83),
-	dayOfWeek: 'THU',
-	startTime: '08:30:00',
-	endTime: '09:20:00',
-	homeroomNames: ['ม.1/2'],
-	learningGroupId: id(84),
-	learningGroupName: 'กลุ่มปัจจุบัน',
-	learningOfferingId: id(85),
-	offeringCode: 'ค21101',
-	offeringName: 'วิชาปัจจุบัน',
-	periodName: 'คาบใหม่',
-	periodOrderIndex: 1,
-	roomName: 'ห้องปัจจุบัน'
-};
 
 for (const [name, snapshot] of [
 	['rich', rich],
 	['minimal', minimal]
-] as const)
-	test(`${name} detached timetable evidence remains readable with saved evaluation results`, async ({
+] as const) {
+	test(`${name} detached evidence remains readable with saved evaluations and no writes`, async ({
 		page
 	}) => {
-		const fixture = await mock(page, {
-				observationStatus: 'evaluators_submitted',
-				averageRating: 4,
-				observation: {
-					timetableBlockGroupId: null,
-					learningGroupId: null,
-					lessonSnapshot: snapshot
-				}
-			}),
-			saved = fixture.observation();
+		const api = await mock(page, {
+			observationStatus: 'evaluators_submitted',
+			averageRating: 4,
+			observation: { periods: [savedPeriod({ lessonSnapshot: snapshot })] }
+		});
+		const original = api.observation();
 		await page.goto(path);
-		await expect(
-			page.getByText('ตารางสอนเดิม (ข้อมูลคาบที่บันทึกไว้)', { exact: true })
-		).toBeVisible();
+		await expect(page.getByTestId('supervision-saved-periods')).toContainText(
+			'ตารางสอนเดิม (ข้อมูลคาบที่บันทึกไว้)'
+		);
 		await expect(
 			page.getByText(
 				'คาบเดิมถูกนำออกจากตารางปัจจุบัน ข้อมูลคาบและผลการนิเทศที่บันทึกไว้ยังคงอยู่',
 				{ exact: true }
 			)
 		).toBeVisible();
-		await expect(page.getByText('กำหนดเอง', { exact: true })).toHaveCount(0);
-		await expect(page.getByText('ผู้ประเมินทดสอบ', { exact: true }).first()).toBeVisible();
+		if (name === 'rich')
+			await expect(page.getByTestId('supervision-saved-periods')).toContainText(
+				'คาบเดิมที่นิเทศจริง'
+			);
 		await page.getByRole('button', { name: 'ดูผลประเมินรายข้อ', exact: true }).click();
 		await expect(page.getByTestId('supervision-review')).toContainText(
 			'หัวข้อ rubric ที่โหลดเมื่อเปิด'
 		);
-		expect(fixture.observation()).toEqual(saved);
-		expect(saved.evaluators[0].status).toBe('submitted');
-		expect(saved.averageRating).toBe(4);
-		expect(fixture.writes).toEqual([]);
-		expect(fixture.count(`${resource}/timetable-options`)).toBe(0);
+		expect(api.observation()).toEqual(original);
+		expect(original.evaluators[0].status).toBe('submitted');
+		expect(original.averageRating).toBe(4);
+		expect(api.writes).toEqual([]);
 	});
+}
 
-test('minimal detached evidence never invents manual labels or a reason; explicit valid manual entry is required', async ({
+test('partial historic manual facts and every saved period remain readable without manual inputs', async ({
 	page
 }) => {
-	const fixture = await mock(page, {
-			observationStatus: 'planned',
-			observation: { timetableBlockGroupId: null, lessonSnapshot: minimal }
-		}),
-		saved = fixture.observation(),
-		writes: UpdateSupervisionObservationRequest[] = [];
-	await page.route(`**${resource}`, (route) => {
-		if (route.request().method() !== 'PATCH') return route.fallback();
-		const body: UpdateSupervisionObservationRequest = route.request().postDataJSON();
-		writes.push(body);
-		return route.fulfill({
-			json: {
-				success: true,
-				data: {
-					...saved,
-					manualLesson: body.manualLesson,
-					lessonSnapshot: { source: 'manual', ...body.manualLesson }
-				}
-			}
-		});
+	const api = await mock(page, {
+		observation: {
+			periods: [
+				savedPeriod({
+					id: id(70),
+					lessonSnapshot: { source: 'manual' },
+					manualLesson: {
+						periodLabel: 'คาบเดิมบางส่วน',
+						reason: 'หมายเหตุที่บันทึกไว้เดิม',
+						classroomLabel: 'ม.3/2'
+					}
+				}),
+				savedPeriod({
+					id: id(71),
+					position: 2,
+					lessonSnapshot: {
+						source: 'removed_timetable',
+						subjectName: 'วิชาคาบที่สอง',
+						periodLabel: 'คาบ 2',
+						classroomLabel: 'ม.3/2'
+					}
+				})
+			]
+		}
 	});
 	await page.goto(path);
+	const evidence = page.getByTestId('supervision-saved-periods');
+	await expect(evidence).toContainText('คาบเดิมบางส่วน');
+	await expect(evidence).toContainText('หมายเหตุที่บันทึกไว้เดิม');
+	await expect(evidence).toContainText('วิชาคาบที่สอง');
 	await page.getByRole('button', { name: 'แก้คาบ/วันเวลา', exact: true }).click();
-	const dialog = page.getByRole('dialog'),
-		save = dialog.getByRole('button', { name: 'บันทึกคาบนิเทศ', exact: true });
-	for (const label of ['วิชา', 'คาบ', 'ชั้น/ห้อง', 'ห้องเรียน', 'เหตุผล/หมายเหตุ'])
-		await expect(dialog.getByLabel(label, { exact: true })).toHaveValue('');
-	await expect(save).toBeDisabled();
-	await save.evaluate((button: HTMLButtonElement) => button.click());
-	expect(writes).toEqual([]);
-	await dialog.getByLabel('วิชา', { exact: true }).fill('คาบกิจกรรมที่ระบุเอง');
-	await dialog.getByLabel('คาบ', { exact: true }).fill('ช่วงบ่าย');
-	await dialog.getByLabel('ชั้น/ห้อง', { exact: true }).fill('ม.1/1');
-	await dialog.getByLabel('เหตุผล/หมายเหตุ', { exact: true }).fill('   ');
-	await expect(save).toBeDisabled();
-	await dialog
-		.getByLabel('เหตุผล/หมายเหตุ', { exact: true })
-		.fill(' ยืนยันเปลี่ยนเป็นกิจกรรมนอกตารางตามข้อเท็จจริง ');
-	await save.click();
-	await expect.poll(() => writes.length).toBe(1);
-	expect(writes[0].manualLesson).toMatchObject({
-		subjectName: 'คาบกิจกรรมที่ระบุเอง',
-		periodLabel: 'ช่วงบ่าย',
-		classroomLabel: 'ม.1/1',
-		reason: 'ยืนยันเปลี่ยนเป็นกิจกรรมนอกตารางตามข้อเท็จจริง'
-	});
-	expect(writes[0].timetableBlockGroupId ?? null).toBeNull();
-	expect(fixture.observation().evaluators).toEqual(saved.evaluators);
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.locator('input[type="time"], input[id^="supervision-manual-"]')).toHaveCount(
+		0
+	);
+	await expect(dialog.getByTestId('supervision-saved-periods')).toContainText(
+		'หมายเหตุที่บันทึกไว้เดิม'
+	);
+	await expect(dialog.getByRole('button', { name: 'บันทึกคาบนิเทศ', exact: true })).toBeDisabled();
+	expect(api.writes).toEqual([]);
 });
 
-test('detached rich evidence can be deliberately rebound to an actual current timetable option', async ({
+test('returned legacy evidence is never rebound until the teacher explicitly selects the current dated range', async ({
 	page
 }) => {
-	const fixture = await mock(page, {
-			observationStatus: 'planned',
-			observation: { timetableBlockGroupId: null, lessonSnapshot: rich }
-		}),
-		writes: UpdateSupervisionObservationRequest[] = [];
-	await page.route(`**${resource}/timetable-options`, (route) =>
-		route.fulfill({ json: { success: true, data: { items: [current] } } })
+	const choices = [timetableOption(0), timetableOption(1), timetableOption(2)];
+	const api = await mock(page, {
+		permissions: ['supervision.request.own', 'supervision.read.own'],
+		canManage: false,
+		observationStatus: 'returned',
+		bookingItems: choices,
+		observation: { periods: [savedPeriod({ lessonSnapshot: rich })] }
+	});
+	await page.goto(path);
+	await page.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByTestId('supervision-saved-periods')).toContainText(
+		'คาบเดิมที่นิเทศจริง'
 	);
-	await page.route(`**${resource}`, (route) => {
-		if (route.request().method() !== 'PATCH') return route.fallback();
-		const body: UpdateSupervisionObservationRequest = route.request().postDataJSON();
-		writes.push(body);
-		return route.fulfill({
-			json: {
-				success: true,
-				data: {
-					...fixture.observation(),
-					timetableBlockGroupId: body.timetableBlockGroupId,
-					manualLesson: null
-				}
-			}
-		});
+	await expect(dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true })).toBeDisabled();
+	await dialog.getByRole('button', { name: /เลือก คาบ 1 ม.1\/1/ }).click();
+	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
+	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
+	await dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(api.writes).toEqual([`PATCH ${resource}/request`]);
+	expect(api.payloads).toEqual([
+		{
+			observedDate: '2026-10-01',
+			timetableBlockGroupIds: choices.map((item) => item.blockGroupId),
+			expectedSourceDigest: 'source-1'
+		}
+	]);
+	await expect(page.getByTestId('supervision-saved-periods')).toContainText('วิชาปัจจุบัน 3');
+	expect(api.count(resource)).toBe(1);
+});
+
+test('a manager deliberately replaces the whole range through the manager update operation', async ({
+	page
+}) => {
+	const choices = [timetableOption(0), timetableOption(1), timetableOption(2)];
+	const api = await mock(page, {
+		observationStatus: 'planned',
+		bookingItems: choices,
+		observation: { periods: [savedPeriod({ lessonSnapshot: rich })] }
 	});
 	await page.goto(path);
 	await page.getByRole('button', { name: 'แก้คาบ/วันเวลา', exact: true }).click();
 	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByLabel('เหตุผล/หมายเหตุ', { exact: true })).toHaveValue('');
 	await expect(dialog.getByRole('button', { name: 'บันทึกคาบนิเทศ', exact: true })).toBeDisabled();
-	await dialog.getByRole('button', { name: /วิชาปัจจุบัน/ }).click();
+	await dialog.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
+	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
+	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
 	await dialog.getByRole('button', { name: 'บันทึกคาบนิเทศ', exact: true }).click();
-	await expect.poll(() => writes.length).toBe(1);
-	expect(writes[0]).toEqual({
-		timetableBlockGroupId: current.blockGroupId,
-		observedAt: '2026-10-01T01:30:00.000Z',
-		manualLesson: null
-	});
+	await expect(dialog).toHaveCount(0);
+	expect(api.writes).toEqual([`PATCH ${resource}`]);
+	expect(api.payloads).toEqual([
+		{
+			observedDate: '2026-10-01',
+			timetableBlockGroupIds: choices.map((item) => item.blockGroupId),
+			expectedSourceDigest: 'source-1'
+		}
+	]);
+	await expect(page.getByTestId('supervision-saved-periods')).toContainText('วิชาปัจจุบัน 3');
 });
-
-for (const origin of ['manual', 'linked'] as const)
-	test(`ordinary ${origin} evidence keeps its actual source and existing reason`, async ({
-		page
-	}) => {
-		const manual: ManualLesson = {
-			subjectName: 'วิชาเดิม',
-			classroomLabel: 'ม.1/1',
-			periodLabel: 'คาบเดิม',
-			roomLabel: null,
-			observedAt: '2026-10-01T09:00:00Z',
-			reason: 'เหตุผลที่บันทึกไว้จริง'
-		};
-		const fixture = await mock(page, {
-			observationStatus: 'planned',
-			observation: {
-				timetableBlockGroupId: origin === 'linked' ? current.blockGroupId : null,
-				manualLesson: origin === 'manual' ? manual : null,
-				lessonSnapshot: origin === 'manual' ? { source: 'manual', ...manual } : rich
-			}
-		});
-		await page.goto(path);
-		await expect(
-			page.getByText(origin === 'manual' ? 'กำหนดเอง' : 'ตารางสอน', { exact: true })
-		).toBeVisible();
-		await page.getByRole('button', { name: 'แก้คาบ/วันเวลา', exact: true }).click();
-		await expect(
-			page.getByRole('dialog').getByLabel('เหตุผล/หมายเหตุ', { exact: true })
-		).toHaveValue(origin === 'manual' ? manual.reason : '');
-		expect(fixture.writes).toEqual([]);
-	});

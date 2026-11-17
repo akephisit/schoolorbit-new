@@ -285,7 +285,7 @@ test('exam round list deletes only authorized rounds through destructive confirm
 	const page = await readProjectFile('src/routes/(app)/staff/academic/exam-schedules/+page.svelte');
 
 	assert.match(page, /PERMISSIONS\.ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL/);
-	assert.doesNotMatch(page,/round\.status|canPublishExamSchedules/);
+	assert.doesNotMatch(page, /round\.status|canPublishExamSchedules/);
 	assert.match(page, /await deleteExamRound\(target\.id\)/);
 	assert.match(page, /rounds = rounds\.filter\(\(round\) => round\.id !== target\.id\)/);
 	assert.match(page, /<AlertDialog\.Title>ลบรอบสอบ/);
@@ -305,10 +305,24 @@ test('exam schedule API exposes staff-level invigilator drag actions', () => {
 	assert.match(api, /apiClient\.delete<ExamInvigilatorWorkspace>/);
 });
 
-test('current exam kind saves its accepted round revision and refreshes live eligibility',()=>{
- const api=readFileSync(projectPath('src/lib/api/examSchedule.ts'),'utf8'),page=readFileSync(projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),'utf8'),dialog=readFileSync(projectPath('src/lib/components/academic/exam-schedule/ExamRoundDialog.svelte'),'utf8');
- assert.match(api,/Schemas\['CreateExamRoundRequest'\]\['examKind'\]/);assert.match(dialog,/<Select\.Item value="midterm">กลางภาค<\/Select\.Item>/);assert.match(dialog,/<Select\.Item value="final">ปลายภาค<\/Select\.Item>/);
- const save=localFunctionSource(page,'saveExamKind');assert.match(save,/updateExamRound/);assert.match(save,/rowVersion: workspace\.round\.rowVersion/);assert.match(save,/refreshWorkspace\(true\)/);assert.doesNotMatch(api+page,/previewExamSources|syncExamSources|publishExamRound/);
+test('current exam kind saves its accepted round revision and refreshes live eligibility', () => {
+	const api = readFileSync(projectPath('src/lib/api/examSchedule.ts'), 'utf8'),
+		page = readFileSync(
+			projectPath('src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'),
+			'utf8'
+		),
+		dialog = readFileSync(
+			projectPath('src/lib/components/academic/exam-schedule/ExamRoundDialog.svelte'),
+			'utf8'
+		);
+	assert.match(api, /Schemas\['CreateExamRoundRequest'\]\['examKind'\]/);
+	assert.match(dialog, /<Select\.Item value="midterm">กลางภาค<\/Select\.Item>/);
+	assert.match(dialog, /<Select\.Item value="final">ปลายภาค<\/Select\.Item>/);
+	const save = localFunctionSource(page, 'saveExamKind');
+	assert.match(save, /updateExamRound/);
+	assert.match(save, /rowVersion: workspace\.round\.rowVersion/);
+	assert.match(save, /refreshWorkspace\(true\)/);
+	assert.doesNotMatch(api + page, /previewExamSources|syncExamSources|publishExamRound/);
 });
 
 test('exam schedule shows only real source changes and uses permission-safe lookup options', async () => {
@@ -333,11 +347,25 @@ test('exam schedule shows only real source changes and uses permission-safe look
 	assert.doesNotMatch(listPage + detailPage, /getLearningDeliveryManagementOptions/);
 });
 
-test('exam current workspace exposes live sources without any source-sync writer or publication fallback',async()=>{
- const contract=JSON.parse(await readFile(path.resolve(projectRoot,'../contracts/openapi/school-api.json'),'utf8'));const workspace=contract.components.schemas.ExamScheduleWorkspace,round=contract.components.schemas.ExamRound;
- assert.ok(workspace.required.includes('unscheduledItems'));assert.ok(workspace.required.includes('scheduledSessions'));assert.equal(workspace.properties.sourcePreview,undefined);assert.ok(round.required.includes('rowVersion'));for(const field of ['status','publishedAt','publishedBy'])assert.equal(round.properties[field],undefined);
- assert.ok(contract.components.schemas.ExamScheduleReadiness.required.includes('complete'));assert.ok(contract.components.schemas.ExamScheduleReadinessCode.enum.includes('invalid_current_sources'));
- for(const route of Object.keys(contract.paths))if(route.startsWith('/api/academic/exam-schedules'))assert.doesNotMatch(route,/source-preview|source-sync|publish/);
+test('exam current workspace exposes live sources without any source-sync writer or publication fallback', async () => {
+	const contract = JSON.parse(
+		await readFile(path.resolve(projectRoot, '../contracts/openapi/school-api.json'), 'utf8')
+	);
+	const workspace = contract.components.schemas.ExamScheduleWorkspace,
+		round = contract.components.schemas.ExamRound;
+	assert.ok(workspace.required.includes('unscheduledItems'));
+	assert.ok(workspace.required.includes('scheduledSessions'));
+	assert.equal(workspace.properties.sourcePreview, undefined);
+	assert.ok(round.required.includes('rowVersion'));
+	for (const field of ['status', 'publishedAt', 'publishedBy'])
+		assert.equal(round.properties[field], undefined);
+	assert.ok(contract.components.schemas.ExamScheduleReadiness.required.includes('complete'));
+	assert.ok(
+		contract.components.schemas.ExamScheduleReadinessCode.enum.includes('invalid_current_sources')
+	);
+	for (const route of Object.keys(contract.paths))
+		if (route.startsWith('/api/academic/exam-schedules'))
+			assert.doesNotMatch(route, /source-preview|source-sync|publish/);
 });
 
 test('exam schedule workspace tabs inherit app content height instead of recalculating viewport height', () => {
@@ -583,11 +611,7 @@ test('staff workspace refreshes or invalidates invigilator workspace after sourc
 	assert.match(refreshOrInvalidateInvigilators, /loadInvigilators/);
 	assert.match(refreshOrInvalidateInvigilators, /invigilatorWorkspace = null/);
 
-	for (const handlerName of [
-		'handleSaveDay',
-		'handleDeleteDay',
-		'handleSaveAssignment'
-	]) {
+	for (const handlerName of ['handleSaveDay', 'handleDeleteDay', 'handleSaveAssignment']) {
 		const handler = localFunctionSource(page, handlerName);
 		assert.match(handler, /refreshWorkspace\(true\)/, `${handlerName} should refresh invigilators`);
 	}
@@ -836,7 +860,7 @@ test('staff workspace wires direct current setup, placement, room assignment and
 		'upsertExamDay',
 		'deleteExamDay',
 		'upsertDayRoomAssignment',
-		'ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL',
+		'ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL'
 	];
 
 	for (const expected of expectedWorkspaceWiring) {
@@ -1212,7 +1236,7 @@ test('scheduled exam sessions can be removed through dialog and tray drop', () =
 	assert.doesNotMatch(handleUnscheduleExamSession, /refreshWorkspace\(true\)/);
 	assert.match(handleUnscheduleExamSession, /applyRemovedExamSession\(session\)/);
 	assert.match(handleUnscheduleExamSession, /!canManageExamSchedules/);
-	assert.doesNotMatch(handleUnscheduleExamSession,/workspace\.round\.status/);
+	assert.doesNotMatch(handleUnscheduleExamSession, /workspace\.round\.status/);
 });
 
 test('staff workspace reloads by route round id and keeps form input on failed saves', () => {
@@ -1658,7 +1682,7 @@ test('exam scheduling uses generated term and homeroom contracts end to end', ()
 		'getExamScheduleWorkspace',
 		'upsertExamDay',
 		'upsertExamDayRoomAssignment',
-		'placeExamSession',
+		'placeExamSession'
 	]) {
 		assert.match(handlers, new RegExp(`operation_id = "${operationId}"`));
 	}

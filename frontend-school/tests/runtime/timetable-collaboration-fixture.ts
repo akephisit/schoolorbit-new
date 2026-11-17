@@ -1,4 +1,7 @@
-import type { TimetableLookupChanges, TimetableBlockWorkspace } from '../../src/lib/api/timetable.js';
+import type {
+	TimetableLookupChanges,
+	TimetableBlockWorkspace
+} from '../../src/lib/api/timetable.js';
 import { makeTimetable, timetableIds } from '../e2e/timetable-test-harness.ts';
 
 export function collaborationWorkspace(): TimetableBlockWorkspace {

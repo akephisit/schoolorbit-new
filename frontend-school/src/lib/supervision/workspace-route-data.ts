@@ -11,6 +11,7 @@ export type WorkspaceSection =
 export type ObservationRegion = { readable: boolean; items: SupervisionObservation[] };
 export type TeacherStatusRegion = { cycleId: string; items: SupervisionTeacherStatusRow[] };
 export type SupervisionWorkspaceRouteData = {
+	identity: Promise<string>;
 	section: WorkspaceSection;
 	academicYearId: string | null;
 	academicTermId: string | null;

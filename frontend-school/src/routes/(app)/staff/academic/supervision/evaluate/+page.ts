@@ -1,3 +1,4 @@
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
 import {
 	listSupervisionCycles,
 	listSupervisionTemplateSummaries,
@@ -12,13 +13,16 @@ import { PERMISSIONS } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {
+	academicContext: 'term_optional' as const,
 	access: {
 		user_type: 'staff',
 		permission: PERMISSIONS.SUPERVISION_EVALUATE_ASSIGNED
 	}
 };
 
-export const load: PageLoad = ({ fetch, url }) => {
+export const load: PageLoad = ({ fetch, url, depends }) => {
+	depends('school:app-identity');
+	const routeIdentity = waitForAuthenticatedUser().then((user) => (user ? appIdentityKey() : ''));
 	const academicYearId = url.searchParams.get('academicYearId');
 	const academicTermId = url.searchParams.get('academicTermId');
 	const access = waitForSupervisionAccess([_meta.access.permission]);
@@ -58,6 +62,7 @@ export const load: PageLoad = ({ fetch, url }) => {
 		'โหลดข้อมูลแบบประเมินไม่สำเร็จ'
 	);
 	return {
+		identity: routeIdentity,
 		title: 'รายการที่ต้องประเมิน',
 		section: 'evaluate' as const,
 		academicYearId,

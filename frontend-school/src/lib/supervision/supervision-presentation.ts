@@ -1,7 +1,8 @@
 import type {
 	SupervisionCycleStatus,
 	SupervisionObservation,
-	SupervisionObservationStatus
+	SupervisionObservationStatus,
+	SupervisionObservationPeriod
 } from '#lib/api/supervision.js';
 
 const statusLabels = {
@@ -91,4 +92,31 @@ export function currentReturnReason(
 		.filter((item) => item.toStatus === 'returned')
 		.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 	return action?.comment?.trim() || null;
+}
+
+export function savedLessonLabels(observation: SupervisionObservation) {
+	const periods = [...observation.periods].sort((a, b) => a.position - b.position);
+	const values = (field: 'subjectName' | 'classroomLabel' | 'roomLabel' | 'periodLabel') =>
+		periods
+			.map((period) => period.lessonSnapshot[field] ?? period.manualLesson?.[field])
+			.filter((value): value is string => Boolean(value?.trim()));
+	return {
+		subject: [...new Set(values('subjectName'))].join(' · ') || 'ไม่ระบุวิชา',
+		homeroom: [...new Set(values('classroomLabel'))].join(' · ') || 'ไม่ระบุชั้นเรียน',
+		room: [...new Set(values('roomLabel'))].join(' · ') || '—',
+		period: values('periodLabel').join(' → ') || 'ไม่ระบุคาบ'
+	};
+}
+
+export function savedPeriodSourceLabel(period: SupervisionObservationPeriod): string {
+	if (period.manualLesson || period.lessonSnapshot.source === 'manual')
+		return 'กำหนดเอง (ข้อมูลที่บันทึกไว้)';
+	if (period.timetableBlockGroupId) return 'ตารางสอน';
+	if (
+		period.lessonSnapshot.source === 'timetable' ||
+		period.lessonSnapshot.source === 'removed_timetable' ||
+		period.lessonSnapshot.timetableBlockGroupId
+	)
+		return 'ตารางสอนเดิม (ข้อมูลคาบที่บันทึกไว้)';
+	return 'ข้อมูลคาบที่บันทึกไว้';
 }

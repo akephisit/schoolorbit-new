@@ -84,7 +84,7 @@ async fn populated_cutover_preserves_current_ids_facts_and_retries_without_histo
         chosen.len() as i64
     );
 
-    assert_eq!(sqlx::query_scalar::<_, Value>("SELECT jsonb_agg(to_jsonb(r)-'updated_at'-'timetable_block_group_id'-'learning_group_id' ORDER BY id) FROM supervision_observations r")
+    assert_eq!(sqlx::query_scalar::<_, Value>("SELECT jsonb_agg((to_jsonb(r)||(to_jsonb(p)-ARRAY['id','observation_id','position','academic_year_id','academic_term_id','learning_offering_id','ends_at','created_at','updated_at']))-'updated_at'-'timetable_block_group_id'-'learning_group_id' ORDER BY r.id) FROM supervision_observations r JOIN supervision_observation_periods p ON p.observation_id=r.id")
         .fetch_one(&pool).await.unwrap(), supervision);
     let legacy: i64 = sqlx::query_scalar("SELECT count(*) FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relname=ANY(ARRAY['academic_delivery_versions','academic_timetable_versions','academic_term_change_sets','academic_term_change_items','academic_teacher_handoff_runs','academic_delivery_revision_audiences','academic_delivery_revision_audience_rooms','academic_delivery_offering_effectivity','academic_delivery_teacher_cutoffs'])")
         .fetch_one(&pool).await.unwrap();
@@ -752,7 +752,7 @@ async fn intentional_empty_current_graph_detaches_legacy_supervision_and_keeps_s
     canonical(&pool).await;
     assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM learning_offerings WHERE academic_term_id=(SELECT id FROM academic_terms WHERE status='active')").fetch_one(&pool).await.unwrap(),0);
     assert_eq!(sqlx::query_scalar::<_,Uuid>("SELECT id FROM academic_timetables WHERE academic_term_id=(SELECT id FROM academic_terms WHERE status='active')").fetch_one(&pool).await.unwrap(),current);
-    let (source,detached,original):(Value,bool,Value)=sqlx::query_as("SELECT lesson_snapshot,timetable_block_group_id IS NULL AND learning_group_id IS NULL,to_jsonb(s)-'updated_at'-'timetable_block_group_id'-'learning_group_id'-'lesson_snapshot' FROM supervision_observations s WHERE id=$1")
+    let (source,detached,original):(Value,bool,Value)=sqlx::query_as("SELECT p.lesson_snapshot,p.timetable_block_group_id IS NULL AND p.learning_group_id IS NULL,(to_jsonb(s)||(to_jsonb(p)-ARRAY['id','observation_id','position','academic_year_id','academic_term_id','learning_offering_id','ends_at','created_at','updated_at']))-'updated_at'-'timetable_block_group_id'-'learning_group_id'-'lesson_snapshot' FROM supervision_observations s JOIN supervision_observation_periods p ON p.observation_id=s.id WHERE s.id=$1")
         .bind(old_observation.0).fetch_one(&pool).await.unwrap();
     assert!(detached);
     assert_eq!(source["source"], "removed_timetable");

@@ -38,6 +38,8 @@ test('supervision wrapper uses generated operations and schemas as its wire owne
 		'getSupervisionObservationReview',
 		'getSupervisionEvaluatorAvailability',
 		'getSupervisionObservationTimetableOptions',
+		'getSupervisionBookingOptions',
+		'getSupervisionCycleDeletionImpact',
 		'getSupervisionCycleProgress',
 		'getSupervisionTeacherStatusOverview'
 	]) {
@@ -58,6 +60,8 @@ test('all supervision reads accept and forward cancellable request options', asy
 		'getSupervisionObservationReview',
 		'getSupervisionEvaluatorAvailability',
 		'getSupervisionObservationTimetableOptions',
+		'getSupervisionBookingOptions',
+		'getSupervisionCycleDeletionImpact',
 		'getSupervisionCycleProgress',
 		'getSupervisionTeacherStatusOverview'
 	]) {
@@ -84,4 +88,16 @@ test('supervision workspace owns and cleans up cancellable refreshes', async () 
 	assert.match(workspace, /\.abort\(\)/);
 	assert.match(workspace, /if \(isAbortError\(error\)\) return/);
 	assert.doesNotMatch(workspace, /let refreshRevision = 0/);
+});
+
+test('cycle deletion uses the central typed JSON DELETE and canonical preview revision', async () => {
+	const wrapper = await read('src/lib/api/supervision.ts');
+	assert.match(wrapper, /operations\['deleteSupervisionCycle'\]\['requestBody'\]/);
+	assert.match(wrapper, /apiClient.deleteWithBody<SupervisionCycleDeletionImpact>/);
+	assert.match(wrapper, /getSupervisionCycleDeletionImpact/);
+	const dialog = await read('src/lib/components/supervision/SupervisionCycleDelete.svelte');
+	assert.match(dialog, /expectedRevision: impact.revision/);
+	assert.match(dialog, /confirmation !== cycle.title/);
+	assert.match(dialog, /response.status === 409/);
+	assert.match(dialog, /sourceContext !== ownerKey\(\)/);
 });

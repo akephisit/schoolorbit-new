@@ -1,5 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { mock, id, year, path, firstCycle, templateId } from './fixtures/supervision-route-data';
+import {
+	mock,
+	id,
+	year,
+	path,
+	firstCycle,
+	templateId,
+	savedPeriod,
+	timetableOption
+} from './fixtures/supervision-route-data';
 
 test.use({ serviceWorkers: 'block' });
 const detailPath = `/staff/academic/supervision/${id(30)}?academicYearId=${year}`;
@@ -15,14 +24,19 @@ for (const colorScheme of ['light', 'dark'] as const) {
 			await page.emulateMedia({ colorScheme });
 			const api = await mock(page, {
 				permissions: teacherPermissions,
+				bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
 				canManage: false,
 				observationStatus: 'returned',
 				observation: {
-					lessonSnapshot: {
-						subjectName: 'วิชาที่ต้องแก้ไข',
-						classroomLabel: 'ม.1/1',
-						periodLabel: 'คาบ 1'
-					},
+					periods: [
+						savedPeriod({
+							lessonSnapshot: {
+								subjectName: 'วิชาที่ต้องแก้ไข',
+								classroomLabel: 'ม.1/1',
+								periodLabel: 'คาบ 1'
+							}
+						})
+					],
 					actions: [
 						{
 							id: id(90),
@@ -56,8 +70,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
 			});
 			await page.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
 			const dialog = page.getByRole('dialog');
-			await dialog.getByLabel('คาบ', { exact: true }).fill('คาบ 2');
-			await dialog.getByLabel('เหตุผล/หมายเหตุ', { exact: true }).fill('แก้ไขข้อมูลคาบตามคำแนะนำ');
+			await dialog.getByRole('button', { name: /เลือก คาบ 2 ม.1\/1/ }).click();
 			await dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
 			await expect(dialog).toHaveCount(0);
 			await expect(page.getByTestId('supervision-workflow')).toContainText('ผู้รับผิดชอบตรวจคำขอ');
@@ -66,10 +79,9 @@ for (const colorScheme of ['light', 'dark'] as const) {
 			expect(api.writes).toEqual([`PATCH ${observationPath}/request`]);
 			expect(api.payloads).toEqual([
 				expect.objectContaining({
-					manualLesson: expect.objectContaining({
-						periodLabel: 'คาบ 2',
-						observedAt: '2026-10-01T09:00:00.000Z'
-					})
+					observedDate: '2026-10-01',
+					timetableBlockGroupIds: [timetableOption(1).blockGroupId],
+					expectedSourceDigest: 'source-1'
 				})
 			]);
 			await page.screenshot({
@@ -118,7 +130,12 @@ for (const status of ['draft', 'open', 'closed', 'archived'] as const) {
 	test(`booking availability follows manual ${status} state regardless of today`, async ({
 		page
 	}) => {
-		await mock(page, { permissions: teacherPermissions, cycleStatus: status, term: true });
+		await mock(page, {
+			permissions: teacherPermissions,
+			bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
+			cycleStatus: status,
+			term: true
+		});
 		await page.goto(path('').replace('/supervision/?', '/supervision?'));
 		await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
 		if (status === 'open') {
@@ -138,11 +155,20 @@ for (const status of ['draft', 'open', 'closed', 'archived'] as const) {
 test('returned request cannot resubmit while booking is closed', async ({ page }) => {
 	const api = await mock(page, {
 		permissions: teacherPermissions,
+		bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
 		canManage: false,
 		cycleStatus: 'closed',
 		observationStatus: 'returned',
 		observation: {
-			lessonSnapshot: { subjectName: 'วิชาทดสอบ', classroomLabel: 'ม.1/1', periodLabel: 'คาบ 1' }
+			periods: [
+				savedPeriod({
+					lessonSnapshot: {
+						subjectName: 'วิชาทดสอบ',
+						classroomLabel: 'ม.1/1',
+						periodLabel: 'คาบ 1'
+					}
+				})
+			]
 		}
 	});
 	await page.goto(detailPath);
@@ -151,7 +177,7 @@ test('returned request cannot resubmit while booking is closed', async ({ page }
 	);
 	await page.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('เหตุผล/หมายเหตุ').fill('แก้ไขข้อมูล');
+	await dialog.getByRole('button', { name: /เลือก คาบ 2 ม.1\/1/ }).click();
 	await expect(dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true })).toBeDisabled();
 	expect(api.writes).toEqual([]);
 });
@@ -189,10 +215,19 @@ test('a refused resubmission retains the correction draft and current return rea
 }) => {
 	const api = await mock(page, {
 		permissions: teacherPermissions,
+		bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
 		canManage: false,
 		observationStatus: 'returned',
 		observation: {
-			lessonSnapshot: { subjectName: 'วิชาทดสอบ', classroomLabel: 'ม.1/1', periodLabel: 'คาบ 1' }
+			periods: [
+				savedPeriod({
+					lessonSnapshot: {
+						subjectName: 'วิชาทดสอบ',
+						classroomLabel: 'ม.1/1',
+						periodLabel: 'คาบ 1'
+					}
+				})
+			]
 		}
 	});
 	await page.route(`**${observationPath}/request`, async (route) =>
@@ -205,18 +240,22 @@ test('a refused resubmission retains the correction draft and current return rea
 	await page.goto(detailPath);
 	await page.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
 	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('คาบ', { exact: true }).fill('คาบที่แก้ไข');
-	await dialog.getByLabel('เหตุผล/หมายเหตุ').fill('ร่างที่ต้องเก็บไว้');
+	await dialog.getByRole('button', { name: /เลือก คาบ 2 ม.1\/1/ }).click();
 	await dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
 	await expect(page.getByText('รอบนิเทศถูกปิดรับคำขอแล้ว', { exact: true })).toBeVisible();
-	await expect(dialog.getByLabel('คาบ', { exact: true })).toHaveValue('คาบที่แก้ไข');
-	await expect(dialog.getByLabel('เหตุผล/หมายเหตุ')).toHaveValue('ร่างที่ต้องเก็บไว้');
+	await expect(dialog.getByRole('button', { name: /เลือก คาบ 2 ม.1\/1/ })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	await expect(dialog.getByTestId('supervision-booking-selection')).toContainText('1 คาบต่อเนื่อง');
 	expect(api.count(observationPath)).toBe(1);
 });
 
 test('own returned row names the next teacher action and links to correction', async ({ page }) => {
 	await mock(page, {
 		permissions: teacherPermissions,
+		bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
+		term: true,
 		canManage: false,
 		observationStatus: 'returned'
 	});
@@ -263,6 +302,7 @@ test('own legacy returned request can cancel without editing submitted results',
 }) => {
 	const api = await mock(page, {
 		permissions: teacherPermissions,
+		bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
 		canManage: false,
 		observationStatus: 'returned',
 		observation: {
@@ -336,12 +376,21 @@ for (const referenceState of ['pending', 'failed'] as const) {
 	}) => {
 		const api = await mock(page, {
 			permissions: teacherPermissions,
+			bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
 			canManage: false,
 			observationStatus: 'returned',
 			hold: referenceState === 'pending' ? 'selected-cycle' : undefined,
 			fail: referenceState === 'failed' ? 'selected-cycle' : undefined,
 			observation: {
-				lessonSnapshot: { subjectName: 'วิชาทดสอบ', classroomLabel: 'ม.1/1', periodLabel: 'คาบ 1' }
+				periods: [
+					savedPeriod({
+						lessonSnapshot: {
+							subjectName: 'วิชาทดสอบ',
+							classroomLabel: 'ม.1/1',
+							periodLabel: 'คาบ 1'
+						}
+					})
+				]
 			}
 		});
 		await page.goto(detailPath);
@@ -355,7 +404,7 @@ for (const referenceState of ['pending', 'failed'] as const) {
 		).toHaveCount(0);
 		await page.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
 		const dialog = page.getByRole('dialog');
-		await dialog.getByLabel('เหตุผล/หมายเหตุ').fill('แก้ไขข้อมูลคาบ');
+		await dialog.getByRole('button', { name: /เลือก คาบ 2 ม.1\/1/ }).click();
 		const save = dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true });
 		await expect(save).toBeDisabled();
 		if (referenceState === 'pending') {

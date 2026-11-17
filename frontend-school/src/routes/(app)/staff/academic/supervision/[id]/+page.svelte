@@ -1,5 +1,17 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { page } from '$app/state';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import SupervisionLessonPicker from '#lib/components/supervision/SupervisionLessonPicker.svelte';
+	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
+	import {
+		schoolCivilDate,
+		type SupervisionLessonSelection
+	} from '#lib/supervision/booking-range.js';
+	import {
+		savedLessonLabels,
+		savedPeriodSourceLabel
+	} from '#lib/supervision/supervision-presentation.js';
 	import {
 		supervisionStatusLabel as statusLabel,
 		currentReturnReason
@@ -31,13 +43,11 @@
 		getSupervisionEvaluatorAvailability,
 		getSupervisionObservation,
 		getSupervisionObservationReview,
-		getSupervisionObservationTimetableOptions,
 		getSupervisionTemplateSummary,
 		getSupervisionCycle,
 		replaceSupervisionObservationEvaluators,
 		updateRequestedSupervisionObservation,
 		updateSupervisionObservation,
-		type ManualLesson,
 		type SupervisionCycle,
 		type SupervisionEvaluatorAvailability,
 		type SupervisionEvaluator,
@@ -47,8 +57,7 @@
 		type SupervisionReviewEvaluatorResult,
 		type SupervisionReviewResponse,
 		type SupervisionTemplate,
-		type SupervisionTemplateSummary,
-		type SupervisionTimetableOption
+		type SupervisionTemplateSummary
 	} from '#lib/api/supervision.js';
 	import {
 		calculateRubricDraftSummary,
@@ -63,29 +72,16 @@
 	import { cn } from '#lib/utils.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Command from '#lib/components/ui/command/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import type { PageData } from './$types';
-
-	type LessonEditForm = {
-		subjectName: string;
-		classroomLabel: string;
-		roomLabel: string;
-		periodLabel: string;
-		observedDate: string;
-		observedTime: string;
-		reason: string;
-	};
 
 	type DetailItem = {
 		label: string;
@@ -108,48 +104,47 @@
 	let templateLoading = $state(true);
 	let templateError = $state('');
 	let reviewOpen = $state(false);
-	let editTimetableError = $state('');
-	let lessonSaveError = $state('');
-	let editTimetableLoaded = $state(false);
 	let evaluatorAvailabilityError = $state('');
 	let evaluatorAvailabilityLoaded = $state(false);
 	let contextEpoch = 0;
 	let contextId = '';
 	let contextIdentity = '';
-	const routeOwners = new WeakMap<object, string>();
+	let mutationLifetime = 0;
+	onDestroy(() => {
+		mutationLifetime += 1;
+	});
+
+	function captureMutationOwner() {
+		const lifetime = mutationLifetime;
+		const epoch = contextEpoch;
+		const identity = appIdentityKey();
+		const resourceId = data.observationId;
+		const pathname = page.url.pathname;
+		return () =>
+			lifetime === mutationLifetime &&
+			epoch === contextEpoch &&
+			identity === appIdentityKey() &&
+			resourceId === data.observationId &&
+			pathname === page.url.pathname;
+	}
 	let lessonWorkflowRevision = 0;
 	let evaluatorWorkflowRevision = 0;
 	const observationRequest = new LatestRequest();
 	const cycleRequest = new LatestRequest();
 	const templateRequest = new LatestRequest();
 	const reviewRequest = new LatestRequest();
-	const editTimetableRequest = new LatestRequest();
 	const evaluatorRequest = new LatestRequest();
 	let availableEvaluators = $state<SupervisionEvaluatorAvailability[]>([]);
 	let loadingReview = $state(false);
 	let reviewError = $state('');
 	let selectedReviewEvaluatorId = $state('summary');
 	let loadingEvaluatorAvailability = $state(false);
-	let editTimetableBlockGroups = $state<SupervisionTimetableOption[]>([]);
-	let loadingEditTimetable = $state(false);
-	let selectedEditTimetableBlockGroupId = $state('');
-	let selectedEditTimetableDate = $state('');
-	let editWeekStartDate = $state('');
 	let editLessonOpen = $state(false);
 	let editEvaluatorsOpen = $state(false);
 	let evaluatorPickerOpen = $state(false);
 	let cancelDialogOpen = $state(false);
 	let cancelReason = $state('');
 	let selectedEvaluatorIds = $state<string[]>([]);
-	let lessonForm = $state<LessonEditForm>({
-		subjectName: '',
-		classroomLabel: '',
-		roomLabel: '',
-		periodLabel: '',
-		observedDate: '',
-		observedTime: '',
-		reason: ''
-	});
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
 	const canManageObservation = $derived(
@@ -224,11 +219,6 @@
 	const unavailableEvaluatorCount = $derived(
 		availableEvaluators.filter((evaluator) => !evaluator.available).length
 	);
-	const selectedEditTimetableBlockGroup = $derived(
-		editTimetableBlockGroups.find(
-			(entry) => entry.blockGroupId === selectedEditTimetableBlockGroupId
-		) ?? null
-	);
 	const reviewRubricSections = $derived(
 		review ? templateSectionsToRubricForm(review.template) : []
 	);
@@ -259,18 +249,21 @@
 	const routeObservation = $derived(data.observation);
 	const routeCycle = $derived(data.cycle);
 	const routeTemplate = $derived(data.template);
-	const routeIdentity = $derived(`${currentUserId}|${$userPermissions.toSorted().join(',')}`);
+	const routeIdentity = $derived.by(() => {
+		void $authStore;
+		void $userPermissions;
+		return appIdentityKey();
+	});
 
 	$effect.pre(() => {
 		const source = {
+			identity: data.identity,
 			observationId: routeObservationId,
 			observation: routeObservation,
 			cycle: routeCycle,
 			template: routeTemplate
 		};
 		const identity = routeIdentity;
-		if (!routeOwners.has(source.observation)) routeOwners.set(source.observation, identity);
-		const ownsSource = routeOwners.get(source.observation) === identity;
 		untrack(() => {
 			if (contextId !== source.observationId || contextIdentity !== identity) {
 				contextIdentity = identity;
@@ -289,18 +282,13 @@
 				cancelReason = '';
 				selectedReviewEvaluatorId = 'summary';
 				selectedEvaluatorIds = [];
-				editTimetableBlockGroups = [];
 				availableEvaluators = [];
-				editTimetableLoaded = false;
 				evaluatorAvailabilityLoaded = false;
 				reviewError = '';
-				editTimetableError = '';
 				evaluatorAvailabilityError = '';
 				loadingReview = false;
-				loadingEditTimetable = false;
 				loadingEvaluatorAvailability = false;
 				reviewRequest.abort();
-				editTimetableRequest.abort();
 				evaluatorRequest.abort();
 			}
 			const identityTicket = observationRequest.begin();
@@ -312,20 +300,35 @@
 			cycleError = '';
 			templateLoading = true;
 			templateError = '';
-			void source.observation.then((result) => {
-				if (!ownsSource || !observationRequest.isCurrent(identityTicket.revision)) return;
+			void Promise.all([source.identity, source.observation]).then(([owner, result]) => {
+				if (
+					owner !== appIdentityKey() ||
+					identity !== appIdentityKey() ||
+					!observationRequest.isCurrent(identityTicket.revision)
+				)
+					return;
 				loading = false;
 				if (result.ok) observation = result.data;
 				else error = result.error;
 			});
-			void source.cycle.then((result) => {
-				if (!ownsSource || !cycleRequest.isCurrent(cycleTicket.revision)) return;
+			void Promise.all([source.identity, source.cycle]).then(([owner, result]) => {
+				if (
+					owner !== appIdentityKey() ||
+					identity !== appIdentityKey() ||
+					!cycleRequest.isCurrent(cycleTicket.revision)
+				)
+					return;
 				cycleLoading = false;
 				if (result.ok) cycle = result.data;
 				else cycleError = result.error;
 			});
-			void source.template.then((result) => {
-				if (!ownsSource || !templateRequest.isCurrent(templateTicket.revision)) return;
+			void Promise.all([source.identity, source.template]).then(([owner, result]) => {
+				if (
+					owner !== appIdentityKey() ||
+					identity !== appIdentityKey() ||
+					!templateRequest.isCurrent(templateTicket.revision)
+				)
+					return;
 				templateLoading = false;
 				if (result.ok) template = result.data;
 				else templateError = result.error;
@@ -336,7 +339,6 @@
 			cycleRequest.abort();
 			templateRequest.abort();
 			reviewRequest.abort();
-			editTimetableRequest.abort();
 			evaluatorRequest.abort();
 		};
 	});
@@ -355,10 +357,6 @@
 		if (!reviewOpen) {
 			reviewRequest.abort();
 			loadingReview = false;
-		}
-		if (!editLessonOpen) {
-			editTimetableRequest.abort();
-			loadingEditTimetable = false;
 		}
 		if (!editEvaluatorsOpen) {
 			evaluatorRequest.abort();
@@ -510,208 +508,30 @@
 		});
 	}
 
-	function formatDateInput(value?: string | null): string {
-		if (!value) return '';
-		const date = new Date(value);
-		const year = date.getFullYear();
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		const day = String(date.getDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
-	}
-
-	function formatTimeInput(value?: string | null): string {
-		if (!value) return '08:30';
-		const date = new Date(value);
-		const hour = String(date.getHours()).padStart(2, '0');
-		const minute = String(date.getMinutes()).padStart(2, '0');
-		return `${hour}:${minute}`;
-	}
-
-	function toIsoDateTime(date: string, time: string): string {
-		return new Date(`${date}T${time || '00:00'}`).toISOString();
-	}
-
-	function parseLocalDate(date: string): Date {
-		const [year = '1970', month = '1', day = '1'] = date.split('-');
-		return new Date(Number(year), Number(month) - 1, Number(day));
-	}
-
-	function toLocalDateInputValue(date: Date): string {
-		const year = date.getFullYear();
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		const day = String(date.getDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
-	}
-
-	function addDays(date: Date, days: number): Date {
-		return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
-	}
-
-	function startOfWeek(date: Date): Date {
-		const mondayOffset = (date.getDay() + 6) % 7;
-		return addDays(date, -mondayOffset);
-	}
-
-	function addWeeks(date: string, weeks: number): string {
-		return toLocalDateInputValue(addDays(parseLocalDate(date), weeks * 7));
-	}
-
-	function editTimetableDayValues(): string[] {
-		const order = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-		const days = new Set(editTimetableBlockGroups.map((entry) => entry.dayOfWeek));
-		return order.filter((day) => days.has(day));
-	}
-
-	function editTimetableDayLabel(day: string): string {
-		return (
-			{
-				MON: 'จันทร์',
-				TUE: 'อังคาร',
-				WED: 'พุธ',
-				THU: 'พฤหัสบดี',
-				FRI: 'ศุกร์',
-				SAT: 'เสาร์',
-				SUN: 'อาทิตย์'
-			}[day] ?? day
-		);
-	}
-
-	function dateForEditTimetableDay(day: string): string {
-		const offsets: Record<string, number> = {
-			MON: 0,
-			TUE: 1,
-			WED: 2,
-			THU: 3,
-			FRI: 4,
-			SAT: 5,
-			SUN: 6
-		};
-		const weekStart = editWeekStartDate || toLocalDateInputValue(startOfWeek(new Date()));
-		return toLocalDateInputValue(addDays(parseLocalDate(weekStart), offsets[day] ?? 0));
-	}
-
-	function formatShortDate(date: string): string {
-		return new Intl.DateTimeFormat('th-TH', {
-			day: 'numeric',
-			month: 'short'
-		}).format(parseLocalDate(date));
-	}
-
-	function editTimetableObservedAt(
-		entry: SupervisionTimetableOption,
-		observedDate: string
-	): string {
-		const startTime = entry.startTime?.slice(0, 5) || '08:00';
-		return toIsoDateTime(observedDate, startTime);
-	}
-
-	function editTimetablePeriodKey(entry: SupervisionTimetableOption): string {
-		return (
-			entry.bellSchedulePeriodId ||
-			`${entry.startTime ?? ''}-${entry.endTime ?? ''}-${entry.periodName ?? ''}`
-		);
-	}
-
-	function editTimetablePeriodLabel(entry: SupervisionTimetableOption): string {
-		return entry.periodName || 'ไม่ระบุคาบ';
-	}
-
-	function editTimetableTimeLabel(entry: SupervisionTimetableOption): string {
-		if (!entry.startTime && !entry.endTime) return '';
-		return `${entry.startTime?.slice(0, 5) ?? ''}-${entry.endTime?.slice(0, 5) ?? ''}`;
-	}
-
-	function editTimetablePeriodSort(entry: SupervisionTimetableOption): number {
-		if (entry.startTime) {
-			const [hour = '0', minute = '0'] = entry.startTime.split(':');
-			return Number(hour) * 60 + Number(minute);
-		}
-		return 9999;
-	}
-
-	function editTimetablePeriodRows() {
-		const rows: { key: string; label: string; timeLabel: string; sort: number }[] = [];
-		for (const entry of editTimetableBlockGroups) {
-			const key = editTimetablePeriodKey(entry);
-			if (!rows.some((row) => row.key === key)) {
-				rows.push({
-					key,
-					label: editTimetablePeriodLabel(entry),
-					timeLabel: editTimetableTimeLabel(entry),
-					sort: editTimetablePeriodSort(entry)
-				});
-			}
-		}
-		return rows.sort(
-			(left, right) => left.sort - right.sort || left.label.localeCompare(right.label)
-		);
-	}
-
-	function editTimetableBlockGroupFor(
-		day: string,
-		row: { key: string }
-	): SupervisionTimetableOption | null {
-		return (
-			editTimetableBlockGroups.find(
-				(entry) => entry.dayOfWeek === day && editTimetablePeriodKey(entry) === row.key
-			) ?? null
-		);
-	}
-
-	function editTimetableBlockGroupTitle(entry: SupervisionTimetableOption): string {
-		return entry.offeringName || entry.offeringCode || 'คาบสอน';
-	}
-
-	function editTimetableBlockGroupMeta(entry: SupervisionTimetableOption): string {
-		const classroom = entry.learningGroupName || entry.homeroomNames.join(', ');
-		const room = entry.roomName ? `ห้อง ${entry.roomName}` : '';
-		return [classroom, room].filter(Boolean).join(' · ') || 'ไม่มีรายละเอียดเพิ่มเติม';
-	}
-
-	function selectLessonTimetableBlockGroup(
-		entry: SupervisionTimetableOption,
-		observedDate: string
-	) {
-		selectedEditTimetableBlockGroupId = entry.blockGroupId;
-		selectedEditTimetableDate = observedDate;
-		lessonForm.subjectName = editTimetableBlockGroupTitle(entry);
-		lessonForm.classroomLabel = entry.learningGroupName || entry.homeroomNames.join(', ');
-		lessonForm.roomLabel = entry.roomName ?? '';
-		lessonForm.periodLabel = entry.periodName;
-		lessonForm.observedDate = observedDate;
-		lessonForm.observedTime = entry.startTime?.slice(0, 5) || '08:00';
-	}
-
 	function observationSubjectLabel(item: SupervisionObservation): string {
-		return item.lessonSnapshot.subjectName ?? item.manualLesson?.subjectName ?? 'ไม่ระบุวิชา';
+		return savedLessonLabels(item).subject;
 	}
-
 	function observationClassroomLabel(item: SupervisionObservation): string {
-		return item.lessonSnapshot.classroomLabel ?? item.manualLesson?.classroomLabel ?? '-';
+		return savedLessonLabels(item).homeroom;
 	}
-
 	function observationRoomLabel(item: SupervisionObservation): string {
-		return item.lessonSnapshot.roomLabel ?? item.manualLesson?.roomLabel ?? '-';
+		return savedLessonLabels(item).room;
 	}
-
 	function observationPeriodLabel(item: SupervisionObservation): string {
-		return item.lessonSnapshot.periodLabel ?? item.manualLesson?.periodLabel ?? '-';
+		return savedLessonLabels(item).period;
 	}
 	function hasDetachedTimetableSource(item: SupervisionObservation): boolean {
-		return (
-			!item.timetableBlockGroupId &&
-			!item.manualLesson &&
-			(item.lessonSnapshot.source === 'timetable' ||
-				item.lessonSnapshot.source === 'removed_timetable' ||
-				Boolean(item.lessonSnapshot.timetableBlockGroupId))
+		return item.periods.some(
+			(period) =>
+				!period.timetableBlockGroupId &&
+				!period.manualLesson &&
+				(period.lessonSnapshot.source === 'timetable' ||
+					period.lessonSnapshot.source === 'removed_timetable' ||
+					Boolean(period.lessonSnapshot.timetableBlockGroupId))
 		);
 	}
 	function lessonSourceLabel(item: SupervisionObservation): string {
-		if (item.manualLesson || item.lessonSnapshot.source === 'manual') return 'กำหนดเอง';
-		if (item.timetableBlockGroupId) return 'ตารางสอน';
-		return hasDetachedTimetableSource(item)
-			? 'ตารางสอนเดิม (ข้อมูลคาบที่บันทึกไว้)'
-			: 'ข้อมูลคาบที่บันทึกไว้';
+		return [...new Set(item.periods.map(savedPeriodSourceLabel))].join(' · ');
 	}
 
 	function lessonDetails(item: SupervisionObservation): DetailItem[] {
@@ -752,13 +572,14 @@
 	async function retryObservation() {
 		if (!(await waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS))) return;
 		const ticket = observationRequest.begin();
+		const owner = appIdentityKey();
 		loading = true;
 		error = '';
 		const result = await captureRouteLoad(
 			getSupervisionObservation(data.observationId, { signal: ticket.signal }),
 			'โหลดรายการนิเทศไม่สำเร็จ'
 		);
-		if (!observationRequest.isCurrent(ticket.revision)) return;
+		if (owner !== appIdentityKey() || !observationRequest.isCurrent(ticket.revision)) return;
 		loading = false;
 		if (result.ok) {
 			observation = result.data;
@@ -770,13 +591,14 @@
 	async function retryCycle() {
 		if (!observation) return;
 		const ticket = cycleRequest.begin();
+		const owner = appIdentityKey();
 		cycleLoading = true;
 		cycleError = '';
 		const result = await captureRouteLoad(
 			getSupervisionCycle(observation.cycleId, { signal: ticket.signal }),
 			'โหลดรอบนิเทศไม่สำเร็จ'
 		);
-		if (!cycleRequest.isCurrent(ticket.revision)) return;
+		if (owner !== appIdentityKey() || !cycleRequest.isCurrent(ticket.revision)) return;
 		cycleLoading = false;
 		if (result.ok) cycle = result.data;
 		else cycleError = result.error;
@@ -785,13 +607,14 @@
 	async function retryTemplate() {
 		if (!observation) return;
 		const ticket = templateRequest.begin();
+		const owner = appIdentityKey();
 		templateLoading = true;
 		templateError = '';
 		const result = await captureRouteLoad(
 			getSupervisionTemplateSummary(observation.templateId, { signal: ticket.signal }),
 			'โหลดข้อมูลแบบประเมินไม่สำเร็จ'
 		);
-		if (!templateRequest.isCurrent(ticket.revision)) return;
+		if (owner !== appIdentityKey() || !templateRequest.isCurrent(ticket.revision)) return;
 		templateLoading = false;
 		if (result.ok) template = result.data;
 		else templateError = result.error;
@@ -846,152 +669,70 @@
 
 	async function certifyResult() {
 		if (!observation || !canCertifyResult) return;
-		const sourceEpoch = contextEpoch;
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = `certify-result:${observation.id}`;
 		try {
 			const response = await certifySupervisionObservation(submittedId);
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			const updated = mutationData(response, 'รับรองผลไม่สำเร็จ');
 			replaceReviewObservation(updated);
 			toast.success('รับรองผลนิเทศแล้ว');
 		} catch (saveError) {
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'รับรองผลไม่สำเร็จ');
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
 	async function approveResult() {
 		if (!observation || !canApproveResult) return;
-		const sourceEpoch = contextEpoch;
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = `approve-result:${observation.id}`;
 		try {
 			const response = await approveSupervisionObservation(submittedId);
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			const updated = mutationData(response, 'อนุมัติผลไม่สำเร็จ');
 			replaceReviewObservation(updated);
 			toast.success('อนุมัติผลนิเทศแล้ว');
 		} catch (saveError) {
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'อนุมัติผลไม่สำเร็จ');
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
-	async function loadEditTimetableOptions(force = false) {
-		if (!observation || !canEditLesson || !editLessonOpen) return;
-		if (!force && editTimetableLoaded) return;
-		const ticket = editTimetableRequest.begin();
-		loadingEditTimetable = true;
-		editTimetableError = '';
-		try {
-			const items = await getSupervisionObservationTimetableOptions(observation.id, {
-				signal: ticket.signal
-			});
-			if (!editTimetableRequest.isCurrent(ticket.revision) || !editLessonOpen) return;
-			editTimetableBlockGroups = items;
-			editTimetableLoaded = true;
-		} catch (loadError) {
-			if (!editTimetableRequest.isCurrent(ticket.revision) || isAbortError(loadError)) return;
-			editTimetableError = loadError instanceof Error ? loadError.message : 'โหลดคาบสอนไม่สำเร็จ';
-		} finally {
-			if (editTimetableRequest.isCurrent(ticket.revision)) loadingEditTimetable = false;
-		}
-	}
-
-	async function openLessonEditor() {
+	function openLessonEditor() {
 		if (!observation || !canEditLesson) return;
-		lessonSaveError = '';
-		selectedEditTimetableBlockGroupId = observation.timetableBlockGroupId ?? '';
-		selectedEditTimetableDate = formatDateInput(observation.observedAt);
-		editWeekStartDate = toLocalDateInputValue(startOfWeek(new Date(observation.observedAt)));
-		lessonForm = {
-			subjectName:
-				observation.lessonSnapshot.subjectName ?? observation.manualLesson?.subjectName ?? '',
-			classroomLabel:
-				observation.lessonSnapshot.classroomLabel ?? observation.manualLesson?.classroomLabel ?? '',
-			roomLabel: observation.lessonSnapshot.roomLabel ?? observation.manualLesson?.roomLabel ?? '',
-			periodLabel:
-				observation.lessonSnapshot.periodLabel ?? observation.manualLesson?.periodLabel ?? '',
-			observedDate: formatDateInput(observation.observedAt),
-			observedTime: formatTimeInput(observation.observedAt),
-			reason: observation.manualLesson?.reason ?? ''
-		};
 		lessonWorkflowRevision += 1;
 		editLessonOpen = true;
-		void loadEditTimetableOptions(true);
 	}
 
-	async function saveLessonEdit() {
-		if (!observation || !canEditLesson) return;
-		if (isReturnedOwnRequest && cycle?.status !== 'open') {
-			toast.error('รอบนิเทศยังไม่เปิดรับคำขอ');
-			return;
-		}
-		if (selectedEditTimetableBlockGroup && !selectedEditTimetableDate) {
-			toast.error('เลือกวันที่จากตารางสอนก่อน');
-			return;
-		}
-		if (
-			!selectedEditTimetableBlockGroup &&
-			(!lessonForm.subjectName.trim() ||
-				!lessonForm.classroomLabel.trim() ||
-				!lessonForm.periodLabel.trim() ||
-				!lessonForm.observedDate ||
-				!lessonForm.observedTime ||
-				!lessonForm.reason.trim())
-		) {
-			toast.error('กรอกวิชา ชั้น/ห้อง คาบ วันที่ เวลา และเหตุผลการกำหนดคาบเองให้ครบ');
-			return;
-		}
-		const payload =
-			selectedEditTimetableBlockGroup && selectedEditTimetableDate
-				? {
-						timetableBlockGroupId: selectedEditTimetableBlockGroupId,
-						observedAt: editTimetableObservedAt(
-							selectedEditTimetableBlockGroup,
-							selectedEditTimetableDate
-						),
-						manualLesson: null
-					}
-				: {
-						manualLesson: {
-							subjectName: lessonForm.subjectName,
-							classroomLabel: lessonForm.classroomLabel,
-							roomLabel: lessonForm.roomLabel || null,
-							periodLabel: lessonForm.periodLabel,
-							observedAt: toIsoDateTime(lessonForm.observedDate, lessonForm.observedTime),
-							reason: lessonForm.reason.trim()
-						} satisfies ManualLesson
-					};
-
-		const sourceEpoch = contextEpoch;
+	async function saveLessonEdit(selection: SupervisionLessonSelection) {
+		if (!observation || !canEditLesson) throw new Error('ไม่มีสิทธิ์แก้ไขคาบนิเทศ');
+		if (isReturnedOwnRequest && cycle?.status !== 'open')
+			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		const workflowRevision = lessonWorkflowRevision;
 		const resubmitting = isReturnedOwnRequest;
-		lessonSaveError = '';
 		savingAction = 'lesson';
 		try {
 			const response =
 				canManageObservation && !canEditOwnRequested
-					? await updateSupervisionObservation(submittedId, payload)
-					: await updateRequestedSupervisionObservation(submittedId, payload);
-			if (sourceEpoch !== contextEpoch) return;
-			const updated = mutationData(response, 'แก้ไขรายการนิเทศไม่สำเร็จ');
-			replaceObservation(updated);
+					? await updateSupervisionObservation(submittedId, selection)
+					: await updateRequestedSupervisionObservation(submittedId, selection);
+			if (!ownsMutation() || !canEditLesson) return;
+			replaceObservation(mutationData(response, 'แก้ไขรายการนิเทศไม่สำเร็จ'));
 			if (workflowRevision === lessonWorkflowRevision) editLessonOpen = false;
 			toast.success(resubmitting ? 'แก้ไขและส่งคำขอใหม่แล้ว' : 'แก้ไขคาบนิเทศแล้ว');
 		} catch (saveError) {
-			if (sourceEpoch !== contextEpoch) return;
-			const message = saveError instanceof Error ? saveError.message : 'แก้ไขรายการนิเทศไม่สำเร็จ';
-			if (workflowRevision === lessonWorkflowRevision) lessonSaveError = message;
-			else toast.error(message);
+			if (ownsMutation()) throw saveError;
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
@@ -1045,7 +786,7 @@
 			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คน');
 			return;
 		}
-		const sourceEpoch = contextEpoch;
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		const workflowRevision = evaluatorWorkflowRevision;
 		savingAction = 'evaluators';
@@ -1056,24 +797,24 @@
 					isRequired: true
 				}))
 			});
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			const updated = mutationData(response, 'แก้ไขผู้ประเมินไม่สำเร็จ');
 			replaceObservation(updated);
 			if (workflowRevision === evaluatorWorkflowRevision) editEvaluatorsOpen = false;
 			toast.success('แก้ไขผู้ประเมินแล้ว');
 		} catch (saveError) {
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			void loadEvaluatorAvailability(true);
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขผู้ประเมินไม่สำเร็จ');
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
 	async function cancelObservation() {
 		if (!observation || !canCancelObservation) return;
-		const sourceEpoch = contextEpoch;
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'cancel';
 		try {
@@ -1081,19 +822,19 @@
 				canManageObservation && !canCancelOwnRequest
 					? await cancelSupervisionObservation(submittedId, { reason: cancelReason || null })
 					: await cancelRequestedSupervisionObservation(submittedId);
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			const updated = mutationData(response, 'ยกเลิกรายการนิเทศไม่สำเร็จ');
 			replaceObservation(updated);
 			cancelDialogOpen = false;
 			cancelReason = '';
 			toast.success('ยกเลิกรายการนิเทศแล้ว');
 		} catch (cancelError) {
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			toast.error(
 				cancelError instanceof Error ? cancelError.message : 'ยกเลิกรายการนิเทศไม่สำเร็จ'
 			);
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 </script>
@@ -1196,6 +937,7 @@
 									</div>
 								{/each}
 							</div>
+							<SupervisionSavedPeriods {observation} />
 						</Card.Content>
 					</Card.Root>
 
@@ -1573,210 +1315,31 @@
 </PageShell>
 
 <Dialog.Root bind:open={editLessonOpen}>
-	<Dialog.Content class="flex max-h-[92vh] flex-col sm:max-w-5xl">
-		<Dialog.Header>
-			<Dialog.Title>แก้คาบ/วันเวลา</Dialog.Title>
-			<Dialog.Description>
-				เลือกคาบจากตารางสอนของครูผู้ถูกนิเทศ หรือระบุคาบกำหนดเองเมื่อไม่มีในตาราง
-			</Dialog.Description>
-		</Dialog.Header>
+	<Dialog.Content class="flex max-h-[92vh] flex-col sm:max-w-6xl">
+		<Dialog.Header
+			><Dialog.Title>แก้คาบ/วันเวลา</Dialog.Title><Dialog.Description
+				>เลือกช่วงคาบจากตารางสอนปัจจุบัน ข้อมูลคาบเดิมแสดงไว้เพื่ออ่านประกอบ</Dialog.Description
+			></Dialog.Header
+		>
 		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-			<div
-				class="flex flex-col gap-2 rounded-md border bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
-			>
-				<div>
-					<p class="text-sm font-medium">สัปดาห์ {formatShortDate(editWeekStartDate)}</p>
-					<p class="text-xs text-muted-foreground">
-						แสดงเฉพาะวันที่มีคาบสอนของครูผู้ถูกนิเทศในตาราง
-					</p>
-				</div>
-				<div class="flex flex-wrap gap-2">
-					<Button
-						type="button"
-						size="sm"
-						variant="outline"
-						onclick={() => (editWeekStartDate = addWeeks(editWeekStartDate, -1))}
-					>
-						สัปดาห์ก่อน
-					</Button>
-					<Button
-						type="button"
-						size="sm"
-						variant="outline"
-						onclick={() => (editWeekStartDate = toLocalDateInputValue(startOfWeek(new Date())))}
-					>
-						สัปดาห์นี้
-					</Button>
-					<Button
-						type="button"
-						size="sm"
-						variant="outline"
-						onclick={() => (editWeekStartDate = addWeeks(editWeekStartDate, 1))}
-					>
-						สัปดาห์ถัดไป
-					</Button>
-				</div>
-			</div>
-
-			{#if loadingEditTimetable}
-				<div role="status" aria-label="กำลังโหลด"><PageSkeleton /></div>
-			{:else if editTimetableError}
-				<PageState title="โหลดคาบสอนไม่สำเร็จ" description={editTimetableError} />
-				<Button variant="outline" onclick={() => void loadEditTimetableOptions(true)}
-					>ลองใหม่</Button
-				>
-			{:else if editTimetableBlockGroups.length === 0}
-				<PageState
-					title="ไม่พบคาบสอนในตาราง"
-					description="ใช้คาบกำหนดเองด้านล่างเมื่อคาบนิเทศไม่ได้อยู่ในตารางสอน"
+			{#if observation && editLessonOpen}
+				<SupervisionSavedPeriods {observation} />
+				<SupervisionLessonPicker
+					academicYearId={observation.academicYearId}
+					academicTermId={observation.academicTermId}
+					observationId={observation.id}
+					initialDate={schoolCivilDate(new Date(observation.observedAt))}
+					allowed={canEditLesson}
+					disabled={isReturnedOwnRequest && cycle?.status !== 'open'}
+					onsubmit={saveLessonEdit}
+					submitLabel={isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
 				/>
-			{:else}
-				<div class="overflow-x-auto rounded-md border">
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head class="w-36">คาบ</Table.Head>
-								{#each editTimetableDayValues() as day (day)}
-									<Table.Head class="min-w-40">
-										<div class="space-y-1">
-											<p>{editTimetableDayLabel(day)}</p>
-											<p class="text-xs font-normal text-muted-foreground">
-												{formatShortDate(dateForEditTimetableDay(day))}
-											</p>
-										</div>
-									</Table.Head>
-								{/each}
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each editTimetablePeriodRows() as row (row.key)}
-								<Table.Row>
-									<Table.Cell class="align-top">
-										<p class="font-medium">{row.label}</p>
-										{#if row.timeLabel}
-											<p class="text-xs text-muted-foreground">{row.timeLabel}</p>
-										{/if}
-									</Table.Cell>
-									{#each editTimetableDayValues() as day (day)}
-										{@const entry = editTimetableBlockGroupFor(day, row)}
-										{@const observedDate = dateForEditTimetableDay(day)}
-										<Table.Cell class="align-top">
-											{#if entry}
-												<Button
-													type="button"
-													variant={selectedEditTimetableBlockGroupId === entry.blockGroupId &&
-													selectedEditTimetableDate === observedDate
-														? 'default'
-														: 'outline'}
-													class="h-auto w-full justify-start whitespace-normal px-3 py-2 text-left"
-													onclick={() => selectLessonTimetableBlockGroup(entry, observedDate)}
-												>
-													<div class="space-y-1">
-														<p class="font-medium">{editTimetableBlockGroupTitle(entry)}</p>
-														<p class="text-xs opacity-80">{editTimetableBlockGroupMeta(entry)}</p>
-													</div>
-												</Button>
-											{:else}
-												<div
-													class="rounded-md border border-dashed p-3 text-xs text-muted-foreground"
-												>
-													ว่าง
-												</div>
-											{/if}
-										</Table.Cell>
-									{/each}
-								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
-				</div>
 			{/if}
-
-			<div class="grid gap-4 rounded-md border p-3 sm:grid-cols-2">
-				<div class="space-y-2 sm:col-span-2">
-					<Label>คาบกำหนดเอง</Label>
-					<p class="text-xs text-muted-foreground">
-						แก้ช่องด้านล่างเฉพาะกรณีไม่ได้เลือกคาบจากตารางสอน
-					</p>
-				</div>
-				<div class="space-y-2">
-					<Label for="supervision-manual-subject">วิชา</Label>
-					<Input id="supervision-manual-subject" bind:value={lessonForm.subjectName} />
-				</div>
-				<div class="space-y-2">
-					<Label for="supervision-manual-period">คาบ</Label>
-					<Input id="supervision-manual-period" bind:value={lessonForm.periodLabel} />
-				</div>
-				<div class="space-y-2">
-					<Label for="supervision-manual-classroom">ชั้น/ห้อง</Label>
-					<Input id="supervision-manual-classroom" bind:value={lessonForm.classroomLabel} />
-				</div>
-				<div class="space-y-2">
-					<Label for="supervision-manual-room">ห้องเรียน</Label>
-					<Input id="supervision-manual-room" bind:value={lessonForm.roomLabel} />
-				</div>
-				<div class="space-y-2">
-					<Label for="supervision-observed-date">วันที่</Label>
-					<DatePicker
-						id="supervision-observed-date"
-						bind:value={lessonForm.observedDate}
-						required
-						ariaLabel="เลือกวันที่นิเทศ"
-						onValueChange={() => {
-							selectedEditTimetableBlockGroupId = '';
-							selectedEditTimetableDate = '';
-						}}
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="supervision-manual-time">เวลา</Label>
-					<Input
-						id="supervision-manual-time"
-						type="time"
-						bind:value={lessonForm.observedTime}
-						oninput={() => {
-							selectedEditTimetableBlockGroupId = '';
-							selectedEditTimetableDate = '';
-						}}
-					/>
-				</div>
-				<div class="space-y-2 sm:col-span-2">
-					<Label for="supervision-manual-reason">เหตุผล/หมายเหตุ</Label>
-					<Textarea
-						id="supervision-manual-reason"
-						bind:value={lessonForm.reason}
-						rows={3}
-						oninput={() => {
-							selectedEditTimetableBlockGroupId = '';
-							selectedEditTimetableDate = '';
-						}}
-					/>
-				</div>
-			</div>
 		</div>
-		{#if lessonSaveError}<Alert.Root variant="destructive"
-				><Alert.Title>บันทึกรายการไม่สำเร็จ</Alert.Title><Alert.Description
-					>{lessonSaveError}</Alert.Description
-				></Alert.Root
-			>{/if}
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (editLessonOpen = false)}>ยกเลิก</Button>
-			<LoadingButton
-				onclick={saveLessonEdit}
-				disabled={(isReturnedOwnRequest && cycle?.status !== 'open') ||
-					(!selectedEditTimetableBlockGroup &&
-						(!lessonForm.subjectName.trim() ||
-							!lessonForm.classroomLabel.trim() ||
-							!lessonForm.periodLabel.trim() ||
-							!lessonForm.observedDate ||
-							!lessonForm.observedTime ||
-							!lessonForm.reason.trim()))}
-				loading={savingAction === 'lesson'}
-				loadingLabel="กำลังบันทึก..."
-			>
-				{isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
-			</LoadingButton>
-		</Dialog.Footer>
+		<Dialog.Footer
+			><Button variant="outline" onclick={() => (editLessonOpen = false)}>ยกเลิก</Button
+			></Dialog.Footer
+		>
 	</Dialog.Content>
 </Dialog.Root>
 

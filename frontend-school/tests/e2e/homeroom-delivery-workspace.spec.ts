@@ -1,13 +1,11 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
 	mockDeliveryNavigation,
 	navigationIds as ids,
 	navigationOfferingIds as offerings,
-	navigationDelivery,
 	navigationWorkspace
 } from './fixtures/delivery-navigation-route-data';
 import { deferred, deliveryReply } from './fixtures/current-delivery';
-import type { DeliveryManagementOptions } from '../../src/lib/api/learning-delivery';
 test.use({ serviceWorkers: 'block' });
 const href = (view = 'homerooms') =>
 	`/staff/academic/delivery?academicYearId=${ids.year}&academicTermId=${ids.term}&view=${view}`;

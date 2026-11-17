@@ -8022,6 +8022,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/supervision/booking-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionBookingOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/supervision/cycles': {
 		parameters: {
 			query?: never;
@@ -8048,10 +8064,26 @@ export interface paths {
 		get: operations['getSupervisionCycle'];
 		put?: never;
 		post?: never;
-		delete?: never;
+		delete: operations['deleteSupervisionCycle'];
 		options?: never;
 		head?: never;
 		patch: operations['updateSupervisionCycle'];
+		trace?: never;
+	};
+	'/api/supervision/cycles/{id}/deletion-impact': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getSupervisionCycleDeletionImpact'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
 		trace?: never;
 	};
 	'/api/supervision/observations': {
@@ -11823,18 +11855,16 @@ export interface components {
 					cycleId: string;
 					evaluators: components['schemas']['SupervisionEvaluator'][];
 					/** Format: uuid */
-					homeroomId?: string | null;
-					/** Format: uuid */
 					id: string;
-					/** Format: uuid */
-					learningGroupId?: string | null;
-					lessonSnapshot: components['schemas']['LessonSnapshot'];
-					manualLesson?: components['schemas']['ManualLesson'] | null;
-					/** Format: date-time */
+					/**
+					 * Format: date-time
+					 * @description Earliest canonical period start, projected for chronological summaries.
+					 */
 					observedAt: string;
 					observedDisplayName?: string | null;
 					/** Format: uuid */
 					observedUserId: string;
+					periods: components['schemas']['SupervisionObservationPeriod'][];
 					/** Format: date-time */
 					requestedAt: string;
 					/** Format: uuid */
@@ -11842,8 +11872,6 @@ export interface components {
 					status: components['schemas']['SupervisionObservationStatus'];
 					/** Format: uuid */
 					templateId: string;
-					/** Format: uuid */
-					timetableBlockGroupId?: string | null;
 					/** Format: date-time */
 					updatedAt: string;
 				}[];
@@ -11922,26 +11950,24 @@ export interface components {
 			data: {
 				items: {
 					/** Format: uuid */
-					bellSchedulePeriodId: string;
+					bellPeriodId: string;
 					/** Format: uuid */
 					blockGroupId: string;
 					/** Format: uuid */
 					blockId: string;
-					dayOfWeek: string;
 					endTime: string;
-					homeroomNames: string[];
+					/** Format: uuid */
+					homeroomId: string;
+					homeroomName: string;
 					/** Format: uuid */
 					learningGroupId: string;
 					learningGroupName: string;
-					/** Format: uuid */
-					learningOfferingId: string;
-					offeringCode: string;
-					offeringName: string;
+					/** Format: date */
+					observedDate: string;
 					periodName: string;
-					/** Format: int32 */
-					periodOrderIndex: number;
 					roomName?: string | null;
 					startTime: string;
+					subjectName?: string | null;
 				}[];
 			};
 			message?: string;
@@ -13213,6 +13239,18 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_SupervisionBookingOptions: {
+			data: {
+				items: components['schemas']['SupervisionTimetableOption'][];
+				sourceDigest: string;
+				/** Format: date */
+				weekEndDate: string;
+				/** Format: date */
+				weekStartDate: string;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_SupervisionCycle: {
 			data: {
 				/** Format: uuid */
@@ -13233,6 +13271,16 @@ export interface components {
 				title: string;
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_SupervisionCycleDeletionImpact: {
+			data: {
+				counts: components['schemas']['SupervisionCycleDeletionCounts'];
+				/** Format: uuid */
+				cycleId: string;
+				revision: string;
 			};
 			message?: string;
 			success: boolean;
@@ -13286,18 +13334,16 @@ export interface components {
 				cycleId: string;
 				evaluators: components['schemas']['SupervisionEvaluator'][];
 				/** Format: uuid */
-				homeroomId?: string | null;
-				/** Format: uuid */
 				id: string;
-				/** Format: uuid */
-				learningGroupId?: string | null;
-				lessonSnapshot: components['schemas']['LessonSnapshot'];
-				manualLesson?: components['schemas']['ManualLesson'] | null;
-				/** Format: date-time */
+				/**
+				 * Format: date-time
+				 * @description Earliest canonical period start, projected for chronological summaries.
+				 */
 				observedAt: string;
 				observedDisplayName?: string | null;
 				/** Format: uuid */
 				observedUserId: string;
+				periods: components['schemas']['SupervisionObservationPeriod'][];
 				/** Format: date-time */
 				requestedAt: string;
 				/** Format: uuid */
@@ -13305,8 +13351,6 @@ export interface components {
 				status: components['schemas']['SupervisionObservationStatus'];
 				/** Format: uuid */
 				templateId: string;
-				/** Format: uuid */
-				timetableBlockGroupId?: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			};
@@ -20456,6 +20500,9 @@ export interface components {
 			rowVersion: number;
 			sourceDigest: string;
 		};
+		DeleteSupervisionCycleRequest: {
+			expectedRevision: string;
+		};
 		DeliveryCatalogVersionOption: {
 			code: string;
 			/** Format: uuid */
@@ -22035,18 +22082,16 @@ export interface components {
 				cycleId: string;
 				evaluators: components['schemas']['SupervisionEvaluator'][];
 				/** Format: uuid */
-				homeroomId?: string | null;
-				/** Format: uuid */
 				id: string;
-				/** Format: uuid */
-				learningGroupId?: string | null;
-				lessonSnapshot: components['schemas']['LessonSnapshot'];
-				manualLesson?: components['schemas']['ManualLesson'] | null;
-				/** Format: date-time */
+				/**
+				 * Format: date-time
+				 * @description Earliest canonical period start, projected for chronological summaries.
+				 */
 				observedAt: string;
 				observedDisplayName?: string | null;
 				/** Format: uuid */
 				observedUserId: string;
+				periods: components['schemas']['SupervisionObservationPeriod'][];
 				/** Format: date-time */
 				requestedAt: string;
 				/** Format: uuid */
@@ -22054,8 +22099,6 @@ export interface components {
 				status: components['schemas']['SupervisionObservationStatus'];
 				/** Format: uuid */
 				templateId: string;
-				/** Format: uuid */
-				timetableBlockGroupId?: string | null;
 				/** Format: date-time */
 				updatedAt: string;
 			}[];
@@ -22118,26 +22161,24 @@ export interface components {
 		ItemsData_SupervisionTimetableOption: {
 			items: {
 				/** Format: uuid */
-				bellSchedulePeriodId: string;
+				bellPeriodId: string;
 				/** Format: uuid */
 				blockGroupId: string;
 				/** Format: uuid */
 				blockId: string;
-				dayOfWeek: string;
 				endTime: string;
-				homeroomNames: string[];
+				/** Format: uuid */
+				homeroomId: string;
+				homeroomName: string;
 				/** Format: uuid */
 				learningGroupId: string;
 				learningGroupName: string;
-				/** Format: uuid */
-				learningOfferingId: string;
-				offeringCode: string;
-				offeringName: string;
+				/** Format: date */
+				observedDate: string;
 				periodName: string;
-				/** Format: int32 */
-				periodOrderIndex: number;
 				roomName?: string | null;
 				startTime: string;
+				subjectName?: string | null;
 			}[];
 		};
 		JobPositionPage: {
@@ -22786,24 +22827,6 @@ export interface components {
 			certificateNumber: string;
 			firstName: string;
 			lastName: string;
-		};
-		ManualLesson: {
-			classroomLabel: string;
-			/** Format: date-time */
-			observedAt: string;
-			periodLabel: string;
-			reason: string;
-			roomLabel?: string | null;
-			subjectName: string;
-		};
-		ManualLessonInput: {
-			classroomLabel: string;
-			/** Format: date-time */
-			observedAt: string;
-			periodLabel: string;
-			reason: string;
-			roomLabel?: string | null;
-			subjectName: string;
 		};
 		MathNodeAttributes: {
 			latex: string;
@@ -24277,11 +24300,10 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			cycleId: string;
-			manualLesson?: components['schemas']['ManualLessonInput'] | null;
-			/** Format: date-time */
-			observedAt?: string | null;
-			/** Format: uuid */
-			timetableBlockGroupId?: string | null;
+			expectedSourceDigest: string;
+			/** Format: date */
+			observedDate: string;
+			timetableBlockGroupIds: string[];
 		};
 		/** @enum {string} */
 		RequirementKind: 'required' | 'elective' | 'optional';
@@ -25801,6 +25823,22 @@ export interface components {
 			observationId: string;
 			toStatus?: components['schemas']['SupervisionObservationStatus'] | null;
 		};
+		SupervisionBookingOptions: {
+			items: components['schemas']['SupervisionTimetableOption'][];
+			sourceDigest: string;
+			/** Format: date */
+			weekEndDate: string;
+			/** Format: date */
+			weekStartDate: string;
+		};
+		SupervisionBookingOptionsQuery: {
+			/** Format: uuid */
+			academicTermId: string;
+			/** Format: uuid */
+			academicYearId: string;
+			/** Format: date */
+			weekStartDate: string;
+		};
 		SupervisionCycle: {
 			/** Format: uuid */
 			academicTermId?: string | null;
@@ -25820,6 +25858,26 @@ export interface components {
 			title: string;
 			/** Format: date-time */
 			updatedAt: string;
+		};
+		SupervisionCycleDeletionCounts: {
+			/** Format: int64 */
+			actions: number;
+			/** Format: int64 */
+			evaluators: number;
+			/** Format: int64 */
+			observations: number;
+			/** Format: int64 */
+			periods: number;
+			/** Format: int64 */
+			responses: number;
+			/** Format: int64 */
+			targets: number;
+		};
+		SupervisionCycleDeletionImpact: {
+			counts: components['schemas']['SupervisionCycleDeletionCounts'];
+			/** Format: uuid */
+			cycleId: string;
+			revision: string;
 		};
 		SupervisionCycleProgress: {
 			/** Format: int64 */
@@ -25927,18 +25985,16 @@ export interface components {
 			cycleId: string;
 			evaluators: components['schemas']['SupervisionEvaluator'][];
 			/** Format: uuid */
-			homeroomId?: string | null;
-			/** Format: uuid */
 			id: string;
-			/** Format: uuid */
-			learningGroupId?: string | null;
-			lessonSnapshot: components['schemas']['LessonSnapshot'];
-			manualLesson?: components['schemas']['ManualLesson'] | null;
-			/** Format: date-time */
+			/**
+			 * Format: date-time
+			 * @description Earliest canonical period start, projected for chronological summaries.
+			 */
 			observedAt: string;
 			observedDisplayName?: string | null;
 			/** Format: uuid */
 			observedUserId: string;
+			periods: components['schemas']['SupervisionObservationPeriod'][];
 			/** Format: date-time */
 			requestedAt: string;
 			/** Format: uuid */
@@ -25946,10 +26002,28 @@ export interface components {
 			status: components['schemas']['SupervisionObservationStatus'];
 			/** Format: uuid */
 			templateId: string;
-			/** Format: uuid */
-			timetableBlockGroupId?: string | null;
 			/** Format: date-time */
 			updatedAt: string;
+		};
+		SupervisionObservationPeriod: {
+			/** Format: date-time */
+			endsAt?: string | null;
+			/** Format: uuid */
+			homeroomId?: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: uuid */
+			learningGroupId?: string | null;
+			lessonSnapshot: components['schemas']['LessonSnapshot'];
+			manualLesson?: components['schemas']['SupervisionPeriodManualEvidence'] | null;
+			/** Format: uuid */
+			observationId: string;
+			/** Format: date-time */
+			observedAt: string;
+			/** Format: int32 */
+			position: number;
+			/** Format: uuid */
+			timetableBlockGroupId?: string | null;
 		};
 		SupervisionObservationReview: {
 			/** Format: double */
@@ -25972,6 +26046,17 @@ export interface components {
 			| 'acknowledged'
 			| 'completed'
 			| 'cancelled';
+		SupervisionObservationTimetableQuery: {
+			/** Format: date */
+			weekStartDate: string;
+		};
+		SupervisionPeriodManualEvidence: {
+			classroomLabel?: string | null;
+			periodLabel?: string | null;
+			reason?: string | null;
+			roomLabel?: string | null;
+			subjectName?: string | null;
+		};
 		SupervisionReviewEvaluatorResult: {
 			/** Format: double */
 			averageRating?: number | null;
@@ -26114,26 +26199,24 @@ export interface components {
 		};
 		SupervisionTimetableOption: {
 			/** Format: uuid */
-			bellSchedulePeriodId: string;
+			bellPeriodId: string;
 			/** Format: uuid */
 			blockGroupId: string;
 			/** Format: uuid */
 			blockId: string;
-			dayOfWeek: string;
 			endTime: string;
-			homeroomNames: string[];
+			/** Format: uuid */
+			homeroomId: string;
+			homeroomName: string;
 			/** Format: uuid */
 			learningGroupId: string;
 			learningGroupName: string;
-			/** Format: uuid */
-			learningOfferingId: string;
-			offeringCode: string;
-			offeringName: string;
+			/** Format: date */
+			observedDate: string;
 			periodName: string;
-			/** Format: int32 */
-			periodOrderIndex: number;
 			roomName?: string | null;
 			startTime: string;
+			subjectName?: string | null;
 		};
 		SupplyBundle: {
 			entries: components['schemas']['SupplyBundleEntry'][];
@@ -27770,11 +27853,10 @@ export interface components {
 			title?: string | null;
 		};
 		UpdateRequestedObservationRequest: {
-			manualLesson?: components['schemas']['ManualLessonInput'] | null;
-			/** Format: date-time */
-			observedAt?: string | null;
-			/** Format: uuid */
-			timetableBlockGroupId?: string | null;
+			expectedSourceDigest: string;
+			/** Format: date */
+			observedDate: string;
+			timetableBlockGroupIds: string[];
 		};
 		UpdateRoleRequest: {
 			description?: string | null;
@@ -27916,13 +27998,12 @@ export interface components {
 			title?: string | null;
 		};
 		UpdateSupervisionObservationRequest: {
-			manualLesson?: components['schemas']['ManualLessonInput'] | null;
-			/** Format: date-time */
-			observedAt?: string | null;
+			expectedSourceDigest?: string | null;
+			/** Format: date */
+			observedDate?: string | null;
 			/** Format: uuid */
 			templateId?: string | null;
-			/** Format: uuid */
-			timetableBlockGroupId?: string | null;
+			timetableBlockGroupIds?: string[] | null;
 		};
 		UpdateSupervisionTemplateRequest: {
 			description?: string | null;
@@ -65472,6 +65553,57 @@ export interface operations {
 			};
 		};
 	};
+	getSupervisionBookingOptions: {
+		parameters: {
+			query: {
+				academicTermId: string;
+				academicYearId: string;
+				weekStartDate: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Current own weekly teaching periods */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionBookingOptions'];
+				};
+			};
+			/** @description Invalid week or academic context */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Own booking permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listSupervisionCycles: {
 		parameters: {
 			query: {
@@ -65632,6 +65764,69 @@ export interface operations {
 			};
 		};
 	};
+	deleteSupervisionCycle: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Cycle to permanently delete */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['DeleteSupervisionCycleRequest'];
+			};
+		};
+		responses: {
+			/** @description Cycle and complete owned graph permanently deleted */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionCycleDeletionImpact'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School supervision manage permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Cycle not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Stale preview, closed context or malformed graph */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	updateSupervisionCycle: {
 		parameters: {
 			query?: never;
@@ -65694,6 +65889,65 @@ export interface operations {
 				};
 			};
 			/** @description Academic lifecycle or cycle context conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getSupervisionCycleDeletionImpact: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Cycle to permanently delete */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Complete cycle-owned graph deletion preview */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionCycleDeletionImpact'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description School supervision manage permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Cycle not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Malformed graph or unknown dependency */
 			409: {
 				headers: {
 					[name: string]: unknown;
@@ -66688,7 +66942,9 @@ export interface operations {
 	};
 	getSupervisionObservationTimetableOptions: {
 		parameters: {
-			query?: never;
+			query: {
+				weekStartDate: string;
+			};
 			header?: never;
 			path: {
 				/** @description Supervision observation ID */
@@ -66704,7 +66960,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionTimetableOption'];
+					'application/json': components['schemas']['ApiResponse_SupervisionBookingOptions'];
 				};
 			};
 			/** @description Authentication required */

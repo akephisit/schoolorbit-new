@@ -100,10 +100,7 @@ test('legacy or stale context repair retains only the verified term and a matchi
 		'returnTo',
 		'/staff/academic/delivery?academicYearId=year-1&academicTermId=term-1'
 	);
-	const corrected = new URL(
-		repairedDeliveryOfferingHref(stale, context)!,
-		origin
-	);
+	const corrected = new URL(repairedDeliveryOfferingHref(stale, context)!, origin);
 	assert.equal(corrected.searchParams.get('deliveryVersionId'), null);
 	assert.equal(corrected.searchParams.get('returnTo'), null);
 	assert.equal(repairedDeliveryOfferingHref(corrected, context), null);

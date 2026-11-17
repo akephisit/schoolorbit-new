@@ -22,7 +22,12 @@ test('detail regions supersede stale reads and keep review and editors interacti
 	assert.match(page, /\$effect.pre/);
 	assert.match(page, /observationRequest.abort\(\)/);
 	assert.match(page, /reviewOpen/);
-	assert.match(page, /editTimetableError/);
+	assert.match(page, /editLessonOpen/);
+	assert.match(page, /<SupervisionLessonPicker/);
+	const picker = await source('src/lib/components/supervision/SupervisionLessonPicker.svelte');
+	assert.match(picker, /LatestRequest/);
+	assert.match(picker, /getSupervisionObservationTimetableOptions/);
+	assert.match(picker, /request.isCurrent/);
 	assert.match(page, /evaluatorAvailabilityError/);
 	assert.match(page, /contextEpoch/);
 });
