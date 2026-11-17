@@ -1,13 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { revalidatePage } from './fixtures/page-revalidation';
-import {
-	mock,
-	id,
-	year,
-	savedPeriod,
-	timetableOption,
-	replaceFixtureIdentity
-} from './fixtures/supervision-route-data';
+import { mock, id, year, savedPeriod, timetableOption } from './fixtures/supervision-route-data';
 import type {
 	RequestSupervisionObservationRequest,
 	SupervisionTimetableOption
@@ -297,7 +290,7 @@ test('long subject, period and room labels wrap within the mobile grid and selec
 test('a replaced session discards pending old-session options and the old selected draft', async ({
 	page
 }) => {
-	await openBooking(page);
+	const api = await openBooking(page);
 	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
 	const gate = Promise.withResolvers<void>();
 	let held = false;
@@ -324,7 +317,7 @@ test('a replaced session discards pending old-session options and the old select
 	});
 	await page.getByRole('button', { name: 'สัปดาห์ก่อน', exact: true }).click();
 	await expect.poll(() => held).toBe(true);
-	await replaceFixtureIdentity(page, permissions, '01900000-0000-7000-8000-000000000002');
+	await api.replaceIdentity(permissions, '01900000-0000-7000-8000-000000000002');
 	await expect(page.getByTestId('supervision-lesson-picker')).toHaveCount(0);
 	gate.resolve();
 	await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
@@ -364,12 +357,24 @@ for (const change of ['permissions', 'session'] as const) {
 		await expect(
 			region.getByRole('heading', { name: 'ข้อมูลคำขอจากสิทธิ์เดิม', exact: true })
 		).toBeVisible();
-		await replaceFixtureIdentity(
-			page,
+		await api.replaceIdentity(
 			change === 'permissions' ? ['supervision.read.own'] : permissions,
 			change === 'session' ? '01900000-0000-7000-8000-000000000002' : undefined
 		);
 		await expect.poll(() => reads).toBe(3);
+		// A real auth reconciliation must preserve the newly authoritative fixture identity.
+		await page.evaluate(async () => {
+			const modulePath = '/src/lib/api/auth.ts';
+			const { authAPI } = await import(/* @vite-ignore */ modulePath);
+			if (
+				(await authAPI.refreshCurrentUser({ silent: true, invalidate: true })) !== 'authenticated'
+			)
+				throw new Error('Expected replacement identity to remain authenticated');
+			await new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			);
+		});
+		expect(reads).toBe(3);
 		await expect(
 			region.getByRole('heading', { name: 'ข้อมูลคำขอจากสิทธิ์เดิม', exact: true })
 		).toHaveCount(0);

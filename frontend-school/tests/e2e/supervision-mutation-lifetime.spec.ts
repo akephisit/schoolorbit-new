@@ -1,13 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { revalidatePage } from './fixtures/page-revalidation';
-import {
-	id,
-	year,
-	mock,
-	navigate,
-	path,
-	replaceFixtureIdentity
-} from './fixtures/supervision-route-data';
+import { id, year, mock, navigate, path } from './fixtures/supervision-route-data';
 
 test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ page }) => {
@@ -120,9 +113,7 @@ for (const owner of ['workspace', 'detail'] as const) {
 			);
 			const freshPermissions =
 				change === 'permissions' ? [...permissions, 'supervision.read.own'] : permissions;
-			api.setPermissions(freshPermissions);
-			await replaceFixtureIdentity(
-				page,
+			await api.replaceIdentity(
 				freshPermissions,
 				change === 'session' ? '01900000-0000-7000-8000-000000000002' : undefined
 			);

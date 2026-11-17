@@ -336,7 +336,7 @@ test('year changes remove an incompatible term and term-optional routes offer al
 	await expect(page).toHaveURL(/view=calendar/);
 });
 
-test('year-only home navigation preloads supervision with the matching default term and restores Back context', async ({
+test('year-only home navigation respects disabled supervision preload and restores matching term context through history', async ({
 	page
 }) => {
 	const reads: URL[] = [];
@@ -357,14 +357,23 @@ test('year-only home navigation preloads supervision with the matching default t
 	const destination = `/staff/academic/supervision?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`;
 	const link = page.locator('aside').getByRole('link', { name: 'นิเทศทดสอบ', exact: true });
 	await expect(link).toHaveAttribute('href', destination);
+	await expect(link).toHaveAttribute('data-sveltekit-preload-data', 'false');
 	await link.hover();
-	await expect
-		.poll(
-			() => reads.filter((url) => url.searchParams.get('academicTermId') === ids.activeTerm).length
-		)
-		.toBeGreaterThan(0);
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+	expect(reads).toHaveLength(0);
 	await link.click();
 	await expect(page).toHaveURL(destination);
+	await expect
+		.poll(() => reads.filter((url) => url.pathname === '/api/supervision/cycles').length)
+		.toBe(1);
+	await expect
+		.poll(() => reads.filter((url) => url.pathname === '/api/supervision/observations').length)
+		.toBe(1);
 	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
 	await expect(page.getByText('เลือกภาคเรียนก่อนจองคาบนิเทศ', { exact: true })).toHaveCount(0);
 	for (const url of reads) {

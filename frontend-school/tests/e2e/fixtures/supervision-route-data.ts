@@ -119,6 +119,7 @@ export async function mock(
 	const held = gate();
 	const counts = new Map<string, number>();
 	let authFirstName = 'นิเทศ';
+	let authSessionId = sessionState().sessionId;
 	let authPermissions = options.permissions ?? [
 		'supervision.manage.school',
 		'supervision.read.school'
@@ -212,10 +213,21 @@ export async function mock(
 					lastName: 'ทดสอบ',
 					userType: 'staff',
 					status: 'active',
-					session: sessionState(),
+					session: sessionState(Date.now(), { sessionId: authSessionId }),
 					profileImageFileId: null,
 					primaryRoleName: null,
 					permissions: authPermissions
+				});
+			if (resource === '/api/auth/activity') {
+				if (route.request().postDataJSON().expectedSessionId !== authSessionId)
+					return reply(route, 'session changed', 409);
+				return reply(route, sessionState(Date.now(), { sessionId: authSessionId }));
+			}
+			if (resource === '/api/notifications/stream')
+				return route.fulfill({
+					status: 200,
+					contentType: 'text/event-stream',
+					body: ': connected\n\n'
 				});
 			if (resource === '/api/academic/context/options')
 				return reply(route, {
@@ -464,6 +476,11 @@ export async function mock(
 		}
 	);
 	return {
+		replaceIdentity: async (permissions: string[], sessionId = authSessionId) => {
+			authPermissions = [...permissions];
+			authSessionId = sessionId;
+			await replaceFixtureIdentity(page, authPermissions, authSessionId);
+		},
 		setFirstName: (firstName: string) => {
 			authFirstName = firstName;
 		},
@@ -494,11 +511,7 @@ export async function navigate(page: Page, href: string) {
 		.evaluateAll((links) => links.forEach((link) => link.remove()));
 }
 
-export async function replaceFixtureIdentity(
-	page: Page,
-	permissions: string[],
-	sessionId?: string
-) {
+async function replaceFixtureIdentity(page: Page, permissions: string[], sessionId?: string) {
 	await page.evaluate(
 		async ({ permissions, sessionId }) => {
 			const modulePath = '/src/lib/stores/auth.ts';
