@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "59f0f7d04aaeddbf23604819aa0af382d34a76b8350c72aafe47379d5903ad97",
+  "contract_sha256": "574d6e0f91287a318aa4c8059cec5a72a8b2448c451a979d2b3f584cf61ae36a",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",
@@ -100,6 +100,10 @@
     "behavior_cleanup.execute.school",
     "budget.approve.assigned",
     "budget.create.own",
+    "budget.delete.organization_tree",
+    "budget.delete.organization_unit",
+    "budget.delete.own",
+    "budget.delete.school",
     "budget.download.organization_tree",
     "budget.download.organization_unit",
     "budget.download.own",

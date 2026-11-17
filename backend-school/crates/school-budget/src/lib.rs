@@ -1,5 +1,6 @@
 //! Budget owns accepted plans, reservations and the append-only financial ledger.
 pub mod adjustments;
+pub mod deletion;
 pub mod files;
 pub mod http;
 pub mod models;

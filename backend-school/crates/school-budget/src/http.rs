@@ -31,13 +31,14 @@ impl BudgetHttpState {
     }
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/catalogs",operation_id="getBudgetCatalogs",tag="budget",responses((status=200, description = "Budget catalogs returned",body=ApiResponse<BudgetCatalogs>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/catalogs",operation_id="getBudgetCatalogs",tag="budget",params(BudgetCatalogQuery),responses((status=200, description = "Budget catalogs returned",body=ApiResponse<BudgetCatalogs>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn get_catalogs(
     State(s): State<BudgetHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<BudgetCatalogQuery>,
 ) -> Result<Json<ApiResponse<BudgetCatalogs>>, HttpError> {
     let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
-    let data = crate::settings::catalogs(&c.tenant.pool, &c.actor).await?;
+    let data = crate::settings::catalogs(&c.tenant.pool, &c.actor, query).await?;
     Ok(Json(ApiResponse::ok(data)))
 }
 
@@ -51,14 +52,90 @@ pub async fn get_settings(
     Ok(Json(ApiResponse::ok(data)))
 }
 
-#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/budget/settings",operation_id="saveBudgetSettings",tag="budget",request_body=SaveBudgetSettingsRequest,responses((status=200, description = "Budget settings saved",body=ApiResponse<BudgetSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
-pub async fn save_settings(
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/fiscal-years",operation_id="createBudgetFiscalYear",tag="budget",request_body=CreateBudgetFiscalYearRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn create_fiscal_year(
     State(s): State<BudgetHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Json(input): Json<SaveBudgetSettingsRequest>,
-) -> Result<Json<ApiResponse<BudgetSettings>>, HttpError> {
+    Json(input): Json<CreateBudgetFiscalYearRequest>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
     let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
-    let data = crate::settings::save(&c.tenant.pool, &c.actor, input).await?;
+    let data = crate::settings::create_year(&c.tenant.pool, &c.actor, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/fiscal-years/{id}",operation_id="getBudgetYearSettings",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn get_year_settings(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = crate::settings::get_year(&c.tenant.pool, &c.actor, id).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/budget/fiscal-years/{id}",operation_id="saveBudgetYearSettings",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=SaveBudgetYearSettingsRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn save_year_settings(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<SaveBudgetYearSettingsRequest>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = crate::settings::save_year(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/budget/fiscal-years/{id}/funding",operation_id="saveBudgetReceivedFunding",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=SaveBudgetReceivedFundingRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn save_received_funding(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<SaveBudgetReceivedFundingRequest>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = crate::settings::save_received(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/fiscal-years/{id}/close",operation_id="closeBudgetFiscalYear",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn close_fiscal_year(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = crate::settings::close_year(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(delete,path="/api/budget/fiscal-years/{id}",operation_id="deleteBudgetFiscalYear",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetDeletedResource>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn delete_fiscal_year(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetDeletedResource>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = crate::settings::delete_year(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(delete,path="/api/budget/projects/{id}",operation_id="deleteBudgetProject",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetDeletedResource>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn delete_project(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetDeletedResource>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = crate::deletion::delete_project(&c.tenant.pool, &c.actor, id, input).await?;
     s.after_commit(&c.tenant.subdomain);
     Ok(Json(ApiResponse::ok(data)))
 }
@@ -473,15 +550,19 @@ pub fn routes() -> Router<BudgetHttpState> {
         .route("/budget/catalogs", axum::routing::get(get_catalogs))
         .route(
             "/budget/settings",
-            axum::routing::get(get_settings).put(save_settings),
+            axum::routing::get(get_settings),
         )
+        .route("/budget/fiscal-years", axum::routing::post(create_fiscal_year))
+        .route("/budget/fiscal-years/{id}", axum::routing::get(get_year_settings).put(save_year_settings).delete(delete_fiscal_year))
+        .route("/budget/fiscal-years/{id}/funding", axum::routing::put(save_received_funding))
+        .route("/budget/fiscal-years/{id}/close", axum::routing::post(close_fiscal_year))
         .route(
             "/budget/projects",
             axum::routing::get(list_projects).post(create_project),
         )
         .route(
             "/budget/projects/{id}",
-            axum::routing::get(get_project).put(save_project),
+            axum::routing::get(get_project).put(save_project).delete(delete_project),
         )
         .route(
             "/budget/projects/{id}/submit",
@@ -570,7 +651,7 @@ pub fn routes() -> Router<BudgetHttpState> {
 
 #[cfg(feature = "api-docs")]
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(get_catalogs,get_settings,save_settings,list_projects,create_project,get_project,save_project,submit_project,act_project,amend_project,list_requests,create_request,get_request,save_request,submit_request,act_request,close_request,list_payments,create_payment,list_adjustments,create_adjustment,get_adjustment,save_adjustment,submit_adjustment,act_adjustment,get_dashboard,project_process,project_history,request_process,request_history,adjustment_process,adjustment_history,refund_payment,export_report),components(schemas(BudgetStatus,BudgetAdjustmentKind,BudgetResourceKind,BudgetCatalogItem,BudgetFiscalYear,BudgetCatalogs,BudgetSettings,SaveBudgetSettingsRequest,BudgetProjectInput,CreateBudgetProjectRequest,SaveBudgetProjectRequest,BudgetActivityInput,BudgetPlanLineInput,BudgetActivity,BudgetPlanLine,BudgetPlanSnapshot,BudgetProjectSummary,BudgetCapabilities,BudgetAllocationRef,BudgetBalance,BudgetProjectWorkspace,BudgetProjectPage,BudgetMutationRequest,BudgetActionRequest,StartBudgetAmendmentRequest,BudgetRequestLineInput,BudgetSpendingRequestInput,SaveBudgetSpendingRequestRequest,BudgetRequestSummary,BudgetSpendingRequestDetail,BudgetRequestPage,BudgetPaymentAllocationInput,CreateBudgetPaymentRequest,RefundBudgetPaymentRequest,BudgetFileSnapshot,BudgetRefund,BudgetPayment,BudgetPaymentPage,CloseBudgetRequestRequest,BudgetAdjustmentInput,SaveBudgetAdjustmentRequest,BudgetAdjustmentDetail,BudgetAdjustmentPage,BudgetHistoryEntry,BudgetHistoryPage,BudgetProcessDetail,BudgetDashboardRow,BudgetDashboardTotals,BudgetDashboard,BudgetListQuery,BudgetReportQuery,BudgetRequestLine,UpdateBudgetAdjustmentRequest,BudgetCatalogItemInput,BudgetFiscalYearInput,BudgetReportMetric,ApiResponse<BudgetAdjustmentDetail>,ApiResponse<BudgetAdjustmentPage>,ApiResponse<BudgetCatalogs>,ApiResponse<BudgetDashboard>,ApiResponse<BudgetHistoryPage>,ApiResponse<BudgetPaymentPage>,ApiResponse<BudgetProcessDetail>,ApiResponse<BudgetProjectPage>,ApiResponse<BudgetProjectWorkspace>,ApiResponse<BudgetRequestPage>,ApiResponse<BudgetSettings>,ApiResponse<BudgetSpendingRequestDetail>)))]
+#[openapi(paths(get_catalogs,get_settings,create_fiscal_year,get_year_settings,save_year_settings,save_received_funding,close_fiscal_year,delete_fiscal_year,delete_project,list_projects,create_project,get_project,save_project,submit_project,act_project,amend_project,list_requests,create_request,get_request,save_request,submit_request,act_request,close_request,list_payments,create_payment,list_adjustments,create_adjustment,get_adjustment,save_adjustment,submit_adjustment,act_adjustment,get_dashboard,project_process,project_history,request_process,request_history,adjustment_process,adjustment_history,refund_payment,export_report),components(schemas(BudgetStatus,BudgetAdjustmentKind,BudgetResourceKind,BudgetCatalogItem,BudgetFiscalYear,BudgetCatalogs,BudgetCatalogQuery,BudgetSettings,BudgetYearSettings,SaveBudgetYearSettingsRequest,CreateBudgetFiscalYearRequest,BudgetAuthorizedFundingInput,BudgetUnitAllocationInput,BudgetReceivedFundingInput,SaveBudgetReceivedFundingRequest,BudgetSourceBalance,BudgetUnitBalance,BudgetDeletionImpact,BudgetDeletedResource,BudgetProjectInput,CreateBudgetProjectRequest,SaveBudgetProjectRequest,BudgetActivityInput,BudgetPlanLineInput,BudgetActivity,BudgetPlanLine,BudgetPlanSnapshot,BudgetProjectSummary,BudgetCapabilities,BudgetAllocationRef,BudgetBalance,BudgetProjectWorkspace,BudgetProjectPage,BudgetMutationRequest,BudgetActionRequest,StartBudgetAmendmentRequest,BudgetRequestLineInput,BudgetSpendingRequestInput,SaveBudgetSpendingRequestRequest,BudgetRequestSummary,BudgetSpendingRequestDetail,BudgetRequestPage,BudgetPaymentAllocationInput,CreateBudgetPaymentRequest,RefundBudgetPaymentRequest,BudgetFileSnapshot,BudgetRefund,BudgetPayment,BudgetPaymentPage,CloseBudgetRequestRequest,BudgetAdjustmentInput,SaveBudgetAdjustmentRequest,BudgetAdjustmentDetail,BudgetAdjustmentPage,BudgetHistoryEntry,BudgetHistoryPage,BudgetProcessDetail,BudgetDashboardRow,BudgetDashboardTotals,BudgetDashboard,BudgetListQuery,BudgetReportQuery,BudgetRequestLine,UpdateBudgetAdjustmentRequest,BudgetCatalogItemInput,BudgetReportMetric,ApiResponse<BudgetAdjustmentDetail>,ApiResponse<BudgetAdjustmentPage>,ApiResponse<BudgetCatalogs>,ApiResponse<BudgetDashboard>,ApiResponse<BudgetHistoryPage>,ApiResponse<BudgetPaymentPage>,ApiResponse<BudgetProcessDetail>,ApiResponse<BudgetProjectPage>,ApiResponse<BudgetProjectWorkspace>,ApiResponse<BudgetRequestPage>,ApiResponse<BudgetSettings>,ApiResponse<BudgetYearSettings>,ApiResponse<BudgetDeletedResource>,ApiResponse<BudgetSpendingRequestDetail>)))]
 pub struct BudgetApi;
 
 #[cfg(all(test, feature = "api-docs"))]

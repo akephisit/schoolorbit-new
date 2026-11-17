@@ -502,6 +502,27 @@ pub async fn cancel_pending_in_transaction(
     Ok(changed)
 }
 
+/// Producer-owned physical removal by exact source identities. The producer
+/// holds source locks; this owner resolves and locks every matching receipt,
+/// including consumed presentations and inboxes already removed by recipients.
+pub async fn cancel_sources_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    source: NotificationSourceKind,
+    source_ids: &[Uuid],
+    remove_inbox: bool,
+) -> Result<(), AppError> {
+    let notification_ids: Vec<Uuid> = school_database::DbSession::new(&mut **tx)
+        .scalar(
+            "notifications.cancel.source_identities",
+            "SELECT notification_id FROM notification_receipts WHERE source_kind=$1 AND source_id=ANY($2) ORDER BY id FOR UPDATE",
+        )
+        .bind(source.as_str())
+        .bind(source_ids)
+        .fetch_all()
+        .await?;
+    cancel_identified_in_transaction(tx, source, &notification_ids, remove_inbox).await
+}
+
 pub async fn cancel_identified_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
     source: NotificationSourceKind,

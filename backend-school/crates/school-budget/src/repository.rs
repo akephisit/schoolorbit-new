@@ -70,7 +70,10 @@ pub(crate) async fn lock_projects(
     let mut ids = ids.to_vec();
     ids.sort();
     ids.dedup();
+    let years: Vec<Uuid> = DbSession::new(&mut **tx).scalar("budget.repository.lock_project_years", "SELECT DISTINCT fiscal_year_id FROM budget_projects WHERE id=ANY($1)").bind(&ids).fetch_all().await?;
+    crate::settings::lock_years(tx, &years, false).await?;
     let rows=DbSession::new(&mut **tx).query_as::<ProjectRecord>("budget.src.repository.lock_projects", "SELECT id,owner_id,revision,status,attempt_id,accepted_version,accepted_snapshot_id,document,instance_id FROM budget_projects WHERE id=ANY($1) ORDER BY id FOR UPDATE").bind(&ids).fetch_all().await?;
+    if rows.iter().any(|r| !years.contains(&r.document.project.fiscal_year_id)) { return Err(stale()); }
     if rows.len() != ids.len() {
         return Err(AppError::NotFound("ไม่พบโครงการ".into()));
     }

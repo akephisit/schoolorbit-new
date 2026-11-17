@@ -80,7 +80,7 @@ async fn replace_lines(
         .iter()
         .map(|(p, _, _)| p.unit.clone())
         .collect::<Vec<_>>();
-    DbSession::new(&mut **tx).query("budget.src.requests.replace_lines", "INSERT INTO budget_request_lines(request_id,project_id,activity_id,plan_line_id,fund_id,expense_category_id,amount,description,unit,fund_name,expense_category_name) SELECT $1,$2,$3,x.id,x.fund,x.category,x.amount,x.description,x.unit,f.name,c.name FROM unnest($4::uuid[],$5::uuid[],$6::uuid[],$7::bigint[],$8::text[],$9::text[]) x(id,fund,category,amount,description,unit) JOIN budget_funds f ON f.id=x.fund JOIN budget_expense_categories c ON c.id=x.category").bind(r.id).bind(r.project_id).bind(r.activity_id).bind(ids).bind(funds).bind(categories).bind(amounts).bind(names).bind(units).execute().await?;
+    DbSession::new(&mut **tx).query("budget.src.requests.replace_lines", "INSERT INTO budget_request_lines(request_id,project_id,activity_id,plan_line_id,fund_id,expense_category_id,amount,description,unit,fund_name,expense_category_name) SELECT $1,$2,$3,x.id,x.fund,x.category,x.amount,x.description,x.unit,f.name,c.name FROM unnest($4::uuid[],$5::uuid[],$6::uuid[],$7::bigint[],$8::text[],$9::text[]) x(id,fund,category,amount,description,unit) JOIN budget_projects p ON p.id=$2 JOIN budget_year_funds f ON f.fund_id=x.fund AND f.fiscal_year_id=p.fiscal_year_id JOIN budget_year_expense_categories c ON c.expense_category_id=x.category AND c.fiscal_year_id=p.fiscal_year_id").bind(r.id).bind(r.project_id).bind(r.activity_id).bind(ids).bind(funds).bind(categories).bind(amounts).bind(names).bind(units).execute().await?;
     Ok(())
 }
 pub async fn create(
@@ -256,7 +256,7 @@ pub async fn submit(
     if !repository::parse_status(&r.status)?.editable() {
         return Err(repository::stale());
     }
-    let route = settings::routing(&mut tx).await?;
+    let route = settings::routing(&mut tx, p.document.project.fiscal_year_id).await?;
     let plan = repository::accepted(&mut tx, &p).await?;
     replace_lines(&mut tx, &r, &plan).await?;
     let evidence =

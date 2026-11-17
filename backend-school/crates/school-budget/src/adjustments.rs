@@ -83,7 +83,7 @@ async fn validate_refs(
     input: &BudgetAdjustmentInput,
 ) -> Result<(), AppError> {
     validate(input)?;
-    settings::routing(tx).await?;
+    settings::routing(tx, input.fiscal_year_id).await?;
     for r in input.from.iter().chain(&input.to) {
         let p: Option<(Uuid, Option<Uuid>)> = DbSession::new(&mut **tx)
             .query_as(
@@ -435,7 +435,7 @@ pub async fn submit(
         return Err(repository::stale());
     }
     validate_refs(&mut tx, &r.document).await?;
-    let route = settings::routing(&mut tx).await?;
+    let route = settings::routing(&mut tx, r.document.fiscal_year_id).await?;
     let s = Source {
         resource_type: "budget_adjustment",
         resource_id: id,
@@ -515,6 +515,7 @@ async fn apply(
         )
         .await?;
     }
+    settings::validate_limits(tx, doc.fiscal_year_id, true).await?;
     match doc.kind {
         BudgetAdjustmentKind::Loan => {
             DbSession::new(&mut **tx)

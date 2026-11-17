@@ -608,16 +608,21 @@ fn runtime_role_for_owner(owner: &str) -> Result<Option<String>, String> {
     Ok(Some(format!("so_{identity}_runtime")))
 }
 
-async fn grant_runtime_privileges(pool: &PgPool, runtime: &str) -> Result<(), sqlx::Error> {
-    let statement = format!(
+fn runtime_privilege_statement(runtime: &str) -> String {
+    format!(
         "REVOKE CREATE ON SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO \"{runtime}\";
          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{runtime}\";
          REVOKE ALL ON academic_result_removal_scope FROM \"{runtime}\";
+         REVOKE ALL ON budget_draft_removal_scope, workflow_source_removal_scope, workflow_evidence_removal_scope FROM \"{runtime}\";
          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO \"{runtime}\";
          REVOKE INSERT, UPDATE, DELETE ON _sqlx_migrations FROM \"{runtime}\";
          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{runtime}\";
          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO \"{runtime}\""
-    );
+    )
+}
+
+async fn grant_runtime_privileges(pool: &PgPool, runtime: &str) -> Result<(), sqlx::Error> {
+    let statement = runtime_privilege_statement(runtime);
     sqlx::raw_sql(sqlx::AssertSqlSafe(statement))
         .execute(pool)
         .await?;

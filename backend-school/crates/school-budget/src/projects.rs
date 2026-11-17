@@ -34,6 +34,7 @@ pub async fn create(
     drop(preflight);
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "budget.projects.create").await?;
+    settings::lock_years(&mut tx, &[input.fiscal_year_id], false).await?;
     let id = Uuid::now_v7();
     if let Some(old) = repository::claim(
         &mut tx,
@@ -135,15 +136,17 @@ async fn activities(
     let funds: Vec<Uuid> = DbSession::new(&mut **tx)
         .scalar(
             "budget.src.projects.activities",
-            "SELECT id FROM budget_funds WHERE active",
+            "SELECT fund_id FROM budget_year_funds WHERE fiscal_year_id=$1 AND active",
         )
+        .bind(r.document.project.fiscal_year_id)
         .fetch_all()
         .await?;
     let cats: Vec<Uuid> = DbSession::new(&mut **tx)
         .scalar(
             "budget.src.projects.activities",
-            "SELECT id FROM budget_expense_categories WHERE active",
+            "SELECT expense_category_id FROM budget_year_expense_categories WHERE fiscal_year_id=$1 AND active",
         )
+        .bind(r.document.project.fiscal_year_id)
         .fetch_all()
         .await?;
     for item in input {
@@ -240,6 +243,8 @@ async fn activities(
         result.push(BudgetActivity {
             id,
             title,
+            start_date: Some(item.start_date),
+            end_date: Some(item.end_date),
             default_fund_id: item.default_fund_id,
             default_expense_category_id: item.default_expense_category_id,
             total_satang: total.to_string(),
@@ -274,6 +279,7 @@ pub async fn save(
     }
     drop(preflight);
     let mut tx = school_tenancy::TenantPool::begin_observed(&pool, "budget.projects.save").await?;
+    settings::lock_project_years(&mut tx, &[id], &[input.fiscal_year_id]).await?;
     let mut r = repository::lock_project(&mut tx, id).await?;
     policy::require_read_in_transaction(&mut tx, a, &r, &read_scope).await?;
     policy::require_update_with_scope(a, &r, &update_scope)?;
@@ -317,7 +323,11 @@ pub async fn save(
         p.fiscal_year_id == r.document.project.fiscal_year_id,
     )
     .await?;
-    let items = activities(&mut tx, a, &r, input.activities, catalog).await?;
+    // Resolve catalogs in the explicit destination year, including a permitted draft move.
+    let mut target = r.clone();
+    target.document.project = p.clone();
+    let items = activities(&mut tx, a, &target, input.activities, catalog).await?;
+    settings::validate_activity_dates(&p, &items)?;
     r.document = Json(DraftPlan {
         project: p,
         activities: items,
@@ -380,7 +390,8 @@ pub async fn submit(
     {
         return Err(invalid("กรุณาบันทึกกิจกรรมและรายการงบประมาณก่อนส่งแผน"));
     }
-    let route = settings::routing(&mut tx).await?;
+    settings::validate_activity_dates(&r.document.project, &r.document.activities)?;
+    let route = settings::routing(&mut tx, r.document.project.fiscal_year_id).await?;
     settings::validate_project(&mut tx, &r.document.project, true).await?;
     r.status = "submitted".into();
     r.revision += 1;
@@ -420,6 +431,8 @@ async fn accept(
     a: &ActorContext,
     r: &mut ProjectRecord,
 ) -> Result<(), AppError> {
+    settings::validate_project(tx, &r.document.project, true).await?;
+    settings::validate_activity_dates(&r.document.project, &r.document.activities)?;
     let mut planned = BTreeMap::<(Uuid, Uuid, Uuid), i64>::new();
     let mut line_dimensions = BTreeMap::new();
     for activity in &r.document.activities {
@@ -497,6 +510,7 @@ async fn accept(
         accepted_by: a.user_id,
     };
     DbSession::new(&mut **tx).query("budget.src.projects.accept", "INSERT INTO budget_plan_snapshots(id,project_id,version,document,accepted_by,accepted_at) VALUES($1,$2,$3,$4,$5,$6)").bind(snapshot.id).bind(r.id).bind(snapshot.version).bind(Json(&snapshot)).bind(a.user_id).bind(snapshot.accepted_at).execute().await?;
+    settings::validate_limits(tx, r.document.project.fiscal_year_id, true).await?;
     r.accepted_version = Some(snapshot.version);
     r.accepted_snapshot_id = Some(snapshot.id);
     Ok(())
