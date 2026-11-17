@@ -15,5 +15,6 @@
 
 {#key `${identity}|${data.requestKey}`}<ProjectList
 		source={budgetSource(data.record, identity)}
+		catalogsSource={budgetSource(data.catalogs, identity)}
 		query={data.query}
 	/>{/key}

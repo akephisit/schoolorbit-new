@@ -698,7 +698,9 @@ export async function mockBudget(
 			}
 		}
 		if (path.endsWith('/catalogs')) {
-			const year = yearSettings.get(url.searchParams.get('fiscalYearId') ?? '');
+			const fiscalYearId = url.searchParams.get('fiscalYearId');
+			const year = yearSettings.get(fiscalYearId ?? '');
+			if (fiscalYearId && !year) return reply(route, 'ไม่พบปีงบประมาณ', 404);
 			return reply(route, {
 				fiscalYears: [...yearSettings.values()].map((item) => item.fiscalYear),
 				funds: year?.funds ?? [],

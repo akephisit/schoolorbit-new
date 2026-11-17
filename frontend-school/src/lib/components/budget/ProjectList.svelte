@@ -1,39 +1,44 @@
 <script lang="ts">
-	import { FolderOpen, Plus, Search, Settings2 } from '@lucide/svelte';
+	import { FolderOpen, Plus } from '@lucide/svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import ReadAccessNotice from './ReadAccessNotice.svelte';
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { listBudgetProjects, type BudgetProjectPage } from '#lib/api/budget.js';
+	import {
+		listBudgetProjects,
+		type BudgetProjectPage,
+		type BudgetCatalogs
+	} from '#lib/api/budget.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { BudgetRegion } from '#lib/budget/region.svelte.js';
-	import { budgetFilters, destination, dateLabel } from '#lib/budget/presentation.js';
+	import { budgetFilters, dateLabel } from '#lib/budget/presentation.js';
 	import { money } from '#lib/budget/money.js';
 	import { budgetReadPermissions } from '#lib/budget/access.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { PageState, TableSkeleton } from '#lib/components/app-state/index.js';
 	import ProjectDelete from './ProjectDelete.svelte';
 	import ProjectForm from './ProjectForm.svelte';
 	import Paging from './Paging.svelte';
+	import BudgetNavigation from './BudgetNavigation.svelte';
+	import ListFilters from './ListFilters.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	let {
 		source,
+		catalogsSource,
 		query
 	}: {
 		source: Promise<RouteLoadResult<BudgetProjectPage | null>>;
+		catalogsSource: Promise<RouteLoadResult<BudgetCatalogs | null>>;
 		query: ReturnType<typeof budgetFilters>;
 	} = $props();
 	const region = new BudgetRegion<BudgetProjectPage | null>();
-	let creating = $state(false),
-		search = $state(untrack(() => query.search));
+	let creating = $state(false);
 	$effect.pre(() => region.consume(source));
 	onDestroy(() => region.dispose());
 </script>
@@ -44,32 +49,20 @@
 	title="โครงการงบประมาณ"
 	contentClass="space-y-6"
 >
-	{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_MANAGE_SCHOOL)}<Button
-				variant="outline"
-				href="/staff/budget/settings"><Settings2 class="size-4" />ตั้งค่างบประมาณ</Button
-			>{/if}{#if $can.has(PERMISSIONS.BUDGET_CREATE_OWN) && $can.hasAny(...budgetReadPermissions)}<Button
+	{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_CREATE_OWN) && $can.hasAny(...budgetReadPermissions)}<Button
 				onclick={() => (creating = true)}><Plus class="size-4" />สร้างโครงการ</Button
 			>{/if}{/snippet}
+	<BudgetNavigation fiscalYearId={query.fiscalYearId} />
 	<ReadAccessNotice />
-	<Card.Root class="gap-0 py-0"
-		><Card.Content class="p-3 sm:p-4">
-			<form
-				class="flex flex-wrap items-end gap-3"
-				onsubmit={(event) => {
-					event.preventDefault();
-					void goto(destination('/staff/budget/projects', { ...query, search, offset: 0 }));
-				}}
-			>
-				<div class="min-w-0 flex-1 space-y-2">
-					<Label for="budget-project-search">ค้นหาโครงการ</Label><Input
-						id="budget-project-search"
-						bind:value={search}
-					/>
-				</div>
-				<Button type="submit" variant="outline"><Search class="size-4" />ค้นหา</Button>
-			</form></Card.Content
-		></Card.Root
-	>
+	{#if $can.hasAny(...budgetReadPermissions)}<ListFilters
+			source={catalogsSource}
+			{query}
+			path="/staff/budget/projects"
+			searchable
+		/>{/if}
+	{#if region.value}<p class="text-sm text-muted-foreground">
+			ทั้งหมด {region.value.total} โครงการในขอบเขตที่คุณมีสิทธิ์ดู
+		</p>{/if}
 	<section aria-label="โครงการงบประมาณ" aria-busy={region.loading} data-testid="budget-projects">
 		{#if region.error}<PageState
 				variant="error"
@@ -82,26 +75,33 @@
 				columns={5}
 			/>{:else if region.value?.items.length}<Card.Root class="gap-0 overflow-hidden py-0"
 				><div class="min-w-0">
-					<Table.Root class="min-w-[48rem]"
-						><Table.Header
+					<Table.Root class="block w-full sm:table sm:min-w-[48rem]"
+						><Table.Header class="sr-only sm:not-sr-only"
 							><Table.Row
 								><Table.Head>โครงการ / หน่วยงาน</Table.Head><Table.Head>ระยะเวลา</Table.Head
 								><Table.Head class="whitespace-nowrap text-right">งบประมาณ</Table.Head><Table.Head
 									>สถานะ</Table.Head
 								><Table.Head>รายละเอียด</Table.Head></Table.Row
 							></Table.Header
-						><Table.Body
+						><Table.Body class="block sm:table-row-group"
 							>{#each region.value.items as project (project.id)}<Table.Row
+									class="grid grid-cols-2 gap-x-4 gap-y-2 p-4 sm:table-row sm:p-0"
 									><Table.Cell
+										class="col-span-2 min-w-0 max-sm:break-words max-sm:whitespace-normal sm:table-cell"
 										><p class="min-w-48 font-medium">{project.name}</p>
 										<p class="text-sm text-muted-foreground">
 											{project.organizationUnitName}
 										</p></Table.Cell
-									><Table.Cell class="whitespace-nowrap"
+									><Table.Cell class="col-span-2 whitespace-nowrap text-sm sm:text-base"
 										>{dateLabel(project.startDate)} – {dateLabel(project.endDate)}</Table.Cell
-									><Table.Cell class="whitespace-nowrap text-right tabular-nums"
-										>{money(project.totalSatang)} บาท</Table.Cell
-									><Table.Cell><StatusBadge status={project.status} /></Table.Cell><Table.Cell
+									><Table.Cell
+										class="col-span-2 flex items-center justify-between gap-3 whitespace-nowrap tabular-nums sm:table-cell sm:text-right"
+										><span class="text-sm text-muted-foreground sm:hidden">งบประมาณ</span>{money(
+											project.totalSatang
+										)} บาท</Table.Cell
+									><Table.Cell class="self-center"
+										><StatusBadge status={project.status} /></Table.Cell
+									><Table.Cell class="flex flex-wrap justify-end gap-2 sm:table-cell"
 										><Button
 											size="sm"
 											variant="outline"
@@ -124,9 +124,11 @@
 					>
 				</div></Card.Root
 			>{:else if region.value && !region.error}<PageState
-				title={query.search ? 'ไม่พบโครงการตามคำค้น' : 'ยังไม่มีโครงการงบประมาณ'}
-				description={query.search
-					? 'ลองใช้คำค้นอื่นเพื่อค้นหาโครงการในขอบเขตงานของคุณ'
+				title={query.search || query.status || query.fiscalYearId
+					? 'ไม่พบโครงการตามตัวกรอง'
+					: 'ยังไม่มีโครงการงบประมาณ'}
+				description={query.search || query.status || query.fiscalYearId
+					? 'ลองเปลี่ยนปีงบประมาณ สถานะ หรือคำค้นเพื่อดูรายการอื่น'
 					: $can.has(PERMISSIONS.BUDGET_CREATE_OWN)
 						? 'สร้างโครงการและเพิ่มกิจกรรมเพื่อเริ่มวางแผนค่าใช้จ่าย'
 						: 'โครงการในขอบเขตที่คุณมีสิทธิ์ดูจะแสดงที่นี่'}
@@ -147,6 +149,7 @@
 				>ข้อมูลโครงการและระยะเวลาดำเนินการ</Dialog.Description
 			></Dialog.Header
 		>{#if creating}<ProjectForm
+				initialFiscalYearId={query.fiscalYearId}
 				oncancel={() => (creating = false)}
 				onsaved={(value) => {
 					creating = false;

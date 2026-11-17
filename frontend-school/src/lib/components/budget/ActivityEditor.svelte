@@ -42,8 +42,8 @@
 	const id = $derived(`budget-activity-${activity.key}`);
 </script>
 
-<Card.Root class="gap-0" role="region" aria-label={activity.title || 'กิจกรรมใหม่'}
-	><Card.Content class="space-y-5">
+<Card.Root class="gap-0 py-0" role="region" aria-label={activity.title || 'กิจกรรมใหม่'}
+	><Card.Content class="space-y-5 py-5">
 		<div class="flex flex-wrap items-end justify-between gap-3">
 			<div class="min-w-0 flex-1 space-y-2">
 				<Label for={`${id}-title`}>ชื่อกิจกรรม *</Label><Input
@@ -89,7 +89,12 @@
 			</p>{/if}
 
 		<div class="space-y-4 rounded-lg bg-muted/40 p-4">
-			<p class="text-sm font-medium">ค่าเริ่มต้นสำหรับรายการใหม่</p>
+			<div class="space-y-1">
+				<p class="text-sm font-medium">ค่าเริ่มต้นสำหรับรายการค่าใช้จ่าย</p>
+				<p class="text-sm text-muted-foreground">
+					รายการที่เพิ่มใหม่จะใช้ค่านี้ รายการเดิมเปลี่ยนเมื่อเลือกแล้วกดใช้ค่าเริ่มต้น
+				</p>
+			</div>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<Choice
 					id={`${id}-fund`}
@@ -135,49 +140,59 @@
 					>
 				</div>{/if}
 		</div>
-		{#each activity.lines as line, index (line.key)}<div class="space-y-3 border-t pt-5">
-				<div class="flex items-center gap-2">
-					<Checkbox
-						id={`${id}-select-${line.key}`}
-						checked={selected.includes(line.key)}
+		<section class="space-y-4" aria-label="รายการค่าใช้จ่ายในกิจกรรม">
+			<h3 class="font-semibold">
+				รายการค่าใช้จ่าย <span class="text-sm font-normal text-muted-foreground"
+					>({activity.lines.length} รายการ)</span
+				>
+			</h3>
+			{#if !activity.lines.length}<p class="text-sm text-muted-foreground">
+					เพิ่มรายการกำหนดเอง หรือเลือกพัสดุจากคลังเพื่อเริ่มคำนวณงบกิจกรรม
+				</p>{/if}
+			{#each activity.lines as line, index (line.key)}<div class="space-y-3 border-t pt-5">
+					<div class="flex items-center gap-2">
+						<Checkbox
+							id={`${id}-select-${line.key}`}
+							checked={selected.includes(line.key)}
+							{disabled}
+							onCheckedChange={(checked) =>
+								(selected = checked
+									? [...selected, line.key]
+									: selected.filter((key) => key !== line.key))}
+						/><Label for={`${id}-select-${line.key}`}
+							>เลือกรายการที่ {index + 1} เพื่อเปลี่ยนค่า</Label
+						>
+					</div>
+					<LineEditor
+						bind:line={activity.lines[index]}
+						{catalogs}
+						{submitted}
 						{disabled}
-						onCheckedChange={(checked) =>
-							(selected = checked
-								? [...selected, line.key]
-								: selected.filter((key) => key !== line.key))}
-					/><Label for={`${id}-select-${line.key}`}
-						>เลือกรายการที่ {index + 1} เพื่อเปลี่ยนค่า</Label
-					>
-				</div>
-				<LineEditor
-					bind:line={activity.lines[index]}
-					{catalogs}
-					{submitted}
-					{disabled}
-					onremove={() => {
-						activity.lines = activity.lines.filter((value) => value.key !== line.key);
-						selected = selected.filter((key) => key !== line.key);
-					}}
-				/>
-			</div>{/each}
-		<div class="flex flex-wrap items-center gap-2">
-			<Button
-				type="button"
-				variant="outline"
-				{disabled}
-				onclick={() => (activity.lines = [...activity.lines, newLine(activity)])}
-				>เพิ่มรายการกำหนดเอง</Button
-			>{#if $can.has(PERMISSIONS.SUPPLY_CATALOG_READ_SCHOOL)}<Button
+						onremove={() => {
+							activity.lines = activity.lines.filter((value) => value.key !== line.key);
+							selected = selected.filter((key) => key !== line.key);
+						}}
+					/>
+				</div>{/each}
+			<div class="flex flex-wrap items-center gap-2">
+				<Button
 					type="button"
 					variant="outline"
 					{disabled}
-					onclick={() => (catalogOpen = true)}>เลือกพัสดุจากคลัง</Button
-				>{/if}
-			<p class="ml-auto text-sm tabular-nums">
-				รวมกิจกรรม <strong>{money(sumSatang(activity.lines.map(previewTotal)))} บาท</strong>
-			</p>
-		</div>
-	</Card.Content></Card.Root
+					onclick={() => (activity.lines = [...activity.lines, newLine(activity)])}
+					>เพิ่มรายการกำหนดเอง</Button
+				>{#if $can.has(PERMISSIONS.SUPPLY_CATALOG_READ_SCHOOL)}<Button
+						type="button"
+						variant="outline"
+						{disabled}
+						onclick={() => (catalogOpen = true)}>เลือกพัสดุจากคลัง</Button
+					>{/if}
+				<p class="ml-auto text-sm tabular-nums">
+					รวมกิจกรรม <strong>{money(sumSatang(activity.lines.map(previewTotal)))} บาท</strong>
+				</p>
+			</div>
+		</section></Card.Content
+	></Card.Root
 >
 <Dialog.Root bind:open={catalogOpen}
 	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"

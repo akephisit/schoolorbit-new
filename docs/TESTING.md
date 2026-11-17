@@ -2401,8 +2401,13 @@ From `frontend-school`, using the pinned repository Node version and a ready loo
 
 ```bash
 node --test tests/static/budget-money.test.mjs tests/static/budget-drafts.test.mjs
-E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/budget-workspace.spec.ts tests/e2e/budget-settings.spec.ts tests/e2e/budget-annual-settings.spec.ts --project=chromium --workers=1
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/budget-workspace.spec.ts tests/e2e/budget-settings.spec.ts tests/e2e/budget-annual-settings.spec.ts tests/e2e/budget-redesign.spec.ts --project=chromium --workers=1
 ```
+
+The redesign browser fixture covers permission-aware local navigation, explicit fiscal-year context,
+server-owned list filters and pagination, independent catalog retries, selected-year creation defaults
+and receipt-only Enter submission. All nine screens retain active navigation and mobile/desktop
+light/dark coverage in the workspace fixture.
 
 Annual settings browser cases cover per-year draft isolation, finance-only unknown-versus-zero
 receipts, exact envelopes/reserve/unit edits, date locking, close freezes, copy-without-money, and

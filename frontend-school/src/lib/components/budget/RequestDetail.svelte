@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ReadAccessNotice from './ReadAccessNotice.svelte';
+	import BudgetNavigation from './BudgetNavigation.svelte';
 	import { onDestroy } from 'svelte';
 	import { budgetUpdatePermissions } from '#lib/budget/access.js';
 	import {
@@ -74,6 +75,13 @@
 		editError = $state(''),
 		paymentOffset = $state(0),
 		disposed = false;
+	const fiscalYearId = $derived.by(() => {
+		const value =
+			new URL(returnTo, 'https://budget.invalid').searchParams.get('fiscalYearId') ?? '';
+		return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+			? value
+			: '';
+	});
 	const controller = new AbortController();
 	const lineNames = $derived(
 		Object.fromEntries(
@@ -190,6 +198,7 @@
 						error = '';
 					}}>ปิดคำขอ</Button
 				>{/if}{/if}{/snippet}
+	<BudgetNavigation {fiscalYearId} />
 	<ReadAccessNotice />
 	<section
 		class="space-y-4"
@@ -208,7 +217,7 @@
 				variant="form"
 				rows={4}
 			/>{:else if region.value}{@const detail = region.value}
-			<Card.Root
+			<Card.Root class="border-primary/15 bg-gradient-to-br from-primary/5 to-card"
 				><Card.Header
 					><div class="flex flex-wrap items-center justify-between gap-3">
 						<Card.Title>สรุปคำขอใช้เงิน</Card.Title>
@@ -222,8 +231,8 @@
 						</div>
 					</div></Card.Header
 				><Card.Content class="space-y-6">
-					<dl class="grid grid-cols-2 gap-6 lg:grid-cols-4">
-						{#each [{ label: 'จำนวนเงินคำขอ', value: detail.request.totalSatang }, { label: 'ผูกพัน', value: detail.request.reservedSatang }, { label: 'จ่ายแล้ว', value: detail.request.paidSatang }, { label: 'คงเหลือคำขอ', value: detail.request.remainingSatang }] as metric (metric.label)}<div
+					<dl class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+						{#each [{ label: 'จำนวนเงินคำขอ', value: detail.request.totalSatang }, { label: 'ผูกพัน', value: detail.request.reservedSatang }, { label: 'จ่ายแล้วตามคำขอ', value: detail.request.paidSatang }, { label: 'คงเหลือคำขอ', value: detail.request.remainingSatang }] as metric (metric.label)}<div
 							>
 								<dt class="text-sm text-muted-foreground">{metric.label}</dt>
 								<dd class="break-words text-lg font-semibold tabular-nums">
@@ -231,6 +240,16 @@
 								</dd>
 							</div>{/each}
 					</dl>
+					<p class="border-t border-primary/10 pt-4 text-sm text-muted-foreground">
+						{#if detail.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}เลือกแก้ไขฉบับร่างเพื่อตรวจสอบรายการและหลักฐาน{#if detail.capabilities.canSubmit}
+								แล้วส่งคำขอพิจารณาเมื่อพร้อม{/if}
+						{:else if detail.capabilities.canPay && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}คำขออนุมัติแล้ว
+							บันทึกการจ่ายเงินตามรายการและยอดที่จ่ายได้
+						{:else if detail.request.status === 'submitted'}ติดตามขั้นตอนปัจจุบันและผู้พิจารณาด้านล่าง
+						{:else if detail.request.status === 'closed'}คำขอนี้ปิดแล้ว ตรวจสอบการจ่ายเงิน คืนเงิน
+							และหลักฐานย้อนหลังได้
+						{:else}ตรวจสอบรายการใช้เงิน การพิจารณา และประวัติของคำขอนี้ด้านล่าง{/if}
+					</p>
 				</Card.Content></Card.Root
 			>
 			<Card.Root
@@ -239,7 +258,16 @@
 						>จำนวนเงินที่ขอแยกตามแหล่งเงินและหมวดรายจ่าย</Card.Description
 					></Card.Header
 				><Card.Content class="space-y-4"
-					><div class="min-w-0 overflow-hidden rounded-lg border">
+					><ul class="divide-y rounded-lg border px-4 md:hidden" aria-label="รายการใช้เงิน">
+						{#each detail.lines as line (line.planLineId)}<li class="space-y-2 py-4">
+								<h3 class="break-words font-medium">{line.description}</h3>
+								<p class="break-words text-sm text-muted-foreground">
+									{line.fundName} · {line.expenseCategoryName}
+								</p>
+								<p class="text-right font-semibold tabular-nums">{money(line.amountSatang)} บาท</p>
+							</li>{/each}
+					</ul>
+					<div class="hidden min-w-0 overflow-hidden rounded-lg border md:block">
 						<Table.Root class="min-w-[38rem]"
 							><Table.Header
 								><Table.Row
@@ -303,9 +331,9 @@
 								class="space-y-4 rounded-lg border p-4"
 							>
 								<div class="flex flex-wrap items-start justify-between gap-3">
-									<div>
-										<h3 class="font-medium">ใบสำคัญ {payment.voucherNumber}</h3>
-										<p class="text-sm text-muted-foreground">
+									<div class="min-w-0 space-y-1">
+										<h3 class="break-words font-medium">ใบสำคัญ {payment.voucherNumber}</h3>
+										<p class="break-words text-sm text-muted-foreground">
 											{dateLabel(payment.paidOn)}{payment.note ? ` · ${payment.note}` : ''}
 										</p>
 									</div>

@@ -155,57 +155,74 @@
 		title="ปิดปีงบประมาณแล้ว"
 		description="ดูข้อมูลของปีนี้ได้ โดยไม่สามารถแก้ไขหรือบันทึกรายการเพิ่มเติม"
 	/>{/if}
-<section aria-label="กรอบงบประมาณประจำปี" class="space-y-4">
-	<h2 class="text-sm font-medium text-muted-foreground">ข้อมูลที่บันทึกแล้ว</h2>
-	<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-		{#each [{ key: 'authorizedSatang' as const, label: 'กรอบงบประมาณรวม' }, { key: 'allocatedSatang' as const, label: 'จัดสรรให้หน่วยงาน' }, { key: 'reserveSatang' as const, label: 'เงินสำรองส่วนกลาง' }, { key: 'unallocatedSatang' as const, label: 'ยังไม่จัดสรร' }, { key: 'receivedSatang' as const, label: 'รับเงินจริงปีนี้' }] as metric (metric.key)}<Card.Root
-				class="gap-0 py-0"
-				><Card.Content class="p-4"
-					><p class="text-sm text-muted-foreground">{metric.label}</p>
-					<p class="mt-2 font-semibold tabular-nums [overflow-wrap:anywhere]">
-						{total(metric.key)}
-					</p></Card.Content
-				></Card.Root
-			>{/each}
-	</div>
-	<p class="text-sm text-muted-foreground">
-		กรอบงบประมาณ = เงินยกมา + เงินจัดสรรใหม่ที่อนุมัติ · ยอดรับเงินจริงบันทึกแยกจากกรอบงบประมาณ ·
-		เงินสำรองแยกจากยอดที่ยังไม่จัดสรร
-	</p>
-	{#if value.sourceBalances.length}<Card.Root class="overflow-hidden py-0"
-			><Table.Root class="min-w-[64rem]"
-				><Table.Header
-					><Table.Row
-						><Table.Head>แหล่งเงิน</Table.Head
-						>{#each ['เงินยกมา', 'จัดสรรใหม่', 'กรอบรวม', 'จัดสรรหน่วยงาน', 'สำรอง', 'ยังไม่จัดสรร', 'ใช้กรอบแล้ว', 'ยังไม่จัดเข้าโครงการ', 'รับเงินจริง'] as label (label)}<Table.Head
-								class="text-right whitespace-nowrap">{label}</Table.Head
-							>{/each}</Table.Row
-					></Table.Header
-				><Table.Body
-					>{#each value.sourceBalances as balance (balance.fundId)}<Table.Row
-							><Table.Cell
-								>{value.funds.find((fund) => fund.id === balance.fundId)?.name ??
-									'แหล่งเงินเดิม'}</Table.Cell
-							>{#each [balance.carryoverSatang, balance.annualFundingSatang, balance.authorizedSatang, balance.allocatedSatang, balance.reserveSatang, balance.unallocatedSatang, balance.committedSatang, balance.remainingSatang, balance.receivedSatang] as amount, i (i)}<Table.Cell
-									class="text-right whitespace-nowrap tabular-nums"
-									>{amount == null ? 'ยังไม่ระบุ' : money(amount)}</Table.Cell
-								>{/each}</Table.Row
-						>{/each}</Table.Body
-				></Table.Root
-			></Card.Root
-		>{/if}
-</section>
-<form onsubmit={save} class="space-y-5">
+<form
+	onsubmit={(event) => {
+		if (section === 'received' || !value.canManage) {
+			event.preventDefault();
+			void saveReceived();
+		} else void save(event);
+	}}
+	class="space-y-5"
+>
 	<Tabs.Root bind:value={section}
-		><Tabs.List class="h-auto flex-wrap"
-			>{#if value.canManage}<Tabs.Trigger value="year">ปีงบประมาณ</Tabs.Trigger><Tabs.Trigger
-					value="funding">กรอบเงินและรับเงิน</Tabs.Trigger
-				><Tabs.Trigger value="allocations">จัดสรรหน่วยงาน</Tabs.Trigger><Tabs.Trigger value="funds"
-					>แหล่งเงิน</Tabs.Trigger
-				><Tabs.Trigger value="categories">หมวดรายจ่าย</Tabs.Trigger><Tabs.Trigger value="routing"
-					>ขั้นตอนพิจารณา</Tabs.Trigger
-				>{:else}<Tabs.Trigger value="funding">รับเงินจริง</Tabs.Trigger>{/if}</Tabs.List
-		>
+		><div class="min-w-0 overflow-x-auto">
+			<Tabs.List class="h-auto w-max" aria-label="หัวข้อการตั้งค่างบประมาณ">
+				{#if value.canManage}
+					<Tabs.Trigger value="year">ปีงบประมาณ</Tabs.Trigger>
+					<Tabs.Trigger value="funds">แหล่งเงิน</Tabs.Trigger>
+					<Tabs.Trigger value="categories">หมวดรายจ่าย</Tabs.Trigger>
+					<Tabs.Trigger value="funding">กรอบเงิน</Tabs.Trigger>
+					<Tabs.Trigger value="allocations">จัดสรรหน่วยงาน</Tabs.Trigger>
+					<Tabs.Trigger value="routing">ขั้นตอนพิจารณา</Tabs.Trigger>
+					<Tabs.Trigger value="received">รับเงินจริง</Tabs.Trigger>
+				{:else}<Tabs.Trigger value="funding">รับเงินจริง</Tabs.Trigger>{/if}
+			</Tabs.List>
+		</div>
+		<section aria-label="กรอบงบประมาณประจำปี" class="mt-4">
+			<details class="rounded-xl border bg-card p-3 sm:p-4">
+				<summary class="cursor-pointer text-sm font-medium"
+					>ยอดที่บันทึกแล้ว · กรอบรวม {total('authorizedSatang')}</summary
+				>
+				<div class="mt-4 space-y-4">
+					<dl class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+						{#each [{ key: 'authorizedSatang' as const, label: 'กรอบงบประมาณรวม' }, { key: 'allocatedSatang' as const, label: 'จัดสรรให้หน่วยงาน' }, { key: 'reserveSatang' as const, label: 'เงินสำรองส่วนกลาง' }, { key: 'unallocatedSatang' as const, label: 'ยังไม่จัดสรร' }, { key: 'receivedSatang' as const, label: 'รับเงินจริงปีนี้' }] as metric (metric.key)}
+							<div class="min-w-0">
+								<dt class="text-sm text-muted-foreground">{metric.label}</dt>
+								<dd class="mt-1 overflow-x-auto whitespace-nowrap font-semibold tabular-nums">
+									{total(metric.key)}
+								</dd>
+							</div>
+						{/each}
+					</dl>
+					<p class="text-sm text-muted-foreground">
+						กรอบงบประมาณ = เงินยกมา + เงินจัดสรรใหม่ที่อนุมัติ ·
+						ยอดรับเงินจริงบันทึกแยกจากกรอบงบประมาณ · เงินสำรองแยกจากยอดที่ยังไม่จัดสรร
+					</p>
+					{#if value.sourceBalances.length}<Card.Root class="gap-0 overflow-hidden py-0"
+							><Table.Root class="min-w-[64rem]"
+								><Table.Header
+									><Table.Row
+										><Table.Head>แหล่งเงิน</Table.Head
+										>{#each ['เงินยกมา', 'จัดสรรใหม่', 'กรอบรวม', 'จัดสรรหน่วยงาน', 'สำรอง', 'ยังไม่จัดสรร', 'ใช้กรอบแล้ว', 'ยังไม่จัดเข้าโครงการ', 'รับเงินจริง'] as label (label)}<Table.Head
+												class="text-right whitespace-nowrap">{label}</Table.Head
+											>{/each}</Table.Row
+									></Table.Header
+								><Table.Body
+									>{#each value.sourceBalances as balance (balance.fundId)}<Table.Row
+											><Table.Cell
+												>{value.funds.find((fund) => fund.id === balance.fundId)?.name ??
+													'แหล่งเงินเดิม'}</Table.Cell
+											>{#each [balance.carryoverSatang, balance.annualFundingSatang, balance.authorizedSatang, balance.allocatedSatang, balance.reserveSatang, balance.unallocatedSatang, balance.committedSatang, balance.remainingSatang, balance.receivedSatang] as amount, i (i)}<Table.Cell
+													class="text-right whitespace-nowrap tabular-nums"
+													>{amount == null ? 'ยังไม่ระบุ' : money(amount)}</Table.Cell
+												>{/each}</Table.Row
+										>{/each}</Table.Body
+								></Table.Root
+							></Card.Root
+						>{/if}
+				</div>
+			</details>
+		</section>
 		<Tabs.Content value="year" class="space-y-4 pt-4"
 			><div class="grid gap-4 sm:grid-cols-3">
 				<div class="space-y-2">
@@ -236,49 +253,60 @@
 					มีโครงการใช้งานปีนี้แล้ว จึงไม่สามารถเปลี่ยนช่วงวันที่ได้
 				</p>{/if}</Tabs.Content
 		>
-		<Tabs.Content value="funding" class="space-y-5 pt-4">
-			{#if value.canManage}<section class="space-y-4" aria-label="กรอบเงินรายแหล่ง">
-					<h2 class="font-semibold">กรอบเงินรายแหล่ง</h2>
-					{#if draft.funding === null}<p class="text-sm text-muted-foreground">
-							ยังไม่กำหนดกรอบงบประมาณของปีนี้ การไม่ระบุวงเงินต่างจากการกำหนดวงเงินเป็นศูนย์
+		{#if value.canManage}<Tabs.Content value="funding" class="space-y-5 pt-4">
+				{#if value.canManage}<section class="space-y-4" aria-label="กรอบเงินรายแหล่ง">
+						<h2 class="font-semibold">กรอบเงินรายแหล่ง</h2>
+						<p class="text-sm text-muted-foreground">
+							กำหนดแหล่งเงินและหมวดรายจ่ายก่อน แล้วระบุเงินยกมา เงินจัดสรรใหม่
+							และเงินสำรองของแต่ละแหล่ง
 						</p>
-						<Button
-							type="button"
-							variant="outline"
-							{disabled}
-							onclick={() =>
-								(draft.funding = value.funds.map((fund) => ({
-									fundId: fund.id,
-									carryover: '0',
-									annual: '0',
-									reserve: '0'
-								})))}>กำหนดกรอบงบประมาณ</Button
-						>{:else}{#each draft.funding as fund (fund.fundId)}<Card.Root
-								><Card.Content class="space-y-3"
-									><h3 class="font-medium">
-										{draft.funds.find((item) => item.id === fund.fundId)?.name ?? 'แหล่งเงินเดิม'}
-									</h3>
-									<div class="grid gap-4 sm:grid-cols-3">
-										{#each [{ key: 'carryover' as const, label: 'เงินยกมา' }, { key: 'annual' as const, label: 'เงินจัดสรรใหม่ที่อนุมัติ' }, { key: 'reserve' as const, label: 'เงินสำรองส่วนกลาง' }] as field (field.key)}<div
-												class="space-y-2"
-											>
-												<Label for={`budget-funding-${fund.fundId}-${field.key}`}
-													>{field.label} (บาท)</Label
-												><Input
-													id={`budget-funding-${fund.fundId}-${field.key}`}
-													inputmode="decimal"
-													bind:value={fund[field.key]}
-													{disabled}
-												/>
-											</div>{/each}
-									</div></Card.Content
-								></Card.Root
-							>{/each}{/if}
-					<p class="text-sm text-muted-foreground">
-						เมื่อเพิ่มแหล่งเงินใหม่ ให้บันทึกการตั้งค่าก่อน แล้วจึงกรอกวงเงินของแหล่งเงินนั้น
-					</p>
-				</section>{/if}
-			<section class="space-y-4 border-t pt-5" aria-label="ยอดรับเงินจริง">
+						{#if draft.funding === null}<p class="text-sm text-muted-foreground">
+								ยังไม่กำหนดกรอบงบประมาณของปีนี้ การไม่ระบุวงเงินต่างจากการกำหนดวงเงินเป็นศูนย์
+							</p>
+							<Button
+								type="button"
+								variant="outline"
+								{disabled}
+								onclick={() =>
+									(draft.funding = value.funds.map((fund) => ({
+										fundId: fund.id,
+										carryover: '0',
+										annual: '0',
+										reserve: '0'
+									})))}>กำหนดกรอบงบประมาณ</Button
+							>{:else}{#each draft.funding as fund (fund.fundId)}<Card.Root
+									><Card.Content class="space-y-3"
+										><h3 class="font-medium">
+											{draft.funds.find((item) => item.id === fund.fundId)?.name ?? 'แหล่งเงินเดิม'}
+										</h3>
+										<div class="grid gap-4 sm:grid-cols-3">
+											{#each [{ key: 'carryover' as const, label: 'เงินยกมา' }, { key: 'annual' as const, label: 'เงินจัดสรรใหม่ที่อนุมัติ' }, { key: 'reserve' as const, label: 'เงินสำรองส่วนกลาง' }] as field (field.key)}<div
+													class="space-y-2"
+												>
+													<Label for={`budget-funding-${fund.fundId}-${field.key}`}
+														>{field.label} (บาท)</Label
+													><Input
+														id={`budget-funding-${fund.fundId}-${field.key}`}
+														inputmode="decimal"
+														bind:value={fund[field.key]}
+														{disabled}
+													/>
+												</div>{/each}
+										</div></Card.Content
+									></Card.Root
+								>{/each}{/if}
+						<p class="text-sm text-muted-foreground">
+							เมื่อเพิ่มแหล่งเงินใหม่ ให้บันทึกการตั้งค่าก่อน แล้วจึงกรอกวงเงินของแหล่งเงินนั้น
+						</p>
+					</section>{/if}
+			</Tabs.Content>{/if}
+
+		<Tabs.Content value={value.canManage ? 'received' : 'funding'} class="space-y-4 pt-4">
+			<p class="text-sm text-muted-foreground">
+				บันทึกเงินที่รับจริงของปีนี้แยกจากกรอบที่ได้รับอนุมัติ
+				การบันทึกส่วนนี้ไม่เปลี่ยนวงเงินจัดสรร
+			</p>
+			<section class="space-y-4" aria-label="ยอดรับเงินจริง">
 				<h2 class="font-semibold">ยอดรับเงินจริงปีนี้</h2>
 				<p class="text-sm text-muted-foreground">
 					ระบุยอดสะสมที่ได้รับจริงในปีนี้ เว้นว่างเมื่อยังไม่มีข้อมูล กรอก 0
@@ -295,10 +323,9 @@
 							placeholder="ยังไม่ระบุ"
 						/>
 					</div>{/each}{#if receivable}<LoadingButton
-						type="button"
+						type="submit"
 						loading={pending === 'received'}
-						disabled={pending !== null}
-						onclick={saveReceived}>บันทึกยอดรับเงินจริง</LoadingButton
+						disabled={pending !== null}>บันทึกยอดรับเงินจริง</LoadingButton
 					>{/if}
 			</section>
 		</Tabs.Content>
@@ -435,7 +462,7 @@
 		</Tabs.Content>
 	</Tabs.Root>
 	{#if error}<PageState variant="error" title="บันทึกไม่สำเร็จ" description={error} />{/if}
-	{#if editable}<div class="flex justify-end border-t pt-4">
+	{#if editable && section !== 'received'}<div class="flex justify-end border-t pt-4">
 			<LoadingButton type="submit" loading={pending === 'settings'} disabled={pending !== null}
 				>บันทึกการตั้งค่า</LoadingButton
 			>

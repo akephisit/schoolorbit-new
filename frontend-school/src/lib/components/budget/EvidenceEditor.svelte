@@ -95,9 +95,12 @@
 		disabled={disabled || busy}
 		onchange={select}
 	/>
-	<p class="text-sm text-muted-foreground">แนบเอกสารประกอบ{required ? 'การทำรายการ' : 'ถ้ามี'}</p>
+	<p class="text-sm text-muted-foreground">
+		เลือกเอกสารประกอบ{required ? 'การทำรายการ' : 'ถ้ามี'} แล้วกดบันทึกแบบฟอร์มเพื่อแนบหลักฐาน
+	</p>
 	{#each drafts as draft (draft)}
-		<div class="space-y-2">
+		<div class="space-y-2 rounded-lg border p-3">
+			<p class="text-sm font-medium">ไฟล์ที่เลือกไว้</p>
 			<LocalDocumentPreview file={draft.file} /><Button
 				type="button"
 				size="sm"

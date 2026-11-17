@@ -28,6 +28,7 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { PageState, PageSkeleton, LoadingButton } from '#lib/components/app-state/index.js';
 	import Choice from './Choice.svelte';
+	import BudgetNavigation from './BudgetNavigation.svelte';
 	import YearSettings from './YearSettings.svelte';
 	let {
 		source,
@@ -211,6 +212,7 @@
 					error = '';
 				}}>เพิ่มปีงบประมาณ</Button
 			>{/if}{/snippet}
+	<BudgetNavigation fiscalYearId={selectedId || value?.fiscalYear.id} />
 	{#if index.error}<PageState
 			variant="error"
 			title="โหลดปีงบประมาณไม่สำเร็จ"
@@ -218,8 +220,8 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={() => index.retry((signal) => getBudgetSettings({ signal }))}
 		/>{/if}
-	<div class="max-w-5xl space-y-6" data-testid="budget-settings">
-		<div class="flex flex-wrap items-end gap-3">
+	<div class="space-y-5" data-testid="budget-settings">
+		<div class="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3 sm:p-4">
 			<div class="w-full sm:w-64">
 				<Choice
 					id="budget-settings-year"
@@ -265,30 +267,36 @@
 				title={selectedId ? 'ไม่พบปีงบประมาณที่เลือก' : 'ยังไม่มีปีงบประมาณ'}
 				description="เพิ่มปีงบประมาณเพื่อเริ่มตั้งค่าแหล่งเงินและวางแผนโครงการ"
 			/>{/if}
-		{#if value && manage}<div class="flex flex-wrap gap-2 border-t pt-4">
-				{#if !value.fiscalYear.isClosed}<Button
-						variant="outline"
-						disabled={pending || childPending || !value.fiscalYear.canClose}
-						onclick={() => {
-							confirm = 'close';
-							confirmation = '';
-							error = '';
-						}}>ปิดปีงบประมาณ</Button
-					>{/if}{#if value.fiscalYear.canDelete}<Button
-						variant="destructive"
-						disabled={pending || childPending}
-						onclick={() => {
-							confirm = 'delete';
-							confirmation = '';
-							error = '';
-						}}>ลบปีงบประมาณ</Button
-					>{/if}
-				{#if !value.fiscalYear.isClosed && !value.fiscalYear.canClose}<p
-						class="w-full text-sm text-muted-foreground"
-					>
-						ปิดปีได้เมื่อไม่มีรายการรอพิจารณา ยอดผูกพัน หรือเงินยืมค้างคืน
-					</p>{/if}
-			</div>{/if}
+		{#if value && manage}<section
+				aria-label="ปิดหรือลบปีงบประมาณ"
+				class="space-y-3 rounded-xl border bg-card p-4"
+			>
+				<h2 class="font-semibold">จัดการสถานะปีงบประมาณ</h2>
+				<div class="flex flex-wrap gap-2">
+					{#if !value.fiscalYear.isClosed}<Button
+							variant="outline"
+							disabled={pending || childPending || !value.fiscalYear.canClose}
+							onclick={() => {
+								confirm = 'close';
+								confirmation = '';
+								error = '';
+							}}>ปิดปีงบประมาณ</Button
+						>{/if}{#if value.fiscalYear.canDelete}<Button
+							variant="destructive"
+							disabled={pending || childPending}
+							onclick={() => {
+								confirm = 'delete';
+								confirmation = '';
+								error = '';
+							}}>ลบปีงบประมาณ</Button
+						>{/if}
+					{#if !value.fiscalYear.isClosed && !value.fiscalYear.canClose}<p
+							class="w-full text-sm text-muted-foreground"
+						>
+							ปิดปีได้เมื่อไม่มีรายการรอพิจารณา ยอดผูกพัน หรือเงินยืมค้างคืน
+						</p>{/if}
+				</div>
+			</section>{/if}
 	</div>
 </PageShell>
 <Dialog.Root bind:open={creating}

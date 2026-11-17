@@ -16,7 +16,7 @@
 	{#each activities as activity (activity.id)}<Card.Root class="gap-0 overflow-hidden py-0"
 			><Card.Header class="gap-3 py-5">
 				<div class="flex flex-wrap items-center justify-between gap-2">
-					<Card.Title><h3>{activity.title}</h3></Card.Title>
+					<Card.Title class="min-w-0 break-words"><h3>{activity.title}</h3></Card.Title>
 					<p class="text-sm tabular-nums">{money(activity.totalSatang)} บาท</p>
 				</div>
 				<p class="text-sm text-muted-foreground">
@@ -25,7 +25,39 @@
 						: 'ยังไม่บันทึกวันที่กิจกรรม'}
 				</p>
 			</Card.Header>
-			<div class="border-t">
+			<ul
+				class="divide-y border-t px-4 md:hidden"
+				aria-label={`รายการค่าใช้จ่าย ${activity.title}`}
+			>
+				{#each activity.lines as line (line.id)}<li class="space-y-3 py-4">
+						<h4 class="break-words font-medium">{line.description}</h4>
+						<dl class="grid grid-cols-2 gap-3 text-sm">
+							<div>
+								<dt class="text-muted-foreground">จำนวน</dt>
+								<dd class="break-words tabular-nums">{line.quantity} {line.unit}</dd>
+							</div>
+							<div>
+								<dt class="text-muted-foreground">ราคา / หน่วย</dt>
+								<dd class="tabular-nums">{money(line.unitPriceSatang)} บาท</dd>
+							</div>
+							<div>
+								<dt class="text-muted-foreground">แหล่งเงิน</dt>
+								<dd class="break-words">
+									{catalogs?.funds.find((item) => item.id === line.fundId)?.name ?? '—'}
+								</dd>
+							</div>
+							<div>
+								<dt class="text-muted-foreground">หมวดรายจ่าย</dt>
+								<dd class="break-words">
+									{catalogs?.expenseCategories.find((item) => item.id === line.expenseCategoryId)
+										?.name ?? '—'}
+								</dd>
+							</div>
+						</dl>
+						<p class="text-right font-semibold tabular-nums">รวม {money(line.totalSatang)} บาท</p>
+					</li>{/each}
+			</ul>
+			<div class="hidden border-t md:block">
 				<Table.Root class="min-w-[48rem]"
 					><Table.Header
 						><Table.Row

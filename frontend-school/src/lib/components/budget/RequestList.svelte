@@ -3,24 +3,32 @@
 	import ReadAccessNotice from './ReadAccessNotice.svelte';
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { listBudgetRequests, type BudgetRequestPage } from '#lib/api/budget.js';
+	import {
+		listBudgetRequests,
+		type BudgetRequestPage,
+		type BudgetCatalogs
+	} from '#lib/api/budget.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { BudgetRegion } from '#lib/budget/region.svelte.js';
-	import { budgetFilters, destination, statusLabels } from '#lib/budget/presentation.js';
+	import { budgetFilters } from '#lib/budget/presentation.js';
 	import { money } from '#lib/budget/money.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { PageState, TableSkeleton } from '#lib/components/app-state/index.js';
-	import { goto } from '$app/navigation';
 	import StatusBadge from './StatusBadge.svelte';
-	import Choice from './Choice.svelte';
+	import ListFilters from './ListFilters.svelte';
+	import BudgetNavigation from './BudgetNavigation.svelte';
+	import { budgetReadPermissions } from '#lib/budget/access.js';
+	import { can } from '#lib/stores/permissions.js';
 	import Paging from './Paging.svelte';
 	let {
 		source,
+		catalogsSource,
 		query,
 		embedded = false
 	}: {
 		source: Promise<RouteLoadResult<BudgetRequestPage | null>>;
+		catalogsSource?: Promise<RouteLoadResult<BudgetCatalogs | null>>;
 		query: ReturnType<typeof budgetFilters>;
 		embedded?: boolean;
 	} = $props();
@@ -29,28 +37,18 @@
 	onDestroy(() => region.dispose());
 </script>
 
-{#if !embedded}<ReadAccessNotice />{/if}
+{#if !embedded}<BudgetNavigation fiscalYearId={query.fiscalYearId} /><ReadAccessNotice />{/if}
 <section
 	class="space-y-4"
 	aria-label="คำขอใช้เงิน"
 	aria-busy={region.loading}
 	data-testid="budget-requests"
 >
-	{#if !embedded}<div class="rounded-xl border bg-card p-3 sm:p-4">
-			<div class="w-full sm:w-60">
-				<Choice
-					id="budget-request-status"
-					label="สถานะ"
-					value={query.status}
-					options={[
-						{ value: '', label: 'ทั้งหมด' },
-						...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))
-					]}
-					onchange={(status) =>
-						goto(destination('/staff/budget/requests', { ...query, status, offset: 0 }))}
-				/>
-			</div>
-		</div>{/if}
+	{#if !embedded && catalogsSource && $can.hasAny(...budgetReadPermissions)}<ListFilters
+			source={catalogsSource}
+			{query}
+			path="/staff/budget/requests"
+		/>{/if}
 	<Card.Root
 		><Card.Header
 			><Card.Title>คำขอใช้เงิน</Card.Title><Card.Description
@@ -71,8 +69,8 @@
 				/>{:else if region.value?.items.length}<div
 					class="min-w-0 overflow-hidden rounded-lg border"
 				>
-					<Table.Root class="min-w-[40rem]"
-						><Table.Header
+					<Table.Root class="block w-full sm:table sm:min-w-[40rem]"
+						><Table.Header class="sr-only sm:not-sr-only"
 							><Table.Row
 								><Table.Head>คำขอ</Table.Head><Table.Head class="text-right"
 									>จำนวนเงิน (บาท)</Table.Head
@@ -80,14 +78,22 @@
 									>สถานะ</Table.Head
 								><Table.Head>รายละเอียด</Table.Head></Table.Row
 							></Table.Header
-						><Table.Body
+						><Table.Body class="block sm:table-row-group"
 							>{#each region.value.items as item (item.id)}<Table.Row
-									><Table.Cell class="min-w-48 font-medium">{item.title}</Table.Cell><Table.Cell
-										class="whitespace-nowrap text-right tabular-nums"
+									class="grid grid-cols-2 gap-x-4 gap-y-2 p-4 sm:table-row sm:p-0"
+									><Table.Cell
+										class="col-span-2 min-w-0 font-medium max-sm:break-words max-sm:whitespace-normal"
+										>{item.title}</Table.Cell
+									><Table.Cell
+										class="col-span-2 flex justify-between gap-3 whitespace-nowrap tabular-nums sm:table-cell sm:text-right"
+										><span class="text-sm text-muted-foreground sm:hidden">จำนวนเงิน (บาท)</span
 										>{money(item.totalSatang)}</Table.Cell
-									><Table.Cell class="whitespace-nowrap text-right tabular-nums"
+									><Table.Cell
+										class="col-span-2 flex justify-between gap-3 whitespace-nowrap tabular-nums sm:table-cell sm:text-right"
+										><span class="text-sm text-muted-foreground sm:hidden">จ่ายแล้ว (บาท)</span
 										>{money(item.paidSatang)}</Table.Cell
-									><Table.Cell><StatusBadge status={item.status} /></Table.Cell><Table.Cell
+									><Table.Cell class="self-center"><StatusBadge status={item.status} /></Table.Cell
+									><Table.Cell class="text-right"
 										><Button
 											variant="outline"
 											size="sm"
@@ -99,8 +105,10 @@
 						></Table.Root
 					>
 				</div>{:else if region.value && !region.error}<PageState
-					title="ยังไม่มีคำขอใช้เงิน"
-					description="สร้างคำขอจากกิจกรรมในโครงการที่อนุมัติแผนแล้ว"
+					title={query.fiscalYearId || query.status ? 'ไม่พบคำขอตามตัวกรอง' : 'ยังไม่มีคำขอใช้เงิน'}
+					description={query.fiscalYearId || query.status
+						? 'ลองเปลี่ยนปีงบประมาณหรือสถานะเพื่อดูรายการอื่น'
+						: 'สร้างคำขอจากกิจกรรมในโครงการที่อนุมัติแผนแล้ว'}
 				/>{/if}
 			{#if region.value}<Paging
 					path={page.url.pathname}
