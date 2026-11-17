@@ -97,7 +97,7 @@
 				disabled={!region.value}
 				onclick={download}><Download class="size-4" aria-hidden="true" />ส่งออก CSV</LoadingButton
 			>{/if}{/snippet}
-	<BudgetNavigation fiscalYearId={query.fiscalYearId} />
+	<BudgetNavigation fiscalYearId={query.fiscalYearId ?? undefined} />
 	<ReadAccessNotice />
 	{#if reports && exportPreview}<p class="text-sm text-muted-foreground">
 			รายงานนี้แสดงเฉพาะข้อมูลที่คุณมีสิทธิ์ดูและส่งออก
@@ -204,7 +204,7 @@
 							<Card.Root class="gap-0 py-0"
 								><Card.Content class="space-y-2 p-4">
 									<Button
-										href={destination(task.path, { fiscalYearId: query.fiscalYearId })}
+										href={destination(task.path, { fiscalYearId: query.fiscalYearId ?? undefined })}
 										variant="link"
 										class="h-auto p-0 whitespace-normal text-left"
 										><task.icon
