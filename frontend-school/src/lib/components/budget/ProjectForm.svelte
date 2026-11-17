@@ -158,7 +158,7 @@
 			disabled={pending || loading || !!workspace?.acceptedPlan}
 			error={errors.fiscalYearId}
 		/>
-		{#if catalogs && draft.fiscalYearId && (!selectedYear || selectedYear.isClosed)}<p
+		{#if !workspace && catalogs && draft.fiscalYearId && (!selectedYear || selectedYear.isClosed)}<p
 				class="text-sm text-warning"
 				role="status"
 			>

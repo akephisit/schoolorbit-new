@@ -216,8 +216,8 @@
 					</dl>
 					<p class="border-t border-primary/10 pt-4 text-sm text-muted-foreground">
 						{#if value.fiscalYearClosed}ปิดปีงบประมาณแล้ว ดูแผนและรายการการเงินย้อนหลังได้ด้านล่าง
-						{:else if value.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}จัดกิจกรรมและค่าใช้จ่ายในแผนฉบับร่าง
-							แล้วส่งแผนพิจารณาเมื่อพร้อม
+						{:else if value.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}จัดกิจกรรมและค่าใช้จ่าย
+							แล้วบันทึกแผนฉบับร่าง{#if value.capabilities.canSubmit}ก่อนส่งแผนพิจารณาเมื่อพร้อม{/if}
 						{:else if value.capabilities.canCreateRequest && $can.has(PERMISSIONS.BUDGET_CREATE_OWN)}แผนผ่านการอนุมัติแล้ว
 							สร้างคำขอใช้เงินจากรายการในแผนได้
 						{:else if value.project.status === 'submitted'}ติดตามผู้พิจารณาและขั้นตอนปัจจุบันในส่วนการพิจารณา

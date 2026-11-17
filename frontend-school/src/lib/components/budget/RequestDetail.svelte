@@ -241,8 +241,8 @@
 							</div>{/each}
 					</dl>
 					<p class="border-t border-primary/10 pt-4 text-sm text-muted-foreground">
-						{#if detail.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}เลือกแก้ไขฉบับร่างเพื่อตรวจสอบรายการและหลักฐาน
-							แล้วส่งคำขอพิจารณา
+						{#if detail.capabilities.canEdit && $can.hasAny(...budgetUpdatePermissions)}เลือกแก้ไขฉบับร่างเพื่อตรวจสอบรายการและหลักฐาน{#if detail.capabilities.canSubmit}
+								แล้วส่งคำขอพิจารณาเมื่อพร้อม{/if}
 						{:else if detail.capabilities.canPay && $can.has(PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}คำขออนุมัติแล้ว
 							บันทึกการจ่ายเงินตามรายการและยอดที่จ่ายได้
 						{:else if detail.request.status === 'submitted'}ติดตามขั้นตอนปัจจุบันและผู้พิจารณาด้านล่าง

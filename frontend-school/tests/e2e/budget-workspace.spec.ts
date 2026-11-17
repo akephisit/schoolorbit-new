@@ -75,7 +75,9 @@ test('failed project read retries its region and read-only users do not load cre
 	await expect(page.getByTestId('budget-projects')).toContainText('โครงการคณิตศาสตร์');
 	await expect(page.getByRole('button', { name: 'สร้างโครงการ', exact: true })).toHaveCount(0);
 	expect(api.reads.filter((path) => path.startsWith('/api/budget/projects')).length).toBe(2);
-	expect(api.reads.some((path) => path.includes('/settings') || path.includes('/lookup/'))).toBe(false);
+	expect(api.reads.some((path) => path.includes('/settings') || path.includes('/lookup/'))).toBe(
+		false
+	);
 	expect(api.reads.filter((path) => path.startsWith('/api/budget/catalogs'))).toHaveLength(1);
 });
 
@@ -277,7 +279,11 @@ test('assigned reviewer reads projects without creator or administration option 
 	await page.goto('/staff/budget/projects');
 	await expect(page.getByTestId('budget-projects')).toContainText('โครงการคณิตศาสตร์');
 	await expect(page.getByRole('button', { name: 'สร้างโครงการ', exact: true })).toHaveCount(0);
-	expect(api.reads.every((path) => path.startsWith('/api/budget/projects') || path.startsWith('/api/budget/catalogs'))).toBe(true);
+	expect(
+		api.reads.every(
+			(path) => path.startsWith('/api/budget/projects') || path.startsWith('/api/budget/catalogs')
+		)
+	).toBe(true);
 });
 
 test('project and catalogs render while the independent request region waits', async ({ page }) => {
@@ -722,6 +728,19 @@ for (const viewport of [
 					await expect(
 						page.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
 					).toHaveCount(1);
+					const active = page
+						.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
+						.locator('[aria-current="page"]');
+					await expect(active).toHaveCount(1);
+					expect(new URL((await active.getAttribute('href')) ?? '', page.url()).pathname).toBe(
+						path.includes('/projects/')
+							? '/staff/budget/projects'
+							: path.includes('/requests/')
+								? '/staff/budget/requests'
+								: path.includes('/adjustments/')
+									? '/staff/budget/adjustments'
+									: path
+					);
 					if (name === 'projects' || name === 'requests' || name === 'adjustments') {
 						const pagination = page.getByRole('navigation', {
 							name: 'หน้ารายการงบประมาณ',
@@ -940,15 +959,22 @@ for (const viewport of [
 			});
 		});
 
-test('settings is discoverable from authorized headers and absent for readers', async ({
+test('settings is discoverable from authorized workspace navigation and absent for readers', async ({
 	page
 }) => {
 	const api = await mockBudget(page);
 	for (const path of ['/staff/budget', '/staff/budget/projects', '/staff/budget/reports']) {
 		await page.goto(path);
-		await expect(page.getByRole('link', { name: 'ตั้งค่างบประมาณ', exact: true })).toBeVisible();
+		await expect(
+			page
+				.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
+				.getByRole('link', { name: 'ตั้งค่า', exact: true })
+		).toBeVisible();
 	}
-	await page.getByRole('link', { name: 'ตั้งค่างบประมาณ', exact: true }).focus();
+	await page
+		.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
+		.getByRole('link', { name: 'ตั้งค่า', exact: true })
+		.focus();
 	await page.keyboard.press('Enter');
 	await expect(page).toHaveURL(/\/staff\/budget\/settings$/);
 	await expect(page.getByTestId('budget-settings')).toBeVisible();
@@ -960,7 +986,11 @@ test('reader has no settings or create action in the project header', async ({ p
 	const api = await mockBudget(page, { permissions: [PERMISSIONS.BUDGET_READ_SCHOOL] });
 	await page.goto('/staff/budget/projects');
 	await expect(page.getByTestId('budget-projects')).toContainText('โครงการคณิตศาสตร์');
-	await expect(page.getByRole('link', { name: 'ตั้งค่างบประมาณ', exact: true })).toHaveCount(0);
+	await expect(
+		page
+			.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
+			.getByRole('link', { name: 'ตั้งค่า', exact: true })
+	).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'สร้างโครงการ', exact: true })).toHaveCount(0);
 	expect(api.reads.some((path) => path.includes('/settings') || path.includes('/lookup/'))).toBe(
 		false
@@ -1015,7 +1045,7 @@ for (const viewport of [
 					theme
 				);
 			});
-			test('large exact amounts wrap inside compact summary cards and reconcile with their allocation', async ({
+			test('large exact amounts remain unbroken in responsive summary cards and reconcile with their allocation', async ({
 				page
 			}) => {
 				const api = await mockBudget(page, { dashboardOverride: largeAmountDashboard });
@@ -1054,17 +1084,18 @@ for (const viewport of [
 					})
 				);
 				if (viewport.width === 390) {
+					for (let index = 1; index < boxes.length; index++) {
+						expect(Math.abs(boxes[index].x - boxes[0].x)).toBeLessThan(1);
+						expect(boxes[index].y).toBeGreaterThan(boxes[index - 1].bottom);
+					}
+				} else {
 					expect(Math.abs(boxes[0].y - boxes[1].y)).toBeLessThan(1);
 					expect(Math.abs(boxes[2].y - boxes[3].y)).toBeLessThan(1);
-					expect(Math.abs(boxes[0].x - boxes[2].x)).toBeLessThan(1);
 					expect(boxes[1].x).toBeGreaterThan(boxes[0].right);
 					expect(boxes[2].y).toBeGreaterThan(boxes[0].bottom);
-				} else {
-					for (let index = 1; index < boxes.length; index++) {
-						expect(Math.abs(boxes[index].y - boxes[0].y)).toBeLessThan(1);
-						expect(boxes[index].x).toBeGreaterThan(boxes[index - 1].right);
-					}
 				}
+				for (const amount of await cards.locator('dd').all())
+					await expect(amount).toHaveCSS('white-space', 'nowrap');
 				await expect(
 					summary.getByRole('cell', { name: '90,071,992,547,409.93', exact: true })
 				).toHaveCount(2);
@@ -1116,7 +1147,7 @@ for (const viewport of [
 				await expect(page.getByTestId('budget-pivot')).toContainText('9,928.00');
 				await expect(
 					page.getByRole('navigation', { name: 'งานงบประมาณ', exact: true })
-				).toHaveCount(0);
+				).toHaveCount(1);
 				expect(api.writes).toHaveLength(0);
 			});
 		});

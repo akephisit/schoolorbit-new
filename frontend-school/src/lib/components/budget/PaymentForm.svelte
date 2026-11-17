@@ -202,7 +202,12 @@
 					/>{/if}{/if}
 		</section>{/if}
 	<section class="space-y-4" aria-label="ข้อมูลการทำรายการ">
-		<h3 class="font-semibold">{payment ? 'ข้อมูลการคืนเงิน' : 'ข้อมูลการจ่ายเงิน'}</h3>
+		<div class="space-y-1">
+			<h3 class="font-semibold">{payment ? 'ข้อมูลการคืนเงิน' : 'ข้อมูลการจ่ายเงิน'}</h3>
+			<p class="break-words text-sm text-muted-foreground">
+				{detail.request.title}{payment ? ` · คืนจากใบสำคัญ ${payment.voucherNumber}` : ''}
+			</p>
+		</div>
 		<div class="grid gap-4 sm:grid-cols-2">
 			<div class="space-y-2">
 				<Label for="budget-payment-date">{payment ? 'วันที่คืนเงิน' : 'วันที่จ่ายเงิน'} *</Label
@@ -223,8 +228,12 @@
 		</div>
 	</section>
 	<fieldset class="min-w-0 space-y-4 border-t pt-6">
-		<legend class="mb-2 font-semibold">จำนวนเงินแยกตามรายการ</legend
-		>{#each lines as line, index (line.planLineId)}<div
+		<legend class="mb-2 font-semibold">จำนวนเงินแยกตามรายการ (บาท)</legend>
+		<p class="text-sm text-muted-foreground">
+			กรอกเฉพาะรายการที่ต้องการ{payment ? 'คืนเงิน' : 'จ่ายเงิน'}ครั้งนี้
+			โดยไม่เกินยอดคงเหลือของแต่ละรายการ
+		</p>
+		{#each lines as line, index (line.planLineId)}<div
 				class="grid min-w-0 items-end gap-3 border-b pb-4 last:border-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_10rem]"
 			>
 				<Label for={`budget-payment-line-${line.planLineId}`}
@@ -264,7 +273,9 @@
 		bind:busy={uploading}
 		disabled={pending}
 	/>
-	<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-4">
+	<div
+		class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/15 bg-primary/5 p-4"
+	>
 		<span class="text-sm text-muted-foreground">รวม{payment ? 'คืนเงิน' : 'จ่ายเงิน'}</span><strong
 			class="text-lg tabular-nums">{money(total)} บาท</strong
 		>

@@ -15,6 +15,19 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 
 	let { fiscalYearId = '' }: { fiscalYearId?: string } = $props();
+	let navigation = $state<HTMLElement>();
+	$effect(() => {
+		void page.url.pathname;
+		if (!navigation) return;
+		const selected = navigation.querySelector<HTMLElement>('[aria-current="page"]');
+		if (!selected) return;
+		const bounds = navigation.getBoundingClientRect();
+		const activeBounds = selected.getBoundingClientRect();
+		if (activeBounds.left < bounds.left)
+			navigation.scrollLeft -= bounds.left - activeBounds.left + 6;
+		else if (activeBounds.right > bounds.right)
+			navigation.scrollLeft += activeBounds.right - bounds.right + 6;
+	});
 	const links = [
 		{ path: '/staff/budget', label: 'ภาพรวม', icon: Wallet },
 		{ path: '/staff/budget/projects', label: 'โครงการ', icon: FolderOpen },
@@ -31,7 +44,11 @@
 </script>
 
 {#if $can.hasAny(...budgetReadPermissions, PERMISSIONS.BUDGET_MANAGE_SCHOOL, PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}
-	<nav aria-label="งานงบประมาณ" class="min-w-0 overflow-x-auto rounded-xl border bg-card p-1.5">
+	<nav
+		bind:this={navigation}
+		aria-label="งานงบประมาณ"
+		class="min-w-0 overflow-x-auto rounded-xl border bg-card p-1.5"
+	>
 		<div class="flex w-max min-w-full items-center gap-1">
 			{#if $can.hasAny(...budgetReadPermissions)}
 				{#each links as link (link.path)}

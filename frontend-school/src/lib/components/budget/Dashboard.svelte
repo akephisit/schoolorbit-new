@@ -1,6 +1,15 @@
 <script lang="ts">
-	import { ChartNoAxesCombined, Wallet, Settings2, Download } from '@lucide/svelte';
+	import {
+		ChartNoAxesCombined,
+		Wallet,
+		Download,
+		FolderOpen,
+		ReceiptText,
+		ArrowLeftRight,
+		ArrowUpRight
+	} from '@lucide/svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import BudgetNavigation from './BudgetNavigation.svelte';
 	import ReadAccessNotice from './ReadAccessNotice.svelte';
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -83,15 +92,12 @@
 	title={reports ? 'รายงานงบประมาณ' : 'ภาพรวมงบประมาณ'}
 	contentClass="space-y-6"
 >
-	{#snippet actions()}{#if $can.hasAny(PERMISSIONS.BUDGET_MANAGE_SCHOOL, PERMISSIONS.BUDGET_PAYMENT_EXECUTE_SCHOOL)}<Button
-				variant="outline"
-				href={destination('/staff/budget/settings', { fiscalYearId: query.fiscalYearId ?? '' })}
-				><Settings2 class="size-4" />ตั้งค่างบประมาณ</Button
-			>{/if}{#if reports && $can.hasAny(PERMISSIONS.BUDGET_DOWNLOAD_OWN, PERMISSIONS.BUDGET_DOWNLOAD_ORGANIZATION_UNIT, PERMISSIONS.BUDGET_DOWNLOAD_ORGANIZATION_TREE, PERMISSIONS.BUDGET_DOWNLOAD_SCHOOL)}<LoadingButton
+	{#snippet actions()}{#if reports && $can.hasAny(...budgetExportPermissions)}<LoadingButton
 				loading={exporting}
 				disabled={!region.value}
-				onclick={download}><Download class="size-4" />ส่งออก CSV</LoadingButton
+				onclick={download}><Download class="size-4" aria-hidden="true" />ส่งออก CSV</LoadingButton
 			>{/if}{/snippet}
+	<BudgetNavigation fiscalYearId={query.fiscalYearId} />
 	<ReadAccessNotice />
 	{#if reports && exportPreview}<p class="text-sm text-muted-foreground">
 			รายงานนี้แสดงเฉพาะข้อมูลที่คุณมีสิทธิ์ดูและส่งออก
@@ -153,6 +159,13 @@
 		aria-busy={region.loading}
 		data-testid="budget-dashboard"
 	>
+		<p class="text-sm text-muted-foreground">
+			{query.fiscalYearId
+				? `ปีงบประมาณ ${catalogs.value?.fiscalYears.find((year) => year.id === query.fiscalYearId)?.name ?? 'ที่เลือก'}`
+				: 'ทุกปีงบประมาณ'} · {reports
+				? 'เปรียบเทียบยอดตามกิจกรรมและแหล่งเงิน'
+				: 'สรุปจากแผนที่อนุมัติในขอบเขตที่คุณมีสิทธิ์ดู'}
+		</p>
 		{#if region.error}<PageState
 				variant="error"
 				title="โหลดสรุปงบประมาณไม่สำเร็จ"
@@ -162,18 +175,19 @@
 					region.retry((signal) => getBudgetDashboard({ signal, query: scopedQuery }))}
 			/>{/if}{#if region.loading && !region.value}<TableSkeleton
 				columns={6}
-			/>{:else if region.value}<div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
-				{#each [{ label: 'งบประมาณปัจจุบัน', value: region.value.totals.currentSatang }, { label: 'ผูกพัน', value: region.value.totals.reservedSatang }, { label: 'จ่ายจริง', value: region.value.totals.paidSatang }, { label: 'คงเหลือใช้ได้', value: region.value.totals.availableSatang }] as metric, index (metric.label)}<Card.Root
+			/>{:else if region.value}<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+				{#each [{ label: 'งบประมาณปัจจุบัน', value: region.value.totals.currentSatang, description: 'แผนที่อนุมัติรวมการปรับงบ' }, { label: 'ผูกพัน', value: region.value.totals.reservedSatang, description: 'ยอดที่กันไว้สำหรับคำขอใช้เงิน' }, { label: 'จ่ายจริง', value: region.value.totals.paidSatang, description: 'ยอดจ่ายสุทธิหลังคืนเงิน' }, { label: 'คงเหลือใช้ได้', value: region.value.totals.availableSatang, description: 'งบปัจจุบันหักยอดผูกพันและจ่ายจริง' }] as metric, index (metric.label)}<Card.Root
 						class={`min-w-0 gap-0 py-0 ${index === 3 ? 'border-primary/20 bg-primary/5' : ''}`}
 						><Card.Content class="min-w-0 p-4"
 							><dl>
 								<dt class="text-sm text-muted-foreground [overflow-wrap:anywhere]">
 									{metric.label}
 								</dt>
-								<dd class="mt-2 text-xl font-semibold tabular-nums [overflow-wrap:anywhere]">
+								<dd class="mt-2 whitespace-nowrap text-xl font-semibold tabular-nums">
 									{money(metric.value)} <span class="text-sm font-normal">บาท</span>
 								</dd>
 							</dl>
+							<p class="mt-2 text-sm text-muted-foreground">{metric.description}</p>
 						</Card.Content></Card.Root
 					>{/each}
 			</div>
@@ -182,11 +196,39 @@
 					region.value.totals.adjustedSatang
 				)} · เงินยืมค้างคืน {money(region.value.totals.loanOutstandingSatang)} บาท
 			</p>
+			{#if !reports && $can.hasAny(...budgetReadPermissions)}
+				<section class="space-y-3" aria-label="ทำงานงบประมาณ">
+					<h2 class="font-semibold">ไปยังงานที่ต้องการ</h2>
+					<div class="grid gap-3 lg:grid-cols-3">
+						{#each [{ path: '/staff/budget/projects', title: 'วางแผนโครงการ', description: 'กิจกรรม ค่าใช้จ่าย และการส่งแผนพิจารณา', icon: FolderOpen }, { path: '/staff/budget/requests', title: 'ติดตามคำขอใช้เงิน', description: 'คำขอ การพิจารณา และการจ่ายเงิน', icon: ReceiptText }, { path: '/staff/budget/adjustments', title: 'ปรับงบและเงินยืม', description: 'เพิ่ม ลด โอนงบ และติดตามการยืมคืน', icon: ArrowLeftRight }] as task (task.path)}
+							<Card.Root class="gap-0 py-0"
+								><Card.Content class="space-y-2 p-4">
+									<Button
+										href={destination(task.path, { fiscalYearId: query.fiscalYearId })}
+										variant="link"
+										class="h-auto p-0 whitespace-normal text-left"
+										><task.icon
+											class="size-4 shrink-0"
+											aria-hidden="true"
+										/>{task.title}<ArrowUpRight
+											class="size-4 shrink-0"
+											aria-hidden="true"
+										/></Button
+									>
+									<p class="text-sm text-muted-foreground">{task.description}</p>
+								</Card.Content></Card.Root
+							>
+						{/each}
+					</div>
+				</section>
+			{/if}
 			<div class="space-y-1">
 				<h2 class="font-semibold">
 					{reports ? 'สรุปตามกิจกรรมและแหล่งเงิน' : 'รายละเอียดงบประมาณ'}
 				</h2>
-				<p class="text-sm text-muted-foreground">จำนวนเงินเป็นบาท แยกตามแหล่งเงินและหมวดรายจ่าย</p>
+				<p class="text-sm text-muted-foreground">
+					จำนวนเงินเป็นบาท แยกตามแหล่งเงินและหมวดรายจ่าย เฉพาะแผนที่อนุมัติในขอบเขตที่คุณมีสิทธิ์ดู
+				</p>
 			</div>
 			{#if region.value.rows.length}{#if reports}<PivotReport
 						rows={region.value.rows}

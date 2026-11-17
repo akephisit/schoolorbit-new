@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { FolderOpen, Plus, Settings2 } from '@lucide/svelte';
+	import { FolderOpen, Plus } from '@lucide/svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import ReadAccessNotice from './ReadAccessNotice.svelte';
 	import { onDestroy } from 'svelte';
@@ -49,10 +49,7 @@
 	title="โครงการงบประมาณ"
 	contentClass="space-y-6"
 >
-	{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_MANAGE_SCHOOL)}<Button
-				variant="outline"
-				href="/staff/budget/settings"><Settings2 class="size-4" />ตั้งค่างบประมาณ</Button
-			>{/if}{#if $can.has(PERMISSIONS.BUDGET_CREATE_OWN) && $can.hasAny(...budgetReadPermissions)}<Button
+	{#snippet actions()}{#if $can.has(PERMISSIONS.BUDGET_CREATE_OWN) && $can.hasAny(...budgetReadPermissions)}<Button
 				onclick={() => (creating = true)}><Plus class="size-4" />สร้างโครงการ</Button
 			>{/if}{/snippet}
 	<BudgetNavigation fiscalYearId={query.fiscalYearId} />
@@ -151,7 +148,7 @@
 				>ข้อมูลโครงการและระยะเวลาดำเนินการ</Dialog.Description
 			></Dialog.Header
 		>{#if creating}<ProjectForm
-			initialFiscalYearId={query.fiscalYearId}
+				initialFiscalYearId={query.fiscalYearId}
 				oncancel={() => (creating = false)}
 				onsaved={(value) => {
 					creating = false;

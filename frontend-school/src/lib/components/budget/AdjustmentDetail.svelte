@@ -219,10 +219,10 @@
 							เงินยืมค้างคืน <strong>{money(detail.loanOutstandingSatang)} บาท</strong>
 						</p>{/if}
 					<p class="border-t border-primary/10 pt-4 text-sm text-muted-foreground">
-						{#if detail.capabilities.canEdit}ตรวจสอบประเภทรายการ ต้นทาง ปลายทาง และจำนวนเงิน
-							แล้วส่งรายการพิจารณา
+						{#if detail.capabilities.canEdit}ตรวจสอบประเภทรายการ ต้นทาง ปลายทาง และจำนวนเงิน{#if detail.capabilities.canSubmit}
+								แล้วส่งรายการพิจารณาเมื่อพร้อม{/if}
 						{:else if detail.status === 'submitted'}ตรวจสอบงบประมาณที่เกี่ยวข้องและติดตามขั้นตอนการพิจารณาด้านล่าง
-						{:else if detail.kind === 'loan' && detail.status === 'approved'}ตรวจสอบยอดเงินยืมค้างคืนก่อนสร้างรายการคืนเงินยืม
+						{:else if detail.kind === 'loan' && detail.status === 'approved'}ติดตามยอดเงินยืมค้างคืนและรายการคืนเงินยืม
 						{:else}ดูงบประมาณที่เกี่ยวข้อง ผลการพิจารณา และประวัติของรายการนี้ด้านล่าง{/if}
 					</p>
 					<div class="flex flex-wrap gap-2">

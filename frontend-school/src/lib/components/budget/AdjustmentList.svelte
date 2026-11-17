@@ -144,7 +144,7 @@
 				>ระบุงบประมาณและเหตุผลก่อนส่งพิจารณา</Dialog.Description
 			></Dialog.Header
 		>{#if creating}<AdjustmentForm
-			initialFiscalYearId={query.fiscalYearId}
+				initialFiscalYearId={query.fiscalYearId}
 				oncancel={() => (creating = false)}
 				onsaved={(value) => {
 					creating = false;

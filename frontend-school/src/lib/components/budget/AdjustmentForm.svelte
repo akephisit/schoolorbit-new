@@ -199,7 +199,7 @@
 				}}
 			/>
 		</div>
-		{#if catalogs && fiscalYearId && (!selectedYear || selectedYear.isClosed)}<p
+		{#if !detail && !loan && catalogs && fiscalYearId && (!selectedYear || selectedYear.isClosed)}<p
 				class="text-sm text-warning"
 				role="status"
 			>
