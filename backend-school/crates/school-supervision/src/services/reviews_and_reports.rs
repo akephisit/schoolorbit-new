@@ -261,16 +261,8 @@ pub async fn cycle_teacher_status(
                COALESCE(units.organization_unit_names, ARRAY[]::text[]) AS organization_unit_names,
                latest.id AS observation_id,
                latest.status,
-               latest.observed_at,
-               NULLIF(
-                   CONCAT_WS(
-                       ' / ',
-                       NULLIF(COALESCE(latest.manual_subject_name, latest.lesson_snapshot->>'subjectName'), ''),
-                       NULLIF(COALESCE(latest.manual_period_label, latest.lesson_snapshot->>'periodLabel'), ''),
-                       NULLIF(COALESCE(latest.manual_classroom_label, latest.lesson_snapshot->>'classroomLabel'), '')
-                   ),
-                   ''
-               ) AS lesson_title,
+               periods.observed_at,
+               periods.lesson_title,
                COALESCE(evaluators.evaluator_names, ARRAY[]::text[]) AS evaluator_names,
                rating.average_rating
         FROM user_display_names u
@@ -298,6 +290,15 @@ pub async fn cycle_teacher_status(
             ORDER BY o.updated_at DESC, o.created_at DESC
             LIMIT 1
         ) latest ON true
+        LEFT JOIN LATERAL (
+            SELECT min(p.observed_at) AS observed_at,
+                string_agg(NULLIF(concat_ws(' / ',
+                    NULLIF(COALESCE(p.manual_subject_name,p.lesson_snapshot->>'subjectName'),''),
+                    NULLIF(COALESCE(p.manual_period_label,p.lesson_snapshot->>'periodLabel'),''),
+                    NULLIF(COALESCE(p.manual_classroom_label,p.lesson_snapshot->>'classroomLabel'),'')),''),
+                    ' · ' ORDER BY p.position,p.id) AS lesson_title
+            FROM supervision_observation_periods p WHERE p.observation_id=latest.id
+        ) periods ON latest.id IS NOT NULL
         LEFT JOIN LATERAL (
             SELECT ARRAY_AGG(
                        COALESCE(

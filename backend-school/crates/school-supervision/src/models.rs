@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "api-docs")]
 use utoipa::{IntoParams, ToSchema};
@@ -272,15 +272,14 @@ pub struct LessonSnapshot {
     pub period_label: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionTimetableOption {
+    pub observed_date: NaiveDate,
     pub block_group_id: Uuid,
     pub block_id: Uuid,
-    pub day_of_week: String,
-    pub bell_schedule_period_id: Uuid,
-    pub period_order_index: i32,
+    pub bell_period_id: Uuid,
     pub period_name: String,
     #[cfg_attr(feature = "api-docs", schema(value_type = String))]
     pub start_time: NaiveTime,
@@ -288,11 +287,93 @@ pub struct SupervisionTimetableOption {
     pub end_time: NaiveTime,
     pub learning_group_id: Uuid,
     pub learning_group_name: String,
-    pub learning_offering_id: Uuid,
-    pub offering_code: String,
-    pub offering_name: String,
-    pub homeroom_names: Vec<String>,
+    pub subject_name: Option<String>,
+    pub homeroom_id: Uuid,
+    pub homeroom_name: String,
     pub room_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionBookingOptions {
+    pub source_digest: String,
+    pub week_start_date: NaiveDate,
+    pub week_end_date: NaiveDate,
+    pub items: Vec<SupervisionTimetableOption>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SupervisionBookingOptionsQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub week_start_date: NaiveDate,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SupervisionObservationTimetableQuery {
+    pub week_start_date: NaiveDate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionPeriodManualEvidence {
+    pub subject_name: Option<String>,
+    pub classroom_label: Option<String>,
+    pub room_label: Option<String>,
+    pub period_label: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionObservationPeriod {
+    pub id: Uuid,
+    pub observation_id: Uuid,
+    pub position: i32,
+    pub timetable_block_group_id: Option<Uuid>,
+    pub learning_group_id: Option<Uuid>,
+    pub homeroom_id: Option<Uuid>,
+    pub observed_at: DateTime<Utc>,
+    pub ends_at: Option<DateTime<Utc>>,
+    pub manual_lesson: Option<SupervisionPeriodManualEvidence>,
+    pub lesson_snapshot: LessonSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionCycleDeletionCounts {
+    pub targets: i64,
+    pub observations: i64,
+    pub periods: i64,
+    pub evaluators: i64,
+    pub responses: i64,
+    pub actions: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionCycleDeletionImpact {
+    pub cycle_id: Uuid,
+    pub revision: String,
+    pub counts: SupervisionCycleDeletionCounts,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DeleteSupervisionCycleRequest {
+    pub expected_revision: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -466,17 +547,14 @@ pub struct SupervisionObservation {
     pub cycle_id: Uuid,
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
-    pub learning_group_id: Option<Uuid>,
-    pub homeroom_id: Option<Uuid>,
     pub observed_user_id: Uuid,
     pub observed_display_name: Option<String>,
     pub requested_by: Option<Uuid>,
     pub approved_by: Option<Uuid>,
     pub template_id: Uuid,
-    pub timetable_block_group_id: Option<Uuid>,
+    /// Earliest canonical period start, projected for chronological summaries.
     pub observed_at: DateTime<Utc>,
-    pub manual_lesson: Option<ManualLesson>,
-    pub lesson_snapshot: LessonSnapshot,
+    pub periods: Vec<SupervisionObservationPeriod>,
     pub status: SupervisionObservationStatus,
     pub requested_at: DateTime<Utc>,
     pub approved_at: Option<DateTime<Utc>>,
@@ -663,58 +741,32 @@ pub struct UpdateSupervisionTemplateRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct ManualLessonInput {
-    pub subject_name: String,
-    pub classroom_label: String,
-    pub room_label: Option<String>,
-    pub observed_at: DateTime<Utc>,
-    pub period_label: String,
-    pub reason: String,
-}
-
-impl ManualLessonInput {
-    pub fn snapshot(&self) -> LessonSnapshot {
-        LessonSnapshot {
-            source: Some("manual".to_string()),
-            timetable_block_group_id: None,
-            subject_name: Some(self.subject_name.clone()),
-            classroom_label: Some(self.classroom_label.clone()),
-            room_label: self.room_label.clone(),
-            observed_at: Some(self.observed_at),
-            period_label: Some(self.period_label.clone()),
-        }
-    }
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RequestSupervisionObservationRequest {
+    pub cycle_id: Uuid,
+    pub academic_term_id: Uuid,
+    pub observed_date: NaiveDate,
+    pub timetable_block_group_ids: Vec<Uuid>,
+    pub expected_source_digest: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct RequestSupervisionObservationRequest {
-    pub cycle_id: Uuid,
-    pub academic_term_id: Uuid,
-    pub timetable_block_group_id: Option<Uuid>,
-    pub observed_at: Option<DateTime<Utc>>,
-    pub manual_lesson: Option<ManualLessonInput>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateRequestedObservationRequest {
-    pub timetable_block_group_id: Option<Uuid>,
-    pub observed_at: Option<DateTime<Utc>>,
-    pub manual_lesson: Option<ManualLessonInput>,
+    pub observed_date: NaiveDate,
+    pub timetable_block_group_ids: Vec<Uuid>,
+    pub expected_source_digest: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateSupervisionObservationRequest {
     pub template_id: Option<Uuid>,
-    pub timetable_block_group_id: Option<Uuid>,
-    pub observed_at: Option<DateTime<Utc>>,
-    pub manual_lesson: Option<ManualLessonInput>,
+    pub observed_date: Option<NaiveDate>,
+    pub timetable_block_group_ids: Option<Vec<Uuid>>,
+    pub expected_source_digest: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

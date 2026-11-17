@@ -11753,38 +11753,12 @@
                       },
                       "type": "array"
                     },
-                    "homeroomId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "id": {
                       "format": "uuid",
                       "type": "string"
                     },
-                    "learningGroupId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "lessonSnapshot": {
-                      "$ref": "#/components/schemas/LessonSnapshot"
-                    },
-                    "manualLesson": {
-                      "oneOf": [
-                        {
-                          "$ref": "#/components/schemas/ManualLesson"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
                     "observedAt": {
+                      "description": "Earliest canonical period start, projected for chronological summaries.",
                       "format": "date-time",
                       "type": "string"
                     },
@@ -11797,6 +11771,12 @@
                     "observedUserId": {
                       "format": "uuid",
                       "type": "string"
+                    },
+                    "periods": {
+                      "items": {
+                        "$ref": "#/components/schemas/SupervisionObservationPeriod"
+                      },
+                      "type": "array"
                     },
                     "requestedAt": {
                       "format": "date-time",
@@ -11816,13 +11796,6 @@
                       "format": "uuid",
                       "type": "string"
                     },
-                    "timetableBlockGroupId": {
-                      "format": "uuid",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
                     "updatedAt": {
                       "format": "date-time",
                       "type": "string"
@@ -11838,7 +11811,7 @@
                     "observedUserId",
                     "templateId",
                     "observedAt",
-                    "lessonSnapshot",
+                    "periods",
                     "status",
                     "requestedAt",
                     "createdAt",
@@ -12132,7 +12105,7 @@
               "items": {
                 "items": {
                   "properties": {
-                    "bellSchedulePeriodId": {
+                    "bellPeriodId": {
                       "format": "uuid",
                       "type": "string"
                     },
@@ -12144,17 +12117,15 @@
                       "format": "uuid",
                       "type": "string"
                     },
-                    "dayOfWeek": {
-                      "type": "string"
-                    },
                     "endTime": {
                       "type": "string"
                     },
-                    "homeroomNames": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
+                    "homeroomId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "homeroomName": {
+                      "type": "string"
                     },
                     "learningGroupId": {
                       "format": "uuid",
@@ -12163,22 +12134,12 @@
                     "learningGroupName": {
                       "type": "string"
                     },
-                    "learningOfferingId": {
-                      "format": "uuid",
-                      "type": "string"
-                    },
-                    "offeringCode": {
-                      "type": "string"
-                    },
-                    "offeringName": {
+                    "observedDate": {
+                      "format": "date",
                       "type": "string"
                     },
                     "periodName": {
                       "type": "string"
-                    },
-                    "periodOrderIndex": {
-                      "format": "int32",
-                      "type": "integer"
                     },
                     "roomName": {
                       "type": [
@@ -12188,23 +12149,26 @@
                     },
                     "startTime": {
                       "type": "string"
+                    },
+                    "subjectName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
+                    "observedDate",
                     "blockGroupId",
                     "blockId",
-                    "dayOfWeek",
-                    "bellSchedulePeriodId",
-                    "periodOrderIndex",
+                    "bellPeriodId",
                     "periodName",
                     "startTime",
                     "endTime",
                     "learningGroupId",
                     "learningGroupName",
-                    "learningOfferingId",
-                    "offeringCode",
-                    "offeringName",
-                    "homeroomNames"
+                    "homeroomId",
+                    "homeroomName"
                   ],
                   "type": "object"
                 },
@@ -17053,6 +17017,49 @@
         ],
         "type": "object"
       },
+      "ApiResponse_SupervisionBookingOptions": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionTimetableOption"
+                },
+                "type": "array"
+              },
+              "sourceDigest": {
+                "type": "string"
+              },
+              "weekEndDate": {
+                "format": "date",
+                "type": "string"
+              },
+              "weekStartDate": {
+                "format": "date",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sourceDigest",
+              "weekStartDate",
+              "weekEndDate",
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_SupervisionCycle": {
         "properties": {
           "data": {
@@ -17119,6 +17126,41 @@
               "createdAt",
               "updatedAt",
               "targets"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_SupervisionCycleDeletionImpact": {
+        "properties": {
+          "data": {
+            "properties": {
+              "counts": {
+                "$ref": "#/components/schemas/SupervisionCycleDeletionCounts"
+              },
+              "cycleId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "revision": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cycleId",
+              "revision",
+              "counts"
             ],
             "type": "object"
           },
@@ -17275,38 +17317,12 @@
                 },
                 "type": "array"
               },
-              "homeroomId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "id": {
                 "format": "uuid",
                 "type": "string"
               },
-              "learningGroupId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "lessonSnapshot": {
-                "$ref": "#/components/schemas/LessonSnapshot"
-              },
-              "manualLesson": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/ManualLesson"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
               "observedAt": {
+                "description": "Earliest canonical period start, projected for chronological summaries.",
                 "format": "date-time",
                 "type": "string"
               },
@@ -17319,6 +17335,12 @@
               "observedUserId": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "periods": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionObservationPeriod"
+                },
+                "type": "array"
               },
               "requestedAt": {
                 "format": "date-time",
@@ -17338,13 +17360,6 @@
                 "format": "uuid",
                 "type": "string"
               },
-              "timetableBlockGroupId": {
-                "format": "uuid",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
               "updatedAt": {
                 "format": "date-time",
                 "type": "string"
@@ -17360,7 +17375,7 @@
               "observedUserId",
               "templateId",
               "observedAt",
-              "lessonSnapshot",
+              "periods",
               "status",
               "requestedAt",
               "createdAt",
@@ -43762,6 +43777,18 @@
         ],
         "type": "object"
       },
+      "DeleteSupervisionCycleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedRevision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
       "DeliveryCatalogVersionOption": {
         "properties": {
           "code": {
@@ -49283,38 +49310,12 @@
                   },
                   "type": "array"
                 },
-                "homeroomId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "id": {
                   "format": "uuid",
                   "type": "string"
                 },
-                "learningGroupId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "lessonSnapshot": {
-                  "$ref": "#/components/schemas/LessonSnapshot"
-                },
-                "manualLesson": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ManualLesson"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
                 "observedAt": {
+                  "description": "Earliest canonical period start, projected for chronological summaries.",
                   "format": "date-time",
                   "type": "string"
                 },
@@ -49327,6 +49328,12 @@
                 "observedUserId": {
                   "format": "uuid",
                   "type": "string"
+                },
+                "periods": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupervisionObservationPeriod"
+                  },
+                  "type": "array"
                 },
                 "requestedAt": {
                   "format": "date-time",
@@ -49346,13 +49353,6 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "timetableBlockGroupId": {
-                  "format": "uuid",
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "updatedAt": {
                   "format": "date-time",
                   "type": "string"
@@ -49368,7 +49368,7 @@
                 "observedUserId",
                 "templateId",
                 "observedAt",
-                "lessonSnapshot",
+                "periods",
                 "status",
                 "requestedAt",
                 "createdAt",
@@ -49602,7 +49602,7 @@
           "items": {
             "items": {
               "properties": {
-                "bellSchedulePeriodId": {
+                "bellPeriodId": {
                   "format": "uuid",
                   "type": "string"
                 },
@@ -49614,17 +49614,15 @@
                   "format": "uuid",
                   "type": "string"
                 },
-                "dayOfWeek": {
-                  "type": "string"
-                },
                 "endTime": {
                   "type": "string"
                 },
-                "homeroomNames": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
+                "homeroomId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "homeroomName": {
+                  "type": "string"
                 },
                 "learningGroupId": {
                   "format": "uuid",
@@ -49633,22 +49631,12 @@
                 "learningGroupName": {
                   "type": "string"
                 },
-                "learningOfferingId": {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                "offeringCode": {
-                  "type": "string"
-                },
-                "offeringName": {
+                "observedDate": {
+                  "format": "date",
                   "type": "string"
                 },
                 "periodName": {
                   "type": "string"
-                },
-                "periodOrderIndex": {
-                  "format": "int32",
-                  "type": "integer"
                 },
                 "roomName": {
                   "type": [
@@ -49658,23 +49646,26 @@
                 },
                 "startTime": {
                   "type": "string"
+                },
+                "subjectName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
+                "observedDate",
                 "blockGroupId",
                 "blockId",
-                "dayOfWeek",
-                "bellSchedulePeriodId",
-                "periodOrderIndex",
+                "bellPeriodId",
                 "periodName",
                 "startTime",
                 "endTime",
                 "learningGroupId",
                 "learningGroupName",
-                "learningOfferingId",
-                "offeringCode",
-                "offeringName",
-                "homeroomNames"
+                "homeroomId",
+                "homeroomName"
               ],
               "type": "object"
             },
@@ -52066,40 +52057,6 @@
         "type": "object"
       },
       "ManualLesson": {
-        "properties": {
-          "classroomLabel": {
-            "type": "string"
-          },
-          "observedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "periodLabel": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "roomLabel": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "subjectName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subjectName",
-          "classroomLabel",
-          "observedAt",
-          "periodLabel",
-          "reason"
-        ],
-        "type": "object"
-      },
-      "ManualLessonInput": {
         "properties": {
           "classroomLabel": {
             "type": "string"
@@ -57350,6 +57307,7 @@
         "type": "object"
       },
       "RequestSupervisionObservationRequest": {
+        "additionalProperties": false,
         "properties": {
           "academicTermId": {
             "format": "uuid",
@@ -57359,34 +57317,27 @@
             "format": "uuid",
             "type": "string"
           },
-          "manualLesson": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ManualLessonInput"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "expectedSourceDigest": {
+            "type": "string"
           },
-          "observedAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
+          "observedDate": {
+            "format": "date",
+            "type": "string"
           },
-          "timetableBlockGroupId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+          "timetableBlockGroupIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
           "cycleId",
-          "academicTermId"
+          "academicTermId",
+          "observedDate",
+          "timetableBlockGroupIds",
+          "expectedSourceDigest"
         ],
         "type": "object"
       },
@@ -63082,6 +63033,57 @@
         ],
         "type": "object"
       },
+      "SupervisionBookingOptions": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionTimetableOption"
+            },
+            "type": "array"
+          },
+          "sourceDigest": {
+            "type": "string"
+          },
+          "weekEndDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "weekStartDate": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceDigest",
+          "weekStartDate",
+          "weekEndDate",
+          "items"
+        ],
+        "type": "object"
+      },
+      "SupervisionBookingOptionsQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "weekStartDate": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "academicTermId",
+          "weekStartDate"
+        ],
+        "type": "object"
+      },
       "SupervisionCycle": {
         "properties": {
           "academicTermId": {
@@ -63146,6 +63148,63 @@
           "createdAt",
           "updatedAt",
           "targets"
+        ],
+        "type": "object"
+      },
+      "SupervisionCycleDeletionCounts": {
+        "properties": {
+          "actions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "evaluators": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "observations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "periods": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "responses": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "targets": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "targets",
+          "observations",
+          "periods",
+          "evaluators",
+          "responses",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "SupervisionCycleDeletionImpact": {
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/SupervisionCycleDeletionCounts"
+          },
+          "cycleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cycleId",
+          "revision",
+          "counts"
         ],
         "type": "object"
       },
@@ -63487,6 +63546,83 @@
             },
             "type": "array"
           },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "observedAt": {
+            "description": "Earliest canonical period start, projected for chronological summaries.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "observedDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observedUserId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionObservationPeriod"
+            },
+            "type": "array"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "requestedBy": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionObservationStatus"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "canManage",
+          "canReview",
+          "id",
+          "cycleId",
+          "academicYearId",
+          "academicTermId",
+          "observedUserId",
+          "templateId",
+          "observedAt",
+          "periods",
+          "status",
+          "requestedAt",
+          "createdAt",
+          "updatedAt",
+          "evaluators",
+          "actions"
+        ],
+        "type": "object"
+      },
+      "SupervisionObservationPeriod": {
+        "properties": {
+          "endsAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "homeroomId": {
             "format": "uuid",
             "type": [
@@ -63511,44 +63647,24 @@
           "manualLesson": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/ManualLesson"
+                "$ref": "#/components/schemas/SupervisionPeriodManualEvidence"
               },
               {
                 "type": "null"
               }
             ]
           },
+          "observationId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "observedAt": {
             "format": "date-time",
             "type": "string"
           },
-          "observedDisplayName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "observedUserId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "requestedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "requestedBy": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "status": {
-            "$ref": "#/components/schemas/SupervisionObservationStatus"
-          },
-          "templateId": {
-            "format": "uuid",
-            "type": "string"
+          "position": {
+            "format": "int32",
+            "type": "integer"
           },
           "timetableBlockGroupId": {
             "format": "uuid",
@@ -63556,29 +63672,14 @@
               "string",
               "null"
             ]
-          },
-          "updatedAt": {
-            "format": "date-time",
-            "type": "string"
           }
         },
         "required": [
-          "canManage",
-          "canReview",
           "id",
-          "cycleId",
-          "academicYearId",
-          "academicTermId",
-          "observedUserId",
-          "templateId",
+          "observationId",
+          "position",
           "observedAt",
-          "lessonSnapshot",
-          "status",
-          "requestedAt",
-          "createdAt",
-          "updatedAt",
-          "evaluators",
-          "actions"
+          "lessonSnapshot"
         ],
         "type": "object"
       },
@@ -63633,6 +63734,54 @@
           "cancelled"
         ],
         "type": "string"
+      },
+      "SupervisionObservationTimetableQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "weekStartDate": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "weekStartDate"
+        ],
+        "type": "object"
+      },
+      "SupervisionPeriodManualEvidence": {
+        "properties": {
+          "classroomLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "periodLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "roomLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "subjectName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
       },
       "SupervisionReviewEvaluatorResult": {
         "properties": {
@@ -64124,7 +64273,7 @@
       },
       "SupervisionTimetableOption": {
         "properties": {
-          "bellSchedulePeriodId": {
+          "bellPeriodId": {
             "format": "uuid",
             "type": "string"
           },
@@ -64136,17 +64285,15 @@
             "format": "uuid",
             "type": "string"
           },
-          "dayOfWeek": {
-            "type": "string"
-          },
           "endTime": {
             "type": "string"
           },
-          "homeroomNames": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+          "homeroomId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "homeroomName": {
+            "type": "string"
           },
           "learningGroupId": {
             "format": "uuid",
@@ -64155,22 +64302,12 @@
           "learningGroupName": {
             "type": "string"
           },
-          "learningOfferingId": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "offeringCode": {
-            "type": "string"
-          },
-          "offeringName": {
+          "observedDate": {
+            "format": "date",
             "type": "string"
           },
           "periodName": {
             "type": "string"
-          },
-          "periodOrderIndex": {
-            "format": "int32",
-            "type": "integer"
           },
           "roomName": {
             "type": [
@@ -64180,23 +64317,26 @@
           },
           "startTime": {
             "type": "string"
+          },
+          "subjectName": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
+          "observedDate",
           "blockGroupId",
           "blockId",
-          "dayOfWeek",
-          "bellSchedulePeriodId",
-          "periodOrderIndex",
+          "bellPeriodId",
           "periodName",
           "startTime",
           "endTime",
           "learningGroupId",
           "learningGroupName",
-          "learningOfferingId",
-          "offeringCode",
-          "offeringName",
-          "homeroomNames"
+          "homeroomId",
+          "homeroomName"
         ],
         "type": "object"
       },
@@ -70323,32 +70463,28 @@
         "type": "object"
       },
       "UpdateRequestedObservationRequest": {
+        "additionalProperties": false,
         "properties": {
-          "manualLesson": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ManualLessonInput"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "expectedSourceDigest": {
+            "type": "string"
           },
-          "observedAt": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
+          "observedDate": {
+            "format": "date",
+            "type": "string"
           },
-          "timetableBlockGroupId": {
-            "format": "uuid",
-            "type": [
-              "string",
-              "null"
-            ]
+          "timetableBlockGroupIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
           }
         },
+        "required": [
+          "observedDate",
+          "timetableBlockGroupIds",
+          "expectedSourceDigest"
+        ],
         "type": "object"
       },
       "UpdateRoleRequest": {
@@ -70993,19 +71129,16 @@
         "type": "object"
       },
       "UpdateSupervisionObservationRequest": {
+        "additionalProperties": false,
         "properties": {
-          "manualLesson": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ManualLessonInput"
-              },
-              {
-                "type": "null"
-              }
+          "expectedSourceDigest": {
+            "type": [
+              "string",
+              "null"
             ]
           },
-          "observedAt": {
-            "format": "date-time",
+          "observedDate": {
+            "format": "date",
             "type": [
               "string",
               "null"
@@ -71018,10 +71151,13 @@
               "null"
             ]
           },
-          "timetableBlockGroupId": {
-            "format": "uuid",
+          "timetableBlockGroupIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
             "type": [
-              "string",
+              "array",
               "null"
             ]
           }
@@ -121622,6 +121758,85 @@
         ]
       }
     },
+    "/api/supervision/booking-options": {
+      "get": {
+        "operationId": "getSupervisionBookingOptions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "weekStartDate",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionBookingOptions"
+                }
+              }
+            },
+            "description": "Current own weekly teaching periods"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid week or academic context"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Own booking permission required"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
     "/api/supervision/cycles": {
       "get": {
         "operationId": "listSupervisionCycles",
@@ -121761,6 +121976,86 @@
       }
     },
     "/api/supervision/cycles/{id}": {
+      "delete": {
+        "operationId": "deleteSupervisionCycle",
+        "parameters": [
+          {
+            "description": "Cycle to permanently delete",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteSupervisionCycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionCycleDeletionImpact"
+                }
+              }
+            },
+            "description": "Cycle and complete owned graph permanently deleted"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School supervision manage permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Cycle not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Stale preview, closed context or malformed graph"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      },
       "get": {
         "operationId": "getSupervisionCycle",
         "parameters": [
@@ -121905,6 +122200,78 @@
               }
             },
             "description": "Academic lifecycle or cycle context conflict"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/cycles/{id}/deletion-impact": {
+      "get": {
+        "operationId": "getSupervisionCycleDeletionImpact",
+        "parameters": [
+          {
+            "description": "Cycle to permanently delete",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionCycleDeletionImpact"
+                }
+              }
+            },
+            "description": "Complete cycle-owned graph deletion preview"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "School supervision manage permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Cycle not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Malformed graph or unknown dependency"
           }
         },
         "tags": [
@@ -123176,6 +123543,15 @@
               "format": "uuid",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "weekStartDate",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -123183,7 +123559,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionTimetableOption"
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionBookingOptions"
                 }
               }
             },

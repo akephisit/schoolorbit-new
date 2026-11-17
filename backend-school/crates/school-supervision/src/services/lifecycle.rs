@@ -7,9 +7,12 @@ pub async fn pending_term_work(
     Ok(DbSession::new(&mut **tx)
         .query_as(
             "supervision.services.lifecycle.pending_term_work",
-            "SELECT id, updated_at::text || ':' || status AS revision, false AS blocks_closure
-         FROM supervision_observations WHERE academic_year_id=$1 AND academic_term_id=$2
-         AND status NOT IN ('completed','cancelled') ORDER BY id",
+            "SELECT o.id, o.updated_at::text || ':' || o.status || ':' ||
+            encode(sha256(convert_to(COALESCE((SELECT jsonb_agg(to_jsonb(p) ORDER BY p.position,p.id)
+                FROM supervision_observation_periods p WHERE p.observation_id=o.id),'[]')::text,'UTF8')),'hex')
+            AS revision, false AS blocks_closure
+         FROM supervision_observations o WHERE o.academic_year_id=$1 AND o.academic_term_id=$2
+         AND o.status NOT IN ('completed','cancelled') ORDER BY o.id",
         )
         .bind(year)
         .bind(term)

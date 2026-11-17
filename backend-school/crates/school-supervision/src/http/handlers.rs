@@ -15,14 +15,17 @@ use crate::access_policy as supervision_access_policy;
 use crate::http::state::SupervisionHttpState;
 use crate::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
-    CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest,
+    CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest, DeleteSupervisionCycleRequest,
     ReplaceObservationEvaluatorsRequest, RequestSupervisionObservationRequest,
-    ReturnObservationRequest, SaveEvaluationRequest, SupervisionCycle, SupervisionCycleQuery,
-    SupervisionEvaluatorAvailability, SupervisionObservation, SupervisionObservationFilter,
-    SupervisionObservationStatus, SupervisionTeacherStatusRow, SupervisionTemplate,
+    ReturnObservationRequest, SaveEvaluationRequest, SupervisionBookingOptionsQuery,
+    SupervisionCycle, SupervisionCycleQuery, SupervisionEvaluatorAvailability,
+    SupervisionObservation, SupervisionObservationFilter, SupervisionObservationStatus,
+    SupervisionObservationTimetableQuery, SupervisionTeacherStatusRow, SupervisionTemplate,
     SupervisionTemplateSummary, UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
     UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
+#[cfg(feature = "api-docs")]
+use crate::models::{SupervisionBookingOptions, SupervisionCycleDeletionImpact};
 use crate::services;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -47,6 +50,73 @@ pub struct ListObservationsQuery {
 #[serde(rename_all = "camelCase")]
 pub struct ItemsData<T> {
     pub items: Vec<T>,
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get, path = "/api/supervision/booking-options", operation_id = "getSupervisionBookingOptions", tag = "supervision",
+    params(SupervisionBookingOptionsQuery),
+    responses(
+        (status=200,description="Current own weekly teaching periods",body=ApiResponse<SupervisionBookingOptions>),
+        (status=400,description="Invalid week or academic context",body=ApiErrorResponse),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Own booking permission required",body=ApiErrorResponse)
+    )
+))]
+pub async fn booking_options(
+    State(state): State<SupervisionHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<SupervisionBookingOptionsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    supervision_access_policy::require_request_own(&context.actor)?;
+    let result =
+        services::booking_options(&context.tenant.pool, context.actor.user_id, query).await?;
+    Ok(Json(ApiResponse::ok(result)).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get,path="/api/supervision/cycles/{id}/deletion-impact",operation_id="getSupervisionCycleDeletionImpact",tag="supervision",
+    params(("id"=Uuid,Path,description="Cycle to permanently delete")),
+    responses(
+        (status=200,description="Complete cycle-owned graph deletion preview",body=ApiResponse<SupervisionCycleDeletionImpact>),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="School supervision manage permission required",body=ApiErrorResponse),
+        (status=404,description="Cycle not found",body=ApiErrorResponse),
+        (status=409,description="Malformed graph or unknown dependency",body=ApiErrorResponse)
+    )
+))]
+pub async fn cycle_deletion_impact(
+    State(state): State<SupervisionHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    supervision_access_policy::require_manage_school(&context.actor)?;
+    let result = services::cycle_deletion_impact(&context.tenant.pool, id).await?;
+    Ok(Json(ApiResponse::ok(result)).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    delete,path="/api/supervision/cycles/{id}",operation_id="deleteSupervisionCycle",tag="supervision",
+    params(("id"=Uuid,Path,description="Cycle to permanently delete")),request_body=DeleteSupervisionCycleRequest,
+    responses(
+        (status=200,description="Cycle and complete owned graph permanently deleted",body=ApiResponse<SupervisionCycleDeletionImpact>),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="School supervision manage permission required",body=ApiErrorResponse),
+        (status=404,description="Cycle not found",body=ApiErrorResponse),
+        (status=409,description="Stale preview, closed context or malformed graph",body=ApiErrorResponse)
+    )
+))]
+pub async fn delete_cycle(
+    State(state): State<SupervisionHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<DeleteSupervisionCycleRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    supervision_access_policy::require_manage_school(&context.actor)?;
+    let result = services::delete_cycle(&context.tenant.pool, id, payload).await?;
+    Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -500,9 +570,9 @@ pub async fn evaluator_availability(
     path = "/api/supervision/observations/{id}/timetable-options",
     operation_id = "getSupervisionObservationTimetableOptions",
     tag = "supervision",
-    params(("id" = Uuid, Path, description = "Supervision observation ID")),
+    params(("id" = Uuid, Path, description = "Supervision observation ID"), SupervisionObservationTimetableQuery),
     responses(
-        (status = 200, description = "Timetable block-group options for the observation", body = ApiResponse<ItemsData<crate::models::SupervisionTimetableOption>>),
+        (status = 200, description = "Timetable block-group options for the observation", body = ApiResponse<SupervisionBookingOptions>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
@@ -512,6 +582,7 @@ pub async fn observation_timetable_options(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
+    Query(query): Query<SupervisionObservationTimetableQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let observation = services::get_observation(&context.tenant.pool, id).await?;
@@ -528,9 +599,11 @@ pub async fn observation_timetable_options(
         .await?;
     }
 
-    let items = services::observation_timetable_options(&context.tenant.pool, id).await?;
+    let items =
+        services::observation_timetable_options(&context.tenant.pool, id, query.week_start_date)
+            .await?;
 
-    Ok(Json(ApiResponse::ok(ItemsData { items })).into_response())
+    Ok(Json(ApiResponse::ok(items)).into_response())
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -1069,7 +1142,12 @@ pub async fn teacher_status_overview(
 pub fn routes() -> Router<SupervisionHttpState> {
     Router::new()
         .route("/cycles", get(list_cycles).post(create_cycle))
-        .route("/cycles/{id}", get(get_cycle).patch(update_cycle))
+        .route(
+            "/cycles/{id}",
+            get(get_cycle).patch(update_cycle).delete(delete_cycle),
+        )
+        .route("/cycles/{id}/deletion-impact", get(cycle_deletion_impact))
+        .route("/booking-options", get(booking_options))
         .route("/templates", get(list_templates).post(create_template))
         .route("/templates/summaries", get(list_template_summaries))
         .route("/templates/{id}/summary", get(get_template_summary))

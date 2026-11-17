@@ -91,7 +91,6 @@ pub async fn replace_observation_evaluators(
     validate_evaluator_availability_for_observation(
         &mut *tx,
         observation_id,
-        current.observed_at,
         &requested_evaluator_user_ids,
     )
     .await?;
@@ -611,50 +610,31 @@ fn conflict_lesson_title(subject_name: Option<&str>, period_label: Option<&str>)
 pub(super) async fn validate_evaluator_availability_for_observation(
     connection: &mut PgConnection,
     observation_id: Uuid,
-    observed_at: DateTime<Utc>,
     evaluator_user_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    if evaluator_user_ids.is_empty() {
-        return Ok(());
-    }
-
-    let conflict_statuses = evaluator_conflict_status_codes()
-        .iter()
-        .map(|status| (*status).to_string())
-        .collect::<Vec<_>>();
-
-    let conflict = DbSession::new(&mut *connection).query_as::<EvaluatorConflictRow>("supervision.services.evaluations.validate_evaluator_availability_for_observation",
-        r#"
-        SELECT NULLIF(evaluator.display_name, '')
-                   AS evaluator_display_name,
-               NULLIF(observed.display_name, '')
-                   AS observed_display_name,
-               COALESCE(NULLIF(o.manual_subject_name, ''), NULLIF(o.lesson_snapshot->>'subjectName', ''))
-                   AS subject_name,
-               COALESCE(NULLIF(o.manual_period_label, ''), NULLIF(o.lesson_snapshot->>'periodLabel', ''))
-                   AS period_label
-        FROM supervision_evaluators e
-        JOIN supervision_observations o ON o.id = e.observation_id
-        JOIN user_display_names evaluator ON evaluator.id = e.evaluator_user_id
-        JOIN user_display_names observed ON observed.id = o.observed_user_id
-        WHERE e.evaluator_user_id = ANY($1::uuid[])
-          AND o.id <> $2
-          AND o.observed_at = $3
-          AND o.status = ANY($4::text[])
-        ORDER BY o.approved_at DESC NULLS LAST, o.created_at DESC
-        LIMIT 1
-        "#,
-    )
-    .bind(evaluator_user_ids)
-    .bind(observation_id)
-    .bind(observed_at)
-    .bind(&conflict_statuses)
-    .fetch_optional()
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to validate supervision evaluator availability: {}", school_database::error_class(&error));
-        AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้".to_string())
-    })?;
+    if evaluator_user_ids.is_empty() { return Ok(()); }
+    let dates:Vec<chrono::NaiveDate>=DbSession::new(connection).scalar("supervision.evaluations.conflict_dates",
+        "SELECT DISTINCT (observed_at AT TIME ZONE 'Asia/Bangkok')::date FROM supervision_observation_periods WHERE observation_id=$1 ORDER BY 1")
+        .bind(observation_id).fetch_all().await?;
+    super::periods::lock_evaluator_dates(connection,evaluator_user_ids,dates).await?;
+    let conflict_statuses=evaluator_conflict_status_codes().iter().map(|s|(*s).to_string()).collect::<Vec<_>>();
+    let conflict=DbSession::new(connection).query_as::<EvaluatorConflictRow>("supervision.evaluations.validate_availability", r#"
+        SELECT NULLIF(evaluator.display_name,'') AS evaluator_display_name,
+            NULLIF(observed.display_name,'') AS observed_display_name,
+            COALESCE(NULLIF(p.manual_subject_name,''),NULLIF(p.lesson_snapshot->>'subjectName','')) AS subject_name,
+            COALESCE(NULLIF(p.manual_period_label,''),NULLIF(p.lesson_snapshot->>'periodLabel','')) AS period_label
+        FROM supervision_evaluators e JOIN supervision_observations o ON o.id=e.observation_id
+        JOIN supervision_observation_periods p ON p.observation_id=o.id
+        JOIN user_display_names evaluator ON evaluator.id=e.evaluator_user_id
+        JOIN user_display_names observed ON observed.id=o.observed_user_id
+        WHERE e.evaluator_user_id=ANY($1) AND o.id<>$2 AND o.status=ANY($3)
+          AND EXISTS(SELECT 1 FROM supervision_observation_periods chosen WHERE chosen.observation_id=$2 AND (
+            (p.ends_at IS NULL AND chosen.ends_at IS NULL AND p.observed_at=chosen.observed_at)
+            OR (p.ends_at IS NULL AND chosen.ends_at IS NOT NULL AND chosen.observed_at<=p.observed_at AND p.observed_at<chosen.ends_at)
+            OR (p.ends_at IS NOT NULL AND chosen.ends_at IS NULL AND p.observed_at<=chosen.observed_at AND chosen.observed_at<p.ends_at)
+            OR (p.ends_at IS NOT NULL AND chosen.ends_at IS NOT NULL AND p.observed_at<chosen.ends_at AND chosen.observed_at<p.ends_at)))
+        ORDER BY o.approved_at DESC NULLS LAST,o.created_at DESC,o.id,p.position LIMIT 1
+    "#).bind(evaluator_user_ids).bind(observation_id).bind(conflict_statuses).fetch_optional().await?;
 
     if let Some(conflict) = conflict {
         let evaluator_name = conflict

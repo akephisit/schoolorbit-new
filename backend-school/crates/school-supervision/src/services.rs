@@ -1,3 +1,6 @@
+mod booking;
+mod periods;
+mod cycle_deletion;
 mod cycles;
 mod evaluations;
 mod lifecycle;
@@ -8,6 +11,8 @@ mod shared;
 mod templates;
 mod term_preparation;
 
+pub use booking::booking_options;
+pub use cycle_deletion::{cycle_deletion_impact, delete_cycle};
 pub use cycles::{create_cycle, get_cycle, list_cycles, update_cycle};
 pub use evaluations::{replace_observation_evaluators, submit_my_evaluation};
 pub use lifecycle::pending_term_work;
@@ -34,12 +39,5 @@ pub use templates::{
     update_template,
 };
 pub use term_preparation::apply as apply_term_preparation;
-
-#[cfg(feature = "integration-test-support")]
-pub use observations::{
-    load_timetable_block_group_context_for_teacher_for_test, resolve_lesson_input_for_test,
-    test_bangkok_observation_date, test_day_of_week_matches_observed_at, LessonResolutionCycle,
-    LessonResolutionEvidence,
-};
 
 pub mod current_source;

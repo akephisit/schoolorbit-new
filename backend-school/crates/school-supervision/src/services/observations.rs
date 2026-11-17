@@ -1,20 +1,17 @@
 use school_database::DbSession;
 use std::collections::HashMap;
 
-use chrono::{DateTime, Datelike, NaiveDate, Utc, Weekday};
-use sqlx::types::Json;
-use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row, Transaction};
+use chrono::{DateTime, NaiveDate, Utc};
+use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 use crate::models::{
-    ApproveObservationRequest, CancelObservationRequest, LessonSnapshot, ManualLesson,
-    ManualLessonInput, RequestSupervisionObservationRequest, ReturnObservationRequest,
-    SupervisionAction, SupervisionCycleStatus, SupervisionEvaluator,
-    SupervisionEvaluatorAvailability, SupervisionObservation, SupervisionObservationFilter,
-    SupervisionObservationStatus, SupervisionTimetableOption, UpdateRequestedObservationRequest,
+    ApproveObservationRequest, CancelObservationRequest, RequestSupervisionObservationRequest,
+    ReturnObservationRequest, SupervisionAction, SupervisionBookingOptions, SupervisionCycleStatus,
+    SupervisionEvaluator, SupervisionEvaluatorAvailability, SupervisionObservation,
+    SupervisionObservationFilter, SupervisionObservationStatus, UpdateRequestedObservationRequest,
     UpdateSupervisionObservationRequest,
 };
-use school_academic_timetable::services::timetable_service;
 use school_errors::AppError;
 
 use super::cycles::SupervisionCycleTargetRow;
@@ -33,7 +30,7 @@ use super::shared::{
     SupervisionTargetMatch, SupervisionTargetRule,
 };
 
-const SCHOOL_TIMEZONE: chrono_tz::Tz = chrono_tz::Asia::Bangkok;
+use super::{booking, periods};
 
 #[derive(Debug, sqlx::FromRow)]
 struct SupervisionObservationRow {
@@ -41,21 +38,11 @@ struct SupervisionObservationRow {
     cycle_id: Uuid,
     academic_year_id: Uuid,
     academic_term_id: Uuid,
-    learning_group_id: Option<Uuid>,
-    homeroom_id: Option<Uuid>,
     observed_user_id: Uuid,
     observed_display_name: Option<String>,
     requested_by: Option<Uuid>,
     approved_by: Option<Uuid>,
     template_id: Uuid,
-    timetable_block_group_id: Option<Uuid>,
-    observed_at: DateTime<Utc>,
-    manual_subject_name: Option<String>,
-    manual_classroom_label: Option<String>,
-    manual_room_label: Option<String>,
-    manual_period_label: Option<String>,
-    manual_reason: Option<String>,
-    lesson_snapshot: Json<LessonSnapshot>,
     status: String,
     requested_at: DateTime<Utc>,
     approved_at: Option<DateTime<Utc>>,
@@ -170,50 +157,29 @@ pub async fn evaluator_availability(
         .map(|status| (*status).to_string())
         .collect::<Vec<_>>();
 
-    let rows = DbSession::new(&mut *connection).query_as::<EvaluatorAvailabilityRow>("supervision.services.observations.evaluator_availability",
-        r#"
-        SELECT u.id, u.title, u.display_name,
-               conflict.observation_id AS conflict_observation_id,
-               conflict.observed_display_name AS conflict_observed_display_name,
-               conflict.observed_at AS conflict_observed_at,
-               conflict.subject_name AS conflict_subject_name,
-               conflict.period_label AS conflict_period_label
-        FROM user_display_names u
-        LEFT JOIN LATERAL (
-            SELECT o.id AS observation_id,
-                   NULLIF(observed.display_name, '')
-                       AS observed_display_name,
-                   o.observed_at,
-                   COALESCE(NULLIF(o.manual_subject_name, ''), NULLIF(o.lesson_snapshot->>'subjectName', ''))
-                       AS subject_name,
-                   COALESCE(NULLIF(o.manual_period_label, ''), NULLIF(o.lesson_snapshot->>'periodLabel', ''))
-                       AS period_label
-            FROM supervision_evaluators e
-            JOIN supervision_observations o ON o.id = e.observation_id
-            JOIN user_display_names observed ON observed.id = o.observed_user_id
-            WHERE e.evaluator_user_id = u.id
-              AND o.id <> $1
-              AND o.observed_at = $2
-              AND o.status = ANY($3::text[])
-            ORDER BY o.approved_at DESC NULLS LAST, o.created_at DESC
-            LIMIT 1
-        ) conflict ON true
-        WHERE u.user_type = 'staff'
-          AND u.status = 'active'
-          AND u.id <> $4
-        ORDER BY (conflict.observation_id IS NOT NULL), u.first_name, u.last_name
-        "#,
-    )
-    .bind(observation_id)
-    .bind(observation.observed_at)
-    .bind(&conflict_statuses)
-    .bind(observation.observed_user_id)
-    .fetch_all()
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision evaluator availability: {}", school_database::error_class(&error));
-        AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้".to_string())
-    })?;
+    let rows=DbSession::new(&mut connection).query_as::<EvaluatorAvailabilityRow>("supervision.observations.evaluator_availability",r#"
+        SELECT u.id,u.title,u.display_name,conflict.observation_id AS conflict_observation_id,
+            conflict.observed_display_name AS conflict_observed_display_name,
+            conflict.observed_at AS conflict_observed_at,conflict.subject_name AS conflict_subject_name,
+            conflict.period_label AS conflict_period_label
+        FROM user_display_names u LEFT JOIN LATERAL (
+            SELECT o.id AS observation_id,NULLIF(observed.display_name,'') AS observed_display_name,
+                p.observed_at,
+                COALESCE(NULLIF(p.manual_subject_name,''),NULLIF(p.lesson_snapshot->>'subjectName','')) AS subject_name,
+                COALESCE(NULLIF(p.manual_period_label,''),NULLIF(p.lesson_snapshot->>'periodLabel','')) AS period_label
+            FROM supervision_evaluators e JOIN supervision_observations o ON o.id=e.observation_id
+            JOIN supervision_observation_periods p ON p.observation_id=o.id
+            JOIN user_display_names observed ON observed.id=o.observed_user_id
+            WHERE e.evaluator_user_id=u.id AND o.id<>$1 AND o.status=ANY($2)
+              AND EXISTS(SELECT 1 FROM supervision_observation_periods chosen WHERE chosen.observation_id=$1 AND (
+                (p.ends_at IS NULL AND chosen.ends_at IS NULL AND p.observed_at=chosen.observed_at)
+                OR (p.ends_at IS NULL AND chosen.ends_at IS NOT NULL AND chosen.observed_at<=p.observed_at AND p.observed_at<chosen.ends_at)
+                OR (p.ends_at IS NOT NULL AND chosen.ends_at IS NULL AND p.observed_at<=chosen.observed_at AND chosen.observed_at<p.ends_at)
+                OR (p.ends_at IS NOT NULL AND chosen.ends_at IS NOT NULL AND p.observed_at<chosen.ends_at AND chosen.observed_at<p.ends_at)))
+            ORDER BY o.approved_at DESC NULLS LAST,o.created_at DESC,o.id,p.position LIMIT 1
+        ) conflict ON true WHERE u.user_type='staff' AND u.status='active' AND u.id<>$3
+        ORDER BY (conflict.observation_id IS NOT NULL),u.first_name,u.last_name,u.id
+    "#).bind(observation_id).bind(conflict_statuses).bind(observation.observed_user_id).fetch_all().await?;
 
     Ok(rows
         .into_iter()
@@ -222,80 +188,12 @@ pub async fn evaluator_availability(
 }
 
 pub async fn observation_timetable_options(
-    pool: &PgPool,
-    observation_id: Uuid,
-) -> Result<Vec<SupervisionTimetableOption>, AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "supervision.observations.observation_timetable_options",
-    )
-    .await?;
-    let observation =
-        super::observations::get_observation_with_connection(&mut connection, observation_id)
-            .await?;
-    let Some(version) = timetable_service::get_for_term_on_connection(
-        &mut connection,
-        observation.academic_term_id,
-    )
-    .await?
-    else {
-        return Ok(Vec::new());
-    };
-
-    let assigned = school_academic_delivery::services::current::assigned_group_ids_on_connection(
-        &mut connection,
-        version.academic_year_id,
-        version.academic_term_id,
-        observation.observed_user_id,
-    )
-    .await?;
-    DbSession::new(&mut *connection)
-        .query_as(
-            "supervision.services.observations.observation_timetable_options",
-            r#"SELECT block_group.id AS block_group_id,
-                  block.id AS block_id,
-                  block.day_of_week,
-                  block.bell_schedule_period_id,
-                  period.order_index AS period_order_index,
-                  period.name AS period_name,
-                  period.start_time,
-                  period.end_time,
-                  block_group.learning_group_id,
-                  learning_group.name AS learning_group_name,
-                  block_group.learning_offering_id,
-                  offering.code_snapshot AS offering_code,
-                  offering.name_snapshot AS offering_name,
-                  ARRAY(
-                      SELECT homeroom.name
-                      FROM learning_group_homerooms coverage
-                      JOIN homerooms homeroom ON homeroom.id = coverage.homeroom_id
-                      WHERE coverage.learning_group_id = block_group.learning_group_id
-                      ORDER BY homeroom.name, homeroom.id
-                  ) AS homeroom_names,
-                  room.name_th AS room_name
-           FROM academic_timetable_blocks block
-           JOIN academic_timetable_block_groups block_group
-             ON block_group.block_id = block.id AND block_group.is_active
-           JOIN academic_timetable_block_group_instructors instructor
-             ON instructor.block_group_id = block_group.id
-           JOIN bell_schedule_periods period ON period.id = block.bell_schedule_period_id
-           JOIN learning_groups learning_group ON learning_group.id = block_group.learning_group_id
-           JOIN learning_offerings offering ON offering.id = block_group.learning_offering_id
-           LEFT JOIN rooms room ON room.id = block_group.room_id
-           WHERE block.timetable_id = $1
-             AND block.academic_term_id = $2
-             AND block.is_active
-             AND instructor.instructor_id = $3
-             AND block_group.learning_group_id=ANY($4)
-           ORDER BY block.day_of_week, period.order_index, block_group.id"#,
-        )
-        .bind(version.id)
-        .bind(observation.academic_term_id)
-        .bind(observation.observed_user_id)
-        .bind(&assigned.learning_group_ids)
-        .fetch_all()
-        .await
-        .map_err(AppError::from)
+    pool: &PgPool, observation_id: Uuid, week_start_date: NaiveDate,
+) -> Result<SupervisionBookingOptions, AppError> {
+    let mut connection=school_tenancy::TenantPool::observed_checkout_pool(pool,"supervision.observations.timetable_options").await?;
+    let observation=get_observation_with_connection(&mut connection,observation_id).await?;
+    booking::options_on_connection(&mut connection,observation.observed_user_id,
+        observation.academic_year_id,observation.academic_term_id,week_start_date).await
 }
 
 pub async fn request_observation(
@@ -324,56 +222,15 @@ pub async fn request_observation(
     validate_observation_context(&mut *tx, &cycle, input.academic_term_id).await?;
     ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
 
-    let lesson = resolve_lesson_input(
-        &mut tx,
-        &cycle,
-        input.academic_term_id,
-        actor_user_id,
-        input.timetable_block_group_id,
-        input.observed_at,
-        input.manual_lesson,
-    )
-    .await?;
-
-    let observation_id: Uuid = DbSession::new(&mut *tx)
-        .scalar(
-            "supervision.services.observations.request_observation",
-            r#"
-        INSERT INTO supervision_observations (
-            cycle_id, academic_year_id, academic_term_id, learning_group_id, homeroom_id,
-            observed_user_id, requested_by, template_id, timetable_block_group_id,
-            manual_subject_name, manual_classroom_label, manual_room_label,
-            observed_at, manual_period_label, manual_reason, lesson_snapshot
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        RETURNING id
-        "#,
-        )
-        .bind(cycle.id)
-        .bind(cycle.academic_year_id)
-        .bind(input.academic_term_id)
-        .bind(lesson.learning_group_id)
-        .bind(lesson.homeroom_id)
-        .bind(actor_user_id)
-        .bind(actor_user_id)
-        .bind(cycle.template_id)
-        .bind(lesson.timetable_block_group_id)
-        .bind(&lesson.manual_subject_name)
-        .bind(&lesson.manual_classroom_label)
-        .bind(&lesson.manual_room_label)
-        .bind(lesson.observed_at)
-        .bind(&lesson.manual_period_label)
-        .bind(&lesson.manual_reason)
-        .bind(Json(lesson.snapshot))
-        .fetch_one()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                "Failed to request supervision observation: {}",
-                school_database::error_class(&error)
-            );
-            AppError::InternalServerError("ไม่สามารถส่งคำขอนิเทศได้".to_string())
-        })?;
+    let selected = booking::resolve(&mut tx,actor_user_id,cycle.academic_year_id,input.academic_term_id,
+        input.observed_date,&input.timetable_block_group_ids,&input.expected_source_digest).await?;
+    periods::ensure_no_own_duplicate(&mut tx,actor_user_id,None,input.observed_date,&selected).await?;
+    let observation_id:Uuid=DbSession::new(&mut tx).scalar("supervision.observations.request_observation",
+        "INSERT INTO supervision_observations(cycle_id,academic_year_id,academic_term_id,observed_user_id,requested_by,template_id)
+         VALUES($1,$2,$3,$4,$4,$5) RETURNING id")
+        .bind(cycle.id).bind(cycle.academic_year_id).bind(input.academic_term_id).bind(actor_user_id).bind(cycle.template_id)
+        .fetch_one().await?;
+    periods::replace(&mut tx,observation_id,cycle.academic_year_id,input.academic_term_id,&selected).await?;
 
     insert_observation_action(
         &mut tx,
@@ -419,57 +276,16 @@ pub async fn update_requested_observation(
         ensure_no_submitted_evaluators(&current)?;
         ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
     }
-    let lesson = resolve_lesson_input(
-        &mut tx,
-        &cycle,
-        current.academic_term_id,
-        actor_user_id,
-        input.timetable_block_group_id,
-        input.observed_at,
-        input.manual_lesson,
-    )
-    .await?;
-
-    DbSession::new(&mut *tx)
-        .query(
-            "supervision.services.observations.update_requested_observation",
-            r#"
-        UPDATE supervision_observations
-        SET timetable_block_group_id = $2,
-            learning_group_id = $3,
-            homeroom_id = $4,
-            manual_subject_name = $5,
-            manual_classroom_label = $6,
-            manual_room_label = $7,
-            observed_at = $8,
-            manual_period_label = $9,
-            manual_reason = $10,
-            lesson_snapshot = $11,
-            status = 'requested',
-            requested_at = CASE WHEN status = 'returned' THEN now() ELSE requested_at END
-        WHERE id = $1
-        "#,
-        )
-        .bind(observation_id)
-        .bind(lesson.timetable_block_group_id)
-        .bind(lesson.learning_group_id)
-        .bind(lesson.homeroom_id)
-        .bind(&lesson.manual_subject_name)
-        .bind(&lesson.manual_classroom_label)
-        .bind(&lesson.manual_room_label)
-        .bind(lesson.observed_at)
-        .bind(&lesson.manual_period_label)
-        .bind(&lesson.manual_reason)
-        .bind(Json(lesson.snapshot))
-        .execute()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                "Failed to update supervision request: {}",
-                school_database::error_class(&error)
-            );
-            AppError::InternalServerError("ไม่สามารถแก้ไขคำขอนิเทศได้".to_string())
-        })?;
+    ensure_no_submitted_evaluators(&current)?;
+    let selected=booking::resolve(&mut tx,actor_user_id,cycle.academic_year_id,current.academic_term_id,
+        input.observed_date,&input.timetable_block_group_ids,&input.expected_source_digest).await?;
+    periods::ensure_no_own_duplicate(&mut tx,actor_user_id,Some(observation_id),input.observed_date,&selected).await?;
+    periods::replace(&mut tx,observation_id,current.academic_year_id,current.academic_term_id,&selected).await?;
+    let evaluator_ids=current.evaluators.iter().map(|e|e.evaluator_user_id).collect::<Vec<_>>();
+    validate_evaluator_availability_for_observation(&mut tx,observation_id,&evaluator_ids).await?;
+    DbSession::new(&mut tx).query("supervision.observations.update_requested_observation",
+        "UPDATE supervision_observations SET status='requested',requested_at=CASE WHEN status='returned' THEN now() ELSE requested_at END WHERE id=$1")
+        .bind(observation_id).execute().await?;
 
     if current.status == SupervisionObservationStatus::Returned {
         insert_observation_action(
@@ -524,97 +340,21 @@ pub async fn update_observation(
         ));
     }
 
-    let cycle = load_cycle_for_request(&mut *tx, current.cycle_id).await?;
-    let template_id = input.template_id.unwrap_or(current.template_id);
-    let manual_lesson = match (input.manual_lesson, current.manual_lesson) {
-        (Some(manual), _) => Some(manual),
-        (None, Some(manual)) if input.timetable_block_group_id.is_none() => {
-            Some(ManualLessonInput {
-                subject_name: manual.subject_name,
-                classroom_label: manual.classroom_label,
-                room_label: manual.room_label,
-                observed_at: input.observed_at.unwrap_or(manual.observed_at),
-                period_label: manual.period_label,
-                reason: manual.reason,
-            })
-        }
-        (None, _) => None,
-    };
-    let timetable_block_group_id = if manual_lesson.is_some() {
-        None
-    } else {
-        input
-            .timetable_block_group_id
-            .or(current.timetable_block_group_id)
-    };
-    let observed_at = if manual_lesson.is_some() {
-        None
-    } else {
-        Some(input.observed_at.unwrap_or(current.observed_at))
-    };
-    let lesson = resolve_lesson_input(
-        &mut tx,
-        &cycle,
-        current.academic_term_id,
-        current.observed_user_id,
-        timetable_block_group_id,
-        observed_at,
-        manual_lesson,
-    )
-    .await?;
-    let evaluator_user_ids = current
-        .evaluators
-        .iter()
-        .map(|evaluator| evaluator.evaluator_user_id)
-        .collect::<Vec<_>>();
-    validate_evaluator_availability_for_observation(
-        &mut *tx,
-        observation_id,
-        lesson.observed_at,
-        &evaluator_user_ids,
-    )
-    .await?;
-
-    DbSession::new(&mut *tx)
-        .query(
-            "supervision.services.observations.update_observation",
-            r#"
-        UPDATE supervision_observations
-        SET template_id = $2,
-            timetable_block_group_id = $3,
-            learning_group_id = $4,
-            homeroom_id = $5,
-            manual_subject_name = $6,
-            manual_classroom_label = $7,
-            manual_room_label = $8,
-            observed_at = $9,
-            manual_period_label = $10,
-            manual_reason = $11,
-            lesson_snapshot = $12
-        WHERE id = $1
-        "#,
-        )
-        .bind(observation_id)
-        .bind(template_id)
-        .bind(lesson.timetable_block_group_id)
-        .bind(lesson.learning_group_id)
-        .bind(lesson.homeroom_id)
-        .bind(&lesson.manual_subject_name)
-        .bind(&lesson.manual_classroom_label)
-        .bind(&lesson.manual_room_label)
-        .bind(lesson.observed_at)
-        .bind(&lesson.manual_period_label)
-        .bind(&lesson.manual_reason)
-        .bind(Json(lesson.snapshot))
-        .execute()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                "Failed to update supervision observation: {}",
-                school_database::error_class(&error)
-            );
-            AppError::InternalServerError("ไม่สามารถแก้ไขรายการนิเทศได้".to_string())
-        })?;
+    if let Some((date,ids,digest))=manager_selection(&input)? {
+        ensure_no_submitted_evaluators(&current)?;
+        let selected=booking::resolve(&mut tx,current.observed_user_id,current.academic_year_id,current.academic_term_id,
+            date,ids,digest).await?;
+        periods::ensure_no_own_duplicate(&mut tx,current.observed_user_id,Some(observation_id),date,&selected).await?;
+        periods::replace(&mut tx,observation_id,current.academic_year_id,current.academic_term_id,&selected).await?;
+        let evaluators=current.evaluators.iter().map(|e|e.evaluator_user_id).collect::<Vec<_>>();
+        validate_evaluator_availability_for_observation(&mut tx,observation_id,&evaluators).await?;
+    }
+    if let Some(template_id)=input.template_id {
+        ensure_no_submitted_evaluators(&current)?;
+        DbSession::new(&mut tx).query("supervision.observations.update_template",
+            "UPDATE supervision_observations SET template_id=$2 WHERE id=$1")
+            .bind(observation_id).bind(template_id).execute().await?;
+    }
 
     insert_observation_action(
         &mut tx,
@@ -695,7 +435,6 @@ pub async fn approve_observation_request(
     validate_evaluator_availability_for_observation(
         &mut *tx,
         observation_id,
-        observation.observed_at,
         &requested_evaluator_user_ids,
     )
     .await?;
@@ -888,15 +627,11 @@ async fn load_observation_row(
 fn observation_select_sql() -> &'static str {
     r#"
     SELECT o.id, o.cycle_id, o.academic_year_id, o.academic_term_id,
-           o.learning_group_id, o.homeroom_id, o.observed_user_id,
+           o.observed_user_id,
            NULLIF(u.display_name, '')
                AS observed_display_name,
            o.requested_by, o.approved_by, o.template_id,
-           o.timetable_block_group_id AS timetable_block_group_id,
-           o.observed_at,
-           o.manual_subject_name, o.manual_classroom_label, o.manual_room_label,
-           o.manual_period_label, o.manual_reason,
-           o.lesson_snapshot, o.status, o.requested_at, o.approved_at,
+           o.status, o.requested_at, o.approved_at,
            o.cancelled_at, o.created_at, o.updated_at
     FROM supervision_observations o
     JOIN user_display_names u ON u.id = o.observed_user_id
@@ -917,13 +652,16 @@ async fn hydrate_observations(
         load_observation_evaluators(&mut *connection, &observation_ids).await?;
     let mut actions_by_observation =
         load_observation_actions(&mut *connection, &observation_ids).await?;
+    let mut periods_by_observation=periods::load(connection,&observation_ids).await?;
     let average_ratings =
         load_observation_average_ratings(&mut *connection, &observation_ids).await?;
 
     rows.into_iter()
         .map(|row| {
             let observation_id = row.id;
-            let manual_lesson = manual_lesson_from_row(&row);
+            let periods=periods_by_observation.remove(&observation_id).unwrap_or_default();
+            let observed_at=periods.iter().map(|p|p.observed_at).min()
+                .ok_or_else(||AppError::Conflict("รายการนิเทศไม่มีหลักฐานคาบที่บันทึกไว้".into()))?;
             Ok(SupervisionObservation {
                 can_manage: false,
                 can_review: false,
@@ -931,17 +669,13 @@ async fn hydrate_observations(
                 cycle_id: row.cycle_id,
                 academic_year_id: row.academic_year_id,
                 academic_term_id: row.academic_term_id,
-                learning_group_id: row.learning_group_id,
-                homeroom_id: row.homeroom_id,
                 observed_user_id: row.observed_user_id,
                 observed_display_name: row.observed_display_name,
                 requested_by: row.requested_by,
                 approved_by: row.approved_by,
                 template_id: row.template_id,
-                timetable_block_group_id: row.timetable_block_group_id,
-                observed_at: row.observed_at,
-                manual_lesson,
-                lesson_snapshot: row.lesson_snapshot.0,
+                observed_at,
+                periods,
                 status: parse_observation_status(&row.status)?,
                 requested_at: row.requested_at,
                 approved_at: row.approved_at,
@@ -958,17 +692,6 @@ async fn hydrate_observations(
             })
         })
         .collect()
-}
-
-fn manual_lesson_from_row(row: &SupervisionObservationRow) -> Option<ManualLesson> {
-    Some(ManualLesson {
-        subject_name: row.manual_subject_name.clone()?,
-        classroom_label: row.manual_classroom_label.clone()?,
-        room_label: row.manual_room_label.clone(),
-        observed_at: row.observed_at,
-        period_label: row.manual_period_label.clone()?,
-        reason: row.manual_reason.clone()?,
-    })
 }
 
 async fn load_observation_evaluators(
@@ -1281,242 +1004,13 @@ async fn validate_observation_context(
     Ok(())
 }
 
-struct ResolvedLessonInput {
-    timetable_block_group_id: Option<Uuid>,
-    learning_group_id: Option<Uuid>,
-    homeroom_id: Option<Uuid>,
-    observed_at: DateTime<Utc>,
-    manual_subject_name: Option<String>,
-    manual_classroom_label: Option<String>,
-    manual_room_label: Option<String>,
-    manual_period_label: Option<String>,
-    manual_reason: Option<String>,
-    snapshot: LessonSnapshot,
-}
-
-async fn resolve_lesson_input(
-    connection: &mut PgConnection,
-    cycle: &CycleForRequestRow,
-    academic_term_id: Uuid,
-    actor_user_id: Uuid,
-    timetable_block_group_id: Option<Uuid>,
-    observed_at: Option<DateTime<Utc>>,
-    manual_lesson: Option<ManualLessonInput>,
-) -> Result<ResolvedLessonInput, AppError> {
-    match (timetable_block_group_id, observed_at, manual_lesson) {
-        (Some(block_group_id), Some(observed_at), None) => {
-            let timetable_id =
-                timetable_service::get_for_term_on_connection(connection, academic_term_id)
-                    .await?
-                    .ok_or_else(|| AppError::NotFound("ไม่พบตารางเรียนในภาคเรียนที่เลือก".into()))?
-                    .id;
-            let entry = load_timetable_block_group_context_for_teacher(
-                &mut *connection,
-                block_group_id,
-                timetable_id,
-                actor_user_id,
-                cycle.academic_year_id,
-                academic_term_id,
-            )
-            .await?;
-            if !day_of_week_matches_observed_at(&entry.day_of_week, observed_at) {
-                return Err(AppError::ValidationError(
-                    "วันที่นิเทศไม่ตรงกับวันของคาบสอน".to_string(),
-                ));
-            }
-            Ok(ResolvedLessonInput {
-                timetable_block_group_id: Some(block_group_id),
-                learning_group_id: entry.learning_group_id,
-                homeroom_id: entry.homeroom_id,
-                observed_at,
-                manual_subject_name: None,
-                manual_classroom_label: None,
-                manual_room_label: None,
-                manual_period_label: None,
-                manual_reason: None,
-                snapshot: load_timetable_block_group_lesson_snapshot(
-                    &mut *connection,
-                    block_group_id,
-                    observed_at,
-                )
-                .await?,
-            })
-        }
-        (Some(_), None, None) => Err(AppError::ValidationError(
-            "ต้องระบุวันที่นิเทศสำหรับคาบจากตารางสอน".to_string(),
-        )),
-        (None, _, Some(manual)) => {
-            validate_manual_lesson(&manual)?;
-            Ok(ResolvedLessonInput {
-                timetable_block_group_id: None,
-                learning_group_id: None,
-                homeroom_id: None,
-                observed_at: manual.observed_at,
-                manual_subject_name: Some(manual.subject_name.clone()),
-                manual_classroom_label: Some(manual.classroom_label.clone()),
-                manual_room_label: manual.room_label.clone(),
-                manual_period_label: Some(manual.period_label.clone()),
-                manual_reason: Some(manual.reason.clone()),
-                snapshot: manual.snapshot(),
-            })
-        }
-        _ => Err(AppError::ValidationError(
-            "ต้องเลือกคาบจากตารางสอนหรือระบุคาบแบบกำหนดเองอย่างใดอย่างหนึ่ง".to_string(),
-        )),
+fn manager_selection(input:&UpdateSupervisionObservationRequest)
+    ->Result<Option<(NaiveDate,&[Uuid],&str)>,AppError> {
+    match (input.observed_date,input.timetable_block_group_ids.as_deref(),input.expected_source_digest.as_deref()) {
+        (None,None,None)=>Ok(None),
+        (Some(date),Some(ids),Some(digest))=>Ok(Some((date,ids,digest))),
+        _=>Err(AppError::ValidationError("ต้องระบุวันที่ คาบสอน และข้อมูลตรวจสอบตารางสอนพร้อมกัน".into())),
     }
-}
-
-fn bangkok_observation_date(observed_at: DateTime<Utc>) -> NaiveDate {
-    observed_at.with_timezone(&SCHOOL_TIMEZONE).date_naive()
-}
-
-fn day_of_week_matches_observed_at(day_of_week: &str, observed_at: DateTime<Utc>) -> bool {
-    let observed_weekday = bangkok_observation_date(observed_at).weekday();
-    matches!(
-        (day_of_week, observed_weekday),
-        ("MON", Weekday::Mon)
-            | ("TUE", Weekday::Tue)
-            | ("WED", Weekday::Wed)
-            | ("THU", Weekday::Thu)
-            | ("FRI", Weekday::Fri)
-            | ("SAT", Weekday::Sat)
-            | ("SUN", Weekday::Sun)
-    )
-}
-
-fn validate_manual_lesson(manual: &ManualLessonInput) -> Result<(), AppError> {
-    if manual.subject_name.trim().is_empty()
-        || manual.classroom_label.trim().is_empty()
-        || manual.period_label.trim().is_empty()
-        || manual.reason.trim().is_empty()
-    {
-        return Err(AppError::ValidationError(
-            "คาบแบบกำหนดเองต้องระบุวิชา ห้อง คาบ และเหตุผล".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct TimetableBlockGroupLessonContext {
-    day_of_week: String,
-    learning_group_id: Option<Uuid>,
-    homeroom_id: Option<Uuid>,
-}
-
-async fn load_timetable_block_group_context_for_teacher(
-    connection: &mut PgConnection,
-    block_group_id: Uuid,
-    timetable_id: Uuid,
-    teacher_user_id: Uuid,
-    academic_year_id: Uuid,
-    academic_term_id: Uuid,
-) -> Result<TimetableBlockGroupLessonContext, AppError> {
-    let context = DbSession::new(&mut *connection)
-        .query_as::<TimetableBlockGroupLessonContext>(
-            "supervision.services.observations.load_timetable_block_group_context_for_teacher",
-            r#"
-        SELECT block.day_of_week, block_group.learning_group_id,
-               NULL::uuid AS homeroom_id
-        FROM academic_timetable_block_groups block_group
-        JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-        WHERE block_group.id = $1
-          AND block.timetable_id = $2
-          AND block.academic_year_id = $4
-          AND block.academic_term_id = $5
-          AND block.is_active
-          AND block_group.is_active
-          AND EXISTS (
-              SELECT 1 FROM academic_timetable_block_group_instructors instructor
-              WHERE instructor.block_group_id = block_group.id
-                AND instructor.instructor_id = $3
-          )
-        "#,
-        )
-        .bind(block_group_id)
-        .bind(timetable_id)
-        .bind(teacher_user_id)
-        .bind(academic_year_id)
-        .bind(academic_term_id)
-        .fetch_optional()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                "Failed to validate supervision timetable entry: {}",
-                school_database::error_class(&error)
-            );
-            AppError::InternalServerError("ไม่สามารถตรวจสอบคาบสอนได้".to_string())
-        })?;
-
-    let context = context
-        .ok_or_else(|| AppError::Forbidden("เลือกจองได้เฉพาะคาบสอนของตนเองในภาคเรียนที่เลือก".into()))?;
-    let groups = context.learning_group_id.into_iter().collect::<Vec<_>>();
-    let assignments =
-        school_academic_delivery::services::current::group_teacher_assignments_on_connection(
-            connection,
-            academic_year_id,
-            academic_term_id,
-            &groups,
-        )
-        .await?;
-    if !assignments
-        .groups
-        .iter()
-        .any(|group| group.teacher_ids.contains(&teacher_user_id))
-    {
-        return Err(AppError::Forbidden("ครูไม่ได้รับมอบหมายในกลุ่มเรียนปัจจุบัน".into()));
-    }
-    Ok(context)
-}
-
-async fn load_timetable_block_group_lesson_snapshot(
-    connection: &mut PgConnection,
-    block_group_id: Uuid,
-    observed_at: DateTime<Utc>,
-) -> Result<LessonSnapshot, AppError> {
-    let row = DbSession::new(&mut *connection).query("supervision.services.observations.load_timetable_block_group_lesson_snapshot",
-        r#"
-        SELECT CASE WHEN subject_version.id IS NULL THEN NULL ELSE concat(
-                   coalesce(subject_version.name_th, subject_version.name_en, offering.name_snapshot),
-                   ' · v', subject_version.version_no
-               ) END AS subject_name,
-               learning_group.name AS classroom_label,
-               r.name_th AS room_label,
-               p.name AS period_label
-        FROM academic_timetable_block_groups block_group
-        JOIN academic_timetable_blocks block ON block.id = block_group.block_id
-        LEFT JOIN learning_groups learning_group
-          ON learning_group.id = block_group.learning_group_id
-        LEFT JOIN learning_offerings offering
-          ON offering.id = block_group.learning_offering_id
-        LEFT JOIN course_offering_details detail
-          ON detail.learning_offering_id = offering.id
-        LEFT JOIN subject_versions subject_version ON subject_version.id = detail.subject_version_id
-        LEFT JOIN rooms r ON block_group.room_id = r.id
-        LEFT JOIN bell_schedule_periods p ON p.id = block.bell_schedule_period_id
-        WHERE block_group.id = $1
-          AND block.is_active
-          AND block_group.is_active
-        "#,
-    )
-    .bind(block_group_id)
-    .fetch_optional()
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision lesson snapshot: {}", school_database::error_class(&error));
-        AppError::InternalServerError("ไม่สามารถดึงข้อมูลคาบสอนได้".to_string())
-    })?
-    .ok_or_else(|| AppError::NotFound("ไม่พบคาบสอน".to_string()))?;
-
-    Ok(LessonSnapshot {
-        source: Some("timetable".to_string()),
-        timetable_block_group_id: Some(block_group_id),
-        subject_name: row.try_get("subject_name").ok(),
-        classroom_label: row.try_get("classroom_label").ok(),
-        room_label: row.try_get("room_label").ok(),
-        observed_at: Some(observed_at),
-        period_label: row.try_get("period_label").ok(),
-    })
 }
 
 fn ensure_no_submitted_evaluators(observation: &SupervisionObservation) -> Result<(), AppError> {
@@ -1663,89 +1157,6 @@ pub(super) async fn insert_observation_action(
         })?;
 
     Ok(())
-}
-
-#[cfg(feature = "integration-test-support")]
-pub struct LessonResolutionCycle {
-    pub id: Uuid,
-    pub academic_year_id: Uuid,
-    pub academic_term_id: Option<Uuid>,
-    pub template_id: Uuid,
-    pub status: String,
-}
-
-#[cfg(feature = "integration-test-support")]
-pub struct LessonResolutionEvidence {
-    pub timetable_block_group_id: Option<Uuid>,
-    pub source: Option<String>,
-}
-
-#[cfg(feature = "integration-test-support")]
-pub fn test_bangkok_observation_date(observed_at: DateTime<Utc>) -> NaiveDate {
-    bangkok_observation_date(observed_at)
-}
-
-#[cfg(feature = "integration-test-support")]
-pub fn test_day_of_week_matches_observed_at(day_of_week: &str, observed_at: DateTime<Utc>) -> bool {
-    day_of_week_matches_observed_at(day_of_week, observed_at)
-}
-
-#[cfg(feature = "integration-test-support")]
-pub async fn resolve_lesson_input_for_test(
-    connection: &mut PgConnection,
-    cycle: &LessonResolutionCycle,
-    academic_term_id: Uuid,
-    actor_user_id: Uuid,
-    timetable_block_group_id: Option<Uuid>,
-    observed_at: Option<DateTime<Utc>>,
-    manual_lesson: Option<ManualLessonInput>,
-) -> Result<LessonResolutionEvidence, AppError> {
-    let resolved = resolve_lesson_input(
-        connection,
-        &CycleForRequestRow {
-            id: cycle.id,
-            academic_year_id: cycle.academic_year_id,
-            academic_term_id: cycle.academic_term_id,
-            template_id: cycle.template_id,
-            status: cycle.status.clone(),
-        },
-        academic_term_id,
-        actor_user_id,
-        timetable_block_group_id,
-        observed_at,
-        manual_lesson,
-    )
-    .await?;
-    Ok(LessonResolutionEvidence {
-        timetable_block_group_id: resolved.timetable_block_group_id,
-        source: resolved.snapshot.source,
-    })
-}
-
-#[cfg(feature = "integration-test-support")]
-pub async fn load_timetable_block_group_context_for_teacher_for_test(
-    pool: &PgPool,
-    block_group_id: Uuid,
-    timetable_id: Uuid,
-    teacher_user_id: Uuid,
-    academic_year_id: Uuid,
-    academic_term_id: Uuid,
-) -> Result<(), AppError> {
-    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
-        pool,
-        "supervision.observations.test_group_context",
-    )
-    .await?;
-    load_timetable_block_group_context_for_teacher(
-        &mut connection,
-        block_group_id,
-        timetable_id,
-        teacher_user_id,
-        academic_year_id,
-        academic_term_id,
-    )
-    .await
-    .map(|_| ())
 }
 
 #[cfg(test)]
