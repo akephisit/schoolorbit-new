@@ -53,7 +53,10 @@ function workspace() {
 			id: 'current-table',
 			academicYearId: 'year',
 			academicTermId: 'term',
-			bellScheduleId:'bell',rowVersion:1,createdAt:'2026-05-01T00:00:00Z',updatedAt:'2026-05-01T00:00:00Z'
+			bellScheduleId: 'bell',
+			rowVersion: 1,
+			createdAt: '2026-05-01T00:00:00Z',
+			updatedAt: '2026-05-01T00:00:00Z'
 		},
 		blocks: [
 			course,

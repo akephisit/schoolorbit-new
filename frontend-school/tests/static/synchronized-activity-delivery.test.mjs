@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFile} from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 
 const deliveryModule =
 	await import('../../src/lib/academic/synchronized-activity-delivery.ts').catch(() => ({}));
@@ -194,10 +194,13 @@ test('synchronized activities default to central activation but retain reviewed 
 	);
 });
 
-test('current curriculum helpers expose no operational-version candidate or date winner',async()=>{
- assert.equal(deliveryModule.deliveryPreparationDraftCandidates,undefined);
- const source=await readFile(new URL('../../src/lib/academic/synchronized-activity-delivery.ts',import.meta.url),'utf8');
- assert.doesNotMatch(source,/DeliveryVersion|sourceVersionId|effectiveFrom|latestPublished/);
+test('current curriculum helpers expose no operational-version candidate or date winner', async () => {
+	assert.equal(deliveryModule.deliveryPreparationDraftCandidates, undefined);
+	const source = await readFile(
+		new URL('../../src/lib/academic/synchronized-activity-delivery.ts', import.meta.url),
+		'utf8'
+	);
+	assert.doesNotMatch(source, /DeliveryVersion|sourceVersionId|effectiveFrom|latestPublished/);
 });
 
 test('focused curriculum preparation supports exact course and independent activity versions without pairing same-code records', () => {

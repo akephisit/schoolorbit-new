@@ -1140,14 +1140,13 @@ test('new academic workspace mutations use typed returned resources', async () =
 	assert.match(corePage, /years = \[created, \.\.\.years\]/);
 	assert.match(deliveryCreateDialog, /const offering = await createLearningOffering\(/);
 	assert.match(deliveryCreateDialog, /onCreated\(\{\s*offering,/);
-	assert.match(deliveryPage,/onCreated=\{\(\) => void refresh\(\)\}/);
-	assert.match(deliveryDetailPage,/const created = await createLearningGroup\(/);
-	assert.match(deliveryDetailPage,/acceptGroup\(created\)/);
-	assert.match(deliveryDetailPage,/await selectGroup\(created\)/);
-	assert.match(deliveryDetailPage,/const value = await updateLearningGroup\(/);
-	assert.match(deliveryDetailPage,/acceptGroup\(value\)/);
-	assert.match(deliveryDetailPage,/g\.id === value\.id && g\.rowVersion <= value\.rowVersion/);
-
+	assert.match(deliveryPage, /onCreated=\{\(\) => void refresh\(\)\}/);
+	assert.match(deliveryDetailPage, /const created = await createLearningGroup\(/);
+	assert.match(deliveryDetailPage, /acceptGroup\(created\)/);
+	assert.match(deliveryDetailPage, /await selectGroup\(created\)/);
+	assert.match(deliveryDetailPage, /const value = await updateLearningGroup\(/);
+	assert.match(deliveryDetailPage, /acceptGroup\(value\)/);
+	assert.match(deliveryDetailPage, /g\.id === value\.id && g\.rowVersion <= value\.rowVersion/);
 });
 
 test('admission exam-room mutations return typed data and patch local state', async () => {
@@ -1296,10 +1295,7 @@ test('timetable API exposes typed loaded responses and conflict unions without r
 		/bellSchedulePeriodId:\s*string/
 	);
 	assert.match(timetableApi, /apiClient\.post<TimetableBlockPlacementPreview>/);
-	assert.match(
-		timetableApi,
-		/apiClient\.post<SwapTimetableBlocksResponse>/
-	);
+	assert.match(timetableApi, /apiClient\.post<SwapTimetableBlocksResponse>/);
 	assert.doesNotMatch(timetableApi, /return response as T/);
 	assert.doesNotMatch(timetableApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(timetableApi, /response\.data as/);

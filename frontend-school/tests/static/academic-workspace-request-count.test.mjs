@@ -90,8 +90,11 @@ test('learning delivery starts cohesive visible regions without per-room request
 		'utf8'
 	);
 	assert.match(loader, /getHomeroomDeliveryWorkspace/);
-	assert.match(loader,/getDeliveryWorkspace/);
-	assert.doesNotMatch(loader,/listAcademicTermChangeSets|getAcademicTermChangeSet|listDeliveryVersions/);
+	assert.match(loader, /getDeliveryWorkspace/);
+	assert.doesNotMatch(
+		loader,
+		/listAcademicTermChangeSets|getAcademicTermChangeSet|listDeliveryVersions/
+	);
 	assert.doesNotMatch(loader, /getLearningDeliveryPageView|getLearningDeliveryOverview/);
 	assert.match(page, /homeroomRequest\s*=\s*new LatestRequest/);
 	assert.match(page, /overviewRequest\s*=\s*new LatestRequest/);

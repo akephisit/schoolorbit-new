@@ -125,12 +125,16 @@ const operations = [
 	['/api/academic/learning-groups/{id}/teachers', 'put', 'replaceLearningGroupTeachers'],
 	['/api/academic/learning-groups/{id}/roster', 'get', 'previewLearningGroupRoster'],
 	['/api/academic/learning-groups/{id}/roster', 'put', 'applyLearningGroupRoster'],
-	['/api/academic/delivery/workspace','get','getDeliveryWorkspace'],
-	['/api/academic/offerings/{id}/weekly-period-target','patch','updateLearningOfferingWeeklyPeriodTarget'],
-	['/api/academic/offerings/{id}/deletion-preview','get','previewLearningOfferingDeletion'],
-	['/api/academic/offerings/{id}','delete','deleteLearningOffering'],
-	['/api/academic/learning-groups/{id}/deletion-preview','get','previewLearningGroupDeletion'],
-	['/api/academic/learning-groups/{id}','delete','deleteLearningGroup']
+	['/api/academic/delivery/workspace', 'get', 'getDeliveryWorkspace'],
+	[
+		'/api/academic/offerings/{id}/weekly-period-target',
+		'patch',
+		'updateLearningOfferingWeeklyPeriodTarget'
+	],
+	['/api/academic/offerings/{id}/deletion-preview', 'get', 'previewLearningOfferingDeletion'],
+	['/api/academic/offerings/{id}', 'delete', 'deleteLearningOffering'],
+	['/api/academic/learning-groups/{id}/deletion-preview', 'get', 'previewLearningGroupDeletion'],
+	['/api/academic/learning-groups/{id}', 'delete', 'deleteLearningGroup']
 ];
 
 test('generated contract owns every academic core and learning delivery operation', async () => {
@@ -255,8 +259,12 @@ test('academic exact values and offering variants keep their wire semantics', as
 	const updateOffering = schemas.UpdateLearningOfferingRequest;
 	assert.equal(updateOffering.properties.weeklyPeriodTarget.type, 'integer');
 	assert.equal(updateOffering.properties.assessmentTotalScore, undefined);
-	for(const name of ['CreateCourseOfferingRequest','CreateActivityOfferingRequest'])assert.ok(schemas[name].required.includes('weeklyPeriodTarget'));
-	assert.deepEqual(schemas.UpdateWeeklyPeriodTargetRequest.required.toSorted(),['rowVersion','weeklyPeriodTarget']);
+	for (const name of ['CreateCourseOfferingRequest', 'CreateActivityOfferingRequest'])
+		assert.ok(schemas[name].required.includes('weeklyPeriodTarget'));
+	assert.deepEqual(schemas.UpdateWeeklyPeriodTargetRequest.required.toSorted(), [
+		'rowVersion',
+		'weeklyPeriodTarget'
+	]);
 	assert.equal(schemas.CourseGradingPolicy, undefined);
 	assert.equal(schemas.ActivityResult, undefined);
 

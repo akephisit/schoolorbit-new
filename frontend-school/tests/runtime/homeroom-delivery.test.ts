@@ -416,7 +416,14 @@ function statusOffering(): Parameters<typeof deliveryOfferingStatuses>[0] {
 test('offering statuses use only selected real groups and retain missing target-room grouping evidence alongside known teacher completeness', () => {
 	const offering = statusOffering();
 	offering.groups[0].teachers = [
-		{ assignmentId: 'assignment', teacherId: 'teacher', displayName: 'ครูหลัก', role: 'primary', rowVersion: 1, isActive: true }
+		{
+			assignmentId: 'assignment',
+			teacherId: 'teacher',
+			displayName: 'ครูหลัก',
+			role: 'primary',
+			rowVersion: 1,
+			isActive: true
+		}
 	];
 	const workspace = comparisonWorkspace();
 	workspace.homerooms[0] = statusRoom([statusItem()]);

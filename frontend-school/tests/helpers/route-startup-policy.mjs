@@ -22,11 +22,7 @@ export function mountApiCalls(svelteSource) {
 				for (const binding of bindings.elements)
 					if (!binding.isTypeOnly) apiNames.add(binding.name.text);
 		}
-		if (
-			module === '#lib/academic/delivery-reconcile.js' &&
-			bindings &&
-			ts.isNamedImports(bindings)
-		)
+		if (module === '#lib/academic/delivery-reconcile.js' && bindings && ts.isNamedImports(bindings))
 			for (const binding of bindings.elements)
 				if ((binding.propertyName ?? binding.name).text === 'registerDeliveryReconcile')
 					eventRegistrationNames.add(binding.name.text);
