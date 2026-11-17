@@ -3,6 +3,7 @@ import {
 	mockBudget,
 	budgetYearSettings,
 	budgetYearId,
+	budgetProjectId,
 	budgetRequestId,
 	budgetFundId
 } from './fixtures/budget';
@@ -130,7 +131,7 @@ for (const [kind, region] of [
 			await page.getByLabel('ค้นหาโครงการ', { exact: true }).fill('คณิตศาสตร์');
 			await page.getByRole('button', { name: 'ค้นหา', exact: true }).click();
 			await expect(page).toHaveURL((url) => url.searchParams.get('search') === 'คณิตศาสตร์');
-			expect(requests.at(-1)!.searchParams.get('search')).toBe('คณิตศาสตร์');
+			await expect.poll(() => requests.at(-1)?.searchParams.get('search')).toBe('คณิตศาสตร์');
 		} else await expect(page.getByRole('textbox')).toHaveCount(0);
 		await page.getByRole('button', { name: 'ล้างตัวกรอง', exact: true }).click();
 		await expect(page).toHaveURL(`/staff/budget/${kind}?limit=20`);
@@ -292,6 +293,87 @@ test('request navigation reuses explicit return-year context without reading the
 	expect(api.reads.some((read) => read.startsWith('/api/budget/projects'))).toBe(false);
 	expect(api.writes).toEqual([]);
 });
+
+for (const kind of ['projects', 'requests', 'adjustments'] as const) {
+	test(`${kind} mobile records wrap complete identities and retain desktop financial fields and actions`, async ({
+		page
+	}) => {
+		const api = await mockBudget(page, { withRequest: true });
+		const projectName = `โครงการพัฒนาการเรียนรู้ ${'ProjectIdentity'.repeat(15)}`;
+		const organization = `หน่วยงานรับผิดชอบ ${'OrganizationIdentity'.repeat(12)}`;
+		const requestTitle = `คำขอวัสดุประกอบกิจกรรม ${'RequestIdentity'.repeat(15)}`;
+		const reason = `เหตุผลการยืมงบประมาณ ${'AdjustmentReason'.repeat(15)}`;
+		api.workspace.project.name = projectName;
+		api.workspace.project.organizationUnitName = organization;
+		api.workspace.project.totalSatang = '123456789012';
+		api.request!.request.title = requestTitle;
+		api.request!.request.totalSatang = '123456789012';
+		api.request!.request.paidSatang = '12345678900';
+		const adjustmentId = id(996);
+		api.adjustments.push({
+			id: adjustmentId,
+			fiscalYearId: budgetYearId,
+			kind: 'loan',
+			amountSatang: '123456789012',
+			loanOutstandingSatang: '12345678900',
+			reason,
+			ownerId: api.workspace.project.ownerId,
+			revision: 1,
+			status: 'approved',
+			createdAt: '2026-10-20T01:00:00Z',
+			capabilities: api.workspace.capabilities
+		});
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.goto(`/staff/budget/${kind}`);
+		const region = page.getByTestId(`budget-${kind}`);
+		const identities =
+			kind === 'projects'
+				? [projectName, organization]
+				: kind === 'requests'
+					? [requestTitle]
+					: ['ยืมงบประมาณ', reason];
+		const action =
+			kind === 'projects' ? 'เปิดโครงการ' : kind === 'requests' ? 'เปิดคำขอ' : 'เปิดรายการ';
+		const resourceId =
+			kind === 'projects' ? budgetProjectId : kind === 'requests' ? budgetRequestId : adjustmentId;
+		for (const width of [390, 1440]) {
+			await page.setViewportSize({ width, height: 900 });
+			for (const text of identities) {
+				const identity = region.getByText(text, { exact: true });
+				await expect(identity).toBeVisible();
+				if (width === 390) {
+					// Detect clipped text even when the table's outer border still fits the viewport.
+					expect(
+						await identity.evaluate((element) => element.scrollWidth <= element.clientWidth)
+					).toBe(true);
+				}
+			}
+			await expect(region).toContainText('1,234,567,890.12');
+			if (kind !== 'projects') await expect(region).toContainText('123,456,789.00');
+			else {
+				await expect(region).toContainText('1 ต.ค. 2569');
+				await expect(region).toContainText('30 ก.ย. 2570');
+			}
+			await expect(region.getByText('อนุมัติแล้ว', { exact: true })).toBeVisible();
+			const open = region.getByRole('link', { name: action, exact: true });
+			await expect(open).toBeVisible();
+			await expect(open).toHaveAttribute(
+				'href',
+				`/staff/budget/${kind}/${resourceId}?returnTo=${encodeURIComponent(`/staff/budget/${kind}`)}`
+			);
+			if (width === 390) {
+				for (const pane of await region.locator('[data-slot="table-container"]').all())
+					expect(await pane.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+						true
+					);
+				expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+					true
+				);
+			}
+		}
+		expect(api.writes).toEqual([]);
+	});
+}
 
 for (const role of ['manager', 'finance'] as const) {
 	test(`Enter in ${role} actual-receipt input only saves receipts and preserves authority`, async ({

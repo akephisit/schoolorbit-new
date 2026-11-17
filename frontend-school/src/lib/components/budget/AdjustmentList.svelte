@@ -94,7 +94,8 @@
 							><Table.Body class="block sm:table-row-group"
 								>{#each region.value.items as item (item.id)}<Table.Row
 										class="grid grid-cols-2 gap-x-4 gap-y-2 p-4 sm:table-row sm:p-0"
-										><Table.Cell class="col-span-2 min-w-0"
+										><Table.Cell
+											class="col-span-2 min-w-0 max-sm:break-words max-sm:whitespace-normal"
 											><p class="font-medium">{adjustmentLabels[item.kind]}</p>
 											<p class="text-sm text-muted-foreground">{item.reason}</p></Table.Cell
 										><Table.Cell

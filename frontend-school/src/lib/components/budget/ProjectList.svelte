@@ -86,7 +86,8 @@
 						><Table.Body class="block sm:table-row-group"
 							>{#each region.value.items as project (project.id)}<Table.Row
 									class="grid grid-cols-2 gap-x-4 gap-y-2 p-4 sm:table-row sm:p-0"
-									><Table.Cell class="col-span-2 sm:table-cell"
+									><Table.Cell
+										class="col-span-2 min-w-0 max-sm:break-words max-sm:whitespace-normal sm:table-cell"
 										><p class="min-w-48 font-medium">{project.name}</p>
 										<p class="text-sm text-muted-foreground">
 											{project.organizationUnitName}

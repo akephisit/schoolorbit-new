@@ -81,7 +81,9 @@
 						><Table.Body class="block sm:table-row-group"
 							>{#each region.value.items as item (item.id)}<Table.Row
 									class="grid grid-cols-2 gap-x-4 gap-y-2 p-4 sm:table-row sm:p-0"
-									><Table.Cell class="col-span-2 min-w-0 font-medium">{item.title}</Table.Cell
+									><Table.Cell
+										class="col-span-2 min-w-0 font-medium max-sm:break-words max-sm:whitespace-normal"
+										>{item.title}</Table.Cell
 									><Table.Cell
 										class="col-span-2 flex justify-between gap-3 whitespace-nowrap tabular-nums sm:table-cell sm:text-right"
 										><span class="text-sm text-muted-foreground sm:hidden">จำนวนเงิน (บาท)</span

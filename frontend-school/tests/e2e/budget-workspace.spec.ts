@@ -14,8 +14,8 @@ import { id, actor } from './fixtures/staff-home-route-data';
 import type { BudgetDashboard } from '../../src/lib/api/budget';
 import { PERMISSIONS } from '../../src/lib/permissions/registry.generated';
 test.use({ serviceWorkers: 'block' });
-async function choose(page: Page, label: string, option: string) {
-	await page.getByRole('combobox', { name: label, exact: true }).click();
+async function choose(page: Page, label: string, option: string, scope: Page | Locator = page) {
+	await scope.getByRole('combobox', { name: label, exact: true }).click();
 	await page.getByRole('option', { name: option, exact: true }).click();
 }
 async function date(page: Page, label: string) {
@@ -92,7 +92,7 @@ test('minimal project to plan approval, activity request, partial payment and cl
 		page.getByLabel(/รหัสโครงการ|รหัสกิจกรรม|วัตถุประสงค์|หลักการและเหตุผล|ตัวชี้วัด/)
 	).toHaveCount(0);
 	await page.getByLabel('ชื่อโครงการ *', { exact: true }).fill('โครงการใหม่');
-	await choose(page, 'ปีงบประมาณ', '2570');
+	await choose(page, 'ปีงบประมาณ', '2570', page.getByTestId('budget-project-form'));
 	await choose(page, 'หน่วยงานที่รับผิดชอบ', 'กลุ่มสาระคณิตศาสตร์');
 	await date(page, 'วันที่เริ่มต้น');
 	await date(page, 'วันที่สิ้นสุด');
@@ -188,7 +188,7 @@ test('failed project mutation preserves all four groups and retry key', async ({
 	await page.goto('/staff/budget/projects');
 	await page.getByRole('button', { name: 'สร้างโครงการ', exact: true }).click();
 	await page.getByLabel('ชื่อโครงการ *', { exact: true }).fill('ชื่อที่ต้องคงอยู่');
-	await choose(page, 'ปีงบประมาณ', '2570');
+	await choose(page, 'ปีงบประมาณ', '2570', page.getByTestId('budget-project-form'));
 	await choose(page, 'หน่วยงานที่รับผิดชอบ', 'กลุ่มสาระคณิตศาสตร์');
 	await date(page, 'วันที่เริ่มต้น');
 	await date(page, 'วันที่สิ้นสุด');
@@ -353,7 +353,7 @@ test('adjustment creation uses approved allocation choices and exact money', asy
 	const api = await mockBudget(page);
 	await page.goto('/staff/budget/adjustments');
 	await page.getByRole('button', { name: 'สร้างรายการปรับงบ', exact: true }).click();
-	await choose(page, 'ปีงบประมาณ', '2570');
+	await choose(page, 'ปีงบประมาณ', '2570', page.getByTestId('budget-adjustment-form'));
 	await page.getByRole('combobox', { name: 'งบประมาณปลายทาง', exact: true }).click();
 	await page.getByRole('option').filter({ hasText: 'กิจกรรมที่หนึ่ง' }).click();
 	await page.getByLabel('จำนวนเงิน (บาท) *', { exact: true }).fill('123.45');
@@ -844,7 +844,7 @@ for (const viewport of [
 						await expect(dialog).toBeVisible();
 						if (name === 'project-new')
 							await expect(
-								page.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true })
+								dialog.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true })
 							).toBeEnabled();
 						if (name === 'adjustment-form')
 							await expect(
