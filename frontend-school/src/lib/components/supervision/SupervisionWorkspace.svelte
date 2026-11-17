@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import SupervisionCycleDelete from '#lib/components/supervision/SupervisionCycleDelete.svelte';
 	import SupervisionLessonPicker from '#lib/components/supervision/SupervisionLessonPicker.svelte';
@@ -400,10 +400,26 @@
 	);
 
 	let managementRevision = 0;
-	let bookingSubmissionRevision = 0;
-	$effect(() => () => {
-		bookingSubmissionRevision += 1;
+	let mutationLifetime = 0;
+	onDestroy(() => {
+		mutationLifetime += 1;
 	});
+
+	function captureMutationOwner() {
+		const lifetime = mutationLifetime;
+		const revision = managementRevision;
+		const context = currentManagementContext();
+		const pathname = page.url.pathname;
+		const year = page.url.searchParams.get('academicYearId');
+		const term = page.url.searchParams.get('academicTermId');
+		return () =>
+			lifetime === mutationLifetime &&
+			revision === managementRevision &&
+			context === currentManagementContext() &&
+			pathname === page.url.pathname &&
+			year === page.url.searchParams.get('academicYearId') &&
+			term === page.url.searchParams.get('academicTermId');
+	}
 
 	function currentManagementContext() {
 		return `${appIdentityKey()}:${section}:${academicYearId ?? ''}:${academicTermId ?? ''}`;
@@ -931,21 +947,13 @@
 	async function createBookingRequest(selection: SupervisionLessonSelection) {
 		if (!canRequest || !currentBookingCycle || !academicTermId)
 			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
-		const sourceRevision = managementRevision;
-		const sourceIdentity = appIdentityKey();
-		const submissionRevision = bookingSubmissionRevision;
+		const ownsMutation = captureMutationOwner();
 		const response = await requestSupervisionObservation({
 			cycleId: currentBookingCycle.id,
 			academicTermId,
 			...selection
 		});
-		if (
-			submissionRevision !== bookingSubmissionRevision ||
-			sourceRevision !== managementRevision ||
-			sourceIdentity !== appIdentityKey() ||
-			!canRequest
-		)
-			return;
+		if (!ownsMutation() || !canRequest) return;
 		replaceObservation(requireMutationData(response, 'ส่งคำขอไม่สำเร็จ'));
 	}
 
@@ -1111,7 +1119,7 @@
 		}
 
 		savingAction = `approve-request:${observationId}`;
-		const sourceRevision = managementRevision;
+		const ownsMutation = captureMutationOwner();
 		try {
 			const response = await approveSupervisionObservationRequest(observationId, {
 				evaluators: evaluatorIds.map((evaluatorId) => ({
@@ -1119,17 +1127,17 @@
 					isRequired: true
 				}))
 			});
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			const observation = requireMutationData(response, 'อนุมัติคำขอไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('อนุมัติคำขอและมอบหมายผู้ประเมินแล้ว');
 			clearRequestApprovalState(observationId);
 		} catch (error) {
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			void loadRequestEvaluatorAvailability(observationId, true);
 			toast.error(error instanceof Error ? error.message : 'อนุมัติคำขอไม่สำเร็จ');
 		} finally {
-			if (sourceRevision === managementRevision) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
@@ -1139,21 +1147,21 @@
 		if (!current || current.evaluators.some((evaluator) => evaluator.status === 'submitted'))
 			return;
 		savingAction = `return-request:${id}`;
-		const sourceRevision = managementRevision;
+		const ownsMutation = captureMutationOwner();
 		try {
 			const response = await returnSupervisionObservationRequest(id, {
 				comment: requestReturnComments[id] || null
 			});
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			const observation = requireMutationData(response, 'ส่งกลับคำขอไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('ส่งกลับคำขอแล้ว');
 			clearRequestApprovalState(id);
 		} catch (error) {
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			toast.error(error instanceof Error ? error.message : 'ส่งกลับคำขอไม่สำเร็จ');
 		} finally {
-			if (sourceRevision === managementRevision) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
@@ -1287,41 +1295,41 @@
 		}
 
 		savingEvaluation = 'submit';
-		const sourceRevision = managementRevision;
+		const ownsMutation = captureMutationOwner();
 		const observationId = evaluationObservationId;
 		try {
 			const payload = evaluationPayload();
 			const response = await submitMySupervisionEvaluation(observationId, payload);
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			const observation = requireMutationData(response, 'บันทึกผลประเมินไม่สำเร็จ');
 			replaceObservation(observation);
 			if (evaluationObservationId === observationId) clearEvaluationDraft();
 			toast.success('ส่งผลประเมินแล้ว');
 		} catch (error) {
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
 		} finally {
-			if (sourceRevision === managementRevision) savingEvaluation = null;
+			if (ownsMutation()) savingEvaluation = null;
 		}
 	}
 
 	async function acknowledgeResult(id: string) {
 		savingAction = `acknowledge-result:${id}`;
-		const sourceRevision = managementRevision;
+		const ownsMutation = captureMutationOwner();
 		try {
 			const response = await acknowledgeSupervisionObservation(id, {
 				comment: acknowledgeComment || null
 			});
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			const observation = requireMutationData(response, 'รับทราบผลไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('รับทราบผลนิเทศแล้ว');
 			acknowledgeComment = '';
 		} catch (error) {
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			toast.error(error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ');
 		} finally {
-			if (sourceRevision === managementRevision) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
@@ -1347,10 +1355,10 @@
 		};
 
 		savingAction = 'create-cycle';
-		const sourceRevision = managementRevision;
+		const ownsMutation = captureMutationOwner();
 		try {
 			const response = await createSupervisionCycle(payload);
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			const cycle = requireMutationData(response, 'สร้างรอบนิเทศไม่สำเร็จ');
 			replaceCycle(cycle);
 			toast.success('สร้างรอบนิเทศแล้ว');
@@ -1358,10 +1366,10 @@
 			cycleForm.description = '';
 			createCycleDialogOpen = false;
 		} catch (error) {
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			toast.error(error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ');
 		} finally {
-			if (sourceRevision === managementRevision) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
@@ -1370,18 +1378,18 @@
 		if (cycle.status === status) return;
 
 		savingAction = `cycle-status:${cycle.id}:${status}`;
-		const sourceRevision = managementRevision;
+		const ownsMutation = captureMutationOwner();
 		try {
 			const response = await updateSupervisionCycle(cycle.id, { status });
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			const updatedCycle = requireMutationData(response, 'เปลี่ยนสถานะรอบนิเทศไม่สำเร็จ');
 			replaceCycle(updatedCycle);
 			toast.success(`เปลี่ยนสถานะรอบนิเทศเป็น${statusLabel(status)}แล้ว`);
 		} catch (error) {
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			toast.error(error instanceof Error ? error.message : 'เปลี่ยนสถานะรอบนิเทศไม่สำเร็จ');
 		} finally {
-			if (sourceRevision === managementRevision) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
@@ -1649,7 +1657,7 @@
 		if (!validateTemplateForm()) return;
 
 		savingTemplate = true;
-		const sourceRevision = managementRevision;
+		const ownsMutation = captureMutationOwner();
 		const workflowRevision = templateWorkflowRevision;
 		const submittedTemplateId = editingTemplateId;
 		try {
@@ -1657,24 +1665,24 @@
 			const response = submittedTemplateId
 				? await updateSupervisionTemplate(submittedTemplateId, payload)
 				: await createSupervisionTemplate(payload);
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			if (!response.success) throw new Error(response.error || 'บันทึกแบบประเมินไม่สำเร็จ');
 			if (response.data) {
 				replaceTemplate(response.data);
 			} else {
 				await retryManagementTemplates();
 			}
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			toast.success(submittedTemplateId ? 'แก้ไขแบบประเมินนิเทศแล้ว' : 'สร้างแบบประเมินนิเทศแล้ว');
 			if (workflowRevision === templateWorkflowRevision) {
 				resetTemplateForm();
 				createTemplateDialogOpen = false;
 			}
 		} catch (error) {
-			if (sourceRevision !== managementRevision) return;
+			if (!ownsMutation()) return;
 			toast.error(error instanceof Error ? error.message : 'บันทึกแบบประเมินไม่สำเร็จ');
 		} finally {
-			if (sourceRevision === managementRevision) savingTemplate = false;
+			if (ownsMutation()) savingTemplate = false;
 		}
 	}
 

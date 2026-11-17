@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { page } from '$app/state';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import SupervisionLessonPicker from '#lib/components/supervision/SupervisionLessonPicker.svelte';
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
@@ -108,6 +109,24 @@
 	let contextEpoch = 0;
 	let contextId = '';
 	let contextIdentity = '';
+	let mutationLifetime = 0;
+	onDestroy(() => {
+		mutationLifetime += 1;
+	});
+
+	function captureMutationOwner() {
+		const lifetime = mutationLifetime;
+		const epoch = contextEpoch;
+		const identity = appIdentityKey();
+		const resourceId = data.observationId;
+		const pathname = page.url.pathname;
+		return () =>
+			lifetime === mutationLifetime &&
+			epoch === contextEpoch &&
+			identity === appIdentityKey() &&
+			resourceId === data.observationId &&
+			pathname === page.url.pathname;
+	}
 	let lessonWorkflowRevision = 0;
 	let evaluatorWorkflowRevision = 0;
 	const observationRequest = new LatestRequest();
@@ -650,39 +669,39 @@
 
 	async function certifyResult() {
 		if (!observation || !canCertifyResult) return;
-		const sourceEpoch = contextEpoch;
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = `certify-result:${observation.id}`;
 		try {
 			const response = await certifySupervisionObservation(submittedId);
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			const updated = mutationData(response, 'รับรองผลไม่สำเร็จ');
 			replaceReviewObservation(updated);
 			toast.success('รับรองผลนิเทศแล้ว');
 		} catch (saveError) {
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'รับรองผลไม่สำเร็จ');
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
 	async function approveResult() {
 		if (!observation || !canApproveResult) return;
-		const sourceEpoch = contextEpoch;
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = `approve-result:${observation.id}`;
 		try {
 			const response = await approveSupervisionObservation(submittedId);
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			const updated = mutationData(response, 'อนุมัติผลไม่สำเร็จ');
 			replaceReviewObservation(updated);
 			toast.success('อนุมัติผลนิเทศแล้ว');
 		} catch (saveError) {
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'อนุมัติผลไม่สำเร็จ');
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
@@ -696,8 +715,7 @@
 		if (!observation || !canEditLesson) throw new Error('ไม่มีสิทธิ์แก้ไขคาบนิเทศ');
 		if (isReturnedOwnRequest && cycle?.status !== 'open')
 			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
-		const sourceEpoch = contextEpoch;
-		const sourceIdentity = appIdentityKey();
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		const workflowRevision = lessonWorkflowRevision;
 		const resubmitting = isReturnedOwnRequest;
@@ -707,13 +725,14 @@
 				canManageObservation && !canEditOwnRequested
 					? await updateSupervisionObservation(submittedId, selection)
 					: await updateRequestedSupervisionObservation(submittedId, selection);
-			if (sourceEpoch !== contextEpoch || sourceIdentity !== appIdentityKey() || !canEditLesson)
-				return;
+			if (!ownsMutation() || !canEditLesson) return;
 			replaceObservation(mutationData(response, 'แก้ไขรายการนิเทศไม่สำเร็จ'));
 			if (workflowRevision === lessonWorkflowRevision) editLessonOpen = false;
 			toast.success(resubmitting ? 'แก้ไขและส่งคำขอใหม่แล้ว' : 'แก้ไขคาบนิเทศแล้ว');
+		} catch (saveError) {
+			if (ownsMutation()) throw saveError;
 		} finally {
-			if (sourceEpoch === contextEpoch && sourceIdentity === appIdentityKey()) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
@@ -767,7 +786,7 @@
 			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คน');
 			return;
 		}
-		const sourceEpoch = contextEpoch;
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		const workflowRevision = evaluatorWorkflowRevision;
 		savingAction = 'evaluators';
@@ -778,24 +797,24 @@
 					isRequired: true
 				}))
 			});
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			const updated = mutationData(response, 'แก้ไขผู้ประเมินไม่สำเร็จ');
 			replaceObservation(updated);
 			if (workflowRevision === evaluatorWorkflowRevision) editEvaluatorsOpen = false;
 			toast.success('แก้ไขผู้ประเมินแล้ว');
 		} catch (saveError) {
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			void loadEvaluatorAvailability(true);
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขผู้ประเมินไม่สำเร็จ');
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 
 	async function cancelObservation() {
 		if (!observation || !canCancelObservation) return;
-		const sourceEpoch = contextEpoch;
+		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'cancel';
 		try {
@@ -803,19 +822,19 @@
 				canManageObservation && !canCancelOwnRequest
 					? await cancelSupervisionObservation(submittedId, { reason: cancelReason || null })
 					: await cancelRequestedSupervisionObservation(submittedId);
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			const updated = mutationData(response, 'ยกเลิกรายการนิเทศไม่สำเร็จ');
 			replaceObservation(updated);
 			cancelDialogOpen = false;
 			cancelReason = '';
 			toast.success('ยกเลิกรายการนิเทศแล้ว');
 		} catch (cancelError) {
-			if (sourceEpoch !== contextEpoch) return;
+			if (!ownsMutation()) return;
 			toast.error(
 				cancelError instanceof Error ? cancelError.message : 'ยกเลิกรายการนิเทศไม่สำเร็จ'
 			);
 		} finally {
-			if (sourceEpoch === contextEpoch) savingAction = null;
+			if (ownsMutation()) savingAction = null;
 		}
 	}
 </script>
