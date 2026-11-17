@@ -3134,15 +3134,8 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
         manifest_dir().join("crates/school-academic-timetable/src/services/daily_teaching.rs"),
     ));
     let supervision = strip_comments(&read_source(
-        manifest_dir().join("crates/school-supervision/src/services/observations.rs"),
+        manifest_dir().join("crates/school-supervision/src/services/booking.rs"),
     ));
-    let supervision_block_group_lookup = supervision
-        .split_once("async fn load_timetable_block_group_context_for_teacher")
-        .expect("supervision timetable block-group lookup must exist")
-        .1
-        .split_once("async fn load_timetable_block_group_lesson_snapshot")
-        .expect("supervision timetable block-group lookup must remain isolated")
-        .0;
     let parents = strip_comments(&read_source(
         manifest_dir().join("crates/school-students/src/parents/services.rs"),
     ));
@@ -3163,11 +3156,22 @@ fn timetable_exact_instructor_consumers_do_not_fallback_to_group_teachers() {
         !daily_teaching.contains("effective_teacher"),
         "daily teaching must not reintroduce an ambiguous teacher-membership union"
     );
-    assert!(supervision_block_group_lookup.contains("academic_timetable_block_group_instructors"));
-    assert!(
-		!supervision_block_group_lookup.contains("learning_group_teachers"),
-		"supervision timetable validation must not authorize a group teacher who is absent from the block group"
-	);
+    assert!(supervision.contains("dated_teaching::snapshot_on_connection"));
+    assert!(supervision.contains("current::assigned_group_ids_on_connection"));
+    let supervision_tokens = supervision.split_whitespace().collect::<String>();
+    assert!(supervision_tokens.contains("letSome(group)=lesson.learning_group_id"));
+    assert!(supervision_tokens.contains("lesson.homeroom_ids.len()!=1"));
+    for forbidden in [
+        "academic_timetable_block_group_instructors",
+        "learning_group_teachers",
+        "FROM academic_timetable",
+        "JOIN academic_timetable",
+    ] {
+        assert!(
+            !supervision.contains(forbidden),
+            "Supervision must compose provider-owned exact instructor authorization: {forbidden}"
+        );
+    }
     assert!(
         parents.contains("timetable_block_service::list_student_blocks"),
         "parent timetable must remain on the canonical exact-instructor timetable reader"

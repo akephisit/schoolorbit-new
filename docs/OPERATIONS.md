@@ -58,6 +58,33 @@ recover with a compatible release or roll forward; never rename the column back,
 modify accepted receipts or bypass migration history. Inspect only bounded
 `ACADEMIC_SCHOOL_DAYS155_*` refusal codes and aggregate audit evidence.
 
+### Supervision canonical-period cutover
+
+School migrations 164 and 165 move saved lesson evidence into ordered observation periods.
+Enable universal Maintenance Mode and drain all old School writers before 164; run the
+canonical all-tenant migration job and require complete tenant/schema readiness before
+starting the new release. Migration 164 preserves each observation UUID, exact historical
+start timestamp, every manual field and raw snapshot (including unknown JSON keys), while
+leaving unknown historical ends unknown. Its finite receipt reconciles canonical rows,
+nonlesson parents and descendants. Migration 165 refuses missing/stale/mismatched evidence
+and external column dependencies before removing the retired parent lesson columns and
+receipt. No archive or runtime compatibility route remains.
+
+Keep maintenance enabled on any refusal. Inspect only bounded `SUPERVISION_PERIOD164_*`
+or `SUPERVISION_PERIOD165_*` findings and aggregate evidence; correct an unmappable source
+through reviewed remediation and rerun the canonical migrator. Never edit SQLx history,
+remove reconciliation checks or infer old lesson times from the current timetable. The
+new application requires completed migration 165; after 165, pre-165 binaries are prohibited.
+Recover using a schema-165-capable release or roll forward, retaining the normal verified
+backup/WAL recovery procedure. Do not reopen only successfully migrated tenants while the
+all-tenant release gate is incomplete.
+
+Permanent cycle deletion is an authenticated product capability: school supervision managers
+review the complete owned graph, explicitly confirm deletion and submit that preview's
+revision. Stale or malformed graphs and closed academic contexts refuse without changes.
+Templates, staff and shared academic/timetable data survive. Deployment and acceptance do
+not require creating real bookings or deleting any production cycle.
+
 ### Recovery after the completed transfer
 
 The application has accepted PostgreSQL writes. Recover or roll forward using the

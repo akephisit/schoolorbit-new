@@ -7,8 +7,10 @@ use school_errors::AppError;
 use sqlx::{types::Json, PgConnection};
 use uuid::Uuid;
 
-use crate::models::{LessonSnapshot, SupervisionObservationPeriod, SupervisionPeriodManualEvidence};
 use super::booking::ResolvedPeriod;
+use crate::models::{
+    LessonSnapshot, SupervisionObservationPeriod, SupervisionPeriodManualEvidence,
+};
 
 #[derive(sqlx::FromRow)]
 struct PeriodRow {
@@ -41,8 +43,11 @@ pub(super) async fn load(
     ).bind(ids).fetch_all().await?;
     let mut result: HashMap<Uuid, Vec<SupervisionObservationPeriod>> = HashMap::new();
     for row in rows {
-        let has_manual = row.manual_subject_name.is_some() || row.manual_classroom_label.is_some()
-            || row.manual_room_label.is_some() || row.manual_period_label.is_some() || row.manual_reason.is_some();
+        let has_manual = row.manual_subject_name.is_some()
+            || row.manual_classroom_label.is_some()
+            || row.manual_room_label.is_some()
+            || row.manual_period_label.is_some()
+            || row.manual_reason.is_some();
         let manual_lesson = has_manual.then_some(SupervisionPeriodManualEvidence {
             subject_name: row.manual_subject_name,
             classroom_label: row.manual_classroom_label,
@@ -50,13 +55,21 @@ pub(super) async fn load(
             period_label: row.manual_period_label,
             reason: row.manual_reason,
         });
-        result.entry(row.observation_id).or_default().push(SupervisionObservationPeriod {
-            id: row.id, observation_id: row.observation_id, position: row.position,
-            timetable_block_group_id: row.timetable_block_group_id,
-            learning_group_id: row.learning_group_id, homeroom_id: row.homeroom_id,
-            observed_at: row.observed_at, ends_at: row.ends_at,
-            manual_lesson, lesson_snapshot: row.lesson_snapshot.0,
-        });
+        result
+            .entry(row.observation_id)
+            .or_default()
+            .push(SupervisionObservationPeriod {
+                id: row.id,
+                observation_id: row.observation_id,
+                position: row.position,
+                timetable_block_group_id: row.timetable_block_group_id,
+                learning_group_id: row.learning_group_id,
+                homeroom_id: row.homeroom_id,
+                observed_at: row.observed_at,
+                ends_at: row.ends_at,
+                manual_lesson,
+                lesson_snapshot: row.lesson_snapshot.0,
+            });
     }
     Ok(result)
 }
@@ -69,18 +82,31 @@ pub(super) async fn replace(
     periods: &[ResolvedPeriod],
 ) -> Result<(), AppError> {
     if periods.is_empty() {
-        return Err(AppError::ValidationError("ต้องเลือกคาบนิเทศอย่างน้อย 1 คาบ".into()));
+        return Err(AppError::ValidationError(
+            "ต้องเลือกคาบนิเทศอย่างน้อย 1 คาบ".into(),
+        ));
     }
-    DbSession::new(connection).query("supervision.periods.replace_remove",
-        "DELETE FROM supervision_observation_periods WHERE observation_id=$1")
-        .bind(observation).execute().await?;
+    DbSession::new(connection)
+        .query(
+            "supervision.periods.replace_remove",
+            "DELETE FROM supervision_observation_periods WHERE observation_id=$1",
+        )
+        .bind(observation)
+        .execute()
+        .await?;
     let allocations = periods.iter().map(|p| p.allocation_id).collect::<Vec<_>>();
     let offerings = periods.iter().map(|p| p.offering_id).collect::<Vec<_>>();
-    let groups = periods.iter().map(|p| p.learning_group_id).collect::<Vec<_>>();
+    let groups = periods
+        .iter()
+        .map(|p| p.learning_group_id)
+        .collect::<Vec<_>>();
     let homerooms = periods.iter().map(|p| p.homeroom_id).collect::<Vec<_>>();
     let starts = periods.iter().map(|p| p.observed_at).collect::<Vec<_>>();
     let ends = periods.iter().map(|p| p.ends_at).collect::<Vec<_>>();
-    let snapshots = periods.iter().map(|p| p.snapshot.clone()).collect::<Vec<_>>();
+    let snapshots = periods
+        .iter()
+        .map(|p| p.snapshot.clone())
+        .collect::<Vec<_>>();
     DbSession::new(connection).query("supervision.periods.replace_insert", r#"
         INSERT INTO supervision_observation_periods (observation_id,position,academic_year_id,academic_term_id,
             timetable_block_group_id,learning_offering_id,learning_group_id,homeroom_id,observed_at,ends_at,lesson_snapshot)
@@ -90,8 +116,14 @@ pub(super) async fn replace(
             WITH ORDINALITY AS p(allocation,offering,learning_group,homeroom,starts,ends,position)
     "#).bind(observation).bind(year).bind(term).bind(allocations).bind(offerings).bind(groups)
         .bind(homerooms).bind(starts).bind(ends).bind(Json(snapshots)).execute().await?;
-    DbSession::new(connection).query("supervision.periods.touch_observation",
-        "UPDATE supervision_observations SET updated_at=now() WHERE id=$1").bind(observation).execute().await?;
+    DbSession::new(connection)
+        .query(
+            "supervision.periods.touch_observation",
+            "UPDATE supervision_observations SET updated_at=now() WHERE id=$1",
+        )
+        .bind(observation)
+        .execute()
+        .await?;
     Ok(())
 }
 
@@ -103,12 +135,19 @@ pub(super) async fn lock_evaluator_dates(
     dates: impl IntoIterator<Item = NaiveDate>,
 ) -> Result<(), AppError> {
     let dates = dates.into_iter().collect::<BTreeSet<_>>();
-    let keys = evaluators.iter().flat_map(|user| dates.iter().map(move |date| (*user,*date)))
+    let keys = evaluators
+        .iter()
+        .flat_map(|user| dates.iter().map(move |date| (*user, *date)))
         .collect::<BTreeSet<_>>();
-    for (user,date) in keys {
-        DbSession::new(connection).query("supervision.periods.lock_evaluator_date",
-            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-            .bind(format!("supervision-evaluator:{user}:{date}")).execute().await?;
+    for (user, date) in keys {
+        DbSession::new(connection)
+            .query(
+                "supervision.periods.lock_evaluator_date",
+                "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+            )
+            .bind(format!("supervision-evaluator:{user}:{date}"))
+            .execute()
+            .await?;
     }
     Ok(())
 }
@@ -116,25 +155,33 @@ pub(super) async fn lock_evaluator_dates(
 pub(super) async fn ensure_no_own_duplicate(
     connection: &mut PgConnection,
     teacher: Uuid,
+    cycle: Uuid,
     except: Option<Uuid>,
     date: NaiveDate,
     periods: &[ResolvedPeriod],
 ) -> Result<(), AppError> {
-    DbSession::new(connection).query("supervision.periods.lock_booking_date",
-        "SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
-        .bind(format!("supervision-booking:{teacher}:{date}")).execute().await?;
-    let starts = periods.iter().map(|p|p.observed_at).collect::<Vec<_>>();
-    let ends = periods.iter().map(|p|p.ends_at).collect::<Vec<_>>();
+    DbSession::new(connection)
+        .query(
+            "supervision.periods.lock_booking_date",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        )
+        .bind(format!("supervision-booking:{teacher}:{date}"))
+        .execute()
+        .await?;
+    let starts = periods.iter().map(|p| p.observed_at).collect::<Vec<_>>();
+    let ends = periods.iter().map(|p| p.ends_at).collect::<Vec<_>>();
     let duplicate: bool = DbSession::new(connection).scalar("supervision.periods.own_duplicate", r#"
         SELECT EXISTS(SELECT 1 FROM supervision_observations o
             JOIN supervision_observation_periods p ON p.observation_id=o.id
             CROSS JOIN unnest($3::timestamptz[],$4::timestamptz[]) chosen(starts,ends)
-            WHERE o.observed_user_id=$1 AND ($2::uuid IS NULL OR o.id<>$2) AND o.status<>'cancelled'
+            WHERE o.observed_user_id=$1 AND o.cycle_id=$5 AND ($2::uuid IS NULL OR o.id<>$2) AND o.status<>'cancelled'
               AND ((p.ends_at IS NOT NULL AND p.observed_at<chosen.ends AND chosen.starts<p.ends_at)
                 OR (p.ends_at IS NULL AND chosen.starts<=p.observed_at AND p.observed_at<chosen.ends)))
-    "#).bind(teacher).bind(except).bind(starts).bind(ends).fetch_one().await?;
+    "#).bind(teacher).bind(except).bind(starts).bind(ends).bind(cycle).fetch_one().await?;
     if duplicate {
-        return Err(AppError::Conflict("มีรายการนิเทศของตนเองในคาบที่เลือกแล้ว".into()));
+        return Err(AppError::Conflict(
+            "มีรายการนิเทศของตนเองในคาบที่เลือกแล้ว".into(),
+        ));
     }
     Ok(())
 }

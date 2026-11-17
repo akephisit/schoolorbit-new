@@ -22828,15 +22828,6 @@ export interface components {
 			firstName: string;
 			lastName: string;
 		};
-		ManualLesson: {
-			classroomLabel: string;
-			/** Format: date-time */
-			observedAt: string;
-			periodLabel: string;
-			reason: string;
-			roomLabel?: string | null;
-			subjectName: string;
-		};
 		MathNodeAttributes: {
 			latex: string;
 		};

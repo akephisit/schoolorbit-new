@@ -19,7 +19,7 @@ async fn template_capture_clear_and_apply_mutate_the_single_current_board() {
             .await
             .unwrap();
     let evaluations_before: serde_json::Value = sqlx::query_scalar("SELECT COALESCE(jsonb_agg(to_jsonb(response) ORDER BY response.id),'[]'::jsonb) FROM supervision_evaluator_responses response").fetch_one(&pool).await.unwrap();
-    let linked_observations:Vec<Uuid> = sqlx::query_scalar("SELECT observation.id FROM supervision_observations observation JOIN academic_timetable_block_groups placed ON placed.id=observation.timetable_block_group_id JOIN academic_timetable_blocks block ON block.id=placed.block_id WHERE block.timetable_id=$1 ORDER BY observation.id").bind(id).fetch_all(&pool).await.unwrap();
+    let linked_observations:Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT observation.id FROM supervision_observations observation JOIN supervision_observation_periods period ON period.observation_id=observation.id JOIN academic_timetable_block_groups placed ON placed.id=period.timetable_block_group_id JOIN academic_timetable_blocks block ON block.id=placed.block_id WHERE block.timetable_id=$1 ORDER BY observation.id").bind(id).fetch_all(&pool).await.unwrap();
     assert!(
         !linked_observations.is_empty(),
         "fixture must exercise saved source evidence during clear"
@@ -61,7 +61,7 @@ async fn template_capture_clear_and_apply_mutate_the_single_current_board() {
         observations_before
     );
     assert_eq!(sqlx::query_scalar::<_,serde_json::Value>("SELECT COALESCE(jsonb_agg(to_jsonb(response) ORDER BY response.id),'[]'::jsonb) FROM supervision_evaluator_responses response").fetch_one(&pool).await.unwrap(),evaluations_before);
-    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM supervision_observations WHERE id=ANY($1) AND timetable_block_group_id IS NOT NULL").bind(&linked_observations).fetch_one(&pool).await.unwrap(),0);
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM supervision_observation_periods WHERE observation_id=ANY($1) AND timetable_block_group_id IS NOT NULL").bind(&linked_observations).fetch_one(&pool).await.unwrap(),0);
     let applied = timetable_template_service::apply_template(
         &pool,
         &mutation,

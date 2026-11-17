@@ -188,12 +188,24 @@ pub async fn evaluator_availability(
 }
 
 pub async fn observation_timetable_options(
-    pool: &PgPool, observation_id: Uuid, week_start_date: NaiveDate,
+    pool: &PgPool,
+    observation_id: Uuid,
+    week_start_date: NaiveDate,
 ) -> Result<SupervisionBookingOptions, AppError> {
-    let mut connection=school_tenancy::TenantPool::observed_checkout_pool(pool,"supervision.observations.timetable_options").await?;
-    let observation=get_observation_with_connection(&mut connection,observation_id).await?;
-    booking::options_on_connection(&mut connection,observation.observed_user_id,
-        observation.academic_year_id,observation.academic_term_id,week_start_date).await
+    let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+        pool,
+        "supervision.observations.timetable_options",
+    )
+    .await?;
+    let observation = get_observation_with_connection(&mut connection, observation_id).await?;
+    booking::options_on_connection(
+        &mut connection,
+        observation.observed_user_id,
+        observation.academic_year_id,
+        observation.academic_term_id,
+        week_start_date,
+    )
+    .await
 }
 
 pub async fn request_observation(
@@ -222,15 +234,38 @@ pub async fn request_observation(
     validate_observation_context(&mut *tx, &cycle, input.academic_term_id).await?;
     ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
 
-    let selected = booking::resolve(&mut tx,actor_user_id,cycle.academic_year_id,input.academic_term_id,
-        input.observed_date,&input.timetable_block_group_ids,&input.expected_source_digest).await?;
-    periods::ensure_no_own_duplicate(&mut tx,actor_user_id,None,input.observed_date,&selected).await?;
+    let selected = booking::resolve(
+        &mut tx,
+        actor_user_id,
+        cycle.academic_year_id,
+        input.academic_term_id,
+        input.observed_date,
+        &input.timetable_block_group_ids,
+        &input.expected_source_digest,
+    )
+    .await?;
+    periods::ensure_no_own_duplicate(
+        &mut tx,
+        actor_user_id,
+        cycle.id,
+        None,
+        input.observed_date,
+        &selected,
+    )
+    .await?;
     let observation_id:Uuid=DbSession::new(&mut tx).scalar("supervision.observations.request_observation",
         "INSERT INTO supervision_observations(cycle_id,academic_year_id,academic_term_id,observed_user_id,requested_by,template_id)
          VALUES($1,$2,$3,$4,$4,$5) RETURNING id")
         .bind(cycle.id).bind(cycle.academic_year_id).bind(input.academic_term_id).bind(actor_user_id).bind(cycle.template_id)
         .fetch_one().await?;
-    periods::replace(&mut tx,observation_id,cycle.academic_year_id,input.academic_term_id,&selected).await?;
+    periods::replace(
+        &mut tx,
+        observation_id,
+        cycle.academic_year_id,
+        input.academic_term_id,
+        &selected,
+    )
+    .await?;
 
     insert_observation_action(
         &mut tx,
@@ -277,12 +312,40 @@ pub async fn update_requested_observation(
         ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
     }
     ensure_no_submitted_evaluators(&current)?;
-    let selected=booking::resolve(&mut tx,actor_user_id,cycle.academic_year_id,current.academic_term_id,
-        input.observed_date,&input.timetable_block_group_ids,&input.expected_source_digest).await?;
-    periods::ensure_no_own_duplicate(&mut tx,actor_user_id,Some(observation_id),input.observed_date,&selected).await?;
-    periods::replace(&mut tx,observation_id,current.academic_year_id,current.academic_term_id,&selected).await?;
-    let evaluator_ids=current.evaluators.iter().map(|e|e.evaluator_user_id).collect::<Vec<_>>();
-    validate_evaluator_availability_for_observation(&mut tx,observation_id,&evaluator_ids).await?;
+    let selected = booking::resolve(
+        &mut tx,
+        actor_user_id,
+        cycle.academic_year_id,
+        current.academic_term_id,
+        input.observed_date,
+        &input.timetable_block_group_ids,
+        &input.expected_source_digest,
+    )
+    .await?;
+    periods::ensure_no_own_duplicate(
+        &mut tx,
+        actor_user_id,
+        current.cycle_id,
+        Some(observation_id),
+        input.observed_date,
+        &selected,
+    )
+    .await?;
+    periods::replace(
+        &mut tx,
+        observation_id,
+        current.academic_year_id,
+        current.academic_term_id,
+        &selected,
+    )
+    .await?;
+    let evaluator_ids = current
+        .evaluators
+        .iter()
+        .map(|e| e.evaluator_user_id)
+        .collect::<Vec<_>>();
+    validate_evaluator_availability_for_observation(&mut tx, observation_id, &evaluator_ids)
+        .await?;
     DbSession::new(&mut tx).query("supervision.observations.update_requested_observation",
         "UPDATE supervision_observations SET status='requested',requested_at=CASE WHEN status='returned' THEN now() ELSE requested_at END WHERE id=$1")
         .bind(observation_id).execute().await?;
@@ -340,20 +403,54 @@ pub async fn update_observation(
         ));
     }
 
-    if let Some((date,ids,digest))=manager_selection(&input)? {
+    if let Some((date, ids, digest)) = manager_selection(&input)? {
         ensure_no_submitted_evaluators(&current)?;
-        let selected=booking::resolve(&mut tx,current.observed_user_id,current.academic_year_id,current.academic_term_id,
-            date,ids,digest).await?;
-        periods::ensure_no_own_duplicate(&mut tx,current.observed_user_id,Some(observation_id),date,&selected).await?;
-        periods::replace(&mut tx,observation_id,current.academic_year_id,current.academic_term_id,&selected).await?;
-        let evaluators=current.evaluators.iter().map(|e|e.evaluator_user_id).collect::<Vec<_>>();
-        validate_evaluator_availability_for_observation(&mut tx,observation_id,&evaluators).await?;
+        let selected = booking::resolve(
+            &mut tx,
+            current.observed_user_id,
+            current.academic_year_id,
+            current.academic_term_id,
+            date,
+            ids,
+            digest,
+        )
+        .await?;
+        periods::ensure_no_own_duplicate(
+            &mut tx,
+            current.observed_user_id,
+            current.cycle_id,
+            Some(observation_id),
+            date,
+            &selected,
+        )
+        .await?;
+        periods::replace(
+            &mut tx,
+            observation_id,
+            current.academic_year_id,
+            current.academic_term_id,
+            &selected,
+        )
+        .await?;
+        let evaluators = current
+            .evaluators
+            .iter()
+            .map(|e| e.evaluator_user_id)
+            .collect::<Vec<_>>();
+        validate_evaluator_availability_for_observation(&mut tx, observation_id, &evaluators)
+            .await?;
     }
-    if let Some(template_id)=input.template_id {
+    if let Some(template_id) = input.template_id {
         ensure_no_submitted_evaluators(&current)?;
-        DbSession::new(&mut tx).query("supervision.observations.update_template",
-            "UPDATE supervision_observations SET template_id=$2 WHERE id=$1")
-            .bind(observation_id).bind(template_id).execute().await?;
+        DbSession::new(&mut tx)
+            .query(
+                "supervision.observations.update_template",
+                "UPDATE supervision_observations SET template_id=$2 WHERE id=$1",
+            )
+            .bind(observation_id)
+            .bind(template_id)
+            .execute()
+            .await?;
     }
 
     insert_observation_action(
@@ -652,16 +749,21 @@ async fn hydrate_observations(
         load_observation_evaluators(&mut *connection, &observation_ids).await?;
     let mut actions_by_observation =
         load_observation_actions(&mut *connection, &observation_ids).await?;
-    let mut periods_by_observation=periods::load(connection,&observation_ids).await?;
+    let mut periods_by_observation = periods::load(connection, &observation_ids).await?;
     let average_ratings =
         load_observation_average_ratings(&mut *connection, &observation_ids).await?;
 
     rows.into_iter()
         .map(|row| {
             let observation_id = row.id;
-            let periods=periods_by_observation.remove(&observation_id).unwrap_or_default();
-            let observed_at=periods.iter().map(|p|p.observed_at).min()
-                .ok_or_else(||AppError::Conflict("รายการนิเทศไม่มีหลักฐานคาบที่บันทึกไว้".into()))?;
+            let periods = periods_by_observation
+                .remove(&observation_id)
+                .unwrap_or_default();
+            let observed_at = periods
+                .iter()
+                .map(|p| p.observed_at)
+                .min()
+                .ok_or_else(|| AppError::Conflict("รายการนิเทศไม่มีหลักฐานคาบที่บันทึกไว้".into()))?;
             Ok(SupervisionObservation {
                 can_manage: false,
                 can_review: false,
@@ -1004,12 +1106,19 @@ async fn validate_observation_context(
     Ok(())
 }
 
-fn manager_selection(input:&UpdateSupervisionObservationRequest)
-    ->Result<Option<(NaiveDate,&[Uuid],&str)>,AppError> {
-    match (input.observed_date,input.timetable_block_group_ids.as_deref(),input.expected_source_digest.as_deref()) {
-        (None,None,None)=>Ok(None),
-        (Some(date),Some(ids),Some(digest))=>Ok(Some((date,ids,digest))),
-        _=>Err(AppError::ValidationError("ต้องระบุวันที่ คาบสอน และข้อมูลตรวจสอบตารางสอนพร้อมกัน".into())),
+fn manager_selection(
+    input: &UpdateSupervisionObservationRequest,
+) -> Result<Option<(NaiveDate, &[Uuid], &str)>, AppError> {
+    match (
+        input.observed_date,
+        input.timetable_block_group_ids.as_deref(),
+        input.expected_source_digest.as_deref(),
+    ) {
+        (None, None, None) => Ok(None),
+        (Some(date), Some(ids), Some(digest)) => Ok(Some((date, ids, digest))),
+        _ => Err(AppError::ValidationError(
+            "ต้องระบุวันที่ คาบสอน และข้อมูลตรวจสอบตารางสอนพร้อมกัน".into(),
+        )),
     }
 }
 

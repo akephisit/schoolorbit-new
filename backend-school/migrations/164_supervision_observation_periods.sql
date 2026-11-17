@@ -5,7 +5,7 @@ LOCK TABLE supervision_observations, supervision_evaluators,
 
 DO $$ BEGIN
     IF EXISTS(SELECT 1 FROM supervision_observations o WHERE jsonb_typeof(o.lesson_snapshot)<>'object'
-        OR EXISTS(SELECT 1 FROM jsonb_each(o.lesson_snapshot) field WHERE field.key=ANY(ARRAY[
+        OR EXISTS(SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(o.lesson_snapshot)='object' THEN o.lesson_snapshot ELSE '{}'::jsonb END) field WHERE field.key=ANY(ARRAY[
             'source','timetableBlockGroupId','subjectName','classroomLabel','roomLabel','observedAt','periodLabel'])
             AND jsonb_typeof(field.value) NOT IN ('string','null'))) THEN
         RAISE EXCEPTION 'SUPERVISION_PERIOD164_EVIDENCE_UNMAPPABLE' USING ERRCODE='check_violation';
@@ -15,6 +15,10 @@ DO $$ BEGIN
         JOIN academic_timetable_block_groups placed ON placed.id=o.timetable_block_group_id
         WHERE g.learning_offering_id<>placed.learning_offering_id) THEN
         RAISE EXCEPTION 'SUPERVISION_PERIOD164_SOURCE_AMBIGUOUS' USING ERRCODE='check_violation';
+    END IF;
+    IF EXISTS(SELECT 1 FROM supervision_observations WHERE lesson_snapshot->>'observedAt' IS NOT NULL
+        AND lesson_snapshot->>'observedAt' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$') THEN
+        RAISE EXCEPTION 'SUPERVISION_PERIOD164_EVIDENCE_UNMAPPABLE' USING ERRCODE='check_violation';
     END IF;
     PERFORM (lesson_snapshot->>'observedAt')::timestamptz,
         (lesson_snapshot->>'timetableBlockGroupId')::uuid FROM supervision_observations;
@@ -39,7 +43,7 @@ CREATE TABLE supervision_observation_periods (
     manual_room_label varchar(120),
     manual_period_label varchar(120),
     manual_reason text,
-    lesson_snapshot jsonb NOT NULL,
+    lesson_snapshot jsonb NOT NULL CHECK (jsonb_typeof(lesson_snapshot)='object'),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     UNIQUE (observation_id, position),

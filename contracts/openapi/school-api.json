@@ -52056,40 +52056,6 @@
         ],
         "type": "object"
       },
-      "ManualLesson": {
-        "properties": {
-          "classroomLabel": {
-            "type": "string"
-          },
-          "observedAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "periodLabel": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "roomLabel": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "subjectName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "subjectName",
-          "classroomLabel",
-          "observedAt",
-          "periodLabel",
-          "reason"
-        ],
-        "type": "object"
-      },
       "MathNodeAttributes": {
         "additionalProperties": false,
         "properties": {

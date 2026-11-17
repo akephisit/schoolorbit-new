@@ -40,6 +40,7 @@ BEGIN
     END IF;
 END $$;
 -- RESTRICT deliberately refuses unknown external dependencies instead of cascading.
+DO $$ BEGIN
 ALTER TABLE supervision_observations
     DROP COLUMN timetable_block_group_id RESTRICT,
     DROP COLUMN learning_group_id RESTRICT,
@@ -52,3 +53,6 @@ ALTER TABLE supervision_observations
     DROP COLUMN manual_reason RESTRICT,
     DROP COLUMN lesson_snapshot RESTRICT;
 DROP TABLE supervision_period_cutover_receipt RESTRICT;
+EXCEPTION WHEN dependent_objects_still_exist THEN
+    RAISE EXCEPTION 'SUPERVISION_PERIOD165_EXTERNAL_DEPENDENCY' USING ERRCODE='check_violation';
+END $$;

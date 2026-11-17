@@ -83,18 +83,6 @@ pub async fn replace_observation_evaluators(
             "ครูผู้ถูกนิเทศเป็นผู้ประเมินรายการของตนเองไม่ได้".to_string(),
         ));
     }
-    let requested_evaluator_user_ids = input
-        .evaluators
-        .iter()
-        .map(|evaluator| evaluator.evaluator_user_id)
-        .collect::<Vec<_>>();
-    validate_evaluator_availability_for_observation(
-        &mut *tx,
-        observation_id,
-        &requested_evaluator_user_ids,
-    )
-    .await?;
-
     let existing_states = current
         .evaluators
         .iter()
@@ -109,6 +97,14 @@ pub async fn replace_observation_evaluators(
         .map(|state| state.evaluator_user_id)
         .collect::<HashSet<_>>();
     let replacement = normalize_evaluator_replacement(&existing_states, input.evaluators)?;
+    // Submitted evaluators are retained even when omitted from the requested
+    // replacement. Validate the complete accepted assignment set under its locks.
+    let evaluator_user_ids = replacement
+        .iter()
+        .map(|e| e.evaluator_user_id)
+        .collect::<Vec<_>>();
+    validate_evaluator_availability_for_observation(&mut tx, observation_id, &evaluator_user_ids)
+        .await?;
     let insert_rows = replacement
         .into_iter()
         .filter(|evaluator| !submitted_user_ids.contains(&evaluator.evaluator_user_id))
@@ -612,12 +608,17 @@ pub(super) async fn validate_evaluator_availability_for_observation(
     observation_id: Uuid,
     evaluator_user_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    if evaluator_user_ids.is_empty() { return Ok(()); }
+    if evaluator_user_ids.is_empty() {
+        return Ok(());
+    }
     let dates:Vec<chrono::NaiveDate>=DbSession::new(connection).scalar("supervision.evaluations.conflict_dates",
         "SELECT DISTINCT (observed_at AT TIME ZONE 'Asia/Bangkok')::date FROM supervision_observation_periods WHERE observation_id=$1 ORDER BY 1")
         .bind(observation_id).fetch_all().await?;
-    super::periods::lock_evaluator_dates(connection,evaluator_user_ids,dates).await?;
-    let conflict_statuses=evaluator_conflict_status_codes().iter().map(|s|(*s).to_string()).collect::<Vec<_>>();
+    super::periods::lock_evaluator_dates(connection, evaluator_user_ids, dates).await?;
+    let conflict_statuses = evaluator_conflict_status_codes()
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect::<Vec<_>>();
     let conflict=DbSession::new(connection).query_as::<EvaluatorConflictRow>("supervision.evaluations.validate_availability", r#"
         SELECT NULLIF(evaluator.display_name,'') AS evaluator_display_name,
             NULLIF(observed.display_name,'') AS observed_display_name,

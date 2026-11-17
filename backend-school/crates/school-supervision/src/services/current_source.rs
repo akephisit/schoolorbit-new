@@ -10,8 +10,10 @@ pub struct SupervisionDeletionImpact {
     pub source_digest: String,
 }
 
-pub async fn deletion_impact_on_connection(connection:&mut PgConnection,scope:&DeliveryDeletionScope)
-    ->Result<SupervisionDeletionImpact,AppError> {
+pub async fn deletion_impact_on_connection(
+    connection: &mut PgConnection,
+    scope: &DeliveryDeletionScope,
+) -> Result<SupervisionDeletionImpact, AppError> {
     Ok(DbSession::new(connection).query_as("supervision.current_source.deletion_impact",r#"
         SELECT count(DISTINCT o.id) observations,
             encode(sha256(convert_to(COALESCE(jsonb_agg(jsonb_build_array(to_jsonb(o),to_jsonb(p))
@@ -24,8 +26,10 @@ pub async fn deletion_impact_on_connection(connection:&mut PgConnection,scope:&D
 }
 
 /// Returns distinct affected observations, even when several of their periods detach.
-pub async fn detach_deleted_source_in_transaction(tx:&mut Transaction<'_,Postgres>,scope:&DeliveryDeletionScope)
-    ->Result<u64,AppError> {
+pub async fn detach_deleted_source_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    scope: &DeliveryDeletionScope,
+) -> Result<u64, AppError> {
     DbSession::new(&mut **tx).query("supervision.current_source.lock_observations",r#"
         SELECT o.id FROM supervision_observations o WHERE o.academic_year_id=$1 AND o.academic_term_id=$2
           AND EXISTS(SELECT 1 FROM supervision_observation_periods p WHERE p.observation_id=o.id
@@ -33,7 +37,10 @@ pub async fn detach_deleted_source_in_transaction(tx:&mut Transaction<'_,Postgre
         ORDER BY o.id FOR UPDATE
     "#).bind(scope.academic_year_id).bind(scope.academic_term_id).bind(&scope.learning_group_ids)
         .bind(scope.learning_offering_id).bind(scope.delete_offering).execute().await?;
-    let count:i64=DbSession::new(&mut **tx).scalar("supervision.current_source.detach",r#"
+    let count: i64 = DbSession::new(&mut **tx)
+        .scalar(
+            "supervision.current_source.detach",
+            r#"
         WITH affected AS (
             UPDATE supervision_observation_periods p SET timetable_block_group_id=NULL,
                 learning_group_id=NULL,learning_offering_id=NULL,updated_at=clock_timestamp()
@@ -42,16 +49,27 @@ pub async fn detach_deleted_source_in_transaction(tx:&mut Transaction<'_,Postgre
               AND (p.learning_group_id=ANY($3) OR ($5 AND p.learning_offering_id=$4))
             RETURNING p.observation_id
         ) SELECT count(DISTINCT observation_id) FROM affected
-    "#).bind(scope.academic_year_id).bind(scope.academic_term_id).bind(&scope.learning_group_ids)
-        .bind(scope.learning_offering_id).bind(scope.delete_offering).fetch_one().await?;
-    u64::try_from(count).map_err(|_|AppError::InternalServerError("จำนวนรายการนิเทศไม่ถูกต้อง".into()))
+    "#,
+        )
+        .bind(scope.academic_year_id)
+        .bind(scope.academic_term_id)
+        .bind(&scope.learning_group_ids)
+        .bind(scope.learning_offering_id)
+        .bind(scope.delete_offering)
+        .fetch_one()
+        .await?;
+    u64::try_from(count).map_err(|_| AppError::InternalServerError("จำนวนรายการนิเทศไม่ถูกต้อง".into()))
 }
 
 /// Remove placement pointers independently; saved evidence and other periods remain.
 /// The return value retains its established distinct-observation meaning.
-pub async fn detach_timetable_sources_in_transaction(tx:&mut Transaction<'_,Postgres>,ids:&[uuid::Uuid])
-    ->Result<u64,AppError> {
-    if ids.is_empty(){return Ok(0);}
+pub async fn detach_timetable_sources_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    ids: &[uuid::Uuid],
+) -> Result<u64, AppError> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
     DbSession::new(&mut **tx).query("supervision.current_source.lock_exact_observations",
         "SELECT o.id FROM supervision_observations o WHERE EXISTS(SELECT 1 FROM supervision_observation_periods p
          WHERE p.observation_id=o.id AND p.timetable_block_group_id=ANY($1)) ORDER BY o.id FOR UPDATE")
@@ -62,5 +80,5 @@ pub async fn detach_timetable_sources_in_transaction(tx:&mut Transaction<'_,Post
             WHERE timetable_block_group_id=ANY($1) RETURNING observation_id
         ) SELECT count(DISTINCT observation_id) FROM affected
     "#).bind(ids).fetch_one().await?;
-    u64::try_from(count).map_err(|_|AppError::InternalServerError("จำนวนรายการนิเทศไม่ถูกต้อง".into()))
+    u64::try_from(count).map_err(|_| AppError::InternalServerError("จำนวนรายการนิเทศไม่ถูกต้อง".into()))
 }

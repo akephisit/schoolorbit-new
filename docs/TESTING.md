@@ -314,6 +314,31 @@ implementation paths; cross-domain/database fixtures retain application-level ow
 `src/integration_tests`, and shared migration fixtures use `school-test-db`. Keep the full OpenAPI artifact byte-identical when
 moving handlers without changing their contract.
 
+### Supervision period booking and permanent cycle deletion
+
+Run the canonical disposable fixture selections from the repository root:
+
+```bash
+./scripts/test_backend_school.sh supervision -- --test-threads=1
+./scripts/test_backend_school.sh --package school-supervision -- --test-threads=1
+./scripts/test_backend_school.sh --package school-migrations --test current_academic_operations -- --test-threads=1
+./scripts/test_backend_school.sh composed_deletion_tests -- --test-threads=1 timetable_template_service_tests
+```
+
+The supervision suite covers one or more actual consecutive periods on one Bangkok civil
+date and the same exact homeroom UUID, sorted by bell times, including different subjects,
+stale/forged selections, same-cycle duplicate intervals, global evaluator conflicts, atomic
+corrections and submitted evidence. Period reads/reporting and partial source removal retain
+all saved evidence and count one observation. Populated 163→164→165 fixtures verify exact
+legacy timestamps/manual fields/raw unknown JSON, bijective period identities, full graph
+reconciliation, missing/stale receipts, malformed inputs, external dependencies, rollback
+and retry. Deletion fixtures verify complete owned-graph hashes/counts, child-only stale
+previews, malformed cross-observation responses, external cascading dependencies, lifecycle
+and concurrent-write refusal, and preservation of shared resources. These fixtures never
+mutate production. API changes additionally use the canonical generate/check/test commands
+and both default and `api-docs` Rust checks; browser confirmation and route/identity behavior
+remain covered by the owning frontend workflows.
+
 ### Manual year rollover and detail retention
 
 Use the repository's disposable PostgreSQL runner from the repository root. These are recipes,

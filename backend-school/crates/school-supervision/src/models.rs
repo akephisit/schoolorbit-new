@@ -609,18 +609,6 @@ pub struct SupervisionObservationReview {
     pub average_rating: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "api-docs", derive(ToSchema))]
-#[serde(rename_all = "camelCase")]
-pub struct ManualLesson {
-    pub subject_name: String,
-    pub classroom_label: String,
-    pub room_label: Option<String>,
-    pub observed_at: DateTime<Utc>,
-    pub period_label: String,
-    pub reason: String,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]

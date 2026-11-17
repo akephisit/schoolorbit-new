@@ -2220,7 +2220,6 @@ fn build_schema_group_16() -> utoipa::openapi::OpenApi {
         SupervisionReviewEvaluatorResult,
         SupervisionReviewItemSummary,
         SupervisionObservationReview,
-        ManualLesson,
         CreateSupervisionCycleTargetRequest,
         CreateSupervisionCycleRequest,
         UpdateSupervisionCycleRequest,
