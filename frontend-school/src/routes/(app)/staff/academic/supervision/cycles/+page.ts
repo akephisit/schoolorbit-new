@@ -1,3 +1,4 @@
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
 import { listSupervisionCycles } from '#lib/api/supervision.js';
 import { waitForSupervisionAccess } from '#lib/supervision/supervision-access.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
@@ -12,7 +13,9 @@ export const _meta = {
 	}
 };
 
-export const load: PageLoad = ({ fetch, url }) => {
+export const load: PageLoad = ({ fetch, url, depends }) => {
+	depends('school:app-identity');
+	const routeIdentity = waitForAuthenticatedUser().then((user) => (user ? appIdentityKey() : ''));
 	const academicYearId = url.searchParams.get('academicYearId');
 	const academicTermId = url.searchParams.get('academicTermId');
 
@@ -28,6 +31,7 @@ export const load: PageLoad = ({ fetch, url }) => {
 			)
 		: null;
 	return {
+		identity: routeIdentity,
 		title: 'รอบนิเทศ',
 		observations: null,
 		section: 'cycles' as const,

@@ -381,10 +381,22 @@ test('year-only home navigation preloads supervision with the matching default t
 test('supervision year-only deep links select the matching school term while explicit older terms persist', async ({
 	page
 }) => {
+	const reads: URL[] = [];
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		if (url.pathname.startsWith('/api/supervision/')) reads.push(url);
+	});
 	await mockAcademicContextApis(page);
 	await page.goto(`/staff/academic/supervision?academicYearId=${ids.activeYear}&view=calendar`);
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.activeTerm}`));
 	await expect(page).toHaveURL(/view=calendar/);
+	await expect
+		.poll(() => reads.filter((url) => url.pathname === '/api/supervision/observations').length)
+		.toBe(1);
+	for (const url of reads)
+		if (url.pathname.endsWith('/cycles') || url.pathname.endsWith('/observations'))
+			expect(url.searchParams.get('academicTermId')).toBe(ids.activeTerm);
+	expect(reads.some((url) => url.pathname.endsWith('/booking-options'))).toBe(false);
 	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
 	await page.goto(
 		`/staff/academic/supervision?academicYearId=${ids.activeYear}&academicTermId=${ids.readyTerm}`

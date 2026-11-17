@@ -1,5 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import SupervisionCycleDelete from '#lib/components/supervision/SupervisionCycleDelete.svelte';
+	import SupervisionLessonPicker from '#lib/components/supervision/SupervisionLessonPicker.svelte';
+	import type { SupervisionLessonSelection } from '#lib/supervision/booking-range.js';
+	import { savedLessonLabels } from '#lib/supervision/supervision-presentation.js';
 	import {
 		supervisionStatusLabel as statusLabel,
 		observationWorkflow
@@ -10,7 +15,6 @@
 	import type { SupervisionWorkspaceRouteData } from '#lib/supervision/workspace-route-data.js';
 	import {
 		BarChart3,
-		BookOpenCheck,
 		Check,
 		ChevronsUpDown,
 		ArrowDown,
@@ -18,7 +22,6 @@
 		Eye,
 		FileSignature,
 		Plus,
-		Send,
 		Settings2,
 		Trash2,
 		UserCheck
@@ -27,7 +30,6 @@
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
 	import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
-	import { currentLocalDate, getMyTimetable, type TimetableBlock } from '#lib/api/timetable.js';
 	import {
 		acknowledgeSupervisionObservation,
 		approveSupervisionObservationRequest,
@@ -70,17 +72,15 @@
 	} from '#lib/utils/supervision-rubric.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import { can } from '#lib/stores/permissions.js';
+	import { can, userPermissions } from '#lib/stores/permissions.js';
 	import { cn } from '#lib/utils.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Command from '#lib/components/ui/command/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
-	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -99,22 +99,6 @@
 	};
 
 	type ResponseDraft = RubricResponseDraft;
-	type TimetableTeachingBlockGroup = {
-		id: string;
-		academicTermId: string;
-		dayOfWeek: string;
-		bellSchedulePeriodId: string;
-		periodName: string;
-		startTime: string;
-		endTime: string;
-		offeringCode: string | null;
-		offeringName: string | null;
-		title: string | null;
-		learningGroupName: string;
-		homeroomName: string;
-		roomName: string | null;
-		roomId: string | null;
-	};
 	type TemplateFormState = {
 		title: string;
 		description: string;
@@ -124,22 +108,6 @@
 		sections: RubricFormSection[];
 	};
 
-	const timetableGridDays = [
-		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ' },
-		{ value: 'TUE', label: 'อังคาร', shortLabel: 'อ' },
-		{ value: 'WED', label: 'พุธ', shortLabel: 'พ' },
-		{ value: 'THU', label: 'พฤหัสบดี', shortLabel: 'พฤ' },
-		{ value: 'FRI', label: 'ศุกร์', shortLabel: 'ศ' },
-		{ value: 'SAT', label: 'เสาร์', shortLabel: 'ส' },
-		{ value: 'SUN', label: 'อาทิตย์', shortLabel: 'อา' }
-	];
-
-	type TimetablePeriodRow = {
-		key: string;
-		label: string;
-		timeLabel: string;
-		sort: number;
-	};
 	type ObservationDetailItem = {
 		label: string;
 		value: string;
@@ -271,12 +239,10 @@
 	let observationsReadable = $state(true);
 	let observationsError = $state('');
 	let bookingOpen = $state(false);
-	let timetableError = $state('');
 	let evaluationTemplateLoading = $state(false);
 	let evaluationTemplateError = $state('');
 	let progressError = $state('');
 	let requestEvaluatorErrors = $state<Record<string, string>>({});
-	let loadingTimetable = $state(false);
 	let saving = $state(false);
 	let savingAction = $state<string | null>(null);
 	let savingTemplate = $state(false);
@@ -285,24 +251,9 @@
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
 	let observations = $state<SupervisionObservation[]>([]);
-	let timetableBlockGroups = $state<TimetableTeachingBlockGroup[]>([]);
 	let requestEvaluatorAvailability = $state<Record<string, SupervisionEvaluatorAvailability[]>>({});
 	let requestEvaluatorAvailabilityLoading = $state<Record<string, boolean>>({});
 	let selectedCycleId = $state('');
-	let selectedTimetableBlockGroupId = $state('');
-	let selectedBookingDate = $state('');
-	let bookingWeekStartDate = $state('');
-	let bookingWeekCycleId = $state('');
-	let manualMode = $state(false);
-	let manualLessonDate = $state('');
-	let manualLessonTime = $state('08:30');
-	let manualLesson = $state({
-		subjectName: '',
-		classroomLabel: '',
-		roomLabel: '',
-		periodLabel: '',
-		reason: ''
-	});
 	let requestEvaluatorIds = $state<Record<string, string[]>>({});
 	let requestReturnComments = $state<Record<string, string>>({});
 	let evaluatorPickerOpenByRequest = $state<Record<string, boolean>>({});
@@ -320,7 +271,6 @@
 	let previewTemplateId = $state('');
 	let editingTemplateId = $state('');
 	let templateWorkflowRevision = 0;
-	let loadedTimetableCycleId = $state('');
 	let cycleForm = $state<CycleFormState>({
 		title: '',
 		description: '',
@@ -328,7 +278,6 @@
 		status: 'open'
 	});
 	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
-	const timetableRequest = new LatestRequest();
 	const evaluatorAvailabilityRequests: Record<string, LatestRequest> = {};
 	const observationRequest = new LatestRequest();
 	const evaluationTemplateRequest = new LatestRequest();
@@ -338,6 +287,11 @@
 	const templateChoices = $derived(routeData ? templateSummaries : templates);
 
 	const currentUserId = $derived($authStore.user?.id ?? '');
+	const routeIdentity = $derived.by(() => {
+		void $authStore;
+		void $userPermissions;
+		return appIdentityKey();
+	});
 	const sectionConfig = $derived(sectionConfigByKey[section]);
 	const mutationBusy = $derived(
 		saving || savingAction !== null || savingTemplate || savingEvaluation !== null
@@ -385,21 +339,6 @@
 	);
 	const requestedObservations = $derived(
 		observations.filter((observation) => observation.status === 'requested')
-	);
-	const selectedCycleDetail = $derived(
-		cycles.find((cycle) => cycle.id === selectedCycleId) ?? null
-	);
-	const timetableSchoolDays = $derived(
-		timetableGridDays.filter(
-			(day, index) =>
-				index < 5 || timetableBlockGroups.some((entry) => entry.dayOfWeek === day.value)
-		)
-	);
-	const bookingWeekDays = $derived(
-		timetableSchoolDays.map((day) => ({ ...day, date: dateForTimetableDay(day.value) }))
-	);
-	const selectedTimetableBlockGroup = $derived(
-		timetableBlockGroups.find((entry) => entry.id === selectedTimetableBlockGroupId) ?? null
 	);
 	const myObservations = $derived(
 		observations.filter((observation) => observation.observedUserId === currentUserId)
@@ -461,16 +400,21 @@
 	);
 
 	let managementRevision = 0;
+	let bookingSubmissionRevision = 0;
+	$effect(() => () => {
+		bookingSubmissionRevision += 1;
+	});
 
 	function currentManagementContext() {
-		return `${section}:${academicYearId ?? ''}:${academicTermId ?? ''}`;
+		return `${appIdentityKey()}:${section}:${academicYearId ?? ''}:${academicTermId ?? ''}`;
 	}
 
 	$effect.pre(() => {
 		const source = routeData;
+		const identity = routeIdentity;
+		const key = `${identity}:${section}:${academicYearId ?? ''}:${academicTermId ?? ''}`;
 		if (!source) return;
 		untrack(() => {
-			const key = currentManagementContext();
 			if (key !== managementContext) {
 				managementContext = key;
 				managementRevision += 1;
@@ -483,10 +427,6 @@
 				observations = [];
 				observationsLoaded = false;
 				bookingOpen = false;
-				timetableBlockGroups = [];
-				loadedTimetableCycleId = '';
-				timetableError = '';
-				loadingTimetable = false;
 				savingEvaluation = null;
 				clearEvaluationDraft();
 				requestEvaluatorAvailability = {};
@@ -520,8 +460,13 @@
 			teacherStatusError = '';
 			const observationRead = observationRequest.begin();
 			if (source.observations)
-				void source.observations.then((result) => {
-					if (!observationRequest.isCurrent(observationRead.revision)) return;
+				void Promise.all([source.identity, source.observations]).then(([owner, result]) => {
+					if (
+						owner !== appIdentityKey() ||
+						key !== currentManagementContext() ||
+						!observationRequest.isCurrent(observationRead.revision)
+					)
+						return;
 					observationsLoading = false;
 					if (!result.ok) {
 						observationsError = result.error;
@@ -535,8 +480,13 @@
 			const templateRead = managementTemplatesRequest.begin();
 			const statusRead = teacherStatusRequest.begin();
 			if (source.cycles)
-				void source.cycles.then((result) => {
-					if (!managementCyclesRequest.isCurrent(cycleRead.revision)) return;
+				void Promise.all([source.identity, source.cycles]).then(([owner, result]) => {
+					if (
+						owner !== appIdentityKey() ||
+						key !== currentManagementContext() ||
+						!managementCyclesRequest.isCurrent(cycleRead.revision)
+					)
+						return;
 					cyclesLoading = false;
 					if (!result.ok) {
 						cyclesError = result.error;
@@ -559,8 +509,13 @@
 					}
 				});
 			if (source.templates)
-				void source.templates.then((result) => {
-					if (!managementTemplatesRequest.isCurrent(templateRead.revision)) return;
+				void Promise.all([source.identity, source.templates]).then(([owner, result]) => {
+					if (
+						owner !== appIdentityKey() ||
+						key !== currentManagementContext() ||
+						!managementTemplatesRequest.isCurrent(templateRead.revision)
+					)
+						return;
 					templatesLoading = false;
 					if (!result.ok) {
 						templatesError = result.error;
@@ -570,8 +525,13 @@
 					templatesLoaded = true;
 				});
 			if (source.teacherStatus)
-				void source.teacherStatus.then((result) => {
-					if (!teacherStatusRequest.isCurrent(statusRead.revision)) return;
+				void Promise.all([source.identity, source.teacherStatus]).then(([owner, result]) => {
+					if (
+						owner !== appIdentityKey() ||
+						key !== currentManagementContext() ||
+						!teacherStatusRequest.isCurrent(statusRead.revision)
+					)
+						return;
 					loadingTeacherStatus = false;
 					if (!result.ok) {
 						teacherStatusError = result.error;
@@ -589,7 +549,6 @@
 			teacherStatusRequest.abort();
 			templateDetailRequest.abort();
 			observationRequest.abort();
-			timetableRequest.abort();
 			evaluationTemplateRequest.abort();
 			for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
 			progressRequest.abort();
@@ -714,39 +673,6 @@
 		}
 	}
 
-	$effect(() => {
-		if (section !== 'mine' || !bookingOpen || manualMode) return;
-		if (!selectedCycleId) return;
-		void refreshTimetableForCycle(selectedCycleId);
-	});
-
-	$effect(() => {
-		if (section !== 'mine') return;
-		if (!currentBookingCycle) return;
-		if (selectedCycleId !== currentBookingCycle.id) {
-			selectedCycleId = currentBookingCycle.id;
-		}
-		if (bookingWeekCycleId !== currentBookingCycle.id) {
-			bookingWeekCycleId = currentBookingCycle.id;
-			bookingWeekStartDate = defaultBookingWeekStartDate();
-			selectedTimetableBlockGroupId = '';
-			selectedBookingDate = '';
-		}
-	});
-
-	$effect(() => {
-		if (section !== 'mine') return;
-		if (!selectedTimetableBlockGroupId) return;
-		if (
-			!timetableBlockGroupsForSelectedCycle().some(
-				(entry) => entry.id === selectedTimetableBlockGroupId
-			)
-		) {
-			selectedTimetableBlockGroupId = '';
-			selectedBookingDate = '';
-		}
-	});
-
 	function formatDate(value?: string | null): string {
 		if (!value) return '-';
 		return new Intl.DateTimeFormat('th-TH', {
@@ -823,270 +749,12 @@
 		}
 	}
 
-	function toLocalDateInputValue(date: Date): string {
-		const year = date.getFullYear();
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		const day = String(date.getDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
-	}
-
-	function parseLocalDate(date: string): Date {
-		const [year = '1970', month = '1', day = '1'] = date.split('-');
-		return new Date(Number(year), Number(month) - 1, Number(day));
-	}
-
-	function addDays(date: Date, days: number): Date {
-		return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
-	}
-
-	function startOfWeek(date: Date): Date {
-		const mondayOffset = (date.getDay() + 6) % 7;
-		return addDays(date, -mondayOffset);
-	}
-
-	function addWeeks(date: string, weeks: number): string {
-		return toLocalDateInputValue(addDays(parseLocalDate(date), weeks * 7));
-	}
-
-	function dateForTimetableDay(day: string): string {
-		const offsets: Record<string, number> = {
-			MON: 0,
-			TUE: 1,
-			WED: 2,
-			THU: 3,
-			FRI: 4,
-			SAT: 5,
-			SUN: 6
-		};
-		const weekStart = bookingWeekStartDate || toLocalDateInputValue(startOfWeek(new Date()));
-		return toLocalDateInputValue(addDays(parseLocalDate(weekStart), offsets[day] ?? 0));
-	}
-
-	function formatShortDate(date: string): string {
-		return new Intl.DateTimeFormat('th-TH', {
-			day: 'numeric',
-			month: 'short'
-		}).format(parseLocalDate(date));
-	}
-
-	function bookingWeekLabel(): string {
-		if (!bookingWeekStartDate) return 'สัปดาห์ปัจจุบัน';
-		const start = parseLocalDate(bookingWeekStartDate);
-		const end = addDays(start, 6);
-		return `${formatShortDate(toLocalDateInputValue(start))} - ${formatShortDate(
-			toLocalDateInputValue(end)
-		)}`;
-	}
-
 	function cycleAcceptsBookings(cycle: SupervisionCycle): boolean {
 		return cycle.status === 'open';
 	}
 
-	function defaultBookingWeekStartDate(): string {
-		return toLocalDateInputValue(startOfWeek(new Date()));
-	}
-
-	function goToPreviousBookingWeek() {
-		if (!bookingWeekStartDate) return;
-		bookingWeekStartDate = addWeeks(bookingWeekStartDate, -1);
-		selectedTimetableBlockGroupId = '';
-		selectedBookingDate = '';
-	}
-
-	function goToNextBookingWeek() {
-		if (!bookingWeekStartDate) return;
-		bookingWeekStartDate = addWeeks(bookingWeekStartDate, 1);
-		selectedTimetableBlockGroupId = '';
-		selectedBookingDate = '';
-	}
-
-	function resetToCurrentBookingWeek() {
-		if (!currentBookingCycle) return;
-		bookingWeekStartDate = defaultBookingWeekStartDate();
-		selectedTimetableBlockGroupId = '';
-		selectedBookingDate = '';
-	}
-
-	function timetableLabel(entry: TimetableTeachingBlockGroup): string {
-		const title = entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
-		const period = entry.periodName ? ` ${entry.periodName}` : '';
-		const roomName = entry.roomName?.trim() || (entry.roomId ? 'ไม่พบชื่อห้อง' : null);
-		const room = roomName ? ` ${roomName}` : '';
-		const classroom = entry.homeroomName ? ` ${entry.homeroomName}` : '';
-		return `${entry.dayOfWeek}${period} - ${title}${classroom}${room}`;
-	}
-
-	function timetableObservedAt(entry: TimetableTeachingBlockGroup, bookingDate: string): string {
-		const startTime = entry.startTime?.slice(0, 5) || '08:00';
-		return combineLocalDateTime(bookingDate, startTime);
-	}
-
-	function observationDate(observation: SupervisionObservation): string | null {
-		const observedAt =
-			observation.observedAt ??
-			observation.lessonSnapshot.observedAt ??
-			observation.manualLesson?.observedAt;
-		return observedAt ? toLocalDateInputValue(new Date(observedAt)) : null;
-	}
-
-	function observationForTimetableCell(
-		entry: TimetableTeachingBlockGroup,
-		bookingDate: string
-	): SupervisionObservation | null {
-		const matches = observations
-			.filter(
-				(observation) =>
-					observation.cycleId === currentBookingCycle?.id &&
-					observation.observedUserId === currentUserId &&
-					observation.timetableBlockGroupId === entry.id &&
-					observation.status !== 'cancelled' &&
-					observationDate(observation) === bookingDate
-			)
-			.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
-		return matches[0] ?? null;
-	}
-
-	function timetableBlockGroupTitle(entry: TimetableTeachingBlockGroup): string {
-		return entry.offeringName || entry.title || entry.offeringCode || 'คาบสอน';
-	}
-
-	function timetablePeriodKey(entry: TimetableTeachingBlockGroup): string {
-		return (
-			entry.bellSchedulePeriodId ||
-			`${entry.startTime ?? ''}-${entry.endTime ?? ''}-${entry.periodName ?? ''}`
-		);
-	}
-
-	function timetablePeriodLabel(entry: TimetableTeachingBlockGroup): string {
-		return entry.periodName || entry.title || 'ไม่ระบุคาบ';
-	}
-
-	function timetableTimeLabel(entry: TimetableTeachingBlockGroup): string {
-		if (!entry.startTime && !entry.endTime) return '';
-		return `${entry.startTime?.slice(0, 5) ?? ''}-${entry.endTime?.slice(0, 5) ?? ''}`;
-	}
-
-	function timetablePeriodSort(entry: TimetableTeachingBlockGroup): number {
-		if (entry.startTime) {
-			const [hour = '0', minute = '0'] = entry.startTime.split(':');
-			return Number(hour) * 60 + Number(minute);
-		}
-		return 9999;
-	}
-
-	function timetableBlockGroupsForSelectedCycle(): TimetableTeachingBlockGroup[] {
-		const termId = selectedCycleDetail?.academicTermId ?? academicTermId;
-		return termId ? timetableBlockGroups.filter((entry) => entry.academicTermId === termId) : [];
-	}
-
-	function timetablePeriodRows(): TimetablePeriodRow[] {
-		const rows: TimetablePeriodRow[] = [];
-		for (const entry of timetableBlockGroupsForSelectedCycle()) {
-			const key = timetablePeriodKey(entry);
-			if (!rows.some((row) => row.key === key)) {
-				rows.push({
-					key,
-					label: timetablePeriodLabel(entry),
-					timeLabel: timetableTimeLabel(entry),
-					sort: timetablePeriodSort(entry)
-				});
-			}
-		}
-		return rows.sort(
-			(left, right) => left.sort - right.sort || left.label.localeCompare(right.label)
-		);
-	}
-
-	function timetableBlockGroupFor(
-		day: string,
-		row: TimetablePeriodRow
-	): TimetableTeachingBlockGroup | null {
-		return (
-			timetableBlockGroupsForSelectedCycle().find(
-				(entry) => entry.dayOfWeek === day && timetablePeriodKey(entry) === row.key
-			) ?? null
-		);
-	}
-
-	function selectTimetableBlockGroup(entry: TimetableTeachingBlockGroup, bookingDate: string) {
-		if (!canRequest) return;
-		const existingObservation = observationForTimetableCell(entry, bookingDate);
-		if (existingObservation && existingObservation.status !== 'returned') return;
-		selectedTimetableBlockGroupId = entry.id;
-		selectedBookingDate = bookingDate;
-	}
-
-	function teachingBlockGroupsFromBlocks(
-		blocks: TimetableBlock[],
-		teacherId: string
-	): TimetableTeachingBlockGroup[] {
-		return blocks.flatMap((block) =>
-			block.groups
-				.filter(
-					(group) =>
-						!teacherId || group.instructors.some((instructor) => instructor.teacherId === teacherId)
-				)
-				.map((group) => ({
-					id: group.id,
-					academicTermId: block.academicTermId,
-					dayOfWeek: block.dayOfWeek,
-					bellSchedulePeriodId: block.bellSchedulePeriodId,
-					periodName: block.periodName,
-					startTime: block.startTime,
-					endTime: block.endTime,
-					offeringCode: block.offeringCode,
-					offeringName: block.offeringName,
-					title: block.title,
-					learningGroupName: group.name,
-					homeroomName: group.name,
-					roomName: group.roomName,
-					roomId: group.roomId
-				}))
-		);
-	}
-
-	async function refreshTimetableForCycle(cycleId: string) {
-		if (!cycleId || !canRequest) {
-			timetableRequest.abort();
-			return;
-		}
-		const cycle = cycles.find((item) => item.id === cycleId);
-		const termId = cycle?.academicTermId ?? academicTermId;
-		const contextKey = `${cycleId}:${termId ?? ''}`;
-		if (loadedTimetableCycleId === contextKey) return;
-		const { revision, signal } = timetableRequest.begin();
-		if (!termId) {
-			timetableBlockGroups = [];
-			loadedTimetableCycleId = contextKey;
-			loadingTimetable = false;
-			return;
-		}
-		timetableError = '';
-		loadingTimetable = true;
-		try {
-			const blocks = await getMyTimetable(
-				{
-					academicTermId: termId,
-					date: currentLocalDate()
-				},
-				{ signal }
-			);
-			if (!timetableRequest.isCurrent(revision)) return;
-			timetableBlockGroups = teachingBlockGroupsFromBlocks(blocks, currentUserId);
-			loadedTimetableCycleId = contextKey;
-		} catch (error) {
-			if (isAbortError(error)) return;
-			if (timetableRequest.isCurrent(revision))
-				timetableError = error instanceof Error ? error.message : 'ไม่สามารถโหลดตารางสอนได้';
-		} finally {
-			if (timetableRequest.isCurrent(revision)) loadingTimetable = false;
-		}
-	}
-
 	function observationLessonTitle(observation: SupervisionObservation): string {
-		return (
-			observation.lessonSnapshot.subjectName ?? observation.manualLesson?.subjectName ?? 'คาบนิเทศ'
-		);
+		return savedLessonLabels(observation).subject;
 	}
 
 	function observationDetailHref(item: SupervisionObservation): string {
@@ -1098,31 +766,16 @@
 	}
 
 	function observationSubjectLabel(observation: SupervisionObservation): string {
-		return (
-			observation.lessonSnapshot.subjectName ??
-			observation.manualLesson?.subjectName ??
-			'ไม่ระบุวิชา'
-		);
+		return savedLessonLabels(observation).subject;
 	}
-
 	function observationClassroomLabel(observation: SupervisionObservation): string {
-		return (
-			observation.lessonSnapshot.classroomLabel ??
-			observation.manualLesson?.classroomLabel ??
-			'ไม่ระบุชั้นเรียน'
-		);
+		return savedLessonLabels(observation).homeroom;
 	}
-
 	function observationPeriodLabel(observation: SupervisionObservation): string {
-		return (
-			observation.lessonSnapshot.periodLabel ??
-			observation.manualLesson?.periodLabel ??
-			'ไม่ระบุคาบ'
-		);
+		return savedLessonLabels(observation).period;
 	}
-
 	function observationRoomLabel(observation: SupervisionObservation): string {
-		return observation.lessonSnapshot.roomLabel ?? observation.manualLesson?.roomLabel ?? '-';
+		return savedLessonLabels(observation).room;
 	}
 
 	function observationEvaluatorNames(observation: SupervisionObservation): string {
@@ -1145,10 +798,6 @@
 			{ label: 'ส่งคำขอ', value: formatDate(observation.requestedAt) },
 			{ label: 'อนุมัติ', value: formatDate(observation.approvedAt) }
 		];
-	}
-
-	function combineLocalDateTime(date: string, time: string): string {
-		return new Date(`${date}T${time || '00:00'}`).toISOString();
 	}
 
 	function sectionRoute(target: SupervisionWorkspaceSection): string {
@@ -1181,6 +830,7 @@
 	async function retryObservations() {
 		if (!academicYearId || !canReadObservations) return;
 		const { revision, signal } = observationRequest.begin();
+		const owner = currentManagementContext();
 		observationsLoading = true;
 		observationsError = '';
 		try {
@@ -1189,15 +839,20 @@
 				{ signal }
 			);
 
-			if (!observationRequest.isCurrent(revision)) return;
+			if (owner !== currentManagementContext() || !observationRequest.isCurrent(revision)) return;
 			observations = items;
 			observationsReadable = true;
 			observationsLoaded = true;
 		} catch (error) {
-			if (!isAbortError(error) && observationRequest.isCurrent(revision))
+			if (
+				!isAbortError(error) &&
+				owner === currentManagementContext() &&
+				observationRequest.isCurrent(revision)
+			)
 				observationsError = error instanceof Error ? error.message : 'โหลดรายการนิเทศไม่สำเร็จ';
 		} finally {
-			if (observationRequest.isCurrent(revision)) observationsLoading = false;
+			if (owner === currentManagementContext() && observationRequest.isCurrent(revision))
+				observationsLoading = false;
 		}
 	}
 	function replaceCycle(cycle: SupervisionCycle) {
@@ -1273,66 +928,25 @@
 		return response.data;
 	}
 
-	async function createBookingRequest() {
-		if (!canRequest) return;
-		if (!currentBookingCycle) {
-			toast.error('ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้');
-			return;
-		}
-		const bookingTermId = currentBookingCycle.academicTermId ?? academicTermId;
-		if (!bookingTermId) {
-			toast.error('กรุณาเลือกภาคเรียนบนแถบด้านบนก่อนจองคาบนิเทศ');
-			return;
-		}
-
-		if (!manualMode && (!selectedTimetableBlockGroupId || !selectedBookingDate)) {
-			toast.error('เลือกคาบจากตารางสอนก่อน');
-			return;
-		}
-
-		if (
-			manualMode &&
-			(!manualLesson.subjectName ||
-				!manualLesson.classroomLabel ||
-				!manualLessonDate ||
-				!manualLessonTime)
-		) {
-			toast.error('กรอกข้อมูลคาบแบบกำหนดเองให้ครบ');
-			return;
-		}
-
-		savingAction = 'request-booking';
+	async function createBookingRequest(selection: SupervisionLessonSelection) {
+		if (!canRequest || !currentBookingCycle || !academicTermId)
+			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
 		const sourceRevision = managementRevision;
-		try {
-			const response = await requestSupervisionObservation({
-				cycleId: currentBookingCycle.id,
-				academicTermId: bookingTermId,
-				timetableBlockGroupId: manualMode ? null : selectedTimetableBlockGroupId,
-				observedAt:
-					manualMode || !selectedTimetableBlockGroup
-						? null
-						: timetableObservedAt(selectedTimetableBlockGroup, selectedBookingDate),
-				manualLesson: manualMode
-					? {
-							subjectName: manualLesson.subjectName,
-							classroomLabel: manualLesson.classroomLabel,
-							roomLabel: manualLesson.roomLabel || null,
-							observedAt: combineLocalDateTime(manualLessonDate, manualLessonTime),
-							periodLabel: manualLesson.periodLabel,
-							reason: manualLesson.reason
-						}
-					: null
-			});
-			if (sourceRevision !== managementRevision) return;
-			const observation = requireMutationData(response, 'ส่งคำขอไม่สำเร็จ');
-			replaceObservation(observation);
-			toast.success('ส่งคำขอจองนิเทศแล้ว');
-		} catch (error) {
-			if (sourceRevision !== managementRevision) return;
-			toast.error(error instanceof Error ? error.message : 'ส่งคำขอไม่สำเร็จ');
-		} finally {
-			if (sourceRevision === managementRevision) savingAction = null;
-		}
+		const sourceIdentity = appIdentityKey();
+		const submissionRevision = bookingSubmissionRevision;
+		const response = await requestSupervisionObservation({
+			cycleId: currentBookingCycle.id,
+			academicTermId,
+			...selection
+		});
+		if (
+			submissionRevision !== bookingSubmissionRevision ||
+			sourceRevision !== managementRevision ||
+			sourceIdentity !== appIdentityKey() ||
+			!canRequest
+		)
+			return;
+		replaceObservation(requireMutationData(response, 'ส่งคำขอไม่สำเร็จ'));
 	}
 
 	function requestCycleLabel(observation: SupervisionObservation): string {
@@ -2149,6 +1763,11 @@
 
 <PageShell title={sectionConfig.title} description={sectionConfig.description}>
 	{#snippet actions()}
+		{#if section === 'mine' && canRequest && !bookingOpen}
+			<Button size="sm" onclick={() => (bookingOpen = true)}
+				><Plus class="size-4" />เปิดจองคาบนิเทศ</Button
+			>
+		{/if}
 		{#if canManageSchool && section === 'cycles'}
 			<Button size="sm" onclick={openCreateCycleDialog}>
 				<Plus class="mr-2 h-4 w-4" />
@@ -2163,53 +1782,70 @@
 		{/if}
 	{/snippet}
 
-	<div class="flex flex-wrap gap-2">
+	<nav aria-label="เมนูนิเทศการสอน" class="flex gap-1 overflow-x-auto border-b pb-2">
 		{#each sectionLinks as item (item.key)}
 			<Button
 				href={sectionRoute(item.key)}
 				data-sveltekit-preload-data={item.key !== 'overview' ? false : 'tap'}
-				variant={section === item.key ? 'default' : 'outline'}
+				variant={section === item.key ? 'secondary' : 'ghost'}
+				aria-current={section === item.key ? 'page' : undefined}
+				class="shrink-0"
 				size="sm"
 			>
 				{item.label}
 			</Button>
 		{/each}
-	</div>
+	</nav>
 
-	<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-		<div class="rounded-md border bg-background px-3 py-2 text-center">
-			<p class="text-lg font-semibold">
-				{!cyclesLoaded ||
-				(section === 'approvals' && !canReadSchoolReport) ||
-				(section === 'evaluate' && !canReadObservations)
-					? '—'
-					: cycles.length}
-			</p>
-			<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
+	{#if section === 'mine'}
+		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="supervision-personal-status">
+			{#each [{ label: 'รออนุมัติคำขอ', statuses: ['requested'] }, { label: 'ต้องแก้ไขและส่งใหม่', statuses: ['returned'] }, { label: 'รอฉันรับทราบ', statuses: ['published'] }, { label: 'เสร็จสิ้น', statuses: ['completed', 'acknowledged'] }] as metric (metric.label)}
+				<div class="rounded-xl border bg-background p-4">
+					<p class="text-2xl font-semibold">
+						{observationsLoaded && observationsReadable
+							? myObservations.filter((item) => metric.statuses.includes(item.status)).length
+							: '—'}
+					</p>
+					<p class="mt-1 text-xs text-muted-foreground">{metric.label}</p>
+				</div>
+			{/each}
 		</div>
-		<div class="rounded-md border bg-background px-3 py-2 text-center">
-			<p class="text-lg font-semibold">
-				{shouldLoadObservations() && observationsLoaded && observationsReadable
-					? requestedObservations.length
-					: '—'}
-			</p>
-			<p class="text-xs text-muted-foreground">คำขอรออนุมัติ</p>
+	{:else}
+		<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+			<div class="rounded-md border bg-background px-3 py-2 text-center">
+				<p class="text-lg font-semibold">
+					{!cyclesLoaded ||
+					(section === 'approvals' && !canReadSchoolReport) ||
+					(section === 'evaluate' && !canReadObservations)
+						? '—'
+						: cycles.length}
+				</p>
+				<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
+			</div>
+			<div class="rounded-md border bg-background px-3 py-2 text-center">
+				<p class="text-lg font-semibold">
+					{shouldLoadObservations() && observationsLoaded && observationsReadable
+						? requestedObservations.length
+						: '—'}
+				</p>
+				<p class="text-xs text-muted-foreground">คำขอรออนุมัติ</p>
+			</div>
+			<div class="rounded-md border bg-background px-3 py-2 text-center">
+				<p class="text-lg font-semibold">
+					{shouldLoadObservations() && observationsLoaded && observationsReadable
+						? activeAssignedObservations.length
+						: '—'}
+				</p>
+				<p class="text-xs text-muted-foreground">รอประเมิน</p>
+			</div>
+			<div class="rounded-md border bg-background px-3 py-2 text-center">
+				<p class="text-lg font-semibold">
+					{templatesLoaded && canReadObservations ? templateSummaries.length : '—'}
+				</p>
+				<p class="text-xs text-muted-foreground">แบบประเมิน</p>
+			</div>
 		</div>
-		<div class="rounded-md border bg-background px-3 py-2 text-center">
-			<p class="text-lg font-semibold">
-				{shouldLoadObservations() && observationsLoaded && observationsReadable
-					? activeAssignedObservations.length
-					: '—'}
-			</p>
-			<p class="text-xs text-muted-foreground">รอประเมิน</p>
-		</div>
-		<div class="rounded-md border bg-background px-3 py-2 text-center">
-			<p class="text-lg font-semibold">
-				{templatesLoaded && canReadObservations ? templateSummaries.length : '—'}
-			</p>
-			<p class="text-xs text-muted-foreground">แบบประเมิน</p>
-		</div>
-	</div>
+	{/if}
 
 	{#if ['mine', 'requests', 'evaluate', 'approvals'].includes(section)}
 		<div class="relative space-y-2" data-testid="supervision-references">
@@ -2229,302 +1865,56 @@
 	{/if}
 	{#if section === 'mine'}
 		<div class="space-y-4">
-			<Card.Root>
-				<Card.Header>
-					<Card.Title class="flex items-center gap-2">
-						<BookOpenCheck class="h-5 w-5" />
-						จองคาบนิเทศของฉัน
-					</Card.Title>
-					<Card.Description>เลือกคาบสอนจริงจากตาราง หรือใช้คาบกำหนดเองเมื่อจำเป็น</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-4">
-					{#if !canRequest}
-						<PageState
-							variant="permission"
-							title="ยังไม่มีสิทธิ์จองคาบนิเทศ"
-							description="ต้องมีสิทธิ์จองคาบนิเทศของตนเองก่อนจึงจะส่งคำขอได้"
-						/>
-					{:else if !bookingOpen}
-						<Button onclick={() => (bookingOpen = true)}>เปิดจองคาบนิเทศ</Button>
-					{:else}
-						<Button
-							variant="outline"
-							onclick={() => {
-								bookingOpen = false;
-								timetableRequest.abort();
-								loadingTimetable = false;
-							}}>ปิดการจอง</Button
-						>
-						{@render managementFeedback(
-							cyclesLoaded,
-							cyclesLoading,
-							cyclesError,
-							retryManagementCycles
-						)}
-						{#if cyclesLoaded}
-							<div class="grid gap-4 lg:grid-cols-[1fr_auto]">
-								<div class="rounded-md border bg-muted/20 p-3">
-									<Label>รอบนิเทศปัจจุบัน</Label>
-									{#if currentBookingCycle}
-										<div class="mt-1 flex flex-wrap items-center gap-2">
-											<p class="font-medium">{cycleLabel(currentBookingCycle)}</p>
-											<Badge variant="secondary">{statusLabel(currentBookingCycle.status)}</Badge>
-										</div>
-										<p class="mt-1 text-xs text-muted-foreground">
-											เปิดรับคำขอจนกว่าผู้ดูแลจะเปลี่ยนสถานะรอบนิเทศ
-										</p>
-									{:else}
-										<p class="mt-1 text-sm text-muted-foreground">
-											ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้
-										</p>
-									{/if}
-								</div>
-								<div class="space-y-2">
-									<Label>รูปแบบคาบ</Label>
-									<div class="flex gap-2">
-										<Button
-											type="button"
-											variant={manualMode ? 'outline' : 'default'}
-											size="sm"
-											onclick={() => (manualMode = false)}
-										>
-											จากตารางสอน
-										</Button>
-										<Button
-											type="button"
-											variant={manualMode ? 'default' : 'outline'}
-											size="sm"
-											onclick={() => (manualMode = true)}
-										>
-											กำหนดเอง
-										</Button>
-									</div>
-								</div>
-							</div>
-
-							{#if !manualMode}
-								<div class="space-y-2">
-									<div class="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-										<div>
-											<Label>คาบจากตารางสอน</Label>
-											{#if currentBookingCycle}
-												<p class="text-xs text-muted-foreground">
-													แสดงคาบสอนจาก {academicTermLabel(
-														currentBookingCycle.academicTermId ?? academicTermId
-													)}
-												</p>
-											{/if}
-										</div>
-										<div class="flex flex-wrap items-center gap-2">
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												onclick={goToPreviousBookingWeek}
-											>
-												<ArrowUp class="mr-1 h-4 w-4" />
-												สัปดาห์ก่อน
-											</Button>
-											<Badge variant="outline" class="px-3 py-1">{bookingWeekLabel()}</Badge>
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												onclick={resetToCurrentBookingWeek}
-											>
-												สัปดาห์นี้
-											</Button>
-											<Button
-												type="button"
-												variant="outline"
-												size="sm"
-												onclick={goToNextBookingWeek}
-											>
-												สัปดาห์ถัดไป
-												<ArrowDown class="ml-1 h-4 w-4" />
-											</Button>
-										</div>
-									</div>
-									{@render managementFeedback(
-										loadedTimetableCycleId !== '',
-										loadingTimetable,
-										timetableError,
-										() => {
-											loadedTimetableCycleId = '';
-											void refreshTimetableForCycle(selectedCycleId);
-										}
-									)}
-									{#if !loadingTimetable && !timetableError}
-										{#if !currentBookingCycle}
-											<Alert.Root>
-												<Alert.Title>ยังไม่มีรอบที่เปิดให้จอง</Alert.Title>
-												<Alert.Description>
-													เมื่อผู้ดูแลเปลี่ยนสถานะรอบนิเทศเป็นเปิดรับคำขอ ตารางจองจะแสดงอัตโนมัติ
-												</Alert.Description>
-											</Alert.Root>
-										{:else if timetableBlockGroupsForSelectedCycle().length === 0}
-											<Alert.Root>
-												<Alert.Title>ไม่พบคาบสอนในภาคเรียนนี้</Alert.Title>
-												<Alert.Description>
-													<p>
-														ตรวจว่ากลุ่มเรียนมีครูผู้สอนและมีคาบในตาราง
-														หรือใช้คาบกำหนดเองเมื่อจำเป็น
-													</p>
-													<div class="mt-3 flex flex-wrap gap-2">
-														<Button
-															href={academicContextualMenuPath(
-																'/staff/academic/timetable',
-																$academicContext.selected,
-																academicContextOptions
-															)}
-															data-sveltekit-preload-data="tap"
-															size="sm"
-															variant="outline"
-														>
-															ตรวจตารางสอน
-														</Button>
-														<Button href="/staff/academic/delivery" size="sm" variant="outline">
-															ตรวจกลุ่มเรียนและครู
-														</Button>
-													</div>
-												</Alert.Description>
-											</Alert.Root>
-										{:else}
-											<div class="overflow-x-auto rounded-md border">
-												<Table.Root>
-													<Table.Header>
-														<Table.Row>
-															<Table.Head class="sticky left-0 z-10 w-[112px] bg-background"
-																>วัน</Table.Head
-															>
-															{#each timetablePeriodRows() as row (row.key)}
-																<Table.Head class="min-w-[150px] text-center">
-																	<div class="font-medium">{row.label}</div>
-																	{#if row.timeLabel}
-																		<div class="text-xs font-normal text-muted-foreground">
-																			{row.timeLabel}
-																		</div>
-																	{/if}
-																</Table.Head>
-															{/each}
-														</Table.Row>
-													</Table.Header>
-													<Table.Body>
-														{#each bookingWeekDays as day (day.value)}
-															<Table.Row>
-																<Table.Cell class="sticky left-0 z-10 bg-background align-top">
-																	<div class="font-medium">{day.label}</div>
-																	<div class="text-xs text-muted-foreground">
-																		{formatShortDate(day.date)}
-																	</div>
-																</Table.Cell>
-																{#each timetablePeriodRows() as row (row.key)}
-																	{@const entry = timetableBlockGroupFor(day.value, row)}
-																	{@const cellObservation = entry
-																		? observationForTimetableCell(entry, day.date)
-																		: null}
-																	<Table.Cell class="min-w-[150px] p-1 align-top">
-																		{#if entry}
-																			<button
-																				type="button"
-																				class={cn(
-																					'min-h-20 w-full rounded-md border p-2 text-left transition hover:border-primary hover:bg-primary/5',
-																					selectedTimetableBlockGroupId === entry.id &&
-																						selectedBookingDate === day.date &&
-																						'border-primary bg-primary/10 shadow-sm'
-																				)}
-																				disabled={!!cellObservation &&
-																					cellObservation.status !== 'returned'}
-																				onclick={() => selectTimetableBlockGroup(entry, day.date)}
-																			>
-																				<div class="flex items-start justify-between gap-2">
-																					<div class="text-sm font-medium leading-snug">
-																						{timetableBlockGroupTitle(entry)}
-																					</div>
-																					{#if cellObservation}
-																						<Badge variant="secondary" class="shrink-0 text-[10px]">
-																							{statusLabel(cellObservation.status)}
-																						</Badge>
-																					{/if}
-																				</div>
-																				<p class="mt-1 text-xs text-muted-foreground">
-																					{entry.periodName ?? row.label}
-																				</p>
-																				<p class="mt-1 text-xs text-muted-foreground">
-																					{entry.homeroomName ?? '-'}
-																				</p>
-																				{#if entry.roomName?.trim() || entry.roomId}
-																					<p class="text-xs text-muted-foreground">
-																						{entry.roomName?.trim() || 'ไม่พบชื่อห้อง'}
-																					</p>
-																				{/if}
-																			</button>
-																		{:else}
-																			<div
-																				class="min-h-20 rounded-md border border-dashed bg-muted/20"
-																			></div>
-																		{/if}
-																	</Table.Cell>
-																{/each}
-															</Table.Row>
-														{/each}
-													</Table.Body>
-												</Table.Root>
-											</div>
-										{/if}{/if}
-									{#if selectedTimetableBlockGroup}
-										<p class="text-xs text-muted-foreground">
-											เลือกแล้ว: {formatShortDate(selectedBookingDate)} · {timetableLabel(
-												selectedTimetableBlockGroup
-											)}
-										</p>
-									{/if}
-								</div>
-							{:else}
-								<div class="grid gap-3 lg:grid-cols-2">
-									<div class="space-y-2">
-										<Label>รายวิชา</Label>
-										<Input bind:value={manualLesson.subjectName} placeholder="ชื่อรายวิชา" />
-									</div>
-									<div class="space-y-2">
-										<Label>ห้องเรียน</Label>
-										<Input bind:value={manualLesson.classroomLabel} placeholder="เช่น ม.3/1" />
-									</div>
-									<div class="space-y-2">
-										<Label>วันที่นิเทศ</Label>
-										<DatePicker bind:value={manualLessonDate} placeholder="เลือกวันที่" />
-									</div>
-									<div class="space-y-2">
-										<Label>เวลา</Label>
-										<Input type="time" bind:value={manualLessonTime} />
-									</div>
-									<div class="space-y-2">
-										<Label>คาบ/ห้อง</Label>
-										<div class="grid grid-cols-2 gap-2">
-											<Input bind:value={manualLesson.periodLabel} placeholder="คาบที่ 2" />
-											<Input bind:value={manualLesson.roomLabel} placeholder="ห้อง 321" />
-										</div>
-									</div>
-									<div class="space-y-2 lg:col-span-2">
-										<Label>เหตุผลที่ใช้คาบกำหนดเอง</Label>
-										<Textarea bind:value={manualLesson.reason} rows={3} />
-									</div>
-								</div>
-							{/if}
-
-							<LoadingButton
-								onclick={createBookingRequest}
-								loading={savingAction === 'request-booking'}
-								loadingLabel="กำลังส่ง..."
-								disabled={cyclesLoading || mutationBusy || !!timetableError || loadingTimetable}
+			{#if bookingOpen && canRequest}
+				<Card.Root class="overflow-hidden border-primary/20">
+					<Card.Header class="flex flex-row items-start justify-between gap-3 bg-muted/20">
+						<div>
+							<Card.Title>จองคาบนิเทศของฉัน</Card.Title><Card.Description
+								>หนึ่งคำขอสำหรับหนึ่งคาบหรือหลายคาบต่อเนื่องของห้องเดียวกัน</Card.Description
 							>
-								<Send class="mr-2 h-4 w-4" />
-								ส่งคำขอจอง
-							</LoadingButton>
-						{/if}
-					{/if}
-				</Card.Content>
-			</Card.Root>
+						</div>
+						<Button variant="ghost" size="sm" onclick={() => (bookingOpen = false)}
+							>ปิดหน้าจอง</Button
+						>
+					</Card.Header>
+					<Card.Content class="space-y-4 pt-4">
+						{#if cyclesLoaded && currentBookingCycle && academicYearId && academicTermId}
+							<div class="flex flex-wrap items-center gap-3 rounded-lg bg-muted/40 p-3">
+								<Label for="booking-cycle">รอบนิเทศ</Label><Select.Root
+									type="single"
+									value={currentBookingCycle.id}
+									onValueChange={(value) => (selectedCycleId = value)}
+									><Select.Trigger
+										id="booking-cycle"
+										class="w-full sm:w-72"
+										aria-label="เลือกรอบนิเทศ">{currentBookingCycle.title}</Select.Trigger
+									><Select.Content
+										>{#each activeBookingCycles as cycle (cycle.id)}<Select.Item value={cycle.id}
+												>{cycle.title}</Select.Item
+											>{/each}</Select.Content
+									></Select.Root
+								>
+								<p class="text-xs text-muted-foreground">
+									เปิดรับคำขอจนกว่าผู้ดูแลจะเปลี่ยนสถานะรอบนิเทศ
+								</p>
+							</div>
+							{#key currentBookingCycle.id}<SupervisionLessonPicker
+									{academicYearId}
+									{academicTermId}
+									observations={myObservations.filter(
+										(item) => item.cycleId === currentBookingCycle.id
+									)}
+									allowed={canRequest}
+									onsubmit={createBookingRequest}
+								/>{/key}
+						{:else if cyclesLoaded}<PageState
+								variant="empty"
+								title="ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้"
+								description="เมื่อผู้ดูแลเปิดรับคำขอ คุณจะเลือกคาบจากตารางสอนได้ที่นี่"
+							/>{/if}
+					</Card.Content>
+				</Card.Root>
+			{/if}
 
 			<Card.Root>
 				<Card.Header>
@@ -3201,6 +2591,16 @@
 													>
 													<Table.Cell class="text-right">
 														<div class="flex flex-wrap justify-end gap-2">
+															<SupervisionCycleDelete
+																{cycle}
+																allowed={canManageSchool}
+																ondelete={(impact) => {
+																	cycles = cycles.filter((item) => item.id !== impact.cycleId);
+																	observations = observations.filter(
+																		(item) => item.cycleId !== impact.cycleId
+																	);
+																}}
+															/>
 															{#if cycle.status === 'draft'}
 																<LoadingButton
 																	size="sm"

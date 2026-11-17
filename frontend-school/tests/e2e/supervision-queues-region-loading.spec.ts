@@ -162,12 +162,12 @@ test('mine loads its list first and keeps booking timetable behind opening the w
 			.getByTestId('supervision-observations')
 			.getByRole('heading', { name: 'วิชาทดสอบ', exact: true })
 	).toBeVisible();
-	expect(api.count('/api/me/timetable')).toBe(0);
+	expect(api.count('/api/supervision/booking-options')).toBe(0);
 	await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
 	await expect(page.getByText('region ไม่พร้อม')).toBeVisible();
 	await page.getByRole('button', { name: 'ลองใหม่' }).click();
-	await expect(page.getByText('ไม่พบคาบสอนในภาคเรียนนี้')).toBeVisible();
-	expect(api.count('/api/me/timetable')).toBe(2);
+	await expect(page.getByText('ไม่พบคาบสอนในสัปดาห์นี้')).toBeVisible();
+	expect(api.count('/api/supervision/booking-options')).toBe(2);
 	expect(api.count(observationPath)).toBe(1);
 });
 

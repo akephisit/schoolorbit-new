@@ -1,3 +1,4 @@
+import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
 import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import {
 	getSupervisionObservation,
@@ -21,6 +22,7 @@ export const _meta = {
 
 export const load: PageLoad = ({ params, fetch, url, depends }) => {
 	depends('school:app-identity');
+	const routeIdentity = waitForAuthenticatedUser().then((user) => (user ? appIdentityKey() : ''));
 	const identity = Promise.all([
 		waitForSupervisionAccess(_meta.access.permission),
 		waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS)
@@ -41,6 +43,7 @@ export const load: PageLoad = ({ params, fetch, url, depends }) => {
 		'โหลดข้อมูลแบบประเมินไม่สำเร็จ'
 	);
 	return {
+		identity: routeIdentity,
 		title: 'รายละเอียดรายการนิเทศ',
 		observationId: params.id,
 		academicYearId: url.searchParams.get('academicYearId'),

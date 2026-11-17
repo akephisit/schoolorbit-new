@@ -1,5 +1,7 @@
 import type {
 	SupervisionObservation,
+	SupervisionObservationPeriod,
+	SupervisionTimetableOption,
 	SupervisionObservationStatus,
 	SupervisionCycleStatus,
 	SupervisionEvaluator,
@@ -15,6 +17,41 @@ export const secondCycle = id(4);
 export const templateId = id(5);
 export const path = (section: string, academicYearId = year, cycleId = '') =>
 	`/staff/academic/supervision/${section}?academicYearId=${academicYearId}${cycleId ? `&cycleId=${cycleId}` : ''}`;
+
+export const savedPeriod = (
+	patch: Partial<SupervisionObservationPeriod> = {}
+): SupervisionObservationPeriod => ({
+	id: id(70),
+	observationId: id(30),
+	position: 1,
+	timetableBlockGroupId: null,
+	learningGroupId: null,
+	homeroomId: null,
+	observedAt: '2026-10-01T09:00:00Z',
+	endsAt: null,
+	manualLesson: null,
+	lessonSnapshot: { subjectName: 'วิชาทดสอบ', classroomLabel: 'ม.1/1', periodLabel: 'คาบ 1' },
+	...patch
+});
+export const timetableOption = (
+	index = 0,
+	patch: Partial<SupervisionTimetableOption> = {}
+): SupervisionTimetableOption => ({
+	observedDate: '2026-10-01',
+	blockGroupId: id(80 + index),
+	blockId: id(90 + index),
+	bellPeriodId: id(100 + index),
+	periodName: `คาบ ${index + 1}`,
+	startTime: `${String(8 + index).padStart(2, '0')}:00:00`,
+	endTime: `${String(9 + index).padStart(2, '0')}:00:00`,
+	learningGroupId: id(110 + index),
+	learningGroupName: 'กลุ่มปัจจุบัน',
+	subjectName: `วิชาปัจจุบัน ${index + 1}`,
+	homeroomId: id(120),
+	homeroomName: 'ม.1/1',
+	roomName: 'ห้องปัจจุบัน',
+	...patch
+});
 
 function gate() {
 	let release = () => {};
@@ -70,6 +107,7 @@ export async function mock(
 		term?: boolean;
 		observationStatus?: SupervisionObservationStatus;
 		observation?: Partial<SupervisionObservation>;
+		bookingItems?: SupervisionTimetableOption[];
 		canManage?: boolean;
 		canReview?: boolean;
 		averageRating?: number;
@@ -104,8 +142,7 @@ export async function mock(
 		createdAt: '2026-09-30T09:00:00Z',
 		updatedAt: '2026-10-01T09:00:00Z',
 		status: observationStatus,
-		lessonSnapshot: { subjectName: 'วิชาทดสอบ', classroomLabel: 'ม.1/1' },
-		manualLesson: null,
+		periods: [savedPeriod()],
 		evaluators: [
 			{
 				id: id(31),
@@ -183,7 +220,7 @@ export async function mock(
 			if (resource === '/api/academic/context/options')
 				return reply(route, {
 					defaultAcademicYearId: year,
-					defaultAcademicTermId: null,
+					defaultAcademicTermId: options.term ? id(8) : null,
 					terms: options.term
 						? [
 								{
@@ -253,7 +290,7 @@ export async function mock(
 												? 'observations'
 												: resource.endsWith('/summaries')
 													? 'summaries'
-													: resource === '/api/me/timetable'
+													: resource === '/api/supervision/booking-options'
 														? 'timetable'
 														: resource.endsWith('/evaluator-availability')
 															? 'evaluator'
@@ -282,7 +319,16 @@ export async function mock(
 					itemSummaries: [{ templateItemId: id(7), averageRating: 4, responseCount: 1 }],
 					averageRating: 4
 				});
-			if (resource.endsWith('/timetable-options')) return reply(route, { items: [] });
+			if (
+				resource.endsWith('/timetable-options') ||
+				resource === '/api/supervision/booking-options'
+			)
+				return reply(route, {
+					sourceDigest: 'source-1',
+					weekStartDate: url.searchParams.get('weekStartDate'),
+					weekEndDate: url.searchParams.get('weekStartDate'),
+					items: options.bookingItems ?? []
+				});
 			if (resource === `/api/supervision/cycles/${firstCycle}` && method === 'GET')
 				return reply(route, cycles()[0]);
 			if (resource.endsWith('/summary'))
@@ -297,7 +343,6 @@ export async function mock(
 				});
 			if (resource === '/api/supervision/observations' && method === 'GET')
 				return reply(route, { items: [snapshot] });
-			if (resource === '/api/me/timetable') return reply(route, []);
 			if (resource.endsWith('/evaluator-availability'))
 				return reply(route, {
 					items: [{ id: id(32), name: 'ผู้ประเมินที่ว่าง', available: true, conflicts: [] }]
@@ -339,25 +384,35 @@ export async function mock(
 				observationStatus = 'cancelled';
 				return reply(route, { ...observation(), status: observationStatus });
 			}
-			if (method === 'PATCH' && resource === `/api/supervision/observations/${id(30)}/request`) {
-				observationStatus = 'requested';
+			if (
+				method === 'PATCH' &&
+				(resource === `/api/supervision/observations/${id(30)}/request` ||
+					resource === `/api/supervision/observations/${id(30)}`)
+			) {
+				if (resource.endsWith('/request')) observationStatus = 'requested';
 				const payload: UpdateRequestedObservationRequest = route.request().postDataJSON();
-				if (payload.manualLesson) {
-					const lesson = payload.manualLesson;
-					observationPatch = {
-						...observationPatch,
-						manualLesson: lesson,
-						observedAt: lesson.observedAt,
+				const periods = payload.timetableBlockGroupIds.map((groupId, index) => {
+					const item =
+						options.bookingItems?.find((item) => item.blockGroupId === groupId) ??
+						timetableOption(index);
+					return savedPeriod({
+						id: id(200 + index),
+						position: index + 1,
+						timetableBlockGroupId: groupId,
+						homeroomId: item.homeroomId,
+						learningGroupId: item.learningGroupId,
+						observedAt: new Date(`${payload.observedDate}T${item.startTime}+07:00`).toISOString(),
+						endsAt: new Date(`${payload.observedDate}T${item.endTime}+07:00`).toISOString(),
 						lessonSnapshot: {
-							source: 'manual',
-							subjectName: lesson.subjectName,
-							classroomLabel: lesson.classroomLabel,
-							roomLabel: lesson.roomLabel,
-							periodLabel: lesson.periodLabel,
-							observedAt: lesson.observedAt
+							source: 'timetable',
+							subjectName: item.subjectName,
+							classroomLabel: item.homeroomName,
+							periodLabel: item.periodName,
+							roomLabel: item.roomName
 						}
-					};
-				}
+					});
+				});
+				observationPatch = { ...observationPatch, periods, observedAt: periods[0].observedAt };
 				return reply(route, { ...observation(), status: observationStatus });
 			}
 			if (resource === '/api/supervision/cycles' && method === 'POST')
@@ -437,4 +492,31 @@ export async function navigate(page: Page, href: string) {
 	await page
 		.getByRole('link', { name: 'test navigation', exact: true })
 		.evaluateAll((links) => links.forEach((link) => link.remove()));
+}
+
+export async function replaceFixtureIdentity(
+	page: Page,
+	permissions: string[],
+	sessionId?: string
+) {
+	await page.evaluate(
+		async ({ permissions, sessionId }) => {
+			const modulePath = '/src/lib/stores/auth.ts';
+			const { authStore } = await import(/* @vite-ignore */ modulePath);
+			let current: import('../../../src/lib/stores/auth.js').AuthState | undefined;
+			const stop = authStore.subscribe(
+				(state: import('../../../src/lib/stores/auth.js').AuthState) => {
+					current = state;
+				}
+			);
+			stop();
+			if (!current?.user || !current.session)
+				throw new Error('Expected authenticated fixture session');
+			authStore.setUser(current.user, permissions, {
+				...current.session,
+				...(sessionId ? { sessionId } : {})
+			});
+		},
+		{ permissions, sessionId }
+	);
 }

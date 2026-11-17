@@ -24,7 +24,10 @@ export type SupervisionTemplateSection = Schemas['SupervisionTemplateSection'];
 export type SupervisionTemplateStep = Schemas['SupervisionTemplateStep'];
 export type SupervisionTemplate = Schemas['SupervisionTemplate'];
 export type SupervisionTemplateSummary = Schemas['SupervisionTemplateSummary'];
-export type ManualLesson = Schemas['ManualLesson'];
+export type SupervisionObservationPeriod = Schemas['SupervisionObservationPeriod'];
+export type SupervisionPeriodManualEvidence = Schemas['SupervisionPeriodManualEvidence'];
+export type SupervisionBookingOptions = Schemas['SupervisionBookingOptions'];
+export type SupervisionCycleDeletionImpact = Schemas['SupervisionCycleDeletionImpact'];
 export type SupervisionEvaluator = Schemas['SupervisionEvaluator'];
 export type SupervisionEvaluatorConflict = Schemas['SupervisionEvaluatorConflict'];
 export type SupervisionEvaluatorAvailability = Schemas['SupervisionEvaluatorAvailability'];
@@ -86,8 +89,45 @@ type SupervisionCycleItems = Schemas['ItemsData_SupervisionCycle'];
 type SupervisionTemplateItems = Schemas['ItemsData_SupervisionTemplate'];
 type SupervisionObservationItems = Schemas['ItemsData_SupervisionObservation'];
 type SupervisionEvaluatorAvailabilityItems = Schemas['ItemsData_SupervisionEvaluatorAvailability'];
-type SupervisionTimetableItems = Schemas['ItemsData_SupervisionTimetableOption'];
 type SupervisionTeacherStatusItems = Schemas['ItemsData_SupervisionTeacherStatusRow'];
+
+export type SupervisionBookingOptionsQuery = NonNullable<
+	operations['getSupervisionBookingOptions']['parameters']['query']
+>;
+export type DeleteSupervisionCycleRequest =
+	operations['deleteSupervisionCycle']['requestBody']['content']['application/json'];
+
+export async function getSupervisionBookingOptions(
+	query: SupervisionBookingOptionsQuery,
+	options: ApiRequestOptions = {}
+): Promise<SupervisionBookingOptions> {
+	const response = await apiClient.get<SupervisionBookingOptions>(
+		'/api/supervision/booking-options',
+		{ ...options, query }
+	);
+	return requireApiData(response, 'ไม่สามารถโหลดคาบสอนสำหรับจองได้');
+}
+
+export async function getSupervisionCycleDeletionImpact(
+	id: CycleId,
+	options: ApiRequestOptions = {}
+): Promise<SupervisionCycleDeletionImpact> {
+	const response = await apiClient.get<SupervisionCycleDeletionImpact>(
+		`/api/supervision/cycles/${id}/deletion-impact`,
+		options
+	);
+	return requireApiData(response, 'ไม่สามารถตรวจผลกระทบของการลบรอบได้');
+}
+
+export function deleteSupervisionCycle(
+	id: CycleId,
+	payload: DeleteSupervisionCycleRequest
+): Promise<ApiResponse<SupervisionCycleDeletionImpact>> {
+	return apiClient.deleteWithBody<SupervisionCycleDeletionImpact>(
+		`/api/supervision/cycles/${id}`,
+		payload
+	);
+}
 
 function requiredAcademicYearId(value: string): string {
 	const id = value.trim();
@@ -283,13 +323,17 @@ export async function getSupervisionEvaluatorAvailability(
 
 export async function getSupervisionObservationTimetableOptions(
 	id: ObservationId,
+	weekStartDate: string,
 	options: ApiRequestOptions = {}
-): Promise<Schemas['SupervisionTimetableOption'][]> {
-	const response = await apiClient.get<SupervisionTimetableItems>(
+): Promise<SupervisionBookingOptions> {
+	const query: NonNullable<
+		operations['getSupervisionObservationTimetableOptions']['parameters']['query']
+	> = { weekStartDate };
+	const response = await apiClient.get<SupervisionBookingOptions>(
 		`/api/supervision/observations/${id}/timetable-options`,
-		options
+		{ ...options, query }
 	);
-	return requireApiData(response, 'ไม่สามารถโหลดคาบสอนสำหรับแก้ไขได้').items;
+	return requireApiData(response, 'ไม่สามารถโหลดคาบสอนสำหรับแก้ไขได้');
 }
 
 export function cancelSupervisionObservation(
