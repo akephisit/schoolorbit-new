@@ -244,9 +244,7 @@ test('missing adjustment year keeps the year index usable and recovers allocatio
 	await expect(
 		dialog.getByText('ไม่พบปีงบประมาณที่เลือก กรุณาเลือกปีงบประมาณอีกครั้ง', { exact: true })
 	).toBeVisible();
-	await expect(
-		dialog.getByRole('heading', { name: 'โหลดตัวเลือกงบประมาณไม่สำเร็จ', exact: true })
-	).toBeVisible();
+	await expect(dialog.getByText('โหลดตัวเลือกงบประมาณไม่สำเร็จ', { exact: true })).toBeVisible();
 	const selectedYear = dialog.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true });
 	await expect(selectedYear).not.toContainText('2570');
 	await dialog.getByLabel('จำนวนเงิน (บาท) *', { exact: true }).fill('12.34');
@@ -256,9 +254,7 @@ test('missing adjustment year keeps the year index usable and recovers allocatio
 	await expect(validYear).toBeVisible();
 	await validYear.click();
 	await expect(selectedYear).toContainText('2570');
-	await expect(
-		dialog.getByRole('heading', { name: 'โหลดตัวเลือกงบประมาณไม่สำเร็จ', exact: true })
-	).toHaveCount(0);
+	await expect(dialog.getByText('โหลดตัวเลือกงบประมาณไม่สำเร็จ', { exact: true })).toHaveCount(0);
 	await expect(
 		dialog.getByText('ไม่พบปีงบประมาณที่เลือก กรุณาเลือกปีงบประมาณอีกครั้ง', { exact: true })
 	).toHaveCount(0);
