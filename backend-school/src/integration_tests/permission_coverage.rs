@@ -1452,16 +1452,20 @@ async fn permission_coverage_staff_leave_coverage_uses_real_session_tenant_and_c
         &app,
         &f,
         &manager,
-        Method::PUT,
-        "/api/staff-leave/coverage/settings",
-        json!({"requestId":Uuid::new_v4(),"expectedRevision":1,"halfDayBoundary":"11:30:00"}),
+        Method::GET,
+        "/api/staff-leave/coverage/options",
+        json!({}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(body["data"]["halfDayBoundary"], json!("11:30:00"));
+    assert!(body["data"].get("halfDayBoundary").is_none());
+    assert!(body["data"].get("revision").is_none());
     let missing_csrf = Request::builder()
-        .method(Method::PUT)
-        .uri("/api/staff-leave/coverage/settings")
+        .method(Method::POST)
+        .uri(format!(
+            "/api/staff-leave/requests/{}/coverage/refresh",
+            Uuid::now_v7()
+        ))
         .header(header::ORIGIN, "https://tenant-a.schoolorbit.test")
         .header(header::CONTENT_TYPE, "application/json")
         .header(
@@ -1473,8 +1477,7 @@ async fn permission_coverage_staff_leave_coverage_uses_real_session_tenant_and_c
             ),
         )
         .body(Body::from(
-            json!({"requestId":Uuid::new_v4(),"expectedRevision":2,"halfDayBoundary":null})
-                .to_string(),
+            json!({"requestId":Uuid::new_v4(),"expectedRevision":1}).to_string(),
         ))
         .unwrap();
     assert_eq!(

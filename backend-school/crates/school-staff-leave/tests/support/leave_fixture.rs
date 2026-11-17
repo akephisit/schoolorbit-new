@@ -41,7 +41,13 @@ pub(crate) fn policy(
         source_reference: "เกณฑ์โรงเรียนสำหรับทดสอบ ไม่ใช่สิทธิ์ตามกฎหมาย".into(),
         enabled: true,
         personnel_types: vec![StaffPersonnelType::CivilServant],
-        unit,
+        unit: match unit {
+            LeaveUnit::Day => LeavePolicyUnit::Day,
+            LeaveUnit::Minute => LeavePolicyUnit::Minute,
+            LeaveUnit::HalfDay => {
+                panic!("historical HalfDay policies must be seeded as evidence, not active writes")
+            }
+        },
         counting_mode: LeaveCountingMode::CalendarDays,
         working_weekdays: vec![],
         excluded_dates: vec![],
@@ -71,7 +77,11 @@ pub(crate) async fn typ(
             expected_revision: None,
             code: Some(code.into()),
             name: "ทดสอบลา".into(),
-            kind: LeaveKind::Leave,
+            kind: if unit == LeaveUnit::Minute {
+                LeaveKind::Exit
+            } else {
+                LeaveKind::Leave
+            },
             archived: false,
         },
     )
@@ -92,13 +102,11 @@ pub(crate) fn period(t: Uuid, day: u32) -> LeavePeriodInput {
     LeavePeriodInput {
         academic_year_id: Some(Uuid::from_u128(0x16000000000000000000000000000001)),
         academic_term_id: Some(Uuid::from_u128(0x16000000000000000000000000000003)),
-        half_day_boundary: Some(chrono::NaiveTime::from_hms_opt(11, 30, 0).unwrap()),
         type_id: t,
         start_date: date(day),
         end_date: date(day),
         start_time: None,
         end_time: None,
-        day_portion: LeaveDayPortion::FullDay,
         reason: "กิจธุระส่วนตัว".into(),
         evidence_file_ids: vec![],
     }

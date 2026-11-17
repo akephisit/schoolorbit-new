@@ -62,7 +62,7 @@ async fn academic_coverage_fixture(
     };
     let pool = school_test_db::create_named_test_pool_with_max_connections(name, 6).await;
     seed_release_two_predecessor(&pool).await.unwrap();
-    apply_migrations_through(&pool, 160).await.unwrap();
+    apply_migrations_through(&pool, 161).await.unwrap();
     let owner = coverage_actor(&pool, "Math owner", false).await;
     let admin = coverage_actor(&pool, "Manager", true).await;
     let teacher = coverage_actor(&pool, "English substitute", false).await;
@@ -219,7 +219,7 @@ async fn academic_coverage_plan(
     period.academic_term_id = Some(f.term);
     period.start_date = f.from;
     period.end_date = f.from;
-    period.half_day_boundary = None;
+
     let draft = service::create(
         &f.pool,
         &f.owner,
@@ -508,7 +508,7 @@ async fn coverage_reciprocal_second_leg_conflict_rolls_back_both_legs_and_submit
     p.academic_term_id = Some(f.term);
     p.start_date = f.back;
     p.end_date = f.back;
-    p.half_day_boundary = None;
+
     let blocker = service::create(
         &f.pool,
         &f.owner,
@@ -590,7 +590,7 @@ async fn coverage_shared_allocation_keeps_co_teacher_original_subject() {
     p.academic_term_id = Some(f.term);
     p.start_date = f.from;
     p.end_date = f.from;
-    p.half_day_boundary = None;
+
     let draft = service::create(
         &f.pool,
         &f.owner,
@@ -668,7 +668,7 @@ async fn coverage_joint_source_block_reserves_each_allocation_as_one_teacher_int
     p.academic_term_id = Some(f.term);
     p.start_date = f.from;
     p.end_date = f.from;
-    p.half_day_boundary = None;
+
     let draft = service::create(
         &f.pool,
         &f.owner,
@@ -948,7 +948,7 @@ async fn coverage_global_dated_reservation_has_one_concurrent_winner_and_failed_
     p.academic_term_id = Some(f.term);
     p.start_date = f.from;
     p.end_date = f.from;
-    p.half_day_boundary = None;
+
     let second = service::create(
         &f.pool,
         &second_owner,
@@ -1167,7 +1167,7 @@ async fn coverage_migration_preserves_legacy_documents_revisions_and_hashes_with
     }
     let query="SELECT jsonb_build_array((SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM staff_leave_requests r),(SELECT jsonb_agg(to_jsonb(r) ORDER BY request_id,revision) FROM staff_leave_revisions r),(SELECT jsonb_agg(to_jsonb(h) ORDER BY id) FROM staff_leave_history h),(SELECT jsonb_agg(to_jsonb(l) ORDER BY request_id,revision,file_id) FROM staff_leave_file_links l),(SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM file_versions v),(SELECT jsonb_agg(to_jsonb(f) ORDER BY id) FROM files f))::text";
     let before: String = sqlx::query_scalar(query).fetch_one(&pool).await.unwrap();
-    apply_migrations_through(&pool, 160).await.unwrap();
+    apply_migrations_through(&pool, 161).await.unwrap();
     let after: String = sqlx::query_scalar(query).fetch_one(&pool).await.unwrap();
     assert_eq!(before, after);
     school_migrations::run_tenant_migrations(&pool)
@@ -1255,7 +1255,7 @@ async fn coverage_http_assigned_tasks_are_redacted_recipient_scoped_and_tenant_b
     p.academic_term_id = Some(f.term);
     p.start_date = f.from;
     p.end_date = f.from;
-    p.half_day_boundary = None;
+
     p.reason = "PRIVATE-ABSENCE-SENTINEL-DO-NOT-EXPOSE".into();
     let draft = service::create(
         &f.pool,
@@ -1736,7 +1736,7 @@ async fn coverage_candidates_batch_all_slots_compare_real_intervals_audiences_an
     p.academic_term_id = Some(f.term);
     p.start_date = f.from;
     p.end_date = f.from;
-    p.half_day_boundary = None;
+
     let draft = service::create(
         &f.pool,
         &f.owner,
@@ -2149,7 +2149,7 @@ async fn coverage_refresh_rechecks_return_leg_and_pupils_even_when_original_dige
             p.academic_term_id = Some(f.term);
             p.start_date = f.from;
             p.end_date = f.from;
-            p.half_day_boundary = None;
+
             p.reason = "Clarified request details".into();
             service::update(
                 &f.pool,

@@ -214,8 +214,8 @@ pub(super) async fn history(
         .await?;
     Ok(())
 }
-pub(super) fn period_from(r: &Record) -> LeavePeriodInput {
-    LeavePeriodInput {
+pub(super) fn period_from(r: &Record) -> StoredLeavePeriod {
+    StoredLeavePeriod {
         academic_year_id: r.document.academic_year_id,
         academic_term_id: r.document.academic_term_id,
         half_day_boundary: r.document.half_day_boundary,
