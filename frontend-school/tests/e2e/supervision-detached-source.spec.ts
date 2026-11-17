@@ -137,3 +137,32 @@ test('returned legacy evidence is never rebound until the teacher explicitly sel
 	await expect(page.getByTestId('supervision-saved-periods')).toContainText('วิชาปัจจุบัน 3');
 	expect(api.count(resource)).toBe(1);
 });
+
+test('a manager deliberately replaces the whole range through the manager update operation', async ({
+	page
+}) => {
+	const choices = [timetableOption(0), timetableOption(1), timetableOption(2)];
+	const api = await mock(page, {
+		observationStatus: 'planned',
+		bookingItems: choices,
+		observation: { periods: [savedPeriod({ lessonSnapshot: rich })] }
+	});
+	await page.goto(path);
+	await page.getByRole('button', { name: 'แก้คาบ/วันเวลา', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByRole('button', { name: 'บันทึกคาบนิเทศ', exact: true })).toBeDisabled();
+	await dialog.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
+	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
+	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
+	await dialog.getByRole('button', { name: 'บันทึกคาบนิเทศ', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	expect(api.writes).toEqual([`PATCH ${resource}`]);
+	expect(api.payloads).toEqual([
+		{
+			observedDate: '2026-10-01',
+			timetableBlockGroupIds: choices.map((item) => item.blockGroupId),
+			expectedSourceDigest: 'source-1'
+		}
+	]);
+	await expect(page.getByTestId('supervision-saved-periods')).toContainText('วิชาปัจจุบัน 3');
+});

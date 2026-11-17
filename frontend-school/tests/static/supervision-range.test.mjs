@@ -117,10 +117,10 @@ test('week navigation uses civil dates across month/year and leap-day boundaries
 	assert.equal(addCivilDays('2028-02-28', 1), '2028-02-29');
 });
 
-test('booked intervals span cycles and source IDs while touching boundaries remain available', () => {
+test('booked intervals overlap different source IDs within the supplied cycle scope, while touching boundaries remain available', () => {
 	const item = lesson(1);
 	const saved = (observedAt, endsAt) => ({
-		id: 'other-cycle',
+		id: 'saved-in-cycle',
 		status: 'planned',
 		periods: [{ timetableBlockGroupId: 'different-source', observedAt, endsAt }]
 	});

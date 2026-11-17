@@ -1381,3 +1381,29 @@ test('an explicit older term supersedes repair publication without another navig
 	stop();
 	store.reset();
 });
+
+test('reset before a scheduled repair dispatch prevents obsolete navigation', async () => {
+	const { createAcademicContextStore } = await importAcademicContextStore();
+	let navigations = 0;
+	const store = createAcademicContextStore({
+		loadOptions: async () => contextOptions(),
+		navigate: async () => {
+			navigations++;
+		}
+	});
+	store.replaceOptions(contextOptions());
+	let snapshot;
+	const stop = store.subscribe((value) => {
+		snapshot = value;
+	});
+	const pending = store.sync(
+		'/(app)/staff/academic/supervision',
+		new URL('https://school.test/staff/academic/supervision?academicYearId=year-active')
+	);
+	queueMicrotask(() => store.reset());
+	await pending;
+	assert.equal(navigations, 0);
+	assert.equal(snapshot.status, 'hidden');
+	stop();
+	store.reset();
+});

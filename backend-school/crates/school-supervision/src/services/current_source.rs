@@ -37,12 +37,41 @@ pub async fn detach_deleted_source_in_transaction(
         ORDER BY o.id FOR UPDATE
     "#).bind(scope.academic_year_id).bind(scope.academic_term_id).bind(&scope.learning_group_ids)
         .bind(scope.learning_offering_id).bind(scope.delete_offering).execute().await?;
+    let missing: bool = DbSession::new(&mut **tx)
+        .scalar(
+            "supervision.current_source.require_saved_evidence",
+            r#"
+        SELECT EXISTS(SELECT 1 FROM supervision_observation_periods p
+            JOIN supervision_observations o ON o.id=p.observation_id
+            WHERE o.academic_year_id=$1 AND o.academic_term_id=$2
+              AND (p.learning_group_id=ANY($3) OR ($5 AND p.learning_offering_id=$4))
+              AND p.lesson_snapshot='{}'::jsonb AND p.timetable_block_group_id IS NULL
+              AND NOT(p.manual_subject_name IS NOT NULL AND p.manual_classroom_label IS NOT NULL
+                  AND p.manual_period_label IS NOT NULL AND p.manual_reason IS NOT NULL))
+    "#,
+        )
+        .bind(scope.academic_year_id)
+        .bind(scope.academic_term_id)
+        .bind(&scope.learning_group_ids)
+        .bind(scope.learning_offering_id)
+        .bind(scope.delete_offering)
+        .fetch_one()
+        .await?;
+    if missing {
+        return Err(AppError::Conflict(
+            "ข้อมูลนิเทศไม่มีหลักฐานคาบที่บันทึกไว้ จึงยังลบแหล่งอ้างอิงไม่ได้".into(),
+        ));
+    }
     let count: i64 = DbSession::new(&mut **tx)
         .scalar(
             "supervision.current_source.detach",
             r#"
         WITH affected AS (
-            UPDATE supervision_observation_periods p SET timetable_block_group_id=NULL,
+            UPDATE supervision_observation_periods p SET
+                lesson_snapshot=CASE WHEN p.lesson_snapshot='{}'::jsonb AND p.timetable_block_group_id IS NOT NULL
+                    THEN jsonb_build_object('source','removed_timetable','timetableBlockGroupId',p.timetable_block_group_id,'observedAt',p.observed_at)
+                    ELSE p.lesson_snapshot END,
+                timetable_block_group_id=NULL,
                 learning_group_id=NULL,learning_offering_id=NULL,updated_at=clock_timestamp()
             FROM supervision_observations o
             WHERE o.id=p.observation_id AND o.academic_year_id=$1 AND o.academic_term_id=$2
@@ -76,7 +105,11 @@ pub async fn detach_timetable_sources_in_transaction(
         .bind(ids).execute().await?;
     let count:i64=DbSession::new(&mut **tx).scalar("supervision.current_source.detach_exact_placements",r#"
         WITH affected AS (
-            UPDATE supervision_observation_periods SET timetable_block_group_id=NULL,updated_at=clock_timestamp()
+            UPDATE supervision_observation_periods SET
+                lesson_snapshot=CASE WHEN lesson_snapshot='{}'::jsonb AND timetable_block_group_id IS NOT NULL
+                    THEN jsonb_build_object('source','removed_timetable','timetableBlockGroupId',timetable_block_group_id,'observedAt',observed_at)
+                    ELSE lesson_snapshot END,
+                timetable_block_group_id=NULL,updated_at=clock_timestamp()
             WHERE timetable_block_group_id=ANY($1) RETURNING observation_id
         ) SELECT count(DISTINCT observation_id) FROM affected
     "#).bind(ids).fetch_one().await?;

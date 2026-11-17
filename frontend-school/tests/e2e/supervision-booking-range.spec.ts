@@ -325,8 +325,10 @@ test('a replaced session discards pending old-session options and the old select
 	await page.getByRole('button', { name: 'สัปดาห์ก่อน', exact: true }).click();
 	await expect.poll(() => held).toBe(true);
 	await replaceFixtureIdentity(page, permissions, '01900000-0000-7000-8000-000000000002');
-	await expect(page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ })).toBeVisible();
+	await expect(page.getByTestId('supervision-lesson-picker')).toHaveCount(0);
 	gate.resolve();
+	await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
+	await expect(page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ })).toBeVisible();
 	await expect(page.getByText('คำตอบจากเซสชันเดิม', { exact: true })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true })).toBeDisabled();
 });

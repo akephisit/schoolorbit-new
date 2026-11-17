@@ -83,7 +83,10 @@ export function createAcademicContextStore({
 			sourceUrl: source.href,
 			targetUrl: target.href,
 			promise: Promise.resolve()
-				.then(() => navigate(target, { replace: true, reset: false }))
+				.then(() => {
+					if (operation.generation !== sessionGeneration || repairNavigation !== operation) return;
+					return navigate(target, { replace: true, reset: false });
+				})
 				.finally(() => {
 					if (repairNavigation === operation) repairNavigation = null;
 				})

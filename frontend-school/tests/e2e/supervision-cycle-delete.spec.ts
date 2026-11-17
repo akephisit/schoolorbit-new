@@ -155,3 +155,34 @@ test('closing a pending preview discards its late result', async ({ page }) => {
 		page.getByTestId('supervision-cycles-ready').getByText('รอบแรก', { exact: true })
 	).toBeVisible();
 });
+
+test('an accepted deletion keeps its confirmation open and cannot rebase while pending', async ({
+	page
+}) => {
+	await mock(page);
+	const gate = Promise.withResolvers<void>();
+	let deleting = false;
+	let previews = 0;
+	await page.route(`**${previewPath}`, (route) => {
+		previews++;
+		return reply(route, impact);
+	});
+	await page.route(`**${cyclePath}`, async (route) => {
+		if (route.request().method() !== 'DELETE') return route.fallback();
+		deleting = true;
+		await gate.promise;
+		return reply(route, impact);
+	});
+	await page.goto(path('cycles'));
+	await page.getByRole('button', { name: 'ลบรอบ รอบแรก ถาวร', exact: true }).click();
+	const dialog = page.getByRole('alertdialog');
+	await dialog.getByRole('textbox').fill('รอบแรก');
+	await dialog.getByRole('button', { name: 'ยืนยันลบถาวร', exact: true }).click();
+	await expect.poll(() => deleting).toBe(true);
+	await expect(dialog.getByRole('button', { name: 'ยกเลิก', exact: true })).toBeDisabled();
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeVisible();
+	expect(previews).toBe(1);
+	gate.resolve();
+	await expect(dialog).toHaveCount(0);
+});

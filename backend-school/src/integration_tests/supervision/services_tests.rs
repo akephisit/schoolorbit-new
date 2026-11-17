@@ -3248,6 +3248,31 @@ async fn supervision_period_migration_refuses_unhydratable_evidence_before_switc
         .await
         .unwrap());
     }
+    let mut ambiguous = pool.begin().await.unwrap();
+    let offering = Uuid::now_v7();
+    let group = Uuid::now_v7();
+    sqlx::query("INSERT INTO learning_offerings SELECT (jsonb_populate_record(NULL::learning_offerings,to_jsonb(o)||jsonb_build_object(
+        'id',$1::uuid,'code_snapshot','SUPERVISION_AMBIGUOUS_SOURCE'))).* FROM learning_offerings o
+        JOIN academic_timetable_block_groups p ON p.learning_offering_id=o.id
+        JOIN supervision_observations saved ON saved.timetable_block_group_id=p.id LIMIT 1")
+        .bind(offering).execute(&mut *ambiguous).await.unwrap();
+    sqlx::query("INSERT INTO learning_groups SELECT (jsonb_populate_record(NULL::learning_groups,to_jsonb(g)||jsonb_build_object(
+        'id',$1::uuid,'learning_offering_id',$2::uuid,'code','SUPERVISION_AMBIGUOUS_GROUP'))).* FROM learning_groups g
+        JOIN academic_timetable_block_groups p ON p.learning_group_id=g.id
+        JOIN supervision_observations saved ON saved.timetable_block_group_id=p.id LIMIT 1")
+        .bind(group).bind(offering).execute(&mut *ambiguous).await.unwrap();
+    sqlx::query("UPDATE supervision_observations SET learning_group_id=$1 WHERE timetable_block_group_id IS NOT NULL")
+        .bind(group).execute(&mut *ambiguous).await.unwrap();
+    let error = sqlx::raw_sql(include_str!(
+        "../../../migrations/164_supervision_observation_periods.sql"
+    ))
+    .execute(&mut *ambiguous)
+    .await
+    .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("SUPERVISION_PERIOD164_SOURCE_AMBIGUOUS"));
+    ambiguous.rollback().await.unwrap();
     apply_migrations_through(&pool, 165).await.unwrap();
 }
 
@@ -4075,4 +4100,104 @@ async fn supervision_replacement_validates_omitted_retained_submitted_evaluators
         serde_json::to_value(services::get_observation(&pool, first.id).await.unwrap()).unwrap(),
         before
     );
+}
+
+#[tokio::test]
+async fn supervision_empty_legacy_snapshots_retain_known_allocation_and_time_when_sources_detach() {
+    let pool = migrated_pool("supervision_empty_legacy_detachment").await;
+    let f = insert_fixture(&pool).await;
+    let first = request_observation(&pool, &f).await;
+    let second = services::request_observation(
+        &pool,
+        f.teacher_id,
+        input_at(&pool, &f, f.teacher_id, f.observed_at + Duration::weeks(1)).await,
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE supervision_observation_periods SET lesson_snapshot='{}' WHERE observation_id=ANY($1)")
+        .bind(vec![first.id,second.id]).execute(&pool).await.unwrap();
+    let allocation = first.periods[0].timetable_block_group_id.unwrap();
+    let (year,term,offering,group):(Uuid,Uuid,Uuid,Uuid)=sqlx::query_as("SELECT academic_year_id,academic_term_id,learning_offering_id,learning_group_id FROM supervision_observation_periods WHERE observation_id=$1")
+        .bind(first.id).fetch_one(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert_eq!(
+        services::current_source::detach_timetable_sources_in_transaction(&mut tx, &[allocation])
+            .await
+            .unwrap(),
+        2
+    );
+    for observation in [&first, &second] {
+        let raw: serde_json::Value = sqlx::query_scalar(
+            "SELECT lesson_snapshot FROM supervision_observation_periods WHERE observation_id=$1",
+        )
+        .bind(observation.id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(raw["source"], "removed_timetable");
+        assert_eq!(raw["timetableBlockGroupId"], allocation.to_string());
+        assert_eq!(
+            serde_json::from_value::<DateTime<Utc>>(raw["observedAt"].clone()).unwrap(),
+            observation.periods[0].observed_at
+        );
+    }
+    tx.rollback().await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let scope = school_academic_delivery::models::current::DeliveryDeletionScope {
+        delete_offering: false,
+        learning_offering_id: offering,
+        academic_year_id: year,
+        academic_term_id: term,
+        learning_group_ids: vec![group],
+    };
+    services::current_source::detach_deleted_source_in_transaction(&mut tx, &scope)
+        .await
+        .unwrap();
+    for observation in [&first, &second] {
+        let (raw,source,live_group):(serde_json::Value,Option<Uuid>,Option<Uuid>)=sqlx::query_as("SELECT lesson_snapshot,timetable_block_group_id,learning_group_id FROM supervision_observation_periods WHERE observation_id=$1")
+            .bind(observation.id).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(raw["timetableBlockGroupId"], allocation.to_string());
+        assert_eq!(source, None);
+        assert_eq!(live_group, None);
+        assert_eq!(
+            serde_json::from_value::<DateTime<Utc>>(raw["observedAt"].clone()).unwrap(),
+            observation.periods[0].observed_at
+        );
+    }
+    tx.rollback().await.unwrap();
+    sqlx::query("UPDATE supervision_observation_periods SET timetable_block_group_id=NULL WHERE observation_id=$1")
+        .bind(second.id).execute(&pool).await.unwrap();
+    let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(p) ORDER BY observation_id,position,id) FROM supervision_observation_periods p WHERE observation_id=ANY($1)")
+        .bind(vec![first.id,second.id]).fetch_one(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(matches!(services::current_source::detach_deleted_source_in_transaction(&mut tx,&scope).await,Err(AppError::Conflict(_))),
+        "an empty group-only record cannot lose its last current pointer without saved lesson evidence");
+    let unchanged:serde_json::Value=sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(p) ORDER BY observation_id,position,id) FROM supervision_observation_periods p WHERE observation_id=ANY($1)")
+        .bind(vec![first.id,second.id]).fetch_one(&mut *tx).await.unwrap();
+    assert_eq!(
+        unchanged, before,
+        "one unmappable period must refuse all matching updates atomically"
+    );
+    tx.rollback().await.unwrap();
+    sqlx::query("UPDATE supervision_observation_periods SET manual_subject_name='Historical manual subject',manual_classroom_label='ม.3/2',
+        manual_period_label='Historical period',manual_reason='Original manual reason' WHERE observation_id=$1")
+        .bind(second.id).execute(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    services::current_source::detach_deleted_source_in_transaction(&mut tx, &scope)
+        .await
+        .unwrap();
+    let manual:(String,String,String,String,Option<Uuid>)=sqlx::query_as("SELECT manual_subject_name,manual_classroom_label,manual_period_label,manual_reason,learning_group_id
+        FROM supervision_observation_periods WHERE observation_id=$1")
+        .bind(second.id).fetch_one(&mut *tx).await.unwrap();
+    assert_eq!(
+        manual,
+        (
+            "Historical manual subject".into(),
+            "ม.3/2".into(),
+            "Historical period".into(),
+            "Original manual reason".into(),
+            None
+        )
+    );
+    tx.rollback().await.unwrap();
 }

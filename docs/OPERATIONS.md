@@ -73,7 +73,9 @@ receipt. No archive or runtime compatibility route remains.
 Keep maintenance enabled on any refusal. Inspect only bounded `SUPERVISION_PERIOD164_*`
 or `SUPERVISION_PERIOD165_*` findings and aggregate evidence; correct an unmappable source
 through reviewed remediation and rerun the canonical migrator. Never edit SQLx history,
-remove reconciliation checks or infer old lesson times from the current timetable. The
+remove reconciliation checks or infer old lesson times from the current timetable. Never
+recreate or edit a missing/stale receipt to force cleanup: preserve both schemas and use a
+reviewed compatible recovery release. The
 new application requires completed migration 165; after 165, pre-165 binaries are prohibited.
 Recover using a schema-165-capable release or roll forward, retaining the normal verified
 backup/WAL recovery procedure. Do not reopen only successfully migrated tenants while the
