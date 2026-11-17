@@ -308,7 +308,7 @@ test('menu destinations complete the context required by the target route', asyn
 		routeId.endsWith('/delivery')
 			? 'term_required'
 			: routeId.endsWith('/supervision')
-				? 'term_optional'
+				? 'term_required'
 				: routeId.endsWith('/student-years')
 					? 'year_required'
 					: 'none';
@@ -346,12 +346,73 @@ test('menu destinations complete the context required by the target route', asyn
 			options,
 			requirement
 		),
-		'/staff/academic/supervision?academicYearId=year-active'
+		'/staff/academic/supervision?academicYearId=year-active&academicTermId=term-active'
 	);
 	assert.equal(
 		academicContextualMenuPath('/staff/work', selected, options, requirement),
 		'/staff/work'
 	);
+});
+
+test('supervision booking defaults only the matching school term and preserves explicit context', async () => {
+	const { academicContextualMenuPath, resolveAcademicContextUrl } = await importRouteContext();
+	const options = contextOptions();
+	const root = '/staff/academic/supervision';
+	const loader = await readProjectFile(`src/routes/(app)${root}/+page.ts`);
+	const requirement = loader.match(/academicContext:\s*'([^']+)'/)[1];
+	const resolver = () => requirement;
+	const yearOnly = { academicYearId: 'year-active', academicTermId: null };
+	const destination = academicContextualMenuPath(
+		`${root}?view=calendar#booking`,
+		yearOnly,
+		options,
+		resolver
+	);
+	assert.equal(
+		destination,
+		`${root}?view=calendar&academicYearId=year-active&academicTermId=term-active#booking`
+	);
+	const direct = resolveAcademicContextUrl(
+		requirement,
+		options,
+		new URL(`https://school.test${root}?academicYearId=year-active`)
+	);
+	assert.equal(direct.status, 'ready');
+	assert.equal(direct.replaceUrl.searchParams.get('academicTermId'), 'term-active');
+	const explicit = new URL(
+		`https://school.test${root}?academicYearId=year-planning&academicTermId=term-planning`
+	);
+	const preserved = resolveAcademicContextUrl(requirement, options, explicit);
+	assert.equal(preserved.status, 'ready');
+	assert.equal(preserved.replaceUrl, null);
+	assert.equal(preserved.selected.academicTermId, 'term-planning');
+	for (const term of ['term-missing', 'term-planning']) {
+		const invalid = resolveAcademicContextUrl(
+			requirement,
+			options,
+			new URL(`https://school.test${root}?academicYearId=year-active&academicTermId=${term}`)
+		);
+		assert.equal(invalid.status, 'unavailable');
+		assert.equal(invalid.replaceUrl, null);
+		assert.equal(invalid.selected.academicTermId, term);
+	}
+	for (const [year, defaults] of [
+		['year-planning', options],
+		['year-active', { ...options, defaultAcademicTermId: null }]
+	]) {
+		const selected = { academicYearId: year, academicTermId: null };
+		assert.equal(
+			academicContextualMenuPath(root, selected, defaults, resolver),
+			`${root}?academicYearId=${year}`
+		);
+		const unresolved = resolveAcademicContextUrl(
+			requirement,
+			defaults,
+			new URL(`https://school.test${root}?academicYearId=${year}`)
+		);
+		assert.equal(unresolved.status, 'unavailable');
+		assert.equal(unresolved.selected.academicTermId, null);
+	}
 });
 
 test('menu destinations preserve invalid explicit context instead of substituting school defaults', async () => {
@@ -468,7 +529,11 @@ test('application route metadata uses only supported academic context requiremen
 	}
 
 	assert.ok(Object.keys(routeModules).length > 0, 'expected route metadata fixtures');
-	assert.doesNotThrow(() => createAcademicContextRouteResolver(routeModules));
+	const resolveRequirement = createAcademicContextRouteResolver(routeModules);
+	assert.equal(resolveRequirement('/(app)/staff/academic/supervision'), 'term_required');
+	for (const child of ['evaluate', 'requests', 'cycles', 'templates', 'overview', 'approvals', '[id]']) {
+		assert.equal(resolveRequirement(`/(app)/staff/academic/supervision/${child}`), 'term_optional', child);
+	}
 });
 
 test('gradebook and result workflows require an exact academic term context', async () => {
@@ -525,7 +590,7 @@ test('URL resolution preserves deep links and enforces term ownership', async ()
 	const optional = resolveAcademicContextUrl(
 		'term_optional',
 		options,
-		new URL('https://school.test/staff/academic/supervision?academicYearId=year-active')
+		new URL('https://school.test/staff/academic/supervision/cycles?academicYearId=year-active')
 	);
 	assert.equal(optional.status, 'ready');
 	assert.equal(optional.selected.academicTermId, null);
@@ -609,7 +674,14 @@ test('existing staff academic consumers declare their exact context requirement'
 		['staff/academic/periods', 'year_required'],
 		['staff/academic/exam-schedules', 'term_required'],
 		['staff/academic/question-bank', 'none'],
-		['staff/academic/supervision', 'term_optional'],
+		['staff/academic/supervision', 'term_required'],
+		['staff/academic/supervision/evaluate', 'term_optional'],
+		['staff/academic/supervision/requests', 'term_optional'],
+		['staff/academic/supervision/cycles', 'term_optional'],
+		['staff/academic/supervision/templates', 'term_optional'],
+		['staff/academic/supervision/overview', 'term_optional'],
+		['staff/academic/supervision/approvals', 'term_optional'],
+		['staff/academic/supervision/[id]', 'term_optional'],
 		['staff/academic/admission', 'year_required'],
 		['staff/timetable', 'term_required'],
 		['staff/exams', 'term_required']

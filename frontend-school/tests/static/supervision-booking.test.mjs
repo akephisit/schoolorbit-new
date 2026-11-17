@@ -83,19 +83,25 @@ test('teaching supervision booking uses a weekly timetable grid with exact obser
 	assert.match(migration, /DROP COLUMN manual_observed_at/);
 });
 
-test('teaching supervision booking gives term-local setup guidance without blocking other sections', async () => {
-	const routePage = await readRepoFile(
-		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
-	);
-
-	assert.match(routePage, /AcademicPrerequisiteNotice/);
-	assert.match(routePage, /academicTermId/);
-	assert.match(routePage, /\/staff\/academic\/timetable/);
+test('teaching supervision booking relies on required route context while management remains year-wide', async () => {
+	const root = 'frontend-school/src/routes/(app)/staff/academic/supervision';
+	const routePage = await readRepoFile(`${root}/+page.svelte`);
+	const routeLoader = await readRepoFile(`${root}/+page.ts`);
+	assert.match(routeLoader, /academicContext:\s*'term_required'/);
 	assert.match(routePage, /<SupervisionWorkspace section="mine"/);
-	assert.doesNotMatch(
-		routePage,
-		/getLearningDeliveryManagementOptions|getCurriculumProgramWorkspace/
-	);
+	assert.doesNotMatch(routePage, /AcademicPrerequisiteNotice|bookingTermPrerequisite/);
+	for (const child of [
+		'evaluate',
+		'requests',
+		'cycles',
+		'templates',
+		'overview',
+		'approvals',
+		'[id]'
+	]) {
+		const loader = await readRepoFile(`${root}/${child}/+page.ts`);
+		assert.match(loader, /academicContext:\s*'term_optional'/, child);
+	}
 });
 
 test('teaching supervision templates expose a read-only form preview', async () => {
@@ -294,7 +300,10 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(supervisionApi, /getSupervisionObservationTimetableOptions/);
 	assert.match(supervisionApi, /cancelSupervisionObservation/);
 	assert.match(supervisionApi, /SupervisionAction = Schemas\['SupervisionAction'\]/);
-	assert.match(detailRoute, /_meta\s*=\s*\{\s*access:/);
+	assert.match(
+		detailRoute,
+		/_meta\s*=\s*\{\s*academicContext:\s*'term_optional' as const,\s*access:/
+	);
 	assert.doesNotMatch(detailRoute, /menu:/);
 	assert.match(detailPage, /getSupervisionObservation/);
 	assert.match(detailPage, /updateSupervisionObservation/);

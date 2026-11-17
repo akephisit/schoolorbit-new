@@ -12,6 +12,7 @@ import {
 import type { PageLoad } from './$types';
 
 export const _meta = {
+	academicContext: 'term_optional' as const,
 	access: {
 		user_type: 'staff',
 		permission: PERMISSION_MODULES.SUPERVISION

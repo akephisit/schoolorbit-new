@@ -327,13 +327,70 @@ test('year changes remove an incompatible term and term-optional routes offer al
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.planningTerm}`));
 
 	await page.goto(
-		`/staff/academic/supervision?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}&view=calendar`
+		`/staff/academic/supervision/cycles?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}&view=calendar`
 	);
 	await page.getByLabel('เลือกภาคเรียน', { exact: true }).click();
 	await page.getByRole('option', { name: 'ทั้งปี', exact: true }).click();
 	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ทั้งปี');
 	await expect(page).not.toHaveURL(/academicTermId=/);
 	await expect(page).toHaveURL(/view=calendar/);
+});
+
+test('year-only home navigation preloads supervision with the matching default term and restores Back context', async ({
+	page
+}) => {
+	const reads: URL[] = [];
+	page.on('request', (request) => {
+		const url = new URL(request.url());
+		if (
+			url.pathname === '/api/supervision/cycles' ||
+			url.pathname === '/api/supervision/observations'
+		)
+			reads.push(url);
+	});
+	await mockAcademicContextApis(page, { navigationMenu: true });
+	const home = `/staff?academicYearId=${ids.activeYear}`;
+	await page.goto(home);
+	await expect(page.getByLabel('เลือกปีการศึกษา', { exact: true })).toContainText(
+		'ปีการศึกษา 2570'
+	);
+	const destination = `/staff/academic/supervision?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`;
+	const link = page.locator('aside').getByRole('link', { name: 'นิเทศทดสอบ', exact: true });
+	await expect(link).toHaveAttribute('href', destination);
+	await link.hover();
+	await expect
+		.poll(
+			() => reads.filter((url) => url.searchParams.get('academicTermId') === ids.activeTerm).length
+		)
+		.toBeGreaterThan(0);
+	await link.click();
+	await expect(page).toHaveURL(destination);
+	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
+	await expect(page.getByText('เลือกภาคเรียนก่อนจองคาบนิเทศ', { exact: true })).toHaveCount(0);
+	for (const url of reads) {
+		expect(url.searchParams.get('academicYearId')).toBe(ids.activeYear);
+		expect(url.searchParams.get('academicTermId')).toBe(ids.activeTerm);
+	}
+	await page.goBack();
+	await expect(page).toHaveURL(home);
+	await page.goForward();
+	await expect(page).toHaveURL(destination);
+	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
+});
+
+test('supervision year-only deep links select the matching school term while explicit older terms persist', async ({
+	page
+}) => {
+	await mockAcademicContextApis(page);
+	await page.goto(`/staff/academic/supervision?academicYearId=${ids.activeYear}&view=calendar`);
+	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.activeTerm}`));
+	await expect(page).toHaveURL(/view=calendar/);
+	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
+	await page.goto(
+		`/staff/academic/supervision?academicYearId=${ids.activeYear}&academicTermId=${ids.readyTerm}`
+	);
+	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 2');
+	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.readyTerm}`));
 });
 
 test('normal history restores selected terms', async ({ page }) => {

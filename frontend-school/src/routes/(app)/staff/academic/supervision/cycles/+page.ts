@@ -5,6 +5,7 @@ import { PERMISSIONS } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {
+	academicContext: 'term_optional' as const,
 	access: {
 		user_type: 'staff',
 		permission: PERMISSIONS.SUPERVISION_MANAGE_SCHOOL

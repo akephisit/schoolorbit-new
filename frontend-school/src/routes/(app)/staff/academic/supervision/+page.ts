@@ -12,7 +12,7 @@ import { PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
 
 export const _meta = {
-	academicContext: 'term_optional' as const,
+	academicContext: 'term_required' as const,
 	menu: {
 		title: 'นิเทศการสอน',
 		icon: 'ClipboardCheck',
