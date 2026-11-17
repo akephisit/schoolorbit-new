@@ -2,11 +2,7 @@ import type { PageLoad } from './$types';
 import { get } from 'svelte/store';
 import { can } from '#lib/stores/permissions.js';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
-import {
-	getLeaveOptions,
-	getLeaveCoverageSettings,
-	getLeaveRequest
-} from '#lib/api/staff-leave.js';
+import { getLeaveOptions, getLeaveCoverageOptions, getLeaveRequest } from '#lib/api/staff-leave.js';
 import { captureLeaveRead } from '#lib/staff-leave/route-data.js';
 export const _meta = {
 	academicContext: 'none' as const,
@@ -17,9 +13,9 @@ export const load: PageLoad = ({ fetch, params, depends }) => {
 	const allowed = () => get(can).has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN);
 	return {
 		title: 'จัดเตรียมคำขอ',
-		coverageSettings: captureLeaveRead(
+		coverageOptions: captureLeaveRead(
 			allowed,
-			() => getLeaveCoverageSettings({ requestFetch: fetch }),
+			() => getLeaveCoverageOptions({ requestFetch: fetch }),
 			null
 		),
 		id: params.id,

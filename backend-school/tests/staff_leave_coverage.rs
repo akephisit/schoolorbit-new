@@ -2198,3 +2198,186 @@ async fn coverage_refresh_rechecks_return_leg_and_pupils_even_when_original_dige
         assert_eq!(original, preserved);
     }
 }
+
+#[tokio::test]
+async fn full_day_http_retires_partial_payloads_and_settings_even_for_existing_receipt_keys() {
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+    let f = academic_coverage_fixture("full_day_wire_guards", true, 7).await;
+    let planned = academic_coverage_plan(
+        &f,
+        school_staff_leave::coverage_models::LeaveCoverageMode::Substitution,
+    )
+    .await;
+    let owner = coverage_http_router(&f.pool, &f.owner, "full-day-owner");
+    let manager = coverage_http_router(&f.pool, &f.admin, "full-day-manager");
+    let key:Uuid=sqlx::query_scalar("SELECT request_id FROM staff_leave_receipts WHERE actor_id=$1 AND operation='request_create' AND resource_id=$2").bind(f.owner.user_id).bind(planned.request.id).fetch_one(&f.pool).await.unwrap();
+    let mut p = period(planned.request.type_id, 17);
+    p.academic_year_id = Some(f.year);
+    p.academic_term_id = Some(f.term);
+    p.start_date = f.from;
+    p.end_date = f.from;
+    let base = serde_json::json!({"requestId":key,"period":p});
+    let before:(i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM staff_leave_requests),(SELECT count(*) FROM staff_leave_receipts)").fetch_one(&f.pool).await.unwrap();
+    for (field, value) in [
+        ("dayPortion", serde_json::json!("morning")),
+        ("dayPortion", serde_json::json!("afternoon")),
+        ("dayPortion", serde_json::json!("full_day")),
+        ("halfDayBoundary", serde_json::json!("12:00:00")),
+        ("halfDayBoundary", serde_json::Value::Null),
+    ] {
+        let mut forged = base.clone();
+        forged["period"][field] = value;
+        let response = owner
+            .clone()
+            .oneshot(
+                Request::post("/api/staff-leave/requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(forged.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "retired field {field} must be rejected before receipt replay"
+        );
+    }
+    let mut timed = base.clone();
+    timed["requestId"] = serde_json::json!(Uuid::now_v7());
+    timed["period"]["startTime"] = serde_json::json!("09:00:00");
+    timed["period"]["endTime"] = serde_json::json!("10:00:00");
+    let response = owner
+        .clone()
+        .oneshot(
+            Request::post("/api/staff-leave/requests")
+                .header("content-type", "application/json")
+                .body(Body::from(timed.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let original_policy = service::policies(&f.pool, &f.admin, planned.request.type_id)
+        .await
+        .unwrap()
+        .remove(0);
+    let old_key:Uuid=sqlx::query_scalar("SELECT request_id FROM staff_leave_receipts WHERE actor_id=$1 AND operation='policy_create' AND resource_id=$2").bind(f.admin.user_id).bind(original_policy.id).fetch_one(&f.pool).await.unwrap();
+    let mut forged = serde_json::to_value(policy(
+        original_policy.type_revision - 1,
+        f.admin.user_id,
+        LeaveUnit::Day,
+        None,
+    ))
+    .unwrap();
+    forged["requestId"] = serde_json::json!(old_key);
+    forged["unit"] = serde_json::json!("half_day");
+    let response = manager
+        .clone()
+        .oneshot(
+            Request::post(format!(
+                "/api/staff-leave/types/{}/policies",
+                planned.request.type_id
+            ))
+            .header("content-type", "application/json")
+            .body(Body::from(forged.to_string()))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let mut wrong = policy(
+        original_policy.type_revision,
+        f.admin.user_id,
+        LeaveUnit::Minute,
+        None,
+    );
+    wrong.request_id = Uuid::now_v7();
+    assert!(
+        service::save_policy(&f.pool, &f.admin, planned.request.type_id, wrong)
+            .await
+            .is_err()
+    );
+    let after:(i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM staff_leave_requests),(SELECT count(*) FROM staff_leave_receipts)").fetch_one(&f.pool).await.unwrap();
+    assert_eq!(before, after);
+    for method in [axum::http::Method::GET, axum::http::Method::PUT] {
+        let response = manager
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri("/api/staff-leave/coverage/settings")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+    let response = owner
+        .clone()
+        .oneshot(
+            Request::get("/api/staff-leave/coverage/options")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let options: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap())
+            .unwrap();
+    assert!(options["data"].get("halfDayBoundary").is_none());
+    assert!(options["data"].get("revision").is_none());
+    let (exit, _) = typ(&f.pool, &f.admin, "wire_exit", LeaveUnit::Minute, None).await;
+    let mut p = period(exit.id, 17);
+    p.academic_year_id = Some(f.year);
+    p.academic_term_id = Some(f.term);
+    p.start_date = f.from;
+    p.end_date = f.from;
+    for (start, end, other_day) in [
+        (None, None, false),
+        (Some("09:00:01"), Some("10:00:00"), false),
+        (Some("09:15:00"), Some("10:00:00"), true),
+    ] {
+        let mut value = serde_json::to_value(&p).unwrap();
+        value["startTime"] = serde_json::json!(start);
+        value["endTime"] = serde_json::json!(end);
+        if other_day {
+            value["endDate"] = serde_json::json!(f.back);
+        }
+        let response = owner
+            .clone()
+            .oneshot(
+                Request::post("/api/staff-leave/requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"requestId":Uuid::now_v7(),"period":value}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    p.start_time = chrono::NaiveTime::from_hms_opt(9, 15, 0);
+    p.end_time = chrono::NaiveTime::from_hms_opt(10, 0, 0);
+    let exact = service::create(
+        &f.pool,
+        &f.owner,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: p,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(exact.request.amount, 45);
+    assert_eq!(exact.request.unit, LeaveUnit::Minute);
+    assert_eq!(exact.coverage.days[0].lessons.len(), 1);
+}

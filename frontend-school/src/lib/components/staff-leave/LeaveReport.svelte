@@ -9,7 +9,7 @@
 	} from '#lib/api/staff-leave.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { LeaveRegion } from '#lib/staff-leave/region.svelte.js';
-	import { leaveAmount, leaveDate } from '#lib/staff-leave/presentation.js';
+	import { leaveUsageAmount, leaveDate } from '#lib/staff-leave/presentation.js';
 	import { leaveUsageCsv } from '#lib/staff-leave/report.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -134,11 +134,11 @@
 								><Table.Cell class="font-medium">{item.displayName}</Table.Cell><Table.Cell
 									>{item.typeName}</Table.Cell
 								><Table.Cell>{leaveDate(item.quotaYearStart)}</Table.Cell><Table.Cell
-									>{leaveAmount(item.approvedAmount, item.unit)}</Table.Cell
-								><Table.Cell>{leaveAmount(item.reservedAmount, item.unit)}</Table.Cell><Table.Cell
+									>{leaveUsageAmount(item.approvedAmount, item)}</Table.Cell
+								><Table.Cell>{leaveUsageAmount(item.reservedAmount, item)}</Table.Cell><Table.Cell
 									>{item.annualLimit == null
 										? 'ไม่กำหนด'
-										: leaveAmount(item.annualLimit, item.unit)}</Table.Cell
+										: leaveUsageAmount(item.annualLimit, item)}</Table.Cell
 								></Table.Row
 							>{/each}</Table.Body
 					></Table.Root
@@ -158,16 +158,20 @@
 						<dl class="grid grid-cols-3 gap-2 text-sm">
 							<div>
 								<dt class="text-xs text-muted-foreground">อนุมัติแล้ว</dt>
-								<dd class="mt-1 font-medium">{leaveAmount(item.approvedAmount, item.unit)}</dd>
+								<dd class="mt-1 break-all font-medium tabular-nums">
+									{leaveUsageAmount(item.approvedAmount, item)}
+								</dd>
 							</div>
 							<div>
 								<dt class="text-xs text-muted-foreground">รอพิจารณา</dt>
-								<dd class="mt-1 font-medium">{leaveAmount(item.reservedAmount, item.unit)}</dd>
+								<dd class="mt-1 break-all font-medium tabular-nums">
+									{leaveUsageAmount(item.reservedAmount, item)}
+								</dd>
 							</div>
 							<div>
 								<dt class="text-xs text-muted-foreground">สิทธิที่กำหนด</dt>
-								<dd class="mt-1">
-									{item.annualLimit == null ? 'ไม่กำหนด' : leaveAmount(item.annualLimit, item.unit)}
+								<dd class="mt-1 break-all tabular-nums">
+									{item.annualLimit == null ? 'ไม่กำหนด' : leaveUsageAmount(item.annualLimit, item)}
 								</dd>
 							</div>
 						</dl>

@@ -5,7 +5,7 @@
 	import {
 		getLeaveRequest,
 		submitLeaveRequest,
-		type LeaveCoverageSettings,
+		type LeaveCoverageOptions,
 		type LeaveKind,
 		type LeavePersonalOptions,
 		type LeaveRequestDetail
@@ -28,12 +28,12 @@
 	let {
 		source,
 		optionsSource,
-		settingsSource,
+		coverageOptionsSource,
 		kind = 'leave',
 		id
 	}: {
 		source?: Promise<RouteLoadResult<LeaveRequestDetail | null>>;
-		settingsSource: Promise<RouteLoadResult<LeaveCoverageSettings | null>>;
+		coverageOptionsSource: Promise<RouteLoadResult<LeaveCoverageOptions | null>>;
 		optionsSource: Promise<RouteLoadResult<LeavePersonalOptions | null>>;
 		kind?: LeaveKind;
 		id?: string;
@@ -166,7 +166,7 @@
 				kind={effectiveKind}
 				detail={detail ?? undefined}
 				{optionsSource}
-				{settingsSource}
+				{coverageOptionsSource}
 				{coverageRevision}
 				ondirty={(value) => (detailsDirty = value)}
 				oncancel={() => goto(backHref)}
@@ -221,6 +221,10 @@
 						<dd class="whitespace-pre-wrap break-words">{detail.request.reason}</dd>
 					</div>
 				</dl>
+				{#if detail.submissionBlockingReason}<PageState
+						title="คำขอนี้ยังส่งพิจารณาไม่ได้"
+						description={detail.submissionBlockingReason}
+					/>{/if}
 				{#if detail.coverage}<div class="rounded-lg border p-3 text-sm">
 						<p class="font-medium">{coverageStateLabels[detail.coverage.state]}</p>
 						<p>

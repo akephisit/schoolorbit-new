@@ -212,6 +212,10 @@
 				onaction={refreshed}
 			/>{/if}
 		{#if region.loading && !detail}<PageSkeleton variant="detail" />{:else if detail}
+			{#if detail.submissionBlockingReason}<PageState
+					title="คำขอนี้ยังส่งพิจารณาไม่ได้"
+					description={detail.submissionBlockingReason}
+				/>{/if}
 			{#if detail.coverage.days.some( (day) => day.lessons.some((lesson) => lesson.assignment?.consent === 'declined') ) && creator && detail.request.status === 'submitted'}<div
 					class="flex flex-wrap items-center gap-3 rounded-lg border p-3"
 				>

@@ -3,6 +3,7 @@ import type {
 	LeaveRequestDetail,
 	LeavePolicyVersion,
 	LeaveUnit,
+	LeavePolicyUnit,
 	LeaveKind,
 	ProcessTemplateStep
 } from '#lib/api/staff-leave.js';
@@ -12,12 +13,10 @@ export interface LeaveDraft {
 	typeId: string;
 	academicYearId: string;
 	academicTermId: string;
-	halfDayBoundary: string | null;
 	startDate?: string;
 	endDate?: string;
 	startTime: string;
 	endTime: string;
-	dayPortion: LeavePeriodInput['dayPortion'];
 	reason: string;
 	evidenceFileIds: string[];
 }
@@ -27,12 +26,10 @@ export function leaveDraft(detail?: LeaveRequestDetail): LeaveDraft {
 		typeId: source?.typeId ?? '',
 		academicYearId: source?.academicYearId ?? '',
 		academicTermId: source?.academicTermId ?? '',
-		halfDayBoundary: source?.halfDayBoundary ?? null,
 		startDate: source?.startDate,
 		endDate: source?.endDate,
 		startTime: source?.startTime?.slice(0, 5) ?? '',
 		endTime: source?.endTime?.slice(0, 5) ?? '',
-		dayPortion: source?.dayPortion ?? 'full_day',
 		reason: source?.reason ?? '',
 		evidenceFileIds: [...(detail?.evidenceFileIds ?? [])]
 	};
@@ -54,25 +51,18 @@ export function leaveDraftErrors(
 			errors.endTime = 'เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม';
 		if (draft.endDate !== draft.startDate) errors.endDate = 'คำขอแบบนาทีต้องอยู่ในวันเดียวกัน';
 	}
-	if (
-		policy?.unit === 'half_day' &&
-		draft.dayPortion !== 'full_day' &&
-		draft.endDate !== draft.startDate
-	)
-		errors.endDate = 'การลาครึ่งวันต้องอยู่ในวันเดียวกัน';
+
 	return errors;
 }
-export function leavePeriodInput(draft: LeaveDraft, unit: LeaveUnit): LeavePeriodInput {
+export function leavePeriodInput(draft: LeaveDraft, unit: LeavePolicyUnit): LeavePeriodInput {
 	return {
 		typeId: draft.typeId,
 		academicYearId: draft.academicYearId || null,
 		academicTermId: draft.academicTermId || null,
-		halfDayBoundary: draft.halfDayBoundary,
 		startDate: draft.startDate ?? '',
 		endDate: draft.endDate ?? '',
 		startTime: unit === 'minute' ? `${draft.startTime}:00` : null,
 		endTime: unit === 'minute' ? `${draft.endTime}:00` : null,
-		dayPortion: unit === 'half_day' ? draft.dayPortion : 'full_day',
 		reason: draft.reason.trim(),
 		evidenceFileIds: draft.evidenceFileIds
 	};
@@ -80,9 +70,9 @@ export function leavePeriodInput(draft: LeaveDraft, unit: LeaveUnit): LeavePerio
 export function displayedPolicyLimit(amount: number | null | undefined, unit: LeaveUnit): string {
 	return amount == null ? '' : String(unit === 'half_day' ? amount / 2 : amount);
 }
-export function policyLimitInput(raw: string, unit: LeaveUnit): number | null {
+export function policyLimitInput(raw: string): number | null {
 	if (!raw.trim()) return null;
-	const value = Number(raw) * (unit === 'half_day' ? 2 : 1);
+	const value = Number(raw);
 	if (!Number.isSafeInteger(value) || value < 1)
 		throw new Error('จำนวนต้องเป็นค่าบวกตามหน่วยที่เลือก');
 	return value;
@@ -102,7 +92,7 @@ export function newLeavePolicyStep(): ProcessTemplateStep {
 	};
 }
 export function leavePolicyDraft(kind: LeaveKind, initial?: LeavePolicyVersion) {
-	const unit = initial?.unit ?? (kind === 'exit' ? 'minute' : 'half_day');
+	const unit: LeavePolicyUnit = kind === 'exit' ? 'minute' : 'day';
 	return {
 		effectiveFrom: undefined as string | undefined,
 		sourceReference: initial?.sourceReference ?? '',
@@ -114,13 +104,13 @@ export function leavePolicyDraft(kind: LeaveKind, initial?: LeavePolicyVersion) 
 		excludedDates: [...(initial?.excludedDates ?? [])],
 		quotaMonth: initial?.quotaYearStartMonth ?? 1,
 		maxPerRequest: initial
-			? displayedPolicyLimit(initial.maxPerRequest, unit)
+			? displayedPolicyLimit(initial.maxPerRequest, initial.unit)
 			: kind === 'exit'
 				? '120'
 				: '',
-		annualLimit: displayedPolicyLimit(initial?.annualLimit, unit),
+		annualLimit: displayedPolicyLimit(initial?.annualLimit, initial?.unit ?? unit),
 		evidenceRequired: initial?.evidenceRequired ?? false,
-		evidenceFromAmount: displayedPolicyLimit(initial?.evidenceFromAmount, unit),
+		evidenceFromAmount: displayedPolicyLimit(initial?.evidenceFromAmount, initial?.unit ?? unit),
 		minimumNoticeDays: initial?.minimumNoticeDays == null ? '' : String(initial.minimumNoticeDays),
 		steps: initial?.steps.map((step) => ({
 			...step,

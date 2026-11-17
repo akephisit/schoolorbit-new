@@ -11,8 +11,8 @@
 		void $userPermissions;
 		return appIdentityKey();
 	});
-	const settingsSource = $derived(leaveSource(data.coverageSettings, identity));
+	const coverageOptionsSource = $derived(leaveSource(data.coverageOptions, identity));
 	const optionsSource = $derived(leaveSource(data.options, identity));
 </script>
 
-{#key identity}<RequestWorkflow kind={data.kind} {optionsSource} {settingsSource} />{/key}
+{#key identity}<RequestWorkflow kind={data.kind} {optionsSource} {coverageOptionsSource} />{/key}

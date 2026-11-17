@@ -2,7 +2,7 @@ import type { PageLoad } from './$types';
 import { get } from 'svelte/store';
 import { can } from '#lib/stores/permissions.js';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
-import { getLeaveOptions, getLeaveCoverageSettings } from '#lib/api/staff-leave.js';
+import { getLeaveOptions, getLeaveCoverageOptions } from '#lib/api/staff-leave.js';
 import { captureLeaveRead } from '#lib/staff-leave/route-data.js';
 export const _meta = {
 	academicContext: 'none' as const,
@@ -12,9 +12,9 @@ export const load: PageLoad = ({ fetch, depends }) => {
 	depends('school:app-identity');
 	return {
 		title: 'สร้างคำขอ',
-		coverageSettings: captureLeaveRead(
+		coverageOptions: captureLeaveRead(
 			() => get(can).has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN),
-			() => getLeaveCoverageSettings({ requestFetch: fetch }),
+			() => getLeaveCoverageOptions({ requestFetch: fetch }),
 			null
 		),
 		kind: 'leave' as const,

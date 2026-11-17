@@ -3121,8 +3121,19 @@ it does not rewrite existing Leave documents, signatures, revisions or file link
 without coverage context remain explicitly marked as pre-feature evidence. Editable requests
 need an explicit valid academic year/term when newly submitted.
 
-Configure the nullable half-day boundary in Leave settings before morning/afternoon coverage
-is submitted. There is no seeded noon or date-based academic-context inference. Future source
+Migration [161](../backend-school/migrations/161_staff_leave_full_day_requests.sql) retires the
+mutable boundary table and its settings endpoints. Deploy the matching backend and frontend
+together: new Leave requests accept whole days and Exit requests require explicit same-day times.
+Context choices/defaults come from the read-only coverage options endpoint backed by Core; dates
+never infer a term. Existing HalfDay policies remain evidence. A manager must append an explicit
+same-type Day successor, choosing valid whole-day limits and preserving the quota-year month;
+there is no automatic clone, cap rounding, fallback or new-type quota reset. Draft/returned partial
+requests require an explicit owner save under that policy before resubmission. Submitted/approved
+requests, their captured intervals, consent and legal cancellation continue without widening or
+rehashing. Daily report quantities use exact integer strings with amountScale 2 (historical 0.5 days
+remains one scaled unit); minutes use scale 1. Old mutation fields are rejected, including with old
+idempotency keys; unchanged ID-only accepted actions retain their receipt replay. Retain a
+161-compatible writer and recover forward after cutover. Future source
 and actual teaching-group edits can be refused while accepted dated duties depend on them;
 return/replan the request through Leave rather than editing stored snapshots or disabling guards.
 An approved cancellation releases an entirely future exchange pair together. Once either leg
@@ -3134,5 +3145,5 @@ cancellation, rejection and return remain available after closure; creating or a
 teaching still requires a writable target context.
 
 Use the coverage fixtures in [Testing](TESTING.md) for a disposable rehearsal. After migration,
-retain a 160-compatible writer and repair forward; do not restore an older migration timeline
+retain a 161-compatible writer and repair forward; do not restore an older migration timeline
 or delete immutable confirmation/duty evidence to resolve an operational conflict.

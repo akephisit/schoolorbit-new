@@ -15,7 +15,11 @@ import {
 	leaveListDestination,
 	safeLeaveReturn
 } from '../../src/lib/staff-leave/filters.ts';
-import { leaveAmount, leaveHistoryLabel } from '../../src/lib/staff-leave/presentation.ts';
+import {
+	leaveAmount,
+	leaveUsageAmount,
+	leaveHistoryLabel
+} from '../../src/lib/staff-leave/presentation.ts';
 import { LeaveMutationIntent } from '../../src/lib/staff-leave/mutation-intent.ts';
 
 const presentation = ts.transpileModule(
@@ -33,16 +37,17 @@ const { leaveCsvCell, leaveUsageCsv, validReportDate } = await import(
 	`data:text/javascript;base64,${Buffer.from(reportSource).toString('base64')}`
 );
 
-test('half-day granularity displays days and preserves the shared wire allowance', () => {
+test('historical half-day evidence stays exact while active policy amounts require whole units', () => {
 	assert.equal(leaveAmount(3, 'half_day'), '1.5 วัน');
 	assert.equal(leaveHistoryLabel('created'), 'สร้างฉบับร่าง');
 	assert.equal(leaveHistoryLabel('cancellation_approve'), 'อนุมัติการยกเลิกคำขอ');
 	assert.equal(displayedPolicyLimit(5, 'half_day'), '2.5');
-	assert.equal(policyLimitInput('2.5', 'half_day'), 5);
-	assert.equal(policyLimitInput('', 'half_day'), null);
-	assert.throws(() => policyLimitInput('0.25', 'half_day'));
-	assert.throws(() => policyLimitInput('-1', 'day'));
-	assert.throws(() => policyLimitInput('1.5', 'minute'));
+	assert.throws(() => policyLimitInput('2.5'));
+	assert.equal(policyLimitInput('8'), 8);
+	assert.equal(policyLimitInput(''), null);
+	assert.throws(() => policyLimitInput('0.25'));
+	assert.throws(() => policyLimitInput('-1'));
+	assert.throws(() => policyLimitInput('1.5'));
 });
 test('request payload omits client amounts and normalizes stale unit-dependent fields', () => {
 	const draft = {
@@ -53,6 +58,7 @@ test('request payload omits client amounts and normalizes stale unit-dependent f
 		startTime: '09:00',
 		endTime: '10:30',
 		dayPortion: 'morning',
+		halfDayBoundary: '11:30:00',
 		reason: ' เหตุผล ',
 		evidenceFileIds: ['file']
 	};
@@ -60,21 +66,20 @@ test('request payload omits client amounts and normalizes stale unit-dependent f
 		typeId: 'type',
 		academicYearId: null,
 		academicTermId: null,
-		halfDayBoundary: null,
 		startDate: '2026-10-18',
 		endDate: '2026-10-18',
 		startTime: '09:00:00',
 		endTime: '10:30:00',
-		dayPortion: 'full_day',
 		reason: 'เหตุผล',
 		evidenceFileIds: ['file']
 	});
-	assert.equal(leavePeriodInput(draft, 'half_day').dayPortion, 'morning');
+	assert.equal('dayPortion' in leavePeriodInput(draft, 'day'), false);
+	assert.equal('halfDayBoundary' in leavePeriodInput(draft, 'minute'), false);
 	assert.equal(leavePeriodInput(draft, 'day').startTime, null);
 	assert.equal('amount' in leavePeriodInput(draft, 'minute'), false);
 	assert.equal(
-		leaveDraftErrors({ ...draft, endDate: '2026-10-19' }, { unit: 'half_day' }).endDate,
-		'การลาครึ่งวันต้องอยู่ในวันเดียวกัน'
+		leaveDraftErrors({ ...draft, endDate: '2026-10-19' }, { unit: 'day' }).endDate,
+		undefined
 	);
 	assert.equal(
 		leaveDraftErrors({ ...draft, endTime: '08:00' }, { unit: 'minute' }).endTime,
@@ -137,6 +142,8 @@ test('policy amendment copies all criteria without mutating the prior version or
 	};
 	const draft = leavePolicyDraft('leave', prior);
 	assert.equal(draft.effectiveFrom, undefined);
+	assert.equal(draft.unit, 'day');
+	assert.equal(draft.quotaMonth, 10);
 	assert.equal(draft.maxPerRequest, '2.5');
 	assert.equal(draft.evidenceFromAmount, '1.5');
 	assert.equal(draft.minimumNoticeDays, '2');
@@ -159,10 +166,11 @@ test('CSV quotes delimiters, newlines and spreadsheet formula prefixes while usi
 				displayName: '=formula',
 				typeName: 'ลากิจ',
 				quotaYearStart: '2026-01-01',
-				approvedAmount: 3,
-				reservedAmount: 1,
+				approvedAmount: '3',
+				reservedAmount: '1',
 				annualLimit: null,
-				unit: 'half_day'
+				unit: 'day',
+				amountScale: 2
 			}
 		]
 	});
@@ -170,4 +178,18 @@ test('CSV quotes delimiters, newlines and spreadsheet formula prefixes while usi
 	assert.match(csv, /"1.5 วัน","0.5 วัน","ไม่กำหนด"/);
 	assert.equal(validReportDate('2026-02-30'), undefined);
 	assert.equal(validReportDate('2024-02-29'), '2024-02-29');
+});
+
+test('scaled report strings preserve half-days and integers beyond Number precision', () => {
+	assert.equal(
+		leaveUsageAmount('9007199254740993', { unit: 'day', amountScale: 2 }),
+		'4503599627370496.5 วัน'
+	);
+	assert.equal(
+		leaveUsageAmount('9007199254740993', { unit: 'minute', amountScale: 1 }),
+		'9007199254740993 นาที'
+	);
+	assert.equal(leaveUsageAmount('0', { unit: 'day', amountScale: 2 }), '0 วัน');
+	assert.equal(leaveUsageAmount('-1', { unit: 'day', amountScale: 2 }), '-0.5 วัน');
+	assert.throws(() => leaveUsageAmount('1', { unit: 'day', amountScale: 3 }));
 });

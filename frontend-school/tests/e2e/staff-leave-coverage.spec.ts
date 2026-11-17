@@ -164,9 +164,7 @@ test('missing timetable and valid zero lessons remain distinct', async ({ page }
 	await page.reload();
 	await expect(page.getByText('ไม่มีคาบสอนที่ได้รับผลกระทบ', { exact: true })).toBeVisible();
 	await page.goto(editPath.replace('step=coverage', 'step=details'));
-	await expect(
-		page.getByText('เวลาสิ้นสุดช่วงเช้าของโรงเรียน: 11:30', { exact: true })
-	).toBeVisible();
+	await expect(page.getByTestId('leave-request-editor')).toContainText('2569');
 });
 
 test('recipient confirms multiple own rows through redacted task without detail or evidence reads', async ({
@@ -242,30 +240,16 @@ for (const theme of ['light', 'dark'] as const)
 			});
 		});
 
-test('missing half-day boundary is explicit and manager saves actual school setting', async ({
-	page
-}) => {
-	const plan = coveragePlan();
-	plan.sourceDigest = null;
-	plan.days = [];
-	plan.timetableState = 'legacy';
-	plan.blockingReason = 'โรงเรียนยังไม่กำหนดเวลาครึ่งวัน';
-	const api = await mockTeachingCoverage(page, { plan, missingBoundary: true });
-	await page.goto(editPath);
-	await expect(page.getByTestId('leave-coverage-editor')).toContainText(
-		'โรงเรียนยังไม่กำหนดเวลาครึ่งวัน'
-	);
-	await page.getByRole('button', { name: '1. รายละเอียด', exact: true }).click();
-	await expect(page.getByTestId('leave-request-editor')).toContainText('ยังไม่กำหนด');
-	await expect(page.getByTestId('leave-request-editor')).not.toContainText('12:00');
-	await page.goto('/staff/leave/settings');
-	await page.locator('#coverage-half-day-boundary').fill('11:20');
-	await page.getByRole('button', { name: 'บันทึกเวลาครึ่งวัน', exact: true }).click();
-	await expect.poll(() => api.settings.halfDayBoundary).toBe('11:20:00');
+test('whole-day coverage uses explicit context without clock settings', async ({ page }) => {
+	const api = await mockTeachingCoverage(page);
 	await page.goto(editPath.replace('step=coverage', 'step=details'));
-	await expect(page.getByTestId('leave-request-editor')).toContainText(
-		'เวลาสิ้นสุดช่วงเช้าของโรงเรียน: 11:20'
-	);
+	await expect(page.getByTestId('leave-request-editor')).toContainText('2569');
+	await expect(page.getByTestId('leave-request-editor')).not.toContainText('เวลาสิ้นสุดช่วงเช้า');
+	await expect(page.getByRole('radio', { name: /ครึ่งวัน/ })).toHaveCount(0);
+	await page.goto('/staff/leave/settings');
+	await expect(page.getByTestId('leave-types')).toBeVisible();
+	await expect(page.locator('#coverage-half-day-boundary')).toHaveCount(0);
+	expect(api.reads.filter((path) => path.endsWith('/coverage/settings'))).toHaveLength(0);
 });
 
 test('emergency manager completes coverage while administrative approval remains awaiting consent', async ({
@@ -431,7 +415,7 @@ test('editing saved exit date time and valid academic context consumes reconcile
 		kind: 'exit',
 		updatedCoverage: updated
 	});
-	api.settings.contexts.push({
+	api.coverageOptions.contexts.push({
 		academicYearId: coverageYear,
 		academicYearName: '2569',
 		academicTermId: id(801),

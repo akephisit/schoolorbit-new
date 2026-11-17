@@ -5,7 +5,6 @@
 		listLeavePolicies,
 		saveLeaveType,
 		deleteLeaveType,
-		type LeaveCoverageSettings,
 		type LeaveType,
 		type LeavePolicyVersion
 	} from '#lib/api/staff-leave.js';
@@ -32,16 +31,9 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
-	import CoverageSettings from './CoverageSettings.svelte';
 	import LeaveTypeForm from './LeaveTypeForm.svelte';
 	import PolicyEditor from './PolicyEditor.svelte';
-	let {
-		source,
-		settingsSource
-	}: {
-		source: Promise<RouteLoadResult<LeaveType[]>>;
-		settingsSource: Promise<RouteLoadResult<LeaveCoverageSettings | null>>;
-	} = $props();
+	let { source }: { source: Promise<RouteLoadResult<LeaveType[]>> } = $props();
 	const region = new LeaveRegion<LeaveType[]>(),
 		request = new LatestRequest(),
 		intent = new LeaveMutationIntent();
@@ -50,6 +42,7 @@
 		selected = $state<LeaveType | null>(null),
 		policies = $state<LeavePolicyVersion[]>([]);
 	let policySeed = $state<LeavePolicyVersion | undefined>();
+	const policyMonths = $derived([...new Set(policies.map((policy) => policy.quotaYearStartMonth))]);
 	let expandedPolicies = $state<string[]>([]);
 	let policiesLoading = $state(false),
 		policiesError = $state(''),
@@ -166,7 +159,6 @@
 			title="ดำเนินการไม่สำเร็จ"
 			description={error}
 		/>{/if}
-	<CoverageSettings source={settingsSource} />
 	<div class="grid items-start gap-4 lg:grid-cols-[minmax(15rem,0.7fr)_minmax(0,1.8fr)]">
 		<section data-testid="leave-types" aria-busy={region.loading} class="min-w-0">
 			{#if region.error}<PageState
@@ -249,6 +241,7 @@
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<h2 class="text-lg font-semibold">เกณฑ์: {selected.name}</h2>
 					{#if allowed && !selected.archived}<Button
+							disabled={policiesLoading || !!policiesError}
 							onclick={() => {
 								policySeed = undefined;
 								policyOpen = true;
@@ -321,9 +314,11 @@
 													</li>{/each}
 											</ol>
 											{#if allowed && !selected.archived}<Button
+													disabled={policiesLoading || !!policiesError}
 													type="button"
 													variant="outline"
 													onclick={() => {
+														if (policiesLoading || policiesError) return;
 														policySeed = policy;
 														policyOpen = true;
 													}}>สร้างฉบับใหม่จากฉบับนี้</Button
@@ -367,6 +362,8 @@
 		>{#if policyOpen && selected && allowed}<PolicyEditor
 				type={selected}
 				initialPolicy={policySeed}
+				fixedQuotaMonth={policyMonths.length === 1 ? policyMonths[0] : undefined}
+				quotaMonthConflict={policyMonths.length > 1}
 				oncancel={() => (policyOpen = false)}
 				onsaved={(policy) => {
 					policies = [policy, ...policies];

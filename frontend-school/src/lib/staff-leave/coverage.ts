@@ -3,7 +3,7 @@ import type {
 	LeaveCoverageAssignment,
 	LeaveCoveragePlan,
 	LeaveCoverageSelection,
-	LeaveCoverageSettings,
+	LeaveCoverageOptions,
 	DatedTeachingLesson
 } from '#lib/api/staff-leave.js';
 
@@ -63,7 +63,7 @@ export function coverageReady(plan: LeaveCoveragePlan): boolean {
 	const counts = coverageCounts(plan.days.flatMap((day) => day.lessons));
 	return plan.timetableState === 'ready' && counts.selected === counts.total;
 }
-export function validDefaultContext(settings: LeaveCoverageSettings) {
+export function validDefaultContext(settings: LeaveCoverageOptions) {
 	return (
 		settings.contexts.find(
 			(context) =>

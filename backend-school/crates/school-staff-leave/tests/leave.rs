@@ -1187,6 +1187,20 @@ async fn coverage_missing_timetable_is_not_zero_and_partial_fields_are_rejected(
 async fn coverage_options_keep_context_defaults_without_a_mutable_boundary() {
     use school_staff_leave::coverage;
     let (pool, owner, admin, mut other) = fixture("coverage_current_options").await;
+    assert!(coverage::options(&pool, &owner)
+        .await
+        .unwrap()
+        .contexts
+        .is_empty());
+    // Fixture contexts start hidden. Only Core-visible contexts belong in lookup.
+    sqlx::query("UPDATE academic_years SET is_visible=true")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE academic_terms SET is_visible=true")
+        .execute(&pool)
+        .await
+        .unwrap();
     let options = coverage::options(&pool, &owner).await.unwrap();
     assert_eq!(options.contexts.len(), 1);
     assert!(options.default_academic_year_id.is_none());
