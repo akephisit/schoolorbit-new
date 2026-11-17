@@ -268,6 +268,7 @@ export async function mockBudget(
 		withRequest?: boolean;
 		empty?: boolean;
 		holdMutation?: boolean;
+		holdYearCreateResponse?: boolean;
 		stalePlan?: boolean;
 		stalePayment?: boolean;
 		exportFiltered?: boolean;
@@ -726,6 +727,7 @@ export async function mockBudget(
 				next.adjustmentSteps = structuredClone(source.adjustmentSteps);
 			}
 			yearSettings.set(next.fiscalYear.id, next);
+			if (options.holdYearCreateResponse) await held;
 			return reply(route, next);
 		}
 		if (path.startsWith('/api/budget/fiscal-years/')) {
@@ -1143,6 +1145,7 @@ export async function mockBudget(
 	});
 	return {
 		reads,
+		yearSettings,
 		lookupReads,
 		lookupCompletions,
 		writes,

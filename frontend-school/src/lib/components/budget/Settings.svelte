@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Settings2 } from '@lucide/svelte';
 	import { onDestroy } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import {
 		getBudgetSettings,
 		getBudgetYearSettings,
@@ -9,6 +9,7 @@
 		closeBudgetFiscalYear,
 		deleteBudgetFiscalYear,
 		type BudgetSettings,
+		type BudgetFiscalYear,
 		type BudgetYearSettings
 	} from '#lib/api/budget.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
@@ -42,6 +43,7 @@
 		intent = new BudgetMutationIntent();
 	// Unsaved drafts live only in this authenticated workspace, indexed by their fiscal year.
 	let drafts = $state<Record<string, YearDraft>>({}),
+		yearChanges = $state<Record<string, BudgetFiscalYear | null>>({}),
 		creating = $state(false),
 		confirm = $state<'close' | 'delete' | null>(null),
 		pending = $state(false),
@@ -49,12 +51,43 @@
 		error = $state(''),
 		confirmation = $state('');
 	let nextYear = $state({ name: '', startDate: '', endDate: '', copyFromFiscalYearId: '' });
-	let disposed = false;
-	const value = $derived(
-		region.value && (!selectedId || region.value.fiscalYear.id === selectedId) ? region.value : null
-	);
+	let disposed = false,
+		contextGeneration = 0,
+		mutationGeneration = 0;
+	beforeNavigate(() => {
+		contextGeneration++;
+	});
+	const value = $derived.by(() => {
+		const loaded = region.value;
+		if (!loaded || (selectedId && loaded.fiscalYear.id !== selectedId)) return null;
+		const updated = yearChanges[loaded.fiscalYear.id];
+		if (updated === null) return null;
+		return updated && updated.revision > loaded.fiscalYear.revision
+			? { ...loaded, fiscalYear: updated }
+			: loaded;
+	});
+	// Successful actions reconcile the index without superseding an in-flight route read.
+	const years = $derived.by(() => {
+		const current = index.value?.fiscalYears ?? [],
+			ids = new Set(current.map((year) => year.id));
+		return [
+			...current.flatMap((year) => {
+				const updated = yearChanges[year.id];
+				if (updated === null) return [];
+				return [updated && updated.revision > year.revision ? updated : year];
+			}),
+			...Object.values(yearChanges).filter(
+				(year): year is BudgetFiscalYear => year !== null && !ids.has(year.id)
+			)
+		];
+	});
 	const manage = $derived($can.has(PERMISSIONS.BUDGET_MANAGE_SCHOOL));
 	$effect.pre(() => {
+		void selectedId;
+		contextGeneration++;
+		pending = false;
+		creating = false;
+		error = '';
 		index.consume(indexSource);
 		region.consume(source);
 		confirm = null;
@@ -69,14 +102,25 @@
 		index.dispose();
 		region.dispose();
 	});
+	function rememberYear(year: BudgetFiscalYear) {
+		const previous = yearChanges[year.id];
+		if (previous === null) return;
+		if (!previous || year.revision > previous.revision) yearChanges[year.id] = year;
+	}
 	function patch(next: BudgetYearSettings) {
 		region.patch(next);
-		if (index.value)
-			index.patch({
-				fiscalYears: index.value.fiscalYears.map((year) =>
-					year.id === next.fiscalYear.id ? next.fiscalYear : year
-				)
-			});
+		rememberYear(next.fiscalYear);
+	}
+	function beginMutation() {
+		const context = contextGeneration,
+			mutation = ++mutationGeneration;
+		pending = true;
+		return {
+			current: () => !disposed && context === contextGeneration,
+			finish: () => {
+				if (!disposed && mutation === mutationGeneration) pending = false;
+			}
+		};
 	}
 	async function create(event: SubmitEvent) {
 		event.preventDefault();
@@ -91,7 +135,7 @@
 			error = 'กรอกชื่อและช่วงวันที่ปีงบประมาณให้ครบ';
 			return;
 		}
-		pending = true;
+		const mutation = beginMutation();
 		try {
 			const basis = {
 				...nextYear,
@@ -102,24 +146,24 @@
 				...basis,
 				requestId: intent.for({ operation: 'create', ...basis })
 			});
-			if (!disposed) {
-				index.patch({ fiscalYears: [...(index.value?.fiscalYears ?? []), next.fiscalYear] });
+			if (!disposed) rememberYear(next.fiscalYear);
+			if (mutation.current()) {
 				region.patch(next);
 				creating = false;
 				nextYear = { name: '', startDate: '', endDate: '', copyFromFiscalYearId: '' };
 				void goto(destination('/staff/budget/settings', { fiscalYearId: next.fiscalYear.id }));
 			}
 		} catch (cause) {
-			if (!disposed) error = message(cause);
+			if (mutation.current()) error = message(cause);
 		} finally {
-			if (!disposed) pending = false;
+			mutation.finish();
 		}
 	}
 	async function lifecycle() {
-		if (!value || pending || confirmation !== value.fiscalYear.name) return;
+		if (!value || !confirm || pending || confirmation !== value.fiscalYear.name) return;
 		const year = value.fiscalYear,
 			operation = confirm;
-		pending = true;
+		const mutation = beginMutation();
 		error = '';
 		try {
 			const basis = { expectedRevision: year.revision };
@@ -127,25 +171,28 @@
 			if (operation === 'close') {
 				const next = await closeBudgetFiscalYear(year.id, input);
 				if (!disposed) {
-					patch(next);
 					delete drafts[year.id];
+					rememberYear(next.fiscalYear);
+				}
+				if (mutation.current()) {
+					region.patch(next);
 				}
 			} else {
 				await deleteBudgetFiscalYear(year.id, input);
 				if (!disposed) {
 					delete drafts[year.id];
-					index.patch({
-						fiscalYears: index.value?.fiscalYears.filter((item) => item.id !== year.id) ?? []
-					});
+					yearChanges[year.id] = null;
+				}
+				if (mutation.current()) {
 					region.patch(null);
 					void goto('/staff/budget/settings');
 				}
 			}
-			if (!disposed) confirm = null;
+			if (mutation.current()) confirm = null;
 		} catch (cause) {
-			if (!disposed) error = message(cause);
+			if (mutation.current()) error = message(cause);
 		} finally {
-			if (!disposed) pending = false;
+			mutation.finish();
 		}
 	}
 </script>
@@ -178,7 +225,7 @@
 					id="budget-settings-year"
 					label="ปีงบประมาณ"
 					value={selectedId || value?.fiscalYear.id || ''}
-					options={(index.value?.fiscalYears ?? []).map((year) => ({
+					options={years.map((year) => ({
 						value: year.id,
 						label: `${year.name}${year.isClosed ? ' · ปิดปีแล้ว' : ''}`
 					}))}
@@ -202,7 +249,7 @@
 				description={region.error}
 				actionLabel="ลองอีกครั้ง"
 				onaction={() => {
-					const id = selectedId || index.value?.fiscalYears[0]?.id;
+					const id = selectedId || years[0]?.id;
 					if (id) region.retry((signal) => getBudgetYearSettings(id, { signal }));
 				}}
 			/>{/if}
@@ -284,7 +331,7 @@
 				bind:value={nextYear.copyFromFiscalYearId}
 				options={[
 					{ value: '', label: 'เริ่มต้นใหม่' },
-					...(index.value?.fiscalYears ?? []).map((year) => ({ value: year.id, label: year.name }))
+					...years.map((year) => ({ value: year.id, label: year.name }))
 				]}
 				disabled={pending || childPending}
 			/>{#if error}<PageState

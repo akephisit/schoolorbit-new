@@ -282,3 +282,338 @@ test('blocked year closure stays discoverable without allowing a write', async (
 	).toBeVisible();
 	expect(api.writes).toHaveLength(0);
 });
+
+function deferredResponse() {
+	let release = () => {};
+	const promise = new Promise<void>((resolve) => (release = resolve));
+	return { promise, release };
+}
+async function settleResponse(page: Page) {
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+}
+
+for (const operation of ['close', 'delete'] as const)
+	for (const destination of ['pending', 'index-pending', 'resolved', 'same-year-return'] as const)
+		test(`delayed year ${operation} preserves Back/Forward context with ${destination} destination`, async ({
+			page
+		}) => {
+			const first = budgetYearSettings(),
+				second = budgetYearSettings();
+			second.fiscalYear = { ...second.fiscalYear, id: id(998), name: '2571' };
+			const api = await mockBudget(page, { yearSettings: [first, second], holdMutation: true });
+			const readGate = deferredResponse();
+			let holdSecondRead = false,
+				secondReadStarted = false,
+				holdFirstRead = false,
+				firstReadStarted = false,
+				holdIndexRead = false,
+				indexReadStarted = false;
+			await page.route(
+				(url) => url.pathname === `/api/budget/fiscal-years/${second.fiscalYear.id}`,
+				async (route) => {
+					if (holdSecondRead && route.request().method() === 'GET') {
+						secondReadStarted = true;
+						await readGate.promise;
+					}
+					await route.fallback();
+				}
+			);
+			await page.route(
+				(url) => url.pathname === `/api/budget/fiscal-years/${budgetYearId}`,
+				async (route) => {
+					if (holdFirstRead && route.request().method() === 'GET') {
+						firstReadStarted = true;
+						await readGate.promise;
+					}
+					await route.fallback();
+				}
+			);
+			await page.route(
+				(url) => url.pathname === '/api/budget/settings',
+				async (route) => {
+					if (holdIndexRead) {
+						indexReadStarted = true;
+						await readGate.promise;
+					}
+					await route.fallback();
+				}
+			);
+			try {
+				await page.goto(`/staff/budget/settings?fiscalYearId=${second.fiscalYear.id}`);
+				await page.getByRole('tab', { name: 'แหล่งเงิน', exact: true }).click();
+				await page.getByLabel('ชื่อแหล่งเงิน *', { exact: true }).first().fill('ฉบับร่างปี B');
+				await choose(page, 'ปีงบประมาณ', '2570');
+				await page.getByRole('tab', { name: 'ปีงบประมาณ', exact: true }).click();
+				await page.getByLabel('ชื่อปีงบประมาณ *', { exact: true }).fill('ฉบับร่างปี A');
+				await page
+					.getByRole('button', {
+						name: operation === 'close' ? 'ปิดปีงบประมาณ' : 'ลบปีงบประมาณ',
+						exact: true
+					})
+					.click();
+				await page.getByLabel('พิมพ์ชื่อปี 2570 เพื่อยืนยัน').fill('2570');
+				const response = page.waitForResponse(
+					(response) =>
+						response.request().method() === (operation === 'close' ? 'POST' : 'DELETE') &&
+						new URL(response.url()).pathname ===
+							`/api/budget/fiscal-years/${budgetYearId}${operation === 'close' ? '/close' : ''}`
+				);
+				await page
+					.getByRole('button', {
+						name: operation === 'close' ? 'ยืนยันปิดปีงบประมาณ' : 'ยืนยันลบปีงบประมาณถาวร',
+						exact: true
+					})
+					.click();
+				await expect.poll(() => api.writes.length).toBe(1);
+				holdSecondRead = destination === 'pending';
+				holdIndexRead = destination === 'index-pending';
+				await page.goBack();
+				await expect(page).toHaveURL(new RegExp(`fiscalYearId=${second.fiscalYear.id}$`));
+				if (destination === 'pending') await expect.poll(() => secondReadStarted).toBe(true);
+				else if (destination === 'index-pending') {
+					await expect.poll(() => indexReadStarted).toBe(true);
+					const latest = api.yearSettings.get(second.fiscalYear.id)!;
+					latest.fiscalYear = { ...latest.fiscalYear, revision: 2, name: '2571 ล่าสุด' };
+				} else {
+					await page.getByRole('tab', { name: 'แหล่งเงิน', exact: true }).click();
+					await expect(page.getByLabel('ชื่อแหล่งเงิน *', { exact: true }).first()).toHaveValue(
+						'ฉบับร่างปี B'
+					);
+				}
+				if (destination === 'same-year-return') {
+					holdFirstRead = true;
+					await page.goForward();
+					await expect(page).toHaveURL(new RegExp(`fiscalYearId=${budgetYearId}$`));
+					await expect.poll(() => firstReadStarted).toBe(true);
+				}
+				api.release();
+				await (await response).finished();
+				await settleResponse(page);
+				await page.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true }).click();
+				if (operation === 'close')
+					await expect(
+						page.getByRole('option', { name: '2570 · ปิดปีแล้ว', exact: true })
+					).toBeVisible();
+				else await expect(page.getByRole('option', { name: '2570', exact: true })).toHaveCount(0);
+				await page.keyboard.press('Escape');
+
+				if (destination === 'same-year-return') {
+					await expect(page).toHaveURL(new RegExp(`fiscalYearId=${budgetYearId}$`));
+					await expect(page.getByRole('tab', { name: 'ปีงบประมาณ', exact: true })).toHaveCount(0);
+					readGate.release();
+					if (operation === 'close') {
+						await expect(
+							page.getByRole('heading', { name: 'ปิดปีงบประมาณแล้ว', exact: true })
+						).toBeVisible();
+						await page.getByRole('tab', { name: 'ปีงบประมาณ', exact: true }).click();
+						await expect(page.getByLabel('ชื่อปีงบประมาณ *', { exact: true })).toHaveValue('2570');
+						await expect(page.getByLabel('ชื่อปีงบประมาณ *', { exact: true })).toBeDisabled();
+					} else {
+						await expect(
+							page.getByRole('alert').filter({ hasText: 'โหลดการตั้งค่าไม่สำเร็จ' })
+						).toBeVisible();
+					}
+				} else {
+					if (destination === 'pending' || destination === 'index-pending') readGate.release();
+					await expect(page).toHaveURL(new RegExp(`fiscalYearId=${second.fiscalYear.id}$`));
+					await page.getByRole('tab', { name: 'แหล่งเงิน', exact: true }).click();
+					await expect(page.getByLabel('ชื่อแหล่งเงิน *', { exact: true }).first()).toHaveValue(
+						'ฉบับร่างปี B'
+					);
+					if (destination === 'index-pending')
+						await expect(
+							page.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true })
+						).toContainText('2571 ล่าสุด');
+				}
+				if (operation === 'close' && destination === 'resolved') {
+					await page.goForward();
+					await expect(
+						page.getByRole('heading', { name: 'ปิดปีงบประมาณแล้ว', exact: true })
+					).toBeVisible();
+					await page.getByRole('tab', { name: 'ปีงบประมาณ', exact: true }).click();
+					await expect(page.getByLabel('ชื่อปีงบประมาณ *', { exact: true })).toHaveValue('2570');
+					await expect(page.getByLabel('ชื่อปีงบประมาณ *', { exact: true })).toBeDisabled();
+					await page.goBack();
+					await page.getByRole('tab', { name: 'แหล่งเงิน', exact: true }).click();
+					await expect(page.getByLabel('ชื่อแหล่งเงิน *', { exact: true }).first()).toHaveValue(
+						'ฉบับร่างปี B'
+					);
+				}
+				await expect(
+					page.getByRole('heading', { name: 'ไม่พบปีงบประมาณที่เลือก', exact: true })
+				).toHaveCount(0);
+				expect(api.writes).toHaveLength(1);
+			} finally {
+				api.release();
+				readGate.release();
+			}
+		});
+
+test('delayed new-year creation cannot redirect a later Back navigation or discard its draft', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2027-10-20T08:00:00Z'));
+	const first = budgetYearSettings(),
+		second = budgetYearSettings();
+	second.fiscalYear = { ...second.fiscalYear, id: id(998), name: '2571' };
+	const api = await mockBudget(page, { yearSettings: [first, second], holdMutation: true });
+	try {
+		await page.goto(`/staff/budget/settings?fiscalYearId=${second.fiscalYear.id}`);
+		await page.getByRole('tab', { name: 'แหล่งเงิน', exact: true }).click();
+		await page.getByLabel('ชื่อแหล่งเงิน *', { exact: true }).first().fill('ฉบับร่างปี B');
+		await choose(page, 'ปีงบประมาณ', '2570');
+		await page.getByRole('button', { name: 'เพิ่มปีงบประมาณ', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByLabel('ชื่อปีงบประมาณ *', { exact: true }).fill('2572');
+		for (const label of ['วันที่เริ่มต้นปีงบประมาณใหม่', 'วันที่สิ้นสุดปีงบประมาณใหม่']) {
+			const trigger = dialog.getByRole('button', { name: label, exact: true });
+			await trigger.click();
+			const contentId = await trigger.getAttribute('aria-controls');
+			await page
+				.locator(
+					`[id="${contentId}"][data-state="open"] [data-calendar-day]:not([data-outside-month])`
+				)
+				.filter({ hasText: /^20$/ })
+				.click();
+		}
+		const response = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				new URL(response.url()).pathname === '/api/budget/fiscal-years'
+		);
+		await dialog.getByRole('button', { name: 'เพิ่มปีงบประมาณ', exact: true }).click();
+		await expect.poll(() => api.writes.length).toBe(1);
+		await page.goBack();
+		await expect(page).toHaveURL(new RegExp(`fiscalYearId=${second.fiscalYear.id}$`));
+		await page.getByRole('tab', { name: 'แหล่งเงิน', exact: true }).click();
+		await expect(page.getByLabel('ชื่อแหล่งเงิน *', { exact: true }).first()).toHaveValue(
+			'ฉบับร่างปี B'
+		);
+		api.release();
+		await (await response).finished();
+		await settleResponse(page);
+		await page.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true }).click();
+		await expect(page.getByRole('option', { name: '2572', exact: true })).toBeVisible();
+		await page.keyboard.press('Escape');
+
+		await expect(page).toHaveURL(new RegExp(`fiscalYearId=${second.fiscalYear.id}$`));
+		await expect(page.getByLabel('ชื่อแหล่งเงิน *', { exact: true }).first()).toHaveValue(
+			'ฉบับร่างปี B'
+		);
+		expect(api.writes).toHaveLength(1);
+	} finally {
+		api.release();
+	}
+});
+
+test('a deleted year stays absent when its earlier create response arrives afterward', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2027-10-20T08:00:00Z'));
+	const first = budgetYearSettings(),
+		second = budgetYearSettings();
+	second.fiscalYear = { ...second.fiscalYear, id: id(998), name: '2571' };
+	const api = await mockBudget(page, {
+		yearSettings: [first, second],
+		holdYearCreateResponse: true
+	});
+	try {
+		await page.goto(`/staff/budget/settings?fiscalYearId=${second.fiscalYear.id}`);
+		await choose(page, 'ปีงบประมาณ', '2570');
+		await page.getByRole('button', { name: 'เพิ่มปีงบประมาณ', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await dialog.getByLabel('ชื่อปีงบประมาณ *', { exact: true }).fill('2572');
+		for (const label of ['วันที่เริ่มต้นปีงบประมาณใหม่', 'วันที่สิ้นสุดปีงบประมาณใหม่']) {
+			const trigger = dialog.getByRole('button', { name: label, exact: true });
+			await trigger.click();
+			const contentId = await trigger.getAttribute('aria-controls');
+			await page
+				.locator(
+					`[id="${contentId}"][data-state="open"] [data-calendar-day]:not([data-outside-month])`
+				)
+				.filter({ hasText: /^20$/ })
+				.click();
+		}
+		const response = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				new URL(response.url()).pathname === '/api/budget/fiscal-years'
+		);
+		await dialog.getByRole('button', { name: 'เพิ่มปีงบประมาณ', exact: true }).click();
+		await expect
+			.poll(() => [...api.yearSettings.values()].some((year) => year.fiscalYear.name === '2572'))
+			.toBe(true);
+		// The route changes while the create response remains held; the index discovers its saved year.
+		await page.goBack();
+		await expect(page).toHaveURL(new RegExp(`fiscalYearId=${second.fiscalYear.id}$`));
+		await expect(page.getByRole('dialog')).toHaveCount(0);
+		await choose(page, 'ปีงบประมาณ', '2572');
+		await page.getByRole('button', { name: 'ลบปีงบประมาณ', exact: true }).click();
+		await page.getByLabel('พิมพ์ชื่อปี 2572 เพื่อยืนยัน').fill('2572');
+		await page.getByRole('button', { name: 'ยืนยันลบปีงบประมาณถาวร', exact: true }).click();
+		await expect(page.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true })).toContainText(
+			'2570'
+		);
+		api.release();
+		await (await response).finished();
+		await settleResponse(page);
+		await expect(page).toHaveURL(/\/staff\/budget\/settings$/);
+		await page.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true }).click();
+		await expect(page.getByRole('option', { name: '2572', exact: true })).toHaveCount(0);
+		await expect(page.getByRole('option', { name: '2570', exact: true })).toBeVisible();
+	} finally {
+		api.release();
+	}
+});
+
+test('a late close after a fully loaded same-year return shows saved values and read-only controls', async ({
+	page
+}) => {
+	const first = budgetYearSettings(),
+		second = budgetYearSettings();
+	second.fiscalYear = { ...second.fiscalYear, id: id(998), name: '2571' };
+	const api = await mockBudget(page, { yearSettings: [first, second], holdMutation: true });
+	try {
+		await page.goto(`/staff/budget/settings?fiscalYearId=${second.fiscalYear.id}`);
+		await choose(page, 'ปีงบประมาณ', '2570');
+		await page.getByRole('tab', { name: 'ปีงบประมาณ', exact: true }).click();
+		await page.getByLabel('ชื่อปีงบประมาณ *', { exact: true }).fill('ฉบับร่างที่ยังไม่ได้บันทึก');
+		await page.getByRole('button', { name: 'ปิดปีงบประมาณ', exact: true }).click();
+		await page.getByLabel('พิมพ์ชื่อปี 2570 เพื่อยืนยัน').fill('2570');
+		const response = page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				new URL(response.url()).pathname === `/api/budget/fiscal-years/${budgetYearId}/close`
+		);
+		await page.getByRole('button', { name: 'ยืนยันปิดปีงบประมาณ', exact: true }).click();
+		await expect.poll(() => api.writes.length).toBe(1);
+		await page.goBack();
+		await expect(page.getByRole('combobox', { name: 'ปีงบประมาณ', exact: true })).toContainText(
+			'2571'
+		);
+		await page.goForward();
+		await page.getByRole('tab', { name: 'ปีงบประมาณ', exact: true }).click();
+		await expect(page.getByLabel('ชื่อปีงบประมาณ *', { exact: true })).toHaveValue(
+			'ฉบับร่างที่ยังไม่ได้บันทึก'
+		);
+		api.release();
+		await (await response).finished();
+		await expect(
+			page.getByRole('heading', { name: 'ปิดปีงบประมาณแล้ว', exact: true })
+		).toBeVisible();
+		await page.getByRole('tab', { name: 'ปีงบประมาณ', exact: true }).click();
+		await expect(page.getByLabel('ชื่อปีงบประมาณ *', { exact: true })).toHaveValue('2570');
+		await expect(page.getByLabel('ชื่อปีงบประมาณ *', { exact: true })).toBeDisabled();
+		await expect(page.getByRole('button', { name: 'บันทึกการตั้งค่า', exact: true })).toHaveCount(
+			0
+		);
+		await expect(page).toHaveURL(new RegExp(`fiscalYearId=${budgetYearId}$`));
+	} finally {
+		api.release();
+	}
+});
