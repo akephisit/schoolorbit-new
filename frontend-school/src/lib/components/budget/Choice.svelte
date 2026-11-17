@@ -51,12 +51,17 @@
 					aria-expanded={open}
 					aria-required={required}
 					aria-invalid={!!error}
-					aria-describedby={error ? `${id}-error` : undefined}
+					aria-describedby={[
+						`${id}-value`,
+						selected?.description ? `${id}-description` : '',
+						error ? `${id}-error` : ''
+					]
+						.filter(Boolean)
+						.join(' ')}
 					{disabled}
-					class="w-full justify-between font-normal"
-					><span class="min-w-0 truncate">{selected?.label ?? placeholder}</span><ChevronsUpDown
-						class="size-4 shrink-0 opacity-50"
-					/></Button
+					class="w-full justify-between text-left font-normal"
+					><span id={`${id}-value`} class="min-w-0 truncate">{selected?.label ?? placeholder}</span
+					><ChevronsUpDown class="size-4 shrink-0 opacity-50" aria-hidden="true" /></Button
 				>{/snippet}</Popover.Trigger
 		>
 		<Popover.Content class="w-[min(28rem,calc(100vw-2rem))] p-0" align="start" collisionPadding={8}>
@@ -93,5 +98,8 @@
 			>
 		</Popover.Content>
 	</Popover.Root>
+	{#if selected?.description}<p id={`${id}-description`} class="text-sm text-muted-foreground">
+			{selected.description}
+		</p>{/if}
 	{#if error}<p id={`${id}-error`} class="text-sm text-destructive">{error}</p>{/if}
 </div>

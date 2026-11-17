@@ -104,6 +104,7 @@
 				class="size-4 text-muted-foreground"
 				aria-hidden="true"
 			/>การพิจารณา</Card.Title
+		><Card.Description>ขั้นตอน ผู้รับผิดชอบ และผลการพิจารณาของรายการนี้</Card.Description
 		></Card.Header
 	><Card.Content class="space-y-4">
 		{#if region.error}<PageState
@@ -113,14 +114,20 @@
 				actionLabel="ลองอีกครั้ง"
 				onaction={() => region.retry((signal) => getBudgetProcess(kind, id, { signal }))}
 			/>{/if}
-		{#if region.loading && !region.value}<PageSkeleton
-				variant="form"
-				rows={2}
-			/>{:else if process}<ol class="divide-y">
+		{#if region.loading && !region.value}<PageSkeleton variant="form" rows={2} />{:else if process}
+			{#if process.status === 'active' && current}<div class="space-y-1 rounded-lg bg-muted/40 p-3">
+					<p class="text-sm font-medium">ขั้นตอนปัจจุบัน: {current.definition.title}</p>
+					<p class="break-words text-sm text-muted-foreground">
+						{canAct
+							? 'คุณมีสิทธิ์ดำเนินการในขั้นตอนนี้ เลือกผลการพิจารณาด้านล่าง'
+							: 'ติดตามผลจากผู้รับผิดชอบในขั้นตอนนี้'}
+					</p>
+				</div>{/if}
+			<ol class="divide-y">
 				{#each process.steps as step (step.stepIndex)}<li
 						class="flex flex-wrap items-start justify-between gap-3 py-3 first:pt-0 last:pb-0 text-sm"
 					>
-						<div>
+						<div class="min-w-0 flex-1 break-words">
 							<p class:font-semibold={step.stepIndex === process.currentStep}>
 								{step.stepIndex + 1}. {step.definition.title}
 							</p>

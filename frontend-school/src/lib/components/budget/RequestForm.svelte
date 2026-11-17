@@ -109,7 +109,12 @@
 	data-testid="budget-request-form"
 >
 	<section class="space-y-4" aria-label="ข้อมูลคำขอ">
-		<h3 class="font-semibold">ข้อมูลคำขอ</h3>
+		<div class="space-y-1">
+			<h3 class="font-semibold">ข้อมูลคำขอ</h3>
+			<p class="break-words text-sm text-muted-foreground">
+				โครงการ {workspace.project.name} · เลือกกิจกรรมจากแผนที่อนุมัติ
+			</p>
+		</div>
 		<div class="grid gap-4 sm:grid-cols-2">
 			<div class="space-y-2">
 				<Label for="budget-request-title">ชื่อคำขอใช้เงิน *</Label><Input
@@ -132,8 +137,11 @@
 		</div>
 	</section>
 	{#if activity}<fieldset class="min-w-0 space-y-3 border-t pt-6">
-			<legend class="mb-2 font-semibold">รายการจากแผนที่อนุมัติ *</legend
-			>{#each activity.lines as line (line.id)}<div
+			<legend class="mb-2 font-semibold">รายการจากแผนที่อนุมัติ *</legend>
+			<p class="text-sm text-muted-foreground">
+				เลือกรายการที่ต้องการใช้เงิน แล้วระบุจำนวนเงินที่ขอในแต่ละรายการ
+			</p>
+			{#each activity.lines as line (line.id)}<div
 					class="grid min-w-0 items-end gap-3 border-b pb-3 last:border-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_10rem]"
 				>
 					<div class="flex min-w-0 items-start gap-2">
@@ -164,6 +172,9 @@
 						</div>{/if}
 				</div>{/each}
 		</fieldset>{/if}
+	{#if !detail}<p class="text-sm text-muted-foreground">
+			บันทึกฉบับร่างก่อน แล้วแนบหลักฐานประกอบได้จากการแก้ไขคำขอ
+		</p>{/if}
 	{#if detail}<EvidenceEditor
 			bind:this={evidenceEditor}
 			resourceId={detail.request.id}
@@ -171,7 +182,9 @@
 			bind:busy={uploading}
 			disabled={pending}
 		/>{/if}
-	<div class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 p-4">
+	<div
+		class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-primary/15 bg-primary/5 p-4"
+	>
 		<span class="text-sm text-muted-foreground">รวมคำขอ</span><strong class="text-lg tabular-nums"
 			>{money(total)} บาท</strong
 		>

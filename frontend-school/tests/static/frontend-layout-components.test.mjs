@@ -204,6 +204,14 @@ test('every protected app page renders the shared page shell', async () => {
 			'Templates',
 			await readPageShellDelegate('src/lib/components/correspondence/Templates.svelte')
 		],
+		[
+			'RequestWorkflow',
+			await readPageShellDelegate('src/lib/components/staff-leave/RequestWorkflow.svelte')
+		],
+		[
+			'AssignedCoverage',
+			await readPageShellDelegate('src/lib/components/staff-leave/AssignedCoverage.svelte')
+		],
 		['LeaveList', await readPageShellDelegate('src/lib/components/staff-leave/LeaveList.svelte')],
 		[
 			'LeaveDetail',
@@ -235,6 +243,15 @@ test('every protected app page renders the shared page shell', async () => {
 		),
 		false,
 		'A recognized delegate must still render PageShell in its current source.'
+	);
+	assert.equal(
+		rendersPageShellDelegate(
+			"import RequestWorkflow from '#lib/components/staff-leave/RequestWorkflow.svelte';",
+			'RequestWorkflow',
+			pageShellDelegates.get('RequestWorkflow')
+		),
+		false,
+		'Importing a verified delegate without rendering it does not provide a page shell.'
 	);
 	const violations = [];
 

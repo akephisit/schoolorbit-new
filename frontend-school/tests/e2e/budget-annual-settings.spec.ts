@@ -173,7 +173,7 @@ test('used fiscal dates are locked and close-year requires the selected name the
 	await page.getByRole('button', { name: 'ยืนยันปิดปีงบประมาณ', exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'ปิดปีงบประมาณแล้ว', exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'บันทึกการตั้งค่า', exact: true })).toHaveCount(0);
-	await page.getByRole('tab', { name: 'กรอบเงินและรับเงิน', exact: true }).click();
+	await page.getByRole('tab', { name: 'กรอบเงิน', exact: true }).click();
 	await expect(page.getByLabel('เงินยกมา (บาท)', { exact: true }).first()).toBeDisabled();
 	await expect(page.getByRole('button', { name: 'บันทึกยอดรับเงินจริง', exact: true })).toHaveCount(
 		0
@@ -263,6 +263,7 @@ test('new fiscal year copies configurations while requiring fresh authority and 
 		'2571'
 	);
 	await expect(page.getByRole('button', { name: 'กำหนดกรอบงบประมาณ', exact: true })).toBeVisible();
+	await page.getByRole('tab', { name: 'รับเงินจริง', exact: true }).click();
 	await expect(page.getByLabel('เงินอุดหนุน (บาท)', { exact: true })).toHaveValue('');
 	expect(api.writes[0].payload.copyFromFiscalYearId).toBe(budgetYearId);
 	expect(api.writes[0].payload).not.toHaveProperty('authorizedFunding');

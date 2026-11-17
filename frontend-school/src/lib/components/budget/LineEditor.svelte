@@ -25,7 +25,10 @@
 	const id = $derived(`budget-line-${line.key}`);
 </script>
 
-<section class="space-y-4" aria-label={line.description || 'รายการค่าใช้จ่ายใหม่'}>
+<section
+	class="space-y-4 rounded-lg bg-muted/20 p-3 sm:p-4"
+	aria-label={line.description || 'รายการค่าใช้จ่ายใหม่'}
+>
 	<div class="flex items-start justify-between gap-3">
 		<p class="text-sm font-medium">{line.supplyItemId ? 'พัสดุจากคลัง' : 'รายการกำหนดเอง'}</p>
 		<Button
@@ -77,7 +80,7 @@
 			/><FieldError id={`${id}-price-error`} message={errors.price} />
 		</div>
 	</div>
-	<div class="grid gap-4 sm:grid-cols-2">
+	<div class="grid gap-4 border-t pt-4 sm:grid-cols-2">
 		<Choice
 			id={`${id}-fund`}
 			label="แหล่งเงิน"
@@ -111,6 +114,8 @@
 					line.supplyVersionId = null;
 				}}>ใช้เป็นรายการกำหนดเอง</Button
 			>{/if}
-		<p class="ml-auto text-sm tabular-nums">รวม <strong>{money(previewTotal(line))} บาท</strong></p>
+		<p class="ml-auto text-sm tabular-nums">
+			จำนวน × ราคาต่อหน่วย · รวม <strong>{money(previewTotal(line))} บาท</strong>
+		</p>
 	</div>
 </section>

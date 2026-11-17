@@ -179,12 +179,26 @@
 			actionLabel="ลองอีกครั้ง"
 			onaction={load}
 		/>{:else if !catalogs}<PageSkeleton variant="form" rows={5} />{/if}
-	{#if catalogs}<div class="space-y-1">
-			<h2 class="font-semibold">กิจกรรมและรายการค่าใช้จ่าย</h2>
+	{#if catalogs}<div
+			class="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-primary/15 bg-primary/5 p-4"
+		>
+			<div class="space-y-1">
+				<h2 class="font-semibold">กิจกรรมและรายการค่าใช้จ่าย</h2>
+				<p class="text-sm text-muted-foreground">
+					บันทึกฉบับร่างก่อน แล้วจึงส่งแผนพิจารณาจากหน้าโครงการ
+				</p>
+			</div>
 			<p class="text-sm text-muted-foreground">
-				เพิ่มกิจกรรมและแยกค่าใช้จ่ายตามแหล่งเงินและหมวดรายจ่าย
+				{activities.length} กิจกรรม ·
+				<strong class="text-foreground tabular-nums"
+					>{money(sumSatang(activities.flatMap((activity) => activity.lines.map(previewTotal))))} บาท</strong
+				>
 			</p>
 		</div>
+		{#if !activities.length}<PageState
+				title="เริ่มวางแผนกิจกรรม"
+				description="เพิ่มกิจกรรมแรก แล้วระบุช่วงเวลาและรายการค่าใช้จ่ายของกิจกรรมนั้น"
+			/>{/if}
 		{#each activities as activity, index (activity.key)}<ActivityEditor
 				bind:activity={activities[index]}
 				{catalogs}

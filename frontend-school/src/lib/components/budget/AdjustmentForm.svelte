@@ -24,11 +24,13 @@
 	import Choice from './Choice.svelte';
 	let {
 		detail,
+		initialFiscalYearId = '',
 		loan,
 		oncancel,
 		onsaved
 	}: {
 		detail?: BudgetAdjustmentDetail;
+		initialFiscalYearId?: string;
 		loan?: BudgetAdjustmentDetail;
 		oncancel: () => void;
 		onsaved: (value: BudgetAdjustmentDetail) => void;
@@ -39,7 +41,9 @@
 	let kind = $state<SaveBudgetAdjustmentRequest['kind']>(
 			untrack(() => detail?.kind ?? (loan ? 'repayment' : 'add'))
 		),
-		fiscalYearId = $state(untrack(() => detail?.fiscalYearId ?? loan?.fiscalYearId ?? '')),
+		fiscalYearId = $state(
+			untrack(() => detail?.fiscalYearId ?? loan?.fiscalYearId ?? initialFiscalYearId)
+		),
 		fromKey = $state(untrack(() => refKey(detail?.from ?? loan?.to))),
 		toKey = $state(untrack(() => refKey(detail?.to ?? loan?.from))),
 		amount = $state(
@@ -51,11 +55,14 @@
 	let catalogs = $state<BudgetCatalogs | null>(null),
 		dashboard = $state<BudgetDashboard | null>(null),
 		loading = $state(true),
+		catalogLoading = $state(true),
 		readError = $state(''),
+		catalogReadError = $state(''),
 		error = $state(''),
 		pending = $state(false),
 		disposed = false;
 	const request = new LatestRequest(),
+		catalogRequest = new LatestRequest(),
 		intent = new BudgetMutationIntent(),
 		expectedRevision = untrack(() => detail?.revision ?? 0);
 	const refs = $derived(
@@ -71,29 +78,35 @@
 			available: row.availableSatang
 		}))
 	);
+	const selectedYear = $derived(catalogs?.fiscalYears.find((year) => year.id === fiscalYearId));
 	const from = $derived(refs.find((item) => item.key === fromKey));
 	const destinationOptions = $derived(
 		refs.filter((item) => item.key !== fromKey && (!from || item.ref.fundId === from.ref.fundId))
 	);
+	async function loadCatalogs() {
+		const ticket = catalogRequest.begin();
+		catalogLoading = true;
+		catalogReadError = '';
+		try {
+			const value = await getBudgetCatalogs({ signal: ticket.signal });
+			if (!disposed && catalogRequest.isCurrent(ticket.revision)) catalogs = value;
+		} catch (cause) {
+			if (!disposed && catalogRequest.isCurrent(ticket.revision)) catalogReadError = message(cause);
+		} finally {
+			if (!disposed && catalogRequest.isCurrent(ticket.revision)) catalogLoading = false;
+		}
+	}
 	async function load() {
 		const ticket = request.begin();
 		loading = true;
 		readError = '';
+		dashboard = null;
 		try {
-			const [catalogValues, rows] = await Promise.all([
-				getBudgetCatalogs({
-					signal: ticket.signal,
-					query: { fiscalYearId: fiscalYearId || undefined }
-				}),
-				getBudgetDashboard({
-					signal: ticket.signal,
-					query: { fiscalYearId: fiscalYearId || undefined }
-				})
-			]);
-			if (!disposed && request.isCurrent(ticket.revision)) {
-				catalogs = catalogValues;
-				dashboard = rows;
-			}
+			const rows = await getBudgetDashboard({
+				signal: ticket.signal,
+				query: { fiscalYearId: fiscalYearId || undefined }
+			});
+			if (!disposed && request.isCurrent(ticket.revision)) dashboard = rows;
 		} catch (cause) {
 			if (!disposed && request.isCurrent(ticket.revision)) readError = message(cause);
 		} finally {
@@ -102,12 +115,14 @@
 	}
 	$effect.pre(() => {
 		untrack(() => {
+			void loadCatalogs();
 			void load();
 		});
 	});
 	onDestroy(() => {
 		disposed = true;
 		request.abort();
+		catalogRequest.abort();
 	});
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
@@ -155,12 +170,13 @@
 	class="w-full min-w-0 max-w-4xl space-y-6"
 	data-testid="budget-adjustment-form"
 >
-	{#if loading && !catalogs}<PageSkeleton variant="form" rows={4} />{/if}{#if readError}<PageState
+	{#if catalogLoading && !catalogs}<PageSkeleton variant="form" rows={2} />{/if}
+	{#if catalogReadError}<PageState
 			variant="error"
-			title="โหลดตัวเลือกงบประมาณไม่สำเร็จ"
-			description={readError}
+			title="โหลดปีงบประมาณไม่สำเร็จ"
+			description={catalogReadError}
 			actionLabel="ลองอีกครั้ง"
-			onaction={load}
+			onaction={loadCatalogs}
 		/>{/if}
 	<section class="space-y-4" aria-label="ข้อมูลการปรับงบ">
 		<h3 class="font-semibold">ข้อมูลการปรับงบ</h3>
@@ -183,9 +199,19 @@
 				label="ปีงบประมาณ"
 				required
 				bind:value={fiscalYearId}
-				options={(catalogs?.fiscalYears ?? [])
-					.filter((year) => !year.isClosed || year.id === fiscalYearId)
-					.map((year) => ({ value: year.id, label: year.name }))}
+				options={[
+					...(catalogs?.fiscalYears ?? [])
+						.filter((year) => !year.isClosed || year.id === fiscalYearId)
+						.map((year) => ({ value: year.id, label: year.name })),
+					...(catalogs && fiscalYearId && !selectedYear
+						? [
+								{
+									value: fiscalYearId,
+									label: 'ไม่พบปีงบประมาณที่เลือก'
+								}
+							]
+						: [])
+				]}
 				disabled={pending || !!loan || !!detail}
 				onchange={() => {
 					fromKey = '';
@@ -194,9 +220,41 @@
 				}}
 			/>
 		</div>
+		{#if !detail && !loan && catalogs && fiscalYearId && (!selectedYear || selectedYear.isClosed)}<p
+				class="text-sm text-warning"
+				role="status"
+			>
+				{selectedYear?.isClosed
+					? 'ปีงบประมาณที่เลือกปิดแล้ว เลือกปีที่เปิดใช้งานเพื่อสร้างรายการ'
+					: 'ไม่พบปีงบประมาณที่เลือก กรุณาเลือกปีงบประมาณอีกครั้ง'}
+			</p>{/if}
+		<p class="text-sm text-muted-foreground">
+			{kind === 'add'
+				? 'เพิ่มวงเงินให้รายการงบประมาณปลายทาง'
+				: kind === 'reduce'
+					? 'ลดวงเงินจากรายการงบประมาณต้นทาง'
+					: kind === 'loan'
+						? 'ย้ายวงเงินชั่วคราวจากต้นทางไปปลายทาง และติดตามยอดยืมค้างคืน'
+						: kind === 'repayment'
+							? 'คืนวงเงินให้ต้นทางของรายการยืมเดิม'
+							: 'ย้ายวงเงินจากต้นทางไปปลายทาง'}
+		</p>
 	</section>
-	<section class="space-y-4 border-t pt-6" aria-label="งบประมาณที่เกี่ยวข้อง">
+	<section class="space-y-4 border-t pt-6" aria-label="งบประมาณที่เกี่ยวข้อง" aria-busy={loading}>
 		<h3 class="font-semibold">งบประมาณที่เกี่ยวข้อง</h3>
+		<p class="text-sm text-muted-foreground">
+			เลือกจากรายการในแผนที่อนุมัติ {kind !== 'add' && kind !== 'reduce'
+				? 'ต้นทางและปลายทางต้องใช้แหล่งเงินเดียวกัน'
+				: 'ของปีงบประมาณนี้'}
+		</p>
+		{#if readError}<PageState
+				variant="error"
+				title="โหลดตัวเลือกงบประมาณไม่สำเร็จ"
+				description={readError}
+				actionLabel="ลองอีกครั้ง"
+				onaction={load}
+			/>{/if}
+		{#if loading && !dashboard}<PageSkeleton variant="form" rows={2} />{/if}
 		{#if kind !== 'add'}<Choice
 				id="budget-adjustment-from"
 				label="งบประมาณต้นทาง"
@@ -245,7 +303,10 @@
 	{#if error}<PageState variant="error" title="บันทึกการปรับงบไม่สำเร็จ" description={error} />{/if}
 	<div class="flex flex-wrap justify-end gap-2 border-t pt-4">
 		<Button type="button" variant="outline" disabled={pending} onclick={oncancel}>ยกเลิก</Button
-		><LoadingButton type="submit" loading={pending} disabled={loading || !!readError}
+		><LoadingButton
+			type="submit"
+			loading={pending}
+			disabled={loading || catalogLoading || !!readError || !!catalogReadError}
 			>บันทึกฉบับร่าง</LoadingButton
 		>
 	</div>
