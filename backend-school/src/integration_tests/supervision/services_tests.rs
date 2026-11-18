@@ -4111,6 +4111,50 @@ async fn supervision_replacement_validates_omitted_retained_submitted_evaluators
     )
     .await
     .unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(a.evaluator_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before_replacement = supervision_graph_snapshot(&pool).await;
+    let active_replacement = ReplaceObservationEvaluatorsRequest {
+        evaluators: vec![EvaluatorAssignmentInput {
+            evaluator_user_id: a.second_evaluator_id,
+            role_label: None,
+            is_required: Some(true),
+        }],
+    };
+    let updated = services::replace_observation_evaluators(
+        &pool,
+        a.actor_id,
+        first.id,
+        active_replacement.clone(),
+    )
+    .await
+    .expect("submitted evidence stays assigned when an evaluator later becomes inactive");
+    let retained = updated
+        .evaluators
+        .iter()
+        .find(|row| row.evaluator_user_id == a.evaluator_id)
+        .unwrap();
+    assert_eq!(retained.status, SupervisionEvaluatorStatus::Submitted);
+    let after_replacement = supervision_graph_snapshot(&pool).await;
+    assert_eq!(
+        after_replacement["responses"],
+        before_replacement["responses"]
+    );
+    assert_eq!(
+        after_replacement["evaluators"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == retained.id.to_string()),
+        before_replacement["evaluators"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == retained.id.to_string())
+    );
     // Legacy saved assignments may already conflict; omission cannot bypass a
     // conflict check while retaining submitted evidence in the replacement.
     sqlx::query(
@@ -4128,19 +4172,9 @@ async fn supervision_replacement_validates_omitted_retained_submitted_evaluators
         .unwrap();
     let before =
         serde_json::to_value(services::get_observation(&pool, first.id).await.unwrap()).unwrap();
-    let result = services::replace_observation_evaluators(
-        &pool,
-        a.actor_id,
-        first.id,
-        ReplaceObservationEvaluatorsRequest {
-            evaluators: vec![EvaluatorAssignmentInput {
-                evaluator_user_id: a.second_evaluator_id,
-                role_label: None,
-                is_required: Some(true),
-            }],
-        },
-    )
-    .await;
+    let result =
+        services::replace_observation_evaluators(&pool, a.actor_id, first.id, active_replacement)
+            .await;
     assert!(matches!(result, Err(AppError::Conflict(_))));
     assert_eq!(
         serde_json::to_value(services::get_observation(&pool, first.id).await.unwrap()).unwrap(),
@@ -4271,6 +4305,134 @@ async fn set_cycle_dates(
         },
     )
     .await
+}
+
+#[tokio::test]
+async fn supervision_booking_targets_require_current_active_organization_affiliation() {
+    let pool = migrated_pool("supervision_current_booking_target").await;
+    let f = insert_fixture(&pool).await;
+    let group = school_academic_core::services::catalog::create_subject_group(
+        &pool,
+        school_academic_core::models::CreateSubjectGroupRequest {
+            name_th: "Booking target group".into(),
+            name_en: "Booking target group".into(),
+            display_order: None,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO organization_members(user_id,organization_unit_id,position_code) VALUES ($1,$2,'member')")
+        .bind(f.teacher_id).bind(group.organization_unit_id).execute(&pool).await.unwrap();
+    let date = f.observed_at.date_naive();
+    let query = SupervisionBookingOptionsQuery {
+        cycle_id: f.cycle.id,
+        academic_year_id: f.cycle.academic_year_id,
+        academic_term_id: f.academic_term_id,
+        week_start_date: date - Duration::days(i64::from(date.weekday().num_days_from_monday())),
+    };
+    for (target_type, target_id) in [
+        (
+            SupervisionTargetType::OrganizationUnit,
+            group.organization_unit_id,
+        ),
+        (SupervisionTargetType::SubjectGroup, group.id),
+    ] {
+        services::update_cycle(
+            &pool,
+            f.cycle.id,
+            UpdateSupervisionCycleRequest {
+                targets: Some(vec![CreateSupervisionCycleTargetRequest {
+                    target_type,
+                    target_id: Some(target_id),
+                    required_observations: 1,
+                    priority: 10,
+                }]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let selection = multi_input(&pool, &f, f.teacher_id, date, 1).await;
+        assert_eq!(selection.timetable_block_group_ids.len(), 1);
+        for (start, end, active) in [(1, None, true), (-1, Some(0), true), (0, None, false)] {
+            sqlx::query("UPDATE organization_members SET started_at=CURRENT_DATE+$3,ended_at=CURRENT_DATE+$4 WHERE user_id=$1 AND organization_unit_id=$2")
+                .bind(f.teacher_id).bind(group.organization_unit_id).bind(start).bind(end).execute(&pool).await.unwrap();
+            sqlx::query("UPDATE organization_units SET is_active=$2 WHERE id=$1")
+                .bind(group.organization_unit_id)
+                .bind(active)
+                .execute(&pool)
+                .await
+                .unwrap();
+            assert!(matches!(
+                services::booking_options(&pool, f.teacher_id, query.clone()).await,
+                Err(AppError::Forbidden(_))
+            ));
+            assert!(matches!(
+                services::request_observation(&pool, f.teacher_id, selection.clone()).await,
+                Err(AppError::Forbidden(_))
+            ));
+        }
+        sqlx::query("UPDATE organization_units SET is_active=true WHERE id=$1")
+            .bind(group.organization_unit_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn supervision_date_migration_preserves_populated_165_evidence_and_replays() {
+    let pool = migrated_pool_through("supervision_date_migration166", 1, 165).await;
+    sqlx::raw_sql(r#"
+        INSERT INTO supervision_cycle_targets(cycle_id,target_type,required_observations,priority)
+        SELECT id,'school',2,10 FROM supervision_cycles;
+        INSERT INTO supervision_template_sections(id,template_id,title,sort_order)
+        SELECT 'a0000000-0000-0000-0000-000000000166',template_id,'Retained section',1
+        FROM supervision_observations LIMIT 1;
+        INSERT INTO supervision_template_items(id,section_id,label,item_type,required,sort_order)
+        VALUES('a1000000-0000-0000-0000-000000000166','a0000000-0000-0000-0000-000000000166','Retained item','rating',true,1);
+        INSERT INTO supervision_evaluators(id,observation_id,evaluator_user_id,status,submitted_at)
+        SELECT 'a2000000-0000-0000-0000-000000000166',id,observed_user_id,'submitted',now()
+        FROM supervision_observations LIMIT 1;
+        INSERT INTO supervision_evaluator_responses(observation_id,evaluator_id,template_item_id,rating_score,text_response)
+        SELECT observation_id,id,'a1000000-0000-0000-0000-000000000166',4,'Retained evaluation' FROM supervision_evaluators;
+        INSERT INTO supervision_actions(observation_id,actor_user_id,action_kind,from_status,to_status,comment)
+        SELECT id,observed_user_id,'planned','requested','planned','Retained approval' FROM supervision_observations;
+    "#).execute(&pool).await.unwrap();
+    let mut expected = supervision_graph_snapshot(&pool).await;
+    let cycles = expected["cycles"].as_array_mut().unwrap();
+    assert!(!cycles.is_empty());
+    for cycle in cycles {
+        cycle["observation_start_date"] = serde_json::Value::Null;
+        cycle["observation_end_date"] = serde_json::Value::Null;
+    }
+    let period_snapshot =
+        "SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM supervision_observation_periods p";
+    let periods: serde_json::Value = sqlx::query_scalar(period_snapshot)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!periods.as_array().unwrap().is_empty());
+    for _ in 0..2 {
+        school_test_db::run_test_migrations(&pool).await;
+        assert_eq!(supervision_graph_snapshot(&pool).await, expected);
+        assert_eq!(
+            sqlx::query_scalar::<_, serde_json::Value>(period_snapshot)
+                .fetch_one(&pool)
+                .await
+                .unwrap(),
+            periods
+        );
+    }
+    for invalid in [
+        "UPDATE supervision_cycles SET observation_start_date='2026-01-01'",
+        "UPDATE supervision_cycles SET observation_end_date='2026-01-01'",
+        "UPDATE supervision_cycles SET observation_start_date='2026-01-02',observation_end_date='2026-01-01'",
+    ] {
+        let err = sqlx::query(invalid).execute(&pool).await.unwrap_err();
+        assert_eq!(err.as_database_error().and_then(|e| e.constraint()), Some("supervision_cycles_observation_dates_check"));
+    }
+    assert_eq!(supervision_graph_snapshot(&pool).await, expected);
 }
 
 #[test]
@@ -4889,6 +5051,8 @@ async fn supervision_http_dates_and_saved_times_resubmit_enforce_strict_actor_co
         )
         .await;
         assert_eq!(status, expected, "payload={payload}; response={response}");
+        assert_eq!(response["success"], false);
+        assert!(response["error"].as_str().is_some());
     }
     let (status, configured) =
         coverage_request(&app, &auth, &manager, Method::PATCH, &cycle_path, dates).await;
@@ -4992,13 +5156,55 @@ async fn supervision_http_dates_and_saved_times_resubmit_enforce_strict_actor_co
     assert_eq!(availability["data"]["withinCycleDates"], true);
     assert_eq!(availability["data"]["overlap"]["pendingCount"], 0);
     assert_eq!(availability["data"]["overlappingBookings"], json!([]));
+    assert!(availability["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["id"] == f.second_evaluator_id.to_string() && row["available"] == true));
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(f.second_evaluator_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let student = test_user(&pool, "nonstaff-evaluator").await;
+    sqlx::query("UPDATE users SET user_type='student' WHERE id=$1")
+        .bind(student)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let approve_path = format!("{path}/approve-request");
+    let replace_path = format!("{path}/evaluators");
+    let assignment = |id| json!({"evaluators":[{"evaluatorUserId":id,"isRequired":true}]});
+    let before_assignment = supervision_graph_snapshot(&pool).await;
+    for (method, path) in [(Method::POST, &approve_path), (Method::PUT, &replace_path)] {
+        for evaluator in [f.second_evaluator_id, student] {
+            let (status, error) = coverage_request(
+                &app,
+                &auth,
+                &manager,
+                method.clone(),
+                path,
+                assignment(evaluator),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{error}");
+            assert_eq!(error["success"], false);
+            assert_eq!(error["error"], "ผู้ประเมินต้องเป็นบุคลากรที่ยังใช้งานอยู่");
+        }
+    }
+    assert_eq!(supervision_graph_snapshot(&pool).await, before_assignment);
+    sqlx::query("UPDATE users SET status='active' WHERE id=$1")
+        .bind(f.second_evaluator_id)
+        .execute(&pool)
+        .await
+        .unwrap();
     let (status, approved) = coverage_request(
         &app,
         &auth,
         &manager,
         Method::POST,
-        &format!("{path}/approve-request"),
-        json!({"evaluators":[{"evaluatorUserId":f.evaluator_id,"isRequired":true}]}),
+        &approve_path,
+        assignment(f.evaluator_id),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{approved}");
@@ -5026,7 +5232,7 @@ async fn supervision_http_dates_and_saved_times_resubmit_enforce_strict_actor_co
     let (status,_)=coverage_request(&app,&auth,&manager,Method::PATCH,&cycle_path,json!({"observationStartDate":date+Duration::days(1),"observationEndDate":date+Duration::days(2)})).await;
     assert_eq!(status, StatusCode::CONFLICT);
     let resubmit = format!("{path}/resubmit-request");
-    let (status, _) = coverage_request(
+    let (status, error) = coverage_request(
         &app,
         &auth,
         &own,
@@ -5036,6 +5242,7 @@ async fn supervision_http_dates_and_saved_times_resubmit_enforce_strict_actor_co
     )
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(error["success"], false);
     for actor in [&other, &manager] {
         let (status, _) =
             coverage_request(&app, &auth, actor, Method::POST, &resubmit, json!({})).await;

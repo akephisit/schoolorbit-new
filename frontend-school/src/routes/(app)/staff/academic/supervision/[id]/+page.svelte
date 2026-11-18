@@ -188,7 +188,15 @@
 			!observation?.evaluators.some((evaluator) => evaluator.status === 'submitted')
 	);
 	const isReturnedOwnRequest = $derived(canCancelOwnRequest && observation?.status === 'returned');
-	const canResubmitSaved = $derived(Boolean(isReturnedOwnRequest && observation?.periodsLocked));
+	const canResubmitSaved = $derived(
+		canEditOwnRequested && isReturnedOwnRequest && observation?.periodsLocked === true
+	);
+	const cycleDatesError = $derived(
+		cycle ? cycleDateRangeError(cycle.observationStartDate, cycle.observationEndDate) : null
+	);
+	const cycleAllowsResubmission = $derived(
+		!cycleLoading && cycle?.status === 'open' && !cycleDatesError
+	);
 	const canEditLesson = $derived(
 		Boolean(
 			observation &&
@@ -821,7 +829,7 @@
 	}
 
 	async function resubmitSaved() {
-		if (!observation || !canResubmitSaved || cycle?.status !== 'open' || savingAction) return;
+		if (!observation || !canResubmitSaved || !cycleAllowsResubmission || savingAction) return;
 		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'resubmit-saved';
@@ -920,10 +928,14 @@
 						<p class="mt-1 whitespace-pre-wrap text-sm">
 							{currentReturnReason(observation) ?? 'ไม่ได้ระบุเหตุผล'}
 						</p>
-						{#if isReturnedOwnRequest && cycle && cycle.status !== 'open'}<p
+						{#if isReturnedOwnRequest && canEditOwnRequested && cycle && cycle.status !== 'open'}<p
 								class="mt-2 text-sm text-muted-foreground"
 							>
 								ส่งใหม่ได้เมื่อผู้ดูแลเปิดรับคำขอในรอบนี้
+							</p>{:else if isReturnedOwnRequest && canEditOwnRequested && cycleDatesError}<p
+								class="mt-2 text-sm text-muted-foreground"
+							>
+								ส่งใหม่ได้เมื่อผู้ดูแลกำหนดช่วงวันที่นิเทศของรอบนี้
 							</p>{/if}
 					</div>
 				{/if}
@@ -953,7 +965,7 @@
 											onclick={resubmitSaved}
 											loading={savingAction === 'resubmit-saved'}
 											loadingLabel="กำลังส่งใหม่..."
-											disabled={cycleLoading || cycle?.status !== 'open' || savingAction !== null}
+											disabled={!cycleAllowsResubmission || savingAction !== null}
 											>ส่งใหม่ด้วยคาบเดิม</LoadingButton
 										>{/if}
 									{#if canEditLesson}
@@ -1396,7 +1408,7 @@
 		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
 			{#if observation && editLessonOpen}
 				<SupervisionSavedPeriods {observation} />
-				{#if cycle && !cycleDateRangeError(cycle.observationStartDate, cycle.observationEndDate)}
+				{#if cycle && !cycleDatesError}
 					<SupervisionLessonPicker
 						{cycle}
 						academicYearId={observation.academicYearId}

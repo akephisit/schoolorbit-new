@@ -82,11 +82,21 @@ pub async fn replace_observation_evaluators(
         .iter()
         .map(|e| e.evaluator_user_id)
         .collect::<Vec<_>>();
-    super::availability::validate_replacement(&mut tx, &current, &evaluator_user_ids).await?;
     let insert_rows = replacement
         .into_iter()
         .filter(|evaluator| !submitted_user_ids.contains(&evaluator.evaluator_user_id))
         .collect::<Vec<_>>();
+    let new_evaluator_user_ids = insert_rows
+        .iter()
+        .map(|evaluator| evaluator.evaluator_user_id)
+        .collect::<Vec<_>>();
+    super::availability::validate_replacement(
+        &mut tx,
+        &current,
+        &evaluator_user_ids,
+        &new_evaluator_user_ids,
+    )
+    .await?;
 
     DbSession::new(&mut *tx)
         .query(
@@ -534,10 +544,9 @@ pub(super) async fn load_evaluator_submission_states(
 
 pub(super) async fn validate_evaluator_availability_for_observation(
     connection: &mut PgConnection,
-    observation_id: Uuid,
+    observation: &SupervisionObservation,
     evaluator_user_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    let observation = get_observation_with_connection(connection, observation_id).await?;
     let windows = observation
         .periods
         .iter()
@@ -548,7 +557,7 @@ pub(super) async fn validate_evaluator_availability_for_observation(
         observation.observed_user_id,
         observation.cycle_id,
         observation.academic_term_id,
-        Some(observation_id),
+        Some(observation.id),
         &windows,
         evaluator_user_ids,
     )

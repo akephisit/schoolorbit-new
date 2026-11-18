@@ -332,6 +332,57 @@ test('a returned locked visit resubmits the exact saved periods with an empty pa
 	);
 });
 
+test('a returned locked visit stays readable when submitted evidence or missing cycle dates prevents resubmission', async ({
+	page
+}) => {
+	for (const submitted of [true, false]) {
+		await test.step(
+			submitted ? 'with submitted evidence' : 'with missing cycle dates',
+			async () => {
+				const api = await mock(page, {
+					permissions,
+					observationStatus: 'returned',
+					canManage: false,
+					...(submitted ? {} : { observationStartDate: null, observationEndDate: null }),
+					observation: {
+						periodsLocked: true,
+						evaluators: [
+							{
+								id: id(31),
+								observationId: id(30),
+								createdAt: '2026-09-30T09:00:00Z',
+								updatedAt: '2026-10-01T09:00:00Z',
+								evaluatorUserId: id(32),
+								evaluatorDisplayName: 'ผู้ประเมินทดสอบ',
+								roleLabel: 'ผู้ประเมิน',
+								isRequired: true,
+								status: submitted ? 'submitted' : 'assigned'
+							}
+						]
+					}
+				});
+				await page.goto(detail);
+				await expect(page.getByTestId('supervision-current-return-reason')).toBeVisible();
+				await expect(page.getByTestId('supervision-saved-periods')).toContainText('วิชาทดสอบ');
+				await expect(page.getByTestId('supervision-periods-locked')).toBeVisible();
+				const resubmit = page.getByRole('button', { name: 'ส่งใหม่ด้วยคาบเดิม', exact: true });
+				if (submitted) {
+					await expect(resubmit).toHaveCount(0);
+				} else {
+					await expect(
+						page.getByText('ส่งใหม่ได้เมื่อผู้ดูแลกำหนดช่วงวันที่นิเทศของรอบนี้', { exact: true })
+					).toBeVisible();
+					await expect(resubmit).toBeDisabled();
+				}
+				expect(api.writes).not.toContain(
+					`POST /api/supervision/observations/${id(30)}/resubmit-request`
+				);
+				expect(api.count(`/api/supervision/observations/${id(30)}/timetable-options`)).toBe(0);
+			}
+		);
+	}
+});
+
 for (const state of ['parallel', 'blocked', 'outside'] as const) {
 	test(`request review displays full saved range and scoped overlap/evaluator groups for ${state}`, async ({
 		page
@@ -409,3 +460,114 @@ for (const state of ['parallel', 'blocked', 'outside'] as const) {
 			).toBeDisabled();
 	});
 }
+
+test('a unit manager can recheck blocked availability and approve with the still-eligible evaluator', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		permissions: ['supervision.manage.organization_unit', 'supervision.read.organization_unit']
+	});
+	const availabilityPath = `/api/supervision/observations/${id(30)}/evaluator-availability`;
+	const initial: SupervisionEvaluatorAvailabilityResponse = {
+		items: ['ยังว่าง', 'ติดสอนใหม่'].map((name, index) => ({
+			id: id(32 + index),
+			name,
+			available: true,
+			title: null,
+			conflictReason: null,
+			conflict: null
+		})),
+		overlap: { pendingCount: 0, confirmedCount: 1, blocked: true },
+		withinCycleDates: true,
+		overlappingBookings: []
+	};
+	const updated: SupervisionEvaluatorAvailabilityResponse = {
+		...initial,
+		items: [
+			initial.items[0]!,
+			{ ...initial.items[1]!, available: false, conflictReason: 'มีตารางสอนทับ' }
+		],
+		overlap: { pendingCount: 0, confirmedCount: 0, blocked: false }
+	};
+	const refresh = Promise.withResolvers<void>();
+	const failure = Promise.withResolvers<void>();
+	let checks = 0;
+	await page.route(`**${availabilityPath}`, async (route) => {
+		const check = ++checks;
+		if (check < 3) return reply(route, initial);
+		if (check === 3) await refresh.promise;
+		if (check === 4) {
+			await failure.promise;
+			return reply(route, 'ตรวจข้อมูลล่าสุดไม่สำเร็จ', 503);
+		}
+		return reply(route, updated);
+	});
+	await page.goto(path('requests'));
+	const review = page.getByTestId('supervision-request-availability');
+	const inspect = review.getByRole('button', { name: 'ตรวจช่วงคาบและผู้ประเมิน', exact: true });
+	const recheck = review.getByRole('button', { name: 'ตรวจอีกครั้ง', exact: true });
+	const picker = page.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true });
+	const approve = page.getByRole('button', { name: 'อนุมัติและมอบหมาย', exact: true });
+	await expect(inspect).toBeEnabled();
+	expect(checks).toBe(0);
+	await inspect.click();
+	await expect(review).toContainText('มีนัดทับกัน อนุมัติไม่ได้');
+	await picker.click();
+	for (const name of ['ยังว่าง', 'ติดสอนใหม่']) {
+		await page.getByRole('option', { name, exact: true }).click();
+		await expect(
+			page.getByRole('button', { name: `ลบผู้ประเมิน ${name}`, exact: true })
+		).toBeVisible();
+	}
+	await page.keyboard.press('Escape');
+	await expect(picker).toHaveAttribute('aria-expanded', 'false');
+	await expect(approve).toBeDisabled();
+	await recheck.click();
+	await expect(review).toHaveAttribute('aria-busy', 'true');
+	await expect(recheck).toBeDisabled();
+	await expect(review).toContainText('มีนัดทับกัน อนุมัติไม่ได้');
+	refresh.resolve();
+	await expect(review).toContainText('ไม่พบรายการที่กีดกันการอนุมัติ');
+	await expect(
+		page.getByRole('button', { name: 'ลบผู้ประเมิน ยังว่าง', exact: true })
+	).toBeVisible();
+	await expect(
+		page.getByRole('button', { name: 'ลบผู้ประเมิน ติดสอนใหม่', exact: true })
+	).toHaveCount(0);
+	await expect(approve).toBeEnabled();
+
+	await picker.click();
+	await expect(review).toHaveAttribute('aria-busy', 'true');
+	await expect(approve).toBeDisabled();
+	await expect(page.getByRole('option', { name: 'ยังว่าง', exact: true })).toBeDisabled();
+	await page.keyboard.press('Escape');
+	await expect(picker).toHaveAttribute('aria-expanded', 'false');
+	await expect(review).toHaveAttribute('aria-busy', 'true');
+	failure.resolve();
+	await expect(review.getByRole('alert')).toContainText('ตรวจข้อมูลล่าสุดไม่สำเร็จ');
+	await expect(approve).toBeDisabled();
+	await recheck.click();
+	await expect(approve).toBeEnabled();
+	await approve.click();
+	await expect(page.getByText('ไม่มีคำขอจองที่รออนุมัติ')).toBeVisible();
+	expect(checks).toBe(5);
+	expect(api.payloads).toContainEqual({
+		evaluators: [{ evaluatorUserId: id(32), isRequired: true }]
+	});
+});
+
+test('a unit manager can read another unit’s request without checking its availability', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		permissions: ['supervision.manage.organization_unit', 'supervision.read.school'],
+		canManage: false
+	});
+	await page.goto(path('requests'));
+	await expect(page.getByTestId('supervision-saved-periods')).toContainText('วิชาทดสอบ');
+	await expect(page.getByTestId('supervision-request-availability')).toHaveCount(0);
+	await expect(
+		page.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true })
+	).toBeDisabled();
+	expect(api.count(`/api/supervision/observations/${id(30)}/evaluator-availability`)).toBe(0);
+});

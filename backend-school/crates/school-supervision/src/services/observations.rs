@@ -632,7 +632,7 @@ pub async fn approve_observation_request(
         .collect::<Vec<_>>();
     validate_evaluator_availability_for_observation(
         &mut *tx,
-        observation_id,
+        &observation,
         &requested_evaluator_user_ids,
     )
     .await?;
@@ -1116,36 +1116,16 @@ async fn load_supervision_target_match(
     connection: &mut PgConnection,
     staff_user_id: Uuid,
 ) -> Result<SupervisionTargetMatch, AppError> {
-    let organization_unit_ids = DbSession::new(&mut *connection)
-        .scalar::<Uuid>(
+    let memberships = DbSession::new(connection)
+        .query_as::<(Uuid, Option<Uuid>)>(
             "supervision.services.observations.load_supervision_target_match",
             r#"
-        SELECT DISTINCT organization_unit_id
-        FROM organization_members
-        WHERE user_id = $1
-          AND (ended_at IS NULL OR ended_at > CURRENT_DATE)
-        "#,
-        )
-        .bind(staff_user_id)
-        .fetch_all()
-        .await
-        .map_err(|error| {
-            tracing::error!(
-                "Failed to load supervision target organization units: {}",
-                school_database::error_class(&error)
-            );
-            AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของครูได้".to_string())
-        })?;
-
-    let subject_group_ids = DbSession::new(&mut *connection)
-        .scalar::<Uuid>(
-            "supervision.services.observations.load_supervision_target_match",
-            r#"
-        SELECT DISTINCT ou.subject_group_id
+        SELECT DISTINCT ou.id, sg.id
         FROM organization_members om
-        JOIN organization_units ou ON ou.id = om.organization_unit_id
+        JOIN organization_units ou ON ou.id = om.organization_unit_id AND ou.is_active
+        LEFT JOIN subject_groups sg ON sg.id = ou.subject_group_id AND sg.is_active
         WHERE om.user_id = $1
-          AND ou.subject_group_id IS NOT NULL
+          AND om.started_at <= CURRENT_DATE
           AND (om.ended_at IS NULL OR om.ended_at > CURRENT_DATE)
         "#,
         )
@@ -1154,16 +1134,16 @@ async fn load_supervision_target_match(
         .await
         .map_err(|error| {
             tracing::error!(
-                "Failed to load supervision target subject groups: {}",
+                "Failed to load supervision target memberships: {}",
                 school_database::error_class(&error)
             );
-            AppError::InternalServerError("ไม่สามารถตรวจสอบกลุ่มสาระของครูได้".to_string())
+            AppError::InternalServerError("ไม่สามารถตรวจสอบหน่วยงานของครูได้".to_string())
         })?;
 
     Ok(SupervisionTargetMatch {
         staff_user_id,
-        subject_group_ids,
-        organization_unit_ids,
+        subject_group_ids: memberships.iter().filter_map(|(_, group)| *group).collect(),
+        organization_unit_ids: memberships.into_iter().map(|(unit, _)| unit).collect(),
     })
 }
 

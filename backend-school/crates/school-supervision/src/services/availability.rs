@@ -274,6 +274,32 @@ async fn teaching_busy(
     Ok(busy)
 }
 
+async fn require_active_evaluators(
+    connection: &mut PgConnection,
+    evaluators: &[Uuid],
+) -> Result<(), AppError> {
+    if evaluators.is_empty() {
+        return Ok(());
+    }
+    let distinct: HashSet<_> = evaluators.iter().copied().collect();
+    // Retain the eligibility decision through the assignment and audit writes.
+    let active = DbSession::new(connection)
+        .scalar::<Uuid>(
+            "supervision.availability.require_active_evaluators",
+            "SELECT id FROM users WHERE id=ANY($1) AND user_type='staff' AND status='active'
+             ORDER BY id FOR SHARE",
+        )
+        .bind(evaluators)
+        .fetch_all()
+        .await?;
+    if active.len() != distinct.len() {
+        return Err(AppError::ValidationError(
+            "ผู้ประเมินต้องเป็นบุคลากรที่ยังใช้งานอยู่".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Pending requests reserve only their own teacher within a cycle. Confirmed
 /// visits reserve the exact class and every accepted participant across cycles.
 pub(super) async fn validate(
@@ -290,6 +316,7 @@ pub(super) async fn validate(
     users.sort_unstable();
     users.dedup();
     lock_resources(connection, windows, &users).await?;
+    require_active_evaluators(connection, evaluators).await?;
     let facts = facts(connection, windows, except).await?;
     let conflict = facts.iter().any(|f| {
         f.blocks(teacher)
@@ -314,6 +341,7 @@ pub(super) async fn validate_replacement(
     connection: &mut PgConnection,
     observation: &SupervisionObservation,
     evaluators: &[Uuid],
+    new_evaluators: &[Uuid],
 ) -> Result<(), AppError> {
     let windows = observation
         .periods
@@ -325,6 +353,7 @@ pub(super) async fn validate_replacement(
     users.sort_unstable();
     users.dedup();
     lock_resources(connection, &windows, &users).await?;
+    require_active_evaluators(connection, new_evaluators).await?;
     let facts = facts(connection, &windows, Some(observation.id)).await?;
     if facts
         .iter()

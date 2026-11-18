@@ -422,6 +422,7 @@
 	let mutationLifetime = 0;
 	onDestroy(() => {
 		mutationLifetime += 1;
+		for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
 	});
 
 	function captureMutationOwner() {
@@ -453,6 +454,7 @@
 			if (key !== managementContext) {
 				managementContext = key;
 				managementRevision += 1;
+				for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
 				savingAction = null;
 				savingTemplate = false;
 				cycles = [];
@@ -593,7 +595,6 @@
 			templateDetailRequest.abort();
 			observationRequest.abort();
 			evaluationTemplateRequest.abort();
-			for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
 			progressRequest.abort();
 		};
 	});
@@ -1032,12 +1033,18 @@
 		};
 	}
 
-	async function loadRequestEvaluatorAvailability(observationId: string, force = false) {
-		if (!canManageRequests) return;
-		if (!force && requestEvaluatorAvailability[observationId]) return;
+	async function loadRequestEvaluatorAvailability(observationId: string) {
+		if (
+			!canManageRequests ||
+			requestEvaluatorAvailabilityLoading[observationId] ||
+			!requestedObservations.some((item) => item.id === observationId && item.canManage)
+		)
+			return;
+		const context = currentManagementContext();
 		const request = evaluatorAvailabilityRequests[observationId] ?? new LatestRequest();
 		evaluatorAvailabilityRequests[observationId] = request;
 		const { revision, signal } = request.begin();
+		const ownsRead = () => request.isCurrent(revision) && context === currentManagementContext();
 		requestEvaluatorErrors = { ...requestEvaluatorErrors, [observationId]: '' };
 		requestEvaluatorAvailabilityLoading = {
 			...requestEvaluatorAvailabilityLoading,
@@ -1045,10 +1052,9 @@
 		};
 		try {
 			const result = await getSupervisionEvaluatorAvailability(observationId, { signal });
-			const items = result.items;
-			if (!request.isCurrent(revision)) return;
+			if (!ownsRead()) return;
 			const availableIds = new Set(
-				items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
+				result.items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
 			);
 			requestEvaluatorAvailability = {
 				...requestEvaluatorAvailability,
@@ -1062,14 +1068,14 @@
 			};
 		} catch (error) {
 			if (isAbortError(error)) return;
-			if (request.isCurrent(revision))
+			if (ownsRead())
 				requestEvaluatorErrors = {
 					...requestEvaluatorErrors,
 					[observationId]:
 						error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้'
 				};
 		} finally {
-			if (request.isCurrent(revision)) {
+			if (ownsRead()) {
 				requestEvaluatorAvailabilityLoading = {
 					...requestEvaluatorAvailabilityLoading,
 					[observationId]: false
@@ -1080,23 +1086,21 @@
 
 	function handleRequestEvaluatorPickerOpen(observationId: string, open: boolean) {
 		setRequestEvaluatorPickerOpen(observationId, open);
-		if (open) {
-			void loadRequestEvaluatorAvailability(observationId);
-		} else {
-			evaluatorAvailabilityRequests[observationId]?.abort();
-			requestEvaluatorAvailabilityLoading = {
-				...requestEvaluatorAvailabilityLoading,
-				[observationId]: false
-			};
-		}
+		if (open) void loadRequestEvaluatorAvailability(observationId);
+	}
+
+	function requestAvailabilityUnverified(observationId: string): boolean {
+		return Boolean(
+			requestEvaluatorAvailabilityLoading[observationId] || requestEvaluatorErrors[observationId]
+		);
 	}
 
 	function toggleRequestEvaluatorForRequest(
 		observationId: string,
 		staff: SupervisionEvaluatorAvailability
 	) {
-		if (!canManageRequests) return;
-		if (!staff.available) return;
+		if (!canManageRequests || requestAvailabilityUnverified(observationId) || !staff.available)
+			return;
 		const currentIds = selectedRequestEvaluatorIds(observationId);
 		requestEvaluatorIds = {
 			...requestEvaluatorIds,
@@ -1139,12 +1143,12 @@
 	async function approveRequest(observationId: string) {
 		if (!canManageRequests) return;
 		const current = observations.find((item) => item.id === observationId);
-		if (!current || current.evaluators.some((evaluator) => evaluator.status === 'submitted'))
-			return;
 		if (
-			requestEvaluatorAvailabilityLoading[observationId] ||
-			requestEvaluatorErrors[observationId]
-		) {
+			!current?.canManage ||
+			current.evaluators.some((evaluator) => evaluator.status === 'submitted')
+		)
+			return;
+		if (requestAvailabilityUnverified(observationId)) {
 			toast.error('รอตรวจช่วงคาบและผู้ประเมินให้สำเร็จก่อน');
 			return;
 		}
@@ -1175,7 +1179,7 @@
 			clearRequestApprovalState(observationId);
 		} catch (error) {
 			if (!ownsMutation()) return;
-			void loadRequestEvaluatorAvailability(observationId, true);
+			void loadRequestEvaluatorAvailability(observationId);
 			toast.error(error instanceof Error ? error.message : 'อนุมัติคำขอไม่สำเร็จ');
 		} finally {
 			if (ownsMutation()) savingAction = null;
@@ -2273,13 +2277,14 @@
 											</div>
 
 											<div class="mt-4"><SupervisionSavedPeriods {observation} /></div>
-											<SupervisionRequestAvailability
-												result={requestEvaluatorAvailability[observation.id]}
-												loading={!!requestEvaluatorAvailabilityLoading[observation.id]}
-												error={requestEvaluatorErrors[observation.id] ?? ''}
-												oninspect={() =>
-													void loadRequestEvaluatorAvailability(observation.id, true)}
-											/>
+											{#if observation.canManage}<SupervisionRequestAvailability
+													result={requestEvaluatorAvailability[observation.id]}
+													loading={!!requestEvaluatorAvailabilityLoading[observation.id]}
+													error={requestEvaluatorErrors[observation.id] ?? ''}
+													showError={!requestEvaluatorPickerOpen(observation.id)}
+													disabled={mutationBusy}
+													oninspect={() => void loadRequestEvaluatorAvailability(observation.id)}
+												/>{/if}
 											<div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
 												<div class="space-y-2">
 													<Label>ผู้ประเมิน</Label>
@@ -2315,7 +2320,11 @@
 														onOpenChange={(open) =>
 															handleRequestEvaluatorPickerOpen(observation.id, open)}
 													>
-														<Popover.Trigger>
+														<Popover.Trigger
+															disabled={!observation.canManage ||
+																mutationBusy ||
+																requestEvaluatorAvailabilityLoading[observation.id]}
+														>
 															{#snippet child({ props })}
 																<Button
 																	type="button"
@@ -2324,12 +2333,11 @@
 																	aria-label="เพิ่ม/เลือกผู้ประเมิน"
 																	aria-expanded={requestEvaluatorPickerOpen(observation.id)}
 																	class="w-full justify-between font-normal sm:w-[320px]"
-																	disabled={mutationBusy ||
-																		requestEvaluatorAvailabilityLoading[observation.id]}
 																	{...props}
 																>
 																	<span class="truncate">
-																		{requestEvaluatorAvailabilityLoading[observation.id]
+																		{requestEvaluatorAvailabilityLoading[observation.id] &&
+																		!requestEvaluatorAvailability[observation.id]
 																			? 'กำลังตรวจผู้ประเมินที่ว่าง...'
 																			: 'เพิ่ม/เลือกผู้ประเมิน'}
 																	</span>
@@ -2342,7 +2350,7 @@
 																!!requestEvaluatorAvailability[observation.id],
 																!!requestEvaluatorAvailabilityLoading[observation.id],
 																requestEvaluatorErrors[observation.id] ?? '',
-																() => void loadRequestEvaluatorAvailability(observation.id, true)
+																() => void loadRequestEvaluatorAvailability(observation.id)
 															)}
 															<Command.Root>
 																<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
@@ -2356,6 +2364,7 @@
 																			{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
 																				<Command.Item
 																					value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
+																					disabled={requestAvailabilityUnverified(observation.id)}
 																					onSelect={() =>
 																						toggleRequestEvaluatorForRequest(
 																							observation.id,
@@ -2452,7 +2461,9 @@
 													onclick={() => approveRequest(observation.id)}
 													loading={savingAction === `approve-request:${observation.id}`}
 													loadingLabel="กำลังอนุมัติ..."
-													disabled={mutationBusy ||
+													disabled={!observation.canManage ||
+														mutationBusy ||
+														requestAvailabilityUnverified(observation.id) ||
 														observation.evaluators.some(
 															(evaluator) => evaluator.status === 'submitted'
 														) ||

@@ -1,5 +1,8 @@
 use axum::{
-    extract::{Extension, Path, Query, State},
+    extract::{
+        rejection::{JsonRejection, QueryRejection},
+        Extension, Path, Query, State,
+    },
     http::StatusCode,
     response::IntoResponse,
     routing::{get, patch, post, put},
@@ -55,6 +58,25 @@ pub struct ItemsData<T> {
     pub items: Vec<T>,
 }
 
+fn parse_request_body<T>(payload: Result<Json<T>, JsonRejection>) -> Result<T, AppError> {
+    match payload {
+        Ok(Json(payload)) => Ok(payload),
+        Err(JsonRejection::JsonDataError(_)) => {
+            Err(AppError::ValidationError("ข้อมูลคำขอไม่ถูกต้อง".into()))
+        }
+        Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            Err(AppError::PayloadTooLarge)
+        }
+        Err(_) => Err(AppError::BadRequest("รูปแบบคำขอไม่ถูกต้อง".into())),
+    }
+}
+
+fn parse_booking_query<T>(query: Result<Query<T>, QueryRejection>) -> Result<T, AppError> {
+    query
+        .map(|Query(query)| query)
+        .map_err(|_| AppError::BadRequest("ตัวกรองช่วงเวลานิเทศไม่ถูกต้อง".into()))
+}
+
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get, path = "/api/supervision/booking-options", operation_id = "getSupervisionBookingOptions", tag = "supervision",
     params(SupervisionBookingOptionsQuery),
@@ -69,12 +91,16 @@ pub struct ItemsData<T> {
 pub async fn booking_options(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Query(query): Query<SupervisionBookingOptionsQuery>,
+    query: Result<Query<SupervisionBookingOptionsQuery>, QueryRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     supervision_access_policy::require_request_own(&context.actor)?;
-    let result =
-        services::booking_options(&context.tenant.pool, context.actor.user_id, query).await?;
+    let result = services::booking_options(
+        &context.tenant.pool,
+        context.actor.user_id,
+        parse_booking_query(query)?,
+    )
+    .await?;
     Ok(Json(ApiResponse::ok(result)).into_response())
 }
 
@@ -215,13 +241,17 @@ pub async fn list_cycles(
 pub async fn create_cycle(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<CreateSupervisionCycleRequest>,
+    payload: Result<Json<CreateSupervisionCycleRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     supervision_access_policy::require_manage_school(&context.actor)?;
 
-    let cycle =
-        services::create_cycle(&context.tenant.pool, payload, context.actor.user_id).await?;
+    let cycle = services::create_cycle(
+        &context.tenant.pool,
+        parse_request_body(payload)?,
+        context.actor.user_id,
+    )
+    .await?;
 
     Ok((StatusCode::CREATED, Json(ApiResponse::ok(cycle))).into_response())
 }
@@ -247,12 +277,13 @@ pub async fn update_cycle(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<UpdateSupervisionCycleRequest>,
+    payload: Result<Json<UpdateSupervisionCycleRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     supervision_access_policy::require_manage_school(&context.actor)?;
 
-    let cycle = services::update_cycle(&context.tenant.pool, id, payload).await?;
+    let cycle =
+        services::update_cycle(&context.tenant.pool, id, parse_request_body(payload)?).await?;
 
     Ok(Json(ApiResponse::ok(cycle)).into_response())
 }
@@ -576,6 +607,7 @@ pub async fn evaluator_availability(
     responses(
         (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 200, description = "Timetable block-group options for the observation", body = ApiResponse<SupervisionBookingOptions>),
+        (status = 400, description = "Invalid timetable query", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
@@ -585,7 +617,7 @@ pub async fn observation_timetable_options(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Query(query): Query<SupervisionObservationTimetableQuery>,
+    query: Result<Query<SupervisionObservationTimetableQuery>, QueryRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let observation = services::get_observation(&context.tenant.pool, id).await?;
@@ -602,9 +634,12 @@ pub async fn observation_timetable_options(
         .await?;
     }
 
-    let items =
-        services::observation_timetable_options(&context.tenant.pool, id, query.week_start_date)
-            .await?;
+    let items = services::observation_timetable_options(
+        &context.tenant.pool,
+        id,
+        parse_booking_query(query)?.week_start_date,
+    )
+    .await?;
 
     Ok(Json(ApiResponse::ok(items)).into_response())
 }
@@ -628,13 +663,17 @@ pub async fn observation_timetable_options(
 pub async fn request_observation(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
-    Json(payload): Json<RequestSupervisionObservationRequest>,
+    payload: Result<Json<RequestSupervisionObservationRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     supervision_access_policy::require_request_own(&context.actor)?;
 
-    let observation =
-        services::request_observation(&context.tenant.pool, context.actor.user_id, payload).await?;
+    let observation = services::request_observation(
+        &context.tenant.pool,
+        context.actor.user_id,
+        parse_request_body(payload)?,
+    )
+    .await?;
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
             .await?;
@@ -660,10 +699,11 @@ pub async fn resubmit_observation_request(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Json(_payload): Json<ResubmitSupervisionObservationRequest>,
+    payload: Result<Json<ResubmitSupervisionObservationRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     supervision_access_policy::require_request_own(&context.actor)?;
+    parse_request_body(payload)?;
     let observation =
         services::resubmit_observation_request(&context.tenant.pool, context.actor.user_id, id)
             .await?;
@@ -694,7 +734,7 @@ pub async fn update_requested_observation(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<UpdateRequestedObservationRequest>,
+    payload: Result<Json<UpdateRequestedObservationRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     supervision_access_policy::require_request_own(&context.actor)?;
@@ -703,7 +743,7 @@ pub async fn update_requested_observation(
         &context.tenant.pool,
         context.actor.user_id,
         id,
-        payload,
+        parse_request_body(payload)?,
     )
     .await?;
     let observation =
@@ -767,7 +807,7 @@ pub async fn update_observation(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<UpdateSupervisionObservationRequest>,
+    payload: Result<Json<UpdateSupervisionObservationRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
@@ -778,9 +818,13 @@ pub async fn update_observation(
     )
     .await?;
 
-    let observation =
-        services::update_observation(&context.tenant.pool, context.actor.user_id, id, payload)
-            .await?;
+    let observation = services::update_observation(
+        &context.tenant.pool,
+        context.actor.user_id,
+        id,
+        parse_request_body(payload)?,
+    )
+    .await?;
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
             .await?;
@@ -809,7 +853,7 @@ pub async fn replace_observation_evaluators(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<ReplaceObservationEvaluatorsRequest>,
+    payload: Result<Json<ReplaceObservationEvaluatorsRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
@@ -824,7 +868,7 @@ pub async fn replace_observation_evaluators(
         &context.tenant.pool,
         context.actor.user_id,
         id,
-        payload,
+        parse_request_body(payload)?,
     )
     .await?;
     let observation =
@@ -896,7 +940,7 @@ pub async fn approve_observation_request(
     State(state): State<SupervisionHttpState>,
     Extension(session): Extension<AuthenticatedSession>,
     Path(id): Path<Uuid>,
-    Json(payload): Json<ApproveObservationRequest>,
+    payload: Result<Json<ApproveObservationRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let current = services::get_observation(&context.tenant.pool, id).await?;
@@ -911,7 +955,7 @@ pub async fn approve_observation_request(
         &context.tenant.pool,
         context.actor.user_id,
         id,
-        payload,
+        parse_request_body(payload)?,
     )
     .await?;
     let observation =

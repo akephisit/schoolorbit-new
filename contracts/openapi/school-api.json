@@ -121971,6 +121971,16 @@
               }
             },
             "description": "Own booking permission required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -122109,6 +122119,16 @@
               }
             },
             "description": "Academic year or term is closed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -122341,6 +122361,16 @@
               }
             },
             "description": "Academic lifecycle or cycle context conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -122652,6 +122682,16 @@
               }
             },
             "description": "Supervision booking conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -122918,6 +122958,16 @@
               }
             },
             "description": "Evaluator schedule conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -123246,6 +123296,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -123338,6 +123398,16 @@
               }
             },
             "description": "Evaluator schedule conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -123510,6 +123580,16 @@
               }
             },
             "description": "Supervision booking conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -123561,7 +123641,7 @@
                 }
               }
             },
-            "description": "Invalid state or cycle date bounds"
+            "description": "Malformed JSON"
           },
           "401": {
             "content": {
@@ -123602,6 +123682,16 @@
               }
             },
             "description": "Academic lifecycle or booking conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -123798,6 +123888,16 @@
             },
             "description": "Timetable block-group options for the observation"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid timetable query"
+          },
           "401": {
             "content": {
               "application/json": {
@@ -123827,6 +123927,16 @@
               }
             },
             "description": "Supervision observation not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [
@@ -123907,6 +124017,16 @@
               }
             },
             "description": "Supervision booking conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed"
           }
         },
         "tags": [

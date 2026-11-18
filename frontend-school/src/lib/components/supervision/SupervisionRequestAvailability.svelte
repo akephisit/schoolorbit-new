@@ -8,11 +8,15 @@
 		result,
 		loading,
 		error,
+		showError,
+		disabled,
 		oninspect
 	}: {
 		result?: SupervisionEvaluatorAvailabilityResponse;
 		loading: boolean;
 		error: string;
+		showError: boolean;
+		disabled: boolean;
 		oninspect: () => void;
 	} = $props();
 	function timeLabel(value: string) {
@@ -26,17 +30,15 @@
 
 <div class="mt-4 space-y-3" data-testid="supervision-request-availability" aria-busy={loading}>
 	{#if !result && loading}<PageSkeleton rows={2} columns={2} />{/if}
-	{#if error}<PageState
+	{#if error && showError}<PageState
 			variant="error"
 			title="ตรวจช่วงคาบและผู้ประเมินไม่สำเร็จ"
 			description={error}
-			actionLabel="ตรวจอีกครั้ง"
-			onaction={oninspect}
 		/>{/if}
 	{#if result}
 		<div class="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
 			<div class="flex flex-wrap items-center gap-2">
-				<p class="font-medium">รายการที่ทับช่วงคาบนี้</p>
+				<p class="font-medium">{error ? 'ผลการตรวจครั้งล่าสุด' : 'รายการที่ทับช่วงคาบนี้'}</p>
 				<Badge variant={result.overlap.blocked ? 'destructive' : 'outline'}
 					>{result.overlap.blocked
 						? 'มีนัดทับกัน อนุมัติไม่ได้'
@@ -84,7 +86,11 @@
 				).length} คน ตรวจจากงานนิเทศและตารางสอนที่ระบบมีข้อมูลตลอดช่วงคาบที่เลือก
 			</p>
 		</div>
-	{:else if !loading && !error}<Button size="sm" variant="outline" onclick={oninspect}
-			>ตรวจช่วงคาบและผู้ประเมิน</Button
+	{/if}
+	{#if result || !loading}<Button
+			size="sm"
+			variant="outline"
+			disabled={loading || disabled}
+			onclick={oninspect}>{result || error ? 'ตรวจอีกครั้ง' : 'ตรวจช่วงคาบและผู้ประเมิน'}</Button
 		>{/if}
 </div>

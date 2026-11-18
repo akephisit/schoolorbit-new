@@ -65669,6 +65669,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request validation failed */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	listSupervisionCycles: {
@@ -65772,6 +65781,15 @@ export interface operations {
 			};
 			/** @description Academic year or term is closed */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request validation failed */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -65957,6 +65975,15 @@ export interface operations {
 			};
 			/** @description Academic lifecycle or cycle context conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request validation failed */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -66197,6 +66224,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request validation failed */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	acknowledgeSupervisionObservation: {
@@ -66402,6 +66438,15 @@ export interface operations {
 			};
 			/** @description Evaluator schedule conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request validation failed */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -66671,6 +66716,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request validation failed */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	replaceSupervisionObservationEvaluators: {
@@ -66736,6 +66790,15 @@ export interface operations {
 			};
 			/** @description Evaluator schedule conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request validation failed */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -66883,6 +66946,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiErrorResponse'];
 				};
 			};
+			/** @description Request validation failed */
+			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 		};
 	};
 	resubmitSupervisionObservationRequest: {
@@ -66910,7 +66982,7 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
 				};
 			};
-			/** @description Invalid state or cycle date bounds */
+			/** @description Malformed JSON */
 			400: {
 				headers: {
 					[name: string]: unknown;
@@ -66948,6 +67020,15 @@ export interface operations {
 			};
 			/** @description Academic lifecycle or booking conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request validation failed */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -67102,6 +67183,15 @@ export interface operations {
 					'application/json': components['schemas']['ApiResponse_SupervisionBookingOptions'];
 				};
 			};
+			/** @description Invalid timetable query */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
 			/** @description Authentication required */
 			401: {
 				headers: {
@@ -67122,6 +67212,15 @@ export interface operations {
 			};
 			/** @description Supervision observation not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request validation failed */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -67191,6 +67290,15 @@ export interface operations {
 			};
 			/** @description Supervision booking conflict */
 			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request validation failed */
+			422: {
 				headers: {
 					[name: string]: unknown;
 				};
