@@ -6,6 +6,7 @@ import type {
 	SupervisionObservationStatus,
 	SupervisionCycleStatus,
 	SupervisionEvaluator,
+	ApproveObservationRequest,
 	UpdateRequestedObservationRequest
 } from '../../../src/lib/api/supervision';
 import { sessionState } from './session-state';
@@ -111,6 +112,8 @@ export async function mock(
 		term?: boolean;
 		observationStatus?: SupervisionObservationStatus;
 		observation?: Partial<SupervisionObservation>;
+		additionalObservations?: (Partial<SupervisionObservation> &
+			Pick<SupervisionObservation, 'id'>)[];
 		bookingItems?: SupervisionTimetableOption[];
 		canManage?: boolean;
 		canReview?: boolean;
@@ -369,7 +372,12 @@ export async function mock(
 					itemCount: 1
 				});
 			if (resource === '/api/supervision/observations' && method === 'GET')
-				return reply(route, { items: [snapshot] });
+				return reply(route, {
+					items: [
+						snapshot,
+						...(options.additionalObservations ?? []).map((item) => ({ ...snapshot, ...item }))
+					]
+				});
 			if (resource.endsWith('/evaluator-availability'))
 				return reply(route, {
 					items: [
@@ -396,7 +404,24 @@ export async function mock(
 				});
 			if (method === 'POST' && resource.includes(`/observations/${id(30)}/`)) {
 				if (options.hold === 'patch') await held.promise;
-				if (resource.endsWith('/approve-request')) periodsLocked = true;
+				if (resource.endsWith('/approve-request')) {
+					periodsLocked = true;
+					const { evaluators }: ApproveObservationRequest = route.request().postDataJSON();
+					observationPatch = {
+						...observationPatch,
+						evaluators: (evaluators ?? []).map((evaluator, index) => ({
+							...evaluator,
+							isRequired: evaluator.isRequired ?? true,
+							id: id(150 + index),
+							observationId: id(30),
+							evaluatorDisplayName:
+								evaluator.evaluatorUserId === id(32) ? 'ผู้ประเมินที่ว่าง' : null,
+							createdAt: '2026-10-01T09:00:00Z',
+							updatedAt: '2026-10-01T09:00:00Z',
+							status: 'assigned'
+						}))
+					};
+				}
 				observationStatus = resource.endsWith('/resubmit-request')
 					? 'requested'
 					: resource.endsWith('/cancel')

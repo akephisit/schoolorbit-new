@@ -378,7 +378,7 @@ test('teaching supervision approval review shows completed rubric before approvi
 	assert.match(supervisionWorkspace, />\s*ตรวจผล\s*</);
 });
 
-test('teaching supervision workflows are routed instead of tab-only state', async () => {
+test('supervision keeps separate workflow routes with an in-place requests calendar', async () => {
 	const supervisionWorkspace = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
@@ -427,7 +427,13 @@ test('teaching supervision workflows are routed instead of tab-only state', asyn
 		)
 	};
 
-	assert.doesNotMatch(supervisionWorkspace, /<Tabs\.Root/);
+	const requests = supervisionWorkspace.match(
+		/\{:else if section === 'requests'\}([\s\S]*?)\{:else if section === 'evaluate'\}/
+	)?.[1];
+	assert.ok(requests, 'request presentation stays in the requests route section');
+	assert.equal([...supervisionWorkspace.matchAll(/<Tabs\.Root\b/g)].length, 1);
+	assert.match(requests, /<Tabs\.Root\s+bind:value=\{requestsView\}/);
+	assert.match(requests, /<SupervisionBookingCalendar\s+\{observations\}/);
 	assert.doesNotMatch(supervisionWorkspace, /bind:value=\{activeTab\}/);
 	assert.match(supervisionWorkspace, /export type SupervisionWorkspaceSection/);
 	assert.match(supervisionWorkspace, /section:/);

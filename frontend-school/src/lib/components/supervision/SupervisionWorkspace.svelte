@@ -3,7 +3,8 @@
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import SupervisionCycleDates from '#lib/components/supervision/SupervisionCycleDates.svelte';
 	import SupervisionRequestAvailability from '#lib/components/supervision/SupervisionRequestAvailability.svelte';
-	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
+	import SupervisionRequestCard from '#lib/components/supervision/SupervisionRequestCard.svelte';
+	import SupervisionBookingCalendar from '#lib/components/supervision/SupervisionBookingCalendar.svelte';
 	import { cycleDateRangeError, cycleDateRangeLabel } from '#lib/supervision/booking-range.js';
 	import SupervisionCycleDelete from '#lib/components/supervision/SupervisionCycleDelete.svelte';
 	import SupervisionLessonPicker from '#lib/components/supervision/SupervisionLessonPicker.svelte';
@@ -27,8 +28,7 @@
 		FileSignature,
 		Plus,
 		Settings2,
-		Trash2,
-		UserCheck
+		Trash2
 	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
@@ -94,6 +94,7 @@
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
 	export type SupervisionWorkspaceSection =
@@ -189,7 +190,7 @@
 		},
 		requests: {
 			title: 'คำขอจองนิเทศ',
-			description: 'ตรวจคำขอจองคาบนิเทศและกำหนดผู้ประเมิน'
+			description: 'ตรวจคำขอจอง กำหนดผู้ประเมิน และดูปฏิทินนัดนิเทศ'
 		},
 		cycles: {
 			title: 'รอบนิเทศ',
@@ -246,6 +247,8 @@
 	let observationsLoading = $state(false);
 	let observationsReadable = $state(true);
 	let observationsError = $state('');
+	let requestsView = $state('requests');
+	let bookingCalendarDate = $state('');
 	let bookingOpen = $state(false);
 	let evaluationTemplateLoading = $state(false);
 	let evaluationTemplateError = $state('');
@@ -463,6 +466,7 @@
 				teacherStatusRows = [];
 				observations = [];
 				observationsLoaded = false;
+				bookingCalendarDate = '';
 				bookingOpen = false;
 				savingEvaluation = null;
 				clearEvaluationDraft();
@@ -2185,304 +2189,258 @@
 			</Card.Root>
 		</div>
 	{:else if section === 'requests'}
-		<div class="space-y-4">
-			<Card.Root>
-				<Card.Header>
-					<Card.Title class="flex items-center gap-2">
-						<UserCheck class="h-5 w-5" />
-						คำขอจองที่รออนุมัติ
-					</Card.Title>
-					<Card.Description>
-						ตรวจข้อมูลการจอง มอบหมายผู้ประเมินได้หลายคน แล้วอนุมัติทีละรายการ
-					</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-4">
-					<div
-						class="relative"
-						data-testid="supervision-observations"
-						aria-busy={observationsLoading}
-					>
-						{@render managementFeedback(
-							observationsLoaded,
-							observationsLoading,
-							observationsError,
-							retryObservations
-						)}
-						{#if observationsLoaded && !observationsReadable}<PageState
-								variant="permission"
-								title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
-								description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
-							/>{/if}
-						{#if observationsLoaded && observationsReadable}
-							{#if requestedObservations.length === 0}
-								<PageState
-									title="ไม่มีคำขอจองที่รออนุมัติ"
-									description="เมื่อครูส่งคำขอจอง รายการจะปรากฏในส่วนนี้"
-								/>
-							{:else}
-								<div class="space-y-3">
-									{#each requestedObservations as observation (observation.id)}
-										<div class="rounded-md border bg-background p-4">
-											<div
-												class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
-											>
-												<div class="min-w-0 space-y-1">
-													<div class="flex flex-wrap items-center gap-2">
-														<h3 class="font-semibold">
-															{observation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}
-														</h3>
-														<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-														<p class="text-xs text-muted-foreground">
-															{observationWorkflow(observation).stageLabel} · ถัดไป: {observationWorkflow(
-																observation
-															).nextOwner}
-														</p>
-													</div>
-													<p class="text-sm text-muted-foreground">
-														{observationLessonTitle(observation)}
-													</p>
-												</div>
-												<div class="text-sm text-muted-foreground">
-													ส่งคำขอ {formatDate(observation.requestedAt)}
-												</div>
-											</div>
-
-											<div class="mt-4 grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-3">
-												<div>
-													<p class="text-xs text-muted-foreground">วันที่นิเทศ</p>
-													<p class="font-medium">{formatDate(observation.observedAt)}</p>
-												</div>
-												<div>
-													<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
-													<p class="font-medium">{requestCycleLabel(observation)}</p>
-												</div>
-												<div>
-													<p class="text-xs text-muted-foreground">แบบประเมิน</p>
-													<p class="font-medium">{requestTemplateTitle(observation)}</p>
-												</div>
-												<div>
-													<p class="text-xs text-muted-foreground">คาบ/ห้องเรียน</p>
-													<p class="font-medium">{observationLessonTitle(observation)}</p>
-												</div>
-												<div>
-													<p class="text-xs text-muted-foreground">ผู้ขอรับนิเทศ</p>
-													<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-												</div>
-												<div>
-													<p class="text-xs text-muted-foreground">จำนวนผู้ประเมินที่เลือก</p>
-													<p class="font-medium">
-														{selectedRequestEvaluatorIds(observation.id).length} คน
-													</p>
-												</div>
-											</div>
-
-											<div class="mt-4"><SupervisionSavedPeriods {observation} /></div>
-											{#if observation.canManage}<SupervisionRequestAvailability
-													result={requestEvaluatorAvailability[observation.id]}
-													loading={!!requestEvaluatorAvailabilityLoading[observation.id]}
-													error={requestEvaluatorErrors[observation.id] ?? ''}
-													showError={!requestEvaluatorPickerOpen(observation.id)}
-													disabled={mutationBusy}
-													oninspect={() => void loadRequestEvaluatorAvailability(observation.id)}
-												/>{/if}
-											<div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-												<div class="space-y-2">
-													<Label>ผู้ประเมิน</Label>
-													<div
-														class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2"
-													>
-														{#if selectedRequestEvaluators(observation.id).length === 0}
-															<span class="text-sm text-muted-foreground"
-																>ยังไม่ได้เลือกผู้ประเมิน</span
-															>
-														{:else}
-															{#each selectedRequestEvaluators(observation.id) as evaluator (evaluator.id)}
-																<Badge variant="secondary" class="gap-1 pr-1">
-																	<span>{evaluator.name}</span>
-																	<button
-																		type="button"
-																		class="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
-																		aria-label={`ลบผู้ประเมิน ${evaluator.name}`}
-																		onclick={() =>
-																			removeRequestEvaluatorForRequest(
-																				observation.id,
-																				evaluator.id
-																			)}
-																	>
-																		<Trash2 class="h-3 w-3" />
-																	</button>
-																</Badge>
-															{/each}
-														{/if}
-													</div>
-													<Popover.Root
-														open={requestEvaluatorPickerOpen(observation.id)}
-														onOpenChange={(open) =>
-															handleRequestEvaluatorPickerOpen(observation.id, open)}
-													>
-														<Popover.Trigger
-															disabled={!observation.canManage ||
-																mutationBusy ||
-																requestEvaluatorAvailabilityLoading[observation.id]}
+		<div data-testid="supervision-observations" aria-busy={observationsLoading} class="space-y-3">
+			<Tabs.Root
+				bind:value={requestsView}
+				onValueChange={(view) => {
+					if (view === 'calendar') evaluatorPickerOpenByRequest = {};
+				}}
+			>
+				<Tabs.List class="self-start" aria-label="มุมมองคำขอจองนิเทศ">
+					<Tabs.Trigger value="requests">คำขอจอง</Tabs.Trigger>
+					<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
+				</Tabs.List>
+				{@render managementFeedback(
+					observationsLoaded,
+					observationsLoading,
+					observationsError,
+					retryObservations
+				)}
+				{#if observationsLoaded && !observationsReadable}
+					<PageState
+						variant="permission"
+						title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
+						description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
+					/>
+				{/if}
+				<Tabs.Content value="requests" class="space-y-3">
+					{#if requestsView === 'requests' && observationsLoaded && observationsReadable}
+						<h2 class="text-lg font-semibold">คำขอจองที่รออนุมัติ</h2>
+						{#if requestedObservations.length === 0}
+							<PageState
+								title="ไม่มีคำขอจองที่รออนุมัติ"
+								description="เมื่อครูส่งคำขอจอง รายการจะปรากฏในส่วนนี้"
+							/>
+						{:else}
+							<div class="space-y-3">
+								{#each requestedObservations as observation (observation.id)}
+									<SupervisionRequestCard
+										{observation}
+										cycleLabel={requestCycleLabel(observation)}
+										templateLabel={requestTemplateTitle(observation)}
+										requestedLabel={formatDate(observation.requestedAt)}
+									>
+										{#if observation.canManage}<SupervisionRequestAvailability
+												result={requestEvaluatorAvailability[observation.id]}
+												loading={!!requestEvaluatorAvailabilityLoading[observation.id]}
+												error={requestEvaluatorErrors[observation.id] ?? ''}
+												showError={!requestEvaluatorPickerOpen(observation.id)}
+												disabled={mutationBusy}
+												oninspect={() => void loadRequestEvaluatorAvailability(observation.id)}
+											/>{/if}
+										<div class="grid gap-4 border-t pt-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+											<div class="space-y-2">
+												<Label>ผู้ประเมิน</Label>
+												<div
+													class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2"
+												>
+													{#if selectedRequestEvaluators(observation.id).length === 0}
+														<span class="text-sm text-muted-foreground"
+															>ยังไม่ได้เลือกผู้ประเมิน</span
 														>
-															{#snippet child({ props })}
-																<Button
+													{:else}
+														{#each selectedRequestEvaluators(observation.id) as evaluator (evaluator.id)}
+															<Badge variant="secondary" class="gap-1 pr-1">
+																<span>{evaluator.name}</span>
+																<button
 																	type="button"
-																	variant="outline"
-																	role="combobox"
-																	aria-label="เพิ่ม/เลือกผู้ประเมิน"
-																	aria-expanded={requestEvaluatorPickerOpen(observation.id)}
-																	class="w-full justify-between font-normal sm:w-[320px]"
-																	{...props}
+																	class="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
+																	aria-label={`ลบผู้ประเมิน ${evaluator.name}`}
+																	onclick={() =>
+																		removeRequestEvaluatorForRequest(observation.id, evaluator.id)}
 																>
-																	<span class="truncate">
-																		{requestEvaluatorAvailabilityLoading[observation.id] &&
-																		!requestEvaluatorAvailability[observation.id]
-																			? 'กำลังตรวจผู้ประเมินที่ว่าง...'
-																			: 'เพิ่ม/เลือกผู้ประเมิน'}
-																	</span>
-																	<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-																</Button>
-															{/snippet}
-														</Popover.Trigger>
-														<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-															{@render managementFeedback(
-																!!requestEvaluatorAvailability[observation.id],
-																!!requestEvaluatorAvailabilityLoading[observation.id],
-																requestEvaluatorErrors[observation.id] ?? '',
-																() => void loadRequestEvaluatorAvailability(observation.id)
-															)}
-															<Command.Root>
-																<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
-																{#if requestEvaluatorAvailability[observation.id]}<Command.Empty
-																		>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty
-																	>{/if}
-																{#if requestEvaluatorAvailability[observation.id]}<Command.List
-																		class="max-h-72"
-																	>
-																		<Command.Group heading="พร้อมประเมินตลอดช่วงคาบ">
-																			{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
-																				<Command.Item
-																					value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
-																					disabled={requestAvailabilityUnverified(observation.id)}
-																					onSelect={() =>
-																						toggleRequestEvaluatorForRequest(
-																							observation.id,
-																							evaluator
-																						)}
-																				>
-																					<Check
-																						class={cn(
-																							'mr-2 h-4 w-4',
-																							selectedRequestEvaluatorIds(observation.id).includes(
-																								evaluator.id
-																							)
-																								? 'opacity-100'
-																								: 'opacity-0'
-																						)}
-																					/>
-																					<span>{evaluator.name}</span>
-																				</Command.Item>
-																			{/each}
-																		</Command.Group>
-																		{#if unavailableRequestEvaluatorCount(observation.id)}<Command.Group
-																				heading="ไม่ว่างในช่วงคาบนี้"
-																				>{#each requestEvaluatorOptions(observation.id).filter((item) => !item.available) as evaluator (evaluator.id)}<Command.Item
-																						value={`${evaluator.name} ${evaluator.id}`}
-																						disabled
-																						><div class="min-w-0 space-y-1">
-																							<p>{evaluator.name}</p>
-																							<p class="text-xs text-muted-foreground">
-																								{evaluator.conflictReason ?? 'มีงานทับช่วงคาบ'}
-																							</p>
-																							{#if evaluator.conflict}<p
-																									class="text-xs text-muted-foreground"
-																								>
-																									{evaluator.conflict.observedDisplayName ??
-																										'รายการนิเทศ'} · {formatDate(
-																										evaluator.conflict.observedAt
-																									)}{#if evaluator.conflict.lessonTitle}
-																										· {evaluator.conflict.lessonTitle}{/if}
-																								</p>{/if}
-																						</div></Command.Item
-																					>{/each}</Command.Group
-																			>{/if}
-																	</Command.List>{/if}
-															</Command.Root>
-														</Popover.Content>
-													</Popover.Root>
-													{#if unavailableRequestEvaluatorCount(observation.id) > 0}
-														<p class="text-xs text-muted-foreground">
-															ผู้ประเมินไม่ว่าง {unavailableRequestEvaluatorCount(observation.id)} คน
-															ดูเหตุผลในกลุ่ม “ไม่ว่างในช่วงคาบนี้”
-														</p>
+																	<Trash2 class="h-3 w-3" />
+																</button>
+															</Badge>
+														{/each}
 													{/if}
 												</div>
-
-												<div class="space-y-2">
-													<Label>ส่งกลับคำขอ</Label>
-													<Textarea
-														value={requestReturnComments[observation.id] ?? ''}
-														rows={3}
-														placeholder="ระบุเหตุผลส่งกลับ"
-														oninput={(event) =>
-															setRequestReturnCommentForRequest(
-																observation.id,
-																(event.currentTarget as HTMLTextAreaElement).value
-															)}
-													/>
-												</div>
+												<Popover.Root
+													open={requestEvaluatorPickerOpen(observation.id)}
+													onOpenChange={(open) =>
+														handleRequestEvaluatorPickerOpen(observation.id, open)}
+												>
+													<Popover.Trigger
+														disabled={!observation.canManage ||
+															mutationBusy ||
+															requestEvaluatorAvailabilityLoading[observation.id]}
+													>
+														{#snippet child({ props })}
+															<Button
+																type="button"
+																variant="outline"
+																role="combobox"
+																aria-label="เพิ่ม/เลือกผู้ประเมิน"
+																aria-expanded={requestEvaluatorPickerOpen(observation.id)}
+																class="w-full justify-between font-normal sm:w-[320px]"
+																{...props}
+															>
+																<span class="truncate">
+																	{requestEvaluatorAvailabilityLoading[observation.id] &&
+																	!requestEvaluatorAvailability[observation.id]
+																		? 'กำลังตรวจผู้ประเมินที่ว่าง...'
+																		: 'เพิ่ม/เลือกผู้ประเมิน'}
+																</span>
+																<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
+															</Button>
+														{/snippet}
+													</Popover.Trigger>
+													<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+														{@render managementFeedback(
+															!!requestEvaluatorAvailability[observation.id],
+															!!requestEvaluatorAvailabilityLoading[observation.id],
+															requestEvaluatorErrors[observation.id] ?? '',
+															() => void loadRequestEvaluatorAvailability(observation.id)
+														)}
+														<Command.Root>
+															<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
+															{#if requestEvaluatorAvailability[observation.id]}<Command.Empty
+																	>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty
+																>{/if}
+															{#if requestEvaluatorAvailability[observation.id]}<Command.List
+																	class="max-h-72"
+																>
+																	<Command.Group heading="พร้อมประเมินตลอดช่วงคาบ">
+																		{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
+																			<Command.Item
+																				value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
+																				disabled={requestAvailabilityUnverified(observation.id)}
+																				onSelect={() =>
+																					toggleRequestEvaluatorForRequest(
+																						observation.id,
+																						evaluator
+																					)}
+																			>
+																				<Check
+																					class={cn(
+																						'mr-2 h-4 w-4',
+																						selectedRequestEvaluatorIds(observation.id).includes(
+																							evaluator.id
+																						)
+																							? 'opacity-100'
+																							: 'opacity-0'
+																					)}
+																				/>
+																				<span>{evaluator.name}</span>
+																			</Command.Item>
+																		{/each}
+																	</Command.Group>
+																	{#if unavailableRequestEvaluatorCount(observation.id)}<Command.Group
+																			heading="ไม่ว่างในช่วงคาบนี้"
+																			>{#each requestEvaluatorOptions(observation.id).filter((item) => !item.available) as evaluator (evaluator.id)}<Command.Item
+																					value={`${evaluator.name} ${evaluator.id}`}
+																					disabled
+																					><div class="min-w-0 space-y-1">
+																						<p>{evaluator.name}</p>
+																						<p class="text-xs text-muted-foreground">
+																							{evaluator.conflictReason ?? 'มีงานทับช่วงคาบ'}
+																						</p>
+																						{#if evaluator.conflict}<p
+																								class="text-xs text-muted-foreground"
+																							>
+																								{evaluator.conflict.observedDisplayName ??
+																									'รายการนิเทศ'} · {formatDate(
+																									evaluator.conflict.observedAt
+																								)}{#if evaluator.conflict.lessonTitle}
+																									· {evaluator.conflict.lessonTitle}{/if}
+																							</p>{/if}
+																					</div></Command.Item
+																				>{/each}</Command.Group
+																		>{/if}
+																</Command.List>{/if}
+														</Command.Root>
+													</Popover.Content>
+												</Popover.Root>
+												{#if unavailableRequestEvaluatorCount(observation.id) > 0}
+													<p class="text-xs text-muted-foreground">
+														ผู้ประเมินไม่ว่าง {unavailableRequestEvaluatorCount(observation.id)} คน ดูเหตุผลในกลุ่ม
+														“ไม่ว่างในช่วงคาบนี้”
+													</p>
+												{/if}
 											</div>
 
-											<div class="mt-4 flex flex-wrap items-center justify-end gap-2">
-												<Button
-													size="sm"
-													variant="outline"
-													class="h-8"
-													href={observationDetailHref(observation)}
-													data-sveltekit-preload-data="tap"
-												>
-													<Eye class="h-4 w-4" />
-													รายละเอียด
-												</Button>
-												<LoadingButton
-													variant="outline"
-													loading={savingAction === `return-request:${observation.id}`}
-													loadingLabel="กำลังส่งกลับ..."
-													disabled={mutationBusy ||
-														observation.evaluators.some(
-															(evaluator) => evaluator.status === 'submitted'
+											<div class="space-y-2">
+												<Label for={`return-request-${observation.id}`}>ส่งกลับคำขอ</Label>
+												<Textarea
+													id={`return-request-${observation.id}`}
+													value={requestReturnComments[observation.id] ?? ''}
+													rows={3}
+													placeholder="ระบุเหตุผลส่งกลับ"
+													oninput={(event) =>
+														setRequestReturnCommentForRequest(
+															observation.id,
+															(event.currentTarget as HTMLTextAreaElement).value
 														)}
-													onclick={() => returnRequest(observation.id)}
-												>
-													ส่งกลับคำขอ
-												</LoadingButton>
-												<LoadingButton
-													onclick={() => approveRequest(observation.id)}
-													loading={savingAction === `approve-request:${observation.id}`}
-													loadingLabel="กำลังอนุมัติ..."
-													disabled={!observation.canManage ||
-														mutationBusy ||
-														requestAvailabilityUnverified(observation.id) ||
-														observation.evaluators.some(
-															(evaluator) => evaluator.status === 'submitted'
-														) ||
-														selectedRequestEvaluatorIds(observation.id).length === 0 ||
-														requestEvaluatorAvailability[observation.id]?.overlap.blocked ||
-														requestEvaluatorAvailability[observation.id]?.withinCycleDates ===
-															false}
-												>
-													อนุมัติและมอบหมาย
-												</LoadingButton>
+												/>
 											</div>
 										</div>
-									{/each}
-								</div>
-							{/if}
+
+										<div class="flex flex-wrap items-center justify-end gap-2">
+											<Button
+												size="sm"
+												variant="outline"
+												class="h-8"
+												href={observationDetailHref(observation)}
+												data-sveltekit-preload-data="tap"
+											>
+												<Eye class="h-4 w-4" />
+												รายละเอียด
+											</Button>
+											<LoadingButton
+												variant="outline"
+												loading={savingAction === `return-request:${observation.id}`}
+												loadingLabel="กำลังส่งกลับ..."
+												disabled={mutationBusy ||
+													observation.evaluators.some(
+														(evaluator) => evaluator.status === 'submitted'
+													)}
+												onclick={() => returnRequest(observation.id)}
+											>
+												ส่งกลับคำขอ
+											</LoadingButton>
+											<LoadingButton
+												onclick={() => approveRequest(observation.id)}
+												loading={savingAction === `approve-request:${observation.id}`}
+												loadingLabel="กำลังอนุมัติ..."
+												disabled={!observation.canManage ||
+													mutationBusy ||
+													requestAvailabilityUnverified(observation.id) ||
+													observation.evaluators.some(
+														(evaluator) => evaluator.status === 'submitted'
+													) ||
+													selectedRequestEvaluatorIds(observation.id).length === 0 ||
+													requestEvaluatorAvailability[observation.id]?.overlap.blocked ||
+													requestEvaluatorAvailability[observation.id]?.withinCycleDates === false}
+											>
+												อนุมัติและมอบหมาย
+											</LoadingButton>
+										</div>
+									</SupervisionRequestCard>
+								{/each}
+							</div>
 						{/if}
-					</div></Card.Content
-				>
-			</Card.Root>
+					{/if}
+				</Tabs.Content>
+				<Tabs.Content value="calendar">
+					{#if requestsView === 'calendar' && observationsLoaded && observationsReadable}
+						<SupervisionBookingCalendar
+							{observations}
+							bind:selectedDate={bookingCalendarDate}
+							detailHref={observationDetailHref}
+						/>
+					{/if}
+				</Tabs.Content>
+			</Tabs.Root>
 		</div>
 	{:else if section === 'evaluate'}
 		<div class="space-y-4">

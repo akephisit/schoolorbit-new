@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { SupervisionObservation } from '#lib/api/supervision.js';
 	import { savedPeriodSourceLabel } from '#lib/supervision/supervision-presentation.js';
+	import { savedPeriodLabel } from '#lib/supervision/supervision-schedule.js';
 	let { observation }: { observation: SupervisionObservation } = $props();
 	const periods = $derived([...observation.periods].sort((a, b) => a.position - b.position));
 	function dateLabel(value: string) {
@@ -16,9 +17,7 @@
 	{#each periods as period (period.id)}
 		<div class="rounded-lg border p-3 text-sm">
 			<p class="font-medium">
-				{period.lessonSnapshot.periodLabel ??
-					period.manualLesson?.periodLabel ??
-					`คาบ ${period.position}`} · {period.lessonSnapshot.subjectName ??
+				{savedPeriodLabel(period) ?? 'ไม่ระบุคาบ'} · {period.lessonSnapshot.subjectName ??
 					period.manualLesson?.subjectName ??
 					'ไม่ระบุวิชา'}
 			</p>

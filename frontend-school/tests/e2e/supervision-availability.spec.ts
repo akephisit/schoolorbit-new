@@ -445,6 +445,7 @@ for (const state of ['parallel', 'blocked', 'outside'] as const) {
 			reply(route, result)
 		);
 		await page.goto(path('requests'));
+		await page.getByRole('button', { name: 'ดูรายละเอียด 2 คาบ', exact: true }).click();
 		await expect(page.getByTestId('supervision-saved-periods')).toContainText('คาบ 2');
 		await page.getByRole('button', { name: 'ตรวจช่วงคาบและผู้ประเมิน', exact: true }).click();
 		const review = page.getByTestId('supervision-request-availability');
@@ -574,6 +575,7 @@ test('a unit manager can read another unit’s request without checking its avai
 		canManage: false
 	});
 	await page.goto(path('requests'));
+	await page.getByRole('button', { name: 'ดูรายละเอียด 1 คาบ', exact: true }).click();
 	await expect(page.getByTestId('supervision-saved-periods')).toContainText('วิชาทดสอบ');
 	await expect(page.getByTestId('supervision-request-availability')).toHaveCount(0);
 	await expect(
