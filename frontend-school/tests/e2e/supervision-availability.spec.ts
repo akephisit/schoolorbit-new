@@ -503,7 +503,7 @@ test('a unit manager can recheck blocked availability and approve with the still
 			initial.items[0]!,
 			{ ...initial.items[1]!, available: false, conflictReason: 'มีงานนิเทศในช่วงเวลาเดียวกัน' }
 		],
-		overlap: { pendingCount: 0, confirmedCount: 0, blocked: false }
+		overlap: { ...initial.overlap, confirmedCount: 1, blocked: false }
 	};
 	const refresh = Promise.withResolvers<void>();
 	const failure = Promise.withResolvers<void>();
