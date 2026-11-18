@@ -4,6 +4,8 @@
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import SupervisionLessonPicker from '#lib/components/supervision/SupervisionLessonPicker.svelte';
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
+	import SupervisionRequestReview from '#lib/components/supervision/SupervisionRequestReview.svelte';
+	import { createSupervisionRequestReview } from '#lib/supervision/request-review.svelte.js';
 	import {
 		schoolCivilDate,
 		cycleDateRangeError,
@@ -23,6 +25,7 @@
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
 	import {
+		resolveSupervisionRead,
 		waitForSupervisionAccess,
 		SUPERVISION_OBSERVATION_READ_PERMISSIONS
 	} from '#lib/supervision/supervision-access.js';
@@ -116,6 +119,7 @@
 	let mutationLifetime = 0;
 	onDestroy(() => {
 		mutationLifetime += 1;
+		requestReview.reset();
 	});
 
 	function captureMutationOwner() {
@@ -124,11 +128,15 @@
 		const identity = appIdentityKey();
 		const resourceId = data.observationId;
 		const pathname = page.url.pathname;
+		const year = data.academicYearId;
+		const term = data.academicTermId;
 		return () =>
 			lifetime === mutationLifetime &&
 			epoch === contextEpoch &&
 			identity === appIdentityKey() &&
 			resourceId === data.observationId &&
+			year === data.academicYearId &&
+			term === data.academicTermId &&
 			pathname === page.url.pathname;
 	}
 	let lessonWorkflowRevision = 0;
@@ -145,6 +153,7 @@
 	let loadingEvaluatorAvailability = $state(false);
 	let editLessonOpen = $state(false);
 	let editEvaluatorsOpen = $state(false);
+	let requestReviewOpen = $state(false);
 	let evaluatorPickerOpen = $state(false);
 	let cancelDialogOpen = $state(false);
 	let cancelReason = $state('');
@@ -197,20 +206,47 @@
 	const cycleAllowsResubmission = $derived(
 		!cycleLoading && cycle?.status === 'open' && !cycleDatesError
 	);
+	const canEditEvaluators = $derived(
+		Boolean(
+			observation &&
+			(observation.status === 'planned' || observation.status === 'returned') &&
+			canManageObservation
+		)
+	);
+	const requestReview = createSupervisionRequestReview({
+		getObservation: (id) => (observation?.id === id ? observation : null),
+		hasManagePermission: () => canManageObservation,
+		captureOwner: captureMutationOwner,
+		isBusy: () => savingAction !== null,
+		getSavingAction: () => savingAction,
+		setSavingAction: (action) => (savingAction = action),
+		onApplied: (updated) => {
+			replaceObservation(updated);
+			setRequestReviewOpen(false);
+		},
+		onDenied: () => {
+			requestReviewOpen = false;
+			observationRequest.abort();
+			void retryObservation();
+		},
+		allowSaveEvaluators: true
+	});
 	const canEditLesson = $derived(
 		Boolean(
 			observation &&
+			!requestReview.isDenied(observation.id) &&
 			!observation.periodsLocked &&
 			manageableStatus(observation.status) &&
 			(canManageObservation || canEditOwnRequested)
 		)
 	);
-	const canEditEvaluators = $derived(
-		Boolean(observation && manageableStatus(observation.status) && canManageObservation)
+	const canReviewPendingRequest = $derived(
+		Boolean(observation && requestReview.canReview(observation))
 	);
 	const canCancelObservation = $derived(
 		Boolean(
 			observation &&
+			!requestReview.isDenied(observation.id) &&
 			(canCancelOwnRequest ||
 				(canManageObservation &&
 					!['published', 'acknowledged', 'completed', 'cancelled'].includes(observation.status)))
@@ -278,11 +314,12 @@
 			template: routeTemplate
 		};
 		const identity = routeIdentity;
+		const context = [source.observationId, data.academicYearId, data.academicTermId].join(':');
 		untrack(() => {
-			if (contextId !== source.observationId || contextIdentity !== identity) {
+			if (contextId !== context || contextIdentity !== identity) {
 				contextIdentity = identity;
 				resubmitError = '';
-				contextId = source.observationId;
+				contextId = context;
 				contextEpoch += 1;
 				observation = null;
 				cycle = null;
@@ -292,6 +329,8 @@
 				reviewOpen = false;
 				editLessonOpen = false;
 				editEvaluatorsOpen = false;
+				requestReviewOpen = false;
+				requestReview.reset();
 				evaluatorPickerOpen = false;
 				cancelDialogOpen = false;
 				cancelReason = '';
@@ -323,7 +362,7 @@
 				)
 					return;
 				loading = false;
-				if (result.ok) observation = result.data;
+				if (result.ok) applyObservation(result.data);
 				else error = result.error;
 			});
 			void Promise.all([source.identity, source.cycle]).then(([owner, result]) => {
@@ -368,6 +407,7 @@
 			editEvaluatorsOpen = false;
 			availableEvaluators = [];
 		}
+		if (!canReviewPendingRequest) requestReviewOpen = false;
 		if (!canCancelObservation) cancelDialogOpen = false;
 		if (!reviewOpen) {
 			reviewRequest.abort();
@@ -570,12 +610,31 @@
 		return response.data;
 	}
 
+	function applyObservation(updated: SupervisionObservation | null, freshRead = true) {
+		observation = updated;
+		requestReview.reconcile(freshRead);
+		if (!updated || !requestReview.canReview(updated)) requestReviewOpen = false;
+		if (!updated) {
+			contextEpoch += 1;
+			savingAction = null;
+			reviewRequest.abort();
+			cycleRequest.abort();
+			templateRequest.abort();
+			review = null;
+			cycle = null;
+			template = null;
+			loadingReview = false;
+			cycleLoading = false;
+			templateLoading = false;
+		}
+	}
+
 	function replaceObservation(updated: SupervisionObservation) {
 		observationRequest.abort();
 		reviewRequest.abort();
 		loading = false;
 		loadingReview = false;
-		observation = updated;
+		applyObservation(updated, false);
 		if (review)
 			review = {
 				...review,
@@ -591,15 +650,17 @@
 		loading = true;
 		error = '';
 		const result = await captureRouteLoad(
-			getSupervisionObservation(data.observationId, { signal: ticket.signal }),
+			resolveSupervisionRead(
+				getSupervisionObservation(data.observationId, { signal: ticket.signal })
+			),
 			'โหลดรายการนิเทศไม่สำเร็จ'
 		);
 		if (owner !== appIdentityKey() || !observationRequest.isCurrent(ticket.revision)) return;
 		loading = false;
 		if (result.ok) {
-			observation = result.data;
-			if (!cycle && !cycleLoading) void retryCycle();
-			if (!template && !templateLoading) void retryTemplate();
+			applyObservation(result.data);
+			if (result.data && !cycle && !cycleLoading) void retryCycle();
+			if (result.data && !template && !templateLoading) void retryTemplate();
 		} else error = result.error;
 	}
 
@@ -721,13 +782,14 @@
 	}
 
 	function openLessonEditor() {
-		if (!observation || !canEditLesson) return;
+		if (!observation || !canEditLesson || savingAction) return;
 		lessonWorkflowRevision += 1;
 		editLessonOpen = true;
 	}
 
 	async function saveLessonEdit(selection: SupervisionLessonSelection) {
 		if (!observation || !canEditLesson) throw new Error('ไม่มีสิทธิ์แก้ไขคาบนิเทศ');
+		if (savingAction) throw new Error('รอให้การบันทึกปัจจุบันเสร็จก่อน');
 		if (isReturnedOwnRequest && cycle?.status !== 'open')
 			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
 		const ownsMutation = captureMutationOwner();
@@ -751,8 +813,16 @@
 		}
 	}
 
+	function setRequestReviewOpen(open: boolean) {
+		if (!observation) return;
+		if (open && (!requestReview.canReview(observation) || savingAction)) return;
+		requestReviewOpen = open;
+		if (open) void requestReview.loadAvailability(observation.id);
+		else requestReview.cancelAvailability(observation.id);
+	}
+
 	async function openEvaluatorEditor() {
-		if (!observation || !canEditEvaluators) return;
+		if (!observation || !canEditEvaluators || savingAction) return;
 		evaluatorWorkflowRevision += 1;
 		selectedEvaluatorIds = observation.evaluators.map((evaluator) => evaluator.evaluatorUserId);
 		editEvaluatorsOpen = true;
@@ -797,7 +867,7 @@
 	}
 
 	async function saveEvaluatorEdit() {
-		if (!observation || !canEditEvaluators) return;
+		if (!observation || !canEditEvaluators || savingAction) return;
 		if (selectedEvaluatorIds.length === 0) {
 			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คน');
 			return;
@@ -848,7 +918,7 @@
 	}
 
 	async function cancelObservation() {
-		if (!observation || !canCancelObservation) return;
+		if (!observation || !canCancelObservation || savingAction) return;
 		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'cancel';
@@ -974,7 +1044,15 @@
 											{isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'แก้คาบ/วันเวลา'}
 										</Button>
 									{/if}
-									{#if canEditEvaluators}
+									{#if canReviewPendingRequest}
+										<Button
+											onclick={() => setRequestReviewOpen(true)}
+											disabled={savingAction !== null}
+										>
+											<UserCheck class="h-4 w-4" />
+											ตรวจคำขอ
+										</Button>
+									{:else if canEditEvaluators}
 										<Button variant="outline" onclick={openEvaluatorEditor}>
 											<UserCheck class="h-4 w-4" />
 											แก้ผู้ประเมิน
@@ -1434,6 +1512,29 @@
 	</Dialog.Content>
 </Dialog.Root>
 
+<Dialog.Root
+	open={requestReviewOpen && canReviewPendingRequest}
+	onOpenChange={setRequestReviewOpen}
+>
+	{#if observation && canReviewPendingRequest}
+		<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
+			<Dialog.Header>
+				<Dialog.Title>ตรวจคำขอจองนิเทศ</Dialog.Title>
+				<Dialog.Description
+					>{observation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}</Dialog.Description
+				>
+			</Dialog.Header>
+			<SupervisionRequestReview
+				{observation}
+				review={requestReview}
+				showSaveEvaluators
+				showSchedule
+				onclose={() => setRequestReviewOpen(false)}
+			/>
+		</Dialog.Content>
+	{/if}
+</Dialog.Root>
+
 <Dialog.Root bind:open={editEvaluatorsOpen}>
 	<Dialog.Content class="sm:max-w-2xl" aria-busy={loadingEvaluatorAvailability}>
 		<Dialog.Header>
@@ -1557,6 +1658,7 @@
 				variant="destructive"
 				onclick={cancelObservation}
 				loading={savingAction === 'cancel'}
+				disabled={savingAction !== null}
 				loadingLabel="กำลังยกเลิก..."
 			>
 				ยืนยันยกเลิก

@@ -2,7 +2,8 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import SupervisionCycleDates from '#lib/components/supervision/SupervisionCycleDates.svelte';
-	import SupervisionRequestAvailability from '#lib/components/supervision/SupervisionRequestAvailability.svelte';
+	import SupervisionRequestReview from '#lib/components/supervision/SupervisionRequestReview.svelte';
+	import { createSupervisionRequestReview } from '#lib/supervision/request-review.svelte.js';
 	import SupervisionRequestCard from '#lib/components/supervision/SupervisionRequestCard.svelte';
 	import SupervisionBookingCalendar from '#lib/components/supervision/SupervisionBookingCalendar.svelte';
 	import { cycleDateRangeError, cycleDateRangeLabel } from '#lib/supervision/booking-range.js';
@@ -18,10 +19,9 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { SupervisionWorkspaceRouteData } from '#lib/supervision/workspace-route-data.js';
+	import { resolveSupervisionRead } from '#lib/supervision/supervision-access.js';
 	import {
 		BarChart3,
-		Check,
-		ChevronsUpDown,
 		ArrowDown,
 		ArrowUp,
 		Eye,
@@ -36,10 +36,8 @@
 	import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
 	import {
 		acknowledgeSupervisionObservation,
-		approveSupervisionObservationRequest,
 		createSupervisionCycle,
 		createSupervisionTemplate,
-		getSupervisionEvaluatorAvailability,
 		getSupervisionTemplate,
 		listSupervisionTemplateSummaries,
 		type SupervisionTemplateSummary,
@@ -48,7 +46,6 @@
 		listSupervisionCycles,
 		listSupervisionObservations,
 		requestSupervisionObservation,
-		returnSupervisionObservationRequest,
 		submitMySupervisionEvaluation,
 		updateSupervisionCycle,
 		updateSupervisionTemplate,
@@ -58,8 +55,6 @@
 		type SupervisionCycle,
 		type SupervisionCycleStatus,
 		type SupervisionCycleProgress,
-		type SupervisionEvaluatorAvailability,
-		type SupervisionEvaluatorAvailabilityResponse,
 		type SupervisionObservation,
 		type SupervisionTeacherStatusRow,
 		type SupervisionTemplate,
@@ -84,13 +79,11 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import * as Command from '#lib/components/ui/command/index.js';
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
@@ -249,11 +242,11 @@
 	let observationsError = $state('');
 	let requestsView = $state('requests');
 	let bookingCalendarDate = $state('');
+	let calendarReviewId = $state('');
 	let bookingOpen = $state(false);
 	let evaluationTemplateLoading = $state(false);
 	let evaluationTemplateError = $state('');
 	let progressError = $state('');
-	let requestEvaluatorErrors = $state<Record<string, string>>({});
 	let saving = $state(false);
 	let savingAction = $state<string | null>(null);
 	let savingTemplate = $state(false);
@@ -262,14 +255,7 @@
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
 	let observations = $state<SupervisionObservation[]>([]);
-	let requestEvaluatorAvailability = $state<
-		Record<string, SupervisionEvaluatorAvailabilityResponse>
-	>({});
-	let requestEvaluatorAvailabilityLoading = $state<Record<string, boolean>>({});
 	let selectedCycleId = $state('');
-	let requestEvaluatorIds = $state<Record<string, string[]>>({});
-	let requestReturnComments = $state<Record<string, string>>({});
-	let evaluatorPickerOpenByRequest = $state<Record<string, boolean>>({});
 	let evaluationObservationId = $state('');
 	let responseDrafts = $state<{ [itemId: string]: ResponseDraft }>({});
 	let acknowledgeComment = $state('');
@@ -294,7 +280,6 @@
 		observationEndDate: ''
 	});
 	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
-	const evaluatorAvailabilityRequests: Record<string, LatestRequest> = {};
 	const observationRequest = new LatestRequest();
 	const evaluationTemplateRequest = new LatestRequest();
 	const progressRequest = new LatestRequest();
@@ -421,11 +406,39 @@
 			: 0
 	);
 
+	const requestReview = createSupervisionRequestReview({
+		getObservation: (id) =>
+			section === 'requests' && observationsLoaded && observationsReadable
+				? observations.find((item) => item.id === id)
+				: undefined,
+		hasManagePermission: () => canManageRequests,
+		captureOwner: captureMutationOwner,
+		isBusy: () => mutationBusy,
+		getSavingAction: () => savingAction,
+		setSavingAction: (action) => (savingAction = action),
+		onApplied: (updated) => {
+			replaceObservation(updated);
+			if (calendarReviewId === updated.id && updated.status !== 'requested') calendarReviewId = '';
+		},
+		onDenied: (id) => {
+			if (calendarReviewId === id) calendarReviewId = '';
+			void retryObservations();
+		},
+		allowSaveEvaluators: true
+	});
+	const calendarReviewObservation = $derived(
+		requestsView === 'calendar' && observationsLoaded && observationsReadable
+			? requestedObservations.find(
+					(item) => item.id === calendarReviewId && requestReview.canReview(item)
+				)
+			: undefined
+	);
+
 	let managementRevision = 0;
 	let mutationLifetime = 0;
 	onDestroy(() => {
 		mutationLifetime += 1;
-		for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
+		requestReview.reset();
 	});
 
 	function captureMutationOwner() {
@@ -457,7 +470,7 @@
 			if (key !== managementContext) {
 				managementContext = key;
 				managementRevision += 1;
-				for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
+				requestReview.reset();
 				savingAction = null;
 				savingTemplate = false;
 				cycles = [];
@@ -467,15 +480,10 @@
 				observations = [];
 				observationsLoaded = false;
 				bookingCalendarDate = '';
+				calendarReviewId = '';
 				bookingOpen = false;
 				savingEvaluation = null;
 				clearEvaluationDraft();
-				requestEvaluatorAvailability = {};
-				requestEvaluatorAvailabilityLoading = {};
-				requestEvaluatorErrors = {};
-				evaluatorPickerOpenByRequest = {};
-				requestEvaluatorIds = {};
-				requestReturnComments = {};
 				progress = null;
 				progressError = '';
 				loadingProgress = false;
@@ -521,9 +529,7 @@
 						observationsError = result.error;
 						return;
 					}
-					observations = result.data.items;
-					observationsReadable = result.data.readable;
-					observationsLoaded = true;
+					applyObservations(result.data.items, result.data.readable);
 				});
 			const cycleRead = managementCyclesRequest.begin();
 			const templateRead = managementTemplatesRequest.begin();
@@ -876,6 +882,13 @@
 	function shouldLoadObservations() {
 		return routeData.observations !== null;
 	}
+	function applyObservations(items: SupervisionObservation[], readable: boolean, freshRead = true) {
+		observations = items;
+		observationsReadable = readable;
+		observationsLoaded = true;
+		requestReview.reconcile(freshRead);
+		if (calendarReviewId && !calendarReviewObservation) calendarReviewId = '';
+	}
 	async function retryObservations() {
 		if (!academicYearId || !canReadObservations) return;
 		const { revision, signal } = observationRequest.begin();
@@ -883,15 +896,14 @@
 		observationsLoading = true;
 		observationsError = '';
 		try {
-			const items = await listSupervisionObservations(
+			const read = listSupervisionObservations(
 				{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
 				{ signal }
 			);
+			const items = await (section === 'requests' ? resolveSupervisionRead(read) : read);
 
 			if (owner !== currentManagementContext() || !observationRequest.isCurrent(revision)) return;
-			observations = items;
-			observationsReadable = true;
-			observationsLoaded = true;
+			applyObservations(items ?? [], items !== null);
 		} catch (error) {
 			if (
 				!isAbortError(error) &&
@@ -945,10 +957,13 @@
 		observationRequest.abort();
 		observationsLoading = false;
 		observationsError = '';
-		observationsLoaded = true;
-		observations = observations.some((item) => item.id === observation.id)
-			? observations.map((item) => (item.id === observation.id ? observation : item))
-			: [observation, ...observations];
+		applyObservations(
+			observations.some((item) => item.id === observation.id)
+				? observations.map((item) => (item.id === observation.id ? observation : item))
+				: [observation, ...observations],
+			observationsReadable,
+			false
+		);
 	}
 
 	function currentUserEvaluator(observation: SupervisionObservation) {
@@ -1000,218 +1015,6 @@
 			templateSummaries.find((template) => template.id === observation.templateId)?.title ??
 			(templatesLoaded ? 'ไม่พบแบบประเมิน' : '—')
 		);
-	}
-
-	function selectedRequestEvaluatorIds(observationId: string): string[] {
-		return requestEvaluatorIds[observationId] ?? [];
-	}
-
-	function requestEvaluatorOptions(observationId: string): SupervisionEvaluatorAvailability[] {
-		return requestEvaluatorAvailability[observationId]?.items ?? [];
-	}
-
-	function availableRequestEvaluatorOptions(
-		observationId: string
-	): SupervisionEvaluatorAvailability[] {
-		return requestEvaluatorOptions(observationId).filter((evaluator) => evaluator.available);
-	}
-
-	function unavailableRequestEvaluatorCount(observationId: string): number {
-		return requestEvaluatorOptions(observationId).filter((evaluator) => !evaluator.available)
-			.length;
-	}
-
-	function selectedRequestEvaluators(observationId: string): SupervisionEvaluatorAvailability[] {
-		const selectedIds = new Set(selectedRequestEvaluatorIds(observationId));
-		return requestEvaluatorOptions(observationId).filter((staff) => selectedIds.has(staff.id));
-	}
-
-	function requestEvaluatorPickerOpen(observationId: string): boolean {
-		return Boolean(evaluatorPickerOpenByRequest[observationId]);
-	}
-
-	function setRequestEvaluatorPickerOpen(observationId: string, open: boolean) {
-		evaluatorPickerOpenByRequest = {
-			...evaluatorPickerOpenByRequest,
-			[observationId]: open
-		};
-	}
-
-	async function loadRequestEvaluatorAvailability(observationId: string) {
-		if (
-			!canManageRequests ||
-			requestEvaluatorAvailabilityLoading[observationId] ||
-			!requestedObservations.some((item) => item.id === observationId && item.canManage)
-		)
-			return;
-		const context = currentManagementContext();
-		const request = evaluatorAvailabilityRequests[observationId] ?? new LatestRequest();
-		evaluatorAvailabilityRequests[observationId] = request;
-		const { revision, signal } = request.begin();
-		const ownsRead = () => request.isCurrent(revision) && context === currentManagementContext();
-		requestEvaluatorErrors = { ...requestEvaluatorErrors, [observationId]: '' };
-		requestEvaluatorAvailabilityLoading = {
-			...requestEvaluatorAvailabilityLoading,
-			[observationId]: true
-		};
-		try {
-			const result = await getSupervisionEvaluatorAvailability(observationId, { signal });
-			if (!ownsRead()) return;
-			const availableIds = new Set(
-				result.items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
-			);
-			requestEvaluatorAvailability = {
-				...requestEvaluatorAvailability,
-				[observationId]: result
-			};
-			requestEvaluatorIds = {
-				...requestEvaluatorIds,
-				[observationId]: selectedRequestEvaluatorIds(observationId).filter((id) =>
-					availableIds.has(id)
-				)
-			};
-		} catch (error) {
-			if (isAbortError(error)) return;
-			if (ownsRead())
-				requestEvaluatorErrors = {
-					...requestEvaluatorErrors,
-					[observationId]:
-						error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้'
-				};
-		} finally {
-			if (ownsRead()) {
-				requestEvaluatorAvailabilityLoading = {
-					...requestEvaluatorAvailabilityLoading,
-					[observationId]: false
-				};
-			}
-		}
-	}
-
-	function handleRequestEvaluatorPickerOpen(observationId: string, open: boolean) {
-		setRequestEvaluatorPickerOpen(observationId, open);
-		if (open) void loadRequestEvaluatorAvailability(observationId);
-	}
-
-	function requestAvailabilityUnverified(observationId: string): boolean {
-		return Boolean(
-			requestEvaluatorAvailabilityLoading[observationId] || requestEvaluatorErrors[observationId]
-		);
-	}
-
-	function toggleRequestEvaluatorForRequest(
-		observationId: string,
-		staff: SupervisionEvaluatorAvailability
-	) {
-		if (!canManageRequests || requestAvailabilityUnverified(observationId) || !staff.available)
-			return;
-		const currentIds = selectedRequestEvaluatorIds(observationId);
-		requestEvaluatorIds = {
-			...requestEvaluatorIds,
-			[observationId]: currentIds.includes(staff.id)
-				? currentIds.filter((id) => id !== staff.id)
-				: [...currentIds, staff.id]
-		};
-	}
-
-	function removeRequestEvaluatorForRequest(observationId: string, evaluatorId: string) {
-		requestEvaluatorIds = {
-			...requestEvaluatorIds,
-			[observationId]: selectedRequestEvaluatorIds(observationId).filter((id) => id !== evaluatorId)
-		};
-	}
-
-	function setRequestReturnCommentForRequest(observationId: string, comment: string) {
-		requestReturnComments = {
-			...requestReturnComments,
-			[observationId]: comment
-		};
-	}
-
-	function clearRequestApprovalState(observationId: string) {
-		evaluatorAvailabilityRequests[observationId]?.abort();
-		const { [observationId]: _evaluatorIds, ...remainingEvaluatorIds } = requestEvaluatorIds;
-		const { [observationId]: _comment, ...remainingComments } = requestReturnComments;
-		const { [observationId]: _pickerOpen, ...remainingPickerOpen } = evaluatorPickerOpenByRequest;
-		const { [observationId]: _availability, ...remainingAvailability } =
-			requestEvaluatorAvailability;
-		const { [observationId]: _availabilityLoading, ...remainingAvailabilityLoading } =
-			requestEvaluatorAvailabilityLoading;
-		requestEvaluatorIds = remainingEvaluatorIds;
-		requestReturnComments = remainingComments;
-		evaluatorPickerOpenByRequest = remainingPickerOpen;
-		requestEvaluatorAvailability = remainingAvailability;
-		requestEvaluatorAvailabilityLoading = remainingAvailabilityLoading;
-	}
-
-	async function approveRequest(observationId: string) {
-		if (!canManageRequests) return;
-		const current = observations.find((item) => item.id === observationId);
-		if (
-			!current?.canManage ||
-			current.evaluators.some((evaluator) => evaluator.status === 'submitted')
-		)
-			return;
-		if (requestAvailabilityUnverified(observationId)) {
-			toast.error('รอตรวจช่วงคาบและผู้ประเมินให้สำเร็จก่อน');
-			return;
-		}
-		const availability = requestEvaluatorAvailability[observationId];
-		if (availability && (!availability.withinCycleDates || availability.overlap.blocked)) {
-			toast.error('ช่วงคาบนี้ยังอนุมัติไม่ได้ ตรวจช่วงวันที่และรายการที่ทับกันก่อน');
-			return;
-		}
-		const evaluatorIds = selectedRequestEvaluatorIds(observationId);
-		if (evaluatorIds.length === 0) {
-			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คนก่อนอนุมัติ');
-			return;
-		}
-
-		savingAction = `approve-request:${observationId}`;
-		const ownsMutation = captureMutationOwner();
-		try {
-			const response = await approveSupervisionObservationRequest(observationId, {
-				evaluators: evaluatorIds.map((evaluatorId) => ({
-					evaluatorUserId: evaluatorId,
-					isRequired: true
-				}))
-			});
-			if (!ownsMutation()) return;
-			const observation = requireMutationData(response, 'อนุมัติคำขอไม่สำเร็จ');
-			replaceObservation(observation);
-			toast.success('อนุมัติคำขอและมอบหมายผู้ประเมินแล้ว');
-			clearRequestApprovalState(observationId);
-		} catch (error) {
-			if (!ownsMutation()) return;
-			void loadRequestEvaluatorAvailability(observationId);
-			toast.error(error instanceof Error ? error.message : 'อนุมัติคำขอไม่สำเร็จ');
-		} finally {
-			if (ownsMutation()) savingAction = null;
-		}
-	}
-
-	async function returnRequest(id: string) {
-		if (!canManageRequests) return;
-		const current = observations.find((item) => item.id === id);
-		if (!current || current.evaluators.some((evaluator) => evaluator.status === 'submitted'))
-			return;
-		savingAction = `return-request:${id}`;
-		const ownsMutation = captureMutationOwner();
-		try {
-			const response = await returnSupervisionObservationRequest(id, {
-				comment: requestReturnComments[id] || null
-			});
-			if (!ownsMutation()) return;
-			const observation = requireMutationData(response, 'ส่งกลับคำขอไม่สำเร็จ');
-			replaceObservation(observation);
-			toast.success('ส่งกลับคำขอแล้ว');
-			clearRequestApprovalState(id);
-		} catch (error) {
-			if (!ownsMutation()) return;
-			toast.error(error instanceof Error ? error.message : 'ส่งกลับคำขอไม่สำเร็จ');
-		} finally {
-			if (ownsMutation()) savingAction = null;
-		}
 	}
 
 	function prepareEvaluationDraft(observation: SupervisionObservation) {
@@ -2190,12 +1993,7 @@
 		</div>
 	{:else if section === 'requests'}
 		<div data-testid="supervision-observations" aria-busy={observationsLoading} class="space-y-3">
-			<Tabs.Root
-				bind:value={requestsView}
-				onValueChange={(view) => {
-					if (view === 'calendar') evaluatorPickerOpenByRequest = {};
-				}}
-			>
+			<Tabs.Root bind:value={requestsView} onValueChange={() => (calendarReviewId = '')}>
 				<Tabs.List class="self-start" aria-label="มุมมองคำขอจองนิเทศ">
 					<Tabs.Trigger value="requests">คำขอจอง</Tabs.Trigger>
 					<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
@@ -2230,201 +2028,11 @@
 										templateLabel={requestTemplateTitle(observation)}
 										requestedLabel={formatDate(observation.requestedAt)}
 									>
-										{#if observation.canManage}<SupervisionRequestAvailability
-												result={requestEvaluatorAvailability[observation.id]}
-												loading={!!requestEvaluatorAvailabilityLoading[observation.id]}
-												error={requestEvaluatorErrors[observation.id] ?? ''}
-												showError={!requestEvaluatorPickerOpen(observation.id)}
-												disabled={mutationBusy}
-												oninspect={() => void loadRequestEvaluatorAvailability(observation.id)}
-											/>{/if}
-										<div class="grid gap-4 border-t pt-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-											<div class="space-y-2">
-												<Label>ผู้ประเมิน</Label>
-												<div
-													class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2"
-												>
-													{#if selectedRequestEvaluators(observation.id).length === 0}
-														<span class="text-sm text-muted-foreground"
-															>ยังไม่ได้เลือกผู้ประเมิน</span
-														>
-													{:else}
-														{#each selectedRequestEvaluators(observation.id) as evaluator (evaluator.id)}
-															<Badge variant="secondary" class="gap-1 pr-1">
-																<span>{evaluator.name}</span>
-																<button
-																	type="button"
-																	class="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
-																	aria-label={`ลบผู้ประเมิน ${evaluator.name}`}
-																	onclick={() =>
-																		removeRequestEvaluatorForRequest(observation.id, evaluator.id)}
-																>
-																	<Trash2 class="h-3 w-3" />
-																</button>
-															</Badge>
-														{/each}
-													{/if}
-												</div>
-												<Popover.Root
-													open={requestEvaluatorPickerOpen(observation.id)}
-													onOpenChange={(open) =>
-														handleRequestEvaluatorPickerOpen(observation.id, open)}
-												>
-													<Popover.Trigger
-														disabled={!observation.canManage ||
-															mutationBusy ||
-															requestEvaluatorAvailabilityLoading[observation.id]}
-													>
-														{#snippet child({ props })}
-															<Button
-																type="button"
-																variant="outline"
-																role="combobox"
-																aria-label="เพิ่ม/เลือกผู้ประเมิน"
-																aria-expanded={requestEvaluatorPickerOpen(observation.id)}
-																class="w-full justify-between font-normal sm:w-[320px]"
-																{...props}
-															>
-																<span class="truncate">
-																	{requestEvaluatorAvailabilityLoading[observation.id] &&
-																	!requestEvaluatorAvailability[observation.id]
-																		? 'กำลังตรวจผู้ประเมินที่ว่าง...'
-																		: 'เพิ่ม/เลือกผู้ประเมิน'}
-																</span>
-																<ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
-															</Button>
-														{/snippet}
-													</Popover.Trigger>
-													<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
-														{@render managementFeedback(
-															!!requestEvaluatorAvailability[observation.id],
-															!!requestEvaluatorAvailabilityLoading[observation.id],
-															requestEvaluatorErrors[observation.id] ?? '',
-															() => void loadRequestEvaluatorAvailability(observation.id)
-														)}
-														<Command.Root>
-															<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
-															{#if requestEvaluatorAvailability[observation.id]}<Command.Empty
-																	>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty
-																>{/if}
-															{#if requestEvaluatorAvailability[observation.id]}<Command.List
-																	class="max-h-72"
-																>
-																	<Command.Group heading="พร้อมประเมินตลอดช่วงคาบ">
-																		{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
-																			<Command.Item
-																				value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
-																				disabled={requestAvailabilityUnverified(observation.id)}
-																				onSelect={() =>
-																					toggleRequestEvaluatorForRequest(
-																						observation.id,
-																						evaluator
-																					)}
-																			>
-																				<Check
-																					class={cn(
-																						'mr-2 h-4 w-4',
-																						selectedRequestEvaluatorIds(observation.id).includes(
-																							evaluator.id
-																						)
-																							? 'opacity-100'
-																							: 'opacity-0'
-																					)}
-																				/>
-																				<span>{evaluator.name}</span>
-																			</Command.Item>
-																		{/each}
-																	</Command.Group>
-																	{#if unavailableRequestEvaluatorCount(observation.id)}<Command.Group
-																			heading="ไม่ว่างในช่วงคาบนี้"
-																			>{#each requestEvaluatorOptions(observation.id).filter((item) => !item.available) as evaluator (evaluator.id)}<Command.Item
-																					value={`${evaluator.name} ${evaluator.id}`}
-																					disabled
-																					><div class="min-w-0 space-y-1">
-																						<p>{evaluator.name}</p>
-																						<p class="text-xs text-muted-foreground">
-																							{evaluator.conflictReason ?? 'มีงานทับช่วงคาบ'}
-																						</p>
-																						{#if evaluator.conflict}<p
-																								class="text-xs text-muted-foreground"
-																							>
-																								{evaluator.conflict.observedDisplayName ??
-																									'รายการนิเทศ'} · {formatDate(
-																									evaluator.conflict.observedAt
-																								)}{#if evaluator.conflict.lessonTitle}
-																									· {evaluator.conflict.lessonTitle}{/if}
-																							</p>{/if}
-																					</div></Command.Item
-																				>{/each}</Command.Group
-																		>{/if}
-																</Command.List>{/if}
-														</Command.Root>
-													</Popover.Content>
-												</Popover.Root>
-												{#if unavailableRequestEvaluatorCount(observation.id) > 0}
-													<p class="text-xs text-muted-foreground">
-														ผู้ประเมินไม่ว่าง {unavailableRequestEvaluatorCount(observation.id)} คน ดูเหตุผลในกลุ่ม
-														“ไม่ว่างในช่วงคาบนี้”
-													</p>
-												{/if}
-											</div>
-
-											<div class="space-y-2">
-												<Label for={`return-request-${observation.id}`}>ส่งกลับคำขอ</Label>
-												<Textarea
-													id={`return-request-${observation.id}`}
-													value={requestReturnComments[observation.id] ?? ''}
-													rows={3}
-													placeholder="ระบุเหตุผลส่งกลับ"
-													oninput={(event) =>
-														setRequestReturnCommentForRequest(
-															observation.id,
-															(event.currentTarget as HTMLTextAreaElement).value
-														)}
-												/>
-											</div>
-										</div>
-
-										<div class="flex flex-wrap items-center justify-end gap-2">
-											<Button
-												size="sm"
-												variant="outline"
-												class="h-8"
-												href={observationDetailHref(observation)}
-												data-sveltekit-preload-data="tap"
-											>
-												<Eye class="h-4 w-4" />
-												รายละเอียด
-											</Button>
-											<LoadingButton
-												variant="outline"
-												loading={savingAction === `return-request:${observation.id}`}
-												loadingLabel="กำลังส่งกลับ..."
-												disabled={mutationBusy ||
-													observation.evaluators.some(
-														(evaluator) => evaluator.status === 'submitted'
-													)}
-												onclick={() => returnRequest(observation.id)}
-											>
-												ส่งกลับคำขอ
-											</LoadingButton>
-											<LoadingButton
-												onclick={() => approveRequest(observation.id)}
-												loading={savingAction === `approve-request:${observation.id}`}
-												loadingLabel="กำลังอนุมัติ..."
-												disabled={!observation.canManage ||
-													mutationBusy ||
-													requestAvailabilityUnverified(observation.id) ||
-													observation.evaluators.some(
-														(evaluator) => evaluator.status === 'submitted'
-													) ||
-													selectedRequestEvaluatorIds(observation.id).length === 0 ||
-													requestEvaluatorAvailability[observation.id]?.overlap.blocked ||
-													requestEvaluatorAvailability[observation.id]?.withinCycleDates === false}
-											>
-												อนุมัติและมอบหมาย
-											</LoadingButton>
-										</div>
+										<SupervisionRequestReview
+											{observation}
+											review={requestReview}
+											detailHref={observationDetailHref(observation)}
+										/>
 									</SupervisionRequestCard>
 								{/each}
 							</div>
@@ -2437,10 +2045,45 @@
 							{observations}
 							bind:selectedDate={bookingCalendarDate}
 							detailHref={observationDetailHref}
-						/>
+						>
+							{#snippet requestAction(observation)}
+								{#if requestReview.canReview(observation)}
+									<Button
+										size="sm"
+										variant="outline"
+										disabled={mutationBusy}
+										onclick={() => (calendarReviewId = observation.id)}>ตรวจคำขอ</Button
+									>
+								{/if}
+							{/snippet}
+						</SupervisionBookingCalendar>
 					{/if}
 				</Tabs.Content>
 			</Tabs.Root>
+			<Dialog.Root
+				open={Boolean(calendarReviewObservation)}
+				onOpenChange={(open) => {
+					if (!open) calendarReviewId = '';
+				}}
+			>
+				{#if calendarReviewObservation}
+					<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
+						<Dialog.Header>
+							<Dialog.Title>ตรวจคำขอจองนิเทศ</Dialog.Title>
+							<Dialog.Description>
+								{calendarReviewObservation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}
+							</Dialog.Description>
+						</Dialog.Header>
+						<SupervisionRequestReview
+							observation={calendarReviewObservation}
+							review={requestReview}
+							showSaveEvaluators
+							showSchedule
+							onclose={() => (calendarReviewId = '')}
+						/>
+					</Dialog.Content>
+				{/if}
+			</Dialog.Root>
 		</div>
 	{:else if section === 'evaluate'}
 		<div class="space-y-4">

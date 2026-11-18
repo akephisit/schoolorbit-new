@@ -87,10 +87,11 @@
 			</p>
 		</div>
 	{/if}
-	{#if result || !loading}<Button
+	{#if (result || !loading) && (showError || !error)}<Button
 			size="sm"
 			variant="outline"
 			disabled={loading || disabled}
-			onclick={oninspect}>{result || error ? 'ตรวจอีกครั้ง' : 'ตรวจช่วงคาบและผู้ประเมิน'}</Button
+			onclick={oninspect}
+			>{result ? 'ตรวจอีกครั้ง' : error ? 'ลองใหม่' : 'ตรวจช่วงคาบและผู้ประเมิน'}</Button
 		>{/if}
 </div>

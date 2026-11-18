@@ -1,7 +1,21 @@
 import { PERMISSIONS } from '#lib/permissions/registry.js';
+import { ApiClientError } from '#lib/api/client.js';
 import { get } from 'svelte/store';
 import { authStore } from '#lib/stores/auth.js';
 import { can } from '#lib/stores/permissions.js';
+
+export function isSupervisionDeniedOrMissing(error: unknown): boolean {
+	return error instanceof ApiClientError && [401, 403, 404].includes(error.status);
+}
+
+export async function resolveSupervisionRead<T>(operation: Promise<T>): Promise<T | null> {
+	try {
+		return await operation;
+	} catch (error) {
+		if (isSupervisionDeniedOrMissing(error)) return null;
+		throw error;
+	}
+}
 
 export function waitForSupervisionAccess(permissions: string[] | string): Promise<boolean> {
 	const allowed = () =>

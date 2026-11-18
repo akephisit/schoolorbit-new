@@ -114,6 +114,15 @@ test('teaching supervision request approval renders request rows with multiple e
 	const supervisionPage = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
+	const review = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionRequestReview.svelte'
+	);
+	const controller = await readRepoFile(
+		'frontend-school/src/lib/supervision/request-review.svelte.ts'
+	);
+	const detail = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
+	);
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
 	const generatedSchoolApi = await readRepoFile(
 		'frontend-school/src/lib/api/generated/school-api.ts'
@@ -133,17 +142,17 @@ test('teaching supervision request approval renders request rows with multiple e
 		supervisionApi,
 		/\/api\/supervision\/observations\/\$\{id\}\/evaluator-availability/
 	);
-	assert.match(supervisionPage, /requestEvaluatorIds/);
-	assert.match(supervisionPage, /requestReturnComments/);
-	assert.match(supervisionPage, /requestEvaluatorAvailability/);
-	assert.match(supervisionPage, /handleRequestEvaluatorPickerOpen\(observation\.id,\s*open\)/);
-	assert.match(supervisionPage, /loadRequestEvaluatorAvailability\(observationId\)/);
-	assert.match(supervisionPage, /toggleRequestEvaluatorForRequest/);
-	assert.match(supervisionPage, /selectedRequestEvaluators\(observation\.id\)/);
-	assert.match(supervisionPage, /evaluator\.available/);
-	assert.match(supervisionPage, /approveRequest\(observation\.id\)/);
-	assert.match(supervisionPage, /evaluatorUserId:\s*evaluatorId/);
-	assert.match(supervisionPage, /requestReturnComments\[observation\.id\]/);
+	assert.equal([...supervisionPage.matchAll(/<SupervisionRequestReview\b/g)].length, 2);
+	assert.match(detail, /<SupervisionRequestReview/);
+	assert.match(review, /\{#each selected as evaluator/);
+	assert.match(review, /if \(pickerOpen\) void review\.loadAvailability\(id\)/);
+	assert.match(review, /review\.toggleEvaluator\(id, evaluator\)/);
+	assert.match(review, /review\.setComment\(id, event\.currentTarget\.value\)/);
+	assert.match(review, /review\.submit\(id, 'approve-request'\)/);
+	assert.match(controller, /getSupervisionEvaluatorAvailability\(id, \{ signal \}\)/);
+	assert.match(controller, /state\?\.evaluatorIds \?\? observation\.evaluators\.map/);
+	assert.match(controller, /evaluatorUserId:\s*id,\s*isRequired,/);
+	assert.match(controller, /returnSupervisionObservationRequest\(id, \{ comment: drafts\[id\]/);
 	assert.match(supervisionPage, /observationLessonTitle\(observation\)/);
 	assert.match(supervisionHandlers, /evaluator_availability/);
 	assert.match(supervisionService, /validate_evaluator_availability_for_observation/);

@@ -6,7 +6,9 @@ import type {
 	SupervisionObservationStatus,
 	SupervisionCycleStatus,
 	SupervisionEvaluator,
-	ApproveObservationRequest,
+	SupervisionEvaluatorAvailability,
+	ReplaceObservationEvaluatorsRequest,
+	ReturnObservationRequest,
 	UpdateRequestedObservationRequest
 } from '../../../src/lib/api/supervision';
 import { sessionState } from './session-state';
@@ -108,6 +110,7 @@ export async function mock(
 			| 'review'
 			| 'timetable-detail';
 		failAt?: number;
+		failStatus?: number;
 		holdAt?: number;
 		term?: boolean;
 		observationStatus?: SupervisionObservationStatus;
@@ -115,6 +118,7 @@ export async function mock(
 		additionalObservations?: (Partial<SupervisionObservation> &
 			Pick<SupervisionObservation, 'id'>)[];
 		bookingItems?: SupervisionTimetableOption[];
+		evaluatorAvailability?: SupervisionEvaluatorAvailability[];
 		canManage?: boolean;
 		canReview?: boolean;
 		averageRating?: number;
@@ -137,8 +141,18 @@ export async function mock(
 	let periodsLocked =
 		options.observation?.periodsLocked ?? !['requested', 'returned'].includes(observationStatus);
 	let observationPatch: Partial<SupervisionObservation> = {};
+	let observationScope: 'manage' | 'read' | 'hidden' | undefined;
+	const evaluatorAvailability = options.evaluatorAvailability ?? [
+		{
+			id: id(32),
+			name: 'ผู้ประเมินที่ว่าง',
+			available: true,
+			conflictReason: null,
+			conflict: null
+		}
+	];
 	const observation = (academicYearId = year): SupervisionObservation => ({
-		canManage: options.canManage ?? true,
+		canManage: observationScope ? observationScope === 'manage' : (options.canManage ?? true),
 		canReview: options.canReview ?? true,
 		averageRating: options.averageRating ?? null,
 		id: id(30),
@@ -155,23 +169,47 @@ export async function mock(
 		status: observationStatus,
 		periodsLocked,
 		periods: [savedPeriod()],
-		evaluators: [
-			{
-				id: id(31),
-				observationId: id(30),
-				createdAt: '2026-09-30T09:00:00Z',
-				updatedAt: '2026-10-01T09:00:00Z',
-				evaluatorUserId: id(20),
-				evaluatorDisplayName: 'ผู้ประเมินทดสอบ',
-				roleLabel: 'ผู้ประเมิน',
-				isRequired: true,
-				status: observationStatus === 'evaluators_submitted' ? 'submitted' : 'assigned'
-			}
-		],
+		evaluators:
+			observationStatus === 'requested'
+				? []
+				: [
+						{
+							id: id(31),
+							observationId: id(30),
+							createdAt: '2026-09-30T09:00:00Z',
+							updatedAt: '2026-10-01T09:00:00Z',
+							evaluatorUserId: id(20),
+							evaluatorDisplayName: 'ผู้ประเมินทดสอบ',
+							roleLabel: 'ผู้ประเมิน',
+							isRequired: true,
+							status: observationStatus === 'evaluators_submitted' ? 'submitted' : 'assigned'
+						}
+					],
 		actions: [],
 		...options.observation,
 		...observationPatch
 	});
+	function applyEvaluators(route: Route) {
+		const { evaluators }: ReplaceObservationEvaluatorsRequest = route.request().postDataJSON();
+		const previous = observation().evaluators;
+		observationPatch = {
+			...observationPatch,
+			evaluators: (evaluators ?? []).map((evaluator, index) => ({
+				...evaluator,
+				isRequired: evaluator.isRequired ?? true,
+				id: id(150 + index),
+				observationId: id(30),
+				evaluatorDisplayName:
+					previous.find((item) => item.evaluatorUserId === evaluator.evaluatorUserId)
+						?.evaluatorDisplayName ??
+					evaluatorAvailability.find((item) => item.id === evaluator.evaluatorUserId)?.name ??
+					null,
+				createdAt: '2026-10-01T09:00:00Z',
+				updatedAt: '2026-10-01T09:00:00Z',
+				status: 'assigned'
+			}))
+		};
+	}
 	let templateTitle = 'แบบประเมินทดสอบ';
 	const detail = () => ({
 		id: templateId,
@@ -338,7 +376,7 @@ export async function mock(
 				)
 					await held.promise;
 				if (options.fail === kind && counts.get(resource) === (options.failAt ?? 1))
-					return reply(route, 'region ไม่พร้อม', 503);
+					return reply(route, 'region ไม่พร้อม', options.failStatus ?? 503);
 			}
 			if (selectedId && method === 'GET') return reply(route, snapshot);
 			if (resource.endsWith('/review') && method === 'GET')
@@ -374,21 +412,13 @@ export async function mock(
 			if (resource === '/api/supervision/observations' && method === 'GET')
 				return reply(route, {
 					items: [
-						snapshot,
+						...(observationScope === 'hidden' ? [] : [snapshot]),
 						...(options.additionalObservations ?? []).map((item) => ({ ...snapshot, ...item }))
 					]
 				});
 			if (resource.endsWith('/evaluator-availability'))
 				return reply(route, {
-					items: [
-						{
-							id: id(32),
-							name: 'ผู้ประเมินที่ว่าง',
-							available: true,
-							conflictReason: null,
-							conflict: null
-						}
-					],
+					items: evaluatorAvailability,
 					overlap: { pendingCount: 0, confirmedCount: 0, blocked: false },
 					withinCycleDates: true,
 					overlappingBookings: []
@@ -406,20 +436,24 @@ export async function mock(
 				if (options.hold === 'patch') await held.promise;
 				if (resource.endsWith('/approve-request')) {
 					periodsLocked = true;
-					const { evaluators }: ApproveObservationRequest = route.request().postDataJSON();
+					applyEvaluators(route);
+				}
+				if (resource.endsWith('/return-request')) {
+					const { comment }: ReturnObservationRequest = route.request().postDataJSON();
 					observationPatch = {
 						...observationPatch,
-						evaluators: (evaluators ?? []).map((evaluator, index) => ({
-							...evaluator,
-							isRequired: evaluator.isRequired ?? true,
-							id: id(150 + index),
-							observationId: id(30),
-							evaluatorDisplayName:
-								evaluator.evaluatorUserId === id(32) ? 'ผู้ประเมินที่ว่าง' : null,
-							createdAt: '2026-10-01T09:00:00Z',
-							updatedAt: '2026-10-01T09:00:00Z',
-							status: 'assigned'
-						}))
+						actions: [
+							...observation().actions,
+							{
+								id: id(300),
+								observationId: id(30),
+								fromStatus: observationStatus,
+								toStatus: 'returned',
+								actionKind: 'request_returned',
+								comment,
+								createdAt: '2026-10-01T09:00:00Z'
+							}
+						]
 					};
 				}
 				observationStatus = resource.endsWith('/resubmit-request')
@@ -444,6 +478,11 @@ export async function mock(
 								: evaluator
 						)
 					};
+				return reply(route, observation());
+			}
+			if (method === 'PUT' && resource === `/api/supervision/observations/${id(30)}/evaluators`) {
+				if (options.hold === 'patch') await held.promise;
+				applyEvaluators(route);
 				return reply(route, observation());
 			}
 			if (method === 'DELETE' && resource === `/api/supervision/observations/${id(30)}/request`) {
@@ -543,6 +582,9 @@ export async function mock(
 		},
 		setPermissions: (permissions: string[]) => {
 			authPermissions = [...permissions];
+		},
+		setObservationScope: (scope: 'manage' | 'read' | 'hidden') => {
+			observationScope = scope;
 		},
 		reads,
 		writes,
