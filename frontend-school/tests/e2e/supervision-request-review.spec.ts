@@ -50,6 +50,8 @@ const dialog = (page: Page) => page.getByRole('dialog', { name: 'ตรวจค
 const agenda = (page: Page) => page.getByRole('region', { name: /1 ต.ค. 2569/ });
 const openReview = (scope: Page | Locator) =>
 	scope.getByRole('button', { name: 'ตรวจคำขอ', exact: true }).click();
+const standaloneCheck = (scope: Page | Locator) =>
+	scope.getByRole('button', { name: /^(ตรวจช่วงคาบและผู้ประเมิน|ตรวจอีกครั้ง)$/ });
 
 const otherTeacher = 'ครู รายการที่ยังจัดการได้';
 const otherRequest = {
@@ -116,6 +118,7 @@ test('detail and calendar save durable evaluators and approval preserves roles',
 	await openReview(page);
 	const review = dialog(page);
 	await expect(review.getByText('คาบ 1', { exact: true })).toBeVisible();
+	await expect(standaloneCheck(review)).toHaveCount(0);
 	await expect(remove(review, primary)).toBeVisible();
 	await expect(remove(review, optional)).toBeVisible();
 	await selectEvaluator(page, review, detailAddition);
@@ -139,6 +142,7 @@ test('detail and calendar save durable evaluators and approval preserves roles',
 	await openReview(agenda(page));
 	await expect(approval(review)).toBeEnabled();
 	await expect(returnReason(review)).toHaveValue(reason);
+	await expect(standaloneCheck(review)).toHaveCount(0);
 	expect(api.count(availabilityPath)).toBe(detailReads);
 	for (const theme of ['light', 'dark']) {
 		await page.evaluate(
@@ -286,8 +290,11 @@ test('recent conflicts keep saved names visible and an intentionally empty draft
 	});
 	await page.goto(requestsPath);
 	await expect(approval(page)).toBeEnabled();
-	await page.getByRole('button', { name: 'ตรวจช่วงคาบและผู้ประเมิน' }).click();
+	const picker = page.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true });
+	await picker.click();
 	await expect(page.getByText(`${optional} · ไม่ว่าง`, { exact: true })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(picker).toHaveAttribute('aria-expanded', 'false');
 	await expect(approval(page)).toBeDisabled();
 	await remove(page, optional).click();
 	await expect(approval(page)).toBeEnabled();
@@ -525,9 +532,8 @@ test('availability denied after a successful check clears the draft until a fres
 	await expect(approval(first)).toBeEnabled();
 	await expect(picker).toHaveAttribute('aria-expanded', 'false');
 	await expect(returnReason(first)).toHaveValue('');
-	await expect(
-		first.getByRole('button', { name: 'ตรวจช่วงคาบและผู้ประเมิน', exact: true })
-	).toBeVisible();
+	await expect(picker).toBeEnabled();
+	await expect(standaloneCheck(first)).toHaveCount(0);
 	expect(api.count('/api/supervision/observations')).toBe(2);
 	expect(api.count(availabilityPath)).toBe(2);
 	expect(api.writes).toEqual([]);

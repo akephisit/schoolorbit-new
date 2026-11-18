@@ -41,7 +41,8 @@
 		oneventselect,
 		fillHeight = false,
 		hideMobileTimes = false,
-		hideDayStateLabels = false
+		hideDayStateLabels = false,
+		hidePendingPrefix = false
 	}: {
 		monthDate: string;
 		events?: CalendarDisplayEvent[];
@@ -54,6 +55,7 @@
 		fillHeight?: boolean;
 		hideMobileTimes?: boolean;
 		hideDayStateLabels?: boolean;
+		hidePendingPrefix?: boolean;
 	} = $props();
 
 	const fallbackColor = '#64748b';
@@ -83,8 +85,12 @@
 		return pendingRequests.filter((event) => eventOverlapsDate(event, date));
 	}
 
+	function pendingPrefix(event: CalendarDisplayEvent) {
+		return event.pending && !hidePendingPrefix ? 'รออนุมัติ: ' : '';
+	}
+
 	function segmentLabel(segment: CalendarWeekEventSegment<CalendarDisplayEvent>) {
-		const title = segment.event.pending ? `รออนุมัติ: ${segment.event.title}` : segment.event.title;
+		const title = `${pendingPrefix(segment.event)}${segment.event.title}`;
 		const startTime = segment.event.startTime?.slice(0, 5);
 		if (segment.event.allDay || !startTime || segment.continuesFromPreviousWeek) {
 			return title;
@@ -211,9 +217,9 @@
 									fillHeight && 'leading-[10px]'
 								)}
 							>
-								{segment.event.pending ? 'รออนุมัติ: ' : ''}{timed && !hideMobileTimes
+								{timed && !hideMobileTimes
 									? segmentLabel(segment)
-									: segment.event.title}
+									: `${pendingPrefix(segment.event)}${segment.event.title}`}
 							</span>
 							<span
 								class={cn(

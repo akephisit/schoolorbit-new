@@ -215,6 +215,21 @@
 		routeData ? routeData.academicTermId : $academicContext.selected.academicTermId
 	);
 	const academicContextOptions = $derived($academicContext.options);
+	const calendarAcademicLabel = $derived.by(() => {
+		const year = academicContextOptions?.years.find((item) => item.id === academicYearId);
+		const term = academicContextOptions?.terms.find(
+			(item) => item.id === academicTermId && item.academicYearId === academicYearId
+		);
+		if (!year) return term?.name ?? '';
+		const standardYearLabel = `ปีการศึกษา ${year.year}`;
+		const yearName = year.name.trim();
+		const yearLabel =
+			yearName && yearName !== String(year.year) && yearName !== standardYearLabel
+				? `${standardYearLabel} (${yearName})`
+				: standardYearLabel;
+		if (!academicTermId) return `ตลอด${yearLabel}`;
+		return [term?.name, yearLabel].filter(Boolean).join(' ');
+	});
 
 	const managementCyclesRequest = new LatestRequest();
 	const managementTemplatesRequest = new LatestRequest();
@@ -2043,6 +2058,8 @@
 					{#if requestsView === 'calendar' && observationsLoaded && observationsReadable}
 						<SupervisionBookingCalendar
 							{observations}
+							{cycles}
+							academicLabel={calendarAcademicLabel}
 							bind:selectedDate={bookingCalendarDate}
 							detailHref={observationDetailHref}
 						>

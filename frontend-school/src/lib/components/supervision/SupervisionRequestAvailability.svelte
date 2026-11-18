@@ -10,14 +10,14 @@
 		error,
 		showError,
 		disabled,
-		oninspect
+		onretry
 	}: {
 		result?: SupervisionEvaluatorAvailabilityResponse;
 		loading: boolean;
 		error: string;
 		showError: boolean;
 		disabled: boolean;
-		oninspect: () => void;
+		onretry: () => void;
 	} = $props();
 	function timeLabel(value: string) {
 		return new Intl.DateTimeFormat('th-TH', {
@@ -34,7 +34,13 @@
 			variant="error"
 			title="ตรวจช่วงคาบและผู้ประเมินไม่สำเร็จ"
 			description={error}
-		/>{/if}
+		>
+			{#snippet action()}
+				<Button size="sm" variant="outline" disabled={loading || disabled} onclick={onretry}>
+					ลองใหม่
+				</Button>
+			{/snippet}
+		</PageState>{/if}
 	{#if result}
 		<div class="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
 			<div class="flex flex-wrap items-center gap-2">
@@ -87,11 +93,4 @@
 			</p>
 		</div>
 	{/if}
-	{#if (result || !loading) && (showError || !error)}<Button
-			size="sm"
-			variant="outline"
-			disabled={loading || disabled}
-			onclick={oninspect}
-			>{result ? 'ตรวจอีกครั้ง' : error ? 'ลองใหม่' : 'ตรวจช่วงคาบและผู้ประเมิน'}</Button
-		>{/if}
 </div>
