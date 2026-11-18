@@ -87,7 +87,7 @@
 			</p>
 		</div>
 	{/if}
-	{#if result || !loading}<Button
+	{#if (result || !loading) && (showError || !error)}<Button
 			size="sm"
 			variant="outline"
 			disabled={loading || disabled}

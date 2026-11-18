@@ -417,8 +417,9 @@
 		setSavingAction: (action) => (savingAction = action),
 		onApplied: (updated) => {
 			replaceObservation(updated);
-			if (calendarReviewId === updated.id) calendarReviewId = '';
-		}
+			if (calendarReviewId === updated.id && updated.status !== 'requested') calendarReviewId = '';
+		},
+		allowSaveEvaluators: true
 	});
 	const calendarReviewObservation = $derived(
 		requestsView === 'calendar' && observationsLoaded && observationsReadable
@@ -2064,6 +2065,7 @@
 						<SupervisionRequestReview
 							observation={calendarReviewObservation}
 							review={requestReview}
+							showSaveEvaluators
 							showSchedule
 							onclose={() => (calendarReviewId = '')}
 						/>

@@ -59,7 +59,7 @@ export function createSupervisionRequestReview({
 	allowSaveEvaluators?: boolean;
 }) {
 	let drafts = $state<Record<string, RequestReviewDraft>>({});
-	const availabilityRequests = new Map<string, LatestRequest>();
+	const availabilityRequests: Record<string, LatestRequest> = {};
 
 	function canReview(observation: SupervisionObservation) {
 		return hasManagePermission() && observation.canManage && observation.status === 'requested';
@@ -78,13 +78,11 @@ export function createSupervisionRequestReview({
 
 	function selectedEvaluators(observation: SupervisionObservation) {
 		const state = drafts[observation.id];
-		const saved = new Map(observation.evaluators.map((item) => [item.evaluatorUserId, item]));
-		const options = new Map(state?.availability?.items.map((item) => [item.id, item]));
-		const ids = state?.evaluatorIds ?? [...saved.keys()];
+		const ids = state?.evaluatorIds ?? observation.evaluators.map((item) => item.evaluatorUserId);
 		const availabilityIsCurrent = state?.availabilityBasis === availabilityBasis(observation);
 		return ids.map((id) => {
-			const evaluator = saved.get(id);
-			const option = options.get(id);
+			const evaluator = observation.evaluators.find((item) => item.evaluatorUserId === id);
+			const option = state?.availability?.items.find((item) => item.id === id);
 			return {
 				id,
 				name: evaluator?.evaluatorDisplayName?.trim() || option?.name || 'ไม่ทราบชื่อผู้ประเมิน',
@@ -131,8 +129,7 @@ export function createSupervisionRequestReview({
 		const basis = availabilityBasis(observation);
 		if (drafts[id]?.requestBasis === basis && drafts[id]?.loading) return;
 		const state = draft(id);
-		const request = availabilityRequests.get(id) ?? new LatestRequest();
-		availabilityRequests.set(id, request);
+		const request = (availabilityRequests[id] ??= new LatestRequest());
 		const { revision, signal } = request.begin();
 		const ownsRoute = captureOwner();
 		const ownsRead = () => ownsRoute() && request.isCurrent(revision);
@@ -147,11 +144,11 @@ export function createSupervisionRequestReview({
 			state.availability = result;
 			state.availabilityBasis = basis;
 			if (state.evaluatorIds) {
-				const keep = new Set([
-					...current.evaluators.map((item) => item.evaluatorUserId),
-					...result.items.filter((item) => item.available).map((item) => item.id)
-				]);
-				state.evaluatorIds = state.evaluatorIds.filter((selectedId) => keep.has(selectedId));
+				state.evaluatorIds = state.evaluatorIds.filter(
+					(selectedId) =>
+						current.evaluators.some((item) => item.evaluatorUserId === selectedId) ||
+						result.items.some((item) => item.id === selectedId && item.available)
+				);
 			}
 		} catch (error) {
 			if (ownsRead() && !isAbortError(error)) {
@@ -187,8 +184,8 @@ export function createSupervisionRequestReview({
 	}
 
 	function cancelAvailability(id: string) {
-		availabilityRequests.get(id)?.abort();
-		availabilityRequests.delete(id);
+		availabilityRequests[id]?.abort();
+		delete availabilityRequests[id];
 		if (drafts[id]) drafts[id].loading = false;
 	}
 
@@ -198,8 +195,7 @@ export function createSupervisionRequestReview({
 	}
 
 	function reset() {
-		for (const request of availabilityRequests.values()) request.abort();
-		availabilityRequests.clear();
+		for (const id of Object.keys(availabilityRequests)) cancelAvailability(id);
 		drafts = {};
 	}
 

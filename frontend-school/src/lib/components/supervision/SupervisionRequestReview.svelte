@@ -38,11 +38,11 @@
 	const canReview = $derived(review.canReview(observation));
 	const canChange = $derived(review.canChange(observation));
 	const disabled = $derived(!canChange || review.isBusy());
-	const state = $derived(review.state(observation));
+	const draft = $derived(review.state(observation));
 	const selected = $derived(review.selectedEvaluators(observation));
-	const available = $derived(state?.availability?.items.filter((item) => item.available) ?? []);
-	const unavailable = $derived(state?.availability?.items.filter((item) => !item.available) ?? []);
-	const selectionUnverified = $derived(Boolean(state?.error || state?.loading));
+	const available = $derived(draft?.availability?.items.filter((item) => item.available) ?? []);
+	const unavailable = $derived(draft?.availability?.items.filter((item) => !item.available) ?? []);
+	const selectionUnverified = $derived(Boolean(draft?.error || draft?.loading));
 	let pickerOpen = $state(false);
 
 	function setPickerOpen(open: boolean) {
@@ -81,15 +81,15 @@
 		</div>
 	{/if}
 	{#if canReview}
-		{#if state?.needsRecheck}
+		{#if draft?.needsRecheck}
 			<p class="text-sm text-muted-foreground">
 				ช่วงคาบหรือรอบนิเทศเปลี่ยนแล้ว กรุณาตรวจช่วงคาบและผู้ประเมินอีกครั้ง
 			</p>
 		{/if}
 		<SupervisionRequestAvailability
-			result={state?.availability}
-			loading={Boolean(state?.loading)}
-			error={state?.error ?? ''}
+			result={draft?.availability}
+			loading={Boolean(draft?.loading)}
+			error={draft?.error ?? ''}
 			showError={!pickerOpen}
 			{disabled}
 			oninspect={() => void review.loadAvailability(id)}
@@ -130,8 +130,11 @@
 					นำผู้ประเมินที่ไม่ว่างออกหรือเลือกคนอื่นก่อนบันทึกหรืออนุมัติ
 				</p>
 			{/if}
+			{#if canChange && selected.length > 0 && !selected.some((item) => item.isRequired)}
+				<p class="text-sm text-muted-foreground">เลือกผู้ประเมินหลักอย่างน้อย 1 คน</p>
+			{/if}
 			<Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-				<Popover.Trigger disabled={disabled || state?.loading}>
+				<Popover.Trigger disabled={disabled || draft?.loading}>
 					{#snippet child({ props })}
 						<Button
 							type="button"
@@ -144,7 +147,7 @@
 							id={`${fieldId}-evaluators`}
 						>
 							<span class="truncate">
-								{state?.loading && !state.availability
+								{draft?.loading && !draft.availability
 									? 'กำลังตรวจผู้ประเมินที่ว่าง...'
 									: 'เพิ่ม/เลือกผู้ประเมิน'}
 							</span>
@@ -153,21 +156,21 @@
 					{/snippet}
 				</Popover.Trigger>
 				<Popover.Content class="w-(--bits-popover-trigger-width) p-0">
-					{#if state?.loading && !state.availability}
+					{#if draft?.loading && !draft.availability}
 						<div role="status" aria-label="กำลังโหลดข้อมูล"><PageSkeleton variant="table" /></div>
 					{/if}
-					{#if state?.error}
+					{#if draft?.error}
 						<PageState
 							variant="error"
 							title="โหลดข้อมูลไม่สำเร็จ"
-							description={state.error}
+							description={draft.error}
 							actionLabel="ลองใหม่"
 							onaction={() => void review.loadAvailability(id)}
 						/>
 					{/if}
 					<Command.Root>
 						<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
-						{#if state?.availability}
+						{#if draft?.availability}
 							<Command.Empty>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty>
 							<Command.List class="max-h-72">
 								<Command.Group heading="พร้อมประเมินตลอดช่วงคาบ">
@@ -228,7 +231,7 @@
 			<Label for={`${fieldId}-comment`}>ส่งกลับคำขอ</Label>
 			<Textarea
 				id={`${fieldId}-comment`}
-				value={state?.comment ?? ''}
+				value={draft?.comment ?? ''}
 				{disabled}
 				rows={3}
 				placeholder="ระบุเหตุผลส่งกลับ"
