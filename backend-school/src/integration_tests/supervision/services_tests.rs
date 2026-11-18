@@ -4890,8 +4890,20 @@ async fn separate_saved_class(pool: &PgPool, observation: &SupervisionObservatio
 }
 
 #[tokio::test]
-async fn supervision_evaluator_teaching_uses_minutes_and_half_open_endpoints() {
-    let pool = migrated_pool("supervision_evaluator_teaching_minutes").await;
+async fn supervision_http_evaluator_teaching_does_not_block_selection_or_assignment() {
+    use crate::integration_tests::auth::session_http_tests::protected_router::ProtectedFixture;
+    use crate::integration_tests::permission_coverage::{
+        coverage_actor, coverage_request, coverage_router,
+    };
+    use axum::http::{Method, StatusCode};
+    use school_academic_timetable::services::dated_teaching::{
+        occupancy_on_connection, AvailabilityWindow,
+    };
+    use school_permissions::registry::codes;
+    use serde_json::{json, Value};
+
+    let pool = migrated_pool_with_connections("supervision_evaluator_teaching", 4).await;
+    school_test_db::run_test_migrations(&pool).await;
     let f = insert_fixture(&pool).await;
     seed_teaching(
         &pool,
@@ -4901,57 +4913,109 @@ async fn supervision_evaluator_teaching_uses_minutes_and_half_open_endpoints() {
     )
     .await;
     let observation = request_observation(&pool, &f).await;
-    let start = observation.periods[0].observed_at;
-    // Captured minute-precision legacy evidence overlaps a teaching duty by one minute.
-    sqlx::query("UPDATE supervision_observation_periods SET observed_at=$2,ends_at=$3 WHERE observation_id=$1")
-        .bind(observation.id).bind(start-Duration::minutes(1)).bind(start+Duration::minutes(1)).execute(&pool).await.unwrap();
-    let response =
-        services::evaluator_availability(&pool, &management_actor(f.actor_id), observation.id)
-            .await
-            .unwrap();
-    let person = response
-        .items
-        .iter()
-        .find(|e| e.id == f.second_evaluator_id)
-        .unwrap();
-    assert!(!person.available && person.conflict.is_none());
-    assert!(person
-        .conflict_reason
-        .as_deref()
+    let period = &observation.periods[0];
+    let start = period.observed_at.with_timezone(&chrono_tz::Asia::Bangkok);
+    let end = period
+        .ends_at
         .unwrap()
-        .contains("ภาระสอน"));
-    let assignment = ApproveObservationRequest {
-        evaluators: vec![EvaluatorAssignmentInput {
-            evaluator_user_id: f.second_evaluator_id,
-            role_label: None,
-            is_required: Some(true),
-        }],
+        .with_timezone(&chrono_tz::Asia::Bangkok);
+    let window = AvailabilityWindow {
+        date: start.date_naive(),
+        start_time: start.time(),
+        end_time: end.time(),
     };
-    assert!(services::approve_observation_request(
-        &pool,
-        f.actor_id,
+    let occupancy = occupancy_on_connection(
+        &mut pool.acquire().await.unwrap(),
+        f.academic_term_id,
+        &[f.second_evaluator_id],
+        std::slice::from_ref(&window),
         observation.id,
-        assignment.clone()
     )
     .await
-    .is_err());
-    sqlx::query("UPDATE supervision_observation_periods SET observed_at=$2,ends_at=$3 WHERE observation_id=$1")
-        .bind(observation.id).bind(start-Duration::minutes(2)).bind(start).execute(&pool).await.unwrap();
-    let response =
-        services::evaluator_availability(&pool, &management_actor(f.actor_id), observation.id)
-            .await
-            .unwrap();
-    assert!(
-        response
-            .items
-            .iter()
-            .find(|e| e.id == f.second_evaluator_id)
-            .unwrap()
-            .available
-    );
-    services::approve_observation_request(&pool, f.actor_id, observation.id, assignment)
+    .unwrap();
+    assert!(occupancy.iter().any(|row| {
+        row.teacher_id == f.second_evaluator_id
+            && row.date == window.date
+            && row.start_time < window.end_time
+            && window.start_time < row.end_time
+    }));
+
+    let auth =
+        ProtectedFixture::with_prepared_tenant_pool("supervision_evaluator_teaching", pool.clone())
+            .await;
+    let _lease = auth
+        .runtime
+        .pool_manager
+        .get_pool("test-pool://session-router-tenant-a", "tenant-a")
         .await
         .unwrap();
+    let manager = coverage_actor(&auth, &[codes::SUPERVISION_MANAGE_SCHOOL], 214).await;
+    let app = coverage_router(&auth);
+    let path = format!("/api/supervision/observations/{}", observation.id);
+    let (status, availability) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::GET,
+        &format!("{path}/evaluator-availability"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{availability}");
+    let person = availability["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == f.second_evaluator_id.to_string())
+        .unwrap();
+    assert_eq!(person["available"], true);
+    assert!(person["conflict"].is_null() && person["conflictReason"].is_null());
+
+    let assignment =
+        json!({"evaluators":[{"evaluatorUserId":f.second_evaluator_id,"isRequired":true}]});
+    let (status, replaced) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::PUT,
+        &format!("{path}/evaluators"),
+        assignment.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{replaced}");
+    assert_eq!(replaced["data"]["status"], "requested");
+    assert_eq!(
+        replaced["data"]["evaluators"][0]["evaluatorUserId"],
+        person["id"]
+    );
+
+    let (status, approved) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::POST,
+        &format!("{path}/approve-request"),
+        assignment,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    assert_eq!(approved["data"]["status"], "planned");
+    assert_eq!(
+        approved["data"]["evaluators"][0]["evaluatorUserId"],
+        person["id"]
+    );
+
+    // Consecutive confirmed supervision periods can share the same participants and class.
+    let adjacent = services::request_observation(
+        &pool,
+        f.teacher_id,
+        input_at(&pool, &f, f.teacher_id, period.ends_at.unwrap()).await,
+    )
+    .await
+    .unwrap();
+    assert_eq!(Some(adjacent.periods[0].observed_at), period.ends_at);
+    assert_eq!(adjacent.periods[0].homeroom_id, period.homeroom_id);
+    approve_with(&pool, &f, adjacent.id, vec![f.second_evaluator_id]).await;
 }
 
 #[tokio::test]

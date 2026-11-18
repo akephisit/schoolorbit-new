@@ -423,11 +423,16 @@ for (const state of ['parallel', 'blocked', 'outside'] as const) {
 				},
 				{
 					id: id(33),
-					name: 'ผู้ประเมินมีงานสอน',
+					name: 'ผู้ประเมินมีนัดนิเทศ',
 					available: false,
 					title: null,
-					conflictReason: 'มีตารางสอนทับคาบที่สอง',
-					conflict: null
+					conflictReason: 'มีงานนิเทศ ครูที่มีสิทธิ์เห็น ในช่วงเวลาเดียวกัน',
+					conflict: {
+						observationId: id(34),
+						observedDisplayName: 'ครูที่มีสิทธิ์เห็น',
+						observedAt: '2026-10-01T10:00:00Z',
+						lessonTitle: 'วิชาที่มีนัดนิเทศ / คาบ 2'
+					}
 				}
 			],
 			overlap: { pendingCount: 2, confirmedCount: 1, blocked: state === 'blocked' },
@@ -451,14 +456,14 @@ for (const state of ['parallel', 'blocked', 'outside'] as const) {
 		const review = page.getByTestId('supervision-request-availability');
 		await expect(review).toContainText('รออนุมัติ 2 รายการ · ยืนยันแล้ว 1 รายการ');
 		await expect(review).toContainText('ครูที่มีสิทธิ์เห็น');
+		await expect(review).toContainText('ตรวจจากนัดนิเทศที่ยืนยันแล้วตลอดช่วงคาบที่เลือก');
 		await page.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true }).click();
 		await expect(page.getByText('พร้อมประเมินตลอดช่วงคาบ', { exact: true })).toBeVisible();
 		await expect(page.getByText('ไม่ว่างในช่วงคาบนี้', { exact: true })).toBeVisible();
-		await expect(page.getByRole('option', { name: /ผู้ประเมินมีงานสอน/ })).toHaveAttribute(
-			'aria-disabled',
-			'true'
-		);
-		await expect(page.getByText('มีตารางสอนทับคาบที่สอง', { exact: true })).toBeVisible();
+		const unavailable = page.getByRole('option', { name: /ผู้ประเมินมีนัดนิเทศ/ });
+		await expect(unavailable).toHaveAttribute('aria-disabled', 'true');
+		await expect(unavailable).toContainText('มีงานนิเทศ ครูที่มีสิทธิ์เห็น ในช่วงเวลาเดียวกัน');
+		await expect(unavailable).toContainText('วิชาที่มีนัดนิเทศ / คาบ 2');
 		await page.getByRole('option', { name: /ผู้ประเมินว่างตลอดช่วง/ }).click();
 		await page.keyboard.press('Escape');
 		if (state === 'parallel')
@@ -480,7 +485,7 @@ test('a unit manager can recheck blocked availability and approve with the still
 	});
 	const availabilityPath = `/api/supervision/observations/${id(30)}/evaluator-availability`;
 	const initial: SupervisionEvaluatorAvailabilityResponse = {
-		items: ['ยังว่าง', 'ติดสอนใหม่'].map((name, index) => ({
+		items: ['ยังว่าง', 'ติดนัดนิเทศใหม่'].map((name, index) => ({
 			id: id(32 + index),
 			name,
 			available: true,
@@ -496,7 +501,7 @@ test('a unit manager can recheck blocked availability and approve with the still
 		...initial,
 		items: [
 			initial.items[0]!,
-			{ ...initial.items[1]!, available: false, conflictReason: 'มีตารางสอนทับ' }
+			{ ...initial.items[1]!, available: false, conflictReason: 'มีงานนิเทศในช่วงเวลาเดียวกัน' }
 		],
 		overlap: { pendingCount: 0, confirmedCount: 0, blocked: false }
 	};
@@ -524,7 +529,7 @@ test('a unit manager can recheck blocked availability and approve with the still
 	await inspect.click();
 	await expect(review).toContainText('มีนัดทับกัน อนุมัติไม่ได้');
 	await picker.click();
-	for (const name of ['ยังว่าง', 'ติดสอนใหม่']) {
+	for (const name of ['ยังว่าง', 'ติดนัดนิเทศใหม่']) {
 		await page.getByRole('option', { name, exact: true }).click();
 		await expect(
 			page.getByRole('button', { name: `ลบผู้ประเมิน ${name}`, exact: true })
@@ -543,7 +548,7 @@ test('a unit manager can recheck blocked availability and approve with the still
 		page.getByRole('button', { name: 'ลบผู้ประเมิน ยังว่าง', exact: true })
 	).toBeVisible();
 	await expect(
-		page.getByRole('button', { name: 'ลบผู้ประเมิน ติดสอนใหม่', exact: true })
+		page.getByRole('button', { name: 'ลบผู้ประเมิน ติดนัดนิเทศใหม่', exact: true })
 	).toHaveCount(0);
 	await expect(approve).toBeEnabled();
 

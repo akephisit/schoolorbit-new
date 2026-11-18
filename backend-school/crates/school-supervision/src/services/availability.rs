@@ -1,8 +1,8 @@
 //! One overlap policy for booking hints and authoritative booking decisions.
 use std::collections::{BTreeSet, HashSet};
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, TimeZone, Utc};
-use school_academic_timetable::services::dated_teaching::{self, AvailabilityWindow};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
+use school_academic_timetable::services::dated_teaching;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
@@ -68,22 +68,7 @@ impl Fact {
     }
 }
 
-/// Half-open intervals; a historical unknown end is an exact point, including
-/// equality only for another point. No duration is guessed or persisted.
-fn overlaps(
-    a: DateTime<Utc>,
-    ae: Option<DateTime<Utc>>,
-    b: DateTime<Utc>,
-    be: Option<DateTime<Utc>>,
-) -> bool {
-    match (ae, be) {
-        (Some(ae), Some(be)) => a < be && b < ae,
-        (None, Some(be)) => b <= a && a < be,
-        (Some(ae), None) => a <= b && b < ae,
-        (None, None) => a == b,
-    }
-}
-
+/// Half-open intervals; a historical unknown end is an exact point.
 pub(super) async fn facts(
     connection: &mut PgConnection,
     windows: &[Window],
@@ -221,59 +206,6 @@ async fn lock_resources(
     Ok(())
 }
 
-async fn teaching_busy(
-    connection: &mut PgConnection,
-    term: Uuid,
-    windows: &[Window],
-    users: &[Uuid],
-    except: Option<Uuid>,
-) -> Result<HashSet<Uuid>, AppError> {
-    // Query occupied civil dates, then compare the actual interval or exact
-    // historical point below. This query range is never a guessed lesson end.
-    let day_end = NaiveTime::from_hms_micro_opt(23, 59, 59, 999999)
-        .ok_or_else(|| AppError::ValidationError("เวลาสิ้นสุดวันไม่ถูกต้อง".into()))?;
-    let windows_by_date = dates(windows)?
-        .into_iter()
-        .map(|date| AvailabilityWindow {
-            date,
-            start_time: NaiveTime::MIN,
-            end_time: day_end,
-        })
-        .collect::<Vec<_>>();
-    let rows = dated_teaching::occupancy_on_connection(
-        connection,
-        term,
-        users,
-        &windows_by_date,
-        except.unwrap_or_else(Uuid::nil),
-    )
-    .await?;
-    let mut busy = HashSet::new();
-    for row in rows {
-        let start = SCHOOL_TIMEZONE
-            .from_local_datetime(&row.date.and_time(row.start_time))
-            .single();
-        let end = SCHOOL_TIMEZONE
-            .from_local_datetime(&row.date.and_time(row.end_time))
-            .single();
-        if let Some((start, end)) = start.zip(end) {
-            if windows.iter().any(|w| {
-                overlaps(
-                    w.start,
-                    w.end,
-                    start.with_timezone(&Utc),
-                    Some(end.with_timezone(&Utc)),
-                )
-            }) {
-                busy.insert(row.teacher_id);
-            }
-        } else {
-            return Err(AppError::ValidationError("เวลาในตารางสอนไม่ถูกต้อง".into()));
-        }
-    }
-    Ok(busy)
-}
-
 async fn require_active_evaluators(
     connection: &mut PgConnection,
     evaluators: &[Uuid],
@@ -306,7 +238,6 @@ pub(super) async fn validate(
     connection: &mut PgConnection,
     teacher: Uuid,
     cycle: Uuid,
-    term: Uuid,
     except: Option<Uuid>,
     windows: &[Window],
     evaluators: &[Uuid],
@@ -323,14 +254,8 @@ pub(super) async fn validate(
             || (!f.confirmed() && f.cycle_id == cycle && f.observed_user_id == teacher)
             || (f.confirmed() && evaluators.iter().any(|user| f.participants.contains(user)))
     });
-    if conflict
-        || !teaching_busy(connection, term, windows, evaluators, except)
-            .await?
-            .is_empty()
-    {
-        return Err(AppError::Conflict(
-            "ช่วงเวลาที่เลือกมีการจองหรือภาระงานที่ไม่สามารถจัดนิเทศได้".into(),
-        ));
+    if conflict {
+        return Err(AppError::Conflict("ช่วงเวลาที่เลือกมีการจองนิเทศที่ทับซ้อนกัน".into()));
     }
     Ok(())
 }
@@ -358,18 +283,9 @@ pub(super) async fn validate_replacement(
     if facts
         .iter()
         .any(|f| f.confirmed() && evaluators.iter().any(|user| f.participants.contains(user)))
-        || !teaching_busy(
-            connection,
-            observation.academic_term_id,
-            &windows,
-            evaluators,
-            Some(observation.id),
-        )
-        .await?
-        .is_empty()
     {
         return Err(AppError::Conflict(
-            "ผู้ประเมินที่เลือกมีงานนิเทศหรือภาระสอนในช่วงเวลาเดียวกัน".into(),
+            "ผู้ประเมินที่เลือกมีงานนิเทศในช่วงเวลาเดียวกัน".into(),
         ));
     }
     Ok(())
@@ -413,15 +329,6 @@ pub(super) async fn evaluator_response(
             "จำนวนบุคลากรเกินขนาดที่ตรวจได้".into(),
         ));
     }
-    let users = staff.iter().map(|s| s.id).collect::<Vec<_>>();
-    let teaching = teaching_busy(
-        connection,
-        observation.academic_term_id,
-        &windows,
-        &users,
-        Some(observation.id),
-    )
-    .await?;
     let overlap = aggregate(&facts, observation.observed_user_id, observation.cycle_id);
     let mut items = Vec::with_capacity(staff.len());
     for person in staff {
@@ -429,7 +336,7 @@ pub(super) async fn evaluator_response(
             .iter()
             .filter(|f| f.confirmed() && f.participants.contains(&person.id))
             .collect::<Vec<_>>();
-        let available = blocking.is_empty() && !teaching.contains(&person.id);
+        let available = blocking.is_empty();
         let conflict = blocking
             .iter()
             .find(|f| permitted.contains(&f.observed_user_id))
@@ -454,14 +361,7 @@ pub(super) async fn evaluator_response(
                     .unwrap_or("ครูในขอบเขตที่ดูแล")
             ))
         } else {
-            Some(
-                if teaching.contains(&person.id) {
-                    "มีภาระสอนในช่วงเวลาเดียวกัน"
-                } else {
-                    "มีงานนิเทศในช่วงเวลาเดียวกัน"
-                }
-                .into(),
-            )
+            Some("มีงานนิเทศในช่วงเวลาเดียวกัน".into())
         };
         items.push(SupervisionEvaluatorAvailability {
             id: person.id,

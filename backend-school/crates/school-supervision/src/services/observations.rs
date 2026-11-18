@@ -277,7 +277,6 @@ pub async fn request_observation(
         &mut tx,
         actor_user_id,
         cycle.id,
-        input.academic_term_id,
         None,
         &selected
             .iter()
@@ -363,7 +362,6 @@ pub async fn update_requested_observation(
         &mut tx,
         actor_user_id,
         current.cycle_id,
-        current.academic_term_id,
         Some(observation_id),
         &selected
             .iter()
@@ -432,7 +430,6 @@ pub async fn resubmit_observation_request(
         &mut tx,
         actor_user_id,
         current.cycle_id,
-        current.academic_term_id,
         Some(observation_id),
         &current
             .periods
@@ -521,7 +518,6 @@ pub async fn update_observation(
             &mut tx,
             current.observed_user_id,
             current.cycle_id,
-            current.academic_term_id,
             Some(observation_id),
             &selected
                 .iter()
