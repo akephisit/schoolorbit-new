@@ -142,7 +142,7 @@ for build, deployment, proxy, secrets or CI work and returns for applicable fina
 Inspect their outputs before dependent decisions and implementation proceed; these roles are not
 an additional mandatory roster for every task.
 
-| Role | Responsibility | Preferred model when available | Reasoning |
+| Role | Responsibility | Default model | Reasoning |
 | --- | --- | --- | --- |
 | Senior/Coordinator | Architecture, scope, shared contracts, assignment, integration, final evidence and authorized delivery | Current primary session model | High when configurable |
 | Frontend | Owned typed UI, API consumers, loading, accessibility and focused coverage | `gpt-6.2-sol` | Medium by default; high for auth, contracts or complex state; xhigh for particularly complex interacting state, async or realtime races, or unresolved reasoning difficulty |
@@ -153,8 +153,20 @@ an additional mandatory roster for every task.
 | Data/Migration | Migration timeline, preservation, tenant isolation, reconciliation and recovery | `gpt-6.2-sol` | High |
 | Pipeline | Build/cache/change selection, deployment, maintenance and acceptance flow | `gpt-6.2-sol` | High |
 
-These are role defaults, not a claim that every host offers these models. For the Senior, recommend
-`gpt-6.2-sol` with high reasoning when the user can select the primary session configuration.
+Use the role defaults as a starting point. The Senior selects a model suited to each assignment
+and prefers the latest version of that model offered by the host, with a supported reasoning level.
+`gpt-6.2-sol` is the routine default. The Senior may choose a different model at the initial
+assignment to meet a capability requirement such as visual analysis or to account for the task's
+risk or complexity.
+For difficult architectural work, high-risk security reviews or consequential data-preservation
+decisions, consider `gpt-6.2-astra` at high or a supported higher reasoning level when offered.
+The Senior may make that choice initially or as evidence emerges during the work.
+
+When multiple models are equally suitable and costs are known, prefer the least costly model
+and apply the version preference to that choice. Measure any claimed cost savings or speed improvements.
+
+For the Senior, recommend the latest offered version of the routine default with high reasoning
+when the user can select the primary session configuration.
 A skill cannot change its own model; retain the current primary model and never spawn a second
 Coordinator merely to simulate changing it. Explicit user model choices override these defaults.
 
@@ -163,8 +175,7 @@ it upfront when evidence establishes the complexity above; a failed attempt at h
 The Senior may also escalate during work with concrete uncertainty and bounded task context.
 File count alone is not a criterion, and higher reasoning does not replace evidence or required checks.
 
-Select profiles from the host's currently offered models and supported reasoning values. Create
-subagents and pass the chosen model/reasoning through actual spawn controls, such as Codex's
+Create subagents and pass the chosen model/reasoning through actual spawn controls, such as Codex's
 `spawn_agent` when available. A new chat/thread is not a substitute for a subagent; role text and
 `agents/openai.yaml` cannot create or configure agents. When overrides require fresh context,
 start the child without inherited history and supply the bounded assignment explicitly. Record the requested
@@ -178,8 +189,6 @@ files, call sites or observed behavior; route environment/access failures to Pip
 respecting the user's authorization and credential boundaries. Higher reasoning cannot supply
 missing evidence or access. For reasoning difficulty, raise supported reasoning or reassign to a
 more capable offered model when concrete uncertainty, risk or stalled diagnosis warrants it.
-When available, consider `gpt-6.2-astra` at high or a supported higher reasoning level for unresolved
-architectural questions, high-risk reviews or consequential data-preservation decisions.
 Update the bounded assignment and revalidate affected evidence; do not repeat blind guesses.
 QA selects and assesses coverage against requirements and acceptance criteria independently of
 the writer's test list. QA reports failures to the Senior; diagnosis and fixes return to the
@@ -192,9 +201,6 @@ implementation owner, with separate Reviewer and QA acceptance preserved.
   for the frozen candidate. Reuse a role's agent for follow-up within its configuration; changing
   the role label alone does not change the model. One implementation owner does not remove the
   independent final review and QA requirement above.
-- Prefer the least costly available model capable of the assigned work. Configure model/reasoning
-  only through controls supported by the current host; otherwise inherit its configuration and
-  report that limitation. Roles do not guarantee model availability, token savings or speed.
 - Before delegation, record the tested base, task, assigned branch/worktree, allowed paths,
   dependencies, protected shared files, focused checks and expected deliverable in chat/task state.
   Every child reads `.rules` and relevant canonical docs itself. Give only the needed context;
