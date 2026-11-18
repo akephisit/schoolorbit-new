@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import { addMonths, parseISO } from 'date-fns';
+	import type { Snippet } from 'svelte';
 	import type { SupervisionObservation } from '#lib/api/supervision.js';
 	import CalendarMonthGrid, {
 		type CalendarDisplayEvent
@@ -29,11 +30,13 @@
 	let {
 		observations,
 		selectedDate = $bindable(''),
-		detailHref
+		detailHref,
+		requestAction
 	}: {
 		observations: SupervisionObservation[];
 		selectedDate?: string;
 		detailHref: (observation: SupervisionObservation) => string;
+		requestAction?: Snippet<[SupervisionObservation]>;
 	} = $props();
 
 	const descriptionId = $props.id();
@@ -186,15 +189,18 @@
 									{/if}
 								</dd>
 							</dl>
-							<Button
-								variant="ghost"
-								size="sm"
-								href={detailHref(observation)}
-								data-sveltekit-preload-data="tap"
-								aria-label={`รายละเอียด ${observation.observedDisplayName ?? 'รายการนิเทศ'}`}
-							>
-								รายละเอียด
-							</Button>
+							<div class="flex flex-wrap items-center gap-2">
+								<Button
+									variant="ghost"
+									size="sm"
+									href={detailHref(observation)}
+									data-sveltekit-preload-data="tap"
+									aria-label={`รายละเอียด ${observation.observedDisplayName ?? 'รายการนิเทศ'}`}
+								>
+									รายละเอียด
+								</Button>
+								{@render requestAction?.(observation)}
+							</div>
 						</li>
 					{/each}
 				</ul>

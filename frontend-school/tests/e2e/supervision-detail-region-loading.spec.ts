@@ -184,7 +184,7 @@ for (const workflow of ['timetable-detail', 'evaluator'] as const) {
 		expect(api.count(resource)).toBe(0);
 		await page
 			.getByRole('button', {
-				name: workflow === 'evaluator' ? 'แก้ผู้ประเมิน' : 'แก้คาบ/วันเวลา',
+				name: workflow === 'evaluator' ? 'ตรวจคำขอ' : 'แก้คาบ/วันเวลา',
 				exact: true
 			})
 			.click();
