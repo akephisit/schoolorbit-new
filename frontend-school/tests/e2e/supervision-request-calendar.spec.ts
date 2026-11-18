@@ -208,12 +208,14 @@ for (const width of [1280, 375]) {
 		await expect(pending).toHaveCSS('outline-style', 'dashed');
 		await expect(pending).toHaveAttribute('aria-label', /ครู ในคิว.*รออนุมัติ/);
 		expect(await pending.innerText()).toBe(width >= 640 ? '10:20 ครู ในคิว' : 'ครู ในคิว');
-		await expect(month.getByRole('group', { name: 'สถานะนัดนิเทศ' })).toContainText('รออนุมัติคำขอ');
+		await expect(month.getByRole('group', { name: 'สถานะนัดนิเทศ' })).toContainText(
+			'รออนุมัติคำขอ'
+		);
 		const agenda = month.getByRole('region', { name: /1 พ.ย. 2569/ });
 		const pendingBooking = agenda.getByRole('listitem').filter({ hasText: 'ครู ในคิว' });
 		await expect(pendingBooking.getByText('ครู ในคิว', { exact: true })).toBeVisible();
 		await expect(pendingBooking.getByText('รอบแรก', { exact: true })).toBeVisible();
-		await expect(pendingBooking.getByText('รออนุมัติ', { exact: true })).toHaveClass('sr-only');
+		await expect(pendingBooking.getByText('รออนุมัติคำขอ', { exact: true })).toHaveClass('sr-only');
 		await expect(pendingBooking.locator('[aria-hidden="true"].border-dashed')).toHaveCSS(
 			'border-top-style',
 			'dashed'

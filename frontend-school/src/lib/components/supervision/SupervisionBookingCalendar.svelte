@@ -52,12 +52,12 @@
 	const { events, pendingRequests, cycleIds } = $derived.by(() => {
 		const events: CalendarDisplayEvent[] = [];
 		const pendingRequests: CalendarDisplayEvent[] = [];
-		const cycleIds = new Set<string>();
+		const bookingCycleIds: string[] = [];
 		const { from, to } = calendarGridRange(monthStart);
 		for (const [date, bookings] of bookingsByDate) {
 			if (date < from || date > to) continue;
 			for (const { observation, periods } of bookings) {
-				cycleIds.add(observation.cycleId);
+				bookingCycleIds.push(observation.cycleId);
 				const pending = observation.status === 'requested';
 				const event: CalendarDisplayEvent = {
 					id: `${observation.id}-${date}`,
@@ -73,7 +73,7 @@
 				else events.push(event);
 			}
 		}
-		return { events, pendingRequests, cycleIds };
+		return { events, pendingRequests, cycleIds: new Set(bookingCycleIds) };
 	});
 	const cycleTitles = $derived(
 		new Map(
@@ -97,7 +97,7 @@
 <section class="min-w-0 space-y-3" aria-labelledby={`${descriptionId}-title`}>
 	<div class="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
 		<div class="min-w-0">
-			<h2 id={`${descriptionId}-title`} class="text-lg font-semibold sm:text-xl">
+			<h2 id={`${descriptionId}-title`} class="text-lg font-semibold text-balance sm:text-xl">
 				{academicLabel ? `ปฏิทินนิเทศการสอน ${academicLabel}` : 'ปฏิทินนิเทศการสอน'}
 			</h2>
 			{#if cycleTitles.size}
@@ -135,7 +135,11 @@
 			>
 		</div>
 	</div>
-	<div class="flex flex-wrap gap-2 text-xs text-muted-foreground" role="group" aria-label="สถานะนัดนิเทศ">
+	<div
+		class="flex flex-wrap gap-2 text-xs text-muted-foreground"
+		role="group"
+		aria-label="สถานะนัดนิเทศ"
+	>
 		<span class="inline-flex items-center gap-1.5"
 			><span class="size-2 rounded-full bg-primary" aria-hidden="true"></span>นัดหมายแล้ว</span
 		>
@@ -175,9 +179,14 @@
 								<div class="min-w-0">
 									<p class="flex items-baseline gap-1.5 font-semibold break-words">
 										{#if observation.status === 'requested'}
-											<span class="size-2 shrink-0 rounded-sm border border-dashed border-primary" aria-hidden="true"></span>
+											<span
+												class="size-2 shrink-0 rounded-sm border border-dashed border-primary"
+												aria-hidden="true"
+											></span>
 										{/if}
-										<span class="min-w-0">{observation.observedDisplayName ?? 'ครูผู้รับนิเทศ'}</span>
+										<span class="min-w-0"
+											>{observation.observedDisplayName ?? 'ครูผู้รับนิเทศ'}</span
+										>
 									</p>
 									{#if cycleIds.size > 1 && cycleTitle}
 										<p class="text-xs break-words text-muted-foreground">{cycleTitle}</p>

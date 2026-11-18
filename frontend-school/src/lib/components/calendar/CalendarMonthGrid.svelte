@@ -85,12 +85,12 @@
 		return pendingRequests.filter((event) => eventOverlapsDate(event, date));
 	}
 
-	function eventTitle(event: CalendarDisplayEvent) {
-		return event.pending && !hidePendingPrefix ? `รออนุมัติ: ${event.title}` : event.title;
+	function pendingPrefix(event: CalendarDisplayEvent) {
+		return event.pending && !hidePendingPrefix ? 'รออนุมัติ: ' : '';
 	}
 
 	function segmentLabel(segment: CalendarWeekEventSegment<CalendarDisplayEvent>) {
-		const title = eventTitle(segment.event);
+		const title = `${pendingPrefix(segment.event)}${segment.event.title}`;
 		const startTime = segment.event.startTime?.slice(0, 5);
 		if (segment.event.allDay || !startTime || segment.continuesFromPreviousWeek) {
 			return title;
@@ -219,7 +219,7 @@
 							>
 								{timed && !hideMobileTimes
 									? segmentLabel(segment)
-									: eventTitle(segment.event)}
+									: `${pendingPrefix(segment.event)}${segment.event.title}`}
 							</span>
 							<span
 								class={cn(

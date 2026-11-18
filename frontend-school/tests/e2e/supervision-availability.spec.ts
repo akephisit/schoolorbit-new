@@ -519,7 +519,9 @@ test('a unit manager can recheck blocked availability and approve with the still
 	});
 	await page.goto(path('requests'));
 	const review = page.getByTestId('supervision-request-availability');
-	const standaloneCheck = page.getByRole('button', { name: /^(ตรวจช่วงคาบและผู้ประเมิน|ตรวจอีกครั้ง)$/ });
+	const standaloneCheck = page.getByRole('button', {
+		name: /^(ตรวจช่วงคาบและผู้ประเมิน|ตรวจอีกครั้ง)$/
+	});
 	const retry = page.getByRole('button', { name: 'ลองใหม่', exact: true });
 	const picker = page.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true });
 	const approve = page.getByRole('button', { name: 'อนุมัติและมอบหมาย', exact: true });
@@ -545,10 +547,12 @@ test('a unit manager can recheck blocked availability and approve with the still
 	await expect(picker).toBeDisabled();
 	await expect(page.getByRole('option', { name: 'ยังว่าง', exact: true })).toBeDisabled();
 	await expect(review).toContainText('มีนัดทับกัน อนุมัติไม่ได้');
-	refresh.resolve();
-	await expect(review).toContainText('ไม่พบรายการที่กีดกันการอนุมัติ');
 	await page.keyboard.press('Escape');
 	await expect(picker).toHaveAttribute('aria-expanded', 'false');
+	await expect(review).toHaveAttribute('aria-busy', 'true');
+	await expect(approve).toBeDisabled();
+	refresh.resolve();
+	await expect(review).toContainText('ไม่พบรายการที่กีดกันการอนุมัติ');
 	await expect(
 		page.getByRole('button', { name: 'ลบผู้ประเมิน ยังว่าง', exact: true })
 	).toBeVisible();
