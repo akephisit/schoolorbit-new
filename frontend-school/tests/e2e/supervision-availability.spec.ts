@@ -452,12 +452,11 @@ for (const state of ['parallel', 'blocked', 'outside'] as const) {
 		await page.goto(path('requests'));
 		await page.getByRole('button', { name: 'ดูรายละเอียด 2 คาบ', exact: true }).click();
 		await expect(page.getByTestId('supervision-saved-periods')).toContainText('คาบ 2');
-		await page.getByRole('button', { name: 'ตรวจช่วงคาบและผู้ประเมิน', exact: true }).click();
+		await page.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true }).click();
 		const review = page.getByTestId('supervision-request-availability');
 		await expect(review).toContainText('รออนุมัติ 2 รายการ · ยืนยันแล้ว 1 รายการ');
 		await expect(review).toContainText('ครูที่มีสิทธิ์เห็น');
 		await expect(review).toContainText('ตรวจจากนัดนิเทศที่ยืนยันแล้วตลอดช่วงคาบที่เลือก');
-		await page.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true }).click();
 		await expect(page.getByText('พร้อมประเมินตลอดช่วงคาบ', { exact: true })).toBeVisible();
 		await expect(page.getByText('ไม่ว่างในช่วงคาบนี้', { exact: true })).toBeVisible();
 		const unavailable = page.getByRole('option', { name: /ผู้ประเมินมีนัดนิเทศ/ });
@@ -510,9 +509,9 @@ test('a unit manager can recheck blocked availability and approve with the still
 	let checks = 0;
 	await page.route(`**${availabilityPath}`, async (route) => {
 		const check = ++checks;
-		if (check < 3) return reply(route, initial);
-		if (check === 3) await refresh.promise;
-		if (check === 4) {
+		if (check === 1) return reply(route, initial);
+		if (check === 2) await refresh.promise;
+		if (check === 3) {
 			await failure.promise;
 			return reply(route, 'ตรวจข้อมูลล่าสุดไม่สำเร็จ', 503);
 		}
@@ -520,15 +519,16 @@ test('a unit manager can recheck blocked availability and approve with the still
 	});
 	await page.goto(path('requests'));
 	const review = page.getByTestId('supervision-request-availability');
-	const inspect = review.getByRole('button', { name: 'ตรวจช่วงคาบและผู้ประเมิน', exact: true });
-	const recheck = review.getByRole('button', { name: 'ตรวจอีกครั้ง', exact: true });
+	const standaloneCheck = page.getByRole('button', { name: /^(ตรวจช่วงคาบและผู้ประเมิน|ตรวจอีกครั้ง)$/ });
+	const retry = page.getByRole('button', { name: 'ลองใหม่', exact: true });
 	const picker = page.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true });
 	const approve = page.getByRole('button', { name: 'อนุมัติและมอบหมาย', exact: true });
-	await expect(inspect).toBeEnabled();
+	await expect(picker).toBeEnabled();
+	await expect(review).toHaveCount(0);
+	await expect(standaloneCheck).toHaveCount(0);
 	expect(checks).toBe(0);
-	await inspect.click();
-	await expect(review).toContainText('มีนัดทับกัน อนุมัติไม่ได้');
 	await picker.click();
+	await expect(review).toContainText('มีนัดทับกัน อนุมัติไม่ได้');
 	for (const name of ['ยังว่าง', 'ติดนัดนิเทศใหม่']) {
 		await page.getByRole('option', { name, exact: true }).click();
 		await expect(
@@ -538,12 +538,17 @@ test('a unit manager can recheck blocked availability and approve with the still
 	await page.keyboard.press('Escape');
 	await expect(picker).toHaveAttribute('aria-expanded', 'false');
 	await expect(approve).toBeDisabled();
-	await recheck.click();
+	await expect(standaloneCheck).toHaveCount(0);
+	await expect(retry).toHaveCount(0);
+	await picker.click();
 	await expect(review).toHaveAttribute('aria-busy', 'true');
-	await expect(recheck).toBeDisabled();
+	await expect(picker).toBeDisabled();
+	await expect(page.getByRole('option', { name: 'ยังว่าง', exact: true })).toBeDisabled();
 	await expect(review).toContainText('มีนัดทับกัน อนุมัติไม่ได้');
 	refresh.resolve();
 	await expect(review).toContainText('ไม่พบรายการที่กีดกันการอนุมัติ');
+	await page.keyboard.press('Escape');
+	await expect(picker).toHaveAttribute('aria-expanded', 'false');
 	await expect(
 		page.getByRole('button', { name: 'ลบผู้ประเมิน ยังว่าง', exact: true })
 	).toBeVisible();
@@ -556,17 +561,20 @@ test('a unit manager can recheck blocked availability and approve with the still
 	await expect(review).toHaveAttribute('aria-busy', 'true');
 	await expect(approve).toBeDisabled();
 	await expect(page.getByRole('option', { name: 'ยังว่าง', exact: true })).toBeDisabled();
+	failure.resolve();
+	await expect(page.getByText('โหลดข้อมูลไม่สำเร็จ', { exact: true })).toBeVisible();
+	await expect(retry).toHaveCount(1);
+	await expect(review.getByRole('button', { name: 'ลองใหม่', exact: true })).toHaveCount(0);
 	await page.keyboard.press('Escape');
 	await expect(picker).toHaveAttribute('aria-expanded', 'false');
-	await expect(review).toHaveAttribute('aria-busy', 'true');
-	failure.resolve();
 	await expect(review.getByRole('alert')).toContainText('ตรวจข้อมูลล่าสุดไม่สำเร็จ');
+	await expect(retry).toHaveCount(1);
 	await expect(approve).toBeDisabled();
-	await recheck.click();
+	await review.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
 	await expect(approve).toBeEnabled();
 	await approve.click();
 	await expect(page.getByText('ไม่มีคำขอจองที่รออนุมัติ')).toBeVisible();
-	expect(checks).toBe(5);
+	expect(checks).toBe(4);
 	expect(api.payloads).toContainEqual({
 		evaluators: [{ evaluatorUserId: id(32), isRequired: true }]
 	});

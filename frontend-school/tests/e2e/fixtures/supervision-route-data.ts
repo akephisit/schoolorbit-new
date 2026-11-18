@@ -11,6 +11,7 @@ import type {
 	ReturnObservationRequest,
 	UpdateRequestedObservationRequest
 } from '../../../src/lib/api/supervision';
+import type { AcademicTermOption } from '../../../src/lib/api/academic-context';
 import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
 export const id = (n: number) => `44000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -112,7 +113,7 @@ export async function mock(
 		failAt?: number;
 		failStatus?: number;
 		holdAt?: number;
-		term?: boolean;
+		term?: boolean | Pick<AcademicTermOption, 'name' | 'sequence' | 'termType'>;
 		observationStatus?: SupervisionObservationStatus;
 		observation?: Partial<SupervisionObservation>;
 		additionalObservations?: (Partial<SupervisionObservation> &
@@ -287,13 +288,16 @@ export async function mock(
 								{
 									id: id(8),
 									academicYearId: year,
-									term: 1,
-									name: 'ภาคเรียน 1',
-									status: 'open',
-									startDate: '2026-05-01',
-									plannedEndDate: '2026-12-01',
-									closedOn: null
-								}
+									blocksYearClosure: true,
+									code: String(options.term === true ? 1 : options.term.sequence),
+									includedInYearResult: true,
+									isVisible: true,
+									schoolDays: [],
+									status: 'active',
+									...(options.term === true
+										? { name: 'ภาคเรียนที่ 1', sequence: 1, termType: 'regular' }
+										: options.term)
+								} satisfies AcademicTermOption
 							]
 						: [],
 					years: [year, nextYear].map((value, index) => ({

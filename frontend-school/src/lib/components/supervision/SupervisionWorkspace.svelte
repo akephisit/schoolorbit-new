@@ -215,6 +215,15 @@
 		routeData ? routeData.academicTermId : $academicContext.selected.academicTermId
 	);
 	const academicContextOptions = $derived($academicContext.options);
+	const calendarAcademicLabel = $derived.by(() => {
+		const year = academicContextOptions?.years.find((item) => item.id === academicYearId);
+		const term = academicContextOptions?.terms.find(
+			(item) => item.id === academicTermId && item.academicYearId === academicYearId
+		);
+		if (!year) return term?.name ?? '';
+		if (!academicTermId) return `ตลอดปีการศึกษา ${year.year}`;
+		return [term?.name, `ปีการศึกษา ${year.year}`].filter(Boolean).join(' ');
+	});
 
 	const managementCyclesRequest = new LatestRequest();
 	const managementTemplatesRequest = new LatestRequest();
@@ -2043,6 +2052,8 @@
 					{#if requestsView === 'calendar' && observationsLoaded && observationsReadable}
 						<SupervisionBookingCalendar
 							{observations}
+							{cycles}
+							academicLabel={calendarAcademicLabel}
 							bind:selectedDate={bookingCalendarDate}
 							detailHref={observationDetailHref}
 						>

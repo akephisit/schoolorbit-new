@@ -8,6 +8,7 @@ import {
 	nextYear,
 	path,
 	savedPeriod,
+	secondCycle,
 	year
 } from './fixtures/supervision-route-data';
 
@@ -163,11 +164,15 @@ for (const width of [1280, 375]) {
 	}, testInfo) => {
 		await page.setViewportSize({ width, height: 900 });
 		const api = await mock(page, {
-			term: true,
+			term:
+				width >= 640
+					? { name: 'ภาคเรียนที่ 2', sequence: 2, termType: 'regular' }
+					: { name: 'ภาคเรียนเสริมทักษะ', sequence: 3, termType: 'custom' },
 			observation: { periods: requestPeriods, evaluators: [] },
 			additionalObservations: [
 				{
 					id: id(40),
+					cycleId: secondCycle,
 					observedDisplayName: 'ครู คาบแยก',
 					status: 'completed',
 					periods: irregularPeriods,
@@ -187,16 +192,36 @@ for (const width of [1280, 375]) {
 		await page.getByRole('tab', { name: 'คำขอจอง' }).focus();
 		await page.keyboard.press('ArrowRight');
 		const month = page.getByRole('tabpanel', { name: 'ปฏิทิน' });
+		const heading = month.getByRole('heading', {
+			name: `ปฏิทินนิเทศการสอน ${width >= 640 ? 'ภาคเรียนที่ 2' : 'ภาคเรียนเสริมทักษะ'} ปีการศึกษา 2569`,
+			exact: true
+		});
+		await expect(heading).toBeVisible();
+		const cycles = month.getByText('รอบนิเทศ รอบแรก · รอบที่สอง', { exact: true });
+		await expect(cycles).toBeVisible();
 		await expect(month.getByText('พฤศจิกายน 2569', { exact: true })).toBeVisible();
 		const day = month.locator(`[data-calendar-date="${bookingDay}"]`);
 		await expect(day).toHaveAttribute('aria-pressed', 'true');
 		await expect(day.locator('span').first()).toHaveClass(/\bbg-primary\b/);
 		await expect(day).toHaveAccessibleName(/1 กิจกรรม, 1 คำร้องรออนุมัติ/);
+		const pending = month.getByTitle('10:20 ครู ในคิว', { exact: true });
+		await expect(pending).toHaveCSS('outline-style', 'dashed');
+		await expect(pending).toHaveAttribute('aria-label', /ครู ในคิว.*รออนุมัติ/);
+		expect(await pending.innerText()).toBe(width >= 640 ? '10:20 ครู ในคิว' : 'ครู ในคิว');
+		await expect(month.getByRole('group', { name: 'สถานะนัดนิเทศ' })).toContainText('รออนุมัติคำขอ');
 		const agenda = month.getByRole('region', { name: /1 พ.ย. 2569/ });
-		await expect(agenda.getByText('ครู ในคิว', { exact: true })).toBeVisible();
+		const pendingBooking = agenda.getByRole('listitem').filter({ hasText: 'ครู ในคิว' });
+		await expect(pendingBooking.getByText('ครู ในคิว', { exact: true })).toBeVisible();
+		await expect(pendingBooking.getByText('รอบแรก', { exact: true })).toBeVisible();
+		await expect(pendingBooking.getByText('รออนุมัติ', { exact: true })).toHaveClass('sr-only');
+		await expect(pendingBooking.locator('[aria-hidden="true"].border-dashed')).toHaveCSS(
+			'border-top-style',
+			'dashed'
+		);
 		await expect(agenda.getByText('ยังไม่มอบหมายผู้ประเมิน')).toBeVisible();
 		await expect(agenda.getByText('คาบ 3–4 · 10:20–12:00 น.')).toBeVisible();
 		await expect(agenda.getByText('ครู คาบแยก', { exact: true })).toBeVisible();
+		await expect(agenda.getByText('รอบที่สอง', { exact: true })).toBeVisible();
 		await expect(agenda.getByText('เสร็จสิ้น', { exact: true })).toBeVisible();
 		await expect(agenda.getByText('คาบ 3 · 00:20–01:10 น.')).toBeVisible();
 		await expect(agenda.getByText('คาบ 5 · 02:40 น. · ไม่ระบุเวลาสิ้นสุด')).toBeVisible();
@@ -255,6 +280,10 @@ for (const width of [1280, 375]) {
 		});
 		await lastDetails.scrollIntoViewIfNeeded();
 		await expect(lastDetails).toBeInViewport();
+		await month.getByRole('button', { name: 'เดือนถัดไป' }).click();
+		await expect(month.getByText('ธันวาคม 2569', { exact: true })).toBeVisible();
+		await expect(cycles).toHaveCount(0);
+		await expect(heading).toBeVisible();
 		await month.getByRole('button', { name: 'วันนี้', exact: true }).click();
 		await expect(day).toHaveAttribute('aria-pressed', 'true');
 		await expect(agenda.getByText('อาจารย์ มณี มีสุข', { exact: true })).toBeVisible();
@@ -276,9 +305,7 @@ for (const width of [1280, 375]) {
 			});
 			if (width < 640) {
 				await agenda.screenshot({ path: testInfo.outputPath(`supervision-agenda-${theme}.png`) });
-				await month
-					.getByRole('heading', { name: 'ปฏิทินนิเทศ', exact: true })
-					.scrollIntoViewIfNeeded();
+				await heading.scrollIntoViewIfNeeded();
 			}
 		}
 		await expect(page).toHaveURL(termPath);
@@ -331,6 +358,10 @@ test('changing year replaces calendar data in the authorized academic context', 
 	await page.goto(requestsPath);
 	await page.getByRole('tab', { name: 'ปฏิทิน' }).click();
 	await expect(
+		page.getByRole('heading', { name: 'ปฏิทินนิเทศการสอน ตลอดปีการศึกษา 2569' })
+	).toBeVisible();
+	await expect(page.getByText('รอบนิเทศ รอบแรก', { exact: true })).toBeVisible();
+	await expect(
 		page.getByRole('region', { name: /1 พ.ย. 2569/ }).getByText('ครู ในคิว')
 	).toBeVisible();
 	const oldRefresh = page.waitForRequest((request) => {
@@ -349,6 +380,10 @@ test('changing year replaces calendar data in the authorized academic context', 
 	const calendar = page.getByRole('tabpanel', { name: 'ปฏิทิน' });
 	const newTeacher = calendar.getByRole('region', { name: /1 พ.ย. 2569/ }).getByText('ครู ปีใหม่');
 	await expect(newTeacher).toBeVisible();
+	await expect(
+		calendar.getByRole('heading', { name: 'ปฏิทินนิเทศการสอน ตลอดปีการศึกษา 2570' })
+	).toBeVisible();
+	await expect(calendar.getByText('รอบนิเทศ รอบปีใหม่', { exact: true })).toBeVisible();
 	api.release();
 	const oldResponse = await oldRequest.response();
 	expect(oldResponse?.ok()).toBe(true);
@@ -362,6 +397,7 @@ test('changing year replaces calendar data in the authorized academic context', 
 			)
 	);
 	await expect(calendar.getByText('ครู ในคิว', { exact: true })).toHaveCount(0);
+	await expect(calendar.getByText('รอบนิเทศ รอบแรก', { exact: true })).toHaveCount(0);
 	await expect(newTeacher).toBeVisible();
 	await expect(page).toHaveURL(nextPath);
 	expect(api.count(observationPath)).toBe(3);

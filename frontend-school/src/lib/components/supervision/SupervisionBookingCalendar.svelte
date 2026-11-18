@@ -2,7 +2,7 @@
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import { addMonths, parseISO } from 'date-fns';
 	import type { Snippet } from 'svelte';
-	import type { SupervisionObservation } from '#lib/api/supervision.js';
+	import type { SupervisionCycle, SupervisionObservation } from '#lib/api/supervision.js';
 	import CalendarMonthGrid, {
 		type CalendarDisplayEvent
 	} from '#lib/components/calendar/CalendarMonthGrid.svelte';
@@ -29,11 +29,15 @@
 
 	let {
 		observations,
+		cycles,
+		academicLabel,
 		selectedDate = $bindable(''),
 		detailHref,
 		requestAction
 	}: {
 		observations: SupervisionObservation[];
+		cycles: SupervisionCycle[];
+		academicLabel: string;
 		selectedDate?: string;
 		detailHref: (observation: SupervisionObservation) => string;
 		requestAction?: Snippet<[SupervisionObservation]>;
@@ -45,13 +49,15 @@
 	const bookingsByDate = $derived(savedBookingsByDate(observations));
 	const bookingsForDay = $derived(bookingsByDate.get(activeDate) ?? []);
 	const monthStart = $derived(monthRange(activeDate).from);
-	const { events, pendingRequests } = $derived.by(() => {
+	const { events, pendingRequests, cycleIds } = $derived.by(() => {
 		const events: CalendarDisplayEvent[] = [];
 		const pendingRequests: CalendarDisplayEvent[] = [];
+		const cycleIds = new Set<string>();
 		const { from, to } = calendarGridRange(monthStart);
 		for (const [date, bookings] of bookingsByDate) {
 			if (date < from || date > to) continue;
 			for (const { observation, periods } of bookings) {
+				cycleIds.add(observation.cycleId);
 				const pending = observation.status === 'requested';
 				const event: CalendarDisplayEvent = {
 					id: `${observation.id}-${date}`,
@@ -67,8 +73,16 @@
 				else events.push(event);
 			}
 		}
-		return { events, pendingRequests };
+		return { events, pendingRequests, cycleIds };
 	});
+	const cycleTitles = $derived(
+		new Map(
+			(cycleIds.size === 0 && cycles.length === 1
+				? cycles
+				: cycles.filter(({ id }) => cycleIds.has(id))
+			).map(({ id, title }) => [id, title])
+		)
+	);
 
 	function selectDate(date: string) {
 		todayDate = schoolCivilDate();
@@ -81,8 +95,17 @@
 </script>
 
 <section class="min-w-0 space-y-3" aria-labelledby={`${descriptionId}-title`}>
-	<div class="flex flex-wrap items-center justify-between gap-2">
-		<h2 id={`${descriptionId}-title`} class="text-lg font-semibold">ปฏิทินนิเทศ</h2>
+	<div class="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+		<div class="min-w-0">
+			<h2 id={`${descriptionId}-title`} class="text-lg font-semibold sm:text-xl">
+				{academicLabel ? `ปฏิทินนิเทศการสอน ${academicLabel}` : 'ปฏิทินนิเทศการสอน'}
+			</h2>
+			{#if cycleTitles.size}
+				<p class="mt-0.5 text-sm break-words text-muted-foreground">
+					รอบนิเทศ {[...cycleTitles.values()].join(' · ')}
+				</p>
+			{/if}
+		</div>
 		<div
 			class="grid w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 sm:w-auto sm:grid-cols-[auto_8rem_auto_auto]"
 			role="group"
@@ -112,30 +135,29 @@
 			>
 		</div>
 	</div>
+	<div class="flex flex-wrap gap-2 text-xs text-muted-foreground" role="group" aria-label="สถานะนัดนิเทศ">
+		<span class="inline-flex items-center gap-1.5"
+			><span class="size-2 rounded-full bg-primary" aria-hidden="true"></span>นัดหมายแล้ว</span
+		>
+		<span class="inline-flex items-center gap-1.5"
+			><span class="size-2 rounded-sm border border-dashed border-primary" aria-hidden="true"
+			></span>รออนุมัติคำขอ</span
+		>
+	</div>
 
 	<div class="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
-		<div class="min-w-0 space-y-2">
-			<div class="h-[33rem] sm:h-[40rem]">
-				<CalendarMonthGrid
-					monthDate={monthStart}
-					{events}
-					{pendingRequests}
-					{todayDate}
-					selectedDate={activeDate}
-					onselect={selectDate}
-					fillHeight
-					hideMobileTimes
-				/>
-			</div>
-			<div class="flex flex-wrap gap-2 text-xs text-muted-foreground" aria-label="สถานะนัดนิเทศ">
-				<span class="inline-flex items-center gap-1.5"
-					><span class="size-2 rounded-full bg-primary" aria-hidden="true"></span>นัดหมายแล้ว</span
-				>
-				<span class="inline-flex items-center gap-1.5"
-					><span class="size-2 rounded-sm border border-dashed border-primary" aria-hidden="true"
-					></span>รออนุมัติคำขอ</span
-				>
-			</div>
+		<div class="h-[33rem] min-w-0 sm:h-[40rem]">
+			<CalendarMonthGrid
+				monthDate={monthStart}
+				{events}
+				{pendingRequests}
+				{todayDate}
+				selectedDate={activeDate}
+				onselect={selectDate}
+				fillHeight
+				hideMobileTimes
+				hidePendingPrefix
+			/>
 		</div>
 
 		<Card.Root class="min-w-0 gap-3 p-4" role="region" aria-labelledby={`${descriptionId}-day`}>
@@ -147,14 +169,25 @@
 					{#each bookingsForDay as { observation, periods } (observation.id)}
 						{@const schedule = savedScheduleSummary(periods)}
 						{@const lesson = savedLessonLabels({ periods })}
+						{@const cycleTitle = cycleTitles.get(observation.cycleId)}
 						<li class="space-y-2 py-3 last:pb-0">
 							<div class="flex flex-wrap items-start justify-between gap-1">
-								<p class="min-w-0 font-semibold break-words">
-									{observation.observedDisplayName ?? 'ครูผู้รับนิเทศ'}
-								</p>
-								<Badge variant={observation.status === 'requested' ? 'outline' : 'secondary'}>
-									{supervisionStatusLabel(observation.status)}
-								</Badge>
+								<div class="min-w-0">
+									<p class="flex items-baseline gap-1.5 font-semibold break-words">
+										{#if observation.status === 'requested'}
+											<span class="size-2 shrink-0 rounded-sm border border-dashed border-primary" aria-hidden="true"></span>
+										{/if}
+										<span class="min-w-0">{observation.observedDisplayName ?? 'ครูผู้รับนิเทศ'}</span>
+									</p>
+									{#if cycleIds.size > 1 && cycleTitle}
+										<p class="text-xs break-words text-muted-foreground">{cycleTitle}</p>
+									{/if}
+								</div>
+								{#if observation.status === 'requested'}
+									<span class="sr-only">{supervisionStatusLabel(observation.status)}</span>
+								{:else}
+									<Badge variant="secondary">{supervisionStatusLabel(observation.status)}</Badge>
+								{/if}
 							</div>
 							<div class="text-sm">
 								<p class="font-medium text-primary">

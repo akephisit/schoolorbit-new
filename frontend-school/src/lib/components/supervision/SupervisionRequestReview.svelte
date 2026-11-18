@@ -86,17 +86,19 @@
 	{#if canReview}
 		{#if draft?.needsRecheck}
 			<p class="text-sm text-muted-foreground">
-				ช่วงคาบหรือรอบนิเทศเปลี่ยนแล้ว กรุณาตรวจช่วงคาบและผู้ประเมินอีกครั้ง
+				ช่วงคาบหรือรอบนิเทศเปลี่ยนแล้ว เปิด “เพิ่ม/เลือกผู้ประเมิน” เพื่อตรวจความพร้อมอีกครั้ง
 			</p>
 		{/if}
-		<SupervisionRequestAvailability
-			result={draft?.availability}
-			loading={Boolean(draft?.loading)}
-			error={draft?.error ?? ''}
-			showError={!pickerOpen}
-			{disabled}
-			oninspect={() => void review.loadAvailability(id)}
-		/>
+		{#if draft?.availability || draft?.loading || (draft?.error && !pickerOpen)}
+			<SupervisionRequestAvailability
+				result={draft.availability}
+				loading={Boolean(draft.loading)}
+				error={draft.error ?? ''}
+				showError={!pickerOpen}
+				{disabled}
+				onretry={() => void review.loadAvailability(id)}
+			/>
+		{/if}
 	{/if}
 	<div class="grid gap-4 border-t pt-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
 		<div class="min-w-0 space-y-2">
