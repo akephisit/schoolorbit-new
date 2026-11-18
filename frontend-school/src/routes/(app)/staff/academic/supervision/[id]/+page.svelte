@@ -1622,7 +1622,7 @@
 			</Popover.Root>
 			{#if unavailableEvaluatorCount > 0}
 				<p class="text-xs text-muted-foreground">
-					ผู้ประเมินไม่ว่าง {unavailableEvaluatorCount} คนจากงานนิเทศหรือตารางสอนในช่วงคาบนี้
+					ผู้ประเมินไม่ว่าง {unavailableEvaluatorCount} คน เพราะมีนัดนิเทศที่ยืนยันแล้วในช่วงคาบนี้
 				</p>
 			{/if}
 		</div>

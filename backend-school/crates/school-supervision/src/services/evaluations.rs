@@ -556,7 +556,6 @@ pub(super) async fn validate_evaluator_availability_for_observation(
         connection,
         observation.observed_user_id,
         observation.cycle_id,
-        observation.academic_term_id,
         Some(observation.id),
         &windows,
         evaluator_user_ids,

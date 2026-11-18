@@ -202,7 +202,7 @@
 													<div class="min-w-0 space-y-1">
 														<p>{evaluator.name}</p>
 														<p class="text-xs text-muted-foreground">
-															{evaluator.conflictReason ?? 'มีงานทับช่วงคาบ'}
+															{evaluator.conflictReason ?? 'มีงานนิเทศในช่วงเวลาเดียวกัน'}
 														</p>
 														{#if evaluator.conflict}
 															<p class="text-xs text-muted-foreground">

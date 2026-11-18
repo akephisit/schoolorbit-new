@@ -83,7 +83,7 @@
 			<p class="text-xs text-muted-foreground">
 				ผู้ประเมินว่าง {result.items.filter((item) => item.available).length} คน · ไม่ว่าง {result.items.filter(
 					(item) => !item.available
-				).length} คน ตรวจจากงานนิเทศและตารางสอนที่ระบบมีข้อมูลตลอดช่วงคาบที่เลือก
+				).length} คน ตรวจจากนัดนิเทศที่ยืนยันแล้วตลอดช่วงคาบที่เลือก
 			</p>
 		</div>
 	{/if}
