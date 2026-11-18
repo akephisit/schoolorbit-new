@@ -2370,8 +2370,9 @@
 											</div>
 
 											<div class="space-y-2">
-												<Label>ส่งกลับคำขอ</Label>
+												<Label for={`return-request-${observation.id}`}>ส่งกลับคำขอ</Label>
 												<Textarea
+													id={`return-request-${observation.id}`}
 													value={requestReturnComments[observation.id] ?? ''}
 													rows={3}
 													placeholder="ระบุเหตุผลส่งกลับ"

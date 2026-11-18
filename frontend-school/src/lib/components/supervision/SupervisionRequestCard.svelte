@@ -44,22 +44,35 @@
 		<Badge variant="secondary">{supervisionStatusLabel(observation.status)}</Badge>
 	</div>
 
-	<div
-		class="grid gap-2 rounded-lg border border-primary/15 bg-primary/5 p-3 sm:grid-cols-[1fr_auto]"
-	>
+	<div class="grid gap-2 rounded-lg border border-primary/15 bg-primary/5 p-3 sm:grid-cols-2">
 		<div class="min-w-0">
 			<p class="text-xl font-semibold break-words text-primary">{schedule.periodTitle}</p>
-			<p class="mt-1 text-sm">
-				{schedule.dates.map(savedScheduleDateLabel).join(' · ') || 'ไม่ระบุวันนิเทศ'}
-				{#if schedule.timeLabel}
-					<span class="font-medium tabular-nums"> · {schedule.timeLabel}</span>
+			{#if schedule.timeLabel || schedule.periods.length === 0}
+				<p class="mt-1 text-sm">
+					{schedule.dates.map(savedScheduleDateLabel).join(' · ') || 'ไม่ระบุวันนิเทศ'}
+					{#if schedule.timeLabel}
+						<span class="font-medium tabular-nums">{` · ${schedule.timeLabel}`}</span>
+					{/if}
+				</p>
+			{:else}
+				{#if schedule.dates.length === 1}
+					<p class="mt-1 text-sm">{savedScheduleDateLabel(schedule.dates[0])}</p>
 				{/if}
-			</p>
+				<ul class="mt-1 text-sm tabular-nums">
+					{#each schedule.periods as period (period.id)}
+						<li>
+							{#if schedule.dates.length !== 1}
+								{period.date ? savedScheduleDateLabel(period.date) : 'ไม่ระบุวันนิเทศ'} ·
+							{/if}
+							{period.label ?? 'ไม่ระบุคาบ'} · {period.timeLabel}
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		</div>
 		<div class="min-w-0 text-sm break-words sm:text-right">
 			<p class="font-medium">
-				{lesson.homeroom}{#if lesson.room !== '—'}
-					· {lesson.room}{/if}
+				{lesson.homeroom}{lesson.room === '—' ? '' : ` · ${lesson.room}`}
 			</p>
 			<p class="text-muted-foreground">{lesson.subject}</p>
 		</div>

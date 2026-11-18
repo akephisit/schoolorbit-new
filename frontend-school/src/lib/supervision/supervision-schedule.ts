@@ -61,13 +61,19 @@ function periodTimeLabel(period: SupervisionObservationPeriod): string {
 
 export function savedScheduleSummary(periods: SupervisionObservationPeriod[]) {
 	const ordered = orderedPeriods(periods);
-	const dates = [...new Set(ordered.map((period) => periodDate(period.observedAt)))].filter(
+	const individualPeriods = ordered.map((period) => ({
+		id: period.id,
+		date: periodDate(period.observedAt),
+		label: periodLabel(period),
+		timeLabel: periodTimeLabel(period)
+	}));
+	const dates = [...new Set(individualPeriods.map((period) => period.date))].filter(
 		(date): date is string => date !== null
 	);
 	const first = ordered[0];
 	const last = ordered.at(-1);
 	const end = last && knownEnd(last);
-	const labels = ordered.map(periodLabel);
+	const labels = individualPeriods.map((period) => period.label);
 	const numbers = labels.map((label) => Number(label?.match(/^คาบ\s*(?:ที่\s*)?(\d+)$/u)?.[1]));
 	const contiguous =
 		first &&
@@ -94,15 +100,11 @@ export function savedScheduleSummary(periods: SupervisionObservationPeriod[]) {
 		periodTitle,
 		timeLabel:
 			first && ordered.length === 1
-				? periodTimeLabel(first)
+				? individualPeriods[0].timeLabel
 				: consecutive
 					? `${savedScheduleTime(first.observedAt)}–${savedScheduleTime(end)} น.`
 					: null,
-		periods: ordered.map((period) => ({
-			id: period.id,
-			label: periodLabel(period) ?? 'ไม่ระบุคาบ',
-			timeLabel: periodTimeLabel(period)
-		}))
+		periods: individualPeriods
 	};
 }
 

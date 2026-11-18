@@ -153,19 +153,20 @@
 							<div class="text-sm">
 								<p class="font-medium text-primary">
 									{schedule.periodTitle}{#if schedule.timeLabel}
-										<span class="text-foreground tabular-nums"> · {schedule.timeLabel}</span>
+										<span class="text-foreground tabular-nums">{` · ${schedule.timeLabel}`}</span>
 									{/if}
 								</p>
 								{#if !schedule.timeLabel}
 									<ul class="mt-1 space-y-1 text-sm tabular-nums">
 										{#each schedule.periods as period (period.id)}
-											<li>{period.label} · {period.timeLabel}</li>
+											<li>{period.label ?? 'ไม่ระบุคาบ'} · {period.timeLabel}</li>
 										{/each}
 									</ul>
 								{/if}
 								<p class="mt-1 break-words text-muted-foreground">
-									{lesson.subject} · {lesson.homeroom}{#if lesson.room !== '—'}
-										· {lesson.room}{/if}
+									{lesson.subject} · {lesson.homeroom}{lesson.room === '—'
+										? ''
+										: ` · ${lesson.room}`}
 								</p>
 							</div>
 							<dl class="text-sm">

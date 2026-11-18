@@ -9,13 +9,15 @@ export type SupervisionLessonSelection = Pick<
 	'observedDate' | 'timetableBlockGroupIds' | 'expectedSourceDigest'
 >;
 
+const schoolDateFormatter = new Intl.DateTimeFormat('en-CA', {
+	timeZone: 'Asia/Bangkok',
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit'
+});
+
 export function schoolCivilDate(value = new Date()): string {
-	return new Intl.DateTimeFormat('en-CA', {
-		timeZone: 'Asia/Bangkok',
-		year: 'numeric',
-		month: '2-digit',
-		day: '2-digit'
-	}).format(value);
+	return schoolDateFormatter.format(value);
 }
 
 export function addCivilDays(value: string, days: number): string {

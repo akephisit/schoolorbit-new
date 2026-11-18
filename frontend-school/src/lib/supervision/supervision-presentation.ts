@@ -103,8 +103,8 @@ export function savedLessonLabels(observation: Pick<SupervisionObservation, 'per
 	const periods = [...observation.periods].sort((a, b) => a.position - b.position);
 	const values = (field: 'subjectName' | 'classroomLabel' | 'roomLabel' | 'periodLabel') =>
 		periods
-			.map((period) => period.lessonSnapshot[field] ?? period.manualLesson?.[field])
-			.filter((value): value is string => Boolean(value?.trim()));
+			.map((period) => period.lessonSnapshot[field]?.trim() || period.manualLesson?.[field]?.trim())
+			.filter((value): value is string => Boolean(value));
 	return {
 		subject: [...new Set(values('subjectName'))].join(' · ') || 'ไม่ระบุวิชา',
 		homeroom: [...new Set(values('classroomLabel'))].join(' · ') || 'ไม่ระบุชั้นเรียน',
