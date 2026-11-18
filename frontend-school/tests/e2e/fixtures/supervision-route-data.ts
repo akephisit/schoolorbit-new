@@ -114,6 +114,7 @@ export async function mock(
 		failStatus?: number;
 		holdAt?: number;
 		term?: boolean | Pick<AcademicTermOption, 'name' | 'sequence' | 'termType'>;
+		yearName?: string;
 		observationStatus?: SupervisionObservationStatus;
 		observation?: Partial<SupervisionObservation>;
 		additionalObservations?: (Partial<SupervisionObservation> &
@@ -304,7 +305,7 @@ export async function mock(
 						isVisible: true,
 						id: value,
 						year: 2569 + index,
-						name: String(2569 + index),
+						name: (index === 0 ? options.yearName : undefined) ?? String(2569 + index),
 						status: 'open'
 					}))
 				});

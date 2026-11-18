@@ -168,6 +168,7 @@ for (const width of [1280, 375]) {
 				width >= 640
 					? { name: 'ภาคเรียนที่ 2', sequence: 2, termType: 'regular' }
 					: { name: 'ภาคเรียนเสริมทักษะ', sequence: 3, termType: 'custom' },
+			yearName: width >= 640 ? 'ปีการศึกษา 2569' : 'ปีการเรียนรู้พิเศษ',
 			observation: { periods: requestPeriods, evaluators: [] },
 			additionalObservations: [
 				{
@@ -193,7 +194,10 @@ for (const width of [1280, 375]) {
 		await page.keyboard.press('ArrowRight');
 		const month = page.getByRole('tabpanel', { name: 'ปฏิทิน' });
 		const heading = month.getByRole('heading', {
-			name: `ปฏิทินนิเทศการสอน ${width >= 640 ? 'ภาคเรียนที่ 2' : 'ภาคเรียนเสริมทักษะ'} ปีการศึกษา 2569`,
+			name:
+				width >= 640
+					? 'ปฏิทินนิเทศการสอน ภาคเรียนที่ 2 ปีการศึกษา 2569'
+					: 'ปฏิทินนิเทศการสอน ภาคเรียนเสริมทักษะ ปีการศึกษา 2569 (ปีการเรียนรู้พิเศษ)',
 			exact: true
 		});
 		await expect(heading).toBeVisible();
