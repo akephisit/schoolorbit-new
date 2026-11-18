@@ -50,6 +50,7 @@ export const timetableOption = (
 	homeroomId: id(120),
 	homeroomName: 'ม.1/1',
 	roomName: 'ห้องปัจจุบัน',
+	bookingAvailability: { pendingCount: 0, confirmedCount: 0, blocked: false },
 	...patch
 });
 
@@ -73,6 +74,8 @@ export async function mock(
 	options: {
 		permissions?: string[];
 		cycleStatus?: SupervisionCycleStatus;
+		observationStartDate?: string | null;
+		observationEndDate?: string | null;
 		hold?:
 			| 'cycles'
 			| 'teacher-status'
@@ -143,6 +146,7 @@ export async function mock(
 		createdAt: '2026-09-30T09:00:00Z',
 		updatedAt: '2026-10-01T09:00:00Z',
 		status: observationStatus,
+		periodsLocked: !['requested', 'returned'].includes(observationStatus),
 		periods: [savedPeriod()],
 		evaluators: [
 			{
@@ -268,6 +272,12 @@ export async function mock(
 							? 'รอบปีใหม่'
 							: 'รอบแรก',
 					status: cycleStatus,
+					observationStartDate:
+						options.observationStartDate === undefined
+							? '2026-09-01'
+							: options.observationStartDate,
+					observationEndDate:
+						options.observationEndDate === undefined ? '2026-12-31' : options.observationEndDate,
 					createdAt: '2026-09-01T00:00:00Z',
 					updatedAt: '2026-09-01T00:00:00Z',
 					targets: []
@@ -357,7 +367,10 @@ export async function mock(
 				return reply(route, { items: [snapshot] });
 			if (resource.endsWith('/evaluator-availability'))
 				return reply(route, {
-					items: [{ id: id(32), name: 'ผู้ประเมินที่ว่าง', available: true, conflicts: [] }]
+					items: [{ id: id(32), name: 'ผู้ประเมินที่ว่าง', available: true, conflicts: [] }],
+					overlap: { pendingCount: 0, confirmedCount: 0, blocked: false },
+					withinCycleDates: true,
+					overlappingBookings: []
 				});
 			if (resource.endsWith('/progress'))
 				return reply(route, {

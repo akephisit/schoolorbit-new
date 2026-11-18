@@ -6,6 +6,7 @@
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
 	import {
 		schoolCivilDate,
+		cycleDateRangeError,
 		type SupervisionLessonSelection
 	} from '#lib/supervision/booking-range.js';
 	import {
@@ -46,6 +47,7 @@
 		getSupervisionTemplateSummary,
 		getSupervisionCycle,
 		replaceSupervisionObservationEvaluators,
+		resubmitSupervisionObservationRequest,
 		updateRequestedSupervisionObservation,
 		updateSupervisionObservation,
 		type SupervisionCycle,
@@ -183,10 +185,12 @@
 		canCancelOwnRequest &&
 			!observation?.evaluators.some((evaluator) => evaluator.status === 'submitted')
 	);
-	const isReturnedOwnRequest = $derived(canEditOwnRequested && observation?.status === 'returned');
+	const isReturnedOwnRequest = $derived(canCancelOwnRequest && observation?.status === 'returned');
+	const canResubmitSaved = $derived(Boolean(isReturnedOwnRequest && observation?.periodsLocked));
 	const canEditLesson = $derived(
 		Boolean(
 			observation &&
+			!observation.periodsLocked &&
 			manageableStatus(observation.status) &&
 			(canManageObservation || canEditOwnRequested)
 		)
@@ -751,10 +755,11 @@
 		loadingEvaluatorAvailability = true;
 		evaluatorAvailabilityError = '';
 		try {
-			const items = await getSupervisionEvaluatorAvailability(observation.id, {
+			const result = await getSupervisionEvaluatorAvailability(observation.id, {
 				signal: ticket.signal
 			});
 			if (!evaluatorRequest.isCurrent(ticket.revision) || !editEvaluatorsOpen) return;
+			const items = result.items;
 			availableEvaluators = items;
 			evaluatorAvailabilityLoaded = true;
 			const availableIds = new Set(items.filter((item) => item.available).map((item) => item.id));
@@ -812,6 +817,24 @@
 		}
 	}
 
+	async function resubmitSaved() {
+		if (!observation || !canResubmitSaved || cycle?.status !== 'open' || savingAction) return;
+		const ownsMutation = captureMutationOwner();
+		const submittedId = observation.id;
+		savingAction = 'resubmit-saved';
+		try {
+			const response = await resubmitSupervisionObservationRequest(submittedId);
+			if (!ownsMutation()) return;
+			replaceObservation(mutationData(response, 'ส่งคำขอเดิมใหม่ไม่สำเร็จ'));
+			toast.success('ส่งคำขอใหม่โดยใช้ช่วงคาบเดิมแล้ว');
+		} catch (failure) {
+			if (ownsMutation())
+				toast.error(failure instanceof Error ? failure.message : 'ส่งคำขอเดิมใหม่ไม่สำเร็จ');
+		} finally {
+			if (ownsMutation()) savingAction = null;
+		}
+	}
+
 	async function cancelObservation() {
 		if (!observation || !canCancelObservation) return;
 		const ownsMutation = captureMutationOwner();
@@ -852,7 +875,7 @@
 		</Button>
 	{/snippet}
 
-	<div data-testid="supervision-detail" aria-busy={loading}>
+	<div class="space-y-4" data-testid="supervision-detail" aria-busy={loading}>
 		{#if loading && !observation}
 			<div role="status" aria-label="กำลังโหลด"><PageSkeleton /></div>
 		{:else if !observation && error}
@@ -868,7 +891,7 @@
 					variant="outline"
 					onclick={retryObservation}>ลองใหม่</Button
 				>{/if}
-			<div class="mb-4 space-y-3">
+			<div class="space-y-3">
 				<SupervisionWorkflow {observation} />
 				{#if observation.status === 'returned'}
 					<div
@@ -907,6 +930,14 @@
 										</p>{/if}
 								</div>
 								<div class="flex flex-wrap gap-2">
+									{#if canResubmitSaved}<LoadingButton
+											variant="outline"
+											onclick={resubmitSaved}
+											loading={savingAction === 'resubmit-saved'}
+											loadingLabel="กำลังส่งใหม่..."
+											disabled={cycleLoading || cycle?.status !== 'open' || savingAction !== null}
+											>ส่งใหม่ด้วยคาบเดิม</LoadingButton
+										>{/if}
 									{#if canEditLesson}
 										<Button variant="outline" onclick={() => void openLessonEditor()}>
 											<CalendarClock class="h-4 w-4" />
@@ -938,6 +969,13 @@
 								{/each}
 							</div>
 							<SupervisionSavedPeriods {observation} />
+							{#if observation.periodsLocked}<p
+									class="mt-3 rounded-lg border bg-muted/30 p-3 text-sm"
+									data-testid="supervision-periods-locked"
+								>
+									คาบนิเทศได้รับการอนุมัติแล้ว จึงเปลี่ยนวิชา ห้อง วันและช่วงคาบไม่ได้
+									ข้อมูลผู้ประเมินและการจัดการอื่นใช้สิทธิ์ของแต่ละรายการตามเดิม
+								</p>{/if}
 						</Card.Content>
 					</Card.Root>
 
@@ -1324,16 +1362,22 @@
 		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
 			{#if observation && editLessonOpen}
 				<SupervisionSavedPeriods {observation} />
-				<SupervisionLessonPicker
-					academicYearId={observation.academicYearId}
-					academicTermId={observation.academicTermId}
-					observationId={observation.id}
-					initialDate={schoolCivilDate(new Date(observation.observedAt))}
-					allowed={canEditLesson}
-					disabled={isReturnedOwnRequest && cycle?.status !== 'open'}
-					onsubmit={saveLessonEdit}
-					submitLabel={isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
-				/>
+				{#if cycle && !cycleDateRangeError(cycle.observationStartDate, cycle.observationEndDate)}
+					<SupervisionLessonPicker
+						{cycle}
+						academicYearId={observation.academicYearId}
+						academicTermId={observation.academicTermId}
+						observationId={observation.id}
+						initialDate={schoolCivilDate(new Date(observation.observedAt))}
+						allowed={canEditLesson}
+						disabled={isReturnedOwnRequest && cycle?.status !== 'open'}
+						onsubmit={saveLessonEdit}
+						submitLabel={isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
+					/>
+				{:else if cycleLoading}<PageSkeleton />{:else}<PageState
+						title="รอผู้ดูแลกำหนดช่วงวันที่นิเทศ"
+						description="ยังเลือกคาบใหม่ไม่ได้จนกว่ารอบนี้จะมีช่วงวันที่นิเทศ"
+					/>{/if}
 			{/if}
 		</div>
 		<Dialog.Footer

@@ -29,6 +29,43 @@ export function bookingWeekStart(value = schoolCivilDate()): string {
 	return addCivilDays(value, -((weekday + 6) % 7));
 }
 
+export function cycleDateRangeError(start?: string | null, end?: string | null): string | null {
+	if (!start || !end) return 'กำหนดวันเริ่มต้นและวันสุดท้ายที่ให้นิเทศก่อน';
+	for (const date of [start, end]) {
+		const parsed = new Date(`${date}T00:00:00Z`);
+		if (
+			!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+			!Number.isFinite(parsed.getTime()) ||
+			parsed.toISOString().slice(0, 10) !== date
+		)
+			return 'ระบุวันที่ให้ถูกต้อง';
+	}
+	return start > end ? 'วันสุดท้ายต้องไม่อยู่ก่อนวันเริ่มต้น' : null;
+}
+
+export function withinCycleDates(
+	date: string,
+	start?: string | null,
+	end?: string | null
+): boolean {
+	return !cycleDateRangeError(start, end) && Boolean(start && end && date >= start && date <= end);
+}
+
+export function clampedBookingWeek(start: string, end: string, date = schoolCivilDate()): string {
+	return bookingWeekStart(date < start ? start : date > end ? end : date);
+}
+
+export function cycleDateRangeLabel(start?: string | null, end?: string | null): string {
+	if (cycleDateRangeError(start, end)) return 'ยังไม่กำหนดช่วงวันที่นิเทศ';
+	const formatter = new Intl.DateTimeFormat('th-TH', {
+		timeZone: 'UTC',
+		day: 'numeric',
+		month: 'short',
+		year: 'numeric'
+	});
+	return `${formatter.format(new Date(`${start}T00:00:00Z`))} – ${formatter.format(new Date(`${end}T00:00:00Z`))}`;
+}
+
 export function bookingDateLabel(value: string): string {
 	return new Intl.DateTimeFormat('th-TH', {
 		timeZone: 'UTC',
@@ -93,4 +130,46 @@ export function bookedObservationFor(
 					: savedStart >= startsAt && savedStart < endsAt;
 			})
 	);
+}
+
+export function bookingOptionUnavailable(
+	item: SupervisionTimetableOption,
+	start?: string | null,
+	end?: string | null
+): string | null {
+	if (!withinCycleDates(item.observedDate, start, end)) return 'อยู่นอกช่วงวันที่นิเทศ';
+	return item.bookingAvailability.blocked ? 'คาบนี้มีนัดนิเทศที่ทับกัน จองเพิ่มไม่ได้' : null;
+}
+
+export function bookingAvailabilityLabel(item: SupervisionTimetableOption): string {
+	const { pendingCount, confirmedCount, blocked } = item.bookingAvailability;
+	if (blocked) return `ยืนยันแล้ว ${confirmedCount} · จองไม่ได้`;
+	const labels = [];
+	if (pendingCount) labels.push(`รออนุมัติ ${pendingCount}`);
+	if (confirmedCount) labels.push(`นัดหมาย ${confirmedCount} · จองขนานได้`);
+	return labels.join(' · ') || 'ว่าง';
+}
+
+export function reconcileBookingRange(
+	selected: SupervisionTimetableOption[],
+	items: SupervisionTimetableOption[],
+	start?: string | null,
+	end?: string | null
+): SupervisionTimetableOption[] {
+	const current: SupervisionTimetableOption[] = [];
+	for (const old of selected) {
+		const item = items.find(
+			(value) => value.blockGroupId === old.blockGroupId && value.observedDate === old.observedDate
+		);
+		if (
+			!item ||
+			bookingOptionUnavailable(item, start, end) ||
+			item.homeroomId !== old.homeroomId ||
+			item.startTime !== old.startTime ||
+			item.endTime !== old.endTime
+		)
+			return [];
+		current.push(item);
+	}
+	return bookingRangeError(current) ? [] : orderedBookingRange(current);
 }

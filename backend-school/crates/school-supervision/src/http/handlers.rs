@@ -17,11 +17,12 @@ use crate::models::{
     AcknowledgeObservationRequest, ApproveObservationRequest, CancelObservationRequest,
     CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest, DeleteSupervisionCycleRequest,
     ReplaceObservationEvaluatorsRequest, RequestSupervisionObservationRequest,
-    ReturnObservationRequest, SaveEvaluationRequest, SupervisionBookingOptionsQuery,
-    SupervisionCycle, SupervisionCycleQuery, SupervisionEvaluatorAvailability,
-    SupervisionObservation, SupervisionObservationFilter, SupervisionObservationStatus,
-    SupervisionObservationTimetableQuery, SupervisionTeacherStatusRow, SupervisionTemplate,
-    SupervisionTemplateSummary, UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
+    ResubmitSupervisionObservationRequest, ReturnObservationRequest, SaveEvaluationRequest,
+    SupervisionBookingOptionsQuery, SupervisionCycle, SupervisionCycleQuery,
+    SupervisionEvaluatorAvailability, SupervisionObservation, SupervisionObservationFilter,
+    SupervisionObservationStatus, SupervisionObservationTimetableQuery,
+    SupervisionTeacherStatusRow, SupervisionTemplate, SupervisionTemplateSummary,
+    UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
     UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
 #[cfg(feature = "api-docs")]
@@ -639,6 +640,33 @@ pub async fn request_observation(
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
+    post,path="/api/supervision/observations/{id}/resubmit-request",operation_id="resubmitSupervisionObservationRequest",tag="supervision",
+    params(("id"=Uuid,Path,description="Returned observation with a frozen schedule")),
+    request_body=ResubmitSupervisionObservationRequest,
+    responses(
+        (status=200,description="Saved observation request resubmitted without changing periods",body=ApiResponse<SupervisionObservation>),
+        (status=400,description="Invalid state or cycle date bounds",body=ApiErrorResponse),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Own request permission required",body=ApiErrorResponse),
+        (status=404,description="Observation not found",body=ApiErrorResponse),
+        (status=409,description="Academic lifecycle or booking conflict",body=ApiErrorResponse)
+    )
+))]
+pub async fn resubmit_observation_request(
+    State(state): State<SupervisionHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(_payload): Json<ResubmitSupervisionObservationRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    supervision_access_policy::require_request_own(&context.actor)?;
+    let observation =
+        services::resubmit_observation_request(&context.tenant.pool, context.actor.user_id, id)
+            .await?;
+    Ok(Json(ApiResponse::ok(observation)).into_response())
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
     patch,
     path = "/api/supervision/observations/{id}/request",
     operation_id = "updateRequestedSupervisionObservation",
@@ -1172,6 +1200,10 @@ pub fn routes() -> Router<SupervisionHttpState> {
             put(replace_observation_evaluators),
         )
         .route("/observations/{id}/cancel", post(cancel_observation))
+        .route(
+            "/observations/{id}/resubmit-request",
+            post(resubmit_observation_request),
+        )
         .route(
             "/observations/{id}/request",
             patch(update_requested_observation).delete(cancel_requested_observation),

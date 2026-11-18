@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import SupervisionCycleDates from '#lib/components/supervision/SupervisionCycleDates.svelte';
+	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
+	import { cycleDateRangeError, cycleDateRangeLabel } from '#lib/supervision/booking-range.js';
 	import SupervisionCycleDelete from '#lib/components/supervision/SupervisionCycleDelete.svelte';
 	import SupervisionLessonPicker from '#lib/components/supervision/SupervisionLessonPicker.svelte';
 	import type { SupervisionLessonSelection } from '#lib/supervision/booking-range.js';
@@ -55,6 +58,7 @@
 		type SupervisionCycleStatus,
 		type SupervisionCycleProgress,
 		type SupervisionEvaluatorAvailability,
+		type SupervisionEvaluatorAvailabilityResponse,
 		type SupervisionObservation,
 		type SupervisionTeacherStatusRow,
 		type SupervisionTemplate,
@@ -117,6 +121,8 @@
 		description: string;
 		templateId: string;
 		status: SupervisionCycleStatus;
+		observationStartDate: string;
+		observationEndDate: string;
 	};
 
 	const cycleStatusCreateOptions: {
@@ -251,7 +257,9 @@
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
 	let observations = $state<SupervisionObservation[]>([]);
-	let requestEvaluatorAvailability = $state<Record<string, SupervisionEvaluatorAvailability[]>>({});
+	let requestEvaluatorAvailability = $state<
+		Record<string, SupervisionEvaluatorAvailabilityResponse>
+	>({});
 	let requestEvaluatorAvailabilityLoading = $state<Record<string, boolean>>({});
 	let selectedCycleId = $state('');
 	let requestEvaluatorIds = $state<Record<string, string[]>>({});
@@ -275,7 +283,9 @@
 		title: '',
 		description: '',
 		templateId: '',
-		status: 'open'
+		status: 'open',
+		observationStartDate: '',
+		observationEndDate: ''
 	});
 	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
 	const evaluatorAvailabilityRequests: Record<string, LatestRequest> = {};
@@ -974,7 +984,7 @@
 	}
 
 	function requestEvaluatorOptions(observationId: string): SupervisionEvaluatorAvailability[] {
-		return requestEvaluatorAvailability[observationId] ?? [];
+		return requestEvaluatorAvailability[observationId]?.items ?? [];
 	}
 
 	function availableRequestEvaluatorOptions(
@@ -1016,14 +1026,15 @@
 			[observationId]: true
 		};
 		try {
-			const items = await getSupervisionEvaluatorAvailability(observationId, { signal });
+			const result = await getSupervisionEvaluatorAvailability(observationId, { signal });
+			const items = result.items;
 			if (!request.isCurrent(revision)) return;
 			const availableIds = new Set(
 				items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
 			);
 			requestEvaluatorAvailability = {
 				...requestEvaluatorAvailability,
-				[observationId]: items
+				[observationId]: result
 			};
 			requestEvaluatorIds = {
 				...requestEvaluatorIds,
@@ -1344,7 +1355,18 @@
 			return;
 		}
 
+		const dateError = cycleDateRangeError(
+			cycleForm.observationStartDate,
+			cycleForm.observationEndDate
+		);
+		if (dateError) {
+			toast.error(dateError);
+			return;
+		}
+
 		const payload: CreateSupervisionCycleRequest = {
+			observationStartDate: cycleForm.observationStartDate,
+			observationEndDate: cycleForm.observationEndDate,
 			academicYearId,
 			academicTermId,
 			title: cycleForm.title,
@@ -1364,10 +1386,30 @@
 			toast.success('สร้างรอบนิเทศแล้ว');
 			cycleForm.title = '';
 			cycleForm.description = '';
+			cycleForm.observationStartDate = '';
+			cycleForm.observationEndDate = '';
 			createCycleDialogOpen = false;
 		} catch (error) {
 			if (!ownsMutation()) return;
 			toast.error(error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ');
+		} finally {
+			if (ownsMutation()) savingAction = null;
+		}
+	}
+
+	async function saveCycleDates(
+		cycleId: string,
+		dates: Pick<CreateSupervisionCycleRequest, 'observationStartDate' | 'observationEndDate'>
+	) {
+		if (!canManageSchool || mutationBusy) throw new Error('ยังบันทึกช่วงวันที่ไม่ได้');
+		const ownsMutation = captureMutationOwner();
+		savingAction = `cycle-dates:${cycleId}`;
+		try {
+			const response = await updateSupervisionCycle(cycleId, dates);
+			if (!ownsMutation()) return;
+			replaceCycle(requireMutationData(response, 'บันทึกช่วงวันที่ไม่สำเร็จ'));
+		} catch (failure) {
+			if (ownsMutation()) throw failure;
 		} finally {
 			if (ownsMutation()) savingAction = null;
 		}
@@ -1769,7 +1811,11 @@
 	{/if}
 {/snippet}
 
-<PageShell title={sectionConfig.title} description={sectionConfig.description}>
+<PageShell
+	title={sectionConfig.title}
+	description={sectionConfig.description}
+	contentClass="flex flex-col gap-4 [&>*]:mt-0"
+>
 	{#snippet actions()}
 		{#if section === 'mine' && canRequest && !bookingOpen}
 			<Button size="sm" onclick={() => (bookingOpen = true)}
@@ -1856,7 +1902,7 @@
 	{/if}
 
 	{#if ['mine', 'requests', 'evaluate', 'approvals'].includes(section)}
-		<div class="relative space-y-2" data-testid="supervision-references">
+		<div class="relative space-y-2 empty:hidden" data-testid="supervision-references">
 			{#if routeData.cycles}{@render managementFeedback(
 					cyclesLoaded,
 					cyclesLoading,
@@ -1906,15 +1952,43 @@
 									เปิดรับคำขอจนกว่าผู้ดูแลจะเปลี่ยนสถานะรอบนิเทศ
 								</p>
 							</div>
-							{#key currentBookingCycle.id}<SupervisionLessonPicker
-									{academicYearId}
-									{academicTermId}
-									observations={myObservations.filter(
-										(item) => item.cycleId === currentBookingCycle.id
+							<div
+								class="rounded-lg border border-primary/20 bg-primary/5 p-4"
+								data-testid="supervision-cycle-dates"
+							>
+								<p class="font-medium">
+									ช่วงวันที่นิเทศ · {cycleDateRangeLabel(
+										currentBookingCycle.observationStartDate,
+										currentBookingCycle.observationEndDate
 									)}
-									allowed={canRequest}
-									onsubmit={createBookingRequest}
-								/>{/key}
+								</p>
+								<p class="mt-1 text-sm text-muted-foreground">
+									รวมวันเริ่มต้นและวันสุดท้าย สถานะรับคำขอยังคงเปลี่ยนโดยผู้ดูแล
+								</p>
+							</div>
+							{#if cycleDateRangeError(currentBookingCycle.observationStartDate, currentBookingCycle.observationEndDate)}
+								<PageState
+									title="รอผู้ดูแลกำหนดช่วงวันที่นิเทศ"
+									description="รอบนี้ยังไม่มีช่วงวันที่สำหรับจองคาบ ข้อมูลคำขอเดิมยังคงอ่านได้"
+								/>
+								<SupervisionCycleDates
+									cycle={currentBookingCycle}
+									allowed={canManageSchool}
+									disabled={mutationBusy}
+									onsave={(dates) => saveCycleDates(currentBookingCycle.id, dates)}
+								/>
+							{:else}
+								{#key currentBookingCycle.id}<SupervisionLessonPicker
+										cycle={currentBookingCycle}
+										{academicYearId}
+										{academicTermId}
+										observations={myObservations.filter(
+											(item) => item.cycleId === currentBookingCycle.id
+										)}
+										allowed={canRequest}
+										onsubmit={createBookingRequest}
+									/>{/key}
+							{/if}
 						{:else if cyclesLoaded}<PageState
 								variant="empty"
 								title="ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้"
@@ -2589,7 +2663,15 @@
 										{:else}
 											{#each cycles as cycle (cycle.id)}
 												<Table.Row>
-													<Table.Cell class="font-medium">{cycle.title}</Table.Cell>
+													<Table.Cell class="whitespace-normal"
+														><p class="font-medium">{cycle.title}</p>
+														<p class="mt-1 text-xs text-muted-foreground">
+															{cycleDateRangeLabel(
+																cycle.observationStartDate,
+																cycle.observationEndDate
+															)}
+														</p></Table.Cell
+													>
 													<Table.Cell>
 														{cycleContextLabel(cycle)}
 													</Table.Cell>
@@ -2599,6 +2681,12 @@
 													>
 													<Table.Cell class="text-right">
 														<div class="flex flex-wrap justify-end gap-2">
+															<SupervisionCycleDates
+																{cycle}
+																allowed={canManageSchool}
+																disabled={mutationBusy}
+																onsave={(dates) => saveCycleDates(cycle.id, dates)}
+															/>
 															<SupervisionCycleDelete
 																{cycle}
 																allowed={canManageSchool}
@@ -3244,6 +3332,23 @@
 							</Select.Content>
 						</Select.Root>
 					{/if}
+				</div>
+				<div class="space-y-2">
+					<Label for="supervision-cycle-start">วันเริ่มนิเทศ</Label><Input
+						id="supervision-cycle-start"
+						type="date"
+						bind:value={cycleForm.observationStartDate}
+						required
+					/>
+				</div>
+				<div class="space-y-2">
+					<Label for="supervision-cycle-end">วันสุดท้ายที่นิเทศ</Label><Input
+						id="supervision-cycle-end"
+						type="date"
+						bind:value={cycleForm.observationEndDate}
+						min={cycleForm.observationStartDate || undefined}
+						required
+					/>
 				</div>
 				<div class="space-y-2 lg:col-span-2">
 					<Label for="supervision-cycle-status">สถานะรอบ</Label>

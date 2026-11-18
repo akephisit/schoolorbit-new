@@ -3,9 +3,10 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::models::{
-    EvaluatorAssignmentInput, SupervisionCycleStatus, SupervisionEvaluatorStatus,
-    SupervisionObservationStatus, SupervisionTargetType, SupervisionTemplateItemType,
-    SupervisionTemplateStatus, SupervisionTemplateStepActionKind, SupervisionTemplateStepActorKind,
+    EvaluatorAssignmentInput, SupervisionAction, SupervisionCycleStatus,
+    SupervisionEvaluatorStatus, SupervisionObservationStatus, SupervisionTargetType,
+    SupervisionTemplateItemType, SupervisionTemplateStatus, SupervisionTemplateStepActionKind,
+    SupervisionTemplateStepActorKind,
 };
 use school_errors::AppError;
 
@@ -286,10 +287,28 @@ pub fn evaluator_conflict_status_codes() -> &'static [&'static str] {
         "planned",
         "in_progress",
         "evaluators_submitted",
+        "under_review",
         "approved",
         "published",
+        "acknowledged",
         "completed",
     ]
+}
+
+pub(super) fn has_approval_evidence(
+    status: SupervisionObservationStatus,
+    approved_at: Option<chrono::DateTime<chrono::Utc>>,
+    actions: &[SupervisionAction],
+) -> bool {
+    approved_at.is_some()
+        || evaluator_conflict_status_codes().contains(&status.as_str())
+        || actions.iter().any(|action| {
+            action
+                .from_status
+                .into_iter()
+                .chain(action.to_status)
+                .any(|state| evaluator_conflict_status_codes().contains(&state.as_str()))
+        })
 }
 
 #[cfg(test)]

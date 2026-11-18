@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
+	import { page } from '$app/state';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import { ArrowLeft, ArrowRight, Plus, X, Send } from '@lucide/svelte';
 	import { authStore } from '#lib/stores/auth.js';
@@ -9,11 +10,18 @@
 		getSupervisionBookingOptions,
 		getSupervisionObservationTimetableOptions,
 		type SupervisionBookingOptions,
+		type SupervisionCycle,
 		type SupervisionObservation,
 		type SupervisionTimetableOption
 	} from '#lib/api/supervision.js';
 	import {
 		addCivilDays,
+		bookingAvailabilityLabel,
+		bookingOptionUnavailable,
+		clampedBookingWeek,
+		cycleDateRangeError,
+		reconcileBookingRange,
+		withinCycleDates,
 		adjacentBookingOptions,
 		bookedObservationFor,
 		bookingDateLabel,
@@ -29,6 +37,7 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 
 	let {
+		cycle,
 		academicYearId,
 		academicTermId,
 		observationId,
@@ -39,6 +48,7 @@
 		submitLabel = 'ส่งคำขอจอง',
 		disabled = false
 	}: {
+		cycle: SupervisionCycle;
 		academicYearId: string;
 		academicTermId: string;
 		observationId?: string;
@@ -62,7 +72,7 @@
 	const request = new LatestRequest();
 	let context = '';
 	function ownerKey() {
-		return `${identity}|${academicYearId}|${academicTermId}|${observationId ?? ''}|${allowed}`;
+		return `${appIdentityKey()}|${page.url.pathname}|${academicYearId}|${academicTermId}|${cycle.id}|${cycle.observationStartDate ?? ''}|${cycle.observationEndDate ?? ''}|${cycle.status}|${observationId ?? ''}|${allowed}`;
 	}
 	let epoch = 0;
 	const identity = $derived.by(() => {
@@ -71,7 +81,24 @@
 		return appIdentityKey();
 	});
 	const ordered = $derived(orderedBookingRange(selected));
-	const rangeError = $derived(bookingRangeError(ordered));
+	const datesError = $derived(
+		cycleDateRangeError(cycle.observationStartDate, cycle.observationEndDate)
+	);
+	const firstWeek = $derived(
+		cycle.observationStartDate ? bookingWeekStart(cycle.observationStartDate) : ''
+	);
+	const lastWeek = $derived(
+		cycle.observationEndDate ? bookingWeekStart(cycle.observationEndDate) : ''
+	);
+	const rangeError = $derived(
+		bookingRangeError(ordered) ??
+			ordered
+				.map((item) =>
+					bookingOptionUnavailable(item, cycle.observationStartDate, cycle.observationEndDate)
+				)
+				.find(Boolean) ??
+			null
+	);
 	const stale = $derived(ordered.length > 0 && selectionDigest !== options?.sourceDigest);
 	const days = $derived(
 		Array.from({ length: 7 }, (_, index) => addCivilDays(weekStartDate, index))
@@ -87,11 +114,14 @@
 	});
 	const adjacent = $derived(
 		adjacentBookingOptions(options?.items ?? [], ordered).filter(
-			(item) => !bookedObservationFor(item, observations, observationId)
+			(item) =>
+				!bookingOptionUnavailable(item, cycle.observationStartDate, cycle.observationEndDate) &&
+				!bookedObservationFor(item, observations, observationId)
 		)
 	);
 
 	$effect.pre(() => {
+		void identity;
 		const key = ownerKey();
 		untrack(() => {
 			if (context === key) return;
@@ -105,18 +135,20 @@
 			saveError = '';
 			success = '';
 			saving = false;
-			weekStartDate = bookingWeekStart(initialDate);
-			loading = allowed;
-			if (allowed) void loadOptions();
+			weekStartDate = !datesError
+				? clampedBookingWeek(cycle.observationStartDate!, cycle.observationEndDate!, initialDate)
+				: bookingWeekStart(initialDate);
+			loading = allowed && !datesError;
+			if (allowed && !datesError) void loadOptions();
 		});
 	});
-	$effect(() => () => {
+	onDestroy(() => {
 		epoch += 1;
 		request.abort();
 	});
 
 	async function loadOptions() {
-		if (!allowed) return;
+		if (!allowed || datesError) return;
 		const ticket = request.begin();
 		const sourceEpoch = epoch;
 		const sourceContext = ownerKey();
@@ -128,7 +160,7 @@
 						signal: ticket.signal
 					})
 				: await getSupervisionBookingOptions(
-						{ academicYearId, academicTermId, weekStartDate },
+						{ cycleId: cycle.id, academicYearId, academicTermId, weekStartDate },
 						{ signal: ticket.signal }
 					);
 			if (
@@ -137,6 +169,25 @@
 				sourceContext !== ownerKey()
 			)
 				return;
+			if (selected.length) {
+				const refreshed = reconcileBookingRange(
+					selected,
+					result.items,
+					cycle.observationStartDate,
+					cycle.observationEndDate
+				);
+				if (
+					refreshed.length &&
+					!refreshed.some((item) => bookedObservationFor(item, observations, observationId))
+				) {
+					selected = refreshed;
+					selectionDigest = result.sourceDigest;
+				} else {
+					selected = [];
+					selectionDigest = '';
+					saveError = `${saveError ? `${saveError} ` : ''}ช่วงคาบเดิมไม่พร้อมจองหรือข้อมูลคาบเปลี่ยน กรุณาเลือกช่วงใหม่จากตารางล่าสุด`;
+				}
+			}
 			options = result;
 		} catch (failure) {
 			if (
@@ -152,8 +203,13 @@
 	}
 
 	function changeWeek(offset: number) {
-		if (saving) return;
-		weekStartDate = offset === 0 ? bookingWeekStart() : addCivilDays(weekStartDate, offset * 7);
+		if (saving || datesError) return;
+		const candidate =
+			offset === 0
+				? clampedBookingWeek(cycle.observationStartDate!, cycle.observationEndDate!)
+				: addCivilDays(weekStartDate, offset * 7);
+		if (candidate < firstWeek || candidate > lastWeek || candidate === weekStartDate) return;
+		weekStartDate = candidate;
 		options = null;
 		clearSelection();
 		void loadOptions();
@@ -165,14 +221,28 @@
 		success = '';
 	}
 	function startSelection(item: SupervisionTimetableOption) {
-		if (saving || bookedObservationFor(item, observations, observationId)) return;
+		if (
+			saving ||
+			!allowed ||
+			bookingOptionUnavailable(item, cycle.observationStartDate, cycle.observationEndDate) ||
+			bookedObservationFor(item, observations, observationId)
+		)
+			return;
 		selected = [item];
 		selectionDigest = options?.sourceDigest ?? '';
 		saveError = '';
 		success = '';
 	}
 	function extendSelection(item: SupervisionTimetableOption) {
-		if (saving || stale || bookingRangeError([...selected, item])) return;
+		if (
+			saving ||
+			!allowed ||
+			stale ||
+			bookingOptionUnavailable(item, cycle.observationStartDate, cycle.observationEndDate) ||
+			bookedObservationFor(item, observations, observationId) ||
+			bookingRangeError([...selected, item])
+		)
+			return;
 		selected = orderedBookingRange([...selected, item]);
 		saveError = '';
 		success = '';
@@ -188,7 +258,8 @@
 		);
 	}
 	async function submit() {
-		if (!allowed || disabled || saving || loading || rangeError || stale || !options) return;
+		if (!allowed || disabled || saving || loading || datesError || rangeError || stale || !options)
+			return;
 		const sourceEpoch = epoch;
 		const sourceContext = ownerKey();
 		saving = true;
@@ -223,18 +294,28 @@
 			</p>
 		</div>
 		<div class="flex flex-wrap gap-1">
-			<Button variant="outline" size="sm" disabled={saving} onclick={() => changeWeek(-1)}
-				><ArrowLeft class="size-4" />สัปดาห์ก่อน</Button
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={saving || !!datesError || weekStartDate <= firstWeek}
+				onclick={() => changeWeek(-1)}><ArrowLeft class="size-4" />สัปดาห์ก่อน</Button
 			>
-			<Button variant="outline" size="sm" disabled={saving} onclick={() => changeWeek(0)}
-				>สัปดาห์นี้</Button
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={saving || !!datesError}
+				onclick={() => changeWeek(0)}>สัปดาห์นี้</Button
 			>
-			<Button variant="outline" size="sm" disabled={saving} onclick={() => changeWeek(1)}
-				>สัปดาห์ถัดไป<ArrowRight class="size-4" /></Button
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={saving || !!datesError || weekStartDate >= lastWeek}
+				onclick={() => changeWeek(1)}>สัปดาห์ถัดไป<ArrowRight class="size-4" /></Button
 			>
 		</div>
 	</div>
-	{#if error}
+	{#if datesError}<PageState title="รอผู้ดูแลกำหนดช่วงวันที่นิเทศ" description={datesError} />
+	{:else if error}
 		<PageState
 			variant="error"
 			title="โหลดคาบสอนไม่สำเร็จ"
@@ -251,6 +332,9 @@
 			description="เลือกสัปดาห์อื่น หรือตรวจการจัดครูและห้องประจำชั้นในตารางสอน"
 		/>
 	{:else if options}
+		<p class="text-xs text-muted-foreground">
+			ว่าง / รออนุมัติ / จองขนานได้: เลือกได้ · จองไม่ได้: คาบนี้มีนัดนิเทศที่ทับกัน
+		</p>
 		<div class="overflow-x-auto rounded-xl border">
 			<Table.Root class="table-fixed" style={`min-width: ${112 + periods.length * 192}px`}>
 				<Table.Header
@@ -268,11 +352,22 @@
 				<Table.Body
 					>{#each days as day (day)}<Table.Row
 							><Table.Cell class="sticky left-0 z-10 bg-background align-top font-medium"
-								>{bookingDateLabel(day)}</Table.Cell
+								>{bookingDateLabel(
+									day
+								)}{#if !withinCycleDates(day, cycle.observationStartDate, cycle.observationEndDate)}<p
+										class="mt-1 text-xs font-normal text-muted-foreground"
+									>
+										นอกช่วงนิเทศ
+									</p>{/if}</Table.Cell
 							>{#each periods as period (period.key)}<Table.Cell
 									class="w-48 p-1.5 align-top whitespace-normal"
 									>{#each cellItems(day, period.start, period.end) as item (item.blockGroupId)}
 										{@const booked = bookedObservationFor(item, observations, observationId)}
+										{@const unavailable = bookingOptionUnavailable(
+											item,
+											cycle.observationStartDate,
+											cycle.observationEndDate
+										)}
 										{@const chosen = selected.some(
 											(value) =>
 												value.blockGroupId === item.blockGroupId && value.observedDate === day
@@ -284,7 +379,11 @@
 													'min-h-28 w-full whitespace-normal break-words rounded-lg border p-3 text-left transition hover:border-primary disabled:cursor-not-allowed disabled:opacity-60',
 													chosen ? 'border-primary bg-primary/10' : ''
 												].join(' ')}
-												disabled={!!booked || saving || !item.homeroomId}
+												disabled={!allowed ||
+													!!booked ||
+													!!unavailable ||
+													saving ||
+													!item.homeroomId}
 												aria-pressed={chosen}
 												aria-label={`เลือก ${item.periodName} ${item.homeroomName} ${bookingDateLabel(day)}${selected.length ? ' เป็นคาบแรกของช่วงใหม่' : ''}`}
 												onclick={() => startSelection(item)}
@@ -295,6 +394,14 @@
 												<p class="mt-1 text-sm">{item.homeroomName}</p>
 												{#if item.roomName}<p class="text-xs text-muted-foreground">
 														{item.roomName}
+													</p>{/if}
+												<Badge
+													variant={item.bookingAvailability.blocked ? 'destructive' : 'outline'}
+													class="mt-2 max-w-full whitespace-normal"
+													>{bookingAvailabilityLabel(item)}</Badge
+												>
+												{#if unavailable}<p class="mt-1 text-xs text-muted-foreground">
+														{unavailable}
 													</p>{/if}
 												{#if booked}<Badge variant="secondary" class="mt-2"
 														>{supervisionStatusLabel(booked.status)}</Badge
@@ -378,7 +485,7 @@
 		<LoadingButton
 			loading={saving}
 			loadingLabel="กำลังส่ง..."
-			disabled={disabled || loading || !!error || !!rangeError || stale || !allowed}
+			disabled={disabled || loading || !!datesError || !!error || !!rangeError || stale || !allowed}
 			onclick={() => void submit()}><Send class="size-4" />{submitLabel}</LoadingButton
 		>
 	</div>
