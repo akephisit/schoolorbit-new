@@ -145,16 +145,16 @@ an additional mandatory roster for every task.
 | Role | Responsibility | Preferred model when available | Reasoning |
 | --- | --- | --- | --- |
 | Senior/Coordinator | Architecture, scope, shared contracts, assignment, integration, final evidence and authorized delivery | Current primary session model | High when configurable |
-| Frontend | Owned typed UI, API consumers, loading, accessibility and focused coverage | `gpt-6.1-sol` | Medium by default; high for auth, contracts or complex state; xhigh for particularly complex interacting state, async or realtime races, or unresolved reasoning difficulty |
-| Backend | Owned Rust/service/HTTP changes, authorization, persistence and focused coverage | `gpt-6.1-sol` | High by default; xhigh for complex transaction, concurrency, idempotency, migration preservation or cross-domain architecture reasoning |
-| Rules/Security Reviewer | Independent read-only review of correctness, rules, permissions, secrets, tenant boundaries and the complete integrated diff | `gpt-6.1-sol` | High |
-| QA/Verifier | Independently assess requirements and acceptance criteria, select coverage and run affected owned checks; report commands, candidate tree, environment and results without editing source | `gpt-6-luna`; `gpt-6.1-sol` for complex validation | Low for predefined check execution; medium for selecting/analyzing coverage; high on `gpt-6.1-sol` for complex authentication, authorization/tenant isolation, security, transactions or data migration validation |
-| Explorer | Read-only implementation/call-site/dependency investigation with file and line evidence | `gpt-6-luna`; `gpt-6.1-sol` for architectural uncertainty | Low for file/call-site lookup; medium for multi-layer flow tracing; architectural investigation escalates to `gpt-6.1-sol`/medium |
-| Data/Migration | Migration timeline, preservation, tenant isolation, reconciliation and recovery | `gpt-6.1-sol` | High |
-| Pipeline | Build/cache/change selection, deployment, maintenance and acceptance flow | `gpt-6.1-sol` | High |
+| Frontend | Owned typed UI, API consumers, loading, accessibility and focused coverage | `gpt-6.2-sol` | Medium by default; high for auth, contracts or complex state; xhigh for particularly complex interacting state, async or realtime races, or unresolved reasoning difficulty |
+| Backend | Owned Rust/service/HTTP changes, authorization, persistence and focused coverage | `gpt-6.2-sol` | High by default; xhigh for complex transaction, concurrency, idempotency, migration preservation or cross-domain architecture reasoning |
+| Rules/Security Reviewer | Independent read-only review of correctness, rules, permissions, secrets, tenant boundaries and the complete integrated diff | `gpt-6.2-sol` | High |
+| QA/Verifier | Independently assess requirements and acceptance criteria, select coverage and run affected owned checks; report commands, candidate tree, environment and results without editing source | `gpt-6.2-sol` | Low for predefined check execution; medium for selecting/analyzing coverage; high for complex authentication, authorization/tenant isolation, security, transactions or data migration validation |
+| Explorer | Read-only implementation/call-site/dependency investigation with file and line evidence | `gpt-6.2-sol` | Low for file/call-site lookup; medium for multi-layer flow tracing or initial architectural investigation |
+| Data/Migration | Migration timeline, preservation, tenant isolation, reconciliation and recovery | `gpt-6.2-sol` | High |
+| Pipeline | Build/cache/change selection, deployment, maintenance and acceptance flow | `gpt-6.2-sol` | High |
 
 These are role defaults, not a claim that every host offers these models. For the Senior, recommend
-`gpt-6.1-sol` with high reasoning when the user can select the primary session configuration.
+`gpt-6.2-sol` with high reasoning when the user can select the primary session configuration.
 A skill cannot change its own model; retain the current primary model and never spawn a second
 Coordinator merely to simulate changing it. Explicit user model choices override these defaults.
 
@@ -176,8 +176,10 @@ configuration and report the limitation once.
 Bound escalation to the cause of uncertainty: investigate missing evidence at the authoritative
 files, call sites or observed behavior; route environment/access failures to Pipeline when useful,
 respecting the user's authorization and credential boundaries. Higher reasoning cannot supply
-missing evidence or access. For reasoning/architecture difficulty, raise supported reasoning or
-reassign to a more capable offered model when uncertainty, risk or stalled diagnosis warrants it.
+missing evidence or access. For reasoning difficulty, raise supported reasoning or reassign to a
+more capable offered model when concrete uncertainty, risk or stalled diagnosis warrants it.
+When available, consider `gpt-6.2-astra` at high or a supported higher reasoning level for unresolved
+architectural questions, high-risk reviews or consequential data-preservation decisions.
 Update the bounded assignment and revalidate affected evidence; do not repeat blind guesses.
 QA selects and assesses coverage against requirements and acceptance criteria independently of
 the writer's test list. QA reports failures to the Senior; diagnosis and fixes return to the
