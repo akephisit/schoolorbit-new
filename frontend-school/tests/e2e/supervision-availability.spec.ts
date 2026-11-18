@@ -249,11 +249,21 @@ test('date mutation cannot be closed or rebound by Escape while pending, and its
 		.toBe(true);
 	await page.keyboard.press('Escape');
 	await expect(dialog).toBeVisible();
+	const refreshedCycles = page.waitForResponse(
+		(response) =>
+			new URL(response.url()).pathname === '/api/supervision/cycles' &&
+			response.request().method() === 'GET'
+	);
 	await api.replaceIdentity(
 		['supervision.manage.school', 'supervision.read.school'],
 		'01900000-0000-7000-8000-000000000002'
 	);
 	await expect(dialog).toHaveCount(0);
+	await (await refreshedCycles).finished();
+	const cycles = page.getByTestId('supervision-cycles');
+	const row = cycles.getByRole('row', { name: /รอบแรก/ });
+	await expect(cycles).toHaveAttribute('aria-busy', 'false');
+	await expect(row).toContainText('31 ธ.ค. 2569');
 	const response = page.waitForResponse(
 		(response) =>
 			new URL(response.url()).pathname === `/api/supervision/cycles/${firstCycle}` &&
@@ -267,7 +277,7 @@ test('date mutation cannot be closed or rebound by Escape while pending, and its
 				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
 			)
 	);
-	await expect(page.getByRole('row', { name: /รอบแรก/ })).toContainText('31 ธ.ค. 2569');
+	await expect(row).toContainText('31 ธ.ค. 2569');
 	await expect(
 		page.getByRole('button', { name: 'กำหนดช่วงวันที่ รอบแรก', exact: true })
 	).toBeEnabled();

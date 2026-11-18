@@ -410,15 +410,30 @@ for (const referenceState of ['pending', 'failed'] as const) {
 		).toHaveCount(0);
 		await page.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
 		const dialog = page.getByRole('dialog');
-		await dialog.getByRole('button', { name: /เลือก คาบ 2 ม.1\/1/ }).click();
+		const picker = dialog.getByTestId('supervision-lesson-picker');
 		const save = dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true });
-		await expect(save).toBeDisabled();
+		await expect(dialog.getByTestId('supervision-saved-periods')).toContainText('วิชาทดสอบ');
+		await expect(picker).toHaveCount(0);
+		await expect(save).toHaveCount(0);
+		expect(api.count(`${observationPath}/timetable-options`)).toBe(0);
+		expect(api.writes).toEqual([]);
 		if (referenceState === 'pending') {
+			await expect(dialog.locator('[data-slot="skeleton"]').first()).toBeVisible();
 			api.release();
+			await expect(picker).toBeVisible();
+			await picker.getByRole('button', { name: /เลือก คาบ 2 ม.1\/1/ }).click();
 			await expect(save).toBeEnabled();
+			expect(api.count(`${observationPath}/timetable-options`)).toBe(1);
+			expect(api.count(`/api/supervision/cycles/${firstCycle}`)).toBe(1);
+		} else {
+			await expect(dialog).toContainText('ยังเลือกคาบใหม่ไม่ได้จนกว่ารอบนี้จะมีช่วงวันที่นิเทศ');
+			await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+			await cycle.getByRole('button', { name: 'ลองใหม่', exact: true }).click();
+			await expect(cycle).toBeHidden();
+			expect(api.count(`/api/supervision/cycles/${firstCycle}`)).toBe(2);
+			expect(api.count(`${observationPath}/timetable-options`)).toBe(0);
 		}
 		expect(api.writes).toEqual([]);
 		expect(api.count(observationPath)).toBe(1);
-		expect(api.count(`/api/supervision/cycles/${firstCycle}`)).toBe(1);
 	});
 }

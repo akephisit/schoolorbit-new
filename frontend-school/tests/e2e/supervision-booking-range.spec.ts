@@ -135,42 +135,54 @@ test('stale refusal keeps the selected draft and explicit refresh requires choos
 	page
 }) => {
 	const items = choices();
+	const refreshedItems = [
+		timetableOption(0, { startTime: '08:15:00', endTime: '09:15:00' }),
+		timetableOption(1, { startTime: '09:15:00', endTime: '10:15:00' }),
+		timetableOption(2, { startTime: '10:15:00', endTime: '11:15:00' })
+	];
 	const api = await openBooking(page, items);
-	let attempts = 0;
 	const payloads: RequestSupervisionObservationRequest[] = [];
 	await page.route(`**${observationsPath}/requests`, async (route) => {
 		if (route.request().method() !== 'POST') return route.fallback();
 		const payload: RequestSupervisionObservationRequest = route.request().postDataJSON();
 		payloads.push(payload);
-		if (++attempts === 1) return reply(route, 'ตารางสอนเปลี่ยนแล้ว', 409);
-		return reply(route, { ...api.observation(), periods: savedSelection(payload, items) });
+		if (payloads.length === 1) return reply(route, 'ตารางสอนเปลี่ยนแล้ว', 409);
+		return reply(route, { ...api.observation(), periods: savedSelection(payload, refreshedItems) });
 	});
 	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
 	await page.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
-	await page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true }).click();
-	await expect(page.getByTestId('supervision-booking-selection')).toContainText(
-		'ตารางสอนเปลี่ยนแล้ว'
-	);
-	await expect(page.getByTestId('supervision-booking-selection')).toContainText('2 คาบต่อเนื่อง');
+	const selection = page.getByTestId('supervision-booking-selection');
+	const submit = selection.getByRole('button', { name: 'ส่งคำขอจอง', exact: true });
+	await submit.click();
+	await expect(selection).toContainText('ตารางสอนเปลี่ยนแล้ว');
+	await expect(selection).toContainText('2 คาบต่อเนื่อง · 08:00–10:00');
 	await page.route(`**${optionsPath}*`, (route) =>
 		reply(route, {
 			sourceDigest: 'source-2',
 			weekStartDate: '2026-09-28',
 			weekEndDate: '2026-10-04',
-			items
+			items: refreshedItems
 		})
 	);
 	await page.getByRole('button', { name: 'ตรวจตารางสอนล่าสุด', exact: true }).click();
-	await expect(page.getByTestId('supervision-booking-selection')).toContainText(
-		'ร่างเดิมยังแสดงอยู่'
-	);
-	await expect(page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true })).toBeDisabled();
+	await expect(selection).toContainText('ช่วงคาบเดิมไม่พร้อมจองหรือข้อมูลคาบเปลี่ยน');
+	await expect(selection).toContainText('ยังไม่ได้เลือกคาบ');
+	await expect(submit).toBeDisabled();
+	expect(payloads).toHaveLength(1);
 	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
 	await page.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
-	await page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true }).click();
-	await expect(page.getByTestId('supervision-booking-selection')).toContainText('ส่งคำขอสำเร็จ');
-	expect(payloads[0].timetableBlockGroupIds).toEqual(payloads[1].timetableBlockGroupIds);
-	expect(payloads[1].expectedSourceDigest).toBe('source-2');
+	await expect(selection).toContainText('2 คาบต่อเนื่อง · 08:15–10:15');
+	await submit.click();
+	await expect(selection).toContainText('ส่งคำขอสำเร็จ');
+	expect(payloads).toEqual(
+		['source-1', 'source-2'].map((expectedSourceDigest) => ({
+			cycleId: api.observation().cycleId,
+			academicTermId: id(8),
+			observedDate: '2026-10-01',
+			timetableBlockGroupIds: refreshedItems.slice(0, 2).map((item) => item.blockGroupId),
+			expectedSourceDigest
+		}))
+	);
 });
 
 test('late previous-week options cannot replace the newer week or its draft', async ({ page }) => {
