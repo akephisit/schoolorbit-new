@@ -138,12 +138,12 @@ test('returned legacy evidence is never rebound until the teacher explicitly sel
 	expect(api.count(resource)).toBe(1);
 });
 
-test('a manager deliberately replaces the whole range through the manager update operation', async ({
+test('before first approval a manager deliberately replaces the whole range through the manager update operation', async ({
 	page
 }) => {
 	const choices = [timetableOption(0), timetableOption(1), timetableOption(2)];
 	const api = await mock(page, {
-		observationStatus: 'planned',
+		observationStatus: 'requested',
 		bookingItems: choices,
 		observation: { periods: [savedPeriod({ lessonSnapshot: rich })] }
 	});

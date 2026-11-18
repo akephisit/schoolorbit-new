@@ -7,6 +7,7 @@
 	import {
 		schoolCivilDate,
 		cycleDateRangeError,
+		cycleDateRangeLabel,
 		type SupervisionLessonSelection
 	} from '#lib/supervision/booking-range.js';
 	import {
@@ -97,6 +98,7 @@
 	let loading = $state(true);
 	let savingAction = $state<string | null>(null);
 	let error = $state('');
+	let resubmitError = $state('');
 	let observation = $state<SupervisionObservation | null>(null);
 	let review = $state<SupervisionObservationReview | null>(null);
 	let template = $state<SupervisionTemplateSummary | null>(null);
@@ -271,6 +273,7 @@
 		untrack(() => {
 			if (contextId !== source.observationId || contextIdentity !== identity) {
 				contextIdentity = identity;
+				resubmitError = '';
 				contextId = source.observationId;
 				contextEpoch += 1;
 				observation = null;
@@ -822,6 +825,7 @@
 		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'resubmit-saved';
+		resubmitError = '';
 		try {
 			const response = await resubmitSupervisionObservationRequest(submittedId);
 			if (!ownsMutation()) return;
@@ -829,7 +833,7 @@
 			toast.success('ส่งคำขอใหม่โดยใช้ช่วงคาบเดิมแล้ว');
 		} catch (failure) {
 			if (ownsMutation())
-				toast.error(failure instanceof Error ? failure.message : 'ส่งคำขอเดิมใหม่ไม่สำเร็จ');
+				resubmitError = failure instanceof Error ? failure.message : 'ส่งคำขอเดิมใหม่ไม่สำเร็จ';
 		} finally {
 			if (ownsMutation()) savingAction = null;
 		}
@@ -893,6 +897,20 @@
 				>{/if}
 			<div class="space-y-3">
 				<SupervisionWorkflow {observation} />
+				{#if resubmitError}<div
+						role="alert"
+						class="space-y-2 rounded-lg border border-destructive/20 p-3 text-sm text-destructive"
+					>
+						<p>{resubmitError}</p>
+						<Button
+							size="sm"
+							variant="outline"
+							onclick={() => {
+								resubmitError = '';
+								void retryObservation();
+							}}>ตรวจรายการล่าสุด</Button
+						>
+					</div>{/if}
 				{#if observation.status === 'returned'}
 					<div
 						class="rounded-lg border bg-muted/30 p-4"
@@ -959,7 +977,7 @@
 								</div>
 							</div>
 						</Card.Header>
-						<Card.Content>
+						<Card.Content class="space-y-4">
 							<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
 								{#each lessonDetails(observation) as detail (detail.label)}
 									<div class="rounded-md border bg-muted/20 p-3">
@@ -1081,6 +1099,9 @@
 								<div class="rounded-md border bg-muted/20 p-3">
 									<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
 									<p class="font-medium">{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '-')}</p>
+									{#if cycle}<p class="mt-1 text-xs text-muted-foreground">
+											{cycleDateRangeLabel(cycle.observationStartDate, cycle.observationEndDate)}
+										</p>{/if}
 								</div>
 							</div>
 
@@ -1305,7 +1326,12 @@
 				</div>
 
 				<div class="min-w-0 space-y-4">
-					<div data-testid="supervision-detail-cycle" aria-busy={cycleLoading}>
+					<div
+						class="space-y-3"
+						hidden={!cycleError && (!cycleLoading || !!cycle)}
+						data-testid="supervision-detail-cycle"
+						aria-busy={cycleLoading}
+					>
 						{#if cycleLoading && !cycle}<div role="status" aria-label="กำลังโหลด">
 								<PageSkeleton rows={1} columns={1} />
 							</div>{/if}
@@ -1314,7 +1340,12 @@
 								description={cycleError}
 							/><Button variant="outline" onclick={retryCycle}>ลองใหม่</Button>{/if}
 					</div>
-					<div data-testid="supervision-detail-template" aria-busy={templateLoading}>
+					<div
+						class="space-y-3"
+						hidden={!templateError && (!templateLoading || !!template)}
+						data-testid="supervision-detail-template"
+						aria-busy={templateLoading}
+					>
 						{#if templateLoading && !template}<div role="status" aria-label="กำลังโหลด">
 								<PageSkeleton rows={1} columns={1} />
 							</div>{/if}
@@ -1339,6 +1370,9 @@
 							<div>
 								<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
 								<p class="font-medium">{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '-')}</p>
+								{#if cycle}<p class="mt-1 text-xs text-muted-foreground">
+										{cycleDateRangeLabel(cycle.observationStartDate, cycle.observationEndDate)}
+									</p>{/if}
 							</div>
 							<div>
 								<p class="text-xs text-muted-foreground">ภาคเรียน/ปีการศึกษา</p>
@@ -1370,6 +1404,7 @@
 						observationId={observation.id}
 						initialDate={schoolCivilDate(new Date(observation.observedAt))}
 						allowed={canEditLesson}
+						onreloadCycle={retryCycle}
 						disabled={isReturnedOwnRequest && cycle?.status !== 'open'}
 						onsubmit={saveLessonEdit}
 						submitLabel={isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
@@ -1474,7 +1509,7 @@
 			</Popover.Root>
 			{#if unavailableEvaluatorCount > 0}
 				<p class="text-xs text-muted-foreground">
-					ซ่อนผู้ประเมิน {unavailableEvaluatorCount} คนที่มีงานนิเทศชนช่วงนี้
+					ผู้ประเมินไม่ว่าง {unavailableEvaluatorCount} คนจากงานนิเทศหรือตารางสอนในช่วงคาบนี้
 				</p>
 			{/if}
 		</div>

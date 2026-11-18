@@ -61,7 +61,8 @@ const workflowByStatus = {
 
 // Presentation follows the server status; evaluator counts never advance the workflow locally.
 export function observationWorkflow(
-	observation: Pick<SupervisionObservation, 'status' | 'evaluators'>
+	observation: Pick<SupervisionObservation, 'status' | 'evaluators'> &
+		Partial<Pick<SupervisionObservation, 'periodsLocked'>>
 ) {
 	const workflow = workflowByStatus[observation.status];
 	const required = observation.evaluators.filter((evaluator) => evaluator.isRequired);
@@ -71,6 +72,10 @@ export function observationWorkflow(
 	);
 	return {
 		...workflow,
+		nextAction:
+			observation.status === 'returned' && observation.periodsLocked
+				? 'ตรวจและส่งใหม่ด้วยคาบเดิม'
+				: workflow.nextAction,
 		stageLabel:
 			workflow.stage < 0
 				? 'ยุติรายการ'

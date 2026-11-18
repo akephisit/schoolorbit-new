@@ -19,14 +19,16 @@ use crate::models::{
     ReplaceObservationEvaluatorsRequest, RequestSupervisionObservationRequest,
     ResubmitSupervisionObservationRequest, ReturnObservationRequest, SaveEvaluationRequest,
     SupervisionBookingOptionsQuery, SupervisionCycle, SupervisionCycleQuery,
-    SupervisionEvaluatorAvailability, SupervisionObservation, SupervisionObservationFilter,
-    SupervisionObservationStatus, SupervisionObservationTimetableQuery,
-    SupervisionTeacherStatusRow, SupervisionTemplate, SupervisionTemplateSummary,
-    UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
+    SupervisionObservation, SupervisionObservationFilter, SupervisionObservationStatus,
+    SupervisionObservationTimetableQuery, SupervisionTeacherStatusRow, SupervisionTemplate,
+    SupervisionTemplateSummary, UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
     UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
 #[cfg(feature = "api-docs")]
-use crate::models::{SupervisionBookingOptions, SupervisionCycleDeletionImpact};
+use crate::models::{
+    SupervisionBookingOptions, SupervisionCycleDeletionImpact,
+    SupervisionEvaluatorAvailabilityResponse,
+};
 use crate::services;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -57,6 +59,7 @@ pub struct ItemsData<T> {
     get, path = "/api/supervision/booking-options", operation_id = "getSupervisionBookingOptions", tag = "supervision",
     params(SupervisionBookingOptionsQuery),
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status=200,description="Current own weekly teaching periods",body=ApiResponse<SupervisionBookingOptions>),
         (status=400,description="Invalid week or academic context",body=ApiErrorResponse),
         (status=401,description="Authentication required",body=ApiErrorResponse),
@@ -201,6 +204,7 @@ pub async fn list_cycles(
     tag = "supervision",
     request_body = CreateSupervisionCycleRequest,
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 201, description = "Supervision cycle created", body = ApiResponse<SupervisionCycle>),
         (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Invalid supervision cycle", body = ApiErrorResponse),
@@ -230,6 +234,7 @@ pub async fn create_cycle(
     params(("id" = Uuid, Path, description = "Supervision cycle ID")),
     request_body = UpdateSupervisionCycleRequest,
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 200, description = "Supervision cycle updated", body = ApiResponse<SupervisionCycle>),
         (status = 409, description = "Academic lifecycle or cycle context conflict", body = ApiErrorResponse),
         (status = 400, description = "Invalid supervision cycle", body = ApiErrorResponse),
@@ -536,7 +541,8 @@ pub async fn get_observation_review(
     tag = "supervision",
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     responses(
-        (status = 200, description = "Available supervision evaluators", body = ApiResponse<ItemsData<SupervisionEvaluatorAvailability>>),
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
+        (status = 200, description = "Available supervision evaluators", body = ApiResponse<SupervisionEvaluatorAvailabilityResponse>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
         (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
@@ -556,14 +562,9 @@ pub async fn evaluator_availability(
     )
     .await?;
 
-    let items = services::evaluator_availability(&context.tenant.pool, id).await?;
-
-    Ok(Json(ApiResponse::ok(ItemsData::<
-        SupervisionEvaluatorAvailability,
-    > {
-        items,
-    }))
-    .into_response())
+    let response =
+        services::evaluator_availability(&context.tenant.pool, &context.actor, id).await?;
+    Ok(Json(ApiResponse::ok(response)).into_response())
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
@@ -573,6 +574,7 @@ pub async fn evaluator_availability(
     tag = "supervision",
     params(("id" = Uuid, Path, description = "Supervision observation ID"), SupervisionObservationTimetableQuery),
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 200, description = "Timetable block-group options for the observation", body = ApiResponse<SupervisionBookingOptions>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
@@ -614,6 +616,7 @@ pub async fn observation_timetable_options(
     tag = "supervision",
     request_body = RequestSupervisionObservationRequest,
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 201, description = "Supervision observation requested", body = ApiResponse<SupervisionObservation>),
         (status = 400, description = "Invalid supervision request", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -644,8 +647,9 @@ pub async fn request_observation(
     params(("id"=Uuid,Path,description="Returned observation with a frozen schedule")),
     request_body=ResubmitSupervisionObservationRequest,
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status=200,description="Saved observation request resubmitted without changing periods",body=ApiResponse<SupervisionObservation>),
-        (status=400,description="Invalid state or cycle date bounds",body=ApiErrorResponse),
+        (status=400,description="Malformed JSON",body=ApiErrorResponse),
         (status=401,description="Authentication required",body=ApiErrorResponse),
         (status=403,description="Own request permission required",body=ApiErrorResponse),
         (status=404,description="Observation not found",body=ApiErrorResponse),
@@ -663,6 +667,9 @@ pub async fn resubmit_observation_request(
     let observation =
         services::resubmit_observation_request(&context.tenant.pool, context.actor.user_id, id)
             .await?;
+    let observation =
+        services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
+            .await?;
     Ok(Json(ApiResponse::ok(observation)).into_response())
 }
 
@@ -674,6 +681,7 @@ pub async fn resubmit_observation_request(
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     request_body = UpdateRequestedObservationRequest,
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 200, description = "Requested observation updated", body = ApiResponse<SupervisionObservation>),
         (status = 400, description = "Requested observation cannot be updated", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -746,6 +754,7 @@ pub async fn cancel_requested_observation(
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     request_body = UpdateSupervisionObservationRequest,
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 200, description = "Supervision observation updated", body = ApiResponse<SupervisionObservation>),
         (status = 400, description = "Observation cannot be updated", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -787,6 +796,7 @@ pub async fn update_observation(
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     request_body = ReplaceObservationEvaluatorsRequest,
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 200, description = "Supervision evaluators replaced", body = ApiResponse<SupervisionObservation>),
         (status = 400, description = "Invalid evaluator assignment", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -873,6 +883,7 @@ pub async fn cancel_observation(
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     request_body = ApproveObservationRequest,
     responses(
+        (status = 422, description = "Request validation failed", body = ApiErrorResponse),
         (status = 200, description = "Supervision request approved", body = ApiResponse<SupervisionObservation>),
         (status = 400, description = "Supervision request cannot be approved", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),

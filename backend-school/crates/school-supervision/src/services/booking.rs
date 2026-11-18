@@ -63,6 +63,7 @@ pub async fn booking_options(
         &cycle,
         query.academic_term_id,
         query.week_start_date,
+        None,
     )
     .await
 }
@@ -73,10 +74,40 @@ pub(super) async fn options_on_connection(
     cycle: &super::observations::CycleForRequestRow,
     term: Uuid,
     week: NaiveDate,
+    except: Option<Uuid>,
 ) -> Result<SupervisionBookingOptions, AppError> {
-    weekly_evidence(connection, teacher, cycle, term, week)
-        .await
-        .map(|(options, _)| options)
+    let (mut options, _) = weekly_evidence(connection, teacher, cycle, term, week).await?;
+    let windows = options
+        .items
+        .iter()
+        .map(|item| {
+            let start = SCHOOL_TIMEZONE
+                .from_local_datetime(&item.observed_date.and_time(item.start_time))
+                .single()
+                .ok_or_else(|| invalid("วันเวลานิเทศไม่ถูกต้อง"))?
+                .with_timezone(&Utc);
+            let end = SCHOOL_TIMEZONE
+                .from_local_datetime(&item.observed_date.and_time(item.end_time))
+                .single()
+                .ok_or_else(|| invalid("วันเวลานิเทศไม่ถูกต้อง"))?
+                .with_timezone(&Utc);
+            Ok(super::availability::Window {
+                start,
+                end: Some(end),
+                homeroom: Some(item.homeroom_id),
+            })
+        })
+        .collect::<Result<Vec<_>, AppError>>()?;
+    let facts = super::availability::facts(connection, &windows, except).await?;
+    for group in facts.chunk_by(|a, b| a.window_index == b.window_index) {
+        if let Some(first) = group.first() {
+            if let Some(item) = options.items.get_mut(first.window_index as usize) {
+                item.booking_availability =
+                    super::availability::aggregate(group, teacher, cycle.id);
+            }
+        }
+    }
+    Ok(options)
 }
 
 async fn weekly_evidence(
@@ -140,6 +171,7 @@ async fn weekly_evidence(
             homeroom_id: homeroom,
             homeroom_name: name,
             room_name: lesson.room_name,
+            booking_availability: Default::default(),
         });
     }
     items.retain(|item| cycle.contains_date(item.observed_date));
@@ -266,6 +298,7 @@ mod tests {
             homeroom_id: Uuid::from_u128(room),
             homeroom_name: "ม.3/2".into(),
             room_name: Some(format!("Physical room {id}")),
+            booking_availability: Default::default(),
         }
     }
     #[test]

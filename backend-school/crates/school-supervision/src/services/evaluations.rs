@@ -1,14 +1,13 @@
 use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
-use chrono::{DateTime, Utc};
 use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row};
 use uuid::Uuid;
 
 use crate::models::{
     EvaluationResponseInput, ReplaceObservationEvaluatorsRequest, SaveEvaluationRequest,
-    SupervisionEvaluatorAvailability, SupervisionEvaluatorConflict, SupervisionEvaluatorStatus,
-    SupervisionObservation, SupervisionObservationStatus, SupervisionTemplateItemType,
+    SupervisionEvaluatorStatus, SupervisionObservation, SupervisionObservationStatus,
+    SupervisionTemplateItemType,
 };
 use school_errors::AppError;
 
@@ -18,8 +17,8 @@ use super::observations::{
 };
 use super::shared::{
     all_required_evaluators_submitted, can_transition_observation_status,
-    evaluator_conflict_status_codes, manager_can_edit_observation, normalize_evaluator_replacement,
-    parse_template_item_type, EvaluatorReplacementState, EvaluatorSubmissionState,
+    manager_can_edit_observation, normalize_evaluator_replacement, parse_template_item_type,
+    EvaluatorReplacementState, EvaluatorSubmissionState,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,26 +33,6 @@ pub(super) struct EvaluationResponseBulkRow {
     pub(super) template_item_id: Uuid,
     pub(super) rating_score: Option<f64>,
     pub(super) text_response: Option<String>,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-pub(super) struct EvaluatorAvailabilityRow {
-    pub(super) id: Uuid,
-    pub(super) title: Option<String>,
-    pub(super) display_name: String,
-    pub(super) conflict_observation_id: Option<Uuid>,
-    pub(super) conflict_observed_display_name: Option<String>,
-    pub(super) conflict_observed_at: Option<DateTime<Utc>>,
-    pub(super) conflict_subject_name: Option<String>,
-    pub(super) conflict_period_label: Option<String>,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct EvaluatorConflictRow {
-    evaluator_display_name: Option<String>,
-    observed_display_name: Option<String>,
-    subject_name: Option<String>,
-    period_label: Option<String>,
 }
 
 pub async fn replace_observation_evaluators(
@@ -103,8 +82,7 @@ pub async fn replace_observation_evaluators(
         .iter()
         .map(|e| e.evaluator_user_id)
         .collect::<Vec<_>>();
-    validate_evaluator_availability_for_observation(&mut tx, observation_id, &evaluator_user_ids)
-        .await?;
+    super::availability::validate_replacement(&mut tx, &current, &evaluator_user_ids).await?;
     let insert_rows = replacement
         .into_iter()
         .filter(|evaluator| !submitted_user_ids.contains(&evaluator.evaluator_user_id))
@@ -554,110 +532,27 @@ pub(super) async fn load_evaluator_submission_states(
         .collect())
 }
 
-pub(super) fn evaluator_availability_from_row(
-    row: EvaluatorAvailabilityRow,
-) -> SupervisionEvaluatorAvailability {
-    let name = row.display_name;
-    let conflict = row
-        .conflict_observation_id
-        .zip(row.conflict_observed_at)
-        .map(
-            |(observation_id, observed_at)| SupervisionEvaluatorConflict {
-                observation_id,
-                observed_display_name: row.conflict_observed_display_name.clone(),
-                observed_at,
-                lesson_title: conflict_lesson_title(
-                    row.conflict_subject_name.as_deref(),
-                    row.conflict_period_label.as_deref(),
-                ),
-            },
-        );
-    let conflict_reason = conflict.as_ref().map(|conflict| {
-        let observed_name = conflict
-            .observed_display_name
-            .as_deref()
-            .unwrap_or("ครูอีกคน");
-        let lesson = conflict.lesson_title.as_deref().unwrap_or("คาบเดียวกัน");
-        format!("มีงานนิเทศ {observed_name} ({lesson}) ในช่วงเวลาเดียวกัน")
-    });
-
-    SupervisionEvaluatorAvailability {
-        id: row.id,
-        name,
-        title: row.title,
-        available: conflict.is_none(),
-        conflict_reason,
-        conflict,
-    }
-}
-
-fn conflict_lesson_title(subject_name: Option<&str>, period_label: Option<&str>) -> Option<String> {
-    match (
-        subject_name.filter(|value| !value.trim().is_empty()),
-        period_label.filter(|value| !value.trim().is_empty()),
-    ) {
-        (Some(subject), Some(period)) => Some(format!("{subject} / {period}")),
-        (Some(subject), None) => Some(subject.to_string()),
-        (None, Some(period)) => Some(period.to_string()),
-        (None, None) => None,
-    }
-}
-
 pub(super) async fn validate_evaluator_availability_for_observation(
     connection: &mut PgConnection,
     observation_id: Uuid,
     evaluator_user_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    if evaluator_user_ids.is_empty() {
-        return Ok(());
-    }
-    let dates:Vec<chrono::NaiveDate>=DbSession::new(connection).scalar("supervision.evaluations.conflict_dates",
-        "SELECT DISTINCT (observed_at AT TIME ZONE 'Asia/Bangkok')::date FROM supervision_observation_periods WHERE observation_id=$1 ORDER BY 1")
-        .bind(observation_id).fetch_all().await?;
-    super::periods::lock_evaluator_dates(connection, evaluator_user_ids, dates).await?;
-    let conflict_statuses = evaluator_conflict_status_codes()
+    let observation = get_observation_with_connection(connection, observation_id).await?;
+    let windows = observation
+        .periods
         .iter()
-        .map(|s| (*s).to_string())
+        .map(super::availability::Window::from)
         .collect::<Vec<_>>();
-    let conflict=DbSession::new(connection).query_as::<EvaluatorConflictRow>("supervision.evaluations.validate_availability", r#"
-        SELECT NULLIF(evaluator.display_name,'') AS evaluator_display_name,
-            NULLIF(observed.display_name,'') AS observed_display_name,
-            COALESCE(NULLIF(p.manual_subject_name,''),NULLIF(p.lesson_snapshot->>'subjectName','')) AS subject_name,
-            COALESCE(NULLIF(p.manual_period_label,''),NULLIF(p.lesson_snapshot->>'periodLabel','')) AS period_label
-        FROM supervision_evaluators e JOIN supervision_observations o ON o.id=e.observation_id
-        JOIN supervision_observation_periods p ON p.observation_id=o.id
-        JOIN user_display_names evaluator ON evaluator.id=e.evaluator_user_id
-        JOIN user_display_names observed ON observed.id=o.observed_user_id
-        WHERE e.evaluator_user_id=ANY($1) AND o.id<>$2 AND o.status=ANY($3)
-          AND EXISTS(SELECT 1 FROM supervision_observation_periods chosen WHERE chosen.observation_id=$2 AND (
-            (p.ends_at IS NULL AND chosen.ends_at IS NULL AND p.observed_at=chosen.observed_at)
-            OR (p.ends_at IS NULL AND chosen.ends_at IS NOT NULL AND chosen.observed_at<=p.observed_at AND p.observed_at<chosen.ends_at)
-            OR (p.ends_at IS NOT NULL AND chosen.ends_at IS NULL AND p.observed_at<=chosen.observed_at AND chosen.observed_at<p.ends_at)
-            OR (p.ends_at IS NOT NULL AND chosen.ends_at IS NOT NULL AND p.observed_at<chosen.ends_at AND chosen.observed_at<p.ends_at)))
-        ORDER BY o.approved_at DESC NULLS LAST,o.created_at DESC,o.id,p.position LIMIT 1
-    "#).bind(evaluator_user_ids).bind(observation_id).bind(conflict_statuses).fetch_optional().await?;
-
-    if let Some(conflict) = conflict {
-        let evaluator_name = conflict
-            .evaluator_display_name
-            .as_deref()
-            .unwrap_or("ผู้ประเมินที่เลือก");
-        let observed_name = conflict
-            .observed_display_name
-            .as_deref()
-            .unwrap_or("ครูอีกคน");
-        let lesson = conflict_lesson_title(
-            conflict.subject_name.as_deref(),
-            conflict.period_label.as_deref(),
-        )
-        .unwrap_or_else(|| "คาบเดียวกัน".to_string());
-
-        return Err(AppError::ValidationError(format!(
-            "{evaluator_name} มีงานนิเทศ {observed_name} ({lesson}) ในช่วงเวลาเดียวกัน"
-        )));
-    }
-
-    Ok(())
+    super::availability::validate(
+        connection,
+        observation.observed_user_id,
+        observation.cycle_id,
+        observation.academic_term_id,
+        Some(observation_id),
+        &windows,
+        evaluator_user_ids,
+    )
+    .await
 }
 
 #[cfg(test)]

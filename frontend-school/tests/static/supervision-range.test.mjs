@@ -184,6 +184,12 @@ test('pending and parallel confirmed bookings remain eligible while authoritativ
 		/นอกช่วง/
 	);
 	assert.equal(bookingAvailabilityLabel(lesson(0)), 'ว่าง');
+	assert.equal(
+		bookingAvailabilityLabel(
+			lesson(0, { bookingAvailability: { pendingCount: 2, confirmedCount: 3, blocked: true } })
+		),
+		'รออนุมัติ 2 · นัดหมาย 3 · จองไม่ได้'
+	);
 	assert.match(
 		bookingAvailabilityLabel(
 			lesson(0, { bookingAvailability: { pendingCount: 2, confirmedCount: 0, blocked: false } })

@@ -291,6 +291,7 @@ pub struct SupervisionTimetableOption {
     pub homeroom_id: Uuid,
     pub homeroom_name: String,
     pub room_name: Option<String>,
+    pub booking_availability: SupervisionBookingAvailability,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -680,8 +681,10 @@ pub struct UpdateSupervisionCycleRequest {
     pub description: Option<String>,
     pub template_id: Option<Uuid>,
     #[serde(default, deserialize_with = "present_date")]
+    #[cfg_attr(feature = "api-docs", schema(nullable = false))]
     pub observation_start_date: Option<NaiveDate>,
     #[serde(default, deserialize_with = "present_date")]
+    #[cfg_attr(feature = "api-docs", schema(nullable = false))]
     pub observation_end_date: Option<NaiveDate>,
     pub status: Option<SupervisionCycleStatus>,
     pub targets: Option<Vec<CreateSupervisionCycleTargetRequest>>,

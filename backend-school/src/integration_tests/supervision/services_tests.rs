@@ -191,6 +191,8 @@ async fn insert_fixture(pool: &PgPool) -> SupervisionFixture {
     let cycle = services::create_cycle(
         pool,
         CreateSupervisionCycleRequest {
+            observation_start_date: chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
+            observation_end_date: chrono::NaiveDate::from_ymd_opt(2200, 12, 31).unwrap(),
             academic_year_id,
             academic_term_id: None,
             title: "Characterization cycle".to_string(),
@@ -317,6 +319,7 @@ async fn input_at(
         pool,
         teacher,
         SupervisionBookingOptionsQuery {
+            cycle_id: fixture.cycle.id,
             academic_year_id: fixture.cycle.academic_year_id,
             academic_term_id: fixture.academic_term_id,
             week_start_date: monday,
@@ -390,6 +393,8 @@ async fn supervision_lifecycle_cycles_reject_closed_contexts_without_losing_targ
     let pool = migrated_pool("supervision_lifecycle_cycles").await;
     let fixture = insert_fixture(&pool).await;
     let cycle_input = CreateSupervisionCycleRequest {
+        observation_start_date: chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
+        observation_end_date: chrono::NaiveDate::from_ymd_opt(2200, 12, 31).unwrap(),
         academic_year_id: fixture.cycle.academic_year_id,
         academic_term_id: None,
         title: "Lifecycle cycle".into(),
@@ -949,9 +954,10 @@ async fn failed_evaluator_replacement_rolls_back_assignments_and_action_rows() {
     let fixture = insert_fixture(&pool).await;
 
     let first = request_observation(&pool, &fixture).await;
-    approve_with(&pool, &fixture, first.id, vec![fixture.evaluator_id]).await;
     let other = insert_fixture(&pool).await;
     let second = request_observation(&pool, &other).await;
+    separate_saved_class(&pool, &second).await;
+    approve_with(&pool, &fixture, first.id, vec![fixture.evaluator_id]).await;
     approve_with(
         &pool,
         &fixture,
@@ -989,9 +995,7 @@ async fn failed_evaluator_replacement_rolls_back_assignments_and_action_rows() {
     )
     .await
     .expect_err("busy evaluator should be rejected");
-    assert!(
-        matches!(error, AppError::ValidationError(message) if message.contains("ช่วงเวลาเดียวกัน"))
-    );
+    assert!(matches!(error, AppError::Conflict(message) if message.contains("ช่วงเวลาเดียวกัน")));
 
     let evaluator_ids_after = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM supervision_evaluators WHERE observation_id = $1 ORDER BY id",
@@ -1574,7 +1578,8 @@ async fn permission_coverage_supervision_embargo_uses_exact_grant_origin_for_eac
     let pool = migrated_pool_with_connections("permission_coverage_supervision", 4).await;
     school_test_db::run_test_migrations(&pool).await;
     let first = insert_fixture(&pool).await;
-    let second = insert_fixture(&pool).await;
+    let mut second = insert_fixture(&pool).await;
+    second.observed_at += Duration::hours(1);
     let units: Vec<Uuid> =
         sqlx::query_scalar("SELECT id FROM organization_units WHERE is_active ORDER BY id LIMIT 2")
             .fetch_all(&pool)
@@ -2015,6 +2020,7 @@ async fn physical_current_placement_removal_detaches_saved_supervision_and_prese
         &pool,
         teacher,
         SupervisionBookingOptionsQuery {
+            cycle_id: fixture.cycle.id,
             academic_year_id: fixture.cycle.academic_year_id,
             academic_term_id: fixture.academic_term_id,
             week_start_date: week,
@@ -2101,7 +2107,7 @@ async fn physical_current_placement_removal_detaches_saved_supervision_and_prese
 fn cycle_requests_reject_all_retired_schedule_fields() {
     let create = serde_json::json!({
         "academicYearId": Uuid::new_v4(), "title": "Manual cycle", "templateId": Uuid::new_v4(),
-        "status": "open", "targets": []
+        "status": "open", "targets": [], "observationStartDate":"2026-01-01", "observationEndDate":"2026-12-31"
     });
     assert!(serde_json::from_value::<CreateSupervisionCycleRequest>(create.clone()).is_ok());
     for field in ["bookingOpensAt", "bookingClosesAt", "startsAt", "endsAt"] {
@@ -2354,14 +2360,10 @@ async fn own_returned_save_resubmits_atomically_and_preserves_return_evidence() 
         ),
         "a returned request cannot acquire a new submitted evaluation"
     );
-    let resubmitted_planned = services::update_requested_observation(
-        &pool,
-        fixture.teacher_id,
-        requested.id,
-        corrected_request(&pool, &fixture).await,
-    )
-    .await
-    .unwrap();
+    let resubmitted_planned =
+        services::resubmit_observation_request(&pool, fixture.teacher_id, requested.id)
+            .await
+            .unwrap();
     assert_eq!(
         resubmitted_planned.status,
         SupervisionObservationStatus::Requested
@@ -2465,6 +2467,10 @@ async fn submitted_evidence_blocks_return_resubmit_and_reapproval_without_mutati
             corrected_request(&pool, &fixture).await
         )
         .await,
+        Err(AppError::Conflict(_))
+    ));
+    assert!(matches!(
+        services::resubmit_observation_request(&pool, fixture.teacher_id, requested.id).await,
         Err(AppError::ValidationError(_))
     ));
     assert!(matches!(
@@ -2532,14 +2538,9 @@ async fn return_and_evaluation_submission_serialize_without_stranding_or_erasing
                 .evaluators
                 .iter()
                 .all(|evaluator| evaluator.status != SupervisionEvaluatorStatus::Submitted));
-            services::update_requested_observation(
-                &pool,
-                fixture.teacher_id,
-                requested.id,
-                corrected_request(&pool, &fixture).await,
-            )
-            .await
-            .unwrap();
+            services::resubmit_observation_request(&pool, fixture.teacher_id, requested.id)
+                .await
+                .unwrap();
         }
         (Err(AppError::ValidationError(_)), Ok(_)) => {
             assert_eq!(final_state.status, SupervisionObservationStatus::Planned);
@@ -2809,6 +2810,7 @@ async fn options_for(
         pool,
         teacher,
         SupervisionBookingOptionsQuery {
+            cycle_id: f.cycle.id,
             academic_year_id: f.cycle.academic_year_id,
             academic_term_id: f.academic_term_id,
             week_start_date: date
@@ -3044,11 +3046,19 @@ async fn supervision_same_lesson_across_cycles_is_allowed_but_later_period_evalu
         .await
         .unwrap();
     approve_with(&pool, &a, first.id, vec![a.evaluator_id]).await;
-    let availability = services::evaluator_availability(&pool, second.id)
-        .await
-        .unwrap();
+    let availability = services::evaluator_availability(
+        &pool,
+        &school_authorization::ActorContext {
+            user_id: b.actor_id,
+            permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+        },
+        second.id,
+    )
+    .await
+    .unwrap();
     assert!(
         !availability
+            .items
             .iter()
             .find(|e| e.id == a.evaluator_id)
             .unwrap()
@@ -3093,6 +3103,7 @@ async fn supervision_same_lesson_across_cycles_is_allowed_but_later_period_evalu
     )
     .await
     .unwrap();
+    separate_saved_class(&pool, &d_obs).await;
     let assignment = ApproveObservationRequest {
         evaluators: vec![EvaluatorAssignmentInput {
             evaluator_user_id: a.evaluator_id,
@@ -3107,6 +3118,37 @@ async fn supervision_same_lesson_across_cycles_is_allowed_but_later_period_evalu
     assert_eq!(
         usize::from(c_result.is_ok()) + usize::from(d_result.is_ok()),
         1
+    );
+    let next = date + Duration::weeks(2);
+    let c2 = services::request_observation(
+        &pool,
+        c.teacher_id,
+        multi_input(&pool, &c, c.teacher_id, next, 1).await,
+    )
+    .await
+    .unwrap();
+    let d2 = services::request_observation(
+        &pool,
+        d.teacher_id,
+        multi_input(&pool, &d, d.teacher_id, next, 1).await,
+    )
+    .await
+    .unwrap();
+    let assignment = |user| ApproveObservationRequest {
+        evaluators: vec![EvaluatorAssignmentInput {
+            evaluator_user_id: user,
+            role_label: None,
+            is_required: Some(true),
+        }],
+    };
+    let (left, right) = tokio::join!(
+        services::approve_observation_request(&pool, c.actor_id, c2.id, assignment(c.evaluator_id)),
+        services::approve_observation_request(&pool, d.actor_id, d2.id, assignment(d.evaluator_id))
+    );
+    assert_eq!(
+        usize::from(left.is_ok()) + usize::from(right.is_ok()),
+        1,
+        "same exact class serializes even when all participants differ"
     );
 }
 
@@ -3712,8 +3754,8 @@ async fn supervision_http_booking_and_deletion_enforce_permissions_resource_scop
     let week = f.observed_at.date_naive()
         - Duration::days(i64::from(f.observed_at.weekday().num_days_from_monday()));
     let options = format!(
-        "/api/supervision/booking-options?academicYearId={}&academicTermId={}&weekStartDate={week}",
-        f.cycle.academic_year_id, f.academic_term_id
+        "/api/supervision/booking-options?cycleId={}&academicYearId={}&academicTermId={}&weekStartDate={week}",
+        f.cycle.id, f.cycle.academic_year_id, f.academic_term_id
     );
     for actor in [&reader, &evaluator] {
         let (status, _) =
@@ -3835,6 +3877,8 @@ async fn supervision_global_evaluator_locks_serialize_approvals_across_academic_
     let cycle = services::create_cycle(
         &pool,
         CreateSupervisionCycleRequest {
+            observation_start_date: chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
+            observation_end_date: chrono::NaiveDate::from_ymd_opt(2200, 12, 31).unwrap(),
             academic_year_id: year,
             academic_term_id: Some(term),
             title: "Independent year supervision".into(),
@@ -4008,6 +4052,8 @@ async fn supervision_cycle_delete_accepts_every_cycle_status_in_writable_context
         let cycle = services::create_cycle(
             &pool,
             CreateSupervisionCycleRequest {
+                observation_start_date: chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
+                observation_end_date: chrono::NaiveDate::from_ymd_opt(2200, 12, 31).unwrap(),
                 academic_year_id: f.cycle.academic_year_id,
                 academic_term_id: Some(f.academic_term_id),
                 title: format!("Delete {} cycle", status.as_str()),
@@ -4095,7 +4141,7 @@ async fn supervision_replacement_validates_omitted_retained_submitted_evaluators
         },
     )
     .await;
-    assert!(matches!(result, Err(AppError::ValidationError(_))));
+    assert!(matches!(result, Err(AppError::Conflict(_))));
     assert_eq!(
         serde_json::to_value(services::get_observation(&pool, first.id).await.unwrap()).unwrap(),
         before
@@ -4200,4 +4246,866 @@ async fn supervision_empty_legacy_snapshots_retain_known_allocation_and_time_whe
         )
     );
     tx.rollback().await.unwrap();
+}
+
+fn management_actor(user_id: Uuid) -> school_authorization::ActorContext {
+    school_authorization::ActorContext {
+        user_id,
+        permissions: vec![school_permissions::registry::codes::SUPERVISION_MANAGE_SCHOOL.into()],
+    }
+}
+
+async fn set_cycle_dates(
+    pool: &PgPool,
+    f: &SupervisionFixture,
+    start: chrono::NaiveDate,
+    end: chrono::NaiveDate,
+) -> Result<SupervisionCycle, AppError> {
+    services::update_cycle(
+        pool,
+        f.cycle.id,
+        UpdateSupervisionCycleRequest {
+            observation_start_date: Some(start),
+            observation_end_date: Some(end),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+#[test]
+fn supervision_date_payloads_require_pairs_and_never_accept_null_clearing() {
+    for payload in [
+        serde_json::json!({"observationStartDate":null}),
+        serde_json::json!({"observationEndDate":null}),
+    ] {
+        assert!(serde_json::from_value::<UpdateSupervisionCycleRequest>(payload).is_err());
+    }
+    assert!(serde_json::from_value::<UpdateSupervisionCycleRequest>(serde_json::json!({})).is_ok());
+    assert!(
+        serde_json::from_value::<ResubmitSupervisionObservationRequest>(serde_json::json!({}))
+            .is_ok()
+    );
+    for field in [
+        "observedDate",
+        "timetableBlockGroupIds",
+        "expectedSourceDigest",
+        "observedAt",
+    ] {
+        let mut payload = serde_json::json!({});
+        payload[field] = serde_json::json!("forged");
+        assert!(serde_json::from_value::<ResubmitSupervisionObservationRequest>(payload).is_err());
+    }
+}
+
+#[tokio::test]
+async fn supervision_date_windows_are_inclusive_and_protect_every_ever_approved_period() {
+    let pool = migrated_pool("supervision_date_window").await;
+    let original_unset: i64 = sqlx::query_scalar("SELECT count(*) FROM supervision_cycles WHERE observation_start_date IS NULL AND observation_end_date IS NULL").fetch_one(&pool).await.unwrap();
+    assert!(
+        original_unset > 0,
+        "166 must leave preexisting cycles unset"
+    );
+    let f = insert_fixture(&pool).await;
+    let date = f.observed_at.date_naive();
+    assert!(set_cycle_dates(&pool, &f, date + Duration::days(1), date)
+        .await
+        .is_err());
+    assert!(services::update_cycle(
+        &pool,
+        f.cycle.id,
+        UpdateSupervisionCycleRequest {
+            observation_start_date: Some(date),
+            ..Default::default()
+        }
+    )
+    .await
+    .is_err());
+    set_cycle_dates(&pool, &f, date, date).await.unwrap();
+    let options = options_for(&pool, &f, f.teacher_id, date).await;
+    assert!(!options.items.is_empty());
+    assert!(options.items.iter().all(|p| p.observed_date == date));
+    let stale = observation_input(&pool, &f).await;
+    set_cycle_dates(&pool, &f, date, date + Duration::days(1))
+        .await
+        .unwrap();
+    assert!(matches!(
+        services::request_observation(&pool, f.teacher_id, stale).await,
+        Err(AppError::Conflict(_))
+    ));
+    set_cycle_dates(&pool, &f, date, date).await.unwrap();
+    let outside = options_for(&pool, &f, f.teacher_id, date + Duration::weeks(1)).await;
+    assert!(outside.items.is_empty());
+    assert_eq!(
+        outside.week_end_date - outside.week_start_date,
+        Duration::days(6)
+    );
+    let observation = services::request_observation(
+        &pool,
+        f.teacher_id,
+        multi_input(&pool, &f, f.teacher_id, date, 3).await,
+    )
+    .await
+    .unwrap();
+    let mut outside_input = observation_input(&pool, &f).await;
+    outside_input.observed_date = date + Duration::weeks(1);
+    assert!(
+        services::request_observation(&pool, f.teacher_id, outside_input)
+            .await
+            .is_err()
+    );
+    approve_with(&pool, &f, observation.id, vec![f.evaluator_id]).await;
+    services::return_observation_request(
+        &pool,
+        f.actor_id,
+        observation.id,
+        ReturnObservationRequest {
+            comment: Some("Retain approved dates".into()),
+        },
+    )
+    .await
+    .unwrap();
+    set_cycle_dates(&pool, &f, date, date + Duration::days(1))
+        .await
+        .unwrap();
+    // A legacy later period can occupy another civil date; protecting only the
+    // first summary timestamp would incorrectly allow this shrink.
+    sqlx::query("UPDATE supervision_observation_periods SET observed_at=observed_at+interval '1 day',ends_at=ends_at+interval '1 day' WHERE observation_id=$1 AND position=3")
+        .bind(observation.id).execute(&pool).await.unwrap();
+    assert!(set_cycle_dates(&pool, &f, date, date).await.is_err());
+    let before =
+        serde_json::to_value(services::get_cycle(&pool, f.cycle.id).await.unwrap()).unwrap();
+    assert!(set_cycle_dates(
+        &pool,
+        &f,
+        date + Duration::days(1),
+        date + Duration::days(2)
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        serde_json::to_value(services::get_cycle(&pool, f.cycle.id).await.unwrap()).unwrap(),
+        before
+    );
+    // Legacy postapproval evidence still protects dates without inventing approved_at.
+    sqlx::query("UPDATE supervision_observations SET approved_at=NULL WHERE id=$1")
+        .bind(observation.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        services::get_observation(&pool, observation.id)
+            .await
+            .unwrap()
+            .periods_locked
+    );
+    assert!(set_cycle_dates(
+        &pool,
+        &f,
+        date - Duration::days(2),
+        date - Duration::days(1)
+    )
+    .await
+    .is_err());
+    services::cancel_observation(
+        &pool,
+        f.actor_id,
+        observation.id,
+        CancelObservationRequest {
+            reason: Some("Cancelled visits release date protection".into()),
+        },
+    )
+    .await
+    .unwrap();
+    set_cycle_dates(
+        &pool,
+        &f,
+        date + Duration::days(1),
+        date + Duration::days(2),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn supervision_frozen_returned_resubmits_saved_times_without_stale_evaluator_gate() {
+    let pool = migrated_pool("supervision_frozen_resubmit").await;
+    let a = insert_fixture(&pool).await;
+    let b = insert_fixture(&pool).await;
+    let date = a.observed_at.date_naive();
+    let first = request_observation(&pool, &a).await;
+    let second = request_observation(&pool, &b).await;
+    // Independent saved class evidence, with no shared teacher/evaluator yet.
+    let other_room: Uuid = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id=$1 AND id<>$2 ORDER BY id LIMIT 1",
+    )
+    .bind(b.cycle.academic_year_id)
+    .bind(first.periods[0].homeroom_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE supervision_observation_periods SET homeroom_id=$2 WHERE observation_id=$1",
+    )
+    .bind(second.id)
+    .bind(other_room)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let approved = services::approve_observation_request(
+        &pool,
+        a.actor_id,
+        first.id,
+        ApproveObservationRequest {
+            evaluators: vec![EvaluatorAssignmentInput {
+                evaluator_user_id: a.evaluator_id,
+                role_label: None,
+                is_required: Some(true),
+            }],
+        },
+    )
+    .await
+    .unwrap();
+    assert!(approved.periods_locked);
+    let selection = corrected_request(&pool, &a).await;
+    assert!(services::update_requested_observation(
+        &pool,
+        a.teacher_id,
+        first.id,
+        selection.clone()
+    )
+    .await
+    .is_err());
+    assert!(services::update_observation(
+        &pool,
+        a.actor_id,
+        first.id,
+        UpdateSupervisionObservationRequest {
+            observed_date: Some(selection.observed_date),
+            timetable_block_group_ids: Some(selection.timetable_block_group_ids),
+            expected_source_digest: Some(selection.expected_source_digest),
+            template_id: None
+        }
+    )
+    .await
+    .is_err());
+    services::return_observation_request(
+        &pool,
+        a.actor_id,
+        first.id,
+        ReturnObservationRequest {
+            comment: Some("Choose a different evaluator".into()),
+        },
+    )
+    .await
+    .unwrap();
+    approve_with(&pool, &b, second.id, vec![a.evaluator_id]).await;
+    let saved = services::resubmit_observation_request(&pool, a.teacher_id, first.id)
+        .await
+        .unwrap();
+    assert_eq!(saved.status, SupervisionObservationStatus::Requested);
+    assert_eq!(
+        serde_json::to_value(&saved.periods).unwrap(),
+        serde_json::to_value(&approved.periods).unwrap()
+    );
+    assert_eq!(saved.evaluators[0].id, approved.evaluators[0].id);
+    let availability =
+        services::evaluator_availability(&pool, &management_actor(a.actor_id), first.id)
+            .await
+            .unwrap();
+    assert!(availability.within_cycle_dates);
+    assert!(!availability.overlap.blocked);
+    assert!(
+        !availability
+            .items
+            .iter()
+            .find(|p| p.id == a.evaluator_id)
+            .unwrap()
+            .available
+    );
+    assert!(
+        availability
+            .items
+            .iter()
+            .find(|p| p.id == a.second_evaluator_id)
+            .unwrap()
+            .available
+    );
+    assert!(services::approve_observation_request(
+        &pool,
+        a.actor_id,
+        first.id,
+        ApproveObservationRequest {
+            evaluators: vec![EvaluatorAssignmentInput {
+                evaluator_user_id: a.evaluator_id,
+                role_label: None,
+                is_required: Some(true)
+            }]
+        }
+    )
+    .await
+    .is_err());
+    approve_with(&pool, &a, first.id, vec![a.second_evaluator_id]).await;
+    assert_eq!(
+        saved.periods[0]
+            .observed_at
+            .with_timezone(&chrono_tz::Asia::Bangkok)
+            .date_naive(),
+        date
+    );
+}
+
+#[tokio::test]
+async fn supervision_aggregate_counts_are_private_and_hard_blocks_are_participant_or_exact_class() {
+    let pool = migrated_pool("supervision_booking_aggregate").await;
+    let a = insert_fixture(&pool).await;
+    let b = insert_fixture(&pool).await;
+    let date = a.observed_at.date_naive();
+    let first = request_observation(&pool, &a).await;
+    let second = request_observation(&pool, &b).await;
+    let pending = options_for(&pool, &b, b.teacher_id, date)
+        .await
+        .items
+        .into_iter()
+        .find(|p| p.start_time.hour() == 10 && p.observed_date == date)
+        .unwrap();
+    assert_eq!(pending.booking_availability.pending_count, 2);
+    assert!(
+        pending.booking_availability.blocked,
+        "own same-cycle pending blocks"
+    );
+    let correction = services::observation_timetable_options(
+        &pool,
+        second.id,
+        date - Duration::days(i64::from(date.weekday().num_days_from_monday())),
+    )
+    .await
+    .unwrap();
+    let item = correction
+        .items
+        .iter()
+        .find(|p| p.observed_date == date && p.start_time.hour() == 10)
+        .unwrap();
+    assert_eq!(item.booking_availability.pending_count, 1);
+    assert!(
+        !item.booking_availability.blocked,
+        "other pending requests do not reserve a class"
+    );
+    approve_with(&pool, &a, first.id, vec![a.evaluator_id]).await;
+    let private_actor = school_authorization::ActorContext {
+        user_id: b.actor_id,
+        permissions: vec![],
+    };
+    let response = services::evaluator_availability(&pool, &private_actor, second.id)
+        .await
+        .unwrap();
+    assert_eq!(response.overlap.confirmed_count, 1);
+    assert!(response.overlap.blocked);
+    assert!(response.overlapping_bookings.is_empty());
+    let hidden = response
+        .items
+        .iter()
+        .find(|e| e.id == a.evaluator_id)
+        .unwrap();
+    assert!(!hidden.available && hidden.conflict.is_none());
+    assert!(hidden
+        .conflict_reason
+        .as_deref()
+        .unwrap()
+        .contains("งานนิเทศ"));
+    let scoped = services::evaluator_availability(&pool, &management_actor(b.actor_id), second.id)
+        .await
+        .unwrap();
+    assert_eq!(scoped.overlapping_bookings.len(), 1);
+    assert!(scoped
+        .items
+        .iter()
+        .find(|e| e.id == a.evaluator_id)
+        .unwrap()
+        .conflict
+        .is_some());
+    let replacement = ApproveObservationRequest {
+        evaluators: vec![EvaluatorAssignmentInput {
+            evaluator_user_id: b.evaluator_id,
+            role_label: None,
+            is_required: Some(true),
+        }],
+    };
+    assert!(
+        services::approve_observation_request(&pool, b.actor_id, second.id, replacement.clone())
+            .await
+            .is_err(),
+        "same exact class blocks even with a different evaluator"
+    );
+    let other_room: Uuid = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id=$1 AND id<>$2 ORDER BY id LIMIT 1",
+    )
+    .bind(b.cycle.academic_year_id)
+    .bind(first.periods[0].homeroom_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE supervision_observation_periods SET homeroom_id=$2 WHERE observation_id=$1",
+    )
+    .bind(second.id)
+    .bind(other_room)
+    .execute(&pool)
+    .await
+    .unwrap();
+    services::approve_observation_request(&pool, b.actor_id, second.id, replacement)
+        .await
+        .unwrap();
+    // Different exact classes and people can be confirmed at the same minute.
+    assert_eq!(
+        services::get_observation(&pool, second.id)
+            .await
+            .unwrap()
+            .status,
+        SupervisionObservationStatus::Planned
+    );
+}
+
+#[tokio::test]
+async fn supervision_cycle_date_shrink_and_approval_serialize_to_a_valid_outcome() {
+    let pool = migrated_pool_with_connections("supervision_date_approval_race", 4).await;
+    let f = insert_fixture(&pool).await;
+    let observation = request_observation(&pool, &f).await;
+    let date = f.observed_at.date_naive();
+    let assignment = ApproveObservationRequest {
+        evaluators: vec![EvaluatorAssignmentInput {
+            evaluator_user_id: f.evaluator_id,
+            role_label: None,
+            is_required: Some(true),
+        }],
+    };
+    let (dates, approval) = tokio::join!(
+        set_cycle_dates(
+            &pool,
+            &f,
+            date + Duration::days(1),
+            date + Duration::days(2)
+        ),
+        services::approve_observation_request(&pool, f.actor_id, observation.id, assignment)
+    );
+    assert_eq!(
+        usize::from(dates.is_ok()) + usize::from(approval.is_ok()),
+        1
+    );
+    let saved = services::get_observation(&pool, observation.id)
+        .await
+        .unwrap();
+    let cycle = services::get_cycle(&pool, f.cycle.id).await.unwrap();
+    if saved.periods_locked {
+        assert!(
+            cycle.observation_start_date.unwrap() <= date
+                && date <= cycle.observation_end_date.unwrap()
+        );
+    } else {
+        assert_eq!(cycle.observation_start_date, Some(date + Duration::days(1)));
+    }
+}
+
+/// Distinct captured class evidence lets evaluator tests isolate people conflicts
+/// without accidentally relying on two confirmed visits in the same exact class.
+async fn separate_saved_class(pool: &PgPool, observation: &SupervisionObservation) {
+    let other: Uuid = sqlx::query_scalar(
+        "SELECT id FROM homerooms WHERE academic_year_id=$1 AND id<>$2 ORDER BY id LIMIT 1",
+    )
+    .bind(observation.academic_year_id)
+    .bind(observation.periods[0].homeroom_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE supervision_observation_periods SET homeroom_id=$2 WHERE observation_id=$1",
+    )
+    .bind(observation.id)
+    .bind(other)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn supervision_evaluator_teaching_uses_minutes_and_half_open_endpoints() {
+    let pool = migrated_pool("supervision_evaluator_teaching_minutes").await;
+    let f = insert_fixture(&pool).await;
+    seed_teaching(
+        &pool,
+        f.second_evaluator_id,
+        f.cycle.academic_year_id,
+        f.academic_term_id,
+    )
+    .await;
+    let observation = request_observation(&pool, &f).await;
+    let start = observation.periods[0].observed_at;
+    // Captured minute-precision legacy evidence overlaps a teaching duty by one minute.
+    sqlx::query("UPDATE supervision_observation_periods SET observed_at=$2,ends_at=$3 WHERE observation_id=$1")
+        .bind(observation.id).bind(start-Duration::minutes(1)).bind(start+Duration::minutes(1)).execute(&pool).await.unwrap();
+    let response =
+        services::evaluator_availability(&pool, &management_actor(f.actor_id), observation.id)
+            .await
+            .unwrap();
+    let person = response
+        .items
+        .iter()
+        .find(|e| e.id == f.second_evaluator_id)
+        .unwrap();
+    assert!(!person.available && person.conflict.is_none());
+    assert!(person
+        .conflict_reason
+        .as_deref()
+        .unwrap()
+        .contains("ภาระสอน"));
+    let assignment = ApproveObservationRequest {
+        evaluators: vec![EvaluatorAssignmentInput {
+            evaluator_user_id: f.second_evaluator_id,
+            role_label: None,
+            is_required: Some(true),
+        }],
+    };
+    assert!(services::approve_observation_request(
+        &pool,
+        f.actor_id,
+        observation.id,
+        assignment.clone()
+    )
+    .await
+    .is_err());
+    sqlx::query("UPDATE supervision_observation_periods SET observed_at=$2,ends_at=$3 WHERE observation_id=$1")
+        .bind(observation.id).bind(start-Duration::minutes(2)).bind(start).execute(&pool).await.unwrap();
+    let response =
+        services::evaluator_availability(&pool, &management_actor(f.actor_id), observation.id)
+            .await
+            .unwrap();
+    assert!(
+        response
+            .items
+            .iter()
+            .find(|e| e.id == f.second_evaluator_id)
+            .unwrap()
+            .available
+    );
+    services::approve_observation_request(&pool, f.actor_id, observation.id, assignment)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn supervision_observed_teacher_cannot_book_while_already_a_confirmed_evaluator() {
+    let pool = migrated_pool("supervision_observed_as_participant").await;
+    let f = insert_fixture(&pool).await;
+    let observation = request_observation(&pool, &f).await;
+    separate_saved_class(&pool, &observation).await;
+    approve_with(&pool, &f, observation.id, vec![f.evaluator_id]).await;
+    // A later timetable change makes the evaluator eligible to request their own
+    // lesson in a different class; the confirmed supervision promise still blocks it.
+    seed_teaching(
+        &pool,
+        f.evaluator_id,
+        f.cycle.academic_year_id,
+        f.academic_term_id,
+    )
+    .await;
+    let options = options_for(&pool, &f, f.evaluator_id, f.observed_at.date_naive()).await;
+    let item = options
+        .items
+        .iter()
+        .find(|p| p.observed_date == f.observed_at.date_naive() && p.start_time.hour() == 10)
+        .unwrap();
+    assert_ne!(
+        Some(item.homeroom_id),
+        services::get_observation(&pool, observation.id)
+            .await
+            .unwrap()
+            .periods[0]
+            .homeroom_id
+    );
+    assert!(item.booking_availability.blocked);
+    assert_eq!(item.booking_availability.confirmed_count, 1);
+    let input = input_at(&pool, &f, f.evaluator_id, f.observed_at).await;
+    let error = services::request_observation(&pool, f.evaluator_id, input)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error,AppError::Conflict(message) if !message.contains(&observation.id.to_string()))
+    );
+}
+
+#[tokio::test]
+async fn supervision_http_dates_and_saved_times_resubmit_enforce_strict_actor_contracts() {
+    use crate::integration_tests::auth::session_http_tests::protected_router::ProtectedFixture;
+    use crate::integration_tests::permission_coverage::{
+        coverage_actor, coverage_request, coverage_router,
+    };
+    use axum::http::{Method, StatusCode};
+    use school_permissions::registry::codes;
+    use serde_json::{json, Value};
+    let pool = migrated_pool_with_connections("supervision_dates_http", 4).await;
+    school_test_db::run_test_migrations(&pool).await;
+    let f = insert_fixture(&pool).await;
+    let auth =
+        ProtectedFixture::with_prepared_tenant_pool("supervision_dates_http", pool.clone()).await;
+    let _lease = auth
+        .runtime
+        .pool_manager
+        .get_pool("test-pool://session-router-tenant-a", "tenant-a")
+        .await
+        .unwrap();
+    let own = coverage_actor(&auth, &[codes::SUPERVISION_REQUEST_OWN], 211).await;
+    let other = coverage_actor(&auth, &[codes::SUPERVISION_REQUEST_OWN], 212).await;
+    let manager = coverage_actor(&auth, &[codes::SUPERVISION_MANAGE_SCHOOL], 213).await;
+    seed_teaching(&pool, own.id, f.cycle.academic_year_id, f.academic_term_id).await;
+    let app = coverage_router(&auth);
+    let date = f.observed_at.date_naive();
+    let week = date - Duration::days(i64::from(date.weekday().num_days_from_monday()));
+    let cycle_path = format!("/api/supervision/cycles/{}", f.cycle.id);
+    let dates = json!({"observationStartDate":date,"observationEndDate":date});
+    let (status, _) =
+        coverage_request(&app, &auth, &own, Method::PATCH, &cycle_path, dates.clone()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    for (payload, expected) in [
+        (
+            json!({"observationStartDate":date}),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            json!({"observationStartDate":null,"observationEndDate":null}),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+        (
+            json!({"observationStartDate":date+Duration::days(1),"observationEndDate":date}),
+            StatusCode::UNPROCESSABLE_ENTITY,
+        ),
+    ] {
+        let (status, response) = coverage_request(
+            &app,
+            &auth,
+            &manager,
+            Method::PATCH,
+            &cycle_path,
+            payload.clone(),
+        )
+        .await;
+        assert_eq!(status, expected, "payload={payload}; response={response}");
+    }
+    let (status, configured) =
+        coverage_request(&app, &auth, &manager, Method::PATCH, &cycle_path, dates).await;
+    assert_eq!(status, StatusCode::OK, "{configured}");
+    assert_eq!(configured["data"]["observationStartDate"], date.to_string());
+    let mut cycle_create = json!({"academicYearId":f.cycle.academic_year_id,"academicTermId":f.academic_term_id,"title":"Dates required","templateId":f.template.id,"status":"open","targets":[{"targetType":"staff","targetId":other.id,"requiredObservations":1,"priority":1}]});
+    let (status, _) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::POST,
+        "/api/supervision/cycles",
+        cycle_create.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    cycle_create["observationStartDate"] = json!(date);
+    cycle_create["observationEndDate"] = json!(date);
+    let (status, created_cycle) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::POST,
+        "/api/supervision/cycles",
+        cycle_create,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created_cycle}");
+    assert_eq!(
+        created_cycle["data"]["observationEndDate"],
+        date.to_string()
+    );
+    let outside_target=format!("/api/supervision/booking-options?cycleId={}&academicYearId={}&academicTermId={}&weekStartDate={week}",created_cycle["data"]["id"].as_str().unwrap(),f.cycle.academic_year_id,f.academic_term_id);
+    let (status, _) =
+        coverage_request(&app, &auth, &own, Method::GET, &outside_target, Value::Null).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let missing_cycle = format!(
+        "/api/supervision/booking-options?academicYearId={}&academicTermId={}&weekStartDate={week}",
+        f.cycle.academic_year_id, f.academic_term_id
+    );
+    let (status, _) =
+        coverage_request(&app, &auth, &own, Method::GET, &missing_cycle, Value::Null).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let bad_context=format!("/api/supervision/booking-options?cycleId={}&academicYearId={}&academicTermId={}&weekStartDate={week}",f.cycle.id,Uuid::new_v4(),f.academic_term_id);
+    let (status, _) =
+        coverage_request(&app, &auth, &own, Method::GET, &bad_context, Value::Null).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let options_path = format!("{missing_cycle}&cycleId={}", f.cycle.id);
+    let (status, options) =
+        coverage_request(&app, &auth, &own, Method::GET, &options_path, Value::Null).await;
+    assert_eq!(status, StatusCode::OK, "{options}");
+    let option = options["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["startTime"] == "10:00:00")
+        .unwrap();
+    assert_eq!(
+        option["bookingAvailability"],
+        json!({"pendingCount":0,"confirmedCount":0,"blocked":false})
+    );
+    assert!(option.get("observedUserId").is_none() && option.get("overlappingBookings").is_none());
+    let selection = json!({"observedDate":date,"timetableBlockGroupIds":[option["blockGroupId"]],"expectedSourceDigest":options["data"]["sourceDigest"]});
+    let mut create = selection.clone();
+    create["cycleId"] = json!(f.cycle.id);
+    create["academicTermId"] = json!(f.academic_term_id);
+    let (status, requested) = coverage_request(
+        &app,
+        &auth,
+        &own,
+        Method::POST,
+        "/api/supervision/observations/requests",
+        create,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{requested}");
+    assert_eq!(requested["data"]["periodsLocked"], false);
+    let id = requested["data"]["id"].as_str().unwrap();
+    let path = format!("/api/supervision/observations/{id}");
+    let availability_path = format!("{path}/evaluator-availability");
+    let (status, _) = coverage_request(
+        &app,
+        &auth,
+        &own,
+        Method::GET,
+        &availability_path,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, availability) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::GET,
+        &availability_path,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{availability}");
+    assert_eq!(availability["data"]["withinCycleDates"], true);
+    assert_eq!(availability["data"]["overlap"]["pendingCount"], 0);
+    assert_eq!(availability["data"]["overlappingBookings"], json!([]));
+    let (status, approved) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::POST,
+        &format!("{path}/approve-request"),
+        json!({"evaluators":[{"evaluatorUserId":f.evaluator_id,"isRequired":true}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    assert_eq!(approved["data"]["periodsLocked"], true);
+    let (status, returned) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::POST,
+        &format!("{path}/return-request"),
+        json!({"comment":"Keep approved times; replace evaluator if needed"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{returned}");
+    let (status, _) = coverage_request(
+        &app,
+        &auth,
+        &own,
+        Method::PATCH,
+        &format!("{path}/request"),
+        selection,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status,_)=coverage_request(&app,&auth,&manager,Method::PATCH,&cycle_path,json!({"observationStartDate":date+Duration::days(1),"observationEndDate":date+Duration::days(2)})).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let resubmit = format!("{path}/resubmit-request");
+    let (status, _) = coverage_request(
+        &app,
+        &auth,
+        &own,
+        Method::POST,
+        &resubmit,
+        json!({"observedDate":date}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    for actor in [&other, &manager] {
+        let (status, _) =
+            coverage_request(&app, &auth, actor, Method::POST, &resubmit, json!({})).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+    let before = serde_json::to_value(
+        services::get_observation(&pool, id.parse().unwrap())
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION fail_saved_resubmit_action() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'SUPERVISION_SAVED_RESUBMIT_AUDIT'; END $$; CREATE TRIGGER fail_saved_resubmit_action BEFORE INSERT ON supervision_actions FOR EACH ROW EXECUTE FUNCTION fail_saved_resubmit_action();").execute(&pool).await.unwrap();
+    let (status, _) = coverage_request(&app, &auth, &own, Method::POST, &resubmit, json!({})).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        serde_json::to_value(
+            services::get_observation(&pool, id.parse().unwrap())
+                .await
+                .unwrap()
+        )
+        .unwrap(),
+        before
+    );
+    sqlx::raw_sql("DROP TRIGGER fail_saved_resubmit_action ON supervision_actions; DROP FUNCTION fail_saved_resubmit_action();").execute(&pool).await.unwrap();
+    let (status, saved) =
+        coverage_request(&app, &auth, &own, Method::POST, &resubmit, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["data"]["status"], "requested");
+    assert_eq!(saved["data"]["periods"], approved["data"]["periods"]);
+    assert_eq!(saved["data"]["canManage"], false);
+    assert_eq!(saved["data"]["canReview"], false);
+    assert_eq!(saved["data"]["averageRating"], Value::Null);
+    // A legacy approved cycle may still be unset. Roster availability describes
+    // people independently, while approval is separately guarded by its bounds.
+    sqlx::query("UPDATE supervision_cycles SET observation_start_date=NULL,observation_end_date=NULL WHERE id=$1").bind(f.cycle.id).execute(&pool).await.unwrap();
+    let (status, availability) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::GET,
+        &availability_path,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{availability}");
+    assert_eq!(availability["data"]["withinCycleDates"], false);
+    assert!(availability["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|e| e["id"] == f.second_evaluator_id.to_string() && e["available"] == true));
+    let (status, reassigned) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::PUT,
+        &format!("{path}/evaluators"),
+        json!({"evaluators":[{"evaluatorUserId":f.second_evaluator_id,"isRequired":true}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{reassigned}");
+    assert_eq!(reassigned["data"]["periods"], approved["data"]["periods"]);
+    let (status, _) = coverage_request(
+        &app,
+        &auth,
+        &manager,
+        Method::POST,
+        &format!("{path}/approve-request"),
+        json!({"evaluators":[{"evaluatorUserId":f.second_evaluator_id,"isRequired":true}]}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }

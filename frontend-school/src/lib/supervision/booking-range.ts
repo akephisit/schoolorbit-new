@@ -143,10 +143,11 @@ export function bookingOptionUnavailable(
 
 export function bookingAvailabilityLabel(item: SupervisionTimetableOption): string {
 	const { pendingCount, confirmedCount, blocked } = item.bookingAvailability;
-	if (blocked) return `ยืนยันแล้ว ${confirmedCount} · จองไม่ได้`;
 	const labels = [];
 	if (pendingCount) labels.push(`รออนุมัติ ${pendingCount}`);
-	if (confirmedCount) labels.push(`นัดหมาย ${confirmedCount} · จองขนานได้`);
+	if (confirmedCount) labels.push(`นัดหมาย ${confirmedCount}`);
+	if (blocked) labels.push('จองไม่ได้');
+	else if (confirmedCount) labels.push('จองขนานได้');
 	return labels.join(' · ') || 'ว่าง';
 }
 
@@ -165,6 +166,7 @@ export function reconcileBookingRange(
 			!item ||
 			bookingOptionUnavailable(item, start, end) ||
 			item.homeroomId !== old.homeroomId ||
+			item.learningGroupId !== old.learningGroupId ||
 			item.startTime !== old.startTime ||
 			item.endTime !== old.endTime
 		)

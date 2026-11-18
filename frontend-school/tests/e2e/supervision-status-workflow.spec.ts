@@ -7,7 +7,8 @@ import {
 	firstCycle,
 	templateId,
 	savedPeriod,
-	timetableOption
+	timetableOption,
+	selectSupervisionDate
 } from './fixtures/supervision-route-data';
 
 test.use({ serviceWorkers: 'block' });
@@ -98,15 +99,18 @@ for (const colorScheme of ['light', 'dark'] as const) {
 	}
 }
 
-test('cycle creation has manual status and no scheduling inputs or payload fields', async ({
+test('cycle creation requires the observation date window and retains manual status', async ({
 	page
 }) => {
+	await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
 	const api = await mock(page);
 	await page.goto(path('cycles'));
 	await page.getByRole('button', { name: 'สร้างรอบนิเทศ', exact: true }).first().click();
 	const dialog = page.getByRole('dialog');
 	await expect(dialog.getByText('เปิดรับคำขอ', { exact: true })).toBeVisible();
-	await expect(dialog.locator('input[type="time"], input[type="date"]')).toHaveCount(0);
+	await expect(dialog.locator('input[type="time"]')).toHaveCount(0);
+	await selectSupervisionDate(page, 'วันเริ่มนิเทศ', '2026-10-01');
+	await selectSupervisionDate(page, 'วันสุดท้ายที่นิเทศ', '2026-10-15');
 	await expect(
 		dialog.getByText(/เปิดจองวันที่|ปิดจองวันที่|เริ่มรอบวันที่|สิ้นสุดรอบวันที่/)
 	).toHaveCount(0);
@@ -118,6 +122,8 @@ test('cycle creation has manual status and no scheduling inputs or payload field
 			academicYearId: year,
 			academicTermId: null,
 			title: 'รอบสถานะกำหนดเอง',
+			observationStartDate: '2026-10-01',
+			observationEndDate: '2026-10-15',
 			description: null,
 			templateId,
 			status: 'open',

@@ -2,6 +2,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import SupervisionCycleDates from '#lib/components/supervision/SupervisionCycleDates.svelte';
+	import SupervisionRequestAvailability from '#lib/components/supervision/SupervisionRequestAvailability.svelte';
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
 	import { cycleDateRangeError, cycleDateRangeLabel } from '#lib/supervision/booking-range.js';
 	import SupervisionCycleDelete from '#lib/components/supervision/SupervisionCycleDelete.svelte';
@@ -87,6 +88,7 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
@@ -274,6 +276,7 @@
 	let loadingProgress = $state(false);
 	let loadingTeacherStatus = $state(false);
 	let createCycleDialogOpen = $state(false);
+	let cycleFormError = $state('');
 	let createTemplateDialogOpen = $state(false);
 	let previewTemplateDialogOpen = $state(false);
 	let previewTemplateId = $state('');
@@ -303,6 +306,12 @@
 		return appIdentityKey();
 	});
 	const sectionConfig = $derived(sectionConfigByKey[section]);
+	const referenceFeedbackVisible = $derived(
+		Boolean(
+			(routeData.cycles && ((cyclesLoading && !cyclesLoaded) || cyclesError)) ||
+			(routeData.templates && ((templatesLoading && !templatesLoaded) || templatesError))
+		)
+	);
 	const mutationBusy = $derived(
 		saving || savingAction !== null || savingTemplate || savingEvaluation !== null
 	);
@@ -472,7 +481,15 @@
 				createTemplateDialogOpen = false;
 				setTemplatePreviewDialogOpen(false);
 				resetTemplateForm();
-				cycleForm.templateId = '';
+				cycleForm = {
+					title: '',
+					description: '',
+					templateId: '',
+					status: 'open',
+					observationStartDate: '',
+					observationEndDate: ''
+				};
+				cycleFormError = '';
 				progressCycleId = source.cycleId;
 			}
 			observationsLoading = source.observations !== null;
@@ -731,6 +748,7 @@
 			toast.error('กรุณาเลือกปีการศึกษาก่อน');
 			return;
 		}
+		cycleFormError = '';
 		createCycleDialogOpen = true;
 		if (routeData) void retryManagementTemplates();
 	}
@@ -1123,6 +1141,18 @@
 		const current = observations.find((item) => item.id === observationId);
 		if (!current || current.evaluators.some((evaluator) => evaluator.status === 'submitted'))
 			return;
+		if (
+			requestEvaluatorAvailabilityLoading[observationId] ||
+			requestEvaluatorErrors[observationId]
+		) {
+			toast.error('รอตรวจช่วงคาบและผู้ประเมินให้สำเร็จก่อน');
+			return;
+		}
+		const availability = requestEvaluatorAvailability[observationId];
+		if (availability && (!availability.withinCycleDates || availability.overlap.blocked)) {
+			toast.error('ช่วงคาบนี้ยังอนุมัติไม่ได้ ตรวจช่วงวันที่และรายการที่ทับกันก่อน');
+			return;
+		}
 		const evaluatorIds = selectedRequestEvaluatorIds(observationId);
 		if (evaluatorIds.length === 0) {
 			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คนก่อนอนุมัติ');
@@ -1345,13 +1375,14 @@
 	}
 
 	async function createCycle() {
-		if (!canManageSchool) return;
+		if (!canManageSchool || mutationBusy) return;
+		cycleFormError = '';
 		if (!academicYearId) {
-			toast.error('กรุณาเลือกปีการศึกษาก่อน');
+			cycleFormError = 'กรุณาเลือกปีการศึกษาก่อน';
 			return;
 		}
 		if (!cycleForm.title.trim() || !cycleForm.templateId) {
-			toast.error('กรอกชื่อรอบและเลือกแบบประเมินให้ครบ');
+			cycleFormError = 'กรอกชื่อรอบและเลือกแบบประเมินให้ครบ';
 			return;
 		}
 
@@ -1360,7 +1391,7 @@
 			cycleForm.observationEndDate
 		);
 		if (dateError) {
-			toast.error(dateError);
+			cycleFormError = dateError;
 			return;
 		}
 
@@ -1391,7 +1422,7 @@
 			createCycleDialogOpen = false;
 		} catch (error) {
 			if (!ownsMutation()) return;
-			toast.error(error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ');
+			cycleFormError = error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ';
 		} finally {
 			if (ownsMutation()) savingAction = null;
 		}
@@ -1902,7 +1933,11 @@
 	{/if}
 
 	{#if ['mine', 'requests', 'evaluate', 'approvals'].includes(section)}
-		<div class="relative space-y-2 empty:hidden" data-testid="supervision-references">
+		<div
+			class="relative space-y-2"
+			hidden={!referenceFeedbackVisible}
+			data-testid="supervision-references"
+		>
 			{#if routeData.cycles}{@render managementFeedback(
 					cyclesLoaded,
 					cyclesLoading,
@@ -1986,6 +2021,7 @@
 											(item) => item.cycleId === currentBookingCycle.id
 										)}
 										allowed={canRequest}
+										onreloadCycle={retryManagementCycles}
 										onsubmit={createBookingRequest}
 									/>{/key}
 							{/if}
@@ -2092,7 +2128,7 @@
 														!observation.evaluators.some(
 															(evaluator) => evaluator.status === 'submitted'
 														)
-															? 'แก้ไขและส่งใหม่'
+															? observationWorkflow(observation).nextAction
 															: 'รายละเอียด'}
 													</Button>
 													{#if observation.status === 'published'}
@@ -2236,6 +2272,14 @@
 												</div>
 											</div>
 
+											<div class="mt-4"><SupervisionSavedPeriods {observation} /></div>
+											<SupervisionRequestAvailability
+												result={requestEvaluatorAvailability[observation.id]}
+												loading={!!requestEvaluatorAvailabilityLoading[observation.id]}
+												error={requestEvaluatorErrors[observation.id] ?? ''}
+												oninspect={() =>
+													void loadRequestEvaluatorAvailability(observation.id, true)}
+											/>
 											<div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
 												<div class="space-y-2">
 													<Label>ผู้ประเมิน</Label>
@@ -2301,14 +2345,14 @@
 																() => void loadRequestEvaluatorAvailability(observation.id, true)
 															)}
 															<Command.Root>
-																<Command.Input placeholder="ค้นหาครูผู้ประเมินที่ว่าง..." />
+																<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
 																{#if requestEvaluatorAvailability[observation.id]}<Command.Empty
 																		>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty
 																	>{/if}
 																{#if requestEvaluatorAvailability[observation.id]}<Command.List
 																		class="max-h-72"
 																	>
-																		<Command.Group>
+																		<Command.Group heading="พร้อมประเมินตลอดช่วงคาบ">
 																			{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
 																				<Command.Item
 																					value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
@@ -2332,13 +2376,36 @@
 																				</Command.Item>
 																			{/each}
 																		</Command.Group>
+																		{#if unavailableRequestEvaluatorCount(observation.id)}<Command.Group
+																				heading="ไม่ว่างในช่วงคาบนี้"
+																				>{#each requestEvaluatorOptions(observation.id).filter((item) => !item.available) as evaluator (evaluator.id)}<Command.Item
+																						value={`${evaluator.name} ${evaluator.id}`}
+																						disabled
+																						><div class="min-w-0 space-y-1">
+																							<p>{evaluator.name}</p>
+																							<p class="text-xs text-muted-foreground">
+																								{evaluator.conflictReason ?? 'มีงานทับช่วงคาบ'}
+																							</p>
+																							{#if evaluator.conflict}<p
+																									class="text-xs text-muted-foreground"
+																								>
+																									{evaluator.conflict.observedDisplayName ??
+																										'รายการนิเทศ'} · {formatDate(
+																										evaluator.conflict.observedAt
+																									)}{#if evaluator.conflict.lessonTitle}
+																										· {evaluator.conflict.lessonTitle}{/if}
+																								</p>{/if}
+																						</div></Command.Item
+																					>{/each}</Command.Group
+																			>{/if}
 																	</Command.List>{/if}
 															</Command.Root>
 														</Popover.Content>
 													</Popover.Root>
 													{#if unavailableRequestEvaluatorCount(observation.id) > 0}
 														<p class="text-xs text-muted-foreground">
-															ซ่อนผู้ประเมิน {unavailableRequestEvaluatorCount(observation.id)} คนที่มีงานนิเทศชนช่วงนี้
+															ผู้ประเมินไม่ว่าง {unavailableRequestEvaluatorCount(observation.id)} คน
+															ดูเหตุผลในกลุ่ม “ไม่ว่างในช่วงคาบนี้”
 														</p>
 													{/if}
 												</div>
@@ -2389,7 +2456,10 @@
 														observation.evaluators.some(
 															(evaluator) => evaluator.status === 'submitted'
 														) ||
-														selectedRequestEvaluatorIds(observation.id).length === 0}
+														selectedRequestEvaluatorIds(observation.id).length === 0 ||
+														requestEvaluatorAvailability[observation.id]?.overlap.blocked ||
+														requestEvaluatorAvailability[observation.id]?.withinCycleDates ===
+															false}
 												>
 													อนุมัติและมอบหมาย
 												</LoadingButton>
@@ -3283,8 +3353,21 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<Dialog.Root bind:open={createCycleDialogOpen}>
-	<Dialog.Content class="max-w-3xl">
+<Dialog.Root
+	open={createCycleDialogOpen}
+	onOpenChange={(open) => {
+		if (savingAction !== 'create-cycle') createCycleDialogOpen = open;
+	}}
+>
+	<Dialog.Content
+		class="max-w-3xl"
+		onEscapeKeydown={(event) => {
+			if (savingAction === 'create-cycle') event.preventDefault();
+		}}
+		onInteractOutside={(event) => {
+			if (savingAction === 'create-cycle') event.preventDefault();
+		}}
+	>
 		<Dialog.Header>
 			<Dialog.Title>สร้างรอบนิเทศ</Dialog.Title>
 			<Dialog.Description>รอบนิเทศจะผูกกับปีและภาคเรียนที่เลือกบนแถบด้านบน</Dialog.Description>
@@ -3295,7 +3378,10 @@
 				void createCycle();
 			}}
 		>
-			<div class="grid gap-4 py-2 lg:grid-cols-2">
+			<fieldset
+				disabled={savingAction === 'create-cycle'}
+				class="grid min-w-0 gap-4 py-2 lg:grid-cols-2"
+			>
 				<div class="rounded-lg border bg-muted/30 p-3 lg:col-span-2">
 					<p class="text-xs font-medium text-muted-foreground">บริบทของรอบนิเทศ</p>
 					<p class="mt-1 font-medium">
@@ -3334,19 +3420,21 @@
 					{/if}
 				</div>
 				<div class="space-y-2">
-					<Label for="supervision-cycle-start">วันเริ่มนิเทศ</Label><Input
+					<Label for="supervision-cycle-start">วันเริ่มนิเทศ</Label><DatePicker
 						id="supervision-cycle-start"
-						type="date"
-						bind:value={cycleForm.observationStartDate}
+						ariaLabel="วันเริ่มนิเทศ"
+						value={cycleForm.observationStartDate || undefined}
+						onValueChange={(value) => (cycleForm.observationStartDate = value ?? '')}
 						required
 					/>
 				</div>
 				<div class="space-y-2">
-					<Label for="supervision-cycle-end">วันสุดท้ายที่นิเทศ</Label><Input
+					<Label for="supervision-cycle-end">วันสุดท้ายที่นิเทศ</Label><DatePicker
 						id="supervision-cycle-end"
-						type="date"
-						bind:value={cycleForm.observationEndDate}
-						min={cycleForm.observationStartDate || undefined}
+						ariaLabel="วันสุดท้ายที่นิเทศ"
+						value={cycleForm.observationEndDate || undefined}
+						onValueChange={(value) => (cycleForm.observationEndDate = value ?? '')}
+						minValue={cycleForm.observationStartDate || undefined}
 						required
 					/>
 				</div>
@@ -3381,10 +3469,16 @@
 						placeholder="รายละเอียดเพิ่มเติม"
 					/>
 				</div>
-			</div>
+			</fieldset>
+			{#if cycleFormError}<p role="alert" class="my-3 text-sm text-destructive">
+					{cycleFormError}
+				</p>{/if}
 			<Dialog.Footer>
-				<Button type="button" variant="outline" onclick={() => (createCycleDialogOpen = false)}
-					>ยกเลิก</Button
+				<Button
+					type="button"
+					variant="outline"
+					disabled={savingAction === 'create-cycle'}
+					onclick={() => (createCycleDialogOpen = false)}>ยกเลิก</Button
 				>
 				<LoadingButton
 					type="submit"

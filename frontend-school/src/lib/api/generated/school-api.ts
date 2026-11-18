@@ -8262,6 +8262,22 @@ export interface paths {
 		patch: operations['updateRequestedSupervisionObservation'];
 		trace?: never;
 	};
+	'/api/supervision/observations/{id}/resubmit-request': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['resubmitSupervisionObservationRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/supervision/observations/{id}/return-request': {
 		parameters: {
 			query?: never;
@@ -11804,6 +11820,10 @@ export interface components {
 					description?: string | null;
 					/** Format: uuid */
 					id: string;
+					/** Format: date */
+					observationEndDate?: string | null;
+					/** Format: date */
+					observationStartDate?: string | null;
 					status: components['schemas']['SupervisionCycleStatus'];
 					targets: components['schemas']['SupervisionCycleTarget'][];
 					/** Format: uuid */
@@ -11811,21 +11831,6 @@ export interface components {
 					title: string;
 					/** Format: date-time */
 					updatedAt: string;
-				}[];
-			};
-			message?: string;
-			success: boolean;
-		};
-		ApiResponse_ItemsData_SupervisionEvaluatorAvailability: {
-			data: {
-				items: {
-					available: boolean;
-					conflict?: components['schemas']['SupervisionEvaluatorConflict'] | null;
-					conflictReason?: string | null;
-					/** Format: uuid */
-					id: string;
-					name: string;
-					title?: string | null;
 				}[];
 			};
 			message?: string;
@@ -11865,6 +11870,7 @@ export interface components {
 					/** Format: uuid */
 					observedUserId: string;
 					periods: components['schemas']['SupervisionObservationPeriod'][];
+					periodsLocked: boolean;
 					/** Format: date-time */
 					requestedAt: string;
 					/** Format: uuid */
@@ -11955,6 +11961,7 @@ export interface components {
 					blockGroupId: string;
 					/** Format: uuid */
 					blockId: string;
+					bookingAvailability: components['schemas']['SupervisionBookingAvailability'];
 					endTime: string;
 					/** Format: uuid */
 					homeroomId: string;
@@ -13264,6 +13271,10 @@ export interface components {
 				description?: string | null;
 				/** Format: uuid */
 				id: string;
+				/** Format: date */
+				observationEndDate?: string | null;
+				/** Format: date */
+				observationStartDate?: string | null;
 				status: components['schemas']['SupervisionCycleStatus'];
 				targets: components['schemas']['SupervisionCycleTarget'][];
 				/** Format: uuid */
@@ -13311,6 +13322,16 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_SupervisionEvaluatorAvailabilityResponse: {
+			data: {
+				items: components['schemas']['SupervisionEvaluatorAvailability'][];
+				overlap: components['schemas']['SupervisionBookingAvailability'];
+				overlappingBookings: components['schemas']['SupervisionOverlappingBooking'][];
+				withinCycleDates: boolean;
+			};
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_SupervisionObservation: {
 			data: {
 				/** Format: uuid */
@@ -13344,6 +13365,7 @@ export interface components {
 				/** Format: uuid */
 				observedUserId: string;
 				periods: components['schemas']['SupervisionObservationPeriod'][];
+				periodsLocked: boolean;
 				/** Format: date-time */
 				requestedAt: string;
 				/** Format: uuid */
@@ -19868,6 +19890,10 @@ export interface components {
 			/** Format: uuid */
 			academicYearId: string;
 			description?: string | null;
+			/** Format: date */
+			observationEndDate: string;
+			/** Format: date */
+			observationStartDate: string;
 			status?: components['schemas']['SupervisionCycleStatus'] | null;
 			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][];
 			/** Format: uuid */
@@ -22039,6 +22065,10 @@ export interface components {
 				description?: string | null;
 				/** Format: uuid */
 				id: string;
+				/** Format: date */
+				observationEndDate?: string | null;
+				/** Format: date */
+				observationStartDate?: string | null;
 				status: components['schemas']['SupervisionCycleStatus'];
 				targets: components['schemas']['SupervisionCycleTarget'][];
 				/** Format: uuid */
@@ -22092,6 +22122,7 @@ export interface components {
 				/** Format: uuid */
 				observedUserId: string;
 				periods: components['schemas']['SupervisionObservationPeriod'][];
+				periodsLocked: boolean;
 				/** Format: date-time */
 				requestedAt: string;
 				/** Format: uuid */
@@ -22166,6 +22197,7 @@ export interface components {
 				blockGroupId: string;
 				/** Format: uuid */
 				blockId: string;
+				bookingAvailability: components['schemas']['SupervisionBookingAvailability'];
 				endTime: string;
 				/** Format: uuid */
 				homeroomId: string;
@@ -24347,6 +24379,7 @@ export interface components {
 			/** Format: uuid */
 			timetableId: string;
 		};
+		ResubmitSupervisionObservationRequest: Record<string, never>;
 		ResultBlocker: {
 			/** Format: uuid */
 			assessmentPhaseId?: string | null;
@@ -25823,6 +25856,13 @@ export interface components {
 			observationId: string;
 			toStatus?: components['schemas']['SupervisionObservationStatus'] | null;
 		};
+		SupervisionBookingAvailability: {
+			blocked: boolean;
+			/** Format: int64 */
+			confirmedCount: number;
+			/** Format: int64 */
+			pendingCount: number;
+		};
 		SupervisionBookingOptions: {
 			items: components['schemas']['SupervisionTimetableOption'][];
 			sourceDigest: string;
@@ -25836,6 +25876,8 @@ export interface components {
 			academicTermId: string;
 			/** Format: uuid */
 			academicYearId: string;
+			/** Format: uuid */
+			cycleId: string;
 			/** Format: date */
 			weekStartDate: string;
 		};
@@ -25851,6 +25893,10 @@ export interface components {
 			description?: string | null;
 			/** Format: uuid */
 			id: string;
+			/** Format: date */
+			observationEndDate?: string | null;
+			/** Format: date */
+			observationStartDate?: string | null;
 			status: components['schemas']['SupervisionCycleStatus'];
 			targets: components['schemas']['SupervisionCycleTarget'][];
 			/** Format: uuid */
@@ -25953,6 +25999,12 @@ export interface components {
 			name: string;
 			title?: string | null;
 		};
+		SupervisionEvaluatorAvailabilityResponse: {
+			items: components['schemas']['SupervisionEvaluatorAvailability'][];
+			overlap: components['schemas']['SupervisionBookingAvailability'];
+			overlappingBookings: components['schemas']['SupervisionOverlappingBooking'][];
+			withinCycleDates: boolean;
+		};
 		SupervisionEvaluatorConflict: {
 			lessonTitle?: string | null;
 			/** Format: uuid */
@@ -25995,6 +26047,7 @@ export interface components {
 			/** Format: uuid */
 			observedUserId: string;
 			periods: components['schemas']['SupervisionObservationPeriod'][];
+			periodsLocked: boolean;
 			/** Format: date-time */
 			requestedAt: string;
 			/** Format: uuid */
@@ -26049,6 +26102,14 @@ export interface components {
 		SupervisionObservationTimetableQuery: {
 			/** Format: date */
 			weekStartDate: string;
+		};
+		SupervisionOverlappingBooking: {
+			/** Format: date-time */
+			endsAt?: string | null;
+			/** Format: date-time */
+			observedAt: string;
+			observedDisplayName?: string | null;
+			status: components['schemas']['SupervisionObservationStatus'];
 		};
 		SupervisionPeriodManualEvidence: {
 			classroomLabel?: string | null;
@@ -26204,6 +26265,7 @@ export interface components {
 			blockGroupId: string;
 			/** Format: uuid */
 			blockId: string;
+			bookingAvailability: components['schemas']['SupervisionBookingAvailability'];
 			endTime: string;
 			/** Format: uuid */
 			homeroomId: string;
@@ -27991,6 +28053,10 @@ export interface components {
 			/** Format: uuid */
 			academicYearId?: string | null;
 			description?: string | null;
+			/** Format: date */
+			observationEndDate?: string;
+			/** Format: date */
+			observationStartDate?: string;
 			status?: components['schemas']['SupervisionCycleStatus'] | null;
 			targets?: components['schemas']['CreateSupervisionCycleTargetRequest'][] | null;
 			/** Format: uuid */
@@ -65558,6 +65624,7 @@ export interface operations {
 			query: {
 				academicTermId: string;
 				academicYearId: string;
+				cycleId: string;
 				weekStartDate: string;
 			};
 			header?: never;
@@ -66574,7 +66641,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionEvaluatorAvailability'];
+					'application/json': components['schemas']['ApiResponse_SupervisionEvaluatorAvailabilityResponse'];
 				};
 			};
 			/** @description Authentication required */
@@ -66808,6 +66875,78 @@ export interface operations {
 				};
 			};
 			/** @description Supervision booking conflict */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	resubmitSupervisionObservationRequest: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Returned observation with a frozen schedule */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['ResubmitSupervisionObservationRequest'];
+			};
+		};
+		responses: {
+			/** @description Saved observation request resubmitted without changing periods */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
+				};
+			};
+			/** @description Invalid state or cycle date bounds */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Own request permission required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Observation not found */
+			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Academic lifecycle or booking conflict */
 			409: {
 				headers: {
 					[name: string]: unknown;

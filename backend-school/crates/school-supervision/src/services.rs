@@ -1,3 +1,4 @@
+mod availability;
 mod booking;
 mod cycle_deletion;
 mod cycles;

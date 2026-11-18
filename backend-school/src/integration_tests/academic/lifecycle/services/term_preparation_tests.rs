@@ -1204,6 +1204,8 @@ async fn supervision_preparation_copies_fresh_draft_configuration_without_any_da
             dates: vec![],
         },
     };
+    sqlx::query("UPDATE supervision_cycles SET observation_start_date='2026-01-01',observation_end_date='2026-12-31' WHERE id=$1")
+        .bind(source_cycle).execute(&pool).await.unwrap();
     let source_before: serde_json::Value = sqlx::query_scalar("SELECT jsonb_agg(to_jsonb(cycle) ORDER BY id) FROM supervision_cycles cycle WHERE academic_term_id=$1")
         .bind(source_term_id).fetch_one(&pool).await.unwrap();
     let workspace = preview(&pool, &actor, input.clone()).await.unwrap();
@@ -1236,6 +1238,18 @@ async fn supervision_preparation_copies_fresh_draft_configuration_without_any_da
     assert_eq!(copied.0, "draft");
     assert_eq!(copied.2, Some(actor.user_id));
     assert_eq!(copied.3, target_term_id);
+    let copied_dates: (Option<chrono::NaiveDate>, Option<chrono::NaiveDate>) = sqlx::query_as(
+        "SELECT observation_start_date,observation_end_date FROM supervision_cycles WHERE id=$1",
+    )
+    .bind(target_cycle)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        copied_dates,
+        (None, None),
+        "preparation drafts must not guess observation dates from source cycles"
+    );
     let target: (Uuid, i32, i32) = sqlx::query_as("SELECT target_id,required_observations,priority FROM supervision_cycle_targets WHERE cycle_id=$1 AND target_type='staff'")
         .bind(target_cycle).fetch_one(&pool).await.unwrap();
     assert_eq!(target, (mapped_staff, 3, 7));

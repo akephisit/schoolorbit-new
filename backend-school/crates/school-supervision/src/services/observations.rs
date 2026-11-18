@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::models::{
     ApproveObservationRequest, CancelObservationRequest, RequestSupervisionObservationRequest,
     ReturnObservationRequest, SupervisionAction, SupervisionBookingOptions, SupervisionCycleStatus,
-    SupervisionEvaluator, SupervisionEvaluatorAvailability, SupervisionObservation,
+    SupervisionEvaluator, SupervisionEvaluatorAvailabilityResponse, SupervisionObservation,
     SupervisionObservationFilter, SupervisionObservationStatus, UpdateRequestedObservationRequest,
     UpdateSupervisionObservationRequest,
 };
@@ -16,17 +16,15 @@ use school_errors::AppError;
 
 use super::cycles::SupervisionCycleTargetRow;
 use super::evaluations::{
-    evaluator_availability_from_row, insert_supervision_evaluators,
-    load_evaluator_submission_states, validate_evaluator_availability_for_observation,
-    EvaluatorAvailabilityRow,
+    insert_supervision_evaluators, load_evaluator_submission_states,
+    validate_evaluator_availability_for_observation,
 };
 use super::lifecycle::{require_cycle_write, require_observation_write};
 use super::shared::{
-    all_required_evaluators_submitted, can_transition_observation_status,
-    evaluator_conflict_status_codes, has_approval_evidence, has_required_evaluator,
-    manager_can_edit_observation, parse_cycle_status, parse_evaluator_status,
-    parse_observation_status, parse_optional_observation_status, parse_target_type,
-    resolve_supervision_target_rule, teacher_can_edit_requested_observation,
+    all_required_evaluators_submitted, can_transition_observation_status, has_approval_evidence,
+    has_required_evaluator, manager_can_edit_observation, parse_cycle_status,
+    parse_evaluator_status, parse_observation_status, parse_optional_observation_status,
+    parse_target_type, resolve_supervision_target_rule, teacher_can_edit_requested_observation,
     SupervisionObservationListAccess, SupervisionTargetMatch, SupervisionTargetRule,
 };
 
@@ -190,49 +188,23 @@ pub(super) async fn get_observation_with_connection(
 
 pub async fn evaluator_availability(
     pool: &PgPool,
+    actor: &school_authorization::ActorContext,
     observation_id: Uuid,
-) -> Result<Vec<SupervisionEvaluatorAvailability>, AppError> {
+) -> Result<SupervisionEvaluatorAvailabilityResponse, AppError> {
     let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
         pool,
         "supervision.observations.evaluator_availability",
     )
     .await?;
-    let observation =
-        super::observations::get_observation_with_connection(&mut connection, observation_id)
-            .await?;
-    let conflict_statuses = evaluator_conflict_status_codes()
-        .iter()
-        .map(|status| (*status).to_string())
-        .collect::<Vec<_>>();
-
-    let rows=DbSession::new(&mut connection).query_as::<EvaluatorAvailabilityRow>("supervision.observations.evaluator_availability",r#"
-        SELECT u.id,u.title,u.display_name,conflict.observation_id AS conflict_observation_id,
-            conflict.observed_display_name AS conflict_observed_display_name,
-            conflict.observed_at AS conflict_observed_at,conflict.subject_name AS conflict_subject_name,
-            conflict.period_label AS conflict_period_label
-        FROM user_display_names u LEFT JOIN LATERAL (
-            SELECT o.id AS observation_id,NULLIF(observed.display_name,'') AS observed_display_name,
-                p.observed_at,
-                COALESCE(NULLIF(p.manual_subject_name,''),NULLIF(p.lesson_snapshot->>'subjectName','')) AS subject_name,
-                COALESCE(NULLIF(p.manual_period_label,''),NULLIF(p.lesson_snapshot->>'periodLabel','')) AS period_label
-            FROM supervision_evaluators e JOIN supervision_observations o ON o.id=e.observation_id
-            JOIN supervision_observation_periods p ON p.observation_id=o.id
-            JOIN user_display_names observed ON observed.id=o.observed_user_id
-            WHERE e.evaluator_user_id=u.id AND o.id<>$1 AND o.status=ANY($2)
-              AND EXISTS(SELECT 1 FROM supervision_observation_periods chosen WHERE chosen.observation_id=$1 AND (
-                (p.ends_at IS NULL AND chosen.ends_at IS NULL AND p.observed_at=chosen.observed_at)
-                OR (p.ends_at IS NULL AND chosen.ends_at IS NOT NULL AND chosen.observed_at<=p.observed_at AND p.observed_at<chosen.ends_at)
-                OR (p.ends_at IS NOT NULL AND chosen.ends_at IS NULL AND p.observed_at<=chosen.observed_at AND chosen.observed_at<p.ends_at)
-                OR (p.ends_at IS NOT NULL AND chosen.ends_at IS NOT NULL AND p.observed_at<chosen.ends_at AND chosen.observed_at<p.ends_at)))
-            ORDER BY o.approved_at DESC NULLS LAST,o.created_at DESC,o.id,p.position LIMIT 1
-        ) conflict ON true WHERE u.user_type='staff' AND u.status='active' AND u.id<>$3
-        ORDER BY (conflict.observation_id IS NOT NULL),u.first_name,u.last_name,u.id
-    "#).bind(observation_id).bind(conflict_statuses).bind(observation.observed_user_id).fetch_all().await?;
-
-    Ok(rows
-        .into_iter()
-        .map(evaluator_availability_from_row)
-        .collect())
+    let observation = get_observation_with_connection(&mut connection, observation_id).await?;
+    let cycle = load_cycle_for_request(&mut connection, observation.cycle_id).await?;
+    super::availability::evaluator_response(
+        &mut connection,
+        actor,
+        &observation,
+        cycle.contains_periods(&observation.periods),
+    )
+    .await
 }
 
 pub async fn observation_timetable_options(
@@ -256,6 +228,7 @@ pub async fn observation_timetable_options(
         &cycle,
         observation.academic_term_id,
         week_start_date,
+        Some(observation_id),
     )
     .await?;
     if observation.periods_locked {
@@ -300,13 +273,17 @@ pub async fn request_observation(
         &input.expected_source_digest,
     )
     .await?;
-    periods::ensure_no_own_duplicate(
+    super::availability::validate(
         &mut tx,
         actor_user_id,
         cycle.id,
+        input.academic_term_id,
         None,
-        input.observed_date,
-        &selected,
+        &selected
+            .iter()
+            .map(super::availability::Window::from)
+            .collect::<Vec<_>>(),
+        &[],
     )
     .await?;
     let observation_id:Uuid=DbSession::new(&mut tx).scalar("supervision.observations.request_observation",
@@ -369,8 +346,6 @@ pub async fn update_requested_observation(
     let cycle = load_cycle_for_request(&mut *tx, current.cycle_id).await?;
     if current.status == SupervisionObservationStatus::Returned {
         validate_cycle_accepts_requests(&cycle)?;
-        ensure_no_submitted_evaluators(&current)?;
-        ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
     }
     ensure_no_submitted_evaluators(&current)?;
     ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
@@ -384,13 +359,17 @@ pub async fn update_requested_observation(
         &input.expected_source_digest,
     )
     .await?;
-    periods::ensure_no_own_duplicate(
+    super::availability::validate(
         &mut tx,
         actor_user_id,
         current.cycle_id,
+        current.academic_term_id,
         Some(observation_id),
-        input.observed_date,
-        &selected,
+        &selected
+            .iter()
+            .map(super::availability::Window::from)
+            .collect::<Vec<_>>(),
+        &[],
     )
     .await?;
     periods::replace(
@@ -401,13 +380,7 @@ pub async fn update_requested_observation(
         &selected,
     )
     .await?;
-    let evaluator_ids = current
-        .evaluators
-        .iter()
-        .map(|e| e.evaluator_user_id)
-        .collect::<Vec<_>>();
-    validate_evaluator_availability_for_observation(&mut tx, observation_id, &evaluator_ids)
-        .await?;
+
     DbSession::new(&mut tx).query("supervision.observations.update_requested_observation",
         "UPDATE supervision_observations SET status='requested',requested_at=CASE WHEN status='returned' THEN now() ELSE requested_at END WHERE id=$1")
         .bind(observation_id).execute().await?;
@@ -455,12 +428,20 @@ pub async fn resubmit_observation_request(
     validate_cycle_accepts_requests(&cycle)?;
     cycle.require_periods(&current.periods)?;
     ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
-    let evaluators = current
-        .evaluators
-        .iter()
-        .map(|e| e.evaluator_user_id)
-        .collect::<Vec<_>>();
-    validate_evaluator_availability_for_observation(&mut tx, observation_id, &evaluators).await?;
+    super::availability::validate(
+        &mut tx,
+        actor_user_id,
+        current.cycle_id,
+        current.academic_term_id,
+        Some(observation_id),
+        &current
+            .periods
+            .iter()
+            .map(super::availability::Window::from)
+            .collect::<Vec<_>>(),
+        &[],
+    )
+    .await?;
     DbSession::new(&mut tx)
         .query(
             "supervision.observations.resubmit_saved_request",
@@ -536,13 +517,17 @@ pub async fn update_observation(
             digest,
         )
         .await?;
-        periods::ensure_no_own_duplicate(
+        super::availability::validate(
             &mut tx,
             current.observed_user_id,
             current.cycle_id,
+            current.academic_term_id,
             Some(observation_id),
-            date,
-            &selected,
+            &selected
+                .iter()
+                .map(super::availability::Window::from)
+                .collect::<Vec<_>>(),
+            &[],
         )
         .await?;
         periods::replace(
@@ -553,13 +538,6 @@ pub async fn update_observation(
             &selected,
         )
         .await?;
-        let evaluators = current
-            .evaluators
-            .iter()
-            .map(|e| e.evaluator_user_id)
-            .collect::<Vec<_>>();
-        validate_evaluator_availability_for_observation(&mut tx, observation_id, &evaluators)
-            .await?;
     }
     if let Some(template_id) = input.template_id {
         ensure_no_submitted_evaluators(&current)?;

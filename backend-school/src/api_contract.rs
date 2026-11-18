@@ -2215,6 +2215,9 @@ fn build_schema_group_16() -> utoipa::openapi::OpenApi {
         SupervisionEvaluator,
         SupervisionEvaluatorConflict,
         SupervisionEvaluatorAvailability,
+        SupervisionEvaluatorAvailabilityResponse,
+        SupervisionBookingAvailability,
+        SupervisionOverlappingBooking,
         SupervisionAction,
         SupervisionObservation,
         SupervisionReviewResponse,
@@ -2279,7 +2282,7 @@ fn build_schema_group_17() -> utoipa::openapi::OpenApi {
         ApiResponse<SupervisionTemplate>,
         ApiResponse<SupervisionObservation>,
         ApiResponse<SupervisionObservationReview>,
-        ApiResponse<ItemsData<SupervisionEvaluatorAvailability>>,
+        ApiResponse<SupervisionEvaluatorAvailabilityResponse>,
         ApiResponse<ItemsData<SupervisionTimetableOption>>,
         ApiResponse<SupervisionCycleProgress>,
         ApiResponse<ItemsData<SupervisionTeacherStatusRow>>,
@@ -4663,6 +4666,11 @@ mod tests {
                 "updateRequestedSupervisionObservation",
             ),
             (
+                "/api/supervision/observations/{id}/resubmit-request",
+                "post",
+                "resubmitSupervisionObservationRequest",
+            ),
+            (
                 "/api/supervision/observations/{id}/request",
                 "delete",
                 "cancelRequestedSupervisionObservation",
@@ -4726,6 +4734,51 @@ mod tests {
                 ("status".to_string(), false),
             ])
         );
+        assert_eq!(
+            query_contract(&document, "/api/supervision/booking-options", "get"),
+            BTreeSet::from([
+                ("cycleId".into(), true),
+                ("academicYearId".into(), true),
+                ("academicTermId".into(), true),
+                ("weekStartDate".into(), true)
+            ])
+        );
+        let schemas = &document["components"]["schemas"];
+        for field in ["observationStartDate", "observationEndDate"] {
+            assert!(schemas["CreateSupervisionCycleRequest"]["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|required| required == field));
+            assert_eq!(
+                schemas["UpdateSupervisionCycleRequest"]["properties"][field]["type"],
+                "string"
+            );
+            assert_eq!(
+                schemas["UpdateSupervisionCycleRequest"]["properties"][field]["format"],
+                "date"
+            );
+        }
+        assert_eq!(
+            schemas["ResubmitSupervisionObservationRequest"]["additionalProperties"],
+            false
+        );
+        assert_eq!(
+            schemas["SupervisionTimetableOption"]["properties"]["bookingAvailability"]["$ref"],
+            "#/components/schemas/SupervisionBookingAvailability"
+        );
+        for field in [
+            "items",
+            "overlap",
+            "withinCycleDates",
+            "overlappingBookings",
+        ] {
+            assert!(
+                schemas["SupervisionEvaluatorAvailabilityResponse"]["properties"]
+                    .get(field)
+                    .is_some()
+            );
+        }
         for (path, method, _) in expected {
             if method != "get" && !path.starts_with("/api/supervision/templates") {
                 assert_eq!(

@@ -11562,6 +11562,20 @@
                       "format": "uuid",
                       "type": "string"
                     },
+                    "observationEndDate": {
+                      "format": "date",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "observationStartDate": {
+                      "format": "date",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "status": {
                       "$ref": "#/components/schemas/SupervisionCycleStatus"
                     },
@@ -11592,74 +11606,6 @@
                     "createdAt",
                     "updatedAt",
                     "targets"
-                  ],
-                  "type": "object"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "items"
-            ],
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "data"
-        ],
-        "type": "object"
-      },
-      "ApiResponse_ItemsData_SupervisionEvaluatorAvailability": {
-        "properties": {
-          "data": {
-            "properties": {
-              "items": {
-                "items": {
-                  "properties": {
-                    "available": {
-                      "type": "boolean"
-                    },
-                    "conflict": {
-                      "oneOf": [
-                        {
-                          "$ref": "#/components/schemas/SupervisionEvaluatorConflict"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "conflictReason": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "id": {
-                      "format": "uuid",
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "available"
                   ],
                   "type": "object"
                 },
@@ -11778,6 +11724,9 @@
                       },
                       "type": "array"
                     },
+                    "periodsLocked": {
+                      "type": "boolean"
+                    },
                     "requestedAt": {
                       "format": "date-time",
                       "type": "string"
@@ -11802,6 +11751,7 @@
                     }
                   },
                   "required": [
+                    "periodsLocked",
                     "canManage",
                     "canReview",
                     "id",
@@ -12117,6 +12067,9 @@
                       "format": "uuid",
                       "type": "string"
                     },
+                    "bookingAvailability": {
+                      "$ref": "#/components/schemas/SupervisionBookingAvailability"
+                    },
                     "endTime": {
                       "type": "string"
                     },
@@ -12168,7 +12121,8 @@
                     "learningGroupId",
                     "learningGroupName",
                     "homeroomId",
-                    "homeroomName"
+                    "homeroomName",
+                    "bookingAvailability"
                   ],
                   "type": "object"
                 },
@@ -17096,6 +17050,20 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "observationEndDate": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "observationStartDate": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "status": {
                 "$ref": "#/components/schemas/SupervisionCycleStatus"
               },
@@ -17251,6 +17219,50 @@
         ],
         "type": "object"
       },
+      "ApiResponse_SupervisionEvaluatorAvailabilityResponse": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionEvaluatorAvailability"
+                },
+                "type": "array"
+              },
+              "overlap": {
+                "$ref": "#/components/schemas/SupervisionBookingAvailability"
+              },
+              "overlappingBookings": {
+                "items": {
+                  "$ref": "#/components/schemas/SupervisionOverlappingBooking"
+                },
+                "type": "array"
+              },
+              "withinCycleDates": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "items",
+              "overlap",
+              "withinCycleDates",
+              "overlappingBookings"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_SupervisionObservation": {
         "properties": {
           "data": {
@@ -17342,6 +17354,9 @@
                 },
                 "type": "array"
               },
+              "periodsLocked": {
+                "type": "boolean"
+              },
               "requestedAt": {
                 "format": "date-time",
                 "type": "string"
@@ -17366,6 +17381,7 @@
               }
             },
             "required": [
+              "periodsLocked",
               "canManage",
               "canReview",
               "id",
@@ -41471,6 +41487,14 @@
               "null"
             ]
           },
+          "observationEndDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "observationStartDate": {
+            "format": "date",
+            "type": "string"
+          },
           "status": {
             "oneOf": [
               {
@@ -41498,7 +41522,9 @@
         "required": [
           "academicYearId",
           "title",
-          "templateId"
+          "templateId",
+          "observationStartDate",
+          "observationEndDate"
         ],
         "type": "object"
       },
@@ -49149,6 +49175,20 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "observationEndDate": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "observationStartDate": {
+                  "format": "date",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "status": {
                   "$ref": "#/components/schemas/SupervisionCycleStatus"
                 },
@@ -49335,6 +49375,9 @@
                   },
                   "type": "array"
                 },
+                "periodsLocked": {
+                  "type": "boolean"
+                },
                 "requestedAt": {
                   "format": "date-time",
                   "type": "string"
@@ -49359,6 +49402,7 @@
                 }
               },
               "required": [
+                "periodsLocked",
                 "canManage",
                 "canReview",
                 "id",
@@ -49614,6 +49658,9 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "bookingAvailability": {
+                  "$ref": "#/components/schemas/SupervisionBookingAvailability"
+                },
                 "endTime": {
                   "type": "string"
                 },
@@ -49665,7 +49712,8 @@
                 "learningGroupId",
                 "learningGroupName",
                 "homeroomId",
-                "homeroomName"
+                "homeroomName",
+                "bookingAvailability"
               ],
               "type": "object"
             },
@@ -57453,6 +57501,10 @@
         ],
         "type": "object"
       },
+      "ResubmitSupervisionObservationRequest": {
+        "additionalProperties": false,
+        "type": "object"
+      },
       "ResultBlocker": {
         "properties": {
           "assessmentPhaseId": {
@@ -62999,6 +63051,27 @@
         ],
         "type": "object"
       },
+      "SupervisionBookingAvailability": {
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "confirmedCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pendingCount": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pendingCount",
+          "confirmedCount",
+          "blocked"
+        ],
+        "type": "object"
+      },
       "SupervisionBookingOptions": {
         "properties": {
           "items": {
@@ -63038,12 +63111,17 @@
             "format": "uuid",
             "type": "string"
           },
+          "cycleId": {
+            "format": "uuid",
+            "type": "string"
+          },
           "weekStartDate": {
             "format": "date",
             "type": "string"
           }
         },
         "required": [
+          "cycleId",
           "academicYearId",
           "academicTermId",
           "weekStartDate"
@@ -63083,6 +63161,20 @@
           "id": {
             "format": "uuid",
             "type": "string"
+          },
+          "observationEndDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observationStartDate": {
+            "format": "date",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/SupervisionCycleStatus"
@@ -63411,6 +63503,35 @@
         ],
         "type": "object"
       },
+      "SupervisionEvaluatorAvailabilityResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionEvaluatorAvailability"
+            },
+            "type": "array"
+          },
+          "overlap": {
+            "$ref": "#/components/schemas/SupervisionBookingAvailability"
+          },
+          "overlappingBookings": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionOverlappingBooking"
+            },
+            "type": "array"
+          },
+          "withinCycleDates": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "overlap",
+          "withinCycleDates",
+          "overlappingBookings"
+        ],
+        "type": "object"
+      },
       "SupervisionEvaluatorConflict": {
         "properties": {
           "lessonTitle": {
@@ -63537,6 +63658,9 @@
             },
             "type": "array"
           },
+          "periodsLocked": {
+            "type": "boolean"
+          },
           "requestedAt": {
             "format": "date-time",
             "type": "string"
@@ -63561,6 +63685,7 @@
           }
         },
         "required": [
+          "periodsLocked",
           "canManage",
           "canReview",
           "id",
@@ -63711,6 +63836,35 @@
         },
         "required": [
           "weekStartDate"
+        ],
+        "type": "object"
+      },
+      "SupervisionOverlappingBooking": {
+        "properties": {
+          "endsAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "observedDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionObservationStatus"
+          }
+        },
+        "required": [
+          "observedAt",
+          "status"
         ],
         "type": "object"
       },
@@ -64251,6 +64405,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "bookingAvailability": {
+            "$ref": "#/components/schemas/SupervisionBookingAvailability"
+          },
           "endTime": {
             "type": "string"
           },
@@ -64302,7 +64459,8 @@
           "learningGroupId",
           "learningGroupName",
           "homeroomId",
-          "homeroomName"
+          "homeroomName",
+          "bookingAvailability"
         ],
         "type": "object"
       },
@@ -71058,6 +71216,14 @@
               "string",
               "null"
             ]
+          },
+          "observationEndDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "observationStartDate": {
+            "format": "date",
+            "type": "string"
           },
           "status": {
             "oneOf": [
@@ -121730,6 +121896,15 @@
         "parameters": [
           {
             "in": "query",
+            "name": "cycleId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "academicYearId",
             "required": true,
             "schema": {
@@ -123036,7 +123211,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionEvaluatorAvailability"
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionEvaluatorAvailabilityResponse"
                 }
               }
             },
@@ -123335,6 +123510,98 @@
               }
             },
             "description": "Supervision booking conflict"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/observations/{id}/resubmit-request": {
+      "post": {
+        "operationId": "resubmitSupervisionObservationRequest",
+        "parameters": [
+          {
+            "description": "Returned observation with a frozen schedule",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResubmitSupervisionObservationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_SupervisionObservation"
+                }
+              }
+            },
+            "description": "Saved observation request resubmitted without changing periods"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid state or cycle date bounds"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Own request permission required"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Observation not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Academic lifecycle or booking conflict"
           }
         },
         "tags": [

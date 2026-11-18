@@ -44,6 +44,7 @@
 		initialDate,
 		observations = [],
 		allowed,
+		onreloadCycle,
 		onsubmit,
 		submitLabel = 'ส่งคำขอจอง',
 		disabled = false
@@ -55,6 +56,7 @@
 		initialDate?: string;
 		observations?: SupervisionObservation[];
 		allowed: boolean;
+		onreloadCycle?: () => Promise<void>;
 		disabled?: boolean;
 		onsubmit: (selection: SupervisionLessonSelection) => Promise<void>;
 		submitLabel?: string;
@@ -68,6 +70,7 @@
 	let saveError = $state('');
 	let success = $state('');
 	let saving = $state(false);
+	let reloadingCycle = $state(false);
 	let selectionDigest = $state('');
 	const request = new LatestRequest();
 	let context = '';
@@ -135,6 +138,7 @@
 			saveError = '';
 			success = '';
 			saving = false;
+			reloadingCycle = false;
 			weekStartDate = !datesError
 				? clampedBookingWeek(cycle.observationStartDate!, cycle.observationEndDate!, initialDate)
 				: bookingWeekStart(initialDate);
@@ -199,6 +203,21 @@
 			error = failure instanceof Error ? failure.message : 'โหลดคาบสอนไม่สำเร็จ';
 		} finally {
 			if (request.isCurrent(ticket.revision) && sourceContext === ownerKey()) loading = false;
+		}
+	}
+
+	async function reloadCycle() {
+		if (!onreloadCycle || reloadingCycle || saving) return;
+		const sourceEpoch = epoch;
+		const sourceContext = ownerKey();
+		reloadingCycle = true;
+		try {
+			await onreloadCycle();
+		} catch (failure) {
+			if (sourceEpoch === epoch && sourceContext === ownerKey())
+				saveError = failure instanceof Error ? failure.message : 'ตรวจช่วงวันที่ของรอบไม่สำเร็จ';
+		} finally {
+			if (sourceEpoch === epoch && sourceContext === ownerKey()) reloadingCycle = false;
 		}
 	}
 
@@ -480,6 +499,12 @@
 					disabled={saving || loading}
 					onclick={() => void loadOptions()}>ตรวจตารางสอนล่าสุด</Button
 				>
+				{#if onreloadCycle}<Button
+						variant="outline"
+						size="sm"
+						disabled={saving || loading || reloadingCycle}
+						onclick={() => void reloadCycle()}>ตรวจช่วงวันที่ของรอบ</Button
+					>{/if}
 			</div>{/if}
 		{#if success}<p role="status" class="text-sm font-medium text-primary">{success}</p>{/if}
 		<LoadingButton

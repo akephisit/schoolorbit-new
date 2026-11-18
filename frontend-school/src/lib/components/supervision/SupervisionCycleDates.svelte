@@ -8,7 +8,7 @@
 	import type { CreateSupervisionCycleRequest, SupervisionCycle } from '#lib/api/supervision.js';
 	import { cycleDateRangeError, cycleDateRangeLabel } from '#lib/supervision/booking-range.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
@@ -92,13 +92,15 @@
 </script>
 
 <Dialog.Root {open} onOpenChange={setOpen}>
-	{#if allowed}<Button
-			size="sm"
-			variant="outline"
-			disabled={disabled || saving}
-			onclick={() => setOpen(true)}
-			aria-label={`กำหนดช่วงวันที่ ${cycle.title}`}
-			><CalendarRange class="size-4" />ช่วงวันที่นิเทศ</Button
+	{#if allowed}<Dialog.Trigger
+			>{#snippet child({ props })}<Button
+					{...props}
+					size="sm"
+					variant="outline"
+					disabled={disabled || saving}
+					aria-label={`กำหนดช่วงวันที่ ${cycle.title}`}
+					><CalendarRange class="size-4" />ช่วงวันที่นิเทศ</Button
+				>{/snippet}</Dialog.Trigger
 		>{/if}
 	<Dialog.Content
 		class="sm:max-w-lg"
@@ -129,20 +131,22 @@
 			</p>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="space-y-2">
-					<Label for={`cycle-start-${cycle.id}`}>วันเริ่มนิเทศ</Label><Input
+					<Label for={`cycle-start-${cycle.id}`}>วันเริ่มนิเทศ</Label><DatePicker
 						id={`cycle-start-${cycle.id}`}
-						type="date"
-						bind:value={start}
+						ariaLabel="วันเริ่มนิเทศ"
+						value={start || undefined}
+						onValueChange={(value) => (start = value ?? '')}
 						disabled={saving}
 						required
 					/>
 				</div>
 				<div class="space-y-2">
-					<Label for={`cycle-end-${cycle.id}`}>วันสุดท้ายที่นิเทศ</Label><Input
+					<Label for={`cycle-end-${cycle.id}`}>วันสุดท้ายที่นิเทศ</Label><DatePicker
 						id={`cycle-end-${cycle.id}`}
-						type="date"
-						bind:value={end}
-						min={start || undefined}
+						ariaLabel="วันสุดท้ายที่นิเทศ"
+						value={end || undefined}
+						onValueChange={(value) => (end = value ?? '')}
+						minValue={start || undefined}
 						disabled={saving}
 						required
 					/>

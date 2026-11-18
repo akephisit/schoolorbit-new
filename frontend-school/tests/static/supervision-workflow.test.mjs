@@ -27,6 +27,17 @@ test('manual cycle states and observation stages have distinct Thai meanings', (
 	assert.equal(observationWorkflow({ status: 'cancelled', evaluators: [] }).stage, -1);
 });
 
+test('a returned previously approved visit offers saved-times resubmission rather than changing locked lessons', () => {
+	assert.equal(
+		observationWorkflow({ status: 'returned', evaluators: [], periodsLocked: true }).nextAction,
+		'ตรวจและส่งใหม่ด้วยคาบเดิม'
+	);
+	assert.equal(
+		observationWorkflow({ status: 'returned', evaluators: [], periodsLocked: false }).nextAction,
+		'แก้ไขและส่งใหม่'
+	);
+});
+
 test('required evaluator progress names only required pending evaluators and never advances server status', () => {
 	const evaluators = [
 		{ isRequired: true, status: 'submitted', evaluatorDisplayName: 'ส่งแล้ว' },
