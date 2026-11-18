@@ -51,6 +51,35 @@ const agenda = (page: Page) => page.getByRole('region', { name: /1 ต.ค. 2569
 const openReview = (scope: Page | Locator) =>
 	scope.getByRole('button', { name: 'ตรวจคำขอ', exact: true }).click();
 
+const otherTeacher = 'ครู รายการที่ยังจัดการได้';
+const otherRequest = {
+	id: id(40),
+	observedDisplayName: otherTeacher,
+	canManage: true,
+	status: 'requested' as const,
+	evaluators: savedEvaluators
+};
+
+function requestCard(page: Page, teacher: string) {
+	return page
+		.getByRole('tabpanel', { name: 'คำขอจอง' })
+		.locator('[data-slot="card"]')
+		.filter({
+			has: page.getByRole('heading', { name: teacher, exact: true })
+		});
+}
+
+async function refreshWithoutDismissingPicker(page: Page) {
+	await page.evaluate(() => {
+		const link = document.createElement('a');
+		link.href = location.href;
+		link.dataset.sveltekitPreloadData = 'false';
+		document.body.append(link);
+		link.click();
+		link.remove();
+	});
+}
+
 async function selectEvaluator(page: Page, scope: Locator, name: string) {
 	await scope.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน', exact: true }).click();
 	await page.getByRole('option', { name, exact: true }).click();
@@ -299,4 +328,121 @@ test('a readable out-of-scope request shows saved names without review actions o
 	await expect(page.getByRole('button', { name: 'ตรวจคำขอ', exact: true })).toHaveCount(0);
 	expect(api.count(availabilityPath)).toBe(0);
 	expect(api.writes).toEqual([]);
+});
+
+test('a refreshed row that loses management closes its picker and retires only its review draft', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		observation: { evaluators: savedEvaluators },
+		additionalObservations: [otherRequest],
+		evaluatorAvailability,
+		hold: 'observations',
+		holdAt: 2
+	});
+	const secondRead = Promise.withResolvers<void>();
+	const releaseRead = Promise.withResolvers<void>();
+	const privateOverlapName = 'ครู จากผลตรวจช่วงคาบเดิม';
+	let availabilityReads = 0;
+	await page.route(`**${availabilityPath}`, async (route) => {
+		const read = ++availabilityReads;
+		if (read === 2) {
+			secondRead.resolve();
+			await releaseRead.promise;
+		}
+		await route.fulfill({
+			json: {
+				success: true,
+				data: {
+					items: evaluatorAvailability,
+					overlap: { pendingCount: 1, confirmedCount: 0, blocked: false },
+					withinCycleDates: true,
+					overlappingBookings: [
+						{
+							observedDisplayName: privateOverlapName,
+							observedAt: '2026-10-01T09:00:00Z',
+							status: 'requested'
+						}
+					]
+				}
+			}
+		});
+	});
+	await page.goto(requestsPath);
+	const first = requestCard(page, 'ครู ในคิว');
+	const second = requestCard(page, otherTeacher);
+	const picker = first.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน' });
+	await returnReason(second).fill('ร่างของอีกรายการ');
+	await remove(second, optional).click();
+	await returnReason(first).fill(reason);
+	await selectEvaluator(page, first, detailAddition);
+	await picker.click();
+	await secondRead.promise;
+	await expect(page.getByPlaceholder('ค้นหาครูผู้ประเมิน...')).toBeVisible();
+	await expect(first.getByText(privateOverlapName, { exact: true })).toBeVisible();
+	api.setObservationScope('read');
+	const abortedRead = page.waitForEvent('requestfailed', {
+		predicate: (request) => new URL(request.url()).pathname === availabilityPath
+	});
+	await refreshWithoutDismissingPicker(page);
+	const region = page.getByTestId('supervision-observations');
+	await expect(region).toHaveAttribute('aria-busy', 'true');
+	await expect(picker).toHaveAttribute('aria-expanded', 'true');
+	api.release();
+	await expect(picker).toBeDisabled();
+	await abortedRead;
+	releaseRead.resolve();
+	await expect(page.getByPlaceholder('ค้นหาครูผู้ประเมิน...')).toHaveCount(0);
+	await expect(first.getByTestId('supervision-request-availability')).toHaveCount(0);
+	await expect(page.getByText(privateOverlapName, { exact: true })).toHaveCount(0);
+	await expect(first.getByText(detailAddition, { exact: true })).toHaveCount(0);
+	await expect(returnReason(first)).toHaveValue('');
+	await expect(first.getByText(primary, { exact: true })).toBeVisible();
+	await expect(approval(first)).toBeDisabled();
+	await expect(returnReason(second)).toHaveValue('ร่างของอีกรายการ');
+	await expect(remove(second, optional)).toHaveCount(0);
+	await expect(approval(second)).toBeEnabled();
+
+	api.setObservationScope('manage');
+	await refreshWithoutDismissingPicker(page);
+	await expect(picker).toBeEnabled();
+	await expect(picker).toHaveAttribute('aria-expanded', 'false');
+	await expect(returnReason(first)).toHaveValue('');
+	await expect(first.getByText(detailAddition, { exact: true })).toHaveCount(0);
+	await expect(returnReason(second)).toHaveValue('ร่างของอีกรายการ');
+	expect(availabilityReads).toBe(2);
+	expect(api.writes).toEqual([]);
+});
+
+test('a held approval cannot reinsert a request removed by a fresh list', async ({ page }) => {
+	const api = await mock(page, {
+		observation: { evaluators: savedEvaluators },
+		additionalObservations: [otherRequest],
+		hold: 'patch'
+	});
+	await page.goto(requestsPath);
+	const first = requestCard(page, 'ครู ในคิว');
+	const second = requestCard(page, otherTeacher);
+	await returnReason(second).fill('เก็บร่างนี้ไว้');
+	await approval(first).click();
+	const endpoint = `${observationPath}/approve-request`;
+	await expect.poll(() => api.writes).toEqual([`POST ${endpoint}`]);
+	api.setObservationScope('hidden');
+	await refreshWithoutDismissingPicker(page);
+	await expect(first).toHaveCount(0);
+	await expect(approval(second)).toBeDisabled();
+	const settled = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint);
+	api.release();
+	const response = await settled;
+	expect(response.ok()).toBe(true);
+	await response.finished();
+	await expect(approval(second)).toBeEnabled();
+	await expect(returnReason(second)).toHaveValue('เก็บร่างนี้ไว้');
+	await expect(page.getByText('อนุมัติคำขอและมอบหมายผู้ประเมินแล้ว', { exact: true })).toHaveCount(
+		0
+	);
+	await showCalendar(page);
+	await expect(agenda(page).getByText('ครู ในคิว', { exact: true })).toHaveCount(0);
+	await expect(agenda(page).getByText(otherTeacher, { exact: true })).toBeVisible();
+	expect(api.count(availabilityPath)).toBe(0);
 });

@@ -524,9 +524,7 @@
 						observationsError = result.error;
 						return;
 					}
-					observations = result.data.items;
-					observationsReadable = result.data.readable;
-					observationsLoaded = true;
+					applyObservations(result.data.items, result.data.readable);
 				});
 			const cycleRead = managementCyclesRequest.begin();
 			const templateRead = managementTemplatesRequest.begin();
@@ -879,6 +877,13 @@
 	function shouldLoadObservations() {
 		return routeData.observations !== null;
 	}
+	function applyObservations(items: SupervisionObservation[], readable: boolean) {
+		observations = items;
+		observationsReadable = readable;
+		observationsLoaded = true;
+		requestReview.reconcile();
+		if (calendarReviewId && !calendarReviewObservation) calendarReviewId = '';
+	}
 	async function retryObservations() {
 		if (!academicYearId || !canReadObservations) return;
 		const { revision, signal } = observationRequest.begin();
@@ -892,9 +897,7 @@
 			);
 
 			if (owner !== currentManagementContext() || !observationRequest.isCurrent(revision)) return;
-			observations = items;
-			observationsReadable = true;
-			observationsLoaded = true;
+			applyObservations(items, true);
 		} catch (error) {
 			if (
 				!isAbortError(error) &&
@@ -948,10 +951,12 @@
 		observationRequest.abort();
 		observationsLoading = false;
 		observationsError = '';
-		observationsLoaded = true;
-		observations = observations.some((item) => item.id === observation.id)
-			? observations.map((item) => (item.id === observation.id ? observation : item))
-			: [observation, ...observations];
+		applyObservations(
+			observations.some((item) => item.id === observation.id)
+				? observations.map((item) => (item.id === observation.id ? observation : item))
+				: [observation, ...observations],
+			observationsReadable
+		);
 	}
 
 	function currentUserEvaluator(observation: SupervisionObservation) {

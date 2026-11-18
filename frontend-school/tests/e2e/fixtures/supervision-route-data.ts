@@ -140,6 +140,7 @@ export async function mock(
 	let periodsLocked =
 		options.observation?.periodsLocked ?? !['requested', 'returned'].includes(observationStatus);
 	let observationPatch: Partial<SupervisionObservation> = {};
+	let observationScope: 'manage' | 'read' | 'hidden' | undefined;
 	const evaluatorAvailability = options.evaluatorAvailability ?? [
 		{
 			id: id(32),
@@ -150,7 +151,7 @@ export async function mock(
 		}
 	];
 	const observation = (academicYearId = year): SupervisionObservation => ({
-		canManage: options.canManage ?? true,
+		canManage: observationScope ? observationScope === 'manage' : (options.canManage ?? true),
 		canReview: options.canReview ?? true,
 		averageRating: options.averageRating ?? null,
 		id: id(30),
@@ -410,7 +411,7 @@ export async function mock(
 			if (resource === '/api/supervision/observations' && method === 'GET')
 				return reply(route, {
 					items: [
-						snapshot,
+						...(observationScope === 'hidden' ? [] : [snapshot]),
 						...(options.additionalObservations ?? []).map((item) => ({ ...snapshot, ...item }))
 					]
 				});
@@ -580,6 +581,9 @@ export async function mock(
 		},
 		setPermissions: (permissions: string[]) => {
 			authPermissions = [...permissions];
+		},
+		setObservationScope: (scope: 'manage' | 'read' | 'hidden') => {
+			observationScope = scope;
 		},
 		reads,
 		writes,

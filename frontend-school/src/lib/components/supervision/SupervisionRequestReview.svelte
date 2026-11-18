@@ -44,6 +44,9 @@
 	const unavailable = $derived(draft?.availability?.items.filter((item) => !item.available) ?? []);
 	const selectionUnverified = $derived(Boolean(draft?.error || draft?.loading));
 	let pickerOpen = $state(false);
+	$effect.pre(() => {
+		if (!canReview) pickerOpen = false;
+	});
 
 	function setPickerOpen(open: boolean) {
 		pickerOpen = open && !disabled;
@@ -133,18 +136,17 @@
 			{#if canChange && selected.length > 0 && !selected.some((item) => item.isRequired)}
 				<p class="text-sm text-muted-foreground">เลือกผู้ประเมินหลักอย่างน้อย 1 คน</p>
 			{/if}
-			<Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-				<Popover.Trigger disabled={disabled || draft?.loading}>
+			<Popover.Root open={canReview && pickerOpen} onOpenChange={setPickerOpen}>
+				<Popover.Trigger id={`${fieldId}-evaluators`} disabled={disabled || draft?.loading}>
 					{#snippet child({ props })}
 						<Button
 							type="button"
 							variant="outline"
 							role="combobox"
 							aria-label="เพิ่ม/เลือกผู้ประเมิน"
-							aria-expanded={pickerOpen}
+							aria-expanded={canReview && pickerOpen}
 							class="w-full justify-between font-normal"
 							{...props}
-							id={`${fieldId}-evaluators`}
 						>
 							<span class="truncate">
 								{draft?.loading && !draft.availability
@@ -155,71 +157,73 @@
 						</Button>
 					{/snippet}
 				</Popover.Trigger>
-				<Popover.Content class="w-(--bits-popover-trigger-width) p-0">
-					{#if draft?.loading && !draft.availability}
-						<div role="status" aria-label="กำลังโหลดข้อมูล"><PageSkeleton variant="table" /></div>
-					{/if}
-					{#if draft?.error}
-						<PageState
-							variant="error"
-							title="โหลดข้อมูลไม่สำเร็จ"
-							description={draft.error}
-							actionLabel="ลองใหม่"
-							onaction={() => void review.loadAvailability(id)}
-						/>
-					{/if}
-					<Command.Root>
-						<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
-						{#if draft?.availability}
-							<Command.Empty>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty>
-							<Command.List class="max-h-72">
-								<Command.Group heading="พร้อมประเมินตลอดช่วงคาบ">
-									{#each available as evaluator (evaluator.id)}
-										<Command.Item
-											value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
-											disabled={disabled || selectionUnverified}
-											onSelect={() => review.toggleEvaluator(id, evaluator)}
-										>
-											<Check
-												class={cn(
-													'mr-2 size-4',
-													selected.some((item) => item.id === evaluator.id)
-														? 'opacity-100'
-														: 'opacity-0'
-												)}
-											/>
-											<span>{evaluator.name}</span>
-										</Command.Item>
-									{/each}
-								</Command.Group>
-								{#if unavailable.length}
-									<Command.Group heading="ไม่ว่างในช่วงคาบนี้">
-										{#each unavailable as evaluator (evaluator.id)}
-											<Command.Item value={`${evaluator.name} ${evaluator.id}`} disabled>
-												<div class="min-w-0 space-y-1">
-													<p>{evaluator.name}</p>
-													<p class="text-xs text-muted-foreground">
-														{evaluator.conflictReason ?? 'มีงานทับช่วงคาบ'}
-													</p>
-													{#if evaluator.conflict}
-														<p class="text-xs text-muted-foreground">
-															{evaluator.conflict.observedDisplayName ?? 'รายการนิเทศ'} · {formatConflictDate(
-																evaluator.conflict.observedAt
-															)}
-															{evaluator.conflict.lessonTitle
-																? ` · ${evaluator.conflict.lessonTitle}`
-																: ''}
-														</p>
-													{/if}
-												</div>
+				{#if canReview}
+					<Popover.Content class="w-(--bits-popover-trigger-width) p-0">
+						{#if draft?.loading && !draft.availability}
+							<div role="status" aria-label="กำลังโหลดข้อมูล"><PageSkeleton variant="table" /></div>
+						{/if}
+						{#if draft?.error}
+							<PageState
+								variant="error"
+								title="โหลดข้อมูลไม่สำเร็จ"
+								description={draft.error}
+								actionLabel="ลองใหม่"
+								onaction={() => void review.loadAvailability(id)}
+							/>
+						{/if}
+						<Command.Root>
+							<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
+							{#if draft?.availability}
+								<Command.Empty>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty>
+								<Command.List class="max-h-72">
+									<Command.Group heading="พร้อมประเมินตลอดช่วงคาบ">
+										{#each available as evaluator (evaluator.id)}
+											<Command.Item
+												value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
+												disabled={disabled || selectionUnverified}
+												onSelect={() => review.toggleEvaluator(id, evaluator)}
+											>
+												<Check
+													class={cn(
+														'mr-2 size-4',
+														selected.some((item) => item.id === evaluator.id)
+															? 'opacity-100'
+															: 'opacity-0'
+													)}
+												/>
+												<span>{evaluator.name}</span>
 											</Command.Item>
 										{/each}
 									</Command.Group>
-								{/if}
-							</Command.List>
-						{/if}
-					</Command.Root>
-				</Popover.Content>
+									{#if unavailable.length}
+										<Command.Group heading="ไม่ว่างในช่วงคาบนี้">
+											{#each unavailable as evaluator (evaluator.id)}
+												<Command.Item value={`${evaluator.name} ${evaluator.id}`} disabled>
+													<div class="min-w-0 space-y-1">
+														<p>{evaluator.name}</p>
+														<p class="text-xs text-muted-foreground">
+															{evaluator.conflictReason ?? 'มีงานทับช่วงคาบ'}
+														</p>
+														{#if evaluator.conflict}
+															<p class="text-xs text-muted-foreground">
+																{evaluator.conflict.observedDisplayName ?? 'รายการนิเทศ'} · {formatConflictDate(
+																	evaluator.conflict.observedAt
+																)}
+																{evaluator.conflict.lessonTitle
+																	? ` · ${evaluator.conflict.lessonTitle}`
+																	: ''}
+															</p>
+														{/if}
+													</div>
+												</Command.Item>
+											{/each}
+										</Command.Group>
+									{/if}
+								</Command.List>
+							{/if}
+						</Command.Root>
+					</Popover.Content>
+				{/if}
 			</Popover.Root>
 			{#if unavailable.length}
 				<p class="text-xs text-muted-foreground">

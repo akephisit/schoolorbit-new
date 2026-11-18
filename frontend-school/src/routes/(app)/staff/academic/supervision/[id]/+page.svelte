@@ -354,7 +354,7 @@
 				)
 					return;
 				loading = false;
-				if (result.ok) observation = result.data;
+				if (result.ok) applyObservation(result.data);
 				else error = result.error;
 			});
 			void Promise.all([source.identity, source.cycle]).then(([owner, result]) => {
@@ -602,12 +602,18 @@
 		return response.data;
 	}
 
+	function applyObservation(updated: SupervisionObservation | null) {
+		observation = updated;
+		requestReview.reconcile();
+		if (!updated || !requestReview.canReview(updated)) requestReviewOpen = false;
+	}
+
 	function replaceObservation(updated: SupervisionObservation) {
 		observationRequest.abort();
 		reviewRequest.abort();
 		loading = false;
 		loadingReview = false;
-		observation = updated;
+		applyObservation(updated);
 		if (review)
 			review = {
 				...review,
@@ -629,7 +635,7 @@
 		if (owner !== appIdentityKey() || !observationRequest.isCurrent(ticket.revision)) return;
 		loading = false;
 		if (result.ok) {
-			observation = result.data;
+			applyObservation(result.data);
 			if (!cycle && !cycleLoading) void retryCycle();
 			if (!template && !templateLoading) void retryTemplate();
 		} else error = result.error;

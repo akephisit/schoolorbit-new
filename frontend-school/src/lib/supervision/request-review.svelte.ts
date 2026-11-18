@@ -77,7 +77,7 @@ export function createSupervisionRequestReview({
 	}
 
 	function selectedEvaluators(observation: SupervisionObservation) {
-		const state = drafts[observation.id];
+		const state = canReview(observation) ? drafts[observation.id] : undefined;
 		const ids = state?.evaluatorIds ?? observation.evaluators.map((item) => item.evaluatorUserId);
 		const availabilityIsCurrent = state?.availabilityBasis === availabilityBasis(observation);
 		return ids.map((id) => {
@@ -94,7 +94,7 @@ export function createSupervisionRequestReview({
 	}
 
 	function reviewState(observation: SupervisionObservation) {
-		const state = drafts[observation.id];
+		const state = canReview(observation) ? drafts[observation.id] : undefined;
 		if (!state) return;
 		const basis = availabilityBasis(observation);
 		return {
@@ -133,14 +133,18 @@ export function createSupervisionRequestReview({
 		const { revision, signal } = request.begin();
 		const ownsRoute = captureOwner();
 		const ownsRead = () => ownsRoute() && request.isCurrent(revision);
+		const currentRequest = () => {
+			if (!ownsRead()) return;
+			const current = getObservation(id);
+			if (current && canReview(current) && availabilityBasis(current) === basis) return current;
+		};
 		state.requestBasis = basis;
 		state.loading = true;
 		state.error = '';
 		try {
 			const result = await getSupervisionEvaluatorAvailability(id, { signal });
-			if (!ownsRead()) return;
-			const current = getObservation(id);
-			if (!current || !canReview(current) || availabilityBasis(current) !== basis) return;
+			const current = currentRequest();
+			if (!current) return;
 			state.availability = result;
 			state.availabilityBasis = basis;
 			if (state.evaluatorIds) {
@@ -151,7 +155,7 @@ export function createSupervisionRequestReview({
 				);
 			}
 		} catch (error) {
-			if (ownsRead() && !isAbortError(error)) {
+			if (!isAbortError(error) && currentRequest()) {
 				state.error =
 					error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้';
 			}
@@ -194,6 +198,13 @@ export function createSupervisionRequestReview({
 		delete drafts[id];
 	}
 
+	function reconcile() {
+		for (const id of Object.keys(drafts)) {
+			const current = getObservation(id);
+			if (!current || !canReview(current)) clear(id);
+		}
+	}
+
 	function reset() {
 		for (const id of Object.keys(availabilityRequests)) cancelAvailability(id);
 		drafts = {};
@@ -203,8 +214,15 @@ export function createSupervisionRequestReview({
 		const observation = getObservation(id);
 		if (!observation || !canSubmit(observation, action)) return;
 		const ownsMutation = captureOwner();
+		const submittedDraft = draft(id);
+		const ownsResult = () => {
+			if (!ownsMutation() || drafts[id] !== submittedDraft) return false;
+			const current = getObservation(id);
+			return Boolean(current && canChange(current));
+		};
 		const messages = actionMessages[action];
-		setSavingAction(`${action}:${id}`);
+		const actionKey = `${action}:${id}`;
+		setSavingAction(actionKey);
 		try {
 			const evaluators = selectedEvaluators(observation).map(({ id, isRequired, roleLabel }) => ({
 				evaluatorUserId: id,
@@ -216,18 +234,18 @@ export function createSupervisionRequestReview({
 				: action === 'approve-request'
 					? approveSupervisionObservationRequest(id, { evaluators })
 					: replaceSupervisionObservationEvaluators(id, { evaluators }));
-			if (!ownsMutation()) return;
+			if (!ownsResult()) return;
 			const updated = requireApiData(response, messages.failure);
 			if (action === 'save-evaluators') draft(id).evaluatorIds = undefined;
 			else clear(id);
 			onApplied(updated);
 			toast.success(messages.success);
 		} catch (error) {
-			if (!ownsMutation()) return;
+			if (!ownsResult()) return;
 			if (action !== 'return-request') void loadAvailability(id);
 			toast.error(error instanceof Error ? error.message : messages.failure);
 		} finally {
-			if (ownsMutation()) setSavingAction(null);
+			if (ownsMutation() && getSavingAction() === actionKey) setSavingAction(null);
 		}
 	}
 
@@ -245,6 +263,7 @@ export function createSupervisionRequestReview({
 			editSelection(id, evaluator.id, true),
 		removeEvaluator: (id: string, evaluatorId: string) => editSelection(id, evaluatorId),
 		setComment,
+		reconcile,
 		reset,
 		submit
 	};
