@@ -6,6 +6,8 @@
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
 	import {
 		schoolCivilDate,
+		cycleDateRangeError,
+		cycleDateRangeLabel,
 		type SupervisionLessonSelection
 	} from '#lib/supervision/booking-range.js';
 	import {
@@ -46,6 +48,7 @@
 		getSupervisionTemplateSummary,
 		getSupervisionCycle,
 		replaceSupervisionObservationEvaluators,
+		resubmitSupervisionObservationRequest,
 		updateRequestedSupervisionObservation,
 		updateSupervisionObservation,
 		type SupervisionCycle,
@@ -95,6 +98,7 @@
 	let loading = $state(true);
 	let savingAction = $state<string | null>(null);
 	let error = $state('');
+	let resubmitError = $state('');
 	let observation = $state<SupervisionObservation | null>(null);
 	let review = $state<SupervisionObservationReview | null>(null);
 	let template = $state<SupervisionTemplateSummary | null>(null);
@@ -183,10 +187,20 @@
 		canCancelOwnRequest &&
 			!observation?.evaluators.some((evaluator) => evaluator.status === 'submitted')
 	);
-	const isReturnedOwnRequest = $derived(canEditOwnRequested && observation?.status === 'returned');
+	const isReturnedOwnRequest = $derived(canCancelOwnRequest && observation?.status === 'returned');
+	const canResubmitSaved = $derived(
+		canEditOwnRequested && isReturnedOwnRequest && observation?.periodsLocked === true
+	);
+	const cycleDatesError = $derived(
+		cycle ? cycleDateRangeError(cycle.observationStartDate, cycle.observationEndDate) : null
+	);
+	const cycleAllowsResubmission = $derived(
+		!cycleLoading && cycle?.status === 'open' && !cycleDatesError
+	);
 	const canEditLesson = $derived(
 		Boolean(
 			observation &&
+			!observation.periodsLocked &&
 			manageableStatus(observation.status) &&
 			(canManageObservation || canEditOwnRequested)
 		)
@@ -267,6 +281,7 @@
 		untrack(() => {
 			if (contextId !== source.observationId || contextIdentity !== identity) {
 				contextIdentity = identity;
+				resubmitError = '';
 				contextId = source.observationId;
 				contextEpoch += 1;
 				observation = null;
@@ -751,10 +766,11 @@
 		loadingEvaluatorAvailability = true;
 		evaluatorAvailabilityError = '';
 		try {
-			const items = await getSupervisionEvaluatorAvailability(observation.id, {
+			const result = await getSupervisionEvaluatorAvailability(observation.id, {
 				signal: ticket.signal
 			});
 			if (!evaluatorRequest.isCurrent(ticket.revision) || !editEvaluatorsOpen) return;
+			const items = result.items;
 			availableEvaluators = items;
 			evaluatorAvailabilityLoaded = true;
 			const availableIds = new Set(items.filter((item) => item.available).map((item) => item.id));
@@ -812,6 +828,25 @@
 		}
 	}
 
+	async function resubmitSaved() {
+		if (!observation || !canResubmitSaved || !cycleAllowsResubmission || savingAction) return;
+		const ownsMutation = captureMutationOwner();
+		const submittedId = observation.id;
+		savingAction = 'resubmit-saved';
+		resubmitError = '';
+		try {
+			const response = await resubmitSupervisionObservationRequest(submittedId);
+			if (!ownsMutation()) return;
+			replaceObservation(mutationData(response, 'ส่งคำขอเดิมใหม่ไม่สำเร็จ'));
+			toast.success('ส่งคำขอใหม่โดยใช้ช่วงคาบเดิมแล้ว');
+		} catch (failure) {
+			if (ownsMutation())
+				resubmitError = failure instanceof Error ? failure.message : 'ส่งคำขอเดิมใหม่ไม่สำเร็จ';
+		} finally {
+			if (ownsMutation()) savingAction = null;
+		}
+	}
+
 	async function cancelObservation() {
 		if (!observation || !canCancelObservation) return;
 		const ownsMutation = captureMutationOwner();
@@ -852,7 +887,7 @@
 		</Button>
 	{/snippet}
 
-	<div data-testid="supervision-detail" aria-busy={loading}>
+	<div class="space-y-4" data-testid="supervision-detail" aria-busy={loading}>
 		{#if loading && !observation}
 			<div role="status" aria-label="กำลังโหลด"><PageSkeleton /></div>
 		{:else if !observation && error}
@@ -868,8 +903,22 @@
 					variant="outline"
 					onclick={retryObservation}>ลองใหม่</Button
 				>{/if}
-			<div class="mb-4 space-y-3">
+			<div class="space-y-3">
 				<SupervisionWorkflow {observation} />
+				{#if resubmitError}<div
+						role="alert"
+						class="space-y-2 rounded-lg border border-destructive/20 p-3 text-sm text-destructive"
+					>
+						<p>{resubmitError}</p>
+						<Button
+							size="sm"
+							variant="outline"
+							onclick={() => {
+								resubmitError = '';
+								void retryObservation();
+							}}>ตรวจรายการล่าสุด</Button
+						>
+					</div>{/if}
 				{#if observation.status === 'returned'}
 					<div
 						class="rounded-lg border bg-muted/30 p-4"
@@ -879,10 +928,14 @@
 						<p class="mt-1 whitespace-pre-wrap text-sm">
 							{currentReturnReason(observation) ?? 'ไม่ได้ระบุเหตุผล'}
 						</p>
-						{#if isReturnedOwnRequest && cycle && cycle.status !== 'open'}<p
+						{#if isReturnedOwnRequest && canEditOwnRequested && cycle && cycle.status !== 'open'}<p
 								class="mt-2 text-sm text-muted-foreground"
 							>
 								ส่งใหม่ได้เมื่อผู้ดูแลเปิดรับคำขอในรอบนี้
+							</p>{:else if isReturnedOwnRequest && canEditOwnRequested && cycleDatesError}<p
+								class="mt-2 text-sm text-muted-foreground"
+							>
+								ส่งใหม่ได้เมื่อผู้ดูแลกำหนดช่วงวันที่นิเทศของรอบนี้
 							</p>{/if}
 					</div>
 				{/if}
@@ -907,6 +960,14 @@
 										</p>{/if}
 								</div>
 								<div class="flex flex-wrap gap-2">
+									{#if canResubmitSaved}<LoadingButton
+											variant="outline"
+											onclick={resubmitSaved}
+											loading={savingAction === 'resubmit-saved'}
+											loadingLabel="กำลังส่งใหม่..."
+											disabled={!cycleAllowsResubmission || savingAction !== null}
+											>ส่งใหม่ด้วยคาบเดิม</LoadingButton
+										>{/if}
 									{#if canEditLesson}
 										<Button variant="outline" onclick={() => void openLessonEditor()}>
 											<CalendarClock class="h-4 w-4" />
@@ -928,7 +989,7 @@
 								</div>
 							</div>
 						</Card.Header>
-						<Card.Content>
+						<Card.Content class="space-y-4">
 							<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
 								{#each lessonDetails(observation) as detail (detail.label)}
 									<div class="rounded-md border bg-muted/20 p-3">
@@ -938,6 +999,13 @@
 								{/each}
 							</div>
 							<SupervisionSavedPeriods {observation} />
+							{#if observation.periodsLocked}<p
+									class="mt-3 rounded-lg border bg-muted/30 p-3 text-sm"
+									data-testid="supervision-periods-locked"
+								>
+									คาบนิเทศได้รับการอนุมัติแล้ว จึงเปลี่ยนวิชา ห้อง วันและช่วงคาบไม่ได้
+									ข้อมูลผู้ประเมินและการจัดการอื่นใช้สิทธิ์ของแต่ละรายการตามเดิม
+								</p>{/if}
 						</Card.Content>
 					</Card.Root>
 
@@ -1043,6 +1111,9 @@
 								<div class="rounded-md border bg-muted/20 p-3">
 									<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
 									<p class="font-medium">{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '-')}</p>
+									{#if cycle}<p class="mt-1 text-xs text-muted-foreground">
+											{cycleDateRangeLabel(cycle.observationStartDate, cycle.observationEndDate)}
+										</p>{/if}
 								</div>
 							</div>
 
@@ -1267,7 +1338,12 @@
 				</div>
 
 				<div class="min-w-0 space-y-4">
-					<div data-testid="supervision-detail-cycle" aria-busy={cycleLoading}>
+					<div
+						class="space-y-3"
+						hidden={!cycleError && (!cycleLoading || !!cycle)}
+						data-testid="supervision-detail-cycle"
+						aria-busy={cycleLoading}
+					>
 						{#if cycleLoading && !cycle}<div role="status" aria-label="กำลังโหลด">
 								<PageSkeleton rows={1} columns={1} />
 							</div>{/if}
@@ -1276,7 +1352,12 @@
 								description={cycleError}
 							/><Button variant="outline" onclick={retryCycle}>ลองใหม่</Button>{/if}
 					</div>
-					<div data-testid="supervision-detail-template" aria-busy={templateLoading}>
+					<div
+						class="space-y-3"
+						hidden={!templateError && (!templateLoading || !!template)}
+						data-testid="supervision-detail-template"
+						aria-busy={templateLoading}
+					>
 						{#if templateLoading && !template}<div role="status" aria-label="กำลังโหลด">
 								<PageSkeleton rows={1} columns={1} />
 							</div>{/if}
@@ -1301,6 +1382,9 @@
 							<div>
 								<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
 								<p class="font-medium">{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '-')}</p>
+								{#if cycle}<p class="mt-1 text-xs text-muted-foreground">
+										{cycleDateRangeLabel(cycle.observationStartDate, cycle.observationEndDate)}
+									</p>{/if}
 							</div>
 							<div>
 								<p class="text-xs text-muted-foreground">ภาคเรียน/ปีการศึกษา</p>
@@ -1324,16 +1408,23 @@
 		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
 			{#if observation && editLessonOpen}
 				<SupervisionSavedPeriods {observation} />
-				<SupervisionLessonPicker
-					academicYearId={observation.academicYearId}
-					academicTermId={observation.academicTermId}
-					observationId={observation.id}
-					initialDate={schoolCivilDate(new Date(observation.observedAt))}
-					allowed={canEditLesson}
-					disabled={isReturnedOwnRequest && cycle?.status !== 'open'}
-					onsubmit={saveLessonEdit}
-					submitLabel={isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
-				/>
+				{#if cycle && !cycleDatesError}
+					<SupervisionLessonPicker
+						{cycle}
+						academicYearId={observation.academicYearId}
+						academicTermId={observation.academicTermId}
+						observationId={observation.id}
+						initialDate={schoolCivilDate(new Date(observation.observedAt))}
+						allowed={canEditLesson}
+						onreloadCycle={retryCycle}
+						disabled={isReturnedOwnRequest && cycle?.status !== 'open'}
+						onsubmit={saveLessonEdit}
+						submitLabel={isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
+					/>
+				{:else if cycleLoading}<PageSkeleton />{:else}<PageState
+						title="รอผู้ดูแลกำหนดช่วงวันที่นิเทศ"
+						description="ยังเลือกคาบใหม่ไม่ได้จนกว่ารอบนี้จะมีช่วงวันที่นิเทศ"
+					/>{/if}
 			{/if}
 		</div>
 		<Dialog.Footer
@@ -1430,7 +1521,7 @@
 			</Popover.Root>
 			{#if unavailableEvaluatorCount > 0}
 				<p class="text-xs text-muted-foreground">
-					ซ่อนผู้ประเมิน {unavailableEvaluatorCount} คนที่มีงานนิเทศชนช่วงนี้
+					ผู้ประเมินไม่ว่าง {unavailableEvaluatorCount} คนจากงานนิเทศหรือตารางสอนในช่วงคาบนี้
 				</p>
 			{/if}
 		</div>

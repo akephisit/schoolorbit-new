@@ -31,6 +31,9 @@ export type SupervisionCycleDeletionImpact = Schemas['SupervisionCycleDeletionIm
 export type SupervisionEvaluator = Schemas['SupervisionEvaluator'];
 export type SupervisionEvaluatorConflict = Schemas['SupervisionEvaluatorConflict'];
 export type SupervisionEvaluatorAvailability = Schemas['SupervisionEvaluatorAvailability'];
+export type SupervisionEvaluatorAvailabilityResponse =
+	Schemas['SupervisionEvaluatorAvailabilityResponse'];
+export type SupervisionBookingAvailability = Schemas['SupervisionBookingAvailability'];
 export type SupervisionAction = Schemas['SupervisionAction'];
 export type SupervisionObservation = Schemas['SupervisionObservation'];
 export type SupervisionReviewResponse = Schemas['SupervisionReviewResponse'];
@@ -88,7 +91,6 @@ type CycleId = operations['getSupervisionCycleProgress']['parameters']['path']['
 type SupervisionCycleItems = Schemas['ItemsData_SupervisionCycle'];
 type SupervisionTemplateItems = Schemas['ItemsData_SupervisionTemplate'];
 type SupervisionObservationItems = Schemas['ItemsData_SupervisionObservation'];
-type SupervisionEvaluatorAvailabilityItems = Schemas['ItemsData_SupervisionEvaluatorAvailability'];
 type SupervisionTeacherStatusItems = Schemas['ItemsData_SupervisionTeacherStatusRow'];
 
 export type SupervisionBookingOptionsQuery = NonNullable<
@@ -313,12 +315,12 @@ export function replaceSupervisionObservationEvaluators(
 export async function getSupervisionEvaluatorAvailability(
 	id: ObservationId,
 	options: ApiRequestOptions = {}
-): Promise<SupervisionEvaluatorAvailability[]> {
-	const response = await apiClient.get<SupervisionEvaluatorAvailabilityItems>(
+): Promise<SupervisionEvaluatorAvailabilityResponse> {
+	const response = await apiClient.get<SupervisionEvaluatorAvailabilityResponse>(
 		`/api/supervision/observations/${id}/evaluator-availability`,
 		options
 	);
-	return requireApiData(response, 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้').items;
+	return requireApiData(response, 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้');
 }
 
 export async function getSupervisionObservationTimetableOptions(
@@ -418,4 +420,17 @@ export async function getSupervisionTeacherStatusOverview(
 		options
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดภาพรวมสถานะครูได้').items;
+}
+
+export type ResubmitSupervisionObservationRequest =
+	operations['resubmitSupervisionObservationRequest']['requestBody']['content']['application/json'];
+
+export function resubmitSupervisionObservationRequest(
+	id: ObservationId
+): Promise<ApiResponse<SupervisionObservation>> {
+	const payload: ResubmitSupervisionObservationRequest = {};
+	return apiClient.post<SupervisionObservation>(
+		`/api/supervision/observations/${id}/resubmit-request`,
+		payload
+	);
 }

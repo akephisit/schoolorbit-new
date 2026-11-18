@@ -1,3 +1,4 @@
+mod availability;
 mod booking;
 mod cycle_deletion;
 mod cycles;
@@ -19,8 +20,8 @@ pub use lifecycle::pending_term_work;
 pub use observations::{
     approve_observation_request, cancel_observation, cancel_requested_observation,
     evaluator_availability, get_observation, list_observations, observation_timetable_options,
-    request_observation, return_observation_request, update_observation,
-    update_requested_observation,
+    request_observation, resubmit_observation_request, return_observation_request,
+    update_observation, update_requested_observation,
 };
 pub use response_visibility::{
     redact_observations_results_for_actor, redact_teacher_status_results_for_actor,

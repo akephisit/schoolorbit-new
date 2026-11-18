@@ -1,5 +1,6 @@
 import type {
 	SupervisionObservation,
+	SupervisionCycle,
 	SupervisionObservationPeriod,
 	SupervisionTimetableOption,
 	SupervisionObservationStatus,
@@ -50,6 +51,7 @@ export const timetableOption = (
 	homeroomId: id(120),
 	homeroomName: 'ม.1/1',
 	roomName: 'ห้องปัจจุบัน',
+	bookingAvailability: { pendingCount: 0, confirmedCount: 0, blocked: false },
 	...patch
 });
 
@@ -73,6 +75,8 @@ export async function mock(
 	options: {
 		permissions?: string[];
 		cycleStatus?: SupervisionCycleStatus;
+		observationStartDate?: string | null;
+		observationEndDate?: string | null;
 		hold?:
 			| 'cycles'
 			| 'teacher-status'
@@ -124,8 +128,11 @@ export async function mock(
 		'supervision.manage.school',
 		'supervision.read.school'
 	];
-	let cycleStatus = options.cycleStatus ?? 'open';
+	const cycleStatus = options.cycleStatus ?? 'open';
+	const cyclePatches: Record<string, Partial<SupervisionCycle>> = {};
 	let observationStatus = options.observationStatus ?? 'requested';
+	let periodsLocked =
+		options.observation?.periodsLocked ?? !['requested', 'returned'].includes(observationStatus);
 	let observationPatch: Partial<SupervisionObservation> = {};
 	const observation = (academicYearId = year): SupervisionObservation => ({
 		canManage: options.canManage ?? true,
@@ -143,6 +150,7 @@ export async function mock(
 		createdAt: '2026-09-30T09:00:00Z',
 		updatedAt: '2026-10-01T09:00:00Z',
 		status: observationStatus,
+		periodsLocked,
 		periods: [savedPeriod()],
 		evaluators: [
 			{
@@ -268,9 +276,16 @@ export async function mock(
 							? 'รอบปีใหม่'
 							: 'รอบแรก',
 					status: cycleStatus,
+					observationStartDate:
+						options.observationStartDate === undefined
+							? '2026-09-01'
+							: options.observationStartDate,
+					observationEndDate:
+						options.observationEndDate === undefined ? '2026-12-31' : options.observationEndDate,
 					createdAt: '2026-09-01T00:00:00Z',
 					updatedAt: '2026-09-01T00:00:00Z',
-					targets: []
+					targets: [],
+					...cyclePatches[value]
 				}));
 			const selectedId = resource.match(/\/observations\/([^/]+)$/)?.[1];
 			const snapshot = {
@@ -357,7 +372,18 @@ export async function mock(
 				return reply(route, { items: [snapshot] });
 			if (resource.endsWith('/evaluator-availability'))
 				return reply(route, {
-					items: [{ id: id(32), name: 'ผู้ประเมินที่ว่าง', available: true, conflicts: [] }]
+					items: [
+						{
+							id: id(32),
+							name: 'ผู้ประเมินที่ว่าง',
+							available: true,
+							conflictReason: null,
+							conflict: null
+						}
+					],
+					overlap: { pendingCount: 0, confirmedCount: 0, blocked: false },
+					withinCycleDates: true,
+					overlappingBookings: []
 				});
 			if (resource.endsWith('/progress'))
 				return reply(route, {
@@ -370,17 +396,20 @@ export async function mock(
 				});
 			if (method === 'POST' && resource.includes(`/observations/${id(30)}/`)) {
 				if (options.hold === 'patch') await held.promise;
-				observationStatus = resource.endsWith('/cancel')
-					? 'cancelled'
-					: resource.endsWith('/certify')
-						? 'approved'
-						: resource.endsWith('/approve')
-							? 'published'
-							: resource.endsWith('/return-request')
-								? 'returned'
-								: resource.includes('/evaluations/')
-									? 'evaluators_submitted'
-									: 'planned';
+				if (resource.endsWith('/approve-request')) periodsLocked = true;
+				observationStatus = resource.endsWith('/resubmit-request')
+					? 'requested'
+					: resource.endsWith('/cancel')
+						? 'cancelled'
+						: resource.endsWith('/certify')
+							? 'approved'
+							: resource.endsWith('/approve')
+								? 'published'
+								: resource.endsWith('/return-request')
+									? 'returned'
+									: resource.includes('/evaluations/')
+										? 'evaluators_submitted'
+										: 'planned';
 				if (resource.includes('/evaluations/'))
 					observationPatch = {
 						...observationPatch,
@@ -462,8 +491,11 @@ export async function mock(
 				});
 			if (resource === `/api/supervision/cycles/${firstCycle}` && method === 'PATCH') {
 				if (options.hold === 'patch') await held.promise;
-				cycleStatus = route.request().postDataJSON().status;
-				return reply(route, { ...cycles()[0], title: 'รอบแรก', status: cycleStatus });
+				cyclePatches[firstCycle] = {
+					...cyclePatches[firstCycle],
+					...route.request().postDataJSON()
+				};
+				return reply(route, { ...cycles()[0], title: 'รอบแรก' });
 			}
 			if (resource === `/api/supervision/templates/${templateId}` && method === 'PATCH') {
 				if (options.hold === 'patch') await held.promise;
@@ -532,4 +564,17 @@ async function replaceFixtureIdentity(page: Page, permissions: string[], session
 		},
 		{ permissions, sessionId }
 	);
+}
+
+/** Select a displayed date through the shared DatePicker's real calendar controls. */
+export async function selectSupervisionDate(page: Page, label: string, date: string) {
+	await page.getByRole('button', { name: label, exact: true }).click();
+	const accessibleDate = new Intl.DateTimeFormat('th-TH', {
+		timeZone: 'Asia/Bangkok',
+		weekday: 'long',
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric'
+	}).format(new Date(`${date}T12:00:00+07:00`));
+	await page.getByRole('button', { name: accessibleDate, exact: true }).click();
 }

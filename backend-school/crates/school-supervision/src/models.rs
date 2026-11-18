@@ -291,6 +291,36 @@ pub struct SupervisionTimetableOption {
     pub homeroom_id: Uuid,
     pub homeroom_name: String,
     pub room_name: Option<String>,
+    pub booking_availability: SupervisionBookingAvailability,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionBookingAvailability {
+    pub pending_count: i64,
+    pub confirmed_count: i64,
+    pub blocked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionOverlappingBooking {
+    pub observed_display_name: Option<String>,
+    pub observed_at: DateTime<Utc>,
+    pub ends_at: Option<DateTime<Utc>>,
+    pub status: SupervisionObservationStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionEvaluatorAvailabilityResponse {
+    pub items: Vec<SupervisionEvaluatorAvailability>,
+    pub overlap: SupervisionBookingAvailability,
+    pub within_cycle_dates: bool,
+    pub overlapping_bookings: Vec<SupervisionOverlappingBooking>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -308,6 +338,7 @@ pub struct SupervisionBookingOptions {
 #[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SupervisionBookingOptionsQuery {
+    pub cycle_id: Uuid,
     pub academic_year_id: Uuid,
     pub academic_term_id: Uuid,
     pub week_start_date: NaiveDate,
@@ -400,6 +431,8 @@ pub struct SupervisionCycle {
     pub title: String,
     pub description: Option<String>,
     pub template_id: Uuid,
+    pub observation_start_date: Option<NaiveDate>,
+    pub observation_end_date: Option<NaiveDate>,
     pub status: SupervisionCycleStatus,
     pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
@@ -541,6 +574,7 @@ pub struct SupervisionAction {
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct SupervisionObservation {
+    pub periods_locked: bool,
     pub can_manage: bool,
     pub can_review: bool,
     pub id: Uuid,
@@ -630,6 +664,8 @@ pub struct CreateSupervisionCycleRequest {
     pub title: String,
     pub description: Option<String>,
     pub template_id: Uuid,
+    pub observation_start_date: NaiveDate,
+    pub observation_end_date: NaiveDate,
     pub status: Option<SupervisionCycleStatus>,
     #[serde(default)]
     pub targets: Vec<CreateSupervisionCycleTargetRequest>,
@@ -644,6 +680,12 @@ pub struct UpdateSupervisionCycleRequest {
     pub title: Option<String>,
     pub description: Option<String>,
     pub template_id: Option<Uuid>,
+    #[serde(default, deserialize_with = "present_date")]
+    #[cfg_attr(feature = "api-docs", schema(nullable = false))]
+    pub observation_start_date: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "present_date")]
+    #[cfg_attr(feature = "api-docs", schema(nullable = false))]
+    pub observation_end_date: Option<NaiveDate>,
     pub status: Option<SupervisionCycleStatus>,
     pub targets: Option<Vec<CreateSupervisionCycleTargetRequest>>,
 }
@@ -756,6 +798,11 @@ pub struct UpdateSupervisionObservationRequest {
     pub timetable_block_group_ids: Option<Vec<Uuid>>,
     pub expected_source_digest: Option<String>,
 }
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResubmitSupervisionObservationRequest {}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
@@ -878,4 +925,10 @@ fn default_rating_min() -> i32 {
 
 fn default_rating_max() -> i32 {
     5
+}
+
+fn present_date<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<NaiveDate>, D::Error> {
+    NaiveDate::deserialize(deserializer).map(Some)
 }

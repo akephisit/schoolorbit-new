@@ -151,37 +151,3 @@ pub(super) async fn lock_evaluator_dates(
     }
     Ok(())
 }
-
-pub(super) async fn ensure_no_own_duplicate(
-    connection: &mut PgConnection,
-    teacher: Uuid,
-    cycle: Uuid,
-    except: Option<Uuid>,
-    date: NaiveDate,
-    periods: &[ResolvedPeriod],
-) -> Result<(), AppError> {
-    DbSession::new(connection)
-        .query(
-            "supervision.periods.lock_booking_date",
-            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
-        )
-        .bind(format!("supervision-booking:{teacher}:{date}"))
-        .execute()
-        .await?;
-    let starts = periods.iter().map(|p| p.observed_at).collect::<Vec<_>>();
-    let ends = periods.iter().map(|p| p.ends_at).collect::<Vec<_>>();
-    let duplicate: bool = DbSession::new(connection).scalar("supervision.periods.own_duplicate", r#"
-        SELECT EXISTS(SELECT 1 FROM supervision_observations o
-            JOIN supervision_observation_periods p ON p.observation_id=o.id
-            CROSS JOIN unnest($3::timestamptz[],$4::timestamptz[]) chosen(starts,ends)
-            WHERE o.observed_user_id=$1 AND o.cycle_id=$5 AND ($2::uuid IS NULL OR o.id<>$2) AND o.status<>'cancelled'
-              AND ((p.ends_at IS NOT NULL AND p.observed_at<chosen.ends AND chosen.starts<p.ends_at)
-                OR (p.ends_at IS NULL AND chosen.starts<=p.observed_at AND p.observed_at<chosen.ends)))
-    "#).bind(teacher).bind(except).bind(starts).bind(ends).bind(cycle).fetch_one().await?;
-    if duplicate {
-        return Err(AppError::Conflict(
-            "มีรายการนิเทศของตนเองในคาบที่เลือกแล้ว".into(),
-        ));
-    }
-    Ok(())
-}

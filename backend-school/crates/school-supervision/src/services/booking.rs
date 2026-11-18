@@ -44,12 +44,26 @@ pub async fn booking_options(
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "supervision.booking.options")
             .await?;
+    let cycle =
+        super::observations::load_cycle_for_request(&mut connection, query.cycle_id).await?;
+    if cycle.academic_year_id != query.academic_year_id {
+        return Err(invalid("ปีการศึกษาไม่ตรงกับรอบนิเทศ"));
+    }
+    super::observations::validate_observation_context(
+        &mut connection,
+        &cycle,
+        query.academic_term_id,
+    )
+    .await?;
+    super::observations::ensure_cycle_target_allows_teacher(&mut connection, cycle.id, teacher)
+        .await?;
     options_on_connection(
         &mut connection,
         teacher,
-        query.academic_year_id,
+        &cycle,
         query.academic_term_id,
         query.week_start_date,
+        None,
     )
     .await
 }
@@ -57,22 +71,53 @@ pub async fn booking_options(
 pub(super) async fn options_on_connection(
     connection: &mut PgConnection,
     teacher: Uuid,
-    year: Uuid,
+    cycle: &super::observations::CycleForRequestRow,
     term: Uuid,
     week: NaiveDate,
+    except: Option<Uuid>,
 ) -> Result<SupervisionBookingOptions, AppError> {
-    weekly_evidence(connection, teacher, year, term, week)
-        .await
-        .map(|(options, _)| options)
+    let (mut options, _) = weekly_evidence(connection, teacher, cycle, term, week).await?;
+    let windows = options
+        .items
+        .iter()
+        .map(|item| {
+            let start = SCHOOL_TIMEZONE
+                .from_local_datetime(&item.observed_date.and_time(item.start_time))
+                .single()
+                .ok_or_else(|| invalid("วันเวลานิเทศไม่ถูกต้อง"))?
+                .with_timezone(&Utc);
+            let end = SCHOOL_TIMEZONE
+                .from_local_datetime(&item.observed_date.and_time(item.end_time))
+                .single()
+                .ok_or_else(|| invalid("วันเวลานิเทศไม่ถูกต้อง"))?
+                .with_timezone(&Utc);
+            Ok(super::availability::Window {
+                start,
+                end: Some(end),
+                homeroom: Some(item.homeroom_id),
+            })
+        })
+        .collect::<Result<Vec<_>, AppError>>()?;
+    let facts = super::availability::facts(connection, &windows, except).await?;
+    for group in facts.chunk_by(|a, b| a.window_index == b.window_index) {
+        if let Some(first) = group.first() {
+            if let Some(item) = options.items.get_mut(first.window_index as usize) {
+                item.booking_availability =
+                    super::availability::aggregate(group, teacher, cycle.id);
+            }
+        }
+    }
+    Ok(options)
 }
 
 async fn weekly_evidence(
     connection: &mut PgConnection,
     teacher: Uuid,
-    year: Uuid,
+    cycle: &super::observations::CycleForRequestRow,
     term: Uuid,
     week: NaiveDate,
 ) -> Result<(SupervisionBookingOptions, HashMap<Uuid, Option<Uuid>>), AppError> {
+    let year = cycle.academic_year_id;
     if week.weekday() != Weekday::Mon {
         return Err(invalid("วันเริ่มสัปดาห์ต้องเป็นวันจันทร์"));
     }
@@ -126,13 +171,15 @@ async fn weekly_evidence(
             homeroom_id: homeroom,
             homeroom_name: name,
             room_name: lesson.room_name,
+            booking_availability: Default::default(),
         });
     }
+    items.retain(|item| cycle.contains_date(item.observed_date));
     items.sort_by_key(|p| (p.observed_date, p.start_time, p.end_time, p.block_group_id));
     // Include Delivery eligibility, not merely the underlying timetable revision.
     let digest:String=DbSession::new(connection).scalar("supervision.booking.source_digest",
-        "SELECT encode(sha256(convert_to(jsonb_build_array($1::text,$2::uuid[],$3::uuid,$4::uuid,$5::uuid,$6::date)::text,'UTF8')),'hex')")
-        .bind(snapshot.source_digest).bind(&assigned.learning_group_ids).bind(year).bind(term).bind(teacher).bind(week)
+        "SELECT encode(sha256(convert_to(jsonb_build_array($1::text,$2::uuid[],$3::uuid,$4::uuid,$5::uuid,$6::date,$7::uuid,$8::date,$9::date)::text,'UTF8')),'hex')")
+        .bind(snapshot.source_digest).bind(&assigned.learning_group_ids).bind(year).bind(term).bind(teacher).bind(week).bind(cycle.id).bind(cycle.observation_start_date).bind(cycle.observation_end_date)
         .fetch_one().await?;
     Ok((
         SupervisionBookingOptions {
@@ -148,14 +195,15 @@ async fn weekly_evidence(
 pub(super) async fn resolve(
     connection: &mut PgConnection,
     teacher: Uuid,
-    year: Uuid,
+    cycle: &super::observations::CycleForRequestRow,
     term: Uuid,
     date: NaiveDate,
     ids: &[Uuid],
     expected: &str,
 ) -> Result<Vec<ResolvedPeriod>, AppError> {
+    cycle.require_date(date)?;
     let (options, offerings) =
-        weekly_evidence(connection, teacher, year, term, monday(date)?).await?;
+        weekly_evidence(connection, teacher, cycle, term, monday(date)?).await?;
     if expected != options.source_digest {
         return Err(AppError::Conflict(
             "ตารางสอนเปลี่ยนแล้ว กรุณาโหลดคาบสอนใหม่".into(),
@@ -250,6 +298,7 @@ mod tests {
             homeroom_id: Uuid::from_u128(room),
             homeroom_name: "ม.3/2".into(),
             room_name: Some(format!("Physical room {id}")),
+            booking_availability: Default::default(),
         }
     }
     #[test]

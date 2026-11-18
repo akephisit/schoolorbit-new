@@ -58,6 +58,17 @@ recover with a compatible release or roll forward; never rename the column back,
 modify accepted receipts or bypass migration history. Inspect only bounded
 `ACADEMIC_SCHOOL_DAYS155_*` refusal codes and aggregate audit evidence.
 
+### Supervision observation date configuration
+
+Migration 166 adds nullable inclusive Bangkok civil-date bounds to supervision cycles.
+Existing cycles and term-preparation draft copies remain unset. Managers must deliberately
+configure both observation dates before new bookings, teacher corrections/resubmissions or
+request approvals; cycle status stays manual. Noncancelled ever-approved visits protect all
+saved periods from a date change that would exclude them. Their periods stay locked even
+when returned; a teacher resubmits the saved times and a reviewer can choose new evaluators.
+Availability checks cover confirmed supervision participants/exact homerooms and evaluators'
+current timetable plus dated teaching duties; they do not claim to cover every commitment.
+
 ### Supervision canonical-period cutover
 
 School migrations 164 and 165 move saved lesson evidence into ordered observation periods.

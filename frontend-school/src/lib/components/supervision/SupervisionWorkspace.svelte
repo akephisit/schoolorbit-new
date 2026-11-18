@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { onDestroy, untrack } from 'svelte';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import SupervisionCycleDates from '#lib/components/supervision/SupervisionCycleDates.svelte';
+	import SupervisionRequestAvailability from '#lib/components/supervision/SupervisionRequestAvailability.svelte';
+	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
+	import { cycleDateRangeError, cycleDateRangeLabel } from '#lib/supervision/booking-range.js';
 	import SupervisionCycleDelete from '#lib/components/supervision/SupervisionCycleDelete.svelte';
 	import SupervisionLessonPicker from '#lib/components/supervision/SupervisionLessonPicker.svelte';
 	import type { SupervisionLessonSelection } from '#lib/supervision/booking-range.js';
@@ -55,6 +59,7 @@
 		type SupervisionCycleStatus,
 		type SupervisionCycleProgress,
 		type SupervisionEvaluatorAvailability,
+		type SupervisionEvaluatorAvailabilityResponse,
 		type SupervisionObservation,
 		type SupervisionTeacherStatusRow,
 		type SupervisionTemplate,
@@ -83,6 +88,7 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import { DatePicker } from '#lib/components/ui/date-picker/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
@@ -117,6 +123,8 @@
 		description: string;
 		templateId: string;
 		status: SupervisionCycleStatus;
+		observationStartDate: string;
+		observationEndDate: string;
 	};
 
 	const cycleStatusCreateOptions: {
@@ -251,7 +259,9 @@
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
 	let observations = $state<SupervisionObservation[]>([]);
-	let requestEvaluatorAvailability = $state<Record<string, SupervisionEvaluatorAvailability[]>>({});
+	let requestEvaluatorAvailability = $state<
+		Record<string, SupervisionEvaluatorAvailabilityResponse>
+	>({});
 	let requestEvaluatorAvailabilityLoading = $state<Record<string, boolean>>({});
 	let selectedCycleId = $state('');
 	let requestEvaluatorIds = $state<Record<string, string[]>>({});
@@ -266,6 +276,7 @@
 	let loadingProgress = $state(false);
 	let loadingTeacherStatus = $state(false);
 	let createCycleDialogOpen = $state(false);
+	let cycleFormError = $state('');
 	let createTemplateDialogOpen = $state(false);
 	let previewTemplateDialogOpen = $state(false);
 	let previewTemplateId = $state('');
@@ -275,7 +286,9 @@
 		title: '',
 		description: '',
 		templateId: '',
-		status: 'open'
+		status: 'open',
+		observationStartDate: '',
+		observationEndDate: ''
 	});
 	let templateForm = $state<TemplateFormState>(createDefaultTemplateForm());
 	const evaluatorAvailabilityRequests: Record<string, LatestRequest> = {};
@@ -293,6 +306,12 @@
 		return appIdentityKey();
 	});
 	const sectionConfig = $derived(sectionConfigByKey[section]);
+	const referenceFeedbackVisible = $derived(
+		Boolean(
+			(routeData.cycles && ((cyclesLoading && !cyclesLoaded) || cyclesError)) ||
+			(routeData.templates && ((templatesLoading && !templatesLoaded) || templatesError))
+		)
+	);
 	const mutationBusy = $derived(
 		saving || savingAction !== null || savingTemplate || savingEvaluation !== null
 	);
@@ -403,6 +422,7 @@
 	let mutationLifetime = 0;
 	onDestroy(() => {
 		mutationLifetime += 1;
+		for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
 	});
 
 	function captureMutationOwner() {
@@ -434,6 +454,7 @@
 			if (key !== managementContext) {
 				managementContext = key;
 				managementRevision += 1;
+				for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
 				savingAction = null;
 				savingTemplate = false;
 				cycles = [];
@@ -462,7 +483,15 @@
 				createTemplateDialogOpen = false;
 				setTemplatePreviewDialogOpen(false);
 				resetTemplateForm();
-				cycleForm.templateId = '';
+				cycleForm = {
+					title: '',
+					description: '',
+					templateId: '',
+					status: 'open',
+					observationStartDate: '',
+					observationEndDate: ''
+				};
+				cycleFormError = '';
 				progressCycleId = source.cycleId;
 			}
 			observationsLoading = source.observations !== null;
@@ -566,7 +595,6 @@
 			templateDetailRequest.abort();
 			observationRequest.abort();
 			evaluationTemplateRequest.abort();
-			for (const request of Object.values(evaluatorAvailabilityRequests)) request.abort();
 			progressRequest.abort();
 		};
 	});
@@ -721,6 +749,7 @@
 			toast.error('กรุณาเลือกปีการศึกษาก่อน');
 			return;
 		}
+		cycleFormError = '';
 		createCycleDialogOpen = true;
 		if (routeData) void retryManagementTemplates();
 	}
@@ -974,7 +1003,7 @@
 	}
 
 	function requestEvaluatorOptions(observationId: string): SupervisionEvaluatorAvailability[] {
-		return requestEvaluatorAvailability[observationId] ?? [];
+		return requestEvaluatorAvailability[observationId]?.items ?? [];
 	}
 
 	function availableRequestEvaluatorOptions(
@@ -1004,26 +1033,32 @@
 		};
 	}
 
-	async function loadRequestEvaluatorAvailability(observationId: string, force = false) {
-		if (!canManageRequests) return;
-		if (!force && requestEvaluatorAvailability[observationId]) return;
+	async function loadRequestEvaluatorAvailability(observationId: string) {
+		if (
+			!canManageRequests ||
+			requestEvaluatorAvailabilityLoading[observationId] ||
+			!requestedObservations.some((item) => item.id === observationId && item.canManage)
+		)
+			return;
+		const context = currentManagementContext();
 		const request = evaluatorAvailabilityRequests[observationId] ?? new LatestRequest();
 		evaluatorAvailabilityRequests[observationId] = request;
 		const { revision, signal } = request.begin();
+		const ownsRead = () => request.isCurrent(revision) && context === currentManagementContext();
 		requestEvaluatorErrors = { ...requestEvaluatorErrors, [observationId]: '' };
 		requestEvaluatorAvailabilityLoading = {
 			...requestEvaluatorAvailabilityLoading,
 			[observationId]: true
 		};
 		try {
-			const items = await getSupervisionEvaluatorAvailability(observationId, { signal });
-			if (!request.isCurrent(revision)) return;
+			const result = await getSupervisionEvaluatorAvailability(observationId, { signal });
+			if (!ownsRead()) return;
 			const availableIds = new Set(
-				items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
+				result.items.filter((evaluator) => evaluator.available).map((evaluator) => evaluator.id)
 			);
 			requestEvaluatorAvailability = {
 				...requestEvaluatorAvailability,
-				[observationId]: items
+				[observationId]: result
 			};
 			requestEvaluatorIds = {
 				...requestEvaluatorIds,
@@ -1033,14 +1068,14 @@
 			};
 		} catch (error) {
 			if (isAbortError(error)) return;
-			if (request.isCurrent(revision))
+			if (ownsRead())
 				requestEvaluatorErrors = {
 					...requestEvaluatorErrors,
 					[observationId]:
 						error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้'
 				};
 		} finally {
-			if (request.isCurrent(revision)) {
+			if (ownsRead()) {
 				requestEvaluatorAvailabilityLoading = {
 					...requestEvaluatorAvailabilityLoading,
 					[observationId]: false
@@ -1051,23 +1086,21 @@
 
 	function handleRequestEvaluatorPickerOpen(observationId: string, open: boolean) {
 		setRequestEvaluatorPickerOpen(observationId, open);
-		if (open) {
-			void loadRequestEvaluatorAvailability(observationId);
-		} else {
-			evaluatorAvailabilityRequests[observationId]?.abort();
-			requestEvaluatorAvailabilityLoading = {
-				...requestEvaluatorAvailabilityLoading,
-				[observationId]: false
-			};
-		}
+		if (open) void loadRequestEvaluatorAvailability(observationId);
+	}
+
+	function requestAvailabilityUnverified(observationId: string): boolean {
+		return Boolean(
+			requestEvaluatorAvailabilityLoading[observationId] || requestEvaluatorErrors[observationId]
+		);
 	}
 
 	function toggleRequestEvaluatorForRequest(
 		observationId: string,
 		staff: SupervisionEvaluatorAvailability
 	) {
-		if (!canManageRequests) return;
-		if (!staff.available) return;
+		if (!canManageRequests || requestAvailabilityUnverified(observationId) || !staff.available)
+			return;
 		const currentIds = selectedRequestEvaluatorIds(observationId);
 		requestEvaluatorIds = {
 			...requestEvaluatorIds,
@@ -1110,8 +1143,20 @@
 	async function approveRequest(observationId: string) {
 		if (!canManageRequests) return;
 		const current = observations.find((item) => item.id === observationId);
-		if (!current || current.evaluators.some((evaluator) => evaluator.status === 'submitted'))
+		if (
+			!current?.canManage ||
+			current.evaluators.some((evaluator) => evaluator.status === 'submitted')
+		)
 			return;
+		if (requestAvailabilityUnverified(observationId)) {
+			toast.error('รอตรวจช่วงคาบและผู้ประเมินให้สำเร็จก่อน');
+			return;
+		}
+		const availability = requestEvaluatorAvailability[observationId];
+		if (availability && (!availability.withinCycleDates || availability.overlap.blocked)) {
+			toast.error('ช่วงคาบนี้ยังอนุมัติไม่ได้ ตรวจช่วงวันที่และรายการที่ทับกันก่อน');
+			return;
+		}
 		const evaluatorIds = selectedRequestEvaluatorIds(observationId);
 		if (evaluatorIds.length === 0) {
 			toast.error('เลือกผู้ประเมินอย่างน้อย 1 คนก่อนอนุมัติ');
@@ -1134,7 +1179,7 @@
 			clearRequestApprovalState(observationId);
 		} catch (error) {
 			if (!ownsMutation()) return;
-			void loadRequestEvaluatorAvailability(observationId, true);
+			void loadRequestEvaluatorAvailability(observationId);
 			toast.error(error instanceof Error ? error.message : 'อนุมัติคำขอไม่สำเร็จ');
 		} finally {
 			if (ownsMutation()) savingAction = null;
@@ -1334,17 +1379,29 @@
 	}
 
 	async function createCycle() {
-		if (!canManageSchool) return;
+		if (!canManageSchool || mutationBusy) return;
+		cycleFormError = '';
 		if (!academicYearId) {
-			toast.error('กรุณาเลือกปีการศึกษาก่อน');
+			cycleFormError = 'กรุณาเลือกปีการศึกษาก่อน';
 			return;
 		}
 		if (!cycleForm.title.trim() || !cycleForm.templateId) {
-			toast.error('กรอกชื่อรอบและเลือกแบบประเมินให้ครบ');
+			cycleFormError = 'กรอกชื่อรอบและเลือกแบบประเมินให้ครบ';
+			return;
+		}
+
+		const dateError = cycleDateRangeError(
+			cycleForm.observationStartDate,
+			cycleForm.observationEndDate
+		);
+		if (dateError) {
+			cycleFormError = dateError;
 			return;
 		}
 
 		const payload: CreateSupervisionCycleRequest = {
+			observationStartDate: cycleForm.observationStartDate,
+			observationEndDate: cycleForm.observationEndDate,
 			academicYearId,
 			academicTermId,
 			title: cycleForm.title,
@@ -1364,10 +1421,30 @@
 			toast.success('สร้างรอบนิเทศแล้ว');
 			cycleForm.title = '';
 			cycleForm.description = '';
+			cycleForm.observationStartDate = '';
+			cycleForm.observationEndDate = '';
 			createCycleDialogOpen = false;
 		} catch (error) {
 			if (!ownsMutation()) return;
-			toast.error(error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ');
+			cycleFormError = error instanceof Error ? error.message : 'สร้างรอบนิเทศไม่สำเร็จ';
+		} finally {
+			if (ownsMutation()) savingAction = null;
+		}
+	}
+
+	async function saveCycleDates(
+		cycleId: string,
+		dates: Pick<CreateSupervisionCycleRequest, 'observationStartDate' | 'observationEndDate'>
+	) {
+		if (!canManageSchool || mutationBusy) throw new Error('ยังบันทึกช่วงวันที่ไม่ได้');
+		const ownsMutation = captureMutationOwner();
+		savingAction = `cycle-dates:${cycleId}`;
+		try {
+			const response = await updateSupervisionCycle(cycleId, dates);
+			if (!ownsMutation()) return;
+			replaceCycle(requireMutationData(response, 'บันทึกช่วงวันที่ไม่สำเร็จ'));
+		} catch (failure) {
+			if (ownsMutation()) throw failure;
 		} finally {
 			if (ownsMutation()) savingAction = null;
 		}
@@ -1769,7 +1846,11 @@
 	{/if}
 {/snippet}
 
-<PageShell title={sectionConfig.title} description={sectionConfig.description}>
+<PageShell
+	title={sectionConfig.title}
+	description={sectionConfig.description}
+	contentClass="flex flex-col gap-4 [&>*]:mt-0"
+>
 	{#snippet actions()}
 		{#if section === 'mine' && canRequest && !bookingOpen}
 			<Button size="sm" onclick={() => (bookingOpen = true)}
@@ -1856,7 +1937,11 @@
 	{/if}
 
 	{#if ['mine', 'requests', 'evaluate', 'approvals'].includes(section)}
-		<div class="relative space-y-2" data-testid="supervision-references">
+		<div
+			class="relative space-y-2"
+			hidden={!referenceFeedbackVisible}
+			data-testid="supervision-references"
+		>
 			{#if routeData.cycles}{@render managementFeedback(
 					cyclesLoaded,
 					cyclesLoading,
@@ -1906,15 +1991,44 @@
 									เปิดรับคำขอจนกว่าผู้ดูแลจะเปลี่ยนสถานะรอบนิเทศ
 								</p>
 							</div>
-							{#key currentBookingCycle.id}<SupervisionLessonPicker
-									{academicYearId}
-									{academicTermId}
-									observations={myObservations.filter(
-										(item) => item.cycleId === currentBookingCycle.id
+							<div
+								class="rounded-lg border border-primary/20 bg-primary/5 p-4"
+								data-testid="supervision-cycle-dates"
+							>
+								<p class="font-medium">
+									ช่วงวันที่นิเทศ · {cycleDateRangeLabel(
+										currentBookingCycle.observationStartDate,
+										currentBookingCycle.observationEndDate
 									)}
-									allowed={canRequest}
-									onsubmit={createBookingRequest}
-								/>{/key}
+								</p>
+								<p class="mt-1 text-sm text-muted-foreground">
+									รวมวันเริ่มต้นและวันสุดท้าย สถานะรับคำขอยังคงเปลี่ยนโดยผู้ดูแล
+								</p>
+							</div>
+							{#if cycleDateRangeError(currentBookingCycle.observationStartDate, currentBookingCycle.observationEndDate)}
+								<PageState
+									title="รอผู้ดูแลกำหนดช่วงวันที่นิเทศ"
+									description="รอบนี้ยังไม่มีช่วงวันที่สำหรับจองคาบ ข้อมูลคำขอเดิมยังคงอ่านได้"
+								/>
+								<SupervisionCycleDates
+									cycle={currentBookingCycle}
+									allowed={canManageSchool}
+									disabled={mutationBusy}
+									onsave={(dates) => saveCycleDates(currentBookingCycle.id, dates)}
+								/>
+							{:else}
+								{#key currentBookingCycle.id}<SupervisionLessonPicker
+										cycle={currentBookingCycle}
+										{academicYearId}
+										{academicTermId}
+										observations={myObservations.filter(
+											(item) => item.cycleId === currentBookingCycle.id
+										)}
+										allowed={canRequest}
+										onreloadCycle={retryManagementCycles}
+										onsubmit={createBookingRequest}
+									/>{/key}
+							{/if}
 						{:else if cyclesLoaded}<PageState
 								variant="empty"
 								title="ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้"
@@ -2018,7 +2132,7 @@
 														!observation.evaluators.some(
 															(evaluator) => evaluator.status === 'submitted'
 														)
-															? 'แก้ไขและส่งใหม่'
+															? observationWorkflow(observation).nextAction
 															: 'รายละเอียด'}
 													</Button>
 													{#if observation.status === 'published'}
@@ -2162,6 +2276,15 @@
 												</div>
 											</div>
 
+											<div class="mt-4"><SupervisionSavedPeriods {observation} /></div>
+											{#if observation.canManage}<SupervisionRequestAvailability
+													result={requestEvaluatorAvailability[observation.id]}
+													loading={!!requestEvaluatorAvailabilityLoading[observation.id]}
+													error={requestEvaluatorErrors[observation.id] ?? ''}
+													showError={!requestEvaluatorPickerOpen(observation.id)}
+													disabled={mutationBusy}
+													oninspect={() => void loadRequestEvaluatorAvailability(observation.id)}
+												/>{/if}
 											<div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
 												<div class="space-y-2">
 													<Label>ผู้ประเมิน</Label>
@@ -2197,7 +2320,11 @@
 														onOpenChange={(open) =>
 															handleRequestEvaluatorPickerOpen(observation.id, open)}
 													>
-														<Popover.Trigger>
+														<Popover.Trigger
+															disabled={!observation.canManage ||
+																mutationBusy ||
+																requestEvaluatorAvailabilityLoading[observation.id]}
+														>
 															{#snippet child({ props })}
 																<Button
 																	type="button"
@@ -2206,12 +2333,11 @@
 																	aria-label="เพิ่ม/เลือกผู้ประเมิน"
 																	aria-expanded={requestEvaluatorPickerOpen(observation.id)}
 																	class="w-full justify-between font-normal sm:w-[320px]"
-																	disabled={mutationBusy ||
-																		requestEvaluatorAvailabilityLoading[observation.id]}
 																	{...props}
 																>
 																	<span class="truncate">
-																		{requestEvaluatorAvailabilityLoading[observation.id]
+																		{requestEvaluatorAvailabilityLoading[observation.id] &&
+																		!requestEvaluatorAvailability[observation.id]
 																			? 'กำลังตรวจผู้ประเมินที่ว่าง...'
 																			: 'เพิ่ม/เลือกผู้ประเมิน'}
 																	</span>
@@ -2224,20 +2350,21 @@
 																!!requestEvaluatorAvailability[observation.id],
 																!!requestEvaluatorAvailabilityLoading[observation.id],
 																requestEvaluatorErrors[observation.id] ?? '',
-																() => void loadRequestEvaluatorAvailability(observation.id, true)
+																() => void loadRequestEvaluatorAvailability(observation.id)
 															)}
 															<Command.Root>
-																<Command.Input placeholder="ค้นหาครูผู้ประเมินที่ว่าง..." />
+																<Command.Input placeholder="ค้นหาครูผู้ประเมิน..." />
 																{#if requestEvaluatorAvailability[observation.id]}<Command.Empty
 																		>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty
 																	>{/if}
 																{#if requestEvaluatorAvailability[observation.id]}<Command.List
 																		class="max-h-72"
 																	>
-																		<Command.Group>
+																		<Command.Group heading="พร้อมประเมินตลอดช่วงคาบ">
 																			{#each availableRequestEvaluatorOptions(observation.id) as evaluator (evaluator.id)}
 																				<Command.Item
 																					value={`${evaluator.name} ${evaluator.title ?? ''} ${evaluator.id}`}
+																					disabled={requestAvailabilityUnverified(observation.id)}
 																					onSelect={() =>
 																						toggleRequestEvaluatorForRequest(
 																							observation.id,
@@ -2258,13 +2385,36 @@
 																				</Command.Item>
 																			{/each}
 																		</Command.Group>
+																		{#if unavailableRequestEvaluatorCount(observation.id)}<Command.Group
+																				heading="ไม่ว่างในช่วงคาบนี้"
+																				>{#each requestEvaluatorOptions(observation.id).filter((item) => !item.available) as evaluator (evaluator.id)}<Command.Item
+																						value={`${evaluator.name} ${evaluator.id}`}
+																						disabled
+																						><div class="min-w-0 space-y-1">
+																							<p>{evaluator.name}</p>
+																							<p class="text-xs text-muted-foreground">
+																								{evaluator.conflictReason ?? 'มีงานทับช่วงคาบ'}
+																							</p>
+																							{#if evaluator.conflict}<p
+																									class="text-xs text-muted-foreground"
+																								>
+																									{evaluator.conflict.observedDisplayName ??
+																										'รายการนิเทศ'} · {formatDate(
+																										evaluator.conflict.observedAt
+																									)}{#if evaluator.conflict.lessonTitle}
+																										· {evaluator.conflict.lessonTitle}{/if}
+																								</p>{/if}
+																						</div></Command.Item
+																					>{/each}</Command.Group
+																			>{/if}
 																	</Command.List>{/if}
 															</Command.Root>
 														</Popover.Content>
 													</Popover.Root>
 													{#if unavailableRequestEvaluatorCount(observation.id) > 0}
 														<p class="text-xs text-muted-foreground">
-															ซ่อนผู้ประเมิน {unavailableRequestEvaluatorCount(observation.id)} คนที่มีงานนิเทศชนช่วงนี้
+															ผู้ประเมินไม่ว่าง {unavailableRequestEvaluatorCount(observation.id)} คน
+															ดูเหตุผลในกลุ่ม “ไม่ว่างในช่วงคาบนี้”
 														</p>
 													{/if}
 												</div>
@@ -2311,11 +2461,16 @@
 													onclick={() => approveRequest(observation.id)}
 													loading={savingAction === `approve-request:${observation.id}`}
 													loadingLabel="กำลังอนุมัติ..."
-													disabled={mutationBusy ||
+													disabled={!observation.canManage ||
+														mutationBusy ||
+														requestAvailabilityUnverified(observation.id) ||
 														observation.evaluators.some(
 															(evaluator) => evaluator.status === 'submitted'
 														) ||
-														selectedRequestEvaluatorIds(observation.id).length === 0}
+														selectedRequestEvaluatorIds(observation.id).length === 0 ||
+														requestEvaluatorAvailability[observation.id]?.overlap.blocked ||
+														requestEvaluatorAvailability[observation.id]?.withinCycleDates ===
+															false}
 												>
 													อนุมัติและมอบหมาย
 												</LoadingButton>
@@ -2589,7 +2744,15 @@
 										{:else}
 											{#each cycles as cycle (cycle.id)}
 												<Table.Row>
-													<Table.Cell class="font-medium">{cycle.title}</Table.Cell>
+													<Table.Cell class="whitespace-normal"
+														><p class="font-medium">{cycle.title}</p>
+														<p class="mt-1 text-xs text-muted-foreground">
+															{cycleDateRangeLabel(
+																cycle.observationStartDate,
+																cycle.observationEndDate
+															)}
+														</p></Table.Cell
+													>
 													<Table.Cell>
 														{cycleContextLabel(cycle)}
 													</Table.Cell>
@@ -2599,6 +2762,12 @@
 													>
 													<Table.Cell class="text-right">
 														<div class="flex flex-wrap justify-end gap-2">
+															<SupervisionCycleDates
+																{cycle}
+																allowed={canManageSchool}
+																disabled={mutationBusy}
+																onsave={(dates) => saveCycleDates(cycle.id, dates)}
+															/>
 															<SupervisionCycleDelete
 																{cycle}
 																allowed={canManageSchool}
@@ -3195,8 +3364,21 @@
 	</Dialog.Content>
 </Dialog.Root>
 
-<Dialog.Root bind:open={createCycleDialogOpen}>
-	<Dialog.Content class="max-w-3xl">
+<Dialog.Root
+	open={createCycleDialogOpen}
+	onOpenChange={(open) => {
+		if (savingAction !== 'create-cycle') createCycleDialogOpen = open;
+	}}
+>
+	<Dialog.Content
+		class="max-w-3xl"
+		onEscapeKeydown={(event) => {
+			if (savingAction === 'create-cycle') event.preventDefault();
+		}}
+		onInteractOutside={(event) => {
+			if (savingAction === 'create-cycle') event.preventDefault();
+		}}
+	>
 		<Dialog.Header>
 			<Dialog.Title>สร้างรอบนิเทศ</Dialog.Title>
 			<Dialog.Description>รอบนิเทศจะผูกกับปีและภาคเรียนที่เลือกบนแถบด้านบน</Dialog.Description>
@@ -3207,7 +3389,10 @@
 				void createCycle();
 			}}
 		>
-			<div class="grid gap-4 py-2 lg:grid-cols-2">
+			<fieldset
+				disabled={savingAction === 'create-cycle'}
+				class="grid min-w-0 gap-4 py-2 lg:grid-cols-2"
+			>
 				<div class="rounded-lg border bg-muted/30 p-3 lg:col-span-2">
 					<p class="text-xs font-medium text-muted-foreground">บริบทของรอบนิเทศ</p>
 					<p class="mt-1 font-medium">
@@ -3245,6 +3430,25 @@
 						</Select.Root>
 					{/if}
 				</div>
+				<div class="space-y-2">
+					<Label for="supervision-cycle-start">วันเริ่มนิเทศ</Label><DatePicker
+						id="supervision-cycle-start"
+						ariaLabel="วันเริ่มนิเทศ"
+						value={cycleForm.observationStartDate || undefined}
+						onValueChange={(value) => (cycleForm.observationStartDate = value ?? '')}
+						required
+					/>
+				</div>
+				<div class="space-y-2">
+					<Label for="supervision-cycle-end">วันสุดท้ายที่นิเทศ</Label><DatePicker
+						id="supervision-cycle-end"
+						ariaLabel="วันสุดท้ายที่นิเทศ"
+						value={cycleForm.observationEndDate || undefined}
+						onValueChange={(value) => (cycleForm.observationEndDate = value ?? '')}
+						minValue={cycleForm.observationStartDate || undefined}
+						required
+					/>
+				</div>
 				<div class="space-y-2 lg:col-span-2">
 					<Label for="supervision-cycle-status">สถานะรอบ</Label>
 					<Select.Root type="single" bind:value={cycleForm.status}>
@@ -3276,10 +3480,16 @@
 						placeholder="รายละเอียดเพิ่มเติม"
 					/>
 				</div>
-			</div>
+			</fieldset>
+			{#if cycleFormError}<p role="alert" class="my-3 text-sm text-destructive">
+					{cycleFormError}
+				</p>{/if}
 			<Dialog.Footer>
-				<Button type="button" variant="outline" onclick={() => (createCycleDialogOpen = false)}
-					>ยกเลิก</Button
+				<Button
+					type="button"
+					variant="outline"
+					disabled={savingAction === 'create-cycle'}
+					onclick={() => (createCycleDialogOpen = false)}>ยกเลิก</Button
 				>
 				<LoadingButton
 					type="submit"

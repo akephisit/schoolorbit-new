@@ -16,13 +16,20 @@ const {
 	orderedBookingRange,
 	bookedObservationFor,
 	bookingWeekStart,
-	addCivilDays
+	addCivilDays,
+	cycleDateRangeError,
+	withinCycleDates,
+	clampedBookingWeek,
+	bookingOptionUnavailable,
+	bookingAvailabilityLabel,
+	reconcileBookingRange
 } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const lesson = (index, patch = {}) => ({
 	blockGroupId: `lesson-${index}`,
 	observedDate: '2026-11-16',
 	homeroomId: 'homeroom-3-2',
 	homeroomName: 'ม.3/2',
+	bookingAvailability: { pendingCount: 0, confirmedCount: 0, blocked: false },
 	startTime: `${String(8 + index).padStart(2, '0')}:00:00`,
 	endTime: `${String(9 + index).padStart(2, '0')}:00:00`,
 	...patch
@@ -131,4 +138,106 @@ test('booked intervals overlap different source IDs within the supplied cycle sc
 		undefined
 	);
 	assert.equal(bookedObservationFor(item, [saved('2026-11-16T03:00:00Z', null)]), undefined);
+});
+
+test('cycle dates require a complete real ordered pair and include both endpoints', () => {
+	for (const pair of [
+		[null, null],
+		['2026-11-16', null],
+		['2026-02-30', '2026-03-01'],
+		['2026-11-18', '2026-11-16']
+	])
+		assert.ok(cycleDateRangeError(...pair));
+	assert.equal(cycleDateRangeError('2026-11-16', '2026-11-16'), null);
+	for (const day of ['2026-11-16', '2026-11-17', '2026-11-18'])
+		assert.equal(withinCycleDates(day, '2026-11-16', '2026-11-18'), true);
+	for (const day of ['2026-11-15', '2026-11-19'])
+		assert.equal(withinCycleDates(day, '2026-11-16', '2026-11-18'), false);
+	assert.equal(withinCycleDates('2026-11-16', null, null), false);
+});
+
+test('week defaults clamp to first and last available weeks, including partial weeks across years', () => {
+	assert.equal(clampedBookingWeek('2026-12-30', '2027-01-06', '2026-10-01'), '2026-12-28');
+	assert.equal(clampedBookingWeek('2026-12-30', '2027-01-06', '2027-01-10'), '2027-01-04');
+	assert.equal(clampedBookingWeek('2026-11-18', '2026-11-25', '2026-11-23'), '2026-11-23');
+});
+
+test('pending and parallel confirmed bookings remain eligible while authoritative blocked and outside dates are refused', () => {
+	const bounds = ['2026-11-16', '2026-11-18'];
+	for (const availability of [
+		{ pendingCount: 2, confirmedCount: 0, blocked: false },
+		{ pendingCount: 0, confirmedCount: 2, blocked: false }
+	])
+		assert.equal(
+			bookingOptionUnavailable(lesson(0, { bookingAvailability: availability }), ...bounds),
+			null
+		);
+	assert.match(
+		bookingOptionUnavailable(
+			lesson(0, { bookingAvailability: { pendingCount: 0, confirmedCount: 1, blocked: true } }),
+			...bounds
+		),
+		/ทับกัน/
+	);
+	assert.match(
+		bookingOptionUnavailable(lesson(0, { observedDate: '2026-11-19' }), ...bounds),
+		/นอกช่วง/
+	);
+	assert.equal(bookingAvailabilityLabel(lesson(0)), 'ว่าง');
+	assert.equal(
+		bookingAvailabilityLabel(
+			lesson(0, { bookingAvailability: { pendingCount: 2, confirmedCount: 3, blocked: true } })
+		),
+		'รออนุมัติ 2 · นัดหมาย 3 · จองไม่ได้'
+	);
+	assert.match(
+		bookingAvailabilityLabel(
+			lesson(0, { bookingAvailability: { pendingCount: 2, confirmedCount: 0, blocked: false } })
+		),
+		/รออนุมัติ 2/
+	);
+	assert.match(
+		bookingAvailabilityLabel(
+			lesson(0, { bookingAvailability: { pendingCount: 0, confirmedCount: 2, blocked: false } })
+		),
+		/จองขนานได้/
+	);
+});
+
+test('refresh preserves an unchanged eligible range but drops blocked, missing, moved, or newly outside selections', () => {
+	const selected = [lesson(0), lesson(1), lesson(2)];
+	const bounds = ['2026-11-16', '2026-11-18'];
+	assert.deepEqual(
+		reconcileBookingRange(
+			selected,
+			selected.map((item) => ({
+				...item,
+				bookingAvailability: { pendingCount: 3, confirmedCount: 1, blocked: false }
+			})),
+			...bounds
+		).map((item) => item.blockGroupId),
+		selected.map((item) => item.blockGroupId)
+	);
+	assert.deepEqual(
+		reconcileBookingRange(
+			selected,
+			[
+				lesson(0),
+				lesson(1, { bookingAvailability: { pendingCount: 0, confirmedCount: 1, blocked: true } }),
+				lesson(2)
+			],
+			...bounds
+		),
+		[]
+	);
+	assert.deepEqual(reconcileBookingRange(selected, selected.slice(1), ...bounds), []);
+	assert.deepEqual(
+		reconcileBookingRange(
+			selected,
+			[lesson(0), lesson(1, { startTime: '09:30:00' }), lesson(2)],
+			...bounds
+		),
+		[]
+	);
+	assert.deepEqual(reconcileBookingRange(selected, selected, '2026-11-17', '2026-11-18'), []);
 });

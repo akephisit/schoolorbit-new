@@ -1,7 +1,7 @@
 use school_database::DbSession;
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::{PgConnection, PgPool, Postgres};
 use uuid::Uuid;
 
@@ -24,6 +24,8 @@ struct SupervisionCycleRow {
     description: Option<String>,
     template_id: Uuid,
     status: String,
+    observation_start_date: Option<NaiveDate>,
+    observation_end_date: Option<NaiveDate>,
     created_by: Option<Uuid>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -55,7 +57,7 @@ pub async fn list_cycles(
             r#"
         SELECT id, academic_year_id, academic_term_id, title, description,
                template_id,
-               status, created_by, created_at, updated_at
+               status, observation_start_date, observation_end_date, created_by, created_at, updated_at
         FROM supervision_cycles
         WHERE academic_year_id = $1
           AND ($2::uuid IS NULL OR academic_term_id = $2 OR academic_term_id IS NULL)
@@ -99,7 +101,7 @@ async fn get_cycle_with_connection(
             r#"
         SELECT id, academic_year_id, academic_term_id, title, description,
                template_id,
-               status, created_by, created_at, updated_at
+               status, observation_start_date, observation_end_date, created_by, created_at, updated_at
         FROM supervision_cycles
         WHERE id = $1
         "#,
@@ -126,6 +128,7 @@ pub async fn create_cycle(
     created_by: Uuid,
 ) -> Result<SupervisionCycle, AppError> {
     validate_cycle_targets(&input.targets)?;
+    validate_observation_dates(input.observation_start_date, input.observation_end_date)?;
 
     let mut tx =
         school_tenancy::TenantPool::begin_observed(&pool, "supervision.cycles.create_cycle")
@@ -146,9 +149,9 @@ pub async fn create_cycle(
             r#"
         INSERT INTO supervision_cycles (
             academic_year_id, academic_term_id, title, description, template_id,
-            status, created_by
+            status, created_by, observation_start_date, observation_end_date
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id
         "#,
         )
@@ -159,6 +162,8 @@ pub async fn create_cycle(
         .bind(input.template_id)
         .bind(status.as_str())
         .bind(created_by)
+        .bind(input.observation_start_date)
+        .bind(input.observation_end_date)
         .fetch_one()
         .await
         .map_err(|error| {
@@ -204,6 +209,42 @@ pub async fn update_cycle(
     let current = get_cycle_with_connection(&mut tx, id).await?;
     let academic_year_id = input.academic_year_id.unwrap_or(current.academic_year_id);
     let academic_term_id = input.academic_term_id.unwrap_or(current.academic_term_id);
+    let requested_dates = match (input.observation_start_date, input.observation_end_date) {
+        (None, None) => None,
+        (Some(start), Some(end)) => {
+            validate_observation_dates(start, end)?;
+            Some((start, end))
+        }
+        _ => {
+            return Err(AppError::ValidationError(
+                "ต้องระบุวันเริ่มและวันสิ้นสุดช่วงนิเทศพร้อมกัน".into(),
+            ))
+        }
+    };
+    if let Some((start, end)) = requested_dates {
+        let outside:bool=DbSession::new(&mut tx).scalar("supervision.cycles.protect_approved_dates",r#"
+            SELECT EXISTS(SELECT 1 FROM supervision_observations o
+                JOIN supervision_observation_periods p ON p.observation_id=o.id
+                WHERE o.cycle_id=$1 AND o.status<>'cancelled'
+                  AND (o.approved_at IS NOT NULL OR o.status=ANY($4) OR EXISTS(
+                    SELECT 1 FROM supervision_actions a WHERE a.observation_id=o.id
+                      AND (a.from_status=ANY($4) OR a.to_status=ANY($4))))
+                  AND ((p.observed_at AT TIME ZONE 'Asia/Bangkok')::date<$2
+                    OR (p.observed_at AT TIME ZONE 'Asia/Bangkok')::date>$3
+                    OR ((COALESCE(p.ends_at-interval '1 microsecond',p.observed_at)) AT TIME ZONE 'Asia/Bangkok')::date>$3))
+        "#).bind(id).bind(start).bind(end).bind(super::shared::evaluator_conflict_status_codes()).fetch_one().await?;
+        if outside {
+            return Err(AppError::Conflict(
+                "ช่วงวันที่ใหม่ต้องครอบคลุมรายการนิเทศที่เคยอนุมัติแล้วและยังไม่ยกเลิก".into(),
+            ));
+        }
+    }
+    let observation_start_date = requested_dates
+        .map(|d| d.0)
+        .or(current.observation_start_date);
+    let observation_end_date = requested_dates
+        .map(|d| d.1)
+        .or(current.observation_end_date);
     let title = input.title.unwrap_or(current.title);
     let description = input.description.or(current.description);
     let template_id = input.template_id.unwrap_or(current.template_id);
@@ -229,7 +270,7 @@ pub async fn update_cycle(
         UPDATE supervision_cycles
         SET academic_year_id = $2, academic_term_id = $3,
             title = $4, description = $5, template_id = $6,
-            status = $7
+            status = $7, observation_start_date=$8, observation_end_date=$9
         WHERE id = $1
         "#,
         )
@@ -240,6 +281,8 @@ pub async fn update_cycle(
         .bind(&description)
         .bind(template_id)
         .bind(status.as_str())
+        .bind(observation_start_date)
+        .bind(observation_end_date)
         .execute()
         .await
         .map_err(|error| {
@@ -468,9 +511,20 @@ fn cycle_from_row_with_targets(
         description: row.description,
         template_id: row.template_id,
         status: parse_cycle_status(&row.status)?,
+        observation_start_date: row.observation_start_date,
+        observation_end_date: row.observation_end_date,
         created_by: row.created_by,
         created_at: row.created_at,
         updated_at: row.updated_at,
         targets,
     })
+}
+
+fn validate_observation_dates(start: NaiveDate, end: NaiveDate) -> Result<(), AppError> {
+    if start > end {
+        return Err(AppError::ValidationError(
+            "วันเริ่มช่วงนิเทศต้องไม่อยู่หลังวันสิ้นสุด".into(),
+        ));
+    }
+    Ok(())
 }
