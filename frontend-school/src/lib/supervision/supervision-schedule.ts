@@ -29,7 +29,7 @@ function periodDate(value: string): string | null {
 	return Number.isFinite(date.getTime()) ? schoolCivilDate(date) : null;
 }
 
-function periodLabel(period: SupervisionObservationPeriod): string | null {
+export function savedPeriodLabel(period: SupervisionObservationPeriod): string | null {
 	return (
 		period.lessonSnapshot.periodLabel?.trim() || period.manualLesson?.periodLabel?.trim() || null
 	);
@@ -64,7 +64,7 @@ export function savedScheduleSummary(periods: SupervisionObservationPeriod[]) {
 	const individualPeriods = ordered.map((period) => ({
 		id: period.id,
 		date: periodDate(period.observedAt),
-		label: periodLabel(period),
+		label: savedPeriodLabel(period),
 		timeLabel: periodTimeLabel(period)
 	}));
 	const dates = [...new Set(individualPeriods.map((period) => period.date))].filter(

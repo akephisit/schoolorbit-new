@@ -1,11 +1,20 @@
 import { expect, test } from '@playwright/test';
 import type { SupervisionEvaluator } from '../../src/lib/api/supervision';
 import { revalidatePage } from './fixtures/page-revalidation';
-import { id, mock, navigate, nextYear, path, savedPeriod } from './fixtures/supervision-route-data';
+import {
+	id,
+	mock,
+	navigate,
+	nextYear,
+	path,
+	savedPeriod,
+	year
+} from './fixtures/supervision-route-data';
 
 const observationPath = '/api/supervision/observations';
 const requestsPath = path('requests');
 const bookingDay = '2026-11-01';
+const crowdedDay = '2026-11-04';
 const requestPeriods = [
 	savedPeriod({
 		observedAt: '2026-11-01T03:20:00Z',
@@ -48,6 +57,18 @@ const irregularPeriods = [
 	})
 ];
 
+const crowdedBookings = Array.from({ length: 5 }, (_, index) => {
+	const observationId = id(200 + index);
+	const observedAt = `${crowdedDay}T02:00:00Z`;
+	return {
+		id: observationId,
+		observedDisplayName: `ครู นัดที่ ${index + 1}`,
+		observedAt,
+		status: 'planned' as const,
+		periods: [savedPeriod({ id: id(210 + index), observationId, observedAt })]
+	};
+});
+
 const evaluators: SupervisionEvaluator[] = ['อาจารย์ มณี มีสุข', 'อาจารย์ ธนกฤต วัฒนกุล', null].map(
 	(evaluatorDisplayName, index) => ({
 		id: id(170 + index),
@@ -83,6 +104,19 @@ test('request cards show saved periods, time, class, and unique saved subjects b
 					...period,
 					lessonSnapshot: { ...period.lessonSnapshot, subjectName: 'ประวัติศาสตร์' }
 				}))
+			},
+			{
+				id: id(42),
+				observedDisplayName: 'ครู หลักฐานเดิม',
+				periods: [
+					savedPeriod({
+						id: id(74),
+						observationId: id(42),
+						position: 1,
+						lessonSnapshot: { periodLabel: null, subjectName: 'วิชาจากหลักฐานเดิม' },
+						manualLesson: { periodLabel: '  ' }
+					})
+				]
 			}
 		]
 	});
@@ -110,6 +144,16 @@ test('request cards show saved periods, time, class, and unique saved subjects b
 	await expect(card.getByTestId('supervision-saved-periods')).toContainText('คาบ 4 · วิทยาศาสตร์');
 	await expect(card.getByText('แบบประเมินทดสอบ', { exact: true })).toBeVisible();
 	await expect(card.getByText('ผู้รับผิดชอบตรวจคำขอ', { exact: false })).toBeVisible();
+	const legacy = queue.locator('[data-slot="card"]').filter({
+		has: page.getByRole('heading', { name: 'ครู หลักฐานเดิม', exact: true })
+	});
+	await expect(legacy.getByText('ไม่ระบุคาบ', { exact: true })).toBeVisible();
+	const legacyEvidence = legacy.getByTestId('supervision-saved-periods');
+	await expect(legacyEvidence).toBeHidden();
+	await legacy.getByRole('button', { name: 'ดูรายละเอียด 1 คาบ' }).click();
+	await expect(legacyEvidence).toBeVisible();
+	await expect(legacyEvidence).toContainText('ไม่ระบุคาบ · วิชาจากหลักฐานเดิม');
+	await expect(legacy).not.toContainText('คาบ 1');
 	expect(api.count(`/api/supervision/observations/${id(30)}/evaluator-availability`)).toBe(0);
 });
 
@@ -130,7 +174,8 @@ for (const width of [1280, 375]) {
 					evaluators
 				},
 				{ id: id(41), observedDisplayName: 'ครู ถูกส่งกลับ', status: 'returned' },
-				{ id: id(42), observedDisplayName: 'ครู ถูกยกเลิก', status: 'cancelled' }
+				{ id: id(42), observedDisplayName: 'ครู ถูกยกเลิก', status: 'cancelled' },
+				...crowdedBookings
 			]
 		});
 		const termPath = `${requestsPath}&academicTermId=${id(8)}`;
@@ -179,6 +224,37 @@ for (const width of [1280, 375]) {
 		await expect(month.getByText('พฤศจิกายน 2569', { exact: true })).toBeVisible();
 		await month.locator('[data-calendar-date="2026-11-02"]').click();
 		await expect(month.getByText('ไม่มีรายการจองนิเทศในวันนี้')).toBeVisible();
+
+		const crowdedCell = month.locator(`[data-calendar-date="${crowdedDay}"]`);
+		await expect(crowdedCell).toHaveAccessibleName(/5 กิจกรรม$/);
+		const overflow = crowdedCell.getByText(/^\+\d+$/);
+		await expect(overflow).toBeVisible();
+		const visibleChips = crowdedCell.locator('..').locator('button[title]').filter({
+			hasText: 'ครู นัดที่'
+		});
+		const chips = await visibleChips.all();
+		expect(chips.length).toBeGreaterThan(0);
+		expect(chips.length + Number(await overflow.innerText())).toBe(crowdedBookings.length);
+		const overflowBounds = await overflow.boundingBox();
+		expect(overflowBounds).not.toBeNull();
+		for (const chip of chips) {
+			const chipBounds = await chip.boundingBox();
+			expect(chipBounds).not.toBeNull();
+			expect(chipBounds!.y + chipBounds!.height).toBeLessThanOrEqual(overflowBounds!.y);
+		}
+		await crowdedCell.click();
+		const crowdedAgenda = month.getByRole('region', { name: /4 พ.ย. 2569/ });
+		for (const booking of crowdedBookings) {
+			await expect(
+				crowdedAgenda.getByText(booking.observedDisplayName, { exact: true })
+			).toBeVisible();
+		}
+		const lastDetails = crowdedAgenda.getByRole('link', {
+			name: 'รายละเอียด ครู นัดที่ 5',
+			exact: true
+		});
+		await lastDetails.scrollIntoViewIfNeeded();
+		await expect(lastDetails).toBeInViewport();
 		await month.getByRole('button', { name: 'วันนี้', exact: true }).click();
 		await expect(day).toHaveAttribute('aria-pressed', 'true');
 		await expect(agenda.getByText('อาจารย์ มณี มีสุข', { exact: true })).toBeVisible();
@@ -257,15 +333,36 @@ test('changing year replaces calendar data in the authorized academic context', 
 	await expect(
 		page.getByRole('region', { name: /1 พ.ย. 2569/ }).getByText('ครู ในคิว')
 	).toBeVisible();
+	const oldRefresh = page.waitForRequest((request) => {
+		const url = new URL(request.url());
+		return (
+			request.method() === 'GET' &&
+			url.pathname === observationPath &&
+			url.searchParams.get('academicYearId') === year
+		);
+	});
 	await revalidatePage(page);
+	const oldRequest = await oldRefresh;
 	await expect(page.getByTestId('supervision-observations')).toHaveAttribute('aria-busy', 'true');
-	await navigate(page, path('requests', nextYear));
-	await expect(
-		page.getByRole('tabpanel', { name: 'ปฏิทิน' }).getByText('ครู ในคิว', { exact: true })
-	).toHaveCount(0);
-	await expect(
-		page.getByRole('region', { name: /1 พ.ย. 2569/ }).getByText('ครู ปีใหม่')
-	).toBeVisible();
+	const nextPath = path('requests', nextYear);
+	await navigate(page, nextPath);
+	const calendar = page.getByRole('tabpanel', { name: 'ปฏิทิน' });
+	const newTeacher = calendar.getByRole('region', { name: /1 พ.ย. 2569/ }).getByText('ครู ปีใหม่');
+	await expect(newTeacher).toBeVisible();
 	api.release();
+	const oldResponse = await oldRequest.response();
+	expect(oldResponse?.ok()).toBe(true);
+	expect(await oldResponse?.json()).toMatchObject({
+		data: { items: [{ academicYearId: year, observedDisplayName: 'ครู ในคิว' }] }
+	});
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+	await expect(calendar.getByText('ครู ในคิว', { exact: true })).toHaveCount(0);
+	await expect(newTeacher).toBeVisible();
+	await expect(page).toHaveURL(nextPath);
 	expect(api.count(observationPath)).toBe(3);
 });

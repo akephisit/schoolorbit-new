@@ -112,15 +112,18 @@
 
 	<div class="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
 		<div class="min-w-0 space-y-2">
-			<CalendarMonthGrid
-				monthDate={monthStart}
-				{events}
-				{pendingRequests}
-				{todayDate}
-				selectedDate={activeDate}
-				onselect={selectDate}
-				hideMobileTimes
-			/>
+			<div class="h-[33rem] sm:h-[40rem]">
+				<CalendarMonthGrid
+					monthDate={monthStart}
+					{events}
+					{pendingRequests}
+					{todayDate}
+					selectedDate={activeDate}
+					onselect={selectDate}
+					fillHeight
+					hideMobileTimes
+				/>
+			</div>
 			<div class="flex flex-wrap gap-2 text-xs text-muted-foreground" aria-label="สถานะนัดนิเทศ">
 				<span class="inline-flex items-center gap-1.5"
 					><span class="size-2 rounded-full bg-primary" aria-hidden="true"></span>นัดหมายแล้ว</span
