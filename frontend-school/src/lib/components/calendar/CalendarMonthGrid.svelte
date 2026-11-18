@@ -36,6 +36,7 @@
 		pendingRequests = [],
 		dayStates = {},
 		selectedDate = '',
+		todayDate = toIsoDate(new Date()),
 		onselect,
 		oneventselect,
 		fillHeight = false,
@@ -47,6 +48,7 @@
 		pendingRequests?: CalendarDisplayEvent[];
 		dayStates?: Record<string, CalendarDayState>;
 		selectedDate?: string;
+		todayDate?: string;
 		onselect?: (date: string, anchor: HTMLElement) => void;
 		oneventselect?: (event: CalendarDisplayEvent, date: string, anchor: HTMLElement) => void;
 		fillHeight?: boolean;
@@ -55,7 +57,6 @@
 	} = $props();
 
 	const fallbackColor = '#64748b';
-	const todayDate = toIsoDate(new Date());
 
 	const desktop = new MediaQuery('(min-width: 640px)');
 	let weeksHeight = $state(0);

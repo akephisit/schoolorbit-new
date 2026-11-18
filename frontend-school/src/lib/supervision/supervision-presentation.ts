@@ -99,7 +99,7 @@ export function currentReturnReason(
 	return action?.comment?.trim() || null;
 }
 
-export function savedLessonLabels(observation: SupervisionObservation) {
+export function savedLessonLabels(observation: Pick<SupervisionObservation, 'periods'>) {
 	const periods = [...observation.periods].sort((a, b) => a.position - b.position);
 	const values = (field: 'subjectName' | 'classroomLabel' | 'roomLabel' | 'periodLabel') =>
 		periods
