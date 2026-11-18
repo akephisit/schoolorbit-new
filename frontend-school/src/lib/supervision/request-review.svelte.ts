@@ -9,6 +9,7 @@ import {
 } from '#lib/api/supervision.js';
 import { requireApiData } from '#lib/api/client.js';
 import { isAbortError, LatestRequest } from '#lib/async/latest-request.js';
+import { isSupervisionDeniedOrMissing } from '#lib/supervision/supervision-access.js';
 import { toast } from 'svelte-sonner';
 
 type RequestReviewAction = 'approve-request' | 'return-request' | 'save-evaluators';
@@ -47,6 +48,7 @@ export function createSupervisionRequestReview({
 	getSavingAction,
 	setSavingAction,
 	onApplied,
+	onDenied,
 	allowSaveEvaluators = false
 }: {
 	getObservation: (id: string) => SupervisionObservation | null | undefined;
@@ -56,13 +58,20 @@ export function createSupervisionRequestReview({
 	getSavingAction: () => string | null;
 	setSavingAction: (action: string | null) => void;
 	onApplied: (observation: SupervisionObservation) => void;
+	onDenied: (id: string) => void;
 	allowSaveEvaluators?: boolean;
 }) {
 	let drafts = $state<Record<string, RequestReviewDraft>>({});
+	let denied = $state<Record<string, true>>({});
 	const availabilityRequests: Record<string, LatestRequest> = {};
 
 	function canReview(observation: SupervisionObservation) {
-		return hasManagePermission() && observation.canManage && observation.status === 'requested';
+		return (
+			!denied[observation.id] &&
+			hasManagePermission() &&
+			observation.canManage &&
+			observation.status === 'requested'
+		);
 	}
 
 	function canChange(observation: SupervisionObservation) {
@@ -136,7 +145,7 @@ export function createSupervisionRequestReview({
 		const currentRequest = () => {
 			if (!ownsRead()) return;
 			const current = getObservation(id);
-			if (current && canReview(current) && availabilityBasis(current) === basis) return current;
+			if (current && canReview(current)) return current;
 		};
 		state.requestBasis = basis;
 		state.loading = true;
@@ -144,7 +153,7 @@ export function createSupervisionRequestReview({
 		try {
 			const result = await getSupervisionEvaluatorAvailability(id, { signal });
 			const current = currentRequest();
-			if (!current) return;
+			if (!current || availabilityBasis(current) !== basis) return;
 			state.availability = result;
 			state.availabilityBasis = basis;
 			if (state.evaluatorIds) {
@@ -155,10 +164,12 @@ export function createSupervisionRequestReview({
 				);
 			}
 		} catch (error) {
-			if (!isAbortError(error) && currentRequest()) {
+			const current = currentRequest();
+			if (isAbortError(error) || !current) return;
+			if (isSupervisionDeniedOrMissing(error)) deny(id);
+			else if (availabilityBasis(current) === basis)
 				state.error =
 					error instanceof Error ? error.message : 'ไม่สามารถตรวจสอบผู้ประเมินที่ว่างได้';
-			}
 		} finally {
 			if (ownsRead()) state.loading = false;
 		}
@@ -198,7 +209,14 @@ export function createSupervisionRequestReview({
 		delete drafts[id];
 	}
 
-	function reconcile() {
+	function deny(id: string) {
+		denied[id] = true;
+		clear(id);
+		onDenied(id);
+	}
+
+	function reconcile(freshRead: boolean) {
+		if (freshRead) denied = {};
 		for (const id of Object.keys(drafts)) {
 			const current = getObservation(id);
 			if (!current || !canReview(current)) clear(id);
@@ -208,6 +226,7 @@ export function createSupervisionRequestReview({
 	function reset() {
 		for (const id of Object.keys(availabilityRequests)) cancelAvailability(id);
 		drafts = {};
+		denied = {};
 	}
 
 	async function submit(id: string, action: RequestReviewAction) {
@@ -242,6 +261,10 @@ export function createSupervisionRequestReview({
 			toast.success(messages.success);
 		} catch (error) {
 			if (!ownsResult()) return;
+			if (isSupervisionDeniedOrMissing(error)) {
+				deny(id);
+				return;
+			}
 			if (action !== 'return-request') void loadAvailability(id);
 			toast.error(error instanceof Error ? error.message : messages.failure);
 		} finally {
@@ -253,6 +276,7 @@ export function createSupervisionRequestReview({
 		canReview,
 		canChange,
 		canSubmit,
+		isDenied: (id: string) => Boolean(denied[id]),
 		isBusy,
 		isSaving: (id: string, action: RequestReviewAction) => getSavingAction() === `${action}:${id}`,
 		state: reviewState,

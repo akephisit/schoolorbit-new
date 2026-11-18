@@ -7,6 +7,7 @@ import {
 } from '#lib/api/supervision.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import {
+	resolveSupervisionRead,
 	waitForSupervisionAccess,
 	SUPERVISION_OBSERVATION_READ_PERMISSIONS
 } from '#lib/supervision/supervision-access.js';
@@ -27,7 +28,9 @@ export const load: PageLoad = ({ params, fetch, url, depends }) => {
 		waitForSupervisionAccess(_meta.access.permission),
 		waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS)
 	]).then(([route, read]) =>
-		route && read ? getSupervisionObservation(params.id, { requestFetch: fetch }) : null
+		route && read
+			? resolveSupervisionRead(getSupervisionObservation(params.id, { requestFetch: fetch }))
+			: null
 	);
 	// References depend only on identity, and neither waits for its sibling.
 	const cycle = captureRouteLoad(

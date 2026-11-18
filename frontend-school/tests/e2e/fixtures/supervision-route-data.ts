@@ -110,6 +110,7 @@ export async function mock(
 			| 'review'
 			| 'timetable-detail';
 		failAt?: number;
+		failStatus?: number;
 		holdAt?: number;
 		term?: boolean;
 		observationStatus?: SupervisionObservationStatus;
@@ -375,7 +376,7 @@ export async function mock(
 				)
 					await held.promise;
 				if (options.fail === kind && counts.get(resource) === (options.failAt ?? 1))
-					return reply(route, 'region ไม่พร้อม', 503);
+					return reply(route, 'region ไม่พร้อม', options.failStatus ?? 503);
 			}
 			if (selectedId && method === 'GET') return reply(route, snapshot);
 			if (resource.endsWith('/review') && method === 'GET')

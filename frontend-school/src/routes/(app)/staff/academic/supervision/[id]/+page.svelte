@@ -25,6 +25,7 @@
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
 	import {
+		resolveSupervisionRead,
 		waitForSupervisionAccess,
 		SUPERVISION_OBSERVATION_READ_PERMISSIONS
 	} from '#lib/supervision/supervision-access.js';
@@ -205,14 +206,6 @@
 	const cycleAllowsResubmission = $derived(
 		!cycleLoading && cycle?.status === 'open' && !cycleDatesError
 	);
-	const canEditLesson = $derived(
-		Boolean(
-			observation &&
-			!observation.periodsLocked &&
-			manageableStatus(observation.status) &&
-			(canManageObservation || canEditOwnRequested)
-		)
-	);
 	const canEditEvaluators = $derived(
 		Boolean(
 			observation &&
@@ -231,14 +224,29 @@
 			replaceObservation(updated);
 			setRequestReviewOpen(false);
 		},
+		onDenied: () => {
+			requestReviewOpen = false;
+			observationRequest.abort();
+			void retryObservation();
+		},
 		allowSaveEvaluators: true
 	});
+	const canEditLesson = $derived(
+		Boolean(
+			observation &&
+			!requestReview.isDenied(observation.id) &&
+			!observation.periodsLocked &&
+			manageableStatus(observation.status) &&
+			(canManageObservation || canEditOwnRequested)
+		)
+	);
 	const canReviewPendingRequest = $derived(
 		Boolean(observation && requestReview.canReview(observation))
 	);
 	const canCancelObservation = $derived(
 		Boolean(
 			observation &&
+			!requestReview.isDenied(observation.id) &&
 			(canCancelOwnRequest ||
 				(canManageObservation &&
 					!['published', 'acknowledged', 'completed', 'cancelled'].includes(observation.status)))
@@ -602,10 +610,23 @@
 		return response.data;
 	}
 
-	function applyObservation(updated: SupervisionObservation | null) {
+	function applyObservation(updated: SupervisionObservation | null, freshRead = true) {
 		observation = updated;
-		requestReview.reconcile();
+		requestReview.reconcile(freshRead);
 		if (!updated || !requestReview.canReview(updated)) requestReviewOpen = false;
+		if (!updated) {
+			contextEpoch += 1;
+			savingAction = null;
+			reviewRequest.abort();
+			cycleRequest.abort();
+			templateRequest.abort();
+			review = null;
+			cycle = null;
+			template = null;
+			loadingReview = false;
+			cycleLoading = false;
+			templateLoading = false;
+		}
 	}
 
 	function replaceObservation(updated: SupervisionObservation) {
@@ -613,7 +634,7 @@
 		reviewRequest.abort();
 		loading = false;
 		loadingReview = false;
-		applyObservation(updated);
+		applyObservation(updated, false);
 		if (review)
 			review = {
 				...review,
@@ -629,15 +650,17 @@
 		loading = true;
 		error = '';
 		const result = await captureRouteLoad(
-			getSupervisionObservation(data.observationId, { signal: ticket.signal }),
+			resolveSupervisionRead(
+				getSupervisionObservation(data.observationId, { signal: ticket.signal })
+			),
 			'โหลดรายการนิเทศไม่สำเร็จ'
 		);
 		if (owner !== appIdentityKey() || !observationRequest.isCurrent(ticket.revision)) return;
 		loading = false;
 		if (result.ok) {
 			applyObservation(result.data);
-			if (!cycle && !cycleLoading) void retryCycle();
-			if (!template && !templateLoading) void retryTemplate();
+			if (result.data && !cycle && !cycleLoading) void retryCycle();
+			if (result.data && !template && !templateLoading) void retryTemplate();
 		} else error = result.error;
 	}
 

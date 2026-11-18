@@ -19,6 +19,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { SupervisionWorkspaceRouteData } from '#lib/supervision/workspace-route-data.js';
+	import { resolveSupervisionRead } from '#lib/supervision/supervision-access.js';
 	import {
 		BarChart3,
 		ArrowDown,
@@ -418,6 +419,10 @@
 		onApplied: (updated) => {
 			replaceObservation(updated);
 			if (calendarReviewId === updated.id && updated.status !== 'requested') calendarReviewId = '';
+		},
+		onDenied: (id) => {
+			if (calendarReviewId === id) calendarReviewId = '';
+			void retryObservations();
 		},
 		allowSaveEvaluators: true
 	});
@@ -877,11 +882,11 @@
 	function shouldLoadObservations() {
 		return routeData.observations !== null;
 	}
-	function applyObservations(items: SupervisionObservation[], readable: boolean) {
+	function applyObservations(items: SupervisionObservation[], readable: boolean, freshRead = true) {
 		observations = items;
 		observationsReadable = readable;
 		observationsLoaded = true;
-		requestReview.reconcile();
+		requestReview.reconcile(freshRead);
 		if (calendarReviewId && !calendarReviewObservation) calendarReviewId = '';
 	}
 	async function retryObservations() {
@@ -891,13 +896,14 @@
 		observationsLoading = true;
 		observationsError = '';
 		try {
-			const items = await listSupervisionObservations(
+			const read = listSupervisionObservations(
 				{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
 				{ signal }
 			);
+			const items = await (section === 'requests' ? resolveSupervisionRead(read) : read);
 
 			if (owner !== currentManagementContext() || !observationRequest.isCurrent(revision)) return;
-			applyObservations(items, true);
+			applyObservations(items ?? [], items !== null);
 		} catch (error) {
 			if (
 				!isAbortError(error) &&
@@ -955,7 +961,8 @@
 			observations.some((item) => item.id === observation.id)
 				? observations.map((item) => (item.id === observation.id ? observation : item))
 				: [observation, ...observations],
-			observationsReadable
+			observationsReadable,
+			false
 		);
 	}
 

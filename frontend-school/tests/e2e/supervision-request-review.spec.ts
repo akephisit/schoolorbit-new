@@ -446,3 +446,124 @@ test('a held approval cannot reinsert a request removed by a fresh list', async 
 	await expect(agenda(page).getByText(otherTeacher, { exact: true })).toBeVisible();
 	expect(api.count(availabilityPath)).toBe(0);
 });
+
+test('an authoritative detail denial clears private data and rejects a held approval', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		observation: { evaluators: savedEvaluators },
+		evaluatorAvailability,
+		hold: 'patch',
+		fail: 'observation-detail',
+		failAt: 2,
+		failStatus: 403
+	});
+	await page.goto(detailPath);
+	await openReview(page);
+	await expect(remove(dialog(page), primary)).toBeVisible();
+	await approval(dialog(page)).click();
+	const endpoint = `${observationPath}/approve-request`;
+	await expect.poll(() => api.writes).toEqual([`POST ${endpoint}`]);
+	await refreshWithoutDismissingPicker(page);
+	await expect(page.getByTestId('supervision-detail')).toContainText('ไม่พบรายการนิเทศ');
+	await expect(dialog(page)).toHaveCount(0);
+	await expect(page.getByText(primary, { exact: true })).toHaveCount(0);
+	const settled = page.waitForResponse((response) => new URL(response.url()).pathname === endpoint);
+	api.release();
+	const response = await settled;
+	expect(response.ok()).toBe(true);
+	await response.finished();
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+	await expect(page.getByTestId('supervision-detail')).toContainText('ไม่พบรายการนิเทศ');
+	await expect(page.getByText(primary, { exact: true })).toHaveCount(0);
+	await expect(page.getByText('อนุมัติคำขอและมอบหมายผู้ประเมินแล้ว', { exact: true })).toHaveCount(
+		0
+	);
+	expect(api.count(observationPath)).toBe(2);
+	expect(api.count(availabilityPath)).toBe(1);
+});
+
+test('availability denied after a successful check clears the draft until a fresh scoped read', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		observation: { evaluators: savedEvaluators },
+		additionalObservations: [otherRequest],
+		evaluatorAvailability,
+		fail: 'evaluator',
+		failAt: 2,
+		failStatus: 403,
+		hold: 'observations',
+		holdAt: 2
+	});
+	await page.goto(requestsPath);
+	const first = requestCard(page, 'ครู ในคิว');
+	const second = requestCard(page, otherTeacher);
+	const picker = first.getByRole('combobox', { name: 'เพิ่ม/เลือกผู้ประเมิน' });
+	await returnReason(second).fill('ร่างของอีกรายการ');
+	await returnReason(first).fill(reason);
+	await selectEvaluator(page, first, detailAddition);
+	await expect(first.getByTestId('supervision-request-availability')).toBeVisible();
+	await picker.click();
+	await expect(page.getByTestId('supervision-observations')).toHaveAttribute('aria-busy', 'true');
+	await expect(picker).toBeDisabled();
+	await expect(approval(first)).toBeDisabled();
+	await expect(returnRequest(first)).toBeDisabled();
+	await expect(first.getByTestId('supervision-request-availability')).toHaveCount(0);
+	await expect(page.getByPlaceholder('ค้นหาครูผู้ประเมิน...')).toHaveCount(0);
+	await expect(first.getByText(detailAddition, { exact: true })).toHaveCount(0);
+	await expect(first.getByText(primary, { exact: true })).toBeVisible();
+	await expect(returnReason(first)).toHaveValue('');
+	await expect(approval(second)).toBeEnabled();
+	await expect(returnReason(second)).toHaveValue('ร่างของอีกรายการ');
+	api.release();
+	await expect(approval(first)).toBeEnabled();
+	await expect(picker).toHaveAttribute('aria-expanded', 'false');
+	await expect(returnReason(first)).toHaveValue('');
+	await expect(
+		first.getByRole('button', { name: 'ตรวจช่วงคาบและผู้ประเมิน', exact: true })
+	).toBeVisible();
+	expect(api.count('/api/supervision/observations')).toBe(2);
+	expect(api.count(availabilityPath)).toBe(2);
+	expect(api.writes).toEqual([]);
+});
+
+test('a denied review write refreshes scope before any further review action', async ({ page }) => {
+	const api = await mock(page, {
+		observation: { evaluators: savedEvaluators },
+		additionalObservations: [otherRequest],
+		evaluatorAvailability,
+		hold: 'observations',
+		holdAt: 2,
+		fail: 'observations',
+		failAt: 2,
+		failStatus: 403
+	});
+	const endpoint = `${observationPath}/approve-request`;
+	let attempts = 0;
+	await page.route(`**${endpoint}`, (route) => {
+		attempts += 1;
+		return route.fulfill({ status: 404, json: { success: false, error: 'ไม่พบคำขอนิเทศ' } });
+	});
+	await page.goto(requestsPath);
+	const first = requestCard(page, 'ครู ในคิว');
+	const second = requestCard(page, otherTeacher);
+	await approval(first).click();
+	await expect(page.getByTestId('supervision-observations')).toHaveAttribute('aria-busy', 'true');
+	await expect(approval(first)).toBeDisabled();
+	await expect(returnRequest(first)).toBeDisabled();
+	await expect(approval(second)).toBeEnabled();
+	api.release();
+	await expect(page.getByText('ยังไม่มีสิทธิ์ดูรายการนิเทศ', { exact: true })).toBeVisible();
+	await expect(first).toHaveCount(0);
+	await expect(second).toHaveCount(0);
+	await expect(page.getByText(primary, { exact: true })).toHaveCount(0);
+	expect(attempts).toBe(1);
+	expect(api.count('/api/supervision/observations')).toBe(2);
+	expect(api.count(availabilityPath)).toBe(0);
+});
