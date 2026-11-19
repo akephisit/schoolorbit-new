@@ -520,5 +520,6 @@ async fn scoped_options_keep_visible_enrollment_history_without_inaccessible_def
         .is_empty());
 }
 
-#[path = "context_settings_persistence/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("context_settings_persistence/permission_codes_generated.rs");
+}

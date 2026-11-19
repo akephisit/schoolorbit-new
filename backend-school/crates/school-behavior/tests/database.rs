@@ -1778,5 +1778,6 @@ async fn cleanup_reference_locks_preserve_closed_context_eligibility_and_reject_
     }
 }
 
-#[path = "database/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("database/permission_codes_generated.rs");
+}

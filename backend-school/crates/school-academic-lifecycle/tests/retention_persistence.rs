@@ -326,5 +326,6 @@ async fn retention_mixed_and_unknown_rosters_are_conservative_and_preview_never_
     );
 }
 
-#[path = "retention_persistence/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("retention_persistence/permission_codes_generated.rs");
+}

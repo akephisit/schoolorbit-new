@@ -3543,5 +3543,6 @@ async fn annual_budget_delete_racing_final_approval_preserves_exact_winner_in_bo
     }
 }
 
-#[path = "budget/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("budget/permission_codes_generated.rs");
+}

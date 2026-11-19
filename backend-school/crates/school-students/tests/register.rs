@@ -566,5 +566,6 @@ async fn manual_create_is_immediately_visible_and_duplicate_creation_rolls_back(
     );
 }
 
-#[path = "register/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("register/permission_codes_generated.rs");
+}

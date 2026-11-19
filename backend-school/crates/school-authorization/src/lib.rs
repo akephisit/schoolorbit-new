@@ -24,5 +24,6 @@ pub use permissions::{
 pub mod resource_access_policy;
 
 #[cfg(test)]
-#[path = "test_support/permission_codes_generated.rs"]
-mod test_permission_codes;
+mod test_permission_codes {
+    include!("test_support/permission_codes_generated.rs");
+}

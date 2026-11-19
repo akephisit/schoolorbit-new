@@ -2381,5 +2381,6 @@ async fn full_day_http_retires_partial_payloads_and_settings_even_for_existing_r
     assert_eq!(exact.coverage.days[0].lessons.len(), 1);
 }
 
-#[path = "staff_leave_coverage/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("staff_leave_coverage/permission_codes_generated.rs");
+}

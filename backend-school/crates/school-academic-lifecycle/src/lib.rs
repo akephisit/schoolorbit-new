@@ -5,9 +5,11 @@ pub mod services;
 mod permission_codes_generated;
 
 #[cfg(feature = "integration-test-support")]
-#[path = "test_support/integration/permission_codes_generated.rs"]
-mod integration_test_permission_codes;
+mod integration_test_permission_codes {
+    include!("test_support/integration/permission_codes_generated.rs");
+}
 
 #[cfg(test)]
-#[path = "test_support/permission_codes_generated.rs"]
-mod test_permission_codes;
+mod test_permission_codes {
+    include!("test_support/permission_codes_generated.rs");
+}

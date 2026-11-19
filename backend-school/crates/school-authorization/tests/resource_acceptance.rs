@@ -116,5 +116,6 @@ async fn resource_acceptance_preserves_direct_scope_union_and_permission_origin(
     tx.commit().await.unwrap();
 }
 
-#[path = "resource_acceptance/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("resource_acceptance/permission_codes_generated.rs");
+}

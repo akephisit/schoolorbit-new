@@ -2141,5 +2141,6 @@ async fn coverage_refresh_recovers_missing_to_ready_zero_without_dirty_selection
     assert_eq!(revisions, 4);
 }
 
-#[path = "leave/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("leave/permission_codes_generated.rs");
+}

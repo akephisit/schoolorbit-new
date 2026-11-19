@@ -605,5 +605,6 @@ async fn complete_current_graph_preserves_private_rows_while_public_caps_follow_
     );
 }
 
-#[path = "teacher_assignments/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("teacher_assignments/permission_codes_generated.rs");
+}

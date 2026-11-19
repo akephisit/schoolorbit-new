@@ -617,5 +617,6 @@ async fn assessment_detail_and_summary_share_the_callers_single_connection() {
     assert!(!detail.coordinator_candidates.is_empty());
 }
 
-#[path = "persistence/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("persistence/permission_codes_generated.rs");
+}

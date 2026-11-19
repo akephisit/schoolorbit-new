@@ -19,5 +19,6 @@ async fn opening_policy_reads_through_the_lifecycle_crate_boundary() {
     assert!(!policy.require_timetable);
 }
 
-#[path = "persistence/permission_codes_generated.rs"]
-mod codes;
+mod codes {
+    include!("persistence/permission_codes_generated.rs");
+}
