@@ -1064,12 +1064,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         ),
         (
             "school-authorization",
-            &[
-                "school-database",
-                "school-errors",
-                "school-permissions",
-                "school-tenancy",
-            ],
+            &["school-database", "school-errors", "school-tenancy"],
         ),
         (
             "school-behavior",
@@ -1450,7 +1445,14 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
     assert!(!errors.contains("axum"));
     assert!(http.contains("school-errors = { workspace = true }"));
     assert!(authorization.contains("school-errors = { workspace = true }"));
-    assert!(authorization.contains("school-permissions = { workspace = true }"));
+    assert!(
+        !school_dependencies_in_section(&authorization, "dependencies")
+            .contains("school-permissions")
+    );
+    assert!(
+        school_dependencies_in_section(&authorization, "dev-dependencies")
+            .contains("school-permissions")
+    );
     assert!(!authorization.contains("school-http"));
     assert!(!authorization_source.contains("SessionCache"));
     assert!(!authorization_source.contains("modules::auth"));

@@ -1,6 +1,7 @@
 mod academic_resource;
 mod cache;
 mod organization_scope;
+mod permission_codes_generated;
 mod permissions;
 
 pub use academic_resource::{

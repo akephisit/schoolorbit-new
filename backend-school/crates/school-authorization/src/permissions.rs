@@ -1,9 +1,8 @@
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-use crate::PermissionCache;
+use crate::{permission_codes_generated::WILDCARD, PermissionCache};
 
 #[derive(Clone, Debug)]
 pub struct ActorContext {
@@ -92,7 +91,7 @@ pub async fn get_cached_user_permissions(
 pub fn permission_matches(permissions: &[String], required_permission: &str) -> bool {
     permissions
         .iter()
-        .any(|permission| permission == codes::WILDCARD || permission == required_permission)
+        .any(|permission| permission == WILDCARD || permission == required_permission)
 }
 
 pub fn module_permission_matches(permissions: &[String], module: &str) -> bool {
@@ -101,7 +100,7 @@ pub fn module_permission_matches(permissions: &[String], module: &str) -> bool {
     }
     let module_prefix = format!("{module}.");
     permissions.iter().any(|permission| {
-        permission == codes::WILDCARD
+        permission == WILDCARD
             || permission == module
             || permission.starts_with(&module_prefix)
             || permission.starts_with("*.")
@@ -200,7 +199,7 @@ pub async fn staff_users_with_all_permissions_on_connection(
             sqlx::AssertSqlSafe(query),
         )
         .bind(required)
-        .bind(codes::WILDCARD)
+        .bind(WILDCARD)
         .fetch_all()
         .await
 }
@@ -232,6 +231,7 @@ pub async fn load_actor_context_for_session(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use school_permissions::registry::codes;
 
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {
