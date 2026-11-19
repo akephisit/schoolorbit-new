@@ -323,7 +323,7 @@ mod tests {
         school_test_db::run_test_migrations(&pool).await;
         let actor = school_authorization::ActorContext {
             user_id: Uuid::new_v4(),
-            permissions: vec![school_permissions::registry::codes::BEHAVIOR_READ_SCHOOL.into()],
+            permissions: vec![crate::test_permission_codes::BEHAVIOR_READ_SCHOOL.into()],
         };
         let access = BehaviorAccess::for_actor(&actor);
         let query = BehaviorStudentsQuery {

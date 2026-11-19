@@ -3,7 +3,7 @@ use crate::integration_tests::academic::{
     core,
     lifecycle::models::{PromotionRuleInput, PromotionRunStatus, PromotionSuccessOutcome},
 };
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 use uuid::Uuid;
 
 pub(crate) async fn fixture(name: &str) -> (PgPool, ActorContext, CreatePromotionRunInput) {

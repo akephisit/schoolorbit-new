@@ -20,7 +20,6 @@ url = { workspace = true }
 async-trait = { workspace = true }
 async-stream = { workspace = true }
 futures = { workspace = true }
-school-permissions = { workspace = true }
 school-authorization = { workspace = true }
 school-http = { workspace = true }
 school-auth-http = { workspace = true }

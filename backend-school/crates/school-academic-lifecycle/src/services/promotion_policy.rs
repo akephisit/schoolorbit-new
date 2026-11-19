@@ -32,7 +32,7 @@ pub async fn get_promotion_policy_options(
 }
 #[cfg(feature = "integration-test-support")]
 use super::promotion_context::validate_promotion_rules;
-use school_permissions::registry::codes;
+use crate::permission_codes_generated as codes;
 
 #[derive(sqlx::FromRow)]
 struct StoredPolicy {

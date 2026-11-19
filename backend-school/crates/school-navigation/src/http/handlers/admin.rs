@@ -9,6 +9,7 @@ use crate::models::MenuGroup;
 use crate::models::MenuItem;
 #[cfg(feature = "api-docs")]
 use crate::models::MenuWorkspace;
+use crate::permission_codes_generated as codes;
 use crate::services::academic_template_service;
 use crate::services::menu_service;
 use school_auth::session_service::AuthenticatedSession;
@@ -18,7 +19,6 @@ use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]
 use school_http::{ApiErrorResponse, EmptyData};
-use school_permissions::registry::codes;
 
 use axum::{
     extract::{Extension, Path, Query, State},

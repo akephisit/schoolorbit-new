@@ -1,6 +1,6 @@
 use super::*;
 use crate::integration_tests::academic::{core, lifecycle::models::*};
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 use uuid::Uuid;
 
 async fn fixture(name: &str) -> (PgPool, ActorContext, PromotionPolicyInput) {

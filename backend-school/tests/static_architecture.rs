@@ -820,7 +820,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-contracts",
                 "school-http",
                 "school-notifications",
-                "school-permissions",
                 "school-tenancy",
                 "school-workflow",
             ],
@@ -837,7 +836,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-notifications",
-                "school-permissions",
                 "school-students",
                 "school-tenancy",
             ],
@@ -850,7 +848,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-database",
                 "school-errors",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -860,7 +857,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-database",
                 "school-errors",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -871,7 +867,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-database",
                 "school-errors",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -884,7 +879,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-auth-http",
                 "school-authorization",
                 "school-http",
-                "school-permissions",
             ],
         ),
         (
@@ -908,7 +902,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-auth",
                 "school-auth-http",
                 "school-http",
-                "school-permissions",
             ],
         ),
         (
@@ -922,7 +915,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-errors",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -960,7 +952,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-database",
                 "school-errors",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -973,7 +964,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-database",
                 "school-errors",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -985,7 +975,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-authorization",
                 "school-database",
                 "school-errors",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1001,7 +990,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-contracts",
                 "school-file-platform",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1018,7 +1006,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-contracts",
                 "school-file-platform",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1038,7 +1025,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-notifications",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1077,7 +1063,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-notifications",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1091,7 +1076,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-http",
                 "school-notifications",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1105,7 +1089,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-contracts",
                 "school-file-platform",
                 "school-fonts",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1120,7 +1103,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-fonts",
                 "school-http",
-                "school-permissions",
             ],
         ),
         ("school-crypto", &[]),
@@ -1151,7 +1133,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-fonts",
                 "school-http",
-                "school-permissions",
                 "school-question-bank",
                 "school-staff",
                 "school-staff-leave",
@@ -1171,7 +1152,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-contracts",
                 "school-file-platform",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1189,7 +1169,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-database",
                 "school-errors",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1202,7 +1181,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-database",
                 "school-errors",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1218,7 +1196,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-contracts",
                 "school-file-platform",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1231,7 +1208,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-database",
                 "school-errors",
                 "school-file-contracts",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1249,7 +1225,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-database",
                 "school-errors",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1265,7 +1240,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-database",
                 "school-errors",
                 "school-http",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
@@ -1295,7 +1269,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-notifications",
-                "school-permissions",
                 "school-tenancy",
                 "school-workflow",
             ],
@@ -1314,7 +1287,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-file-platform",
                 "school-http",
                 "school-notifications",
-                "school-permissions",
                 "school-staff",
                 "school-staff-file-transfer",
                 "school-staff-leave",
@@ -1331,7 +1303,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-database",
                 "school-errors",
                 "school-file-contracts",
-                "school-permissions",
                 "school-staff",
                 "school-tenancy",
                 "school-workflow",
@@ -1445,14 +1416,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
     assert!(!errors.contains("axum"));
     assert!(http.contains("school-errors = { workspace = true }"));
     assert!(authorization.contains("school-errors = { workspace = true }"));
-    assert!(
-        !school_dependencies_in_section(&authorization, "dependencies")
-            .contains("school-permissions")
-    );
-    assert!(
-        school_dependencies_in_section(&authorization, "dev-dependencies")
-            .contains("school-permissions")
-    );
     assert!(!authorization.contains("school-http"));
     assert!(!authorization_source.contains("SessionCache"));
     assert!(!authorization_source.contains("modules::auth"));
@@ -1493,11 +1456,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         .nth(1)
         .and_then(|rest| rest.split("[lints]").next())
         .expect("Academic Core manifest must keep dev dependencies");
-    for required in [
-        "school-authorization",
-        "school-errors",
-        "school-permissions",
-    ] {
+    for required in ["school-authorization", "school-errors"] {
         assert!(academic_core_dependencies.contains(required));
     }
     for forbidden in [
@@ -1554,7 +1513,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         "school-authorization",
         "school-errors",
         "school-file-platform",
-        "school-permissions",
     ] {
         assert!(font_dependencies.contains(required));
     }
@@ -1570,7 +1528,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         "school-errors",
         "school-file-platform",
         "school-fonts",
-        "school-permissions",
     ] {
         assert!(certificate_dependencies.contains(required));
     }
@@ -4239,7 +4196,7 @@ fn certificate_runtime_keeps_handlers_thin_proofs_private_and_renders_ephemeral(
     .collect::<Vec<_>>()
     .join("\n");
 
-    assert!(handlers.contains("permissions::registry::codes"));
+    assert!(handlers.contains("use crate::permission_codes_generated as codes;"));
     for forbidden in [
         "sqlx::query",
         ".fetch_",
@@ -4325,7 +4282,9 @@ const AFTER: &str = "certificate.issue.school";
     assert_eq!(raw_permission.find_iter(&stripped_fixture).count(), 2);
     assert!(!stripped_fixture.contains("certificate.read.own"));
     for file in backend_rs_files() {
-        if relative(&file) == "crates/school-permissions/src/registry_generated.rs" {
+        if relative(&file) == "crates/school-permissions/src/registry_generated.rs"
+            || file.ends_with("permission_codes_generated.rs")
+        {
             continue;
         }
         let source = read_source(&file);
@@ -6452,6 +6411,56 @@ fn permission_registry_wraps_generated_contract() {
     assert!(wrapper.contains("include!(\"registry_generated.rs\")"));
     assert!(!wrapper.contains("pub const STAFF_READ_ALL"));
     assert!(!wrapper.contains("pub const ALL_PERMISSIONS"));
+}
+
+#[test]
+fn permission_constants_are_local_to_consumers_and_only_metadata_uses_the_registry() {
+    let root = manifest_dir();
+    let registry =
+        read_source(workspace_crate_dir("school-permissions").join("src/registry_generated.rs"));
+    assert!(registry.contains("\nmod codes {"));
+    assert!(!registry.contains("pub mod codes"));
+
+    let manifests = std::iter::once(root.join("Cargo.toml"))
+        .chain(list_files(root.join("crates"), |path| {
+            path.ends_with("Cargo.toml")
+        }));
+    for path in manifests {
+        let package = path
+            .parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|name| name.to_str());
+        let manifest = read_source(&path);
+        let normal = manifest.contains("[dependencies]")
+            && school_dependencies_in_section(&manifest, "dependencies")
+                .contains("school-permissions");
+        let dev = manifest.contains("[dev-dependencies]")
+            && school_dependencies_in_section(&manifest, "dev-dependencies")
+                .contains("school-permissions");
+        assert_eq!(
+            normal,
+            matches!(package, Some("school-migrations" | "school-workflow")),
+            "{}",
+            path.display()
+        );
+        assert_eq!(dev, path == root.join("Cargo.toml"), "{}", path.display());
+    }
+
+    let legacy_path =
+        Regex::new(r"school_permissions\s*::\s*registry\s*::\s*(?:codes\b|\{[^}]*\bcodes\b)")
+            .expect("valid legacy registry import regex");
+    for directory in ["src", "tests", "crates"] {
+        for path in list_files(root.join(directory), |path| {
+            path.extension().is_some_and(|ext| ext == "rs")
+                && !path.ends_with("static_architecture.rs")
+        }) {
+            assert!(
+                !legacy_path.is_match(&lexical_mask(&read_source(&path), false).structural),
+                "{} still imports shared permission constants",
+                path.display()
+            );
+        }
+    }
 }
 
 #[test]
@@ -10211,7 +10220,7 @@ fn current_delivery_changes_register_authorized_contract_routes() {
     }
     let authority = extract_braced_block(&deletion, "pub fn require_school_management", false);
     assert!(authority.contains(
-        "has_permission(school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL)"
+        "has_permission(crate::permission_codes_generated::LEARNING_OFFERING_MANAGE_SCHOOL)"
     ));
     assert!(!authority.contains("MANAGE_ASSIGNED"));
     assert!(command.contains("permission_cache"));

@@ -1,10 +1,10 @@
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_authorization::{
     self as resource_access_policy, AcademicResourceAccess, AcademicResourceListFilter,
     AcademicResourcePermissions,
 };
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -116,6 +116,7 @@ fn require_read_filter(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     #[test]
     fn exact_unit_and_assigned_read_scopes_are_unioned() {

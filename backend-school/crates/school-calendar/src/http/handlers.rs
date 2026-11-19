@@ -4,6 +4,7 @@ use crate::models::{
     CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,
     UpsertCalendarTagRequest,
 };
+use crate::permission_codes_generated as codes;
 use axum::{
     extract::{Extension, Path, Query, State},
     http::{HeaderMap, StatusCode},
@@ -18,7 +19,6 @@ use school_auth_http::tenant::tenant_context;
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

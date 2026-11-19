@@ -7,7 +7,6 @@ use school_attendance::{
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 #[cfg(test)]

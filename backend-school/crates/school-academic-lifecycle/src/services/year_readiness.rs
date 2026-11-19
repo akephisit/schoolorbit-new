@@ -2,12 +2,12 @@ use super::year_transitions;
 use crate::models::{
     LifecycleFinding, LifecycleSeverity, YearLifecycleWorkspace, YearTransitionAction as Action,
 };
+use crate::permission_codes_generated as codes;
 use school_academic_core::models::AcademicTermStatus as Term;
 use school_academic_timetable::services::dated_obligations;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 

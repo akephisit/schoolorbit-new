@@ -6,7 +6,6 @@ use school_academic_assessment::policy::assessment::{
 use school_authorization::AcademicResourceListFilter;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_test_db::cutover_test_support::{
     apply_migrations_through, record_passing_phase_a_reconciliation_marker,
     seed_academic_cutover_fixture, seed_learning_offering_policy_science_course, CutoverFixture,
@@ -617,3 +616,6 @@ async fn assessment_detail_and_summary_share_the_callers_single_connection() {
     assert!(!detail.phases.is_empty());
     assert!(!detail.coordinator_candidates.is_empty());
 }
+
+#[path = "persistence/permission_codes_generated.rs"]
+mod codes;

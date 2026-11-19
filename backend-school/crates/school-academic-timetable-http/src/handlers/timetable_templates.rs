@@ -6,6 +6,7 @@ use axum::{
 };
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use crate::state::AcademicTimetableHttpState;
 use school_academic_realtime::TimetableEvent;
 use school_academic_timetable::models::timetable::{
@@ -20,7 +21,6 @@ use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]
 use school_http::{ApiErrorResponse, EmptyData};
-use school_permissions::registry::codes;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get,

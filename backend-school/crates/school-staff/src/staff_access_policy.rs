@@ -1,10 +1,10 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use school_authorization::resource_access_policy;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 const STAFF_PROFILE_ACCESS: resource_access_policy::ResourceAccessPermissions =
     resource_access_policy::ResourceAccessPermissions {
@@ -82,6 +82,7 @@ pub fn require_job_position_read(actor: &ActorContext) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     fn actor(user_id: Uuid, permissions: &[&str]) -> ActorContext {
         ActorContext {

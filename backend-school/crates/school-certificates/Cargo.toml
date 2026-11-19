@@ -25,7 +25,6 @@ school-crypto = { workspace = true }
 school-errors = { workspace = true }
 school-file-platform = { workspace = true }
 school-fonts = { workspace = true }
-school-permissions = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

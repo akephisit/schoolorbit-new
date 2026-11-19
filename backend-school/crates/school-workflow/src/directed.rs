@@ -1,4 +1,5 @@
 //! Directed assignments are a process mode; participants are visibility, never authority.
+use crate::permission_codes_generated as codes;
 use crate::{
     process::{self, denied, invalid, stale},
     process_models::*,
@@ -8,7 +9,6 @@ use chrono::Utc;
 use school_authorization::{staff_users_with_all_permissions_on_connection, ActorContext};
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;

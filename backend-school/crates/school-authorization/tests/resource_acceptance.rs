@@ -2,7 +2,6 @@ use school_authorization::resource_access_policy::{
     eligible_active_staff_for_resource_on_connection, ResourceAccessPermissions,
     ResourceAccessTarget,
 };
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 async fn user(pool: &PgPool, name: &str, read: Option<&str>, unit: Option<Uuid>) -> Uuid {
@@ -116,3 +115,6 @@ async fn resource_acceptance_preserves_direct_scope_union_and_permission_origin(
     assert!(eligible.contains(&tree));
     tx.commit().await.unwrap();
 }
+
+#[path = "resource_acceptance/permission_codes_generated.rs"]
+mod codes;

@@ -2,7 +2,6 @@
 mod support;
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use school_staff_leave::{models::*, service};
 use school_workflow::process_models::*;
 use sqlx::PgPool;
@@ -2381,3 +2380,6 @@ async fn full_day_http_retires_partial_payloads_and_settings_even_for_existing_r
     assert_eq!(exact.request.unit, LeaveUnit::Minute);
     assert_eq!(exact.coverage.days[0].lessons.len(), 1);
 }
+
+#[path = "staff_leave_coverage/permission_codes_generated.rs"]
+mod codes;

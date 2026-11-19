@@ -12,8 +12,8 @@ use crate::integration_tests::academic::{
         TermPreparationEntityMapping, TermPreparationMappings,
     },
 };
+use crate::test_permission_codes as codes;
 use school_academic_core::ports::{TermPreparationMappingKind, TermPreparationModule};
-use school_permissions::registry::codes;
 
 fn preparation_mappings() -> TermPreparationMappings {
     TermPreparationMappings {

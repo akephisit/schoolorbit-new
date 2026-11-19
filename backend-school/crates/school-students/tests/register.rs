@@ -1,7 +1,6 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_students::access_policy::{authorize_student_profile_read, resolve_student_list_access};
 use school_students::models::{
     CreateStudentRequest, ListStudentsQuery, StudentRegistrationStatus as Status,
@@ -566,3 +565,6 @@ async fn manual_create_is_immediately_visible_and_duplicate_creation_rolls_back(
         0
     );
 }
+
+#[path = "register/permission_codes_generated.rs"]
+mod codes;

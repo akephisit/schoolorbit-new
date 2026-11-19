@@ -1,12 +1,12 @@
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use school_authorization::resource_access_policy;
 use school_authorization::resource_access_policy::ResourceAccessPermissions;
 use school_authorization::resource_access_policy::ResourceAccessTarget;
 use school_authorization::resource_access_policy::UserResourceListAccess;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 const ACHIEVEMENT_READ_ACCESS: ResourceAccessPermissions = ResourceAccessPermissions {
     own: Some(codes::ACHIEVEMENT_READ_OWN),
@@ -101,6 +101,7 @@ fn require_direct_user_resource_access(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     fn actor(user_id: Uuid, permissions: &[&str]) -> ActorContext {
         ActorContext {

@@ -1,3 +1,4 @@
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_authorization::{
     self as resource_access_policy, AcademicResourceAccess, AcademicResourceListFilter,
@@ -5,7 +6,6 @@ use school_authorization::{
 };
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -185,6 +185,7 @@ async fn require_student_summary_with_access(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[test]
     fn exact_unit_and_assigned_access_are_unioned() {
         let unit = Uuid::new_v4();

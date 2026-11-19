@@ -1,5 +1,6 @@
 //! Real session/CSRF transport regressions for independent permission capabilities.
 use crate::integration_tests::auth::session_http_tests::protected_router::ProtectedFixture;
+use crate::test_permission_codes as codes;
 use axum::{
     body::{to_bytes, Body},
     http::{header, Method, Request, StatusCode},
@@ -7,7 +8,6 @@ use axum::{
     Router,
 };
 use school_auth::session_crypto::RawSessionToken;
-use school_permissions::registry::codes;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tower::ServiceExt;

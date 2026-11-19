@@ -5,9 +5,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::QuestionScopeRow;
+use crate::permission_codes_generated as codes;
 use school_authorization::{accessible_exact_units_for_permission, ActorContext};
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QuestionBankAccess {
@@ -271,6 +271,7 @@ SELECT EXISTS(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {

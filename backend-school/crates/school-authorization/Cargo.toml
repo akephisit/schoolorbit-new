@@ -13,7 +13,6 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-school-permissions = { workspace = true }
 school-test-db = { workspace = true }
 tokio = { workspace = true }
 

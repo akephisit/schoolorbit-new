@@ -1,6 +1,6 @@
+use crate::permission_codes_generated as codes;
 use school_authorization::{AcademicResourceAccess, AcademicResourceListFilter, ActorContext};
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -66,6 +66,7 @@ pub async fn require_academic_curriculum_access(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {
             user_id: Uuid::new_v4(),

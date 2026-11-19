@@ -1,9 +1,9 @@
 use super::{models::*, policy::*, repository::*};
+use crate::permission_codes_generated as codes;
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_workflow::process;
 use sqlx::{types::Json, PgPool};
 use uuid::Uuid;

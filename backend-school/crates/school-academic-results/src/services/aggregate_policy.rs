@@ -128,7 +128,7 @@ mod pool_facade_preflight_tests {
         let pool = closed_pool().await;
         let actor = ActorContext {
             user_id: Uuid::new_v4(),
-            permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+            permissions: vec![crate::test_permission_codes::WILDCARD.into()],
         };
         let input = AggregatePolicyInput {
             name: "Synthetic".into(),

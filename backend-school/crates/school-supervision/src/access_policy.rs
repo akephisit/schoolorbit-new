@@ -1,13 +1,13 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use crate::services::SupervisionObservationListAccess;
 use school_authorization::resource_access_policy::{
     require_user_resource_access, ResourceAccessPermissions,
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 pub fn can_manage_school(actor: &ActorContext) -> bool {
     actor.has_permission(codes::SUPERVISION_MANAGE_SCHOOL)
@@ -270,6 +270,7 @@ fn supervision_manage_permissions() -> ResourceAccessPermissions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     fn actor(permissions: &[&str]) -> ActorContext {
         actor_with_id(Uuid::new_v4(), permissions)

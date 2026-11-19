@@ -24,7 +24,6 @@ school-errors = { workspace = true }
 school-file-platform = { workspace = true }
 school-fonts = { workspace = true }
 school-http = { workspace = true }
-school-permissions = { workspace = true }
 school-administration = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }

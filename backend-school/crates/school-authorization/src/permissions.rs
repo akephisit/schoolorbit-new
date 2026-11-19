@@ -231,7 +231,7 @@ pub async fn load_actor_context_for_session(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use school_permissions::registry::codes;
+    use crate::test_permission_codes as codes;
 
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {

@@ -1,6 +1,5 @@
 mod support;
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use school_staff::career::StaffPersonnelType;
 use school_staff_leave::{files, models::*, service};
 use school_workflow::{process, process_models::*};
@@ -2141,3 +2140,6 @@ async fn coverage_refresh_recovers_missing_to_ready_zero_without_dirty_selection
     .unwrap();
     assert_eq!(revisions, 4);
 }
+
+#[path = "leave/permission_codes_generated.rs"]
+mod codes;

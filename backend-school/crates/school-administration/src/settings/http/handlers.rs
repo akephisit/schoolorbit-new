@@ -9,6 +9,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::http::state::AdministrationHttpState;
+use crate::permission_codes_generated as codes;
 use crate::settings::models::{PublicSchoolIconQuery, UpdateSchoolSettingsRequest};
 use crate::settings::services as school_service;
 use school_auth::session_service::AuthenticatedSession;
@@ -20,7 +21,6 @@ use school_file_platform::http_models::{PublicFileFaviconPng, PublicSchoolShareI
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]

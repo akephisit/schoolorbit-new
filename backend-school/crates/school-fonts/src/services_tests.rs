@@ -3,6 +3,7 @@ use school_errors::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::test_permission_codes as codes;
 use crate::{
     models::{
         AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontStyle,
@@ -10,7 +11,6 @@ use crate::{
     },
     services::{self, SchoolFontDeleteOutcome, SchoolFontStagingRelation},
 };
-use school_permissions::registry::codes;
 use school_test_db::{create_named_test_pool, create_test_user, run_test_migrations};
 
 fn actor(user_id: Uuid, permissions: &[&str]) -> ActorContext {

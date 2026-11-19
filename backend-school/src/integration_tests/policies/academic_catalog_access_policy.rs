@@ -6,9 +6,9 @@ mod tests {
     use crate::integration_tests::academic::cutover_test_support::{
         apply_migrations_through, seed_academic_cutover_fixture, CutoverFixture,
     };
+    use crate::test_permission_codes as codes;
     use school_authorization::{AcademicResourceAccess, ActorContext};
     use school_errors::AppError;
-    use school_permissions::registry::codes;
     use school_test_db::create_named_test_pool;
     use uuid::Uuid;
 

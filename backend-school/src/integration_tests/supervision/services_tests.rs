@@ -1313,7 +1313,7 @@ async fn completed_evaluations_flow_through_certification_approval_acknowledgeme
         &pool,
         &school_authorization::ActorContext {
             user_id: fixture.actor_id,
-            permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+            permissions: vec![crate::test_permission_codes::WILDCARD.into()],
         },
         fixture.cycle.id,
     )
@@ -1572,8 +1572,8 @@ async fn permission_coverage_supervision_embargo_uses_exact_grant_origin_for_eac
     use crate::integration_tests::permission_coverage::{
         coverage_actor, coverage_request, coverage_router,
     };
+    use crate::test_permission_codes as codes;
     use axum::http::{Method, StatusCode};
-    use school_permissions::registry::codes;
     use serde_json::{json, Value};
     let pool = migrated_pool_with_connections("permission_coverage_supervision", 4).await;
     school_test_db::run_test_migrations(&pool).await;
@@ -2893,9 +2893,7 @@ async fn supervision_books_unlimited_consecutive_periods_and_counts_one_observat
         &pool,
         &school_authorization::ActorContext {
             user_id: f.actor_id,
-            permissions: vec![
-                school_permissions::registry::codes::SUPERVISION_MANAGE_SCHOOL.into(),
-            ],
+            permissions: vec![crate::test_permission_codes::SUPERVISION_MANAGE_SCHOOL.into()],
         },
         f.cycle.id,
     )
@@ -3050,7 +3048,7 @@ async fn supervision_same_lesson_across_cycles_is_allowed_but_later_period_evalu
         &pool,
         &school_authorization::ActorContext {
             user_id: b.actor_id,
-            permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+            permissions: vec![crate::test_permission_codes::WILDCARD.into()],
         },
         second.id,
     )
@@ -3730,8 +3728,8 @@ async fn supervision_http_booking_and_deletion_enforce_permissions_resource_scop
     use crate::integration_tests::permission_coverage::{
         coverage_actor, coverage_request, coverage_router,
     };
+    use crate::test_permission_codes as codes;
     use axum::http::{Method, StatusCode};
-    use school_permissions::registry::codes;
     use serde_json::{json, Value};
     let pool = migrated_pool_with_connections("supervision_period_http_scope", 4).await;
     school_test_db::run_test_migrations(&pool).await;
@@ -4285,7 +4283,7 @@ async fn supervision_empty_legacy_snapshots_retain_known_allocation_and_time_whe
 fn management_actor(user_id: Uuid) -> school_authorization::ActorContext {
     school_authorization::ActorContext {
         user_id,
-        permissions: vec![school_permissions::registry::codes::SUPERVISION_MANAGE_SCHOOL.into()],
+        permissions: vec![crate::test_permission_codes::SUPERVISION_MANAGE_SCHOOL.into()],
     }
 }
 
@@ -4895,11 +4893,11 @@ async fn supervision_http_evaluator_teaching_does_not_block_selection_or_assignm
     use crate::integration_tests::permission_coverage::{
         coverage_actor, coverage_request, coverage_router,
     };
+    use crate::test_permission_codes as codes;
     use axum::http::{Method, StatusCode};
     use school_academic_timetable::services::dated_teaching::{
         occupancy_on_connection, AvailabilityWindow,
     };
-    use school_permissions::registry::codes;
     use serde_json::{json, Value};
 
     let pool = migrated_pool_with_connections("supervision_evaluator_teaching", 4).await;
@@ -5065,8 +5063,8 @@ async fn supervision_http_dates_and_saved_times_resubmit_enforce_strict_actor_co
     use crate::integration_tests::permission_coverage::{
         coverage_actor, coverage_request, coverage_router,
     };
+    use crate::test_permission_codes as codes;
     use axum::http::{Method, StatusCode};
-    use school_permissions::registry::codes;
     use serde_json::{json, Value};
     let pool = migrated_pool_with_connections("supervision_dates_http", 4).await;
     school_test_db::run_test_migrations(&pool).await;

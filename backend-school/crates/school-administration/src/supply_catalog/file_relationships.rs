@@ -20,13 +20,13 @@ fn denied() -> AppError {
 fn require_upload(actor: &ActorContext, purpose: FilePurpose) -> Result<(), AppError> {
     match purpose {
         FilePurpose::SupplyCatalogImage => actor.require_any_permission(&[
-            school_permissions::registry::codes::SUPPLY_CATALOG_MANAGE_SCHOOL,
-            school_permissions::registry::codes::SUPPLY_CATALOG_REQUEST_OWN,
-            school_permissions::registry::codes::SUPPLY_CATALOG_APPROVE_SCHOOL,
+            crate::permission_codes_generated::SUPPLY_CATALOG_MANAGE_SCHOOL,
+            crate::permission_codes_generated::SUPPLY_CATALOG_REQUEST_OWN,
+            crate::permission_codes_generated::SUPPLY_CATALOG_APPROVE_SCHOOL,
         ]),
         FilePurpose::SupplyProposalSource => actor.require_any_permission(&[
-            school_permissions::registry::codes::SUPPLY_CATALOG_REQUEST_OWN,
-            school_permissions::registry::codes::SUPPLY_CATALOG_APPROVE_SCHOOL,
+            crate::permission_codes_generated::SUPPLY_CATALOG_REQUEST_OWN,
+            crate::permission_codes_generated::SUPPLY_CATALOG_APPROVE_SCHOOL,
         ]),
         _ => Err(denied()),
     }
@@ -134,7 +134,7 @@ pub async fn require_file_access(
         let owner:Option<Uuid>=school_database::DbSession::new(&mut *connection).scalar("administration.supply_catalog.file_relationships.require_file_access", "SELECT proposed_by FROM supply_proposals WHERE id=$1 AND status='pending' AND (image_file_id=$2 OR source_file_id=$2)").bind(resource).bind(file.id).fetch_optional().await?;
         if let Some(owner) = owner {
             return if actor
-                .has_permission(school_permissions::registry::codes::SUPPLY_CATALOG_APPROVE_SCHOOL)
+                .has_permission(crate::permission_codes_generated::SUPPLY_CATALOG_APPROVE_SCHOOL)
             {
                 require_action(actor, SupplyAction::Review, None, false)
             } else {

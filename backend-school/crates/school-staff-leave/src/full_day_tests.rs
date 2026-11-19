@@ -1,9 +1,9 @@
 //! Reconstruct valid migration160 evidence through owning acceptance primitives.
 //! These fixtures are historical data, never a legacy public write adapter.
+use crate::test_permission_codes as codes;
 use crate::{configuration, coverage, coverage_models::*, models::*, repository, service};
 use chrono::{NaiveDate, NaiveTime, Utc};
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use school_staff::career::StaffPersonnelType;
 use school_workflow::{process, process_models::*};
 use sqlx::{types::Json, PgPool};

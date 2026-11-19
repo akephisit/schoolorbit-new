@@ -1,4 +1,5 @@
 use crate::http::state::StaffHttpState;
+use crate::permission_codes_generated as codes;
 use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
@@ -13,7 +14,6 @@ use school_authorization::resource_access_policy::UserResourceListAccess;
 use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
 use school_http::{ApiResponse, IdData};
-use school_permissions::registry::codes;
 use school_staff::models::*;
 use school_staff::services::{dashboard_service, staff_service};
 use school_staff::staff_access_policy;

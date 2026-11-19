@@ -2,13 +2,13 @@ use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_authorization::{
     self as resource_access_policy, AcademicResourceAccess, AcademicResourceListFilter,
     AcademicResourcePermissions,
 };
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 const READ_ASSIGNED_PERMISSIONS: &[&str] = &[
     codes::ACADEMIC_ASSESSMENT_READ_ASSIGNED,
@@ -175,6 +175,7 @@ fn assessment_permissions(action: AssessmentAction) -> AcademicResourcePermissio
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[tokio::test]
     async fn assessment_list_policy_preserves_database_free_school_grants_and_denials() {
         let pool = sqlx::postgres::PgPoolOptions::new()

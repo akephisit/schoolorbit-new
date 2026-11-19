@@ -9,7 +9,7 @@ use school_file_contracts::{
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use school_permissions::registry::codes;
+use crate::permission_codes_generated as codes;
 use school_question_bank::{
     access_policy as question_bank_access_policy, services as question_bank_service,
 };
@@ -1061,7 +1061,7 @@ fn explicit_domain_policy_required() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use school_permissions::registry::codes;
+    use crate::test_permission_codes as codes;
     use school_test_db::{
         create_named_test_pool, create_named_test_pool_with_max_connections, create_test_user,
         run_test_migrations,
@@ -1625,6 +1625,7 @@ mod tests {
 #[cfg(test)]
 mod staff_leave_tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[tokio::test]
     async fn staff_leave_signature_upload_requires_the_acting_signer_and_exact_capability() {
         let pool = sqlx::postgres::PgPoolOptions::new()

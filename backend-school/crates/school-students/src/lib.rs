@@ -10,3 +10,9 @@ mod validation;
 pub mod guardian_relationships;
 
 pub mod registration_outcomes;
+
+mod permission_codes_generated;
+
+#[cfg(test)]
+#[path = "test_support/permission_codes_generated.rs"]
+mod test_permission_codes;

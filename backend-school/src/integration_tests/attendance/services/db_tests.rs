@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_permission_codes as codes;
 #[path = "academic_retention_tests.rs"]
 mod academic_retention_tests;
 #[path = "publication_source_tests.rs"]

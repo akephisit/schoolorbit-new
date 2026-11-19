@@ -1,5 +1,6 @@
 //! Transactional Student Care operations. Private prose/answers and replay outcomes
 //! are encrypted; searchable metadata remains deliberately small.
+use crate::permission_codes_generated as codes;
 use crate::{
     models::*,
     policy::{self, CareAccess},
@@ -7,7 +8,6 @@ use crate::{
 };
 use chrono::{Datelike, NaiveDate, Utc};
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{types::Json, FromRow, PgConnection, PgPool, Postgres, Transaction};

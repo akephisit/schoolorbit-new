@@ -27,7 +27,6 @@ school-academic-results = { workspace = true }
 school-academic-timetable = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
-school-permissions = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

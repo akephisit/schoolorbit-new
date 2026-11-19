@@ -10,6 +10,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::http::state::StaffHttpState;
+use crate::permission_codes_generated as codes;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::context::current_user_tenant_context_from_session;
@@ -17,7 +18,6 @@ use school_auth_http::context::current_user_tenant_context_from_session;
 use school_http::EmptyData;
 use school_http::HttpError as AppError;
 use school_http::{ApiErrorResponse, ApiResponse};
-use school_permissions::registry::codes;
 #[cfg(feature = "api-docs")]
 use school_staff::models::OrganizationMemberItem;
 use school_staff::services::organization_member_service;

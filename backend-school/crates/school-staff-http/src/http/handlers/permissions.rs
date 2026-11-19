@@ -1,4 +1,5 @@
 use crate::http::state::StaffHttpState;
+use crate::permission_codes_generated as codes;
 use axum::{
     extract::{Extension, State},
     http::StatusCode,
@@ -11,7 +12,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 #[cfg(feature = "api-docs")]
 use school_staff::models::Permission;
 use school_staff::services::permission_service;

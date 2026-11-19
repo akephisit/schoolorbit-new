@@ -18,6 +18,7 @@ use sqlx::PgPool;
 use url::Url;
 use uuid::Uuid;
 
+use crate::test_permission_codes as codes;
 use crate::{
     access_policy::{require_owner_action, CertificateAction},
     models::{
@@ -47,7 +48,6 @@ use crate::{
     },
 };
 use request_service::CertificateServiceError;
-use school_permissions::registry::codes;
 use school_test_db::{
     create_named_test_pool, create_named_test_pool_with_max_connections, create_test_user,
     run_test_migrations,

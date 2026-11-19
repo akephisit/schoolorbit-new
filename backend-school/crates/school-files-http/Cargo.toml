@@ -35,7 +35,6 @@ school-students = { workspace = true }
 school-staff = { workspace = true }
 school-fonts = { workspace = true }
 school-certificates = { workspace = true }
-school-permissions = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
 school-file-platform = { workspace = true }

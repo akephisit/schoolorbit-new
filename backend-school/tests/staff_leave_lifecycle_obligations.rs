@@ -306,3 +306,6 @@ async fn pending_provider_keeps_every_obligation_across_bounded_pages() {
         .iter()
         .all(|p| p.blocks_closure && p.revision.len() == 64));
 }
+
+#[path = "staff_leave_lifecycle_obligations/permission_codes_generated.rs"]
+mod codes;

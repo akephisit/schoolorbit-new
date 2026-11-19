@@ -1,3 +1,4 @@
+use crate::test_permission_codes as codes;
 use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
@@ -8,7 +9,6 @@ use school_auth::{
     session_service::AuthenticatedSession,
 };
 use school_authorization::PermissionCache;
-use school_permissions::registry::codes;
 use school_students::http::{routes, state::StudentHttpState};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, TenantContext};
 use school_test_db::{create_named_test_pool, run_test_migrations};

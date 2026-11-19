@@ -12,6 +12,7 @@ use super::models::{
     AssessmentReadiness, AssessmentReadinessFinding, SaveAssessmentPhaseRequest,
     SaveAssessmentPlanRequest, UpdateAssessmentPhaseControlRequest,
 };
+use crate::permission_codes_generated as codes;
 use school_academic_core::ports::{
     TermPreparationContext, TermPreparationMappingKind, TermPreparationModule,
     TermPreparationModuleOutcome,
@@ -20,7 +21,6 @@ use school_academic_core::services::{lifecycle_guard, validate_canonical_decimal
 use school_authorization::AcademicResourceListFilter;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 #[derive(Debug, FromRow)]
 struct AssessmentPlanSummaryRow {

@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use crate::{
     access_policy::{require_owner_action, CertificateAction, CertificateOwnerListScope},
     models::{
@@ -18,7 +19,6 @@ use crate::{
         RecipientType,
     },
 };
-use school_permissions::registry::codes;
 
 use super::{
     audit_service::{record_issue_request_audit, CertificateIssueRequestAuditMetadata},

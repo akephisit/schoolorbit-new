@@ -3872,9 +3872,9 @@ mod composed_deletion_tests;
 
 #[tokio::test]
 async fn current_assigned_discovery_requires_active_staff_and_keeps_saved_management_facts() {
+    use crate::test_permission_codes as codes;
     use school_academic_delivery::policies::learning_offering_access_policy as access;
     use school_authorization::{AcademicResourceAccess, ActorContext};
-    use school_permissions::registry::codes;
     let pool = prepare_delivery_runtime_fixture("delivery_active_assignment_discovery").await;
     let context = planning_runtime_context(&pool).await;
     let offering = offerings::create(&pool, context.teacher_id, course_request(&context))

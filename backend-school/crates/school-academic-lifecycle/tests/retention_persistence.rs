@@ -5,7 +5,6 @@ use school_academic_lifecycle::{
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{PgConnection, PgPool};
 use std::sync::Mutex;
 use uuid::Uuid;
@@ -326,3 +325,6 @@ async fn retention_mixed_and_unknown_rosters_are_conservative_and_preview_never_
         before
     );
 }
+
+#[path = "retention_persistence/permission_codes_generated.rs"]
+mod codes;

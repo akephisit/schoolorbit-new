@@ -1,6 +1,5 @@
 use school_academic_lifecycle::services;
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -19,3 +18,6 @@ async fn opening_policy_reads_through_the_lifecycle_crate_boundary() {
     assert!(!policy.require_offerings);
     assert!(!policy.require_timetable);
 }
+
+#[path = "persistence/permission_codes_generated.rs"]
+mod codes;

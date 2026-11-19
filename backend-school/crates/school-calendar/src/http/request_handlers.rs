@@ -1,5 +1,6 @@
 use crate::http::state::CalendarHttpState;
 use crate::models::UpsertCalendarEventRequest;
+use crate::permission_codes_generated as codes;
 use crate::requests::{
     self, CalendarRequestQuery, CreateCalendarRequest, PendingCalendarQuery, RejectCalendarRequest,
 };
@@ -21,7 +22,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError as AppError};
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 fn require_staff(session: &AuthenticatedSession) -> Result<(), AppError> {

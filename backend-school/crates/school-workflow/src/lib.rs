@@ -13,3 +13,9 @@ pub mod process_models;
 pub mod process_purge;
 
 pub mod signatures;
+
+mod permission_codes_generated;
+
+#[cfg(test)]
+#[path = "test_support/permission_codes_generated.rs"]
+mod test_permission_codes;

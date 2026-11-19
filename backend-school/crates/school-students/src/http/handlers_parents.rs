@@ -7,6 +7,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::http::state::StudentHttpState;
+use crate::permission_codes_generated as codes;
 use crate::services as student_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -14,7 +15,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 
 use crate::models::CreateParentRequest;
 

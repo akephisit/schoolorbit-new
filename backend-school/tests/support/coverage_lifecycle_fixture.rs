@@ -1,3 +1,4 @@
+use crate::codes;
 use chrono::{NaiveDate, NaiveTime};
 use school_academic_core::ports::{
     PendingTermWork, TermPreparationContext, TermPreparationMappingKind,
@@ -9,7 +10,6 @@ use school_academic_timetable::services::dated_teaching::{
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use serde_json::{json, Value};
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use std::collections::HashMap;

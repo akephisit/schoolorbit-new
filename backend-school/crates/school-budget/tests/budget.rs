@@ -8,7 +8,6 @@ use school_budget::{
 };
 use school_errors::AppError;
 use school_file_platform::repository::FileRepository;
-use school_permissions::registry::codes;
 use school_workflow::process_models::*;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -3543,3 +3542,6 @@ async fn annual_budget_delete_racing_final_approval_preserves_exact_winner_in_bo
         reconciled(&f).await;
     }
 }
+
+#[path = "budget/permission_codes_generated.rs"]
+mod codes;

@@ -4,6 +4,7 @@ use super::{
     policy::{denied, invalid},
     service,
 };
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
@@ -12,7 +13,6 @@ use school_file_contracts::{
     file::PlatformFile,
     platform_types::{FilePurpose, FileVisibility},
 };
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 

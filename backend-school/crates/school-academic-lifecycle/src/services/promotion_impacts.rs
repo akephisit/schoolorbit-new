@@ -2,11 +2,11 @@ use super::super::models::{
     PromotionCorrectionImpact, PromotionImpactQuery, PromotionImpactResolution,
     PromotionImpactWorkspace,
 };
+use crate::permission_codes_generated as codes;
 use school_academic_results::services::corrections_after_annuals;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;

@@ -1,11 +1,11 @@
 use super::super::models::*;
 use super::promotion_runs::RUN_COLUMNS;
+use crate::permission_codes_generated as codes;
 use school_academic_core::services::{lifecycle_guard, promotion_students};
 use school_academic_results as results;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::types::Json;
 use sqlx::PgPool;
 use uuid::Uuid;

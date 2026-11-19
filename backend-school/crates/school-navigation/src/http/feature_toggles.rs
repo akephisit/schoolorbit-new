@@ -10,13 +10,13 @@ use uuid::Uuid;
 
 use crate::http::state::NavigationHttpState;
 use crate::models::FeatureToggle;
+use crate::permission_codes_generated as codes;
 use crate::services::feature_toggle_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateFeatureRequest {

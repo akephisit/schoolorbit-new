@@ -2,13 +2,13 @@ use super::{models::*, services::*};
 use crate::integration_tests::academic::cutover_test_support::{
     apply_migrations_through, seed_release_two_predecessor,
 };
+use crate::test_permission_codes as codes;
 use school_academic_assessment::gradebook::services::{
     get_group_phase_workspace, list_controls, list_subjects, resolve_phase_id, source_checksums,
     update_control,
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_test_db::create_named_test_pool_with_max_connections;
 use uuid::Uuid;
 

@@ -530,7 +530,7 @@ impl TimetableMutationContext {
         term: Uuid,
     ) -> Result<TimetablePreparationGuard, AppError> {
         self.actor.require_permission(
-            school_permissions::registry::codes::ACADEMIC_LIFECYCLE_MANAGE_SCHOOL,
+            crate::permission_codes_generated::ACADEMIC_LIFECYCLE_MANAGE_SCHOOL,
         )?;
         if self.identity.is_some() {
             return Err(AppError::Conflict(

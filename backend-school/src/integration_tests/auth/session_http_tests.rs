@@ -1251,7 +1251,7 @@ pub(crate) mod protected_router {
         let role: Uuid = sqlx::query_scalar("INSERT INTO roles (code,name,user_type) VALUES ('TEST_BEHAVIOR_MANAGER','Behavior test manager','staff') RETURNING id")
             .fetch_one(&fixture.tenant_a_pool).await.unwrap();
         let grant = sqlx::query("INSERT INTO role_permissions (role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
-            .bind(role).bind(school_permissions::registry::codes::BEHAVIOR_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
+            .bind(role).bind(crate::test_permission_codes::BEHAVIOR_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
         assert_eq!(grant.rows_affected(), 1);
         sqlx::query("INSERT INTO user_roles (user_id,role_id) VALUES ($1,$2)")
             .bind(manager)
@@ -1342,8 +1342,8 @@ pub(crate) mod protected_router {
 
     #[tokio::test]
     async fn concrete_student_care_routes_preserve_session_csrf_scope_and_response_contract() {
+        use crate::test_permission_codes as codes;
         use school_authorization::ActorContext;
-        use school_permissions::registry::codes;
         use school_student_care::{models::*, policy::CareAccess};
         use sqlx::types::Json as DbJson;
         let fixture = ProtectedFixture::new("care_http_boundary").await;
@@ -1651,7 +1651,7 @@ pub(crate) mod protected_router {
         let role: Uuid = sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES('BULK_HTTP_MANAGER','Bulk HTTP manager','staff') RETURNING id")
             .fetch_one(&fixture.tenant_a_pool).await.unwrap();
         sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
-            .bind(role).bind(school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
+            .bind(role).bind(crate::test_permission_codes::LEARNING_OFFERING_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
         sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
             .bind(user_id)
             .bind(role)
@@ -2508,7 +2508,7 @@ pub(crate) mod protected_router {
         let role: Uuid = sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES('CATALOG_DELETE_HTTP','Catalog deletion HTTP','staff') RETURNING id")
                 .fetch_one(&fixture.tenant_a_pool).await.unwrap();
         sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
-                .bind(role).bind(school_permissions::registry::codes::ACADEMIC_CATALOG_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
+                .bind(role).bind(crate::test_permission_codes::ACADEMIC_CATALOG_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
         sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
             .bind(user_id)
             .bind(role)

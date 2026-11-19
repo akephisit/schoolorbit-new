@@ -1,9 +1,9 @@
 use super::super::models::{CreatePromotionRunInput, PromotionRun};
+use crate::permission_codes_generated as codes;
 use school_academic_core::services::{lifecycle_guard, promotion_students};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 
 pub(super) const RUN_COLUMNS: &str = "id,source_year_id,target_year_id,target_placement_starts_on,policy_id,status,row_version,created_by,created_at,updated_at,reviewed_by,reviewed_at,approved_by,approved_at,approval_id,executed_by,executed_at";

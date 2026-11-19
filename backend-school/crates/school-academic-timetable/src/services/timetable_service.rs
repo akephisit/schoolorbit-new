@@ -76,9 +76,9 @@ pub async fn create(
     mutation: &TimetableMutationContext,
     request: CreateTimetableRequest,
 ) -> Result<Timetable, AppError> {
-    mutation.actor.require_permission(
-        school_permissions::registry::codes::ACADEMIC_TIMETABLE_MANAGE_SCHOOL,
-    )?;
+    mutation
+        .actor
+        .require_permission(crate::permission_codes_generated::ACADEMIC_TIMETABLE_MANAGE_SCHOOL)?;
     mutation.execute_creation(pool, request.academic_term_id, move |pool, permit| async move {
         let mut tx = school_tenancy::TenantPool::begin_observed(&pool, "academic_timetable.current.create").await?;
         let (year, schedule): (Uuid, Uuid) = DbSession::new(&mut tx).query_as("academic_timetable.current.create.context", "SELECT academic_year_id,bell_schedule_id FROM academic_terms WHERE id=$1")

@@ -1,7 +1,7 @@
 use crate::access::BehaviorAccess;
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 pub fn access(actor: &ActorContext) -> BehaviorAccess {
     BehaviorAccess::for_actor(actor)
 }
@@ -27,6 +27,7 @@ pub fn require_history(actor: &ActorContext) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     use uuid::Uuid;
     #[test]
     fn cancelling_own_never_grants_cleanup() {

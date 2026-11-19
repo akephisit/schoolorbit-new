@@ -1,6 +1,6 @@
 use super::*;
 use crate::integration_tests::academic::core;
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 #[tokio::test]
 async fn year_lifecycle_readiness_uses_operational_terms_without_annual_result_prerequisites() {

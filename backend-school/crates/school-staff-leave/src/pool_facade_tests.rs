@@ -40,8 +40,8 @@ async fn pool_facade_preflight_invalid_leave_page_and_range_precede_checkout() {
     let actor = school_authorization::ActorContext {
         user_id: Uuid::new_v4(),
         permissions: vec![
-            school_permissions::registry::codes::STAFF_LEAVE_READ_OWN.into(),
-            school_permissions::registry::codes::STAFF_LEAVE_DOWNLOAD_OWN.into(),
+            crate::test_permission_codes::STAFF_LEAVE_READ_OWN.into(),
+            crate::test_permission_codes::STAFF_LEAVE_DOWNLOAD_OWN.into(),
         ],
     };
     assert!(matches!(

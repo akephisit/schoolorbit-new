@@ -1,12 +1,12 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use school_authorization::resource_access_policy::{
     self, ResourceAccessPermissions, ResourceAccessTarget,
 };
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 use crate::services::StudentListAccess;
 
@@ -122,6 +122,7 @@ async fn student_resource_target_on_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     fn actor(user_id: Uuid, permissions: &[&str]) -> ActorContext {
         ActorContext {

@@ -1604,7 +1604,7 @@ all old clones are closed, and verifies a fresh pool against the unchanged histo
 
 ## Permission Contract
 
-`contracts/permissions.json` is the handwritten permission source. The registries and lock are generated files; do not edit generated files directly.
+`contracts/permissions.json` defines permission values and metadata. `scripts/permission-code-consumers.json` selects constants for each Rust consumer and test scope. The generator owns the registries, lock, and consumer-local `permission_codes_generated.rs` files.
 
 After a permission definition changes, from `frontend-school`:
 
@@ -1616,7 +1616,7 @@ npm run test:static
 PUBLIC_BACKEND_URL=http://localhost:3000 npm run check
 ```
 
-Commit the contract, `contracts/permissions.lock.json`, backend registry, frontend registry, migration when DB permission data changes, and focused authorization tests together.
+Commit the contract, `contracts/permissions.lock.json`, backend and frontend registries, affected generated Rust constants, migration when DB permission data changes, and focused authorization tests together. Run `cargo check --workspace --all-targets --locked` from `backend-school` after changing Rust selections to check unit and integration targets as well as production.
 
 ### School permission coverage
 

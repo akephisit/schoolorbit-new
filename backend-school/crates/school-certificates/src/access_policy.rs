@@ -7,7 +7,7 @@ use school_errors::AppError;
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
-use school_permissions::registry::codes;
+use crate::permission_codes_generated as codes;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CertificateAction {

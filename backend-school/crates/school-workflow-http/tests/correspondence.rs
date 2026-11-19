@@ -1,5 +1,4 @@
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use school_workflow::{correspondence, process, process_models::*, work};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -5169,3 +5168,6 @@ async fn directed_history_keeps_accepted_branch_names_and_actual_targets_after_r
     );
     assert_eq!(resent.document.content_hash, started.document.content_hash);
 }
+
+#[path = "correspondence/permission_codes_generated.rs"]
+mod codes;

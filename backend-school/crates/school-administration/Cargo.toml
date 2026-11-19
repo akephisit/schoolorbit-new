@@ -34,7 +34,6 @@ tracing = { workspace = true }
 utoipa = { workspace = true, optional = true }
 school-errors = { workspace = true }
 school-authorization = { workspace = true }
-school-permissions = { workspace = true }
 school-academic-core = { workspace = true }
 
 [dev-dependencies]

@@ -1,7 +1,7 @@
 use super::*;
 use crate::integration_tests::academic::core;
+use crate::test_permission_codes as codes;
 use school_academic_lifecycle::services::{confirm_year_rollover, preview_year_rollover};
-use school_permissions::registry::codes;
 
 fn event_date() -> chrono::NaiveDate {
     chrono::Utc::now()

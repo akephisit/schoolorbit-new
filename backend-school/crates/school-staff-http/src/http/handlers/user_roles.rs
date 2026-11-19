@@ -7,13 +7,13 @@ use axum::{
 use uuid::Uuid;
 
 use crate::http::state::StaffHttpState;
+use crate::permission_codes_generated as codes;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::HttpError as AppError;
 use school_http::{ApiErrorResponse, ApiResponse, IdData};
 #[cfg(feature = "api-docs")]
 use school_http::{EmptyData, UuidIdData};
-use school_permissions::registry::codes;
 use school_staff::models::*;
 use school_staff::services::user_role_service::{self, AssignRoleOutcome};
 

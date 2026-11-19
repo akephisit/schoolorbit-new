@@ -6,3 +6,9 @@ pub mod services;
 pub mod application;
 pub mod http;
 pub mod runtime;
+
+mod permission_codes_generated;
+
+#[cfg(test)]
+#[path = "test_support/permission_codes_generated.rs"]
+mod test_permission_codes;

@@ -1,6 +1,6 @@
 use super::*;
 use crate::integration_tests::academic::results::{self, models as rm, services as rs};
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 pub(crate) fn hold(row_version: i64) -> ReviewPromotionItemInput {
     ReviewPromotionItemInput {

@@ -43,3 +43,9 @@ impl school_file_contracts::access::FileAuthorizationPort for DomainFileAuthoriz
         .await
     }
 }
+
+mod permission_codes_generated;
+
+#[cfg(test)]
+#[path = "test_support/permission_codes_generated.rs"]
+mod test_permission_codes;

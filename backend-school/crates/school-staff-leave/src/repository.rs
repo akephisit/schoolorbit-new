@@ -1,9 +1,9 @@
 use super::{models::*, policy::*};
+use crate::permission_codes_generated as codes;
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_staff::career::StaffPersonnelType;
 use school_workflow::{process, process_models::*};
 use serde::Serialize;
@@ -232,6 +232,7 @@ pub(super) fn period_from(r: &Record) -> StoredLeavePeriod {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[test]
     fn leave_draft_owner_cannot_edit_other_or_approved() {
         let id = Uuid::new_v4();

@@ -16,7 +16,6 @@ integration-test-support = []
 [dependencies]
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
-school-permissions = { workspace = true }
 school-authorization = { workspace = true }
 school-http = { workspace = true }
 school-auth-http = { workspace = true }

@@ -1,3 +1,4 @@
+use crate::permission_codes_generated as codes;
 use crate::state::AcademicAssessmentHttpState;
 use axum::{
     extract::{Extension, Path, Query, State},
@@ -24,7 +25,6 @@ use school_auth_http::context::{
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 use serde::Deserialize;
 #[cfg(feature = "api-docs")]
 use utoipa::IntoParams;

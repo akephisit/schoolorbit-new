@@ -24,6 +24,7 @@ use crate::lookup::models::StaffLookupItem;
 use crate::lookup::models::StudentLookupItem;
 use crate::lookup::models::{AcademicLookupQuery, SubjectLookupQuery};
 use crate::lookup::services as lookup_service;
+use crate::permission_codes_generated as codes;
 #[cfg(feature = "api-docs")]
 use school_academic_core::models::{AcademicYearLookupItem, GradeLevelLookupItem};
 use school_auth::session_service::AuthenticatedSession;
@@ -34,7 +35,6 @@ use school_auth_http::context::CurrentUserTenantContext;
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 
 async fn active_lookup_context(
     session: &AuthenticatedSession,

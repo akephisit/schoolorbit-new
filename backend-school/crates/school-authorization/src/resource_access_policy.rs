@@ -470,7 +470,7 @@ fn has_optional_permission(actor: &ActorContext, permission: Option<&str>) -> bo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use school_permissions::registry::codes;
+    use crate::test_permission_codes as codes;
 
     fn actor(user_id: Uuid, permissions: &[&str]) -> ActorContext {
         ActorContext {

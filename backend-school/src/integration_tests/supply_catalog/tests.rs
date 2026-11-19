@@ -1,4 +1,5 @@
 use super::{file_relationships, models::*, services};
+use crate::test_permission_codes as codes;
 use async_trait::async_trait;
 use bytes::Bytes;
 use school_authorization::ActorContext;
@@ -17,7 +18,6 @@ use school_file_platform::{
     repository::SqlFileRepository,
     storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
 };
-use school_permissions::registry::codes;
 use school_test_db::{
     create_named_test_pool_with_max_connections, create_test_user, run_test_migrations,
 };

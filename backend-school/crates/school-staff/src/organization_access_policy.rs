@@ -1,10 +1,10 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use crate::services::organization_delegation_service;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 pub async fn can_approve_organization_work(
     pool: &PgPool,
@@ -124,6 +124,7 @@ pub fn can_revoke_organization_delegation(actor: &ActorContext, from_user_id: Uu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     use sqlx::postgres::PgPoolOptions;
 
     fn actor(user_id: Uuid, permissions: &[&str]) -> ActorContext {

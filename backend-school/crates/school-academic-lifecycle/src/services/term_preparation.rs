@@ -16,6 +16,7 @@ use super::super::models::{
     TermPreparationMappingRequirement, TermPreparationMappings, TermPreparationModuleEvidence,
     TermPreparationOutcome, TermPreparationWorkspace,
 };
+use crate::permission_codes_generated as codes;
 use school_academic_core::{
     ports::{
         TermPreparationContext, TermPreparationMappingKind, TermPreparationModule,
@@ -24,7 +25,6 @@ use school_academic_core::{
     services::{lifecycle_guard, years_terms},
 };
 use school_academic_delivery::services::offerings;
-use school_permissions::registry::codes;
 
 const MAX_ENTITY_MAPPINGS: usize = 2_000;
 const MAX_DATE_MAPPINGS: usize = 366;

@@ -122,7 +122,7 @@ async fn composed_with_points(name: &str, points: i32) -> Composed {
         .insert_user(&fixture.tenant_a_pool, &format!("{name}-manager"), "active")
         .await;
     let role:Uuid=sqlx::query_scalar("INSERT INTO roles(code,name,user_type) VALUES($1,'Exact deletion manager','staff') RETURNING id").bind(format!("DELETE-{actor}")).fetch_one(&fixture.tenant_a_pool).await.unwrap();
-    sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2").bind(role).bind(school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
+    sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2").bind(role).bind(crate::test_permission_codes::LEARNING_OFFERING_MANAGE_SCHOOL).execute(&fixture.tenant_a_pool).await.unwrap();
     sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
         .bind(actor)
         .bind(role)
