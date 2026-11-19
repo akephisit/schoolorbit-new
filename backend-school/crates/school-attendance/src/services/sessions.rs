@@ -149,8 +149,8 @@ pub(crate) async fn list_on_connection(
         .bind(actor.user_id)
         .bind(access.assigned_group_ids())
         .bind(actor.has_any_permission(&[
-            school_permissions::registry::codes::ATTENDANCE_READ_ASSIGNED,
-            school_permissions::registry::codes::ATTENDANCE_UPDATE_ASSIGNED,
+            crate::permission_codes_generated::ATTENDANCE_READ_ASSIGNED,
+            crate::permission_codes_generated::ATTENDANCE_UPDATE_ASSIGNED,
         ]))
         .bind(access.dated_source_keys(q.date))
         .fetch_all()

@@ -1,8 +1,8 @@
 use super::models::*;
+use crate::permission_codes_generated as codes;
 use chrono::{Datelike, NaiveDate, Timelike};
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_workflow::process_models::ProcessStepKind;
 use std::collections::BTreeSet;
 
@@ -231,6 +231,7 @@ pub(crate) fn quota_scale(unit: LeaveUnit) -> i128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     fn policy(unit: LeaveUnit) -> LeavePolicyVersion {
         LeavePolicyVersion {
             id: uuid::Uuid::new_v4(),

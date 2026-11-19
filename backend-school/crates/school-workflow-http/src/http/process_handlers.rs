@@ -235,8 +235,8 @@ pub async fn list_process_templates(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let result = {
         if !context.actor.has_any_permission(&[
-            school_permissions::registry::codes::CORRESPONDENCE_CREATE_OWN,
-            school_permissions::registry::codes::PROCESS_MANAGE_SCHOOL,
+            crate::permission_codes_generated::CORRESPONDENCE_CREATE_OWN,
+            crate::permission_codes_generated::PROCESS_MANAGE_SCHOOL,
         ]) {
             return Err(process::denied().into());
         }

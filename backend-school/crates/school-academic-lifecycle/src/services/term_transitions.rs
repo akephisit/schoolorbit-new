@@ -1,10 +1,10 @@
 use super::super::models::{TermTransitionAction, TermTransitionOutcome, TermTransitionRequest};
+use crate::permission_codes_generated as codes;
 use school_academic_core::models::{AcademicTermStatus, AcademicYearStatus, TermLifecycleContext};
 use school_academic_core::services::{lifecycle_context, lifecycle_guard, years_terms};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{types::Json, Postgres, Transaction};
 use uuid::Uuid;
 

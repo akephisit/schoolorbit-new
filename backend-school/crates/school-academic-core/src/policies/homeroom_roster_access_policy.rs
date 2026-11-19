@@ -1,6 +1,6 @@
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 #[derive(Clone, Copy)]
 pub enum RosterAction {
@@ -23,6 +23,7 @@ pub fn require_roster_access(actor: &ActorContext, action: RosterAction) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     use uuid::Uuid;
 
     #[test]

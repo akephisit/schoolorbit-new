@@ -1,10 +1,10 @@
 use crate::models::WorkflowWindow;
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_authorization::{
     accessible_exact_units_for_permission, accessible_tree_units_for_permission,
 };
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_permissions::registry::{PermissionDef, ALL_PERMISSIONS};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -144,6 +144,7 @@ pub async fn filter_manageable_workflow_windows(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     use uuid::Uuid;
 
     fn actor(permissions: &[&str]) -> ActorContext {

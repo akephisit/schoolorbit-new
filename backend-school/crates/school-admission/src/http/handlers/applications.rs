@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::applications::{self as application_service, *};
 use crate::http::state::AdmissionHttpState;
+use crate::permission_codes_generated as codes;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::tenant::tenant_pool;
@@ -22,7 +23,6 @@ use school_file_platform::{platform_service::UploadCommand, repository::SqlFileR
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

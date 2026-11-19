@@ -22,6 +22,29 @@ const run = (cmd, argv, cwd = root, env = {}) => {
   if (result.status !== 0) throw new Error(`${cmd} failed (${result.status})`);
 };
 
+function verifyPermissionRegistryDependencies({ packages }) {
+  const remaining = new Map([
+    ['backend-school', 'dev'],
+    ['school-migrations', 'normal'],
+    ['school-workflow', 'normal']
+  ]);
+  for (const { name, dependencies } of packages) {
+    for (const dependency of dependencies) {
+      if (dependency.name !== 'school-permissions') continue;
+      const kind = dependency.kind ?? 'normal';
+      if (remaining.get(name) !== kind || dependency.target !== null) {
+        const details = [kind, dependency.rename && `alias ${dependency.rename}`, dependency.target && `target ${dependency.target}`].filter(Boolean).join(', ');
+        throw new Error(`Unexpected school-permissions dependency in ${name} (${details})`);
+      }
+      remaining.delete(name);
+    }
+  }
+  if (remaining.size) {
+    const missing = Array.from(remaining, ([name, kind]) => `${name} (${kind})`);
+    throw new Error(`Missing school-permissions dependencies: ${missing.join(', ')}`);
+  }
+}
+
 try {
   if (command === 'plan') {
     const head = git(root, 'rev-parse', 'HEAD');
@@ -65,6 +88,8 @@ try {
       }
       if (suite === 'backend-school') {
         const cwd = path.join(root, suite);
+        const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--format-version', '1', '--no-deps'], { cwd, encoding: 'utf8' }));
+        verifyPermissionRegistryDependencies(metadata);
         run('cargo', ['fmt', '--all', '--', '--check'], cwd);
         const productionClippy = ['clippy', '--workspace', '--lib', '--bins', '--exclude', 'school-test-db', '--locked', '--no-deps'];
         const panicLints = ['-D', 'clippy::unwrap_used', '-D', 'clippy::expect_used', '-D', 'clippy::panic', '-D', 'clippy::unreachable'];
@@ -76,7 +101,7 @@ try {
         run('cargo', ['test', '-p', 'school-database', '-p', 'school-errors', '-p', 'school-http', '--locked'], cwd);
         run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-core-http', '-p', 'school-academic-delivery-http', '-p', 'school-academic-assessment-http', '-p', 'school-academic-timetable-http', '-p', 'school-academic-results-http', '-p', 'school-academic-lifecycle-http', '-p', 'school-academic-realtime', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-file-contracts', '-p', 'school-staff-http', '-p', 'school-staff-file-transfer', '-p', 'school-workflow-http', '--lib', '--locked'], cwd);
         run('cargo', ['build', '--bin', 'backend-school', '--locked'], cwd);
-        const executable = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--format-version', '1', '--no-deps'], { cwd, encoding: 'utf8' })).target_directory + '/debug/backend-school';
+        const executable = path.join(metadata.target_directory, 'debug', 'backend-school');
         const unsupportedExport = spawnSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8' });
         if (unsupportedExport.status !== 2 || unsupportedExport.stdout !== '' || !unsupportedExport.stderr.includes('--features api-docs')) throw new Error('Production binary must reject OpenAPI export before runtime startup');
         run('cargo', ['check', '--workspace', '--all-targets', '--features', 'api-docs', '--locked'], cwd);

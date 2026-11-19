@@ -7,6 +7,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use super::super::models::{LifecycleFinding, LifecycleSeverity, TermActivationWorkspace};
+use crate::permission_codes_generated as codes;
 use school_academic_core::{
     models::{ActivationIssue, ActivationIssueCode, StudentAcademicYearStatus},
     services::{
@@ -16,7 +17,6 @@ use school_academic_core::{
 };
 use school_academic_delivery::services::opening as delivery_opening;
 use school_academic_timetable::services::timetable_service;
-use school_permissions::registry::codes;
 
 pub async fn get_activation_workspace(
     pool: &PgPool,
@@ -376,6 +376,7 @@ fn context_url(path: &str, year: Uuid, term: Uuid) -> String {
 #[cfg(test)]
 mod resolution_tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     #[test]
     fn readiness_resolution_uses_the_resource_owner_and_its_read_or_manage_permission() {

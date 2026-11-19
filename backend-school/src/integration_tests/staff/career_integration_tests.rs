@@ -1,3 +1,4 @@
+use crate::test_permission_codes as codes;
 use crate::AppState;
 use async_trait::async_trait;
 use axum::{
@@ -18,7 +19,6 @@ use school_file_platform::{
     platform_service::FilePlatform,
     storage_provider::{ObjectMetadata, StorageError, StorageProvider, StoredObject},
 };
-use school_permissions::registry::codes;
 use school_staff_http::http::handlers::{career, staff};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, TenantContext};
 use school_test_db::{create_named_test_pool_with_max_connections, run_test_migrations};

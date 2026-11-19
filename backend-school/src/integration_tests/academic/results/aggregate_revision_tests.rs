@@ -16,7 +16,7 @@ async fn year_lifecycle_closes_current_annual_results_only_after_exact_warning_a
     let (pool, mut actor, ctx, _) = ready_aggregate_fixture("year_complete_closure").await;
     actor
         .permissions
-        .push(school_permissions::registry::codes::WILDCARD.into());
+        .push(crate::test_permission_codes::WILDCARD.into());
     sqlx::query("UPDATE academic_terms SET included_in_year_result=(id=$2),status=CASE WHEN id=$2 THEN 'closed' ELSE 'planning' END,blocks_year_closure=(id=$2) WHERE academic_year_id=$1").bind(ctx.academic_year_id).bind(ctx.academic_term_id).execute(&pool).await.unwrap();
     let policy = create_aggregate_policy(
         &pool,
@@ -150,7 +150,7 @@ async fn lifecycle_closure_preserves_reported_aggregates_and_requires_exact_oper
     let (pool, mut actor, ctx, _) = ready_aggregate_fixture("lifecycle_complete_closure").await;
     actor
         .permissions
-        .push(school_permissions::registry::codes::WILDCARD.into());
+        .push(crate::test_permission_codes::WILDCARD.into());
     let policy = create_aggregate_policy(
         &pool,
         &actor,
@@ -293,9 +293,9 @@ async fn lifecycle_closure_preserves_reported_aggregates_and_requires_exact_oper
 #[tokio::test]
 async fn aggregate_batch_providers_preserve_student_boundaries_and_existing_checksums() {
     let (pool, mut actor, ctx, _) = fixture("aggregate_batch_parity").await;
-    actor.permissions.push(
-        school_permissions::registry::codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
-    );
+    actor
+        .permissions
+        .push(crate::test_permission_codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into());
     let policy = create_aggregate_policy(
         &pool,
         &actor,
@@ -476,8 +476,8 @@ pub(crate) async fn ready_aggregate_fixture_with_cohort(
     Uuid,
 ) {
     use crate::integration_tests::academic::learner_evaluation::models as lm;
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
-    use school_permissions::registry::codes;
     let (pool, mut actor, ctx, group) = fixture(name).await;
     actor.permissions.extend([
         codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
@@ -939,8 +939,8 @@ fn aggregate_policy_requires_explicit_valid_thresholds() {
 
 #[tokio::test]
 async fn aggregate_preview_missing_results_cannot_be_locked_even_with_a_hold() {
+    use crate::test_permission_codes as codes;
     use school_errors::AppError;
-    use school_permissions::registry::codes;
     let (pool, mut actor, ctx, group) = fixture("aggregate_missing_results").await;
     actor.permissions.extend([
         codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),

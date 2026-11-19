@@ -21,7 +21,6 @@ school-academic-core = { workspace = true }
 school-academic-delivery = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
-school-permissions = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

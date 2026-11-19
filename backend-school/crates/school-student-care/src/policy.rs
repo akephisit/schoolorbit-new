@@ -1,6 +1,6 @@
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 #[derive(Clone, Copy)]
 pub struct CareAccess {
@@ -96,6 +96,7 @@ pub fn denied() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[test]
     fn routine_room_scope_never_grants_private_results() {
         let a = ActorContext {

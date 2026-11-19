@@ -2,10 +2,10 @@ use school_database::DbSession;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_authorization::{self as resource_access_policy, AcademicResourcePermissions};
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 mod visibility;
 pub(crate) use visibility::project_visibility;
@@ -484,8 +484,8 @@ fn timetable_permissions(action: ScopedTimetableAction) -> AcademicResourcePermi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
-    use school_permissions::registry::codes;
     use school_test_db::create_named_test_pool;
     use uuid::Uuid;
 

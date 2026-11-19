@@ -11,11 +11,11 @@ use crate::integration_tests::academic::{
     },
     gradebook::{models as gm, services as gradebook_adapter},
 };
+use crate::test_permission_codes as codes;
 use chrono::NaiveDate;
 use school_academic_assessment::gradebook::services as gb;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_test_db::create_named_test_pool_with_max_connections;
 use std::time::Duration;
 use uuid::Uuid;

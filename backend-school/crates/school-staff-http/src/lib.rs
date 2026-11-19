@@ -5,3 +5,5 @@ pub mod http;
 pub mod leave;
 
 pub mod leave_coverage;
+
+mod permission_codes_generated;

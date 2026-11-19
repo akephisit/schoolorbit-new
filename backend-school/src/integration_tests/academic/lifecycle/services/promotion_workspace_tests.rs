@@ -6,7 +6,7 @@ use super::{
     },
     promotion_runs::{create_run, tests::fixture},
 };
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 #[tokio::test]
 async fn promotion_workspace_reader_lists_exact_years_and_cannot_borrow_a_foreign_cursor() {

@@ -1,6 +1,6 @@
 use super::*;
 use crate::integration_tests::academic::{core, cutover_test_support::apply_migrations_through};
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 async fn legacy(name: &str) -> (PgPool, ActorContext, PromotionRunCalculation) {
     let pool = core::services_tests::prepare_core_fixture_through(name, 151).await;

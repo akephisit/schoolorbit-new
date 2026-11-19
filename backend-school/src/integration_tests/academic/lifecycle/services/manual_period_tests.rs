@@ -1,6 +1,6 @@
 use super::*;
 use crate::integration_tests::academic::core;
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 async fn fixture(name: &str) -> (PgPool, ActorContext, Uuid, Uuid) {
     let pool = core::services_tests::prepare_core_fixture(name).await;

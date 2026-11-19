@@ -21,7 +21,21 @@ function fixture(t) {
 const fs=require('node:fs');const args=process.argv.slice(2);
 fs.appendFileSync(process.env.COMMAND_LOG,JSON.stringify(args)+'\\n');
 if(args[0]==='clippy'&&process.env.FIXTURE_CLIPPY_FAIL===(args.includes('api-docs')?'api-docs':'default'))process.exit(42);
-if(args[0]==='metadata')process.stdout.write(JSON.stringify({target_directory:${JSON.stringify(path.join(root,'backend-school/target'))}}));
+if(args[0]==='metadata') {
+ const registry={name:'school-permissions',kind:null,rename:null,target:null};
+ const packages=[
+  {name:'backend-school',dependencies:[{...registry,kind:'dev'}]},
+  {name:'school-migrations',dependencies:[registry]},
+  {name:'school-workflow',dependencies:[registry]},
+ ];
+ if(process.env.FIXTURE_PERMISSION_EDGE==='aliased-target')packages.push({
+  name:'school-budget',dependencies:[{...registry,rename:'permission_data',target:'cfg(unix)'}],
+ });
+ if(process.env.FIXTURE_PERMISSION_EDGE==='allowed-owner-target')packages[1].dependencies=[{...registry,target:'cfg(unix)'}];
+ if(process.env.FIXTURE_PERMISSION_EDGE==='build')packages[2].dependencies.push({...registry,kind:'build'});
+ if(process.env.FIXTURE_PERMISSION_EDGE==='missing')packages[0].dependencies=[];
+ process.stdout.write(JSON.stringify({target_directory:${JSON.stringify(path.join(root,'backend-school/target'))},packages}));
+}
 if(args[0]==='tree'&&process.env.FIXTURE_DOCS_DEP)process.stdout.write('utoipa v5.5.0\\n');
 if(args[0]==='build'&&!process.env.FIXTURE_DOCS_LEAK)fs.writeFileSync(${JSON.stringify(path.join(root,'backend-school/target/debug/backend-school'))}, '#!/bin/sh\\necho "OpenAPI export requires --features api-docs" >&2\\nexit 2\\n', {mode:0o755});
 `,{mode:0o755});
@@ -68,6 +82,8 @@ test('local School verification executes tests and database fixtures rather than
  const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'verify','--scope','backend-school'],{cwd:f.root,env:f.env,encoding:'utf8'});
  assert.equal(result.status,0,result.stderr);
  const commands=readFileSync(f.env.COMMAND_LOG,'utf8').trim().split('\n').map(JSON.parse);
+ const metadata=commands.filter(args=>args[0]==='metadata');
+ assert.deepEqual(metadata,[['metadata','--locked','--format-version','1','--no-deps']]);
  const tests=commands.filter(args=>args[0]==='test');assert.ok(tests.length>=3);
  assert.ok(tests.every(args=>!args.includes('--no-run')));
  assert.ok(commands.some(args=>args[0]==='check'&&!args.includes('--features')));
@@ -93,6 +109,23 @@ test('local School verification executes tests and database fixtures rather than
  assert.equal(clippy.filter(args=>args.includes('api-docs')).length,1);
  assert.equal(spawnSync('test',['-e',path.join(f.root,'fixture-executed')]).status,0);
 });
+
+for(const [edge, message] of [
+ ['aliased-target', /Unexpected school-permissions dependency in school-budget.*permission_data.*cfg\(unix\)/],
+ ['allowed-owner-target', /Unexpected school-permissions dependency in school-migrations.*cfg\(unix\)/],
+ ['build', /Unexpected school-permissions dependency in school-workflow.*build/],
+ ['missing', /Missing school-permissions dependencies: backend-school \(dev\)/],
+])test(`School verification rejects unapproved permission metadata edges (${edge})`,t=>{
+ const f=fixture(t);
+ const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'verify','--scope','backend-school'],{
+  cwd:f.root,env:{...f.env,FIXTURE_PERMISSION_EDGE:edge},encoding:'utf8'
+ });
+ assert.notEqual(result.status,0);
+ assert.match(result.stderr,message);
+ const commands=readFileSync(f.env.COMMAND_LOG,'utf8').trim().split('\n').map(JSON.parse);
+ assert.deepEqual(commands.map(args=>args[0]),['metadata']);
+});
+
 for (const [flag, message] of [['FIXTURE_DOCS_LEAK', /Production binary must reject OpenAPI/], ['FIXTURE_DOCS_DEP', /Production dependency graph must exclude Utoipa/]]) test(`School verification refuses production documentation leakage (${flag})`,t=>{
  const f=fixture(t);
  const result=spawnSync(process.execPath,[path.join(f.root,'scripts/pipeline.mjs'),'verify','--scope','backend-school'],{cwd:f.root,env:{...f.env,[flag]:'1'},encoding:'utf8'});

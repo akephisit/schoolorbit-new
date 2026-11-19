@@ -1,7 +1,7 @@
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -139,6 +139,7 @@ pub async fn authorize_socket_on_connection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {

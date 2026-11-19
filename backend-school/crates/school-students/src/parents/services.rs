@@ -471,12 +471,12 @@ mod tests {
 
     #[tokio::test]
     async fn parent_academic_context_contains_only_linked_student_years() {
+        use crate::test_permission_codes as codes;
         use school_academic_core::{
             models::{AcademicContextVisibilityInput, UpdateAcademicContextSettingsRequest},
             services::context_settings,
         };
         use school_authorization::ActorContext;
-        use school_permissions::registry::codes;
 
         let pool = create_named_test_pool("parent_academic_context").await;
         apply_migrations_through(&pool, 40).await.unwrap();

@@ -1,11 +1,11 @@
 //! Leave owns selected plans and exact-plan consent. Timetable owns dated occupancy.
 use super::{coverage_models::*, models::*, policy::*, repository::*};
+use crate::permission_codes_generated as codes;
 use chrono::{NaiveDate, NaiveTime, Utc};
 use school_academic_timetable::services::dated_teaching as duties;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_workflow::process;
 use sqlx::{types::Json, PgConnection, PgPool, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};

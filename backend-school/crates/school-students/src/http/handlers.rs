@@ -17,6 +17,7 @@ use crate::models::{
 };
 #[cfg(feature = "api-docs")]
 use crate::models::{StudentProfile, StudentRegisterProfile};
+use crate::permission_codes_generated as codes;
 use crate::services as student_service;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -24,7 +25,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 
 /// GET /api/student/profile - นักเรียนดูข้อมูลตนเอง
 #[cfg_attr(feature = "api-docs", utoipa::path(

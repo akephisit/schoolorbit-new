@@ -1,4 +1,5 @@
 use crate::http::state::BehaviorHttpState;
+use crate::permission_codes_generated as codes;
 use crate::policy;
 use crate::{
     models::*,
@@ -15,7 +16,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError as AppError};
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/behavior/overview",operation_id="behavior_overview",tag="behavior",responses((status=200, description = "Student behavior overview returned",body=ApiResponse<BehaviorOverview>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]

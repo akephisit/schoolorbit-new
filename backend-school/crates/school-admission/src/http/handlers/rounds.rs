@@ -8,13 +8,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::http::state::AdmissionHttpState;
+use crate::permission_codes_generated as codes;
 use crate::rounds::{self as round_service, *};
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_auth_http::tenant::tenant_pool;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 
 #[derive(Debug, Serialize)]
 struct PublicRoundInfoData {

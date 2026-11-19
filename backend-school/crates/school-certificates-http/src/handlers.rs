@@ -52,7 +52,7 @@ use school_auth_http::{
     tenant::tenant_context,
 };
 
-use school_permissions::registry::codes;
+use crate::permission_codes_generated as codes;
 
 #[derive(Debug)]
 pub enum CertificateHttpError {

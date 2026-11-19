@@ -1,6 +1,7 @@
 mod academic_resource;
 mod cache;
 mod organization_scope;
+mod permission_codes_generated;
 mod permissions;
 
 pub use academic_resource::{
@@ -21,3 +22,8 @@ pub use permissions::{
 };
 
 pub mod resource_access_policy;
+
+#[cfg(test)]
+mod test_permission_codes {
+    include!("test_support/permission_codes_generated.rs");
+}

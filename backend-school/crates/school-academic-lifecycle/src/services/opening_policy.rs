@@ -1,9 +1,9 @@
 use super::super::models::{OpeningPolicy, UpdateOpeningPolicyInput};
+use crate::permission_codes_generated as codes;
 use school_academic_core::services::{lifecycle_guard, years_terms};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 

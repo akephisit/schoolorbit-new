@@ -1,11 +1,11 @@
 use super::queries::detail;
 use super::{coverage, coverage_models::SubmitLeaveRequest};
 use super::{models::*, policy::*, repository::*};
+use crate::permission_codes_generated as codes;
 use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_workflow::process::{ProcessSourcePort, StartProcessInput};
 use school_workflow::{process, process_models::*};
 use sqlx::{types::Json, PgPool, Postgres, Transaction};

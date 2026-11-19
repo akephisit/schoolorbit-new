@@ -120,7 +120,7 @@ async fn lifecycle_external_port_failures_propagate_and_evidence_changes_the_che
             .fetch_one(&pool)
             .await
             .unwrap(),
-        permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+        permissions: vec![crate::test_permission_codes::WILDCARD.into()],
     };
     let mut transaction = pool.begin().await.unwrap();
     let failure = school_academic_lifecycle::services::readiness::workspace_in_transaction(
@@ -271,7 +271,7 @@ async fn lifecycle_current_delivery_has_no_pending_publication_or_change_set_wor
         .fetch_one(&mut *tx)
         .await
         .unwrap(),
-        permissions: vec![school_permissions::registry::codes::WILDCARD.into()],
+        permissions: vec![crate::test_permission_codes::WILDCARD.into()],
     };
     let workspace = super::workspace_in_transaction(&mut tx, &actor, year, term)
         .await
@@ -311,7 +311,7 @@ async fn lifecycle_current_delivery_has_no_pending_publication_or_change_set_wor
 
 #[tokio::test]
 async fn lifecycle_permission_defaults_only_grant_verified_system_administrators() {
-    use school_permissions::registry::codes;
+    use crate::test_permission_codes as codes;
     let pool = core::services_tests::prepare_core_fixture("lifecycle_permission_defaults").await;
     let expected = vec![
         codes::ACADEMIC_LIFECYCLE_READ_SCHOOL,

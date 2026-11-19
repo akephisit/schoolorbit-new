@@ -25,7 +25,6 @@ school-errors = { workspace = true }
 school-file-platform = { workspace = true }
 school-http = { workspace = true }
 school-notifications = { workspace = true }
-school-permissions = { workspace = true }
 school-staff = { workspace = true }
 school-staff-file-transfer = { workspace = true }
 school-staff-leave = { workspace = true }

@@ -1,4 +1,5 @@
 use super::{audit, lock_term, notifications, sessions, settings};
+use crate::permission_codes_generated as codes;
 use crate::{
     models::*,
     policy,
@@ -9,7 +10,6 @@ use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
 use school_file_platform::repository::SqlFileRepository;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 pub async fn enroll(

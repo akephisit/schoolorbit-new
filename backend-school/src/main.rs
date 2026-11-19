@@ -413,3 +413,8 @@ async fn run() -> Result<(), StartupError> {
     .map_err(|error| StartupError::io("server", error))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod test_permission_codes {
+    include!("test_support/permission_codes_generated.rs");
+}

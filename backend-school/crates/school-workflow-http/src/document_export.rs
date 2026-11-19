@@ -1,5 +1,6 @@
 //! Canonical private document preview and server-authoritative evidence composition.
 //! Sarabun is bundled under the SIL OFL in assets; rustybuzz shapes Thai marks.
+use crate::permission_codes_generated as codes;
 use lopdf::{
     content::{Content, Operation},
     dictionary, Dictionary, Document, Object, ObjectId, Stream,
@@ -12,7 +13,6 @@ use school_file_platform::{
     consumer_service::map_platform_error, file_inspector::inspect_file,
     platform_service::FilePlatform, repository::SqlFileRepository, ImageProcessor,
 };
-use school_permissions::registry::codes;
 use school_workflow::{
     correspondence,
     document_validation::{signing_label, DocumentValidationPort},

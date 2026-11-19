@@ -1,6 +1,6 @@
 use super::promotion_runs::{create_run, tests::fixture};
 use super::*;
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 #[tokio::test]
 async fn promotion_calculation_keeps_missing_results_visible_and_replays_without_duplicate_items() {

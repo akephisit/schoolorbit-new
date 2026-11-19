@@ -77,8 +77,7 @@ pub async fn get_workspace(
     year: uuid::Uuid,
     term: uuid::Uuid,
 ) -> Result<super::models::TermLifecycleWorkspace, school_errors::AppError> {
-    actor
-        .require_permission(school_permissions::registry::codes::ACADEMIC_LIFECYCLE_READ_SCHOOL)?;
+    actor.require_permission(crate::permission_codes_generated::ACADEMIC_LIFECYCLE_READ_SCHOOL)?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
         pool,
         "academic_lifecycle.services.get_workspace",

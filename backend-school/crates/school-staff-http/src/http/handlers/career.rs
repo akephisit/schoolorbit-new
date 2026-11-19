@@ -1,4 +1,5 @@
 use crate::http::state::StaffHttpState;
+use crate::permission_codes_generated as codes;
 use axum::{
     extract::{Extension, Path, Query, State},
     response::IntoResponse,
@@ -9,7 +10,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError as AppError};
-use school_permissions::registry::codes;
 use school_staff::staff_access_policy;
 use school_staff::{career::*, services::staff_career_service};
 use uuid::Uuid;

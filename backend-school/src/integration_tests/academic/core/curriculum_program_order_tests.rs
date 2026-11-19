@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_permission_codes as codes;
 use school_academic_core::models::{
     CurriculumViewQuery, OpenCurriculumDraftRequest, ReplaceStudyProgramOrderRequest,
     StudyProgramOrderResult,

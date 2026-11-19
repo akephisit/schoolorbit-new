@@ -76,3 +76,5 @@ pub mod selections {
 }
 
 pub mod http;
+
+mod permission_codes_generated;

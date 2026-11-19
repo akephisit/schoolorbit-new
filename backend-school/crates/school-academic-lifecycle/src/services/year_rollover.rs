@@ -1,10 +1,10 @@
 use crate::models::*;
+use crate::permission_codes_generated as codes;
 use school_academic_core::models::{AcademicYearStatus, GradeProgression, GradeProgressionKind};
 use school_academic_core::services::{lifecycle_context, promotion_students, promotion_targets};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;

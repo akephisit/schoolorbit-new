@@ -18,7 +18,6 @@ school-academic-realtime = { workspace = true }
 school-auth = { workspace = true }
 school-auth-http = { workspace = true }
 school-http = { workspace = true }
-school-permissions = { workspace = true }
 serde = { workspace = true }
 utoipa = { workspace = true, optional = true }
 uuid = { workspace = true }

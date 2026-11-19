@@ -85,6 +85,22 @@ test("the exact Rust toolchain pin selects only backend artifacts and its verifi
   assert.deepEqual(selected.unknown, []);
 });
 
+test("Rust permission selections verify their consumers and deploy only with changed generated Rust", () => {
+  const input = "scripts/permission-code-consumers.json";
+  assert.deepEqual(classify([input]), {
+    verify: ["documentation", "contracts", "backend-school"],
+    deploy: [],
+    unknown: [],
+  });
+  assert.deepEqual(
+    classify([
+      input,
+      "backend-school/crates/school-attendance/src/permission_codes_generated.rs",
+    ]).deploy,
+    ["backend-school"],
+  );
+});
+
 function fixture(t) {
   const root = mkdtempSync(path.join(os.tmpdir(), "pipeline-policy-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

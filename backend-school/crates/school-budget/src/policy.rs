@@ -1,4 +1,5 @@
 //! Scope predicates are unions. Organization relationships are resolved by Authorization.
+use crate::permission_codes_generated as codes;
 use crate::{
     models::*,
     repository::{self, ProjectRecord},
@@ -13,7 +14,6 @@ use school_authorization::{
 };
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 #[derive(Debug, Clone, Default)]
@@ -335,6 +335,7 @@ pub(crate) fn capabilities(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[tokio::test]
     async fn scope_preflight_keeps_direct_grants_and_denials_database_free() {
         let pool = sqlx::postgres::PgPoolOptions::new()

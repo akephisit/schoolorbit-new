@@ -9,7 +9,7 @@ use super::{
     },
 };
 use crate::integration_tests::academic::results;
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 #[tokio::test]
 async fn promotion_execution_partial_batch_preserves_completed_items_after_another_student_is_corrected(

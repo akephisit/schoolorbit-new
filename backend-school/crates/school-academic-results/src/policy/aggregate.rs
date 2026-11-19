@@ -1,8 +1,8 @@
 use super::results;
+use crate::permission_codes_generated as codes;
 use school_academic_assessment::policy::learner_evaluation as learner;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 
 pub fn require_aggregate_read(actor: &ActorContext) -> Result<(), AppError> {
     let learner_read = actor.has_permission(codes::ACADEMIC_LEARNER_EVALUATION_READ_SCHOOL)
@@ -38,6 +38,7 @@ pub fn require_aggregate_policy_manage(actor: &ActorContext) -> Result<(), AppEr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[test]
     fn combined_access_does_not_upgrade_one_domain_or_management_to_lock() {
         let mut actor = ActorContext {

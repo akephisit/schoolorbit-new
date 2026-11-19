@@ -1,3 +1,4 @@
+use crate::permission_codes_generated as codes;
 use crate::state::AcademicTimetableHttpState;
 use axum::{
     extract::{Extension, Query, State},
@@ -18,7 +19,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError as AppError};
-use school_permissions::registry::codes;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/timetable",operation_id="getTimetable",params(TimetableQuery),responses((status=200,description="Current timetable for the explicit term, or null when not created",body=ApiResponse<Option<Timetable>>),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Timetable read permission denied",body=ApiErrorResponse)),tag="academic"))]
 pub async fn get_timetable(

@@ -3,8 +3,8 @@ use crate::integration_tests::academic::{
     lifecycle::models::*,
     results::{models as rm, services as rs},
 };
+use crate::test_permission_codes as codes;
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[tokio::test]

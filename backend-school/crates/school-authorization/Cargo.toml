@@ -8,7 +8,6 @@ school-tenancy = { workspace = true }
 school-database = { workspace = true }
 dashmap = { workspace = true }
 school-errors = { workspace = true }
-school-permissions = { workspace = true }
 sqlx = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }

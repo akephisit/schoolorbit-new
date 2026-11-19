@@ -7,10 +7,10 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
+use crate::permission_codes_generated as codes;
 use school_file_contracts::platform_types::{
     FileInspectionMetadata, FilePurpose, FontInspectionStyle,
 };
-use school_permissions::registry::codes;
 
 use super::models::{
     AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest, SchoolFontDeleteConflict,

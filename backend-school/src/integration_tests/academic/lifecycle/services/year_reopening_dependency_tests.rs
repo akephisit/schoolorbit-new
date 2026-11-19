@@ -2,7 +2,7 @@ use super::*;
 use crate::integration_tests::academic::lifecycle::models::{
     ExecutePromotionRunInput, PromotionDecisionOutcome,
 };
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 #[tokio::test]
 async fn year_reopening_inflight_execution_blocks_before_any_receipt_exists() {

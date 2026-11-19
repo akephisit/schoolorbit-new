@@ -3,7 +3,6 @@ use school_academic_core::{
     services::{context, context_settings, years_terms},
 };
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 async fn fixture(name: &str) -> (sqlx::PgPool, ActorContext, AcademicYear) {
@@ -519,4 +518,8 @@ async fn scoped_options_keep_visible_enrollment_history_without_inaccessible_def
         .unwrap()
         .years
         .is_empty());
+}
+
+mod codes {
+    include!("context_settings_persistence/permission_codes_generated.rs");
 }

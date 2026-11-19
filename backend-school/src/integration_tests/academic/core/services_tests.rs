@@ -2,6 +2,7 @@ use crate::integration_tests::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations, seed_academic_cutover_fixture,
     CutoverFixture,
 };
+use crate::test_permission_codes as codes;
 use chrono::{NaiveDate, NaiveTime};
 use school_academic_core::models::{
     AcademicTermStatus, AcademicTermType, AcademicYearStatus, BellSchedulePeriodInput,
@@ -27,7 +28,6 @@ use school_academic_core::services::{
 use school_authorization::AcademicResourceListFilter;
 use school_authorization::ActorContext;
 use school_http::AppErrorHttpExt;
-use school_permissions::registry::codes;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;

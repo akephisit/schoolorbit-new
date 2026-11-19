@@ -256,7 +256,7 @@ mod tests {
 
         let groups = group_and_filter_menu(
             rows,
-            &actor(&[school_permissions::registry::codes::ACADEMIC_CURRICULUM_READ_SCHOOL]),
+            &actor(&[crate::test_permission_codes::ACADEMIC_CURRICULUM_READ_SCHOOL]),
         );
 
         assert_eq!(groups.len(), 1);
@@ -289,8 +289,8 @@ mod tests {
         let required = "certificate.read.organization_unit|certificate.read.school";
 
         for permission in [
-            school_permissions::registry::codes::CERTIFICATE_READ_ORGANIZATION_UNIT,
-            school_permissions::registry::codes::CERTIFICATE_READ_SCHOOL,
+            crate::test_permission_codes::CERTIFICATE_READ_ORGANIZATION_UNIT,
+            crate::test_permission_codes::CERTIFICATE_READ_SCHOOL,
         ] {
             let groups = group_and_filter_menu(
                 vec![menu_row(
@@ -318,7 +318,7 @@ mod tests {
                 20,
                 10,
             )],
-            &actor(&[school_permissions::registry::codes::CERTIFICATE_READ_OWN]),
+            &actor(&[crate::test_permission_codes::CERTIFICATE_READ_OWN]),
         );
 
         assert!(own_only.is_empty());

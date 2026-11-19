@@ -1,4 +1,5 @@
 //! Correspondence owns file relationships and policy; File Platform owns storage.
+use crate::permission_codes_generated as codes;
 use crate::{
     correspondence,
     process::{denied, invalid},
@@ -12,7 +13,6 @@ use school_file_contracts::{
     file::PlatformFile,
     platform_types::{FilePurpose, FileVisibility},
 };
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -185,6 +185,7 @@ fn require_signature_owner(actor: &ActorContext, id: Uuid) -> Result<(), AppErro
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[test]
     fn personal_signature_permission_never_grants_another_owners_asset() {
         let actor = ActorContext {

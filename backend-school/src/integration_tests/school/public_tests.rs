@@ -1276,9 +1276,9 @@ async fn public_http_reads_need_no_session_and_keep_tenants_and_private_routes_s
 }
 
 async fn assert_appearance_http_boundaries(state: &AppState, a: &PgPool) {
+    use crate::test_permission_codes as codes;
     use school_administration::settings::services::appearance;
     use school_auth::session_crypto::{session_csrf_token, RawSessionToken};
-    use school_permissions::registry::codes;
 
     let origin = "https://school-a.schoolorbit.app";
     let mut headers = axum::http::HeaderMap::new();

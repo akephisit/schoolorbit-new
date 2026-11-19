@@ -422,15 +422,11 @@ async fn current_group_deletion_checks_school_authority_digest_and_atomic_scope(
     let f = fixture("delivery_current_group_deletion").await;
     let school = ActorContext {
         user_id: f.teacher,
-        permissions: vec![
-            school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL.into(),
-        ],
+        permissions: vec![crate::codes::LEARNING_OFFERING_MANAGE_SCHOOL.into()],
     };
     let assigned = ActorContext {
         user_id: f.teacher,
-        permissions: vec![
-            school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_ASSIGNED.into(),
-        ],
+        permissions: vec![crate::codes::LEARNING_OFFERING_MANAGE_ASSIGNED.into()],
     };
     let port = DeletionDependencies { fail: false };
     assert!(matches!(
@@ -607,4 +603,8 @@ async fn complete_current_graph_preserves_private_rows_while_public_caps_follow_
         serde_json::to_value(private).unwrap(),
         "a scoped read cannot poison the complete authority projection"
     );
+}
+
+mod codes {
+    include!("teacher_assignments/permission_codes_generated.rs");
 }

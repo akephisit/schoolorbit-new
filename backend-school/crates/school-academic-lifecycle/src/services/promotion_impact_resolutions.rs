@@ -2,11 +2,12 @@ use super::super::models::{
     PromotionImpactResolution, PromotionImpactResolutionKind, PromotionImpactResolutionOutcome,
     ResolvePromotionImpactInput,
 };
+use crate::integration_test_permission_codes as integration_test_codes;
+use crate::permission_codes_generated as codes;
 use school_academic_core::services::{lifecycle_guard, promotion_reconciliation, years_terms};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -21,7 +22,7 @@ pub async fn resolve_promotion_impact(
 ) -> Result<PromotionImpactResolution, AppError> {
     actor.require_all_permissions(&[
         codes::ACADEMIC_PROMOTION_READ_SCHOOL,
-        codes::ACADEMIC_PROMOTION_CORRECT_SCHOOL,
+        integration_test_codes::ACADEMIC_PROMOTION_CORRECT_SCHOOL,
     ])?;
     validate_input(run_id, impact_id, &input)?;
     let reason = input.reason.trim().to_owned();

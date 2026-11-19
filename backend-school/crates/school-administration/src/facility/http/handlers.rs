@@ -9,6 +9,7 @@ use crate::facility::models::UpdateBuildingRequest;
 use crate::facility::models::UpdateRoomRequest;
 use crate::facility::services;
 use crate::http::state::AdministrationHttpState;
+use crate::permission_codes_generated as codes;
 use axum::{
     extract::{Extension, Path, Query, State},
     http::StatusCode,
@@ -22,7 +23,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 // ----------------------

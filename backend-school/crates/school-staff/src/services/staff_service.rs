@@ -7,12 +7,12 @@ use super::{
     staff_name_service::{normalize_create_names, normalize_updated_names},
 };
 use crate::models::*;
+use crate::permission_codes_generated as codes;
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
 use school_crypto as field_encryption;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 use std::collections::HashMap;
@@ -1617,6 +1617,7 @@ fn staff_title_or_default(title: Option<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     use school_test_db::{create_test_pool, create_test_user, run_test_migrations};
 
     #[tokio::test]

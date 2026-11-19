@@ -25,7 +25,6 @@ school-authorization = { workspace = true }
 school-database = { workspace = true }
 school-errors = { workspace = true }
 school-file-contracts = { workspace = true }
-school-permissions = { workspace = true }
 school-staff = { workspace = true }
 school-tenancy = { workspace = true }
 school-workflow = { workspace = true }

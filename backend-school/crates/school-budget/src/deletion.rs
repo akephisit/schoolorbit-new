@@ -1,9 +1,9 @@
 //! Never-approved deletion keeps Budget authorization and Workflow ownership.
+use crate::permission_codes_generated as codes;
 use crate::{models::*, policy, repository, settings};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_workflow::{process_models::ProcessSource, process_purge};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;

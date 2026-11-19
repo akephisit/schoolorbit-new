@@ -1,6 +1,6 @@
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +47,7 @@ fn require_owner(actor: &ActorContext, owner: Option<Uuid>) -> Result<(), AppErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[test]
     fn actor_authority_is_action_and_owner_specific() {
         let owner = Uuid::now_v7();

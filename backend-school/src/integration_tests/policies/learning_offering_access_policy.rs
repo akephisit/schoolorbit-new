@@ -8,10 +8,10 @@ mod tests {
         seed_learning_offering_policy_science_course, CutoverFixture,
     };
     use crate::integration_tests::academic::delivery::services::offerings;
+    use crate::test_permission_codes as codes;
     use school_academic_delivery::models::LearningOfferingQuery;
     use school_authorization::{AcademicResourceAccess, ActorContext};
     use school_errors::AppError;
-    use school_permissions::registry::codes;
     use school_test_db::{create_named_test_pool, run_test_migrations};
     use uuid::Uuid;
 

@@ -1,8 +1,8 @@
 use crate::integration_tests::academic::results::services_tests::fixture;
+use crate::test_permission_codes as codes;
 use school_academic_results::{models::*, services::*};
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[tokio::test]

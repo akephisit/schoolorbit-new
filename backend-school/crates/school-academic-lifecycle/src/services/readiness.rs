@@ -1,13 +1,13 @@
 use super::super::models::TermLifecycleWorkspace;
 use super::super::models::{LifecycleFinding, LifecycleSeverity, TermTransitionAction as Action};
 use super::term_transitions;
+use crate::permission_codes_generated as codes;
 use crate::ports::ExternalLifecyclePort;
 use school_academic_core::ports::PendingTermWork;
 use school_academic_delivery::services as delivery_services;
 use school_academic_timetable::services::timetable_service;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 

@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_permission_codes as codes;
 use school_authorization::ActorContext;
 use school_test_db::{create_named_test_pool_with_max_connections, run_test_migrations};
 

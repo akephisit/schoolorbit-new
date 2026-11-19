@@ -1,4 +1,5 @@
 use crate::http::state::AttendanceHttpState;
+use crate::permission_codes_generated as codes;
 use crate::{application as services, runtime};
 use crate::{
     models::*,
@@ -13,7 +14,6 @@ use school_auth_http::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, EmptyData, HttpError as AppError};
-use school_permissions::registry::codes;
 use uuid::Uuid;
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/attendance/settings/{term}",operation_id="attendance_get_settings",tag="attendance",params(("term"=Uuid,Path)),responses((status=200, description = "Attendance settings returned",body=ApiResponse<AttendanceSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
 pub async fn get_settings(

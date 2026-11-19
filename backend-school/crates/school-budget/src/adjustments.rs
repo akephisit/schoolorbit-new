@@ -1,4 +1,5 @@
 //! Approved signed movements. Loan outstanding never reduces available a second time.
+use crate::permission_codes_generated as codes;
 use crate::{
     models::*,
     money::{self, invalid, text},
@@ -11,7 +12,6 @@ use chrono::{DateTime, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 #[derive(Debug, Clone, sqlx::FromRow)]

@@ -6,7 +6,6 @@ use school_behavior::{
     services::{catalog, cleanup, integration, manual, report, schedules},
 };
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_test_db::{create_named_test_pool, run_test_migrations};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -1777,4 +1776,8 @@ async fn cleanup_reference_locks_preserve_closed_context_eligibility_and_reject_
         ));
         assert_eq!(before, facts(f.pool.clone()).await);
     }
+}
+
+mod codes {
+    include!("database/permission_codes_generated.rs");
 }

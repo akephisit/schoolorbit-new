@@ -296,10 +296,10 @@ async fn learning_area_migration_rejects_ambiguous_states_and_reconciles_missing
 
 #[tokio::test]
 async fn learning_area_position_grants_do_not_cross_groups_or_administrative_tree() {
+    use crate::test_permission_codes as codes;
     use school_authorization::{
         accessible_exact_units_for_permission, accessible_tree_units_for_permission,
     };
-    use school_permissions::registry::codes;
     let pool = fixture("learning_area_position_scope").await;
     let head = school_test_db::create_test_user(&pool, "area-head@example.test", "Fixture123!")
         .await

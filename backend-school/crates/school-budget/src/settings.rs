@@ -1,3 +1,4 @@
+use crate::permission_codes_generated as codes;
 use crate::{
     models::*,
     money::{self, invalid, text},
@@ -7,7 +8,6 @@ use chrono::{DateTime, NaiveDate, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_workflow::{
     process,
     process_models::{ProcessStepKind, ProcessTemplateStep},

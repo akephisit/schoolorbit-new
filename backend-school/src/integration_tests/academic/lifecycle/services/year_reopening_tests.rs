@@ -1,7 +1,7 @@
 use crate::integration_tests::academic::core;
+use crate::test_permission_codes as codes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 

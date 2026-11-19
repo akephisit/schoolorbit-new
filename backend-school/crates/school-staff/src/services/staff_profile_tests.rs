@@ -290,13 +290,13 @@ async fn staff_profile_migration_blocks_missing_stale_or_failed_reconciliation()
 #[tokio::test]
 async fn staff_licence_attachment_scope_revision_lifecycle_rollback_and_private_read() {
     use super::staff_license_service as licence;
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
     use school_file_contracts::{
         access::FilePolicyAction,
         file::PlatformFile,
         platform_types::{FileLifecycleStatus, FilePurpose, FileVisibility},
     };
-    use school_permissions::registry::codes;
     let pool =
         school_test_db::create_named_test_pool_with_max_connections("staff_licence_attachment", 2)
             .await;

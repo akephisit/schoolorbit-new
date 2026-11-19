@@ -1,9 +1,9 @@
 use crate::models::BehaviorStudent;
+use crate::permission_codes_generated as codes;
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{FromRow, PgConnection};
 use uuid::Uuid;
 
@@ -173,6 +173,7 @@ pub async fn require_student_read(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[test]
     fn independent_scopes_and_creator_cancellation() {
         let actor = ActorContext {

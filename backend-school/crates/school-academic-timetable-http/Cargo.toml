@@ -26,7 +26,6 @@ school-auth-http = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
 school-http = { workspace = true }
-school-permissions = { workspace = true }
 school-tenancy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -1,4 +1,5 @@
 //! Budget relationships lock project → request → file; Files owns bytes, scans and cleanup.
+use crate::permission_codes_generated as codes;
 use crate::{models::BudgetFileSnapshot, policy, queries, repository};
 use school_authorization::ActorContext;
 use school_database::DbSession;
@@ -8,7 +9,6 @@ use school_file_contracts::{
     file::PlatformFile,
     platform_types::{FilePurpose, FileVisibility},
 };
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 fn upload_allowed(a: &ActorContext, r: &repository::RequestRecord) -> bool {
@@ -189,6 +189,7 @@ pub(crate) async fn retain(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     #[test]
     fn evidence_acceptance_is_state_and_capability_specific() {
         let owner = Uuid::now_v7();

@@ -2,10 +2,10 @@ use crate::integration_tests::academic::cutover_test_support::{
     apply_migrations_through, apply_phase_b_runtime_migrations,
     record_passing_phase_a_reconciliation_marker, seed_academic_cutover_fixture, CutoverFixture,
 };
+use crate::test_permission_codes as codes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use school_http::AppErrorHttpExt;
-use school_permissions::registry::codes;
 use school_question_bank::access_policy as question_bank_access_policy;
 use school_question_bank::models::{
     ImageAlignment, ImageNodeAttributes, QuestionBankListQuery, RichBlockNode, RichContent,

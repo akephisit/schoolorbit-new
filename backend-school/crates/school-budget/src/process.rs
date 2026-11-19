@@ -1,4 +1,5 @@
 //! Budget authorizes a source; Workflow owns frozen routing, decisions, work and notification dispatch.
+use crate::permission_codes_generated as codes;
 use crate::{
     models::*,
     money::{invalid, text},
@@ -7,7 +8,6 @@ use crate::{
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_workflow::{
     process::{self, ProcessSourcePort, StartProcessInput},
     process_models::*,

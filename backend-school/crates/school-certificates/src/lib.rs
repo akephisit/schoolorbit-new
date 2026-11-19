@@ -8,3 +8,10 @@ pub const SCHOOL_TIMEZONE: chrono_tz::Tz = chrono_tz::Asia::Bangkok;
 
 #[cfg(test)]
 mod services_tests;
+
+mod permission_codes_generated;
+
+#[cfg(test)]
+mod test_permission_codes {
+    include!("test_support/permission_codes_generated.rs");
+}

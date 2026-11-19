@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{types::Json, PgConnection, PgPool};
 use uuid::Uuid;
 

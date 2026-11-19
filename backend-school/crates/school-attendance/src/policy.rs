@@ -1,7 +1,7 @@
 use crate::models::AttendanceSession;
+use crate::permission_codes_generated as codes;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 pub fn read_school(actor: &ActorContext) -> bool {
     actor.has_any_permission(&[
         codes::ATTENDANCE_READ_SCHOOL,
@@ -182,6 +182,7 @@ pub fn require_reset(actor: &ActorContext) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use crate::models::AttendanceKind;
+    use crate::test_permission_codes as codes;
     use chrono::{NaiveDate, NaiveTime};
     use uuid::Uuid;
     #[test]

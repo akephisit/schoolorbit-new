@@ -10,7 +10,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 pub fn require_school_management(actor: &ActorContext) -> Result<(), AppError> {
-    if actor.has_permission(school_permissions::registry::codes::LEARNING_OFFERING_MANAGE_SCHOOL) {
+    if actor.has_permission(crate::permission_codes_generated::LEARNING_OFFERING_MANAGE_SCHOOL) {
         Ok(())
     } else {
         Err(AppError::Forbidden(

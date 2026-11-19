@@ -1,5 +1,6 @@
 //! Correspondence records, source ACL and immutable document/action decisions.
 use crate::document_validation::DocumentValidationPort;
+use crate::permission_codes_generated as codes;
 use crate::{
     correspondence_files, directed,
     process::{self, denied, invalid, stale},
@@ -9,7 +10,6 @@ use chrono::{Datelike, Duration, Utc};
 use school_authorization::{accessible_exact_units_for_permission, ActorContext};
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use serde::{Deserialize, Serialize};
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;

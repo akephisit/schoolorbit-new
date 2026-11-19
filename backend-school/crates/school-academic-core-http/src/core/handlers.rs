@@ -17,6 +17,7 @@ use school_academic_core::policies::{
     homeroom_roster_access_policy::{require_roster_access, RosterAction},
 };
 const SCHOOL_TIMEZONE: chrono_tz::Tz = chrono_tz::Asia::Bangkok;
+use crate::permission_codes_generated as codes;
 use crate::state::AcademicCoreHttpState;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
@@ -26,7 +27,6 @@ use school_authorization::ActorContext;
 use school_http::ApiErrorResponse;
 use school_http::HttpError as AppError;
 use school_http::{ApiResponse, EmptyData};
-use school_permissions::registry::codes;
 
 use school_academic_core::models::*;
 use school_academic_core::services::{

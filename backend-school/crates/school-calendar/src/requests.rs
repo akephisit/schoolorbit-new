@@ -1,11 +1,11 @@
 use crate::models::{CalendarEvent, UpsertCalendarEventRequest};
+use crate::permission_codes_generated as codes;
 use crate::services::events::create_event_in_transaction;
 use crate::services::shared::{validate_event_date_time, validate_event_text};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use school_notifications::publisher::NotificationType;
-use school_permissions::registry::codes;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 #[cfg(feature = "api-docs")]
@@ -360,6 +360,7 @@ fn require_pending(status: Option<CalendarRequestStatus>) -> Result<(), AppError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
     fn actor(permissions: &[&str]) -> ActorContext {
         ActorContext {
             user_id: Uuid::new_v4(),

@@ -11,9 +11,9 @@ use crate::integration_tests::academic::{
     cutover_test_support::apply_migrations_through,
     lifecycle::models::{ExecutePromotionRunInput, PromotionDecisionOutcome},
 };
+use crate::test_permission_codes as codes;
 use chrono::Duration;
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 #[tokio::test]

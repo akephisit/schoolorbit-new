@@ -27,7 +27,6 @@ school-crypto = { workspace = true }
 school-errors = { workspace = true }
 school-http = { workspace = true }
 school-notifications = { workspace = true }
-school-permissions = { workspace = true }
 school-students = { workspace = true }
 
 [dev-dependencies]

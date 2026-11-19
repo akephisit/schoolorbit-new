@@ -257,7 +257,6 @@ dashmap = { workspace = true }
 futures = { workspace = true }
 async-stream = { workspace = true }
 school-migrations = { workspace = true }
-school-permissions = { workspace = true }
 school-errors = { workspace = true }
 school-http = { workspace = true }
 school-authorization = { workspace = true }
@@ -301,6 +300,7 @@ school-academic-lifecycle-http = { workspace = true }
 school-academic-realtime = { workspace = true }
 
 [dev-dependencies]
+school-permissions = { workspace = true }
 tokio-tungstenite = "0.29.0"
 school-academic-timetable = { workspace = true, features = ["test-support"] }
 syn = { workspace = true }

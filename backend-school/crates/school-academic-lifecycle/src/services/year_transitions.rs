@@ -1,4 +1,5 @@
 use super::super::models::{YearTransitionAction, YearTransitionOutcome, YearTransitionRequest};
+use crate::permission_codes_generated as codes;
 use school_academic_core::models::{
     AcademicYearStatus, YearLifecycleContext, YearTermLifecycleState,
 };
@@ -8,7 +9,6 @@ use school_academic_core::services::{
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 

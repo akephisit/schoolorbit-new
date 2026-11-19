@@ -7,9 +7,9 @@ use crate::integration_tests::academic::{
     results::{models as result_models, services as result_services},
     services::timetable_service,
 };
+use crate::test_permission_codes as codes;
 use chrono::NaiveDate;
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use uuid::Uuid;
 
 fn lifecycle_actor(user_id: Uuid) -> ActorContext {

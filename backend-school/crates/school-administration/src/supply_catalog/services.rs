@@ -776,7 +776,7 @@ async fn load_proposal_on_connection(
         .ok_or_else(missing)
 }
 fn require_proposal(actor: &ActorContext, row: &SupplyProposal) -> Result<(), AppError> {
-    if actor.has_permission(school_permissions::registry::codes::SUPPLY_CATALOG_APPROVE_SCHOOL) {
+    if actor.has_permission(crate::permission_codes_generated::SUPPLY_CATALOG_APPROVE_SCHOOL) {
         require_action(actor, SupplyAction::Review, None, false)
     } else {
         require_action(actor, SupplyAction::Propose, Some(row.proposed_by), false)

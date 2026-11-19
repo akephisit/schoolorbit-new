@@ -5,7 +5,7 @@ use super::promotion_run_review::{
 };
 use super::*;
 use crate::integration_tests::academic::results::{models as rm, services as rs};
-use school_permissions::registry::codes;
+use crate::test_permission_codes as codes;
 
 fn approver(actor: &ActorContext) -> ActorContext {
     ActorContext {

@@ -39,8 +39,8 @@ async fn own_profile_uses_the_caller_selected_student_academic_year() {
 #[tokio::test]
 async fn profile_read_reuses_target_without_broadening_profile_or_pii_access() {
     use crate::integration_tests::policies::student_access_policy::authorize_student_profile_read;
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
-    use school_permissions::registry::codes;
     let pool = create_named_test_pool("student_profile_authorization").await;
     apply_migrations_through(&pool, 40).await.unwrap();
     seed_academic_cutover_fixture(&pool, CutoverFixture::Passing)

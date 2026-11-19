@@ -1,3 +1,4 @@
+use crate::permission_codes_generated as codes;
 use crate::{
     files,
     models::*,
@@ -12,7 +13,6 @@ use chrono::Utc;
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use std::collections::BTreeSet;
 use uuid::Uuid;

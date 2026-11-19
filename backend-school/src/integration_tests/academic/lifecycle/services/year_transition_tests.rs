@@ -4,8 +4,8 @@ use crate::integration_tests::academic::core::{
     models::{AcademicYearStatus, YearTransitionAction, YearTransitionRequest},
     services::year_transitions,
 };
+use crate::test_permission_codes as codes;
 use school_authorization::ActorContext;
-use school_permissions::registry::codes;
 use sqlx::PgPool;
 use uuid::Uuid;
 

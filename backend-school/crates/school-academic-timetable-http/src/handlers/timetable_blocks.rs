@@ -572,7 +572,7 @@ pub async fn daily_teaching_overview(
 ) -> Result<impl IntoResponse, AppError> {
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     context.actor.require_permission(
-        school_permissions::registry::codes::ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
+        crate::permission_codes_generated::ACADEMIC_TIMETABLE_TODAY_READ_SCHOOL,
     )?;
     let overview =
         daily_teaching_service::get_daily_teaching_overview(&context.tenant.pool, query).await?;

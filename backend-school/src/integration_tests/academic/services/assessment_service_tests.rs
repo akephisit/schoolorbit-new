@@ -5,6 +5,7 @@ use crate::integration_tests::academic::cutover_test_support::{
     apply_migrations_through, record_passing_phase_a_reconciliation_marker,
     seed_academic_cutover_fixture, CutoverFixture,
 };
+use crate::test_permission_codes as codes;
 use school_academic_assessment::assessment::models::{
     AssessmentPhaseCode, AssessmentPlanListQuery, SaveAssessmentPhaseRequest,
     SaveAssessmentPlanRequest, UpdateAssessmentPhaseControlRequest,
@@ -16,7 +17,6 @@ use school_academic_assessment::policy::assessment::{
 use school_authorization::AcademicResourceListFilter;
 use school_authorization::ActorContext;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use school_test_db::create_named_test_pool;
 use sqlx::postgres::PgPoolOptions;
 

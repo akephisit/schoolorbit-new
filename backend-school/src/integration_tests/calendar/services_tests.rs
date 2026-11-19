@@ -619,9 +619,9 @@ async fn date_calendar_accepts_independent_dates_and_requires_explicit_matching_
 
 #[tokio::test]
 async fn review_queue_is_fifo_across_pages_while_own_history_is_newest_first() {
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
     use school_calendar::requests::{self, CalendarRequestQuery, CalendarRequestStatus};
-    use school_permissions::registry::codes;
     let pool = migrated_pool("calendar_request_fifo").await;
     let fixture = insert_fixture(&pool).await;
     sqlx::query("INSERT INTO calendar_event_requests(requested_by,title,description,start_date,end_date,all_day,created_at)
@@ -747,9 +747,9 @@ async fn review_queue_is_fifo_across_pages_while_own_history_is_newest_first() {
 
 #[tokio::test]
 async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_requests() {
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
     use school_calendar::requests::{self, CreateCalendarRequest, PendingCalendarQuery};
-    use school_permissions::registry::codes;
     let pool = migrated_pool("calendar_pending_overlay").await;
     let fixture = insert_fixture(&pool).await;
     let own = ActorContext {
@@ -927,11 +927,11 @@ fn payload_event_for_pending_test(date: NaiveDate, year: Uuid) -> UpsertCalendar
 
 #[tokio::test]
 async fn pending_requests_are_private_and_decisions_create_one_event() {
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
     use school_calendar::requests::{
         self, CalendarRequestQuery, CalendarRequestStatus, CreateCalendarRequest,
     };
-    use school_permissions::registry::codes;
     let pool = migrated_pool("calendar_requests").await;
     let fixture = insert_fixture(&pool).await;
     let own = ActorContext {
@@ -1043,9 +1043,9 @@ async fn pending_requests_are_private_and_decisions_create_one_event() {
 
 #[tokio::test]
 async fn rejected_request_retains_reason_without_creating_event() {
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
     use school_calendar::requests::{self, CalendarRequestStatus, CreateCalendarRequest};
-    use school_permissions::registry::codes;
     let pool = migrated_pool("calendar_request_rejected").await;
     let fixture = insert_fixture(&pool).await;
     let actor = ActorContext {
@@ -1455,10 +1455,10 @@ async fn grant_calendar_role(pool: &PgPool, user: Uuid, permissions: &[&str]) ->
 
 #[tokio::test]
 async fn request_recipient_resolution_matches_actor_grants_and_excludes_ineligible_users() {
+    use crate::test_permission_codes as codes;
     use school_authorization::{
         load_actor_context, staff_users_with_all_permissions, PermissionCache,
     };
-    use school_permissions::registry::codes;
     let pool = migrated_pool("calendar_request_recipients").await;
     let required = [codes::CALENDAR_READ_SCHOOL, codes::CALENDAR_MANAGE_SCHOOL];
     let manager = insert_user(&pool, "staff", "Role manager").await;
@@ -1598,9 +1598,9 @@ async fn request_recipient_resolution_matches_actor_grants_and_excludes_ineligib
 
 #[tokio::test]
 async fn request_workflow_notifies_managers_then_only_requester_for_one_successful_decision() {
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
     use school_calendar::requests::{CalendarRequestStatus, CreateCalendarRequest};
-    use school_permissions::registry::codes;
     let pool = migrated_pool("calendar_request_notification_workflow").await;
     let fixture = insert_fixture(&pool).await;
     let manager_id = insert_user(&pool, "staff", "Review manager").await;
@@ -1726,9 +1726,9 @@ async fn request_workflow_notifies_managers_then_only_requester_for_one_successf
 #[tokio::test]
 async fn request_workflow_rolls_back_business_and_all_inboxes_on_acceptance_failure_then_retries_once(
 ) {
+    use crate::test_permission_codes as codes;
     use school_authorization::ActorContext;
     use school_calendar::requests::{CalendarRequestStatus, CreateCalendarRequest};
-    use school_permissions::registry::codes;
     let pool = migrated_pool("calendar_request_atomic_notification_failure").await;
     let fixture = insert_fixture(&pool).await;
     let manager_id = insert_user(&pool, "staff", "Manager").await;

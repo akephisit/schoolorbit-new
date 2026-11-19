@@ -1,4 +1,5 @@
 //! Staff owns licence relationships; Files owns inspection, storage and delivery.
+use crate::permission_codes_generated as codes;
 use crate::{personnel::ReplaceStaffTeachingLicenseFile, staff_access_policy};
 use school_authorization::ActorContext;
 use school_database::DbSession;
@@ -8,7 +9,6 @@ use school_file_contracts::{
     file::PlatformFile,
     platform_types::{FilePurpose, FileVisibility},
 };
-use school_permissions::registry::codes;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -239,6 +239,7 @@ pub async fn replace_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_permission_codes as codes;
 
     #[test]
     fn staff_licence_management_requires_update_and_exact_pii_scope() {

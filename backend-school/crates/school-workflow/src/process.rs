@@ -1,10 +1,10 @@
 //! Reusable sequential process provider. Source validation remains with its owner.
+use crate::permission_codes_generated as codes;
 use crate::process_models::*;
 use chrono::{Duration, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
-use school_permissions::registry::codes;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{types::Json, PgPool, Postgres, Transaction};

@@ -332,8 +332,7 @@ mod tests {
         let actor = ActorContext {
             user_id: Uuid::new_v4(),
             permissions: vec![
-                school_permissions::registry::codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL
-                    .into(),
+                crate::test_permission_codes::ACADEMIC_LEARNER_EVALUATION_MANAGE_SCHOOL.into(),
             ],
         };
         assert!(!policy::can_lock(&actor));
