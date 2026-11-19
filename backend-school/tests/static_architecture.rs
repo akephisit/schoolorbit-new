@@ -6414,37 +6414,12 @@ fn permission_registry_wraps_generated_contract() {
 }
 
 #[test]
-fn permission_constants_are_local_to_consumers_and_only_metadata_uses_the_registry() {
+fn permission_constants_are_local_to_consumers() {
     let root = manifest_dir();
     let registry =
         read_source(workspace_crate_dir("school-permissions").join("src/registry_generated.rs"));
     assert!(registry.contains("\nmod codes {"));
     assert!(!registry.contains("pub mod codes"));
-
-    let manifests = std::iter::once(root.join("Cargo.toml"))
-        .chain(list_files(root.join("crates"), |path| {
-            path.ends_with("Cargo.toml")
-        }));
-    for path in manifests {
-        let package = path
-            .parent()
-            .and_then(|parent| parent.file_name())
-            .and_then(|name| name.to_str());
-        let manifest = read_source(&path);
-        let normal = manifest.contains("[dependencies]")
-            && school_dependencies_in_section(&manifest, "dependencies")
-                .contains("school-permissions");
-        let dev = manifest.contains("[dev-dependencies]")
-            && school_dependencies_in_section(&manifest, "dev-dependencies")
-                .contains("school-permissions");
-        assert_eq!(
-            normal,
-            matches!(package, Some("school-migrations" | "school-workflow")),
-            "{}",
-            path.display()
-        );
-        assert_eq!(dev, path == root.join("Cargo.toml"), "{}", path.display());
-    }
 
     let legacy_path =
         Regex::new(r"school_permissions\s*::\s*registry\s*::\s*(?:codes\b|\{[^}]*\bcodes\b)")

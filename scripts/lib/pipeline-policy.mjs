@@ -115,6 +115,11 @@ export function classify(files) {
         components.forEach((part) => deploy.add(part));
       continue;
     }
+    if (file === 'scripts/permission-code-consumers.json') {
+      verify.add('contracts');
+      verify.add('backend-school');
+      continue;
+    }
     if (contracts.test(file)) {
       ['contracts', 'backend-school', 'frontend-school'].forEach((suite) =>
         verify.add(suite)
