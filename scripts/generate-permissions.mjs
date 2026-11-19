@@ -45,7 +45,7 @@ const COMPONENT_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 const NORMAL_FIELDS = new Set(['module', 'action', 'scope', 'name', 'description']);
 const WILDCARD_FIELDS = new Set(['kind', ...NORMAL_FIELDS]);
 const ROOT_FIELDS = new Set(['schema_version', 'permissions']);
-const CONSUMER_FIELDS = new Set(['production', 'unitTests', 'integrationTests']);
+const CONSUMER_FIELDS = new Set(['production', 'unitTests', 'integrationTestSupport', 'integrationTests']);
 const RUST_CODES_FILE = 'permission_codes_generated.rs';
 
 function isRecord(value) {
@@ -300,7 +300,7 @@ function rustConsumerFiles(normalized, backendRoot, selections) {
 		assertKnownFields(scopes, CONSUMER_FIELDS, name, 'consumer scope');
 		const owner = name === 'backend-school' ? backendRoot : path.join(backendRoot, 'crates', name);
 		const manifest = path.join(owner, 'Cargo.toml');
-		const { production, unitTests, integrationTests } = scopes;
+		const { production, unitTests, integrationTestSupport, integrationTests } = scopes;
 		if (production !== undefined) {
 			const permissions = selectRustCodes(production, knownCodes, `${name}.production`);
 			files.push([path.join(owner, 'src', RUST_CODES_FILE), renderConsumerCodes(permissions), manifest]);
@@ -310,6 +310,16 @@ function rustConsumerFiles(normalized, backendRoot, selections) {
 			files.push([
 				path.join(owner, 'src/test_support', RUST_CODES_FILE),
 				renderConsumerCodes(permissions, new Set(production)),
+				manifest
+			]);
+		}
+		if (integrationTestSupport !== undefined) {
+			const permissions = selectRustCodes(
+				integrationTestSupport, knownCodes, `${name}.integrationTestSupport`
+			);
+			files.push([
+				path.join(owner, 'src/test_support/integration', RUST_CODES_FILE),
+				renderConsumerCodes(permissions),
 				manifest
 			]);
 		}

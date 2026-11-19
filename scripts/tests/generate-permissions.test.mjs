@@ -416,6 +416,25 @@ test('updates every consumer of a changed cross-domain Rust constant', async (t)
 	assert.equal(await readFile(attendanceScore, 'utf8'), await readFile(attendanceCodes, 'utf8'));
 });
 
+test('generates feature-only permissions outside the default Rust projection', async (t) => {
+	const { paths, backendRoot, consumerSelections, authorizationCodes } = await scopedRustPaths(t);
+	consumerSelections['school-authorization'].integrationTestSupport = ['STAFF_READ_ALL'];
+	const featureCodes = path.join(
+		path.dirname(authorizationCodes), 'test_support/integration/permission_codes_generated.rs'
+	);
+	const options = { ...paths, backendRoot, consumerSelections };
+	await generatePermissions({ ...options, initializeLock: true });
+	const defaultCodes = await readFile(authorizationCodes, 'utf8');
+	assert.doesNotMatch(defaultCodes, /STAFF_READ_ALL/);
+	assert.match(await readFile(featureCodes, 'utf8'), /STAFF_READ_ALL: &str = "staff\.read\.all";/);
+	assert.deepEqual((await generatePermissions({ ...options, check: true })).changedPaths, []);
+
+	delete consumerSelections['school-authorization'].integrationTestSupport;
+	await assert.rejects(generatePermissions({ ...options, check: true }), {
+		message: `orphaned generated files: ${featureCodes}`
+	});
+});
+
 test('check detects stale or missing consumer outputs without rewriting them', async (t) => {
 	const { paths, backendRoot, consumerSelections, authorizationCodes } = await scopedRustPaths(t);
 	const options = { ...paths, backendRoot, consumerSelections };

@@ -32,6 +32,8 @@ pub async fn get_promotion_policy_options(
 }
 #[cfg(feature = "integration-test-support")]
 use super::promotion_context::validate_promotion_rules;
+#[cfg(feature = "integration-test-support")]
+use crate::integration_test_permission_codes as integration_test_codes;
 use crate::permission_codes_generated as codes;
 
 #[derive(sqlx::FromRow)]
@@ -99,8 +101,8 @@ pub async fn create_promotion_policy(
 ) -> Result<PromotionPolicyVersion, AppError> {
     actor.require_all_permissions(&[
         codes::ACADEMIC_PROMOTION_READ_SCHOOL,
-        codes::ACADEMIC_PROMOTION_MANAGE_SCHOOL,
-        codes::ACADEMIC_PROMOTION_APPROVE_SCHOOL,
+        integration_test_codes::ACADEMIC_PROMOTION_MANAGE_SCHOOL,
+        integration_test_codes::ACADEMIC_PROMOTION_APPROVE_SCHOOL,
     ])?;
     super::promotion_recommendation::validate_policy(&input)?;
     let mut tx = school_tenancy::TenantPool::begin_observed(
