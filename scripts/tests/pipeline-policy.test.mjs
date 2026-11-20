@@ -51,7 +51,11 @@ test("UI, service, docs, tests and control changes have separate verification/de
   );
   assert.deepEqual(classify([".github/workflows/pipeline.yml"]).deploy, []);
   assert.deepEqual(classify([".github/workflows/pipeline.yml"]).verify, suites);
-  assert.deepEqual(classify(["contracts/openapi/school.json"]).deploy, [
+  assert.deepEqual(classify(["contracts/openapi/school-api.json"]).deploy, [
+    "backend-school",
+    "frontend-school",
+  ]);
+  assert.deepEqual(classify(["backend-school/src/api_contract.rs"]).deploy, [
     "backend-school",
     "frontend-school",
   ]);
@@ -133,6 +137,114 @@ function fixture(t) {
   };
   return { root, base, state, commit };
 }
+
+test("School contract generators select verification and retain accepted artifact hashes", (t) => {
+  const verify = [
+    "documentation",
+    "contracts",
+    "backend-school",
+    "frontend-school",
+  ];
+  const f = fixture(t);
+  const hashes = Object.fromEntries(
+    components.map((part) => [part, f.state.components[part].inputHash]),
+  );
+  const scripts = path.join(f.root, "scripts");
+  mkdirSync(scripts);
+  let base = f.base;
+  for (const name of ["generate-api-contracts", "generate-permissions"]) {
+    assert.deepEqual(classify([`scripts/tests/${name}.test.mjs`]), {
+      verify,
+      deploy: [],
+      unknown: [],
+    });
+    writeFileSync(path.join(scripts, `${name}.mjs`), "// generator edit");
+    const head = f.commit();
+    const plan = makePlan({ ...f, base, head });
+    assert.deepEqual(plan.verify, verify, name);
+    assert.deepEqual(plan.build, [], name);
+    assert.deepEqual(plan.deploy, [], name);
+    assert.deepEqual(plan.hashes, hashes, name);
+    assert.deepEqual(plan.unknown, [], name);
+    base = head;
+  }
+});
+
+test("School permission Rust registry and generator changes deploy only the backend", (t) => {
+  const f = fixture(t);
+  const registry = "backend-school/crates/school-permissions/src";
+  const verify = [
+    "documentation",
+    "contracts",
+    "backend-school",
+    "frontend-school",
+  ];
+  const registryFiles = [`${registry}/registry.rs`, `${registry}/registry_generated.rs`];
+  for (const file of registryFiles) {
+    assert.deepEqual(classify([file]), {
+      verify,
+      deploy: ["backend-school"],
+      unknown: [],
+    });
+  }
+  for (const file of [...registryFiles, "scripts/generate-permissions.mjs"]) {
+    const target = path.join(f.root, file);
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, "// changed permission tooling");
+  }
+  const plan = makePlan({ ...f, head: f.commit() });
+  assert.deepEqual(plan.verify, verify);
+  assert.deepEqual(plan.build, ["backend-school"]);
+  assert.deepEqual(plan.deploy, ["backend-school"]);
+  assert.equal(
+    plan.hashes["frontend-school"],
+    f.state.components["frontend-school"].inputHash,
+  );
+  assert.deepEqual(plan.reasons["frontend-school"], []);
+  assert.deepEqual(plan.reasons["backend-school"], [
+    "unaccepted-runtime-paths",
+    "changed-artifact-inputs",
+  ]);
+});
+
+test("generated School frontend contracts stay queued across a later generator edit", (t) => {
+  for (const [output, generator] of [
+    [
+      "frontend-school/src/lib/permissions/registry.generated.ts",
+      "scripts/generate-permissions.mjs",
+    ],
+    [
+      "frontend-school/src/lib/api/generated/school-api.ts",
+      "scripts/generate-api-contracts.mjs",
+    ],
+  ]) {
+    const f = fixture(t);
+    for (const file of [output, generator]) {
+      mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true });
+    }
+    writeFileSync(path.join(f.root, output), "// changed generated contract");
+    const queued = f.commit();
+    assert.deepEqual(
+      makePlan({ ...f, head: queued }).deploy,
+      ["frontend-school"],
+      output,
+    );
+    writeFileSync(path.join(f.root, generator), "// generator edit");
+    const head = f.commit();
+    const plan = makePlan({ ...f, base: queued, head });
+    assert.deepEqual(plan.build, ["frontend-school"], output);
+    assert.deepEqual(plan.deploy, ["frontend-school"], output);
+    assert.deepEqual(plan.reasons["frontend-school"], [
+      "unaccepted-runtime-paths",
+      "changed-artifact-inputs",
+    ]);
+    f.state.components["frontend-school"] = {
+      sha: queued,
+      inputHash: inputHash(f.root, queued, "frontend-school"),
+    };
+    assert.deepEqual(makePlan({ ...f, base: queued, head }).deploy, [], output);
+  }
+});
 
 test("canonical Node pin content invalidates only frontend artifacts, including caches from before the pin", (t) => {
   const f = fixture(t);
