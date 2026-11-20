@@ -20,7 +20,6 @@ school-notifications = { workspace = true }
 chrono = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
-school-permissions = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 tracing = { workspace = true }

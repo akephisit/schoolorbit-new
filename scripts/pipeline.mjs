@@ -25,8 +25,7 @@ const run = (cmd, argv, cwd = root, env = {}) => {
 function verifyPermissionRegistryDependencies({ packages }) {
   const remaining = new Map([
     ['backend-school', 'dev'],
-    ['school-migrations', 'normal'],
-    ['school-workflow', 'normal']
+    ['school-migrations', 'normal']
   ]);
   for (const { name, dependencies } of packages) {
     for (const dependency of dependencies) {

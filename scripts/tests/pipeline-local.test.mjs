@@ -26,13 +26,14 @@ if(args[0]==='metadata') {
  const packages=[
   {name:'backend-school',dependencies:[{...registry,kind:'dev'}]},
   {name:'school-migrations',dependencies:[registry]},
-  {name:'school-workflow',dependencies:[registry]},
+  {name:'school-workflow',dependencies:[]},
  ];
  if(process.env.FIXTURE_PERMISSION_EDGE==='aliased-target')packages.push({
   name:'school-budget',dependencies:[{...registry,rename:'permission_data',target:'cfg(unix)'}],
  });
  if(process.env.FIXTURE_PERMISSION_EDGE==='allowed-owner-target')packages[1].dependencies=[{...registry,target:'cfg(unix)'}];
  if(process.env.FIXTURE_PERMISSION_EDGE==='build')packages[2].dependencies.push({...registry,kind:'build'});
+ if(process.env.FIXTURE_PERMISSION_EDGE==='workflow')packages[2].dependencies.push(registry);
  if(process.env.FIXTURE_PERMISSION_EDGE==='missing')packages[0].dependencies=[];
  process.stdout.write(JSON.stringify({target_directory:${JSON.stringify(path.join(root,'backend-school/target'))},packages}));
 }
@@ -114,6 +115,7 @@ for(const [edge, message] of [
  ['aliased-target', /Unexpected school-permissions dependency in school-budget.*permission_data.*cfg\(unix\)/],
  ['allowed-owner-target', /Unexpected school-permissions dependency in school-migrations.*cfg\(unix\)/],
  ['build', /Unexpected school-permissions dependency in school-workflow.*build/],
+ ['workflow', /Unexpected school-permissions dependency in school-workflow.*normal/],
  ['missing', /Missing school-permissions dependencies: backend-school \(dev\)/],
 ])test(`School verification rejects unapproved permission metadata edges (${edge})`,t=>{
  const f=fixture(t);

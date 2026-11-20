@@ -5002,7 +5002,6 @@ dependencies = [
  "school-errors",
  "school-file-contracts",
  "school-notifications",
- "school-permissions",
  "school-tenancy",
  "school-test-db",
  "serde",

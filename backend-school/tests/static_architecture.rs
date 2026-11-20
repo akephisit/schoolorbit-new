@@ -1253,7 +1253,6 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-errors",
                 "school-file-contracts",
                 "school-notifications",
-                "school-permissions",
                 "school-tenancy",
             ],
         ),
