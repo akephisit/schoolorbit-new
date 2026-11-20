@@ -1064,9 +1064,11 @@ not only the immediately preceding commit. A newer push during an active release
 release to finish.
 
 The planner distinguishes verification, build and deployment paths. Frontend-only changes do not
-compile a backend; body-only backend edits do not rebuild a frontend. Generated contract changes
-include their School backend/frontend consumers. Test-only and documentation changes do not
-normally deploy. Manual `scope` can add one component or `full`, and cannot omit queued changes.
+compile a backend; body-only backend edits do not rebuild a frontend. School contract generators
+and their tests select verification only. Committed changes under `contracts/` coordinate both
+School components, and generated runtime files follow their component ownership. Test-only and
+documentation changes do not normally deploy. Manual `scope` can add one component or `full`,
+and cannot omit queued changes.
 The plan reports why each component is selected: unaccepted runtime paths, changed artifact inputs,
 an unavailable accepted baseline, or explicit scope. Component-specific deployment files reconcile
 their owners; shared runtime/maintenance/release controls still select all affected components.

@@ -15,8 +15,12 @@ export const suites = [
 ];
 const control =
   /^(?:\.github\/|scripts\/(?:pipeline|lib\/pipeline|lib\/owned-load-cleanup|lib\/schoolorbit-installer|schoolorbit-installer|render_nginx|discover_school|find_worker|smoke_test|prune_runtime|clamd_runtime|reconcile_r2)|podman-compose\.yml$|nginx-configs\/)/;
-const contracts =
-  /^(?:contracts\/|scripts\/(?:generate-(?:api-contracts|permissions)|tests\/generate-))/;
+const contractVerificationInputs = new Set([
+  'scripts/generate-api-contracts.mjs',
+  'scripts/generate-permissions.mjs',
+  'scripts/tests/generate-api-contracts.test.mjs',
+  'scripts/tests/generate-permissions.test.mjs'
+]);
 const testOnly = (file) =>
   /^(?:backend|frontend)-(?:school|admin)\/tests\/|^scripts\/tests\/|\/README\.md$/.test(
     file
@@ -120,11 +124,12 @@ export function classify(files) {
       verify.add('backend-school');
       continue;
     }
-    if (contracts.test(file)) {
+    const sharedContract = file.startsWith('contracts/');
+    if (sharedContract || contractVerificationInputs.has(file)) {
       ['contracts', 'backend-school', 'frontend-school'].forEach((suite) =>
         verify.add(suite)
       );
-      if (!testOnly(file))
+      if (sharedContract)
         ['backend-school', 'frontend-school'].forEach((part) =>
           deploy.add(part)
         );
@@ -142,12 +147,8 @@ export function classify(files) {
         )
       )
         verify.add('frontend-school');
-      // Generated contracts and consumers form one release unit. Body-only service edits
-      // still export/check OpenAPI but do not build the frontend unless its contract changes.
-      if (
-        file.startsWith('backend-school/src/api_') ||
-        /\/registry(?:_generated)?\./.test(file)
-      ) {
+      // Coordinate changes to backend API contract composition with the School frontend.
+      if (file.startsWith('backend-school/src/api_')) {
         verify.add('frontend-school');
         deploy.add('frontend-school');
       }
