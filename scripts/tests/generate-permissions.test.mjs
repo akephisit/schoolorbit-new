@@ -318,6 +318,104 @@ test('check mode reports but never rewrites stale output', async (t) => {
 	assert.equal(await readFile(paths.typeScriptOutputPath, 'utf8'), edited);
 });
 
+function workflowManagementRows(source) {
+	return [...source.matchAll(/code: "([a-z0-9_.]+)",\s*scope: "([a-z_]+)"/g)]
+		.map(([, code, scope]) => [code, scope]);
+}
+
+test('Workflow management projection matches the existing canonical action and scope filter', async () => {
+	const contract = JSON.parse(await readFile(permissionContractPath, 'utf8'));
+	const normalized = validateAndNormalizeContract(contract);
+	const expected = normalized.permissions.filter(({ action, scope }) =>
+		action === 'manage' && ['school', 'all', 'organization_unit', 'organization_tree'].includes(scope)
+	).map(({ code, scope }) => [code, scope]);
+	const { workflowManagementRustContent } = renderPermissionArtifacts(normalized);
+	assert.deepEqual(workflowManagementRows(workflowManagementRustContent), expected);
+});
+
+test('Workflow management projection leaves unrelated codes and metadata outside its output', async (t) => {
+	const contract = structuredClone(validContract);
+	const scopes = ['school', 'all', 'organization_unit', 'organization_tree', 'own', 'assigned', 'global'];
+	for (const scope of scopes) {
+		contract.permissions.push({
+			module: 'workflow_fixture',
+			action: 'manage',
+			scope,
+			name: `Manage ${scope}`,
+			description: `Manage fixture for ${scope}`
+		});
+	}
+	const paths = await temporaryPaths(t, contract);
+	const workflowManagementOutputPath = path.join(
+		path.dirname(paths.rustOutputPath), 'workflow_management_permissions_generated.rs'
+	);
+	const options = { ...paths, workflowManagementOutputPath };
+	await generatePermissions({ ...options, initializeLock: true });
+	const before = await readFile(workflowManagementOutputPath, 'utf8');
+	assert.deepEqual(workflowManagementRows(before), [
+		['workflow_fixture.manage.all', 'all'],
+		['workflow_fixture.manage.organization_tree', 'organization_tree'],
+		['workflow_fixture.manage.organization_unit', 'organization_unit'],
+		['workflow_fixture.manage.school', 'school']
+	]);
+	assert.doesNotMatch(before, /contract-sha256|description:|name:/);
+	const oldTimestamp = new Date('2000-01-01T00:00:00Z');
+	await utimes(workflowManagementOutputPath, oldTimestamp, oldTimestamp);
+	const originalMtime = (await stat(workflowManagementOutputPath)).mtimeMs;
+
+	const eligible = contract.permissions.find(({ module, action, scope }) =>
+		module === 'workflow_fixture' && action === 'manage' && scope === 'school'
+	);
+	eligible.description = 'Updated school management description';
+	contract.permissions.push({
+		module: 'workflow_fixture',
+		action: 'read',
+		scope: 'school',
+		name: 'Read fixtures',
+		description: 'Read fixtures for school'
+	});
+	await writeFile(paths.contractPath, JSON.stringify(contract));
+	const result = await generatePermissions(options);
+	assert.deepEqual(result.changedPaths, [
+		paths.lockPath, paths.rustOutputPath, paths.typeScriptOutputPath
+	]);
+	assert.equal(await readFile(workflowManagementOutputPath, 'utf8'), before);
+	assert.equal((await stat(workflowManagementOutputPath)).mtimeMs, originalMtime);
+
+	contract.permissions.push({
+		module: 'new_workflow_fixture',
+		action: 'manage',
+		scope: 'school',
+		name: 'Manage new fixture',
+		description: 'Manage a new fixture at school scope'
+	});
+	await writeFile(paths.contractPath, JSON.stringify(contract));
+	await assert.rejects(
+		generatePermissions({ ...options, check: true }),
+		/stale generated files:.*workflow_management_permissions_generated\.rs/
+	);
+	const update = await generatePermissions(options);
+	assert.ok(update.changedPaths.includes(workflowManagementOutputPath));
+	assert.match(await readFile(workflowManagementOutputPath, 'utf8'), /new_workflow_fixture\.manage\.school/);
+});
+
+test('check reports missing and stale Workflow metadata without writing it', async (t) => {
+	const paths = await temporaryPaths(t);
+	const workflowManagementOutputPath = path.join(
+		path.dirname(paths.rustOutputPath), 'workflow_management_permissions_generated.rs'
+	);
+	const options = { ...paths, workflowManagementOutputPath };
+	await generatePermissions({ ...paths, initializeLock: true });
+	const expected = { message: `stale generated files: ${workflowManagementOutputPath}` };
+	await assert.rejects(generatePermissions({ ...options, check: true }), expected);
+	await assert.rejects(readFile(workflowManagementOutputPath), /ENOENT/);
+	await writeFile(workflowManagementOutputPath, '// stale\n');
+	await assert.rejects(generatePermissions({ ...options, check: true }), expected);
+	assert.equal(await readFile(workflowManagementOutputPath, 'utf8'), '// stale\n');
+	assert.deepEqual((await generatePermissions(options)).changedPaths, [workflowManagementOutputPath]);
+	assert.deepEqual((await generatePermissions({ ...options, check: true })).changedPaths, []);
+});
+
 async function scopedRustPaths(t) {
 	const paths = await temporaryPaths(t);
 	const backendRoot = path.join(path.dirname(paths.rustOutputPath), 'backend-school');

@@ -5,9 +5,15 @@ use school_authorization::{
     accessible_exact_units_for_permission, accessible_tree_units_for_permission,
 };
 use school_errors::AppError;
-use school_permissions::registry::{PermissionDef, ALL_PERMISSIONS};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+struct WorkflowWindowManagementPermission {
+    code: &'static str,
+    scope: &'static str,
+}
+
+include!("workflow_management_permissions_generated.rs");
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum WorkflowWindowManageAccess {
@@ -43,15 +49,12 @@ pub fn require_workflow_window_manage_permission(
     Err(AppError::Forbidden("ไม่มีสิทธิ์จัดการรอบงานนี้".to_string()))
 }
 
-fn eligible_management_permission(code: &str) -> Option<&'static PermissionDef> {
-    ALL_PERMISSIONS.iter().find(|permission| {
-        permission.code == code
-            && permission.action == "manage"
-            && matches!(
-                permission.scope,
-                "school" | "all" | "organization_unit" | "organization_tree"
-            )
-    })
+fn eligible_management_permission(
+    code: &str,
+) -> Option<&'static WorkflowWindowManagementPermission> {
+    WORKFLOW_WINDOW_MANAGEMENT_PERMISSIONS
+        .iter()
+        .find(|permission| permission.code == code)
 }
 
 pub async fn require_workflow_window_management_access(
