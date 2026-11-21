@@ -21,6 +21,7 @@ members = [
     "crates/school-certificates-http",
     "crates/school-auth-http",
     "crates/school-notifications",
+    "crates/school-notifications-http",
     "crates/school-navigation",
     "crates/school-errors",
     "crates/school-http",
@@ -35,6 +36,7 @@ members = [
     "crates/school-workflow",
     "crates/school-workflow-http",
     "crates/school-question-bank",
+    "crates/school-question-bank-http",
     "crates/school-admission",
     "crates/school-supervision",
     "crates/school-students",
@@ -132,6 +134,7 @@ school-academic-lifecycle = { path = "crates/school-academic-lifecycle" }
 school-workflow = { path = "crates/school-workflow" }
 school-workflow-http = { path = "crates/school-workflow-http" }
 school-question-bank = { path = "crates/school-question-bank" }
+school-question-bank-http = { path = "crates/school-question-bank-http" }
 school-admission = { path = "crates/school-admission" }
 school-supervision = { path = "crates/school-supervision" }
 school-students = { path = "crates/school-students" }
@@ -147,6 +150,7 @@ school-certificates = { path = "crates/school-certificates" }
 school-navigation = { path = "crates/school-navigation" }
 
 school-notifications = { path = "crates/school-notifications" }
+school-notifications-http = { path = "crates/school-notifications-http" }
 
 school-auth-http = { path = "crates/school-auth-http" }
 
@@ -207,7 +211,9 @@ api-docs = [
     "school-http/api-docs",
     "school-navigation/api-docs",
     "school-notifications/api-docs",
+    "school-notifications-http/api-docs",
     "school-question-bank/api-docs",
+    "school-question-bank-http/api-docs",
     "school-staff/api-docs",
     "school-students/api-docs",
     "school-supervision/api-docs",
@@ -270,6 +276,7 @@ school-academic-lifecycle = { workspace = true }
 school-workflow = { workspace = true }
 school-workflow-http = { workspace = true }
 school-question-bank = { workspace = true }
+school-question-bank-http = { workspace = true }
 school-admission = { workspace = true }
 school-supervision = { workspace = true }
 school-students = { workspace = true }
@@ -286,6 +293,7 @@ school-certificates = { workspace = true }
 school-navigation = { workspace = true }
 
 school-notifications = { workspace = true }
+school-notifications-http = { workspace = true }
 
 school-auth-http = { workspace = true }
 

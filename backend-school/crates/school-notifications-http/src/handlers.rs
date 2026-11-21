@@ -1,9 +1,4 @@
-use crate::events::TenantNotificationEvent;
-use crate::events::WorkChangeEvent;
-use crate::http::state::NotificationHttpState;
-use crate::models::ListNotificationsQuery;
-use crate::models::{RegisterPushDeviceRequest, UnregisterPushDeviceQuery};
-use crate::services as notification_service;
+use crate::state::NotificationHttpState;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{
     extract::{Extension, Path, Query, State},
@@ -23,6 +18,11 @@ use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]
 use school_http::{ApiErrorResponse, EmptyData};
+use school_notifications::events::{TenantNotificationEvent, WorkChangeEvent};
+use school_notifications::models::{
+    ListNotificationsQuery, RegisterPushDeviceRequest, UnregisterPushDeviceQuery,
+};
+use school_notifications::{devices, services as notification_service};
 use std::{convert::Infallible, future::Future, time::Duration};
 use tokio::{
     sync::broadcast,
@@ -196,7 +196,7 @@ where
     tag = "notifications",
     params(ListNotificationsQuery),
     responses(
-        (status = 200, description = "Current user's notifications", body = ApiResponse<crate::models::ListNotificationsResponse>),
+        (status = 200, description = "Current user's notifications", body = ApiResponse<school_notifications::models::ListNotificationsResponse>),
         (status = 401, description = "Authentication required", body = ApiErrorResponse)
     )
 ))]
@@ -287,30 +287,30 @@ pub async fn stream_notifications(
     Ok(response)
 }
 
-#[cfg_attr(feature="api-docs", utoipa::path(get,path="/api/notifications/push/config",operation_id="getPushConfig",tag="notifications",responses((status=200,description="Current Web Push key and admission limits",body=ApiResponse<crate::models::PushConfigResponse>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs", utoipa::path(get,path="/api/notifications/push/config",operation_id="getPushConfig",tag="notifications",responses((status=200,description="Current Web Push key and admission limits",body=ApiResponse<school_notifications::models::PushConfigResponse>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
 pub async fn push_config(
     Extension(_session): Extension<AuthenticatedSession>,
 ) -> impl IntoResponse {
-    Json(ApiResponse::ok(crate::devices::push_config()))
+    Json(ApiResponse::ok(devices::push_config()))
 }
 
-#[cfg_attr(feature="api-docs", utoipa::path(get,path="/api/notifications/push/devices",operation_id="listPushDevices",tag="notifications",responses((status=200,description="Current user's active Push device bindings",body=ApiResponse<crate::models::ListPushDevicesResponse>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs", utoipa::path(get,path="/api/notifications/push/devices",operation_id="listPushDevices",tag="notifications",responses((status=200,description="Current user's active Push device bindings",body=ApiResponse<school_notifications::models::ListPushDevicesResponse>),(status=401,description="Authentication required",body=ApiErrorResponse))))]
 pub async fn list_push_devices(
     Extension(session): Extension<AuthenticatedSession>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = current_user_tenant_context_from_session(&session);
     Ok(Json(ApiResponse::ok(
-        crate::devices::list(&context.tenant.pool, context.user_id).await?,
+        devices::list(&context.tenant.pool, context.user_id).await?,
     )))
 }
-#[cfg_attr(feature="api-docs", utoipa::path(post,path="/api/notifications/push/devices",operation_id="registerPushDevice",tag="notifications",request_body=RegisterPushDeviceRequest,responses((status=200,description="Registered or refreshed this installation binding",body=ApiResponse<crate::models::PushDevice>),(status=400,description="Invalid endpoint, label or crypto keys",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=409,description="Key or binding changed, or device limit reached",body=ApiErrorResponse),(status=503,description="Push configuration unavailable",body=ApiErrorResponse))))]
+#[cfg_attr(feature="api-docs", utoipa::path(post,path="/api/notifications/push/devices",operation_id="registerPushDevice",tag="notifications",request_body=RegisterPushDeviceRequest,responses((status=200,description="Registered or refreshed this installation binding",body=ApiResponse<school_notifications::models::PushDevice>),(status=400,description="Invalid endpoint, label or crypto keys",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=409,description="Key or binding changed, or device limit reached",body=ApiErrorResponse),(status=503,description="Push configuration unavailable",body=ApiErrorResponse))))]
 pub async fn register_push_device(
     Extension(session): Extension<AuthenticatedSession>,
     Json(request): Json<RegisterPushDeviceRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = current_user_tenant_context_from_session(&session);
     Ok(Json(ApiResponse::ok(
-        crate::devices::register(
+        devices::register(
             &context.tenant.pool,
             context.user_id,
             session.session_id,
@@ -326,7 +326,7 @@ pub async fn unregister_push_device(
     Query(query): Query<UnregisterPushDeviceQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let context = current_user_tenant_context_from_session(&session);
-    crate::devices::unregister(&context.tenant.pool, context.user_id, id, query.version).await?;
+    devices::unregister(&context.tenant.pool, context.user_id, id, query.version).await?;
     Ok(Json(ApiResponse::empty_with_message("Push device revoked")))
 }
 
@@ -359,12 +359,12 @@ mod tests {
     }
 
     fn event_receivers() -> (
-        broadcast::Sender<crate::events::TenantNotificationEvent>,
-        broadcast::Receiver<crate::events::TenantNotificationEvent>,
-        broadcast::Sender<school_auth::events::PermissionChangeEvent>,
-        broadcast::Receiver<school_auth::events::PermissionChangeEvent>,
-        broadcast::Sender<crate::events::WorkChangeEvent>,
-        broadcast::Receiver<crate::events::WorkChangeEvent>,
+        broadcast::Sender<TenantNotificationEvent>,
+        broadcast::Receiver<TenantNotificationEvent>,
+        broadcast::Sender<PermissionChangeEvent>,
+        broadcast::Receiver<PermissionChangeEvent>,
+        broadcast::Sender<WorkChangeEvent>,
+        broadcast::Receiver<WorkChangeEvent>,
         broadcast::Sender<SessionRevocationEvent>,
         broadcast::Receiver<SessionRevocationEvent>,
     ) {
@@ -429,7 +429,7 @@ mod tests {
                         .send(TenantNotificationEvent::new(
                             "other",
                             Uuid::new_v4(),
-                            crate::models::Notification {
+                            school_notifications::models::Notification {
                                 id: Uuid::new_v4(),
                                 title: "private".into(),
                                 message: "private".into(),

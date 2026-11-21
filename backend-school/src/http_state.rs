@@ -152,7 +152,7 @@ impl FromRef<AppState> for school_navigation::http::state::NavigationHttpState {
     }
 }
 
-impl FromRef<AppState> for school_notifications::http::state::NotificationHttpState {
+impl FromRef<AppState> for school_notifications_http::state::NotificationHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -240,7 +240,7 @@ impl FromRef<AppState> for school_admission::http::state::AdmissionHttpState {
     }
 }
 
-impl FromRef<AppState> for school_question_bank::http::state::QuestionBankHttpState {
+impl FromRef<AppState> for school_question_bank_http::state::QuestionBankHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),

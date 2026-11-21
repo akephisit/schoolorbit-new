@@ -231,8 +231,8 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_notifications::http::routes::protected_routes().with_state(
-                school_notifications::http::state::NotificationHttpState::from_ref(state),
+            school_notifications_http::routes::protected_routes().with_state(
+                school_notifications_http::state::NotificationHttpState::from_ref(state),
             ),
         )
         .nest(
@@ -322,8 +322,8 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
                 )
                 .nest(
                     "/question-bank",
-                    school_question_bank::http::routes::question_bank_routes().with_state(
-                        school_question_bank::http::state::QuestionBankHttpState::from_ref(state),
+                    school_question_bank_http::routes::question_bank_routes().with_state(
+                        school_question_bank_http::state::QuestionBankHttpState::from_ref(state),
                     ),
                 ),
         )

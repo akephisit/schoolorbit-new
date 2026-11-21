@@ -182,11 +182,11 @@ fn application_route_source() -> String {
             "school_navigation::http::",
         ),
         (
-            "school_notifications::http::routes::protected_routes",
-            "crates/school-notifications/src/http/routes.rs",
+            "school_notifications_http::routes::protected_routes",
+            "crates/school-notifications-http/src/routes.rs",
             "protected_routes",
             "/api",
-            "school_notifications::http::",
+            "school_notifications_http::",
         ),
         (
             "school_files_http::http::routes::public_routes",
@@ -448,11 +448,11 @@ fn application_route_source() -> String {
             "school_admission::http::",
         ),
         (
-            "school_question_bank::http::routes::question_bank_routes",
-            "crates/school-question-bank/src/http/routes.rs",
+            "school_question_bank_http::routes::question_bank_routes",
+            "crates/school-question-bank-http/src/routes.rs",
             "question_bank_routes",
             "/api/academic/question-bank",
-            "school_question_bank::http::",
+            "school_question_bank_http::",
         ),
         (
             "school_attendance::http::routes::protected_routes",
@@ -1174,29 +1174,37 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         ),
         (
             "school-notifications",
+            &["school-database", "school-errors", "school-tenancy"],
+        ),
+        (
+            "school-notifications-http",
             &[
                 "school-auth",
                 "school-auth-http",
-                "school-authorization",
-                "school-database",
-                "school-errors",
                 "school-http",
-                "school-tenancy",
+                "school-notifications",
             ],
         ),
         ("school-permissions", &[]),
         (
             "school-question-bank",
             &[
-                "school-auth",
-                "school-auth-http",
                 "school-authorization",
                 "school-database",
                 "school-errors",
                 "school-file-contracts",
+                "school-tenancy",
+            ],
+        ),
+        (
+            "school-question-bank-http",
+            &[
+                "school-auth",
+                "school-auth-http",
+                "school-file-contracts",
                 "school-file-platform",
                 "school-http",
-                "school-tenancy",
+                "school-question-bank",
             ],
         ),
         (
@@ -2749,7 +2757,7 @@ fn people_and_platform_handlers_use_typed_session_identity() {
         "crates/school-files-http/src/http/handlers.rs",
         "crates/school-navigation/src/http/handlers/admin.rs",
         "crates/school-navigation/src/http/handlers/public.rs",
-        "crates/school-notifications/src/http/handlers.rs",
+        "crates/school-notifications-http/src/handlers.rs",
         "crates/school-students/src/parents/http/handlers.rs",
         "crates/school-administration/src/settings/http/handlers.rs",
         "crates/school-staff-http/src/http/handlers/organization_delegations.rs",
@@ -2856,7 +2864,7 @@ fn remaining_vertical_handlers_use_typed_session_identity() {
         "crates/school-admission/src/http/handlers/selections.rs",
         "crates/school-calendar/src/http/handlers.rs",
         "crates/school-administration/src/facility/http/handlers.rs",
-        "crates/school-question-bank/src/http/handlers.rs",
+        "crates/school-question-bank-http/src/handlers.rs",
         "crates/school-supervision/src/http/handlers.rs",
         "crates/school-workflow-http/src/http/work_handlers.rs",
         "crates/school-workflow-http/src/http/handlers.rs",
@@ -2905,7 +2913,7 @@ fn only_auth_boundary_parses_browser_session_credentials() {
 #[test]
 fn notification_sse_binds_stream_lifetime_to_authoritative_session() {
     let source =
-        read_source(manifest_dir().join("crates/school-notifications/src/http/handlers.rs"));
+        read_source(manifest_dir().join("crates/school-notifications-http/src/handlers.rs"));
     let handler = extract_braced_block(&source, "pub async fn stream_notifications", false);
 
     let notification_subscribe = handler
@@ -3821,6 +3829,7 @@ fn module_rs_files() -> Vec<PathBuf> {
         "crates/school-files-http/src",
         "crates/school-navigation/src",
         "crates/school-notifications/src",
+        "crates/school-notifications-http/src",
         "crates/school-administration/src",
         "crates/school-students/src/http",
         "crates/school-students/src/parents",
@@ -3828,7 +3837,7 @@ fn module_rs_files() -> Vec<PathBuf> {
         "crates/school-staff/src/achievement",
         "crates/school-supervision/src/http",
         "crates/school-admission/src/http",
-        "crates/school-question-bank/src/http",
+        "crates/school-question-bank-http/src",
         "crates/school-fonts/src/http",
         "crates/school-calendar/src/http",
         "crates/school-calendar/src/delivery",
@@ -7781,7 +7790,7 @@ fn academic_router_codegen_stays_with_its_concrete_http_state() {
         .get(1)
         .expect("question-bank router");
     assert!(question_bank_router
-        .starts_with("school_question_bank::http::routes::question_bank_routes().with_state("));
+        .starts_with("school_question_bank_http::routes::question_bank_routes().with_state("));
     let state_bindings = extract_method_invocations(
         question_bank_router,
         &lexical_mask(question_bank_router, false),
@@ -7790,7 +7799,7 @@ fn academic_router_codegen_stays_with_its_concrete_http_state() {
     assert_eq!(state_bindings.len(), 1);
     assert_eq!(
         state_bindings[0].arguments,
-        ["school_question_bank::http::state::QuestionBankHttpState::from_ref(state)"]
+        ["school_question_bank_http::state::QuestionBankHttpState::from_ref(state)"]
     );
 }
 
@@ -8006,7 +8015,7 @@ fn permission_invalidation_guard_ignores_comment_and_string_decoys() {
 fn permission_change_sse_supports_user_targeted_and_broadcast_invalidation() {
     let event_source = read_source(workspace_crate_dir("school-auth").join("src/events.rs"));
     let notification_handler =
-        read_source(manifest_dir().join("crates/school-notifications/src/http/handlers.rs"));
+        read_source(manifest_dir().join("crates/school-notifications-http/src/handlers.rs"));
     let app_state = read_source(workspace_crate_dir("school-auth").join("src/runtime.rs"));
 
     for expected in [
@@ -8039,7 +8048,7 @@ fn work_change_sse_supports_work_item_and_window_refresh_signals() {
     let event_source =
         read_source(manifest_dir().join("crates/school-notifications/src/events.rs"));
     let notification_handler =
-        read_source(manifest_dir().join("crates/school-notifications/src/http/handlers.rs"));
+        read_source(manifest_dir().join("crates/school-notifications-http/src/handlers.rs"));
     let app_state =
         read_source(workspace_crate_dir("school-workflow-http").join("src/http/state.rs"));
     let work_handler =
@@ -9128,7 +9137,7 @@ fn question_bank_authorization_lives_in_policy_and_supports_team_teaching() {
         workspace_crate_dir("school-question-bank").join("src/access_policy.rs"),
     ));
     let handlers = strip_comments(&read_source(
-        manifest_dir().join("crates/school-question-bank/src/http/handlers.rs"),
+        manifest_dir().join("crates/school-question-bank-http/src/handlers.rs"),
     ));
     let services = strip_comments(&read_source(
         workspace_crate_dir("school-question-bank").join("src/services.rs"),
@@ -9165,7 +9174,7 @@ fn question_bank_subject_contract_and_temporary_file_lifecycle_are_explicit() {
     ));
     let cleaner = strip_comments(&read_source(manifest_dir().join("src/services/cleaner.rs")));
     let routes = strip_comments(&read_source(
-        manifest_dir().join("crates/school-question-bank/src/http/routes.rs"),
+        manifest_dir().join("crates/school-question-bank-http/src/routes.rs"),
     ));
 
     assert!(migration.contains("CHECK (subject_id IS NOT NULL) NOT VALID"));
@@ -9502,7 +9511,7 @@ fn file_platform_domain_relationships_own_attachment_and_lifecycle_deletion() {
         "crates/school-admission/src/http/handlers/applications.rs",
         "crates/school-admission/src/http/handlers/portal.rs",
         "crates/school-admission/src/http/handlers/rounds.rs",
-        "crates/school-question-bank/src/http/handlers.rs",
+        "crates/school-question-bank-http/src/handlers.rs",
         "src/adapters/auth_profile.rs",
         "crates/school-staff-http/src/http/handlers/staff.rs",
         "crates/school-staff-http/src/achievement/handlers.rs",
@@ -10990,7 +10999,7 @@ fn notification_inbox_first_has_one_acceptance_owner_and_irreversible_presentati
             "retired transport state {retired}"
         )
     }
-    let routes = read_source(manifest_dir().join("crates/school-notifications/src/http/routes.rs"));
+    let routes = read_source(manifest_dir().join("crates/school-notifications-http/src/routes.rs"));
     assert!(!routes.contains("create_notification"));
     assert!(!routes.contains("subscribe_push"));
     for endpoint in [

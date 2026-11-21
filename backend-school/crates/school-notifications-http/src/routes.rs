@@ -1,10 +1,11 @@
 use super::handlers;
-use crate::http::state::NotificationHttpState;
+use crate::state::NotificationHttpState;
 use axum::{
     routing::{delete, get, post},
     Router,
 };
 
+#[inline(never)]
 pub fn protected_routes() -> Router<NotificationHttpState> {
     Router::new()
         .route("/notifications/stream", get(handlers::stream_notifications))

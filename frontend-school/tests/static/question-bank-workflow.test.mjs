@@ -178,10 +178,10 @@ test('question bank exports selected questions with editable native Word Math eq
 	const serverExporter = await readProjectFile('src/lib/question-bank/word-export.server.ts');
 	const viteConfig = await readProjectFile('vite.config.ts');
 	const backendRoutes = await readProjectFile(
-		'../backend-school/crates/school-question-bank/src/http/routes.rs'
+		'../backend-school/crates/school-question-bank-http/src/routes.rs'
 	);
 	const backendHandlers = await readProjectFile(
-		'../backend-school/crates/school-question-bank/src/http/handlers.rs'
+		'../backend-school/crates/school-question-bank-http/src/handlers.rs'
 	);
 	const backendServices = await readProjectFile(
 		'../backend-school/crates/school-question-bank/src/services.rs'

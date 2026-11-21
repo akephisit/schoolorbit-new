@@ -6,11 +6,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::http::state::QuestionBankHttpState;
-use crate::models::{QuestionBankExportDataRequest, QuestionBankListQuery, UpsertQuestionRequest};
-#[cfg(feature = "api-docs")]
-use crate::models::{QuestionBankOptions, QuestionBankPage, QuestionDetail};
-use crate::{access_policy as question_bank_access_policy, services as question_bank_service};
+use crate::state::QuestionBankHttpState;
 use school_auth::session_service::AuthenticatedSession;
 use school_auth_http::context::actor_tenant_context_from_session;
 use school_file_contracts::access as file_access_policy;
@@ -22,6 +18,14 @@ use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]
 use school_http::{ApiErrorResponse, EmptyData};
+use school_question_bank::models::{
+    QuestionBankExportDataRequest, QuestionBankListQuery, UpsertQuestionRequest,
+};
+#[cfg(feature = "api-docs")]
+use school_question_bank::models::{QuestionBankOptions, QuestionBankPage, QuestionDetail};
+use school_question_bank::{
+    access_policy as question_bank_access_policy, services as question_bank_service,
+};
 
 #[cfg_attr(feature = "api-docs", utoipa::path(
     get,

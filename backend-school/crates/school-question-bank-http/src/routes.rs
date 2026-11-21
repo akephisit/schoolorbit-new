@@ -1,8 +1,9 @@
 use super::handlers;
-use crate::http::state::QuestionBankHttpState;
+use crate::state::QuestionBankHttpState;
 use axum::routing::{get, post};
 use axum::Router;
 
+#[inline(never)]
 pub fn question_bank_routes() -> Router<QuestionBankHttpState> {
     Router::new()
         .route("/options", get(handlers::list_options))
