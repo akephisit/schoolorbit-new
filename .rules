@@ -66,6 +66,7 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - An ownership move names the new owner, public contract and dependency direction in the working agreement, reconciles persisted work and invariants, updates affected consumers, and retires the old active implementation. Revalidate producer/consumer behavior and recovery before cutover; do not leave parallel authoritative paths. Record the reason and affected guarantees for a justified boundary exception. These decisions follow the user's authorized scope and the existing conflict rules; they do not introduce an additional approval checkpoint or authorize unrelated behavior changes.
 - Choose examples by matching responsibility, authorization scope, and workflow, not by proximity, age, or file size alone. Inspect their callers and tests and confirm they comply with the current rules. For a full-stack change, trace the actual handler/service/DTO/API-wrapper/loader/component path instead of combining unrelated examples.
 - Keep that agreement stable across files and turns: naming, module placement, imports, response/error handling, validation, state ownership, and UI controls must follow the selected owners. Do not introduce a second pattern halfway through the change because it is easier locally.
+- When changing a reusable pattern, identify the complete set of equivalent owners across the applicable project scope. Use one convention for file layout, ownership, dependency direction, and tests across those peers. Record genuine differences in responsibility and the reason each needs a different boundary. For a sliced rollout, track the complete set, sequencing, and exit checks in the same draft PR. Reconcile every planned peer before calling the transition complete. A narrow behavior fix can reuse the existing convention within its owner. Avoid new variants and unrelated scope changes.
 - When new evidence requires a different pattern, explain the evidence and update the agreement before dependent edits. Reconcile all already-changed consumers in the same coherent change, update this file only if the durable convention changed, and rerun affected checks. Pattern consistency must not preserve an incorrect or unsafe design.
 - Keep existing domain vocabulary. Rust symbols and SQL identifiers follow their owning layer's convention; JSON field names follow the actual wire contract; TypeScript names and component props follow their feature owner. Do not invent parallel names or manually rename generated fields to match a local preference.
 - Use the owning formatter for mechanical style and preserve unrelated files. Do not upgrade or substitute libraries incidentally; apply the dependency and toolchain upgrade policy below when that work is in scope.
@@ -346,7 +347,7 @@ For each endpoint, establish this flow before writing code: router/session middl
 | Responsibility | School owner and rule |
 | --- | --- |
 | Startup and router composition | [Application router](backend-school/src/app.rs) and application-owned state. Register the route under the existing authentication/tenant boundary; do not create a feature-local auth flow. |
-| HTTP transport | The owning domain crate's `http/handlers.rs`, or its existing dedicated HTTP crate. Read [timetable handlers](backend-school/crates/school-academic-timetable-http/src/handlers/timetable_blocks.rs) for narrow HTTP state and typed service calls, or [calendar request handlers](backend-school/crates/school-calendar/src/http/request_handlers.rs) for a domain-owned transport. Neither is a license to copy an unrelated feature's state or permissions. |
+| HTTP transport | The dedicated HTTP crate owns typed handlers, route factories, and narrow HTTP state. [Timetable handlers](backend-school/crates/school-academic-timetable-http/src/handlers/timetable_blocks.rs) show transport calling the typed domain service with concrete state. Use the state and permissions of the actual resource owner. |
 | Business rules and persistence | The existing domain crate's typed models, policy, and service operations. Read [calendar requests](backend-school/crates/school-calendar/src/requests.rs) for validation, bounded reads, and transactional decisions. Keep related small capabilities as modules within their existing domain owner. |
 | Resource scope | The owning domain policy or existing application policy. [Staff access policy](backend-school/crates/school-staff/src/staff_access_policy.rs) illustrates reuse of the shared resource policy and separate PII access; select the policy matching the actual resource. |
 | Cross-domain side effects | Producers accept inbox notifications through `school-notifications::dispatch::create_in_transaction` inside the business transaction. [Calendar workflow](backend-school/crates/school-calendar/src/delivery/request_workflow.rs) only wakes presentation after commit; source-validity adapters live in application composition without a notification dependency back to Calendar. |
@@ -371,10 +372,19 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   before the shared session middleware. This keeps handler futures, extractors and response
   encoding in the owning HTTP crate rather than regenerating them in the executable. Global
   prefixes, public/protected partitioning and cross-domain assembly remain application-owned.
-- Keep feature HTTP handlers, route factories, DTOs and policies with their domain owner, normally
-  under `crates/<owner>/src/http/`. Existing dedicated Academic, Certificate, Auth, Staff and File HTTP
-  crates retain transport composition where importing it into a lower provider would create a
-  dependency cycle. Do not retain production feature facades in the executable.
+- Place standalone domain HTTP composition in `crates/school-<domain>-http`. Use top-level
+  `src/handlers.rs`, `src/routes.rs`, and `src/state.rs`; split them into submodules for cohesive
+  route groups when needed. Keep service operations, domain DTOs, resource policies, and persistence
+  in the business crate. The HTTP companion owns extractors, request and response transport types,
+  route declarations, and transport-only dependencies, and calls the domain's narrow typed APIs.
+  Keep imports directed from HTTP to the domain or existing shared providers. Retire old domain
+  HTTP modules on each slice. The draft PR tracks any domain-owned transports still awaiting this
+  split, through completion of the full cohort.
+- Keep established shared HTTP owners and their existing layouts where they already satisfy those
+  boundaries. Staff HTTP composes Staff, Achievement, Leave, and FileTransfer. Shared Auth HTTP and
+  School HTTP retain their existing responsibilities. A directory move in an existing companion
+  requires an actual boundary or ownership need. Do not retain production feature facades in the
+  executable.
 - Group related small capabilities as modules in an existing cohesive owner. Parents belongs to
   Students, Achievement to Staff, Work to Workflow, and menu/feature/route registration to Navigation.
   School administration owns its settings, facility, supply-catalog and lookup modules. Global
