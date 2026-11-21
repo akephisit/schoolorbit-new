@@ -1043,23 +1043,22 @@ pub async fn history(
     Ok(history)
 }
 pub async fn scan(
-    context: &school_auth_http::context::ActorTenantContext,
+    pool: &school_tenancy::TenantPool,
+    tenant: &str,
+    actor: &ActorContext,
     p: AttendanceScan,
 ) -> Result<AttendanceScanOutcome, AppError> {
     let file = p.evidence_file_id;
     let outcome = async {
-        let seed = if sessions::get_optional(&context.tenant.pool, p.session_id)
-            .await?
-            .is_none()
-        {
-            Some(resolve_seed(&context.tenant.pool, &p.session).await?)
+        let seed = if sessions::get_optional(pool, p.session_id).await?.is_none() {
+            Some(resolve_seed(pool, &p.session).await?)
         } else {
             None
         };
         crate::services::faces::scan_with_seed_and_cached_gallery(
-            &context.tenant.pool,
-            &context.tenant.subdomain,
-            &context.actor,
+            pool,
+            tenant,
+            actor,
             p.clone(),
             seed,
         )
@@ -1079,10 +1078,10 @@ pub async fn scan(
         )
     {
         let cleanup=async{
- let mut tx=school_tenancy::TenantPool::begin_observed(&context.tenant.pool, "attendance.evidence_cleanup").await?;
+ let mut tx=school_tenancy::TenantPool::begin_observed(pool, "attendance.evidence_cleanup").await?;
  DbSession::new(&mut *tx).query("attendance.src.application.scan", "SELECT id FROM files WHERE id=$1 FOR UPDATE").bind(file).execute().await?;
- let disposable:bool=DbSession::new(&mut *tx).scalar("attendance.src.application.scan", "SELECT EXISTS(SELECT 1 FROM files f WHERE f.id=$1 AND f.purpose_code='attendance_evidence' AND f.created_by=$2 AND NOT EXISTS(SELECT 1 FROM attendance_scan_events e WHERE e.evidence_file_id=f.id))").bind(file).bind(context.actor.user_id).fetch_one().await?;
- if disposable{school_file_platform::repository::SqlFileRepository::new(context.tenant.pool.as_ref().clone()).request_delete_in_transaction(&mut tx,file).await.map_err(|_|AppError::ServiceUnavailable("เตรียมล้างภาพชั่วคราวไม่ได้".into()))?;}tx.commit().await?;Ok::<_,AppError>(())}.await;
+ let disposable:bool=DbSession::new(&mut *tx).scalar("attendance.src.application.scan", "SELECT EXISTS(SELECT 1 FROM files f WHERE f.id=$1 AND f.purpose_code='attendance_evidence' AND f.created_by=$2 AND NOT EXISTS(SELECT 1 FROM attendance_scan_events e WHERE e.evidence_file_id=f.id))").bind(file).bind(actor.user_id).fetch_one().await?;
+ if disposable{school_file_platform::repository::SqlFileRepository::new(pool.as_ref().clone()).request_delete_in_transaction(&mut tx,file).await.map_err(|_|AppError::ServiceUnavailable("เตรียมล้างภาพชั่วคราวไม่ได้".into()))?;}tx.commit().await?;Ok::<_,AppError>(())}.await;
         if cleanup.is_err() {
             tracing::warn!(
                 error_code = "attendance_orphan_cleanup_pending",

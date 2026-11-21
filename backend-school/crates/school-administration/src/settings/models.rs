@@ -4,12 +4,6 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Debug, Default, Deserialize)]
-pub struct PublicSchoolIconQuery {
-    #[serde(default)]
-    pub size: school_file_contracts::platform_types::PublicSchoolIconSize,
-}
-
 #[derive(Debug, FromRow)]
 pub struct SchoolSettingsRow {
     pub logo_file_id: Option<Uuid>,
@@ -20,12 +14,6 @@ pub struct SchoolSettingsRow {
 #[serde(rename_all = "camelCase")]
 pub struct SchoolSettingsResponse {
     #[cfg_attr(feature = "api-docs", schema(required = true))]
-    pub logo_file_id: Option<Uuid>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateSchoolSettingsRequest {
     pub logo_file_id: Option<Uuid>,
 }
 

@@ -9,7 +9,7 @@ use school_auth::{
     session_service::AuthenticatedSession,
 };
 use school_authorization::PermissionCache;
-use school_students::http::{routes, state::StudentHttpState};
+use school_students_http::{routes, state::StudentHttpState};
 use school_tenancy::{AdminClient, AdminClientConfig, PoolManager, TenantContext};
 use school_test_db::{create_named_test_pool, run_test_migrations};
 use serde_json::{json, Value};

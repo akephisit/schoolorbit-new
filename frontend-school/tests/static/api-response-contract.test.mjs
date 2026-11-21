@@ -689,7 +689,7 @@ test('daily teaching overview API uses typed response contracts', async () => {
 
 test('admission application detail contract returns application and documents in data', async () => {
 	const backendHandler = await readRepoFile(
-		'backend-school/crates/school-admission/src/http/handlers/applications.rs'
+		'backend-school/crates/school-admission-http/src/handlers/applications.rs'
 	);
 	const examRoomService = await readRepoFile(
 		'backend-school/crates/school-admission/src/services/exam_room_service.rs'
@@ -970,6 +970,15 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	const supervisionWorkspace = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
+	const supervisionRequestReview = await readRepoFile(
+		'frontend-school/src/lib/supervision/request-review.svelte.ts'
+	);
+	const supervisionLessonPicker = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionLessonPicker.svelte'
+	);
+	const supervisionReview = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionRequestReview.svelte'
+	);
 
 	assert.match(supervisionApi, /export\s+type\s+SupervisionObservationStatus/);
 	assert.match(
@@ -985,37 +994,45 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /listSupervisionCycles/);
 	assert.match(supervisionWorkspace, /requestSupervisionObservation/);
 	assert.match(supervisionWorkspace, /updateSupervisionCycle/);
-	assert.match(supervisionWorkspace, /approveSupervisionObservationRequest/);
+	assert.match(supervisionWorkspace, /createSupervisionRequestReview\(\{/);
+	assert.match(
+		supervisionRequestReview,
+		/approveSupervisionObservationRequest\(id, \{ evaluators \}\)/
+	);
 	assert.match(supervisionWorkspace, /submitMySupervisionEvaluation/);
 	assert.doesNotMatch(supervisionWorkspace, /saveMySupervisionEvaluation/);
 	assert.match(supervisionWorkspace, /acknowledgeSupervisionObservation/);
-	assert.match(supervisionWorkspace, /getMyTimetable/);
-	assert.match(supervisionWorkspace, /academicTermId:\s*termId/);
 	assert.match(
 		supervisionWorkspace,
-		/date:\s*cycle\s*\?\s*defaultBookingWeekStartDate\(cycle\)\s*:\s*currentLocalDate\(\)/
-	);
-	assert.match(supervisionWorkspace, /\{ signal \}/);
-	assert.match(supervisionWorkspace, /entry\.academicTermId === termId/);
-	assert.match(supervisionWorkspace, /timetableGridDays/);
-	assert.match(supervisionWorkspace, /timetablePeriodRows/);
-	assert.match(supervisionWorkspace, /selectTimetableBlockGroup/);
-	assert.match(supervisionWorkspace, /entry\.periodName/);
-	assert.doesNotMatch(supervisionWorkspace, /period_name\?\.match\(/);
-	assert.match(supervisionWorkspace, /class="overflow-x-auto rounded-md border"/);
-	assert.match(
-		supervisionWorkspace,
-		/<Table\.Head\s+class="sticky left-0 z-10 w-\[112px\] bg-background"[\s\S]*>วัน<\/Table\.Head/
+		/<SupervisionLessonPicker\s+cycle=\{currentBookingCycle\}\s+\{academicYearId\}\s+\{academicTermId\}/
 	);
 	assert.match(
-		supervisionWorkspace,
-		/<Table\.Header>[\s\S]*\{#each timetablePeriodRows\(\) as row \(row\.key\)\}/
+		supervisionLessonPicker,
+		/getSupervisionBookingOptions\(\s*\{ cycleId: cycle\.id, academicYearId, academicTermId, weekStartDate \},\s*\{ signal: ticket\.signal \}/
 	);
 	assert.match(
-		supervisionWorkspace,
-		/<Table\.Body>[\s\S]*\{#each bookingWeekDays as day \(day\.value\)\}/
+		supervisionLessonPicker,
+		/clampedBookingWeek\(cycle\.observationStartDate!, cycle\.observationEndDate!, initialDate\)/
 	);
-	assert.match(supervisionWorkspace, /formatShortDate\(day\.date\)/);
+	assert.match(
+		supervisionLessonPicker,
+		/!request\.isCurrent\(ticket\.revision\)[\s\S]*sourceContext !== ownerKey\(\)/
+	);
+	assert.match(supervisionLessonPicker, /onclick=\{\(\) => startSelection\(item\)\}/);
+	assert.match(supervisionLessonPicker, /aria-pressed=\{chosen\}/);
+	assert.match(supervisionLessonPicker, /item\.periodName/);
+	assert.doesNotMatch(supervisionLessonPicker, /period_name\?\.match\(/);
+	assert.match(supervisionLessonPicker, /class="overflow-x-auto rounded-xl border"/);
+	assert.match(
+		supervisionLessonPicker,
+		/<Table\.Head\s+class="sticky left-0 z-10 w-28 bg-background">วันที่<\/Table\.Head/
+	);
+	assert.match(
+		supervisionLessonPicker,
+		/<Table\.Header[\s\S]*\{#each periods as period \(period\.key\)\}/
+	);
+	assert.match(supervisionLessonPicker, /<Table\.Body[\s\S]*\{#each days as day \(day\)\}/);
+	assert.match(supervisionLessonPicker, /bookingDateLabel\(\s*day\s*\)/);
 	assert.doesNotMatch(
 		supervisionWorkspace,
 		/grid gap-2 md:hidden[\s\S]*timetableBlockGroupsForSelectedCycle/
@@ -1067,15 +1084,22 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /async function retryObservations/);
 	assert.doesNotMatch(supervisionWorkspace, /onMount\(/);
 
-	assert.match(supervisionWorkspace, /getSupervisionEvaluatorAvailability/);
-	assert.match(supervisionWorkspace, /requestEvaluatorAvailability/);
+	assert.match(supervisionWorkspace, /<SupervisionRequestReview[\s\S]*review=\{requestReview\}/);
+	assert.match(supervisionReview, /if \(pickerOpen\) void review\.loadAvailability\(id\)/);
+	assert.match(
+		supervisionRequestReview,
+		/await getSupervisionEvaluatorAvailability\(id, \{ signal \}\)/
+	);
 	assert.doesNotMatch(supervisionWorkspace, /lookupStaff/);
 	assert.match(supervisionWorkspace, /getAcademicContextStore/);
 	assert.match(supervisionWorkspace, /academicContextOptions/);
 	assert.match(supervisionWorkspace, /\* as Select/);
 	assert.match(supervisionWorkspace, /\* as Dialog/);
 	assert.match(supervisionWorkspace, /\* as Table/);
-	assert.match(supervisionWorkspace, /\* as Alert/);
+	assert.match(
+		supervisionReview,
+		/<PageState\s+variant="error"[\s\S]*description=\{draft\.error\}[\s\S]*onaction=\{\(\) => void review\.loadAvailability\(id\)\}/
+	);
 	assert.match(supervisionWorkspace, /Progress/);
 	assert.doesNotMatch(supervisionWorkspace, /<select\b/);
 	assert.doesNotMatch(supervisionWorkspace, /type="datetime-local"/);
@@ -1155,7 +1179,7 @@ test('admission exam-room mutations return typed data and patch local state', as
 		'frontend-school/src/routes/(app)/staff/academic/admission/[id]/exam-rooms/+page.svelte'
 	);
 	const examRoomsHandler = await readRepoFile(
-		'backend-school/crates/school-admission/src/http/handlers/exam_rooms.rs'
+		'backend-school/crates/school-admission-http/src/handlers/exam_rooms.rs'
 	);
 
 	assert.match(admissionApi, /addExamRoom[\s\S]*apiClient\.post<ExamRoom>/);

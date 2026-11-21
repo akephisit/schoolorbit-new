@@ -6,11 +6,8 @@ edition.workspace = true
 [features]
 api-docs = [
     "school-file-contracts/api-docs",
-    "school-http/api-docs",
-    "school-auth/api-docs",
     "dep:utoipa",
     "school-academic-core/api-docs",
-    "school-file-platform/api-docs",
 ]
 
 [dependencies]
@@ -18,16 +15,11 @@ school-file-contracts = { workspace = true }
 school-tenancy = { workspace = true }
 school-database = { workspace = true }
 school-authorization = { workspace = true }
-school-http = { workspace = true }
-school-auth-http = { workspace = true }
-school-auth = { workspace = true }
-axum = { workspace = true }
 bcrypt = { workspace = true }
 chrono = { workspace = true }
 school-academic-core = { workspace = true }
 school-crypto = { workspace = true }
 school-errors = { workspace = true }
-school-file-platform = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }

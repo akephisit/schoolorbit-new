@@ -4,7 +4,6 @@ pub mod services;
 pub mod target_options;
 
 pub mod delivery;
-pub mod http;
 
 mod permission_codes_generated;
 

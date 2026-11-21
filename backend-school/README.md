@@ -14,9 +14,10 @@ The tenant data-plane API serves school workflows. It resolves the school from e
 ## Workspace
 
 `Cargo.toml` is the application package and workspace root. Domain crates own models, services,
-resource policies and concrete HTTP handlers. A typical owner has `src/models.rs`, `src/services.rs`
-and `src/http/{state,routes,handlers}.rs`. Related smaller capabilities remain modules within that
-owner. See the [workspace manifest](Cargo.toml) for the crate inventory.
+resource policies and persistence. A standalone `school-<domain>-http` companion owns concrete
+handlers, routes and narrow state in `src/{handlers,routes,state}.rs` and their submodules.
+The companion calls typed domain APIs. Related capabilities stay grouped under their existing
+domain or shared HTTP owner. See the [workspace manifest](Cargo.toml) for the crate inventory.
 
 `src/main.rs` starts the process and prepares dependencies. `src/http_state.rs` selects narrow,
 cloneable HTTP state with `FromRef`; no domain accepts full `AppState` or imports the executable.
@@ -59,9 +60,9 @@ and consumers retain their own missing-name denial messages.
 
 Parents lives within Students, Achievement within Staff, Work within Workflow, and menu, feature
 toggles and route registration within Navigation. `school-administration` keeps settings, facility,
-supply catalog and lookup as separate modules. Each owner returns its existing typed responses;
-`src/api_contract.rs` composes the offline OpenAPI document and forwards the optional `api-docs`
-feature without adding metadata dependencies to production.
+supply catalog and lookup as separate modules within its domain and HTTP owners. Each transport
+returns typed responses. `src/api_contract.rs` composes the offline OpenAPI document through the
+optional `api-docs` feature, which production builds leave disabled.
 
 Timetable requests current teacher subject-group affiliations through its `StaffDirectoryPort`.
 The application adapter calls Staff's authoritative bounded query using the request's tenant pool;
@@ -114,8 +115,9 @@ Approved cancellation uses a separate audited approval process. Its route comes 
 
 
 `school-notifications` accepts authoritative inboxes through typed transactional bulk creation.
-Producers own recipient snapshots, content, idempotency and schedules; application composition
-provides source guards. A small pending presentation reference is consumed before independent
+`school-notifications-http` owns the authenticated inbox, device, and SSE endpoints. Producers
+own recipient snapshots, content, idempotency and schedules. Application composition provides
+source guards. A small pending presentation reference is consumed before independent
 SSE/Push attempts and is never retried after an uncertain result. Canonical hashed receipts retain
 business/source identities and terminal outcomes; read state remains inbox-owned. Authenticated
 Push devices use runtime VAPID configuration, session ownership, expiry and exact-version cleanup.

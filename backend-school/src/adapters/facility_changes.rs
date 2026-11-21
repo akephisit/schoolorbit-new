@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use school_academic_timetable_http::websockets::WebSocketManager;
-use school_administration::http::state::FacilityResourceChangePort;
+use school_administration_http::state::FacilityResourceChangePort;
 use uuid::Uuid;
 
 pub(crate) struct ApplicationFacilityChanges(pub Arc<WebSocketManager>);

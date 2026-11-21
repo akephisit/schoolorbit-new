@@ -121,7 +121,7 @@ impl Fixture {
         };
         let files =
             Arc::new(crate::integration_tests::staff::career_integration_tests::file_platform());
-        let administration = school_administration::http::state::AdministrationHttpState {
+        let administration = school_administration_http::state::AdministrationHttpState {
             auth_runtime: auth.runtime.clone(),
             file_platform: files.clone(),
             facility_changes: Arc::new(
@@ -143,7 +143,7 @@ impl Fixture {
             .nest("/api/academic", academic)
             .nest(
                 "/api/facilities",
-                school_administration::facility::http::routes::facility_routes()
+                school_administration_http::routes::facility::facility_routes()
                     .with_state(administration),
             )
             .nest(

@@ -269,19 +269,3 @@ pub struct ListStudentsQuery {
     pub registration_status: Option<StudentRegistrationStatus>,
     pub account_status: Option<String>,
 }
-
-#[derive(Debug, Default, Deserialize)]
-#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
-#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct StudentRegisterQuery {
-    pub academic_year_id: Option<Uuid>,
-}
-
-#[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
-#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct StudentAcademicYearQuery {
-    pub academic_year_id: Uuid,
-}

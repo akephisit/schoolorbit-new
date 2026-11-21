@@ -5,13 +5,11 @@ edition.workspace = true
 
 [features]
 api-docs = [
-    "school-calendar/api-docs",
-    "school-academic-timetable/api-docs",
-    "school-academic-assessment/api-docs",
-    "school-http/api-docs",
-    "school-auth/api-docs",
     "dep:utoipa",
+    "school-academic-assessment/api-docs",
     "school-academic-core/api-docs",
+    "school-academic-timetable/api-docs",
+    "school-calendar/api-docs",
 ]
 
 [dependencies]
@@ -21,10 +19,7 @@ school-calendar = { workspace = true }
 school-academic-timetable = { workspace = true }
 school-academic-assessment = { workspace = true }
 school-authorization = { workspace = true }
-school-http = { workspace = true }
-school-auth-http = { workspace = true }
 school-auth = { workspace = true }
-axum = { workspace = true }
 bcrypt = { workspace = true }
 chrono = { workspace = true }
 school-academic-core = { workspace = true }

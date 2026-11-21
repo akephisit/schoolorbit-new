@@ -2,8 +2,6 @@ pub mod file_relationships;
 pub mod models;
 pub mod services;
 
-pub mod http;
-
 mod permission_codes_generated;
 
 #[cfg(test)]

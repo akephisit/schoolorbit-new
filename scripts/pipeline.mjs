@@ -98,7 +98,7 @@ try {
         if (/^utoipa(?:-gen)? v/m.test(productionDependencies)) throw new Error('Production dependency graph must exclude Utoipa');
         run('cargo', ['test', '--test', 'database_execution_architecture', '--test', 'static_architecture', '--locked'], cwd);
         run('cargo', ['test', '-p', 'school-database', '-p', 'school-errors', '-p', 'school-http', '--locked'], cwd);
-        run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-core-http', '-p', 'school-academic-delivery-http', '-p', 'school-academic-assessment-http', '-p', 'school-academic-timetable-http', '-p', 'school-academic-results-http', '-p', 'school-academic-lifecycle-http', '-p', 'school-academic-realtime', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-file-contracts', '-p', 'school-staff-http', '-p', 'school-staff-file-transfer', '-p', 'school-workflow-http', '--lib', '--locked'], cwd);
+        run('cargo', ['test', '-p', 'school-academic-assessment', '-p', 'school-auth-http', '-p', 'school-academic-core-http', '-p', 'school-academic-delivery-http', '-p', 'school-academic-assessment-http', '-p', 'school-academic-timetable-http', '-p', 'school-academic-results-http', '-p', 'school-academic-lifecycle-http', '-p', 'school-academic-realtime', '-p', 'school-certificates-http', '-p', 'school-notifications', '-p', 'school-notifications-http', '-p', 'school-file-contracts', '-p', 'school-staff-http', '-p', 'school-staff-file-transfer', '-p', 'school-workflow-http', '--lib', '--locked'], cwd);
         run('cargo', ['build', '--bin', 'backend-school', '--locked'], cwd);
         const executable = path.join(metadata.target_directory, 'debug', 'backend-school');
         const unsupportedExport = spawnSync('env', ['-i', `PATH=${process.env.PATH}`, `HOME=${process.env.HOME}`, executable, 'export-openapi'], { cwd, encoding: 'utf8' });
@@ -109,6 +109,7 @@ try {
         for (const contractTest of ['gradebook_review_group_phase_contract_uses_phase_codes', 'learner_endpoint_contract_requires_full_context_and_typed_domains', 'results_endpoint_contract_requires_exact_context_and_typed_envelopes']) {
           run('cargo', ['test', '--bin', 'backend-school', '--features', 'api-docs', contractTest, '--locked'], cwd);
         }
+        run('cargo', ['test', '-p', 'school-budget-http', '--features', 'api-docs', '--lib', '--locked', 'handlers::contract_tests::budget_query_contract_matches_registered_extractors', '--', '--exact'], cwd);
         for (const schemaTest of ['career::schema_tests::career_schema_codes_match_serialized_values', 'personnel::tests::personnel_schema_enum_matches_serialized_codes']) {
           run('cargo', ['test', '-p', 'school-staff', '--features', 'api-docs', schemaTest, '--locked', '--', '--exact'], cwd);
         }

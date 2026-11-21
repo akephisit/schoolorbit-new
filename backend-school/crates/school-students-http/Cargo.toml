@@ -1,0 +1,33 @@
+[package]
+name = "school-students-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-assessment/api-docs",
+    "school-academic-core/api-docs",
+    "school-academic-timetable/api-docs",
+    "school-calendar/api-docs",
+    "school-http/api-docs",
+    "school-students/api-docs",
+]
+
+[dependencies]
+axum = { workspace = true }
+chrono = { workspace = true }
+school-academic-assessment = { workspace = true, optional = true }
+school-academic-core = { workspace = true }
+school-academic-timetable = { workspace = true, optional = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-calendar = { workspace = true }
+school-http = { workspace = true }
+school-students = { workspace = true }
+serde = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

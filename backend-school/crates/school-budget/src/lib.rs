@@ -2,7 +2,6 @@
 pub mod adjustments;
 pub mod deletion;
 pub mod files;
-pub mod http;
 pub mod models;
 pub mod money;
 pub mod policy;

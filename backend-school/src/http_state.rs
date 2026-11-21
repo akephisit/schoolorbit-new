@@ -109,7 +109,7 @@ impl FromRef<AppState> for CertificateHttpState {
     }
 }
 
-impl FromRef<AppState> for school_students::http::state::StudentHttpState {
+impl FromRef<AppState> for school_students_http::state::StudentHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             placement_rosters: &PLACEMENT_ROSTERS,
@@ -118,7 +118,7 @@ impl FromRef<AppState> for school_students::http::state::StudentHttpState {
     }
 }
 
-impl FromRef<AppState> for school_fonts::http::state::FontHttpState {
+impl FromRef<AppState> for school_fonts_http::state::FontHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -136,7 +136,7 @@ impl FromRef<AppState> for school_staff_http::http::state::StaffHttpState {
     }
 }
 
-impl FromRef<AppState> for school_supervision::http::state::SupervisionHttpState {
+impl FromRef<AppState> for school_supervision_http::state::SupervisionHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -144,7 +144,7 @@ impl FromRef<AppState> for school_supervision::http::state::SupervisionHttpState
     }
 }
 
-impl FromRef<AppState> for school_navigation::http::state::NavigationHttpState {
+impl FromRef<AppState> for school_navigation_http::state::NavigationHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -172,7 +172,7 @@ impl FromRef<AppState> for school_workflow_http::http::state::WorkflowHttpState 
     }
 }
 
-impl FromRef<AppState> for school_calendar::http::state::CalendarHttpState {
+impl FromRef<AppState> for school_calendar_http::state::CalendarHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -194,7 +194,7 @@ impl FromRef<AppState> for school_auth_http::http::state::AuthHttpState {
     }
 }
 
-impl FromRef<AppState> for school_administration::http::state::AdministrationHttpState {
+impl FromRef<AppState> for school_administration_http::state::AdministrationHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -208,7 +208,7 @@ impl FromRef<AppState> for school_administration::http::state::AdministrationHtt
     }
 }
 
-impl FromRef<AppState> for school_attendance::http::state::AttendanceHttpState {
+impl FromRef<AppState> for school_attendance_http::state::AttendanceHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -218,7 +218,7 @@ impl FromRef<AppState> for school_attendance::http::state::AttendanceHttpState {
     }
 }
 
-impl FromRef<AppState> for school_behavior::http::state::BehaviorHttpState {
+impl FromRef<AppState> for school_behavior_http::state::BehaviorHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             runtime: &crate::adapters::behavior::APPLICATION_BEHAVIOR,
@@ -229,7 +229,7 @@ impl FromRef<AppState> for school_behavior::http::state::BehaviorHttpState {
     }
 }
 
-impl FromRef<AppState> for school_admission::http::state::AdmissionHttpState {
+impl FromRef<AppState> for school_admission_http::state::AdmissionHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             placement_rosters: &PLACEMENT_ROSTERS,
@@ -276,7 +276,7 @@ impl FromRef<AppState> for school_auth::runtime::AuthRuntime {
     }
 }
 
-impl FromRef<AppState> for school_student_care::http::state::StudentCareHttpState {
+impl FromRef<AppState> for school_student_care_http::state::StudentCareHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),
@@ -293,7 +293,7 @@ impl FromRef<AppState> for school_staff_http::leave::LeaveHttpState {
     }
 }
 
-impl FromRef<AppState> for school_budget::http::BudgetHttpState {
+impl FromRef<AppState> for school_budget_http::state::BudgetHttpState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_runtime: state.auth_runtime.clone(),

@@ -21,7 +21,7 @@ test("UI, service, docs, tests and control changes have separate verification/de
   );
   assert.deepEqual(
     classify([
-      "backend-school/crates/school-navigation/src/http/handlers/admin.rs",
+      "backend-school/crates/school-navigation-http/src/handlers/admin.rs",
     ]).deploy,
     ["backend-school"],
   );

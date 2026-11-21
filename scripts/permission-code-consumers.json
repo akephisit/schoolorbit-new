@@ -359,14 +359,6 @@
   },
   "school-administration": {
     "production": [
-      "FACILITY_CREATE_ALL",
-      "FACILITY_DELETE_ALL",
-      "FACILITY_READ_ALL",
-      "FACILITY_UPDATE_ALL",
-      "ROLES_ASSIGN_ALL",
-      "ROLES_READ_ALL",
-      "SETTINGS_READ_ALL",
-      "SETTINGS_UPDATE_ALL",
       "SUPPLY_CATALOG_APPROVE_SCHOOL",
       "SUPPLY_CATALOG_MANAGE_SCHOOL",
       "SUPPLY_CATALOG_READ_SCHOOL",
@@ -377,7 +369,19 @@
       "SUPPLY_CATALOG_REQUEST_OWN"
     ]
   },
-  "school-admission": {
+  "school-administration-http": {
+    "production": [
+      "FACILITY_CREATE_ALL",
+      "FACILITY_DELETE_ALL",
+      "FACILITY_READ_ALL",
+      "FACILITY_UPDATE_ALL",
+      "ROLES_ASSIGN_ALL",
+      "ROLES_READ_ALL",
+      "SETTINGS_READ_ALL",
+      "SETTINGS_UPDATE_ALL"
+    ]
+  },
+  "school-admission-http": {
     "production": [
       "ADMISSION_ENROLL_ALL",
       "ADMISSION_MANAGE_ALL",
@@ -397,8 +401,7 @@
       "ATTENDANCE_READ_SCHOOL",
       "ATTENDANCE_UPDATE_ASSIGNED",
       "ATTENDANCE_UPDATE_SCHOOL",
-      "ATTENDANCE_VERIFY_ASSIGNED",
-      "BEHAVIOR_MANAGE_SCHOOL"
+      "ATTENDANCE_VERIFY_ASSIGNED"
     ],
     "unitTests": [
       "ATTENDANCE_DELETE_SCHOOL",
@@ -406,6 +409,13 @@
       "ATTENDANCE_READ_OWN",
       "ATTENDANCE_UPDATE_ASSIGNED",
       "ATTENDANCE_UPDATE_SCHOOL"
+    ]
+  },
+  "school-attendance-http": {
+    "production": [
+      "ATTENDANCE_DELETE_SCHOOL",
+      "ATTENDANCE_MANAGE_SCHOOL",
+      "BEHAVIOR_MANAGE_SCHOOL"
     ]
   },
   "school-authorization": {
@@ -465,6 +475,11 @@
         "BEHAVIOR_READ_SCHOOL"
       ]
     }
+  },
+  "school-behavior-http": {
+    "production": [
+      "BEHAVIOR_MANAGE_SCHOOL"
+    ]
   },
   "school-budget": {
     "production": [
@@ -527,6 +542,12 @@
       "CALENDAR_MANAGE_SCHOOL",
       "CALENDAR_READ_SCHOOL",
       "CALENDAR_REQUEST_OWN"
+    ]
+  },
+  "school-calendar-http": {
+    "production": [
+      "CALENDAR_MANAGE_SCHOOL",
+      "CALENDAR_READ_SCHOOL"
     ]
   },
   "school-certificates": {
@@ -605,6 +626,14 @@
     ]
   },
   "school-navigation": {
+    "unitTests": [
+      "ACADEMIC_CURRICULUM_READ_SCHOOL",
+      "CERTIFICATE_READ_ORGANIZATION_UNIT",
+      "CERTIFICATE_READ_OWN",
+      "CERTIFICATE_READ_SCHOOL"
+    ]
+  },
+  "school-navigation-http": {
     "production": [
       "FEATURES_READ_ALL",
       "FEATURES_UPDATE_ALL",
@@ -612,12 +641,6 @@
       "MENU_DELETE_ALL",
       "MENU_READ_ALL",
       "MENU_UPDATE_ALL"
-    ],
-    "unitTests": [
-      "ACADEMIC_CURRICULUM_READ_SCHOOL",
-      "CERTIFICATE_READ_ORGANIZATION_UNIT",
-      "CERTIFICATE_READ_OWN",
-      "CERTIFICATE_READ_SCHOOL"
     ]
   },
   "school-question-bank": {
@@ -754,15 +777,12 @@
   },
   "school-students": {
     "production": [
-      "STUDENT_CREATE_ALL",
-      "STUDENT_DELETE_ALL",
       "STUDENT_PII_READ_ASSIGNED",
       "STUDENT_PII_READ_OWN",
       "STUDENT_PII_READ_SCHOOL",
       "STUDENT_READ_ASSIGNED",
       "STUDENT_READ_OWN",
-      "STUDENT_READ_SCHOOL",
-      "STUDENT_UPDATE_ALL"
+      "STUDENT_READ_SCHOOL"
     ],
     "unitTests": [
       "ACADEMIC_TERM_MANAGE_SCHOOL",
@@ -779,6 +799,13 @@
         "STUDENT_READ_OWN"
       ]
     }
+  },
+  "school-students-http": {
+    "production": [
+      "STUDENT_CREATE_ALL",
+      "STUDENT_DELETE_ALL",
+      "STUDENT_UPDATE_ALL"
+    ]
   },
   "school-supervision": {
     "production": [

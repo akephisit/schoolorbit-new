@@ -10,4 +10,3 @@ pub const ATTENDANCE_READ_SCHOOL: &str = "attendance.read.school";
 pub const ATTENDANCE_UPDATE_ASSIGNED: &str = "attendance.update.assigned";
 pub const ATTENDANCE_UPDATE_SCHOOL: &str = "attendance.update.school";
 pub const ATTENDANCE_VERIFY_ASSIGNED: &str = "attendance.verify.assigned";
-pub const BEHAVIOR_MANAGE_SCHOOL: &str = "behavior.manage.school";
