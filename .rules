@@ -378,8 +378,7 @@ Backend-admin equivalents are [router](backend-admin/src/app.rs), [handlers](bac
   in the business crate. The HTTP companion owns extractors, request and response transport types,
   route declarations, and transport-only dependencies, and calls the domain's narrow typed APIs.
   Keep imports directed from HTTP to the domain or existing shared providers. Retire old domain
-  HTTP modules on each slice. The draft PR tracks any domain-owned transports still awaiting this
-  split, through completion of the full cohort.
+  HTTP modules on each slice.
 - Keep established shared HTTP owners and their existing layouts where they already satisfy those
   boundaries. Staff HTTP composes Staff, Achievement, Leave, and FileTransfer. Shared Auth HTTP and
   School HTTP retain their existing responsibilities. A directory move in an existing companion

@@ -2324,7 +2324,7 @@ checks; never point these fixtures at a tenant database:
 
 ```bash
 ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh --package school-student-care -- --test-threads=1
-./scripts/test_backend_school.sh concrete_student_care_routes -- --test-threads=1
+ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh concrete_student_care_routes -- --test-threads=1
 ```
 
 From `frontend-school`, run the feature helpers and route-loading guards, then the
