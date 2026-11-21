@@ -1459,6 +1459,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
     let file_platform = read_source(workspace_crate_dir("school-file-platform").join("Cargo.toml"));
     let crypto = read_source(workspace_crate_dir("school-crypto").join("Cargo.toml"));
     let fonts = read_source(workspace_crate_dir("school-fonts").join("Cargo.toml"));
+    let fonts_http = read_source(workspace_crate_dir("school-fonts-http").join("Cargo.toml"));
     let certificates = read_source(workspace_crate_dir("school-certificates").join("Cargo.toml"));
     let test_db = read_source(workspace_crate_dir("school-test-db").join("Cargo.toml"));
     let authorization_source = list_files(
@@ -1601,19 +1602,19 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         .expect("crypto manifest must keep dependency sections");
     assert!(!crypto_dependencies.contains("school-"));
     assert!(crypto.contains("test-support = []"));
-    let font_dependencies = fonts
-        .split("[dependencies]")
-        .nth(1)
-        .and_then(|rest| rest.split("[dev-dependencies]").next())
-        .expect("font manifest must keep dependency sections");
+    let font_dependencies = school_dependencies_in_section(&fonts, "dependencies");
     for required in [
         "school-authorization",
         "school-errors",
-        "school-file-platform",
+        "school-file-contracts",
     ] {
         assert!(font_dependencies.contains(required));
     }
     assert!(!font_dependencies.contains("school-certificates"));
+    assert!(!font_dependencies.contains("school-file-platform"));
+    let font_http_dependencies = school_dependencies_in_section(&fonts_http, "dependencies");
+    assert!(font_http_dependencies.contains("school-fonts"));
+    assert!(font_http_dependencies.contains("school-file-platform"));
     let certificate_dependencies = certificates
         .split("[dependencies]")
         .nth(1)
@@ -8374,8 +8375,8 @@ fn teaching_supervision_handlers_use_request_context_and_services() {
 
 #[test]
 fn teaching_supervision_observation_detail_actions_are_registered() {
-    let handler = strip_comments(&read_source(
-        manifest_dir().join("crates/school-supervision-http/src/handlers.rs"),
+    let routes = strip_comments(&read_source(
+        manifest_dir().join("crates/school-supervision-http/src/routes.rs"),
     ));
     let models = strip_comments(&read_source(
         manifest_dir().join("crates/school-supervision/src/models.rs"),
@@ -8392,12 +8393,12 @@ fn teaching_supervision_observation_detail_actions_are_registered() {
     );
 
     for expected in [
-        "patch(update_observation)",
-        "put(replace_observation_evaluators)",
-        "post(cancel_observation)",
+        "patch(handlers::update_observation)",
+        "put(handlers::replace_observation_evaluators)",
+        "post(handlers::cancel_observation)",
     ] {
         assert!(
-            handler.contains(expected),
+            routes.contains(expected),
             "missing supervision observation detail route/action {expected}"
         );
     }
