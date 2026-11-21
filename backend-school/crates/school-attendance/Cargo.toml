@@ -7,8 +7,6 @@ api-docs = [
     "school-file-contracts/api-docs",
     "school-academic-delivery/api-docs",
     "school-academic-timetable/api-docs",
-    "school-http/api-docs",
-    "school-auth/api-docs",
     "dep:utoipa",
     "school-academic-core/api-docs",
     "school-file-platform/api-docs",
@@ -25,10 +23,6 @@ tokio = { workspace = true }
 school-academic-timetable = { workspace = true }
 school-tenancy = { workspace = true }
 school-notifications = { workspace = true }
-school-http = { workspace = true }
-school-auth-http = { workspace = true }
-school-auth = { workspace = true }
-axum = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
 serde = { workspace = true }

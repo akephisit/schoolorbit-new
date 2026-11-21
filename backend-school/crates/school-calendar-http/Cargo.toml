@@ -1,0 +1,27 @@
+[package]
+name = "school-calendar-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "school-calendar/api-docs",
+    "school-http/api-docs",
+    "school-auth/api-docs",
+    "dep:utoipa",
+]
+
+[dependencies]
+axum = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-calendar = { workspace = true }
+school-http = { workspace = true }
+school-notifications = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,29 @@
+[package]
+name = "school-behavior-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "school-behavior/api-docs",
+    "school-http/api-docs",
+    "school-auth/api-docs",
+    "dep:utoipa",
+]
+
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-behavior = { workspace = true }
+school-errors = { workspace = true }
+school-http = { workspace = true }
+school-notifications = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

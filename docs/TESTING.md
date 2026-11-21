@@ -295,19 +295,18 @@ cargo check --workspace --all-targets --features api-docs --locked
 cargo test --bin backend-school --features api-docs api_contract::tests -- --nocapture
 cargo test -p school-staff --features api-docs career::schema_tests
 cargo test -p school-staff --features api-docs personnel_schema_enum_matches_serialized_codes
+cargo test -p school-budget-http --features api-docs --lib --locked handlers::contract_tests::budget_query_contract_matches_registered_extractors -- --exact
 ```
 
-HTTP ownership can be checked independently with `cargo test -p school-auth-http`,
-`cargo test -p school-staff-http`, `cargo test -p school-staff-file-transfer`,
-`cargo test -p school-file-contracts`,
-the six `school-academic-{core,delivery,assessment,timetable,results,lifecycle}-http` packages,
-`cargo test -p school-academic-realtime`, `cargo test -p school-certificates-http`,
-`cargo test -p school-navigation`, and `cargo test -p school-notifications`.
-The backend pipeline's direct `--lib` unit batch includes all six Academic HTTP owners and
-the realtime contract. Timetable HTTP's socket/security units use memory, channels and a lazy
-invalid pool without database queries; run that unit batch once without a database wrapper.
-The other domain owners expose their concrete routes under `http`; changed owners also run
-through the disposable database wrapper when their tests need PostgreSQL.
+Select focused checks with `cargo test -p <http-owner>` and the paired business owner when their
+responsibilities change. The workspace manifest lists the six Academic HTTP companions, shared
+Auth, Staff, Files, Certificate and Workflow HTTP owners, and the Administration, Admission,
+Attendance, Behavior, Budget, Calendar, Fonts, Navigation, Notifications, Question Bank, Student
+Care, Students and Supervision HTTP companions. The backend pipeline's direct `--lib` batch
+includes all six Academic HTTP owners, the realtime contract, and both Notification owners.
+Timetable HTTP's socket/security units use memory, channels and a lazy invalid pool without
+database queries. Run that unit batch without a database wrapper. Use the disposable database
+wrapper for focused route or service cases that exercise PostgreSQL.
 The application owns `FromRef` state selection and injected realtime, result-lock,
 lifecycle, profile-update and file-deletion adapters. Architecture guards inspect the actual crate
 implementation paths; cross-domain/database fixtures retain application-level ownership in
@@ -441,7 +440,7 @@ For single-process tenant fairness, run the focused pure/concurrency checks from
 cargo test -p school-tenancy directory_cache::tests -- --test-threads=1
 cargo test -p school-tenancy background::tests -- --test-threads=1
 cargo test -p school-auth retention::tests -- --test-threads=1
-cargo test -p school-notifications http::handlers::tests -- --test-threads=1
+cargo test -p school-notifications-http handlers::tests -- --test-threads=1
 cargo test -p school-notifications runtime::tests -- --test-threads=1
 cargo test -p school-notifications publisher::tests -- --test-threads=1
 ```
@@ -1673,7 +1672,8 @@ cargo run --locked --features api-docs --bin backend-school -- export-openapi
 ```
 
 Local verification checks default and documentation-enabled workspace targets, runs the three
-domain endpoint-contract tests with `api-docs`, and compares generated JSON/TypeScript with Git.
+domain endpoint-contract tests and Budget HTTP's query-extractor contract with `api-docs`, and
+compares generated JSON and TypeScript with Git.
 
 Central catalog start-only revisions use disposable migration and service fixtures:
 
@@ -2066,7 +2066,7 @@ Session-cache and hidden-tab regressions can be exercised without a live tenant:
 
 ```bash
 ./scripts/test_backend_school.sh integration_tests::auth -- --nocapture --test-threads=1
-./scripts/test_backend_school.sh --package school-notifications http::handlers::tests -- --nocapture --test-threads=1
+./scripts/test_backend_school.sh --package school-notifications-http handlers::tests -- --nocapture --test-threads=1
 ./scripts/test_backend_school.sh --package school-academic-timetable-http websockets::security_tests -- --nocapture --test-threads=1
 cd frontend-school
 node --test tests/static/realtime-idle.test.mjs tests/static/notification-idle-runtime.test.mjs tests/static/auth-refresh-races.test.mjs tests/static/timetable-socket-runtime.test.mjs
@@ -2266,8 +2266,8 @@ source/reset progress, Calendar atomic reminders and 139→140 preservation/refu
 ./scripts/test_backend_school.sh --integration notification_inbox_first_migration -- --test-threads=1
 ```
 
-Owner pure checks include `cargo test -p school-notifications`, followed by the static architecture
-and database execution policy tests. Acceptance fixtures assert transactional rollback, immediate
+Owner pure checks include `cargo test -p school-notifications -p school-notifications-http`,
+followed by the static architecture and database execution policy tests. Acceptance fixtures assert transactional rollback, immediate
 inbox visibility, stable identity replay, payload/policy conflicts and preserved read timestamps.
 Presentation fixtures assert concurrent at-most-one consumption, no replay after process/network
 or finish uncertainty, recoverable unconsumed work, expired/cancelled/missing-inbox suppression and
@@ -2324,7 +2324,7 @@ checks; never point these fixtures at a tenant database:
 
 ```bash
 ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh --package school-student-care -- --test-threads=1
-./scripts/test_backend_school.sh concrete_student_care_routes -- --test-threads=1
+ENCRYPTION_KEY=$(openssl rand -hex 32) ./scripts/test_backend_school.sh concrete_student_care_routes -- --test-threads=1
 ```
 
 From `frontend-school`, run the feature helpers and route-loading guards, then the

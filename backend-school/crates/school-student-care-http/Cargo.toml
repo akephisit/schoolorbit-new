@@ -1,0 +1,25 @@
+[package]
+name = "school-student-care-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "school-student-care/api-docs",
+    "school-http/api-docs",
+    "school-auth/api-docs",
+    "dep:utoipa",
+]
+
+[dependencies]
+axum = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-http = { workspace = true }
+school-notifications = { workspace = true }
+school-student-care = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

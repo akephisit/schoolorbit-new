@@ -212,7 +212,7 @@ impl school_attendance::runtime::AttendanceBehaviorPort for ApplicationBehavior 
 }
 
 #[async_trait::async_trait]
-impl school_behavior::http::state::BehaviorResetPort for ApplicationBehavior {
+impl school_behavior_http::state::BehaviorResetPort for ApplicationBehavior {
     async fn reset_scores(
         &self,
         pool: &PgPool,
@@ -224,7 +224,7 @@ impl school_behavior::http::state::BehaviorResetPort for ApplicationBehavior {
 }
 
 #[async_trait::async_trait]
-impl school_behavior::http::state::BehaviorRuntimePort for ApplicationBehavior {
+impl school_behavior_http::state::BehaviorRuntimePort for ApplicationBehavior {
     async fn refresh_after_commit(
         &self,
         tenant: &str,

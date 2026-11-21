@@ -79,8 +79,8 @@ pub(crate) fn coverage_router(f: &ProtectedFixture) -> Router {
             },
         ))
         .merge(
-            school_navigation::http::routes::protected_system_routes().with_state(
-                school_navigation::http::state::NavigationHttpState {
+            school_navigation_http::routes::protected_system_routes().with_state(
+                school_navigation_http::state::NavigationHttpState {
                     auth_runtime: f.runtime.clone(),
                 },
             ),
@@ -96,8 +96,8 @@ pub(crate) fn coverage_router(f: &ProtectedFixture) -> Router {
         )
         .nest(
             "/supervision",
-            school_supervision::http::handlers::routes().with_state(
-                school_supervision::http::state::SupervisionHttpState {
+            school_supervision_http::routes::protected_routes().with_state(
+                school_supervision_http::state::SupervisionHttpState {
                     auth_runtime: f.runtime.clone(),
                 },
             ),
@@ -131,8 +131,8 @@ pub(crate) fn coverage_router(f: &ProtectedFixture) -> Router {
         .merge(school_academic_timetable_http::routes::academic_routes().with_state(timetable));
     let routes = routes.nest("/academic", academic).nest(
         "/admission",
-        school_admission::http::routes::admission_staff_routes().with_state(
-            school_admission::http::state::AdmissionHttpState {
+        school_admission_http::routes::admission_staff_routes().with_state(
+            school_admission_http::state::AdmissionHttpState {
                 auth_runtime: f.runtime.clone(),
                 placement_rosters: &crate::http_state::PLACEMENT_ROSTERS,
                 file_authorization: &school_files_http::FILE_AUTHORIZATION,

@@ -2,8 +2,6 @@ pub mod access_policy;
 pub mod models;
 pub mod services;
 
-pub mod http;
-
 mod permission_codes_generated;
 
 #[cfg(test)]

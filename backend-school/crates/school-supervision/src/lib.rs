@@ -2,7 +2,6 @@ pub mod models;
 pub mod services;
 
 pub mod access_policy;
-pub mod http;
 
 mod permission_codes_generated;
 

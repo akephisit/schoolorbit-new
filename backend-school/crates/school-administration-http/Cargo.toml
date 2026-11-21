@@ -1,0 +1,31 @@
+[package]
+name = "school-administration-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-academic-core/api-docs",
+    "school-administration/api-docs",
+    "school-file-contracts/api-docs",
+    "school-file-platform/api-docs",
+    "school-http/api-docs",
+]
+
+[dependencies]
+axum = { workspace = true }
+school-academic-core = { workspace = true, optional = true }
+school-administration = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-errors = { workspace = true }
+school-file-contracts = { workspace = true }
+school-file-platform = { workspace = true }
+school-http = { workspace = true }
+serde = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

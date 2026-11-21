@@ -1221,7 +1221,7 @@ pub(crate) mod protected_router {
     async fn behavior_refresh_runs_after_committed_settings_only() {
         struct RefreshProbe(AtomicUsize);
         #[async_trait::async_trait]
-        impl school_behavior::http::state::BehaviorRuntimePort for RefreshProbe {
+        impl school_behavior_http::state::BehaviorRuntimePort for RefreshProbe {
             async fn refresh_after_commit(
                 &self,
                 tenant: &str,
@@ -1267,16 +1267,14 @@ pub(crate) mod protected_router {
             .await;
         let (notification_channel, _) = broadcast::channel(8);
         let app = Router::new()
-            .merge(
-                school_behavior::http::routes::protected_routes().with_state(
-                    school_behavior::http::state::BehaviorHttpState {
-                        auth_runtime: fixture.runtime.clone(),
-                        notification_channel,
-                        reset: &crate::adapters::behavior::APPLICATION_BEHAVIOR,
-                        runtime: &REFRESH,
-                    },
-                ),
-            )
+            .merge(school_behavior_http::routes::protected_routes().with_state(
+                school_behavior_http::state::BehaviorHttpState {
+                    auth_runtime: fixture.runtime.clone(),
+                    notification_channel,
+                    reset: &crate::adapters::behavior::APPLICATION_BEHAVIOR,
+                    runtime: &REFRESH,
+                },
+            ))
             .route_layer(from_fn_with_state(
                 fixture.runtime.clone(),
                 session_middleware,
@@ -1515,8 +1513,8 @@ pub(crate) mod protected_router {
             .await;
         let app = Router::new()
             .merge(
-                school_student_care::http::routes::protected_routes().with_state(
-                    school_student_care::http::state::StudentCareHttpState {
+                school_student_care_http::routes::protected_routes().with_state(
+                    school_student_care_http::state::StudentCareHttpState {
                         auth_runtime: fixture.runtime.clone(),
                     },
                 ),

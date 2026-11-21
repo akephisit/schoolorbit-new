@@ -34,14 +34,14 @@ fn public_routes(state: &AppState) -> Router<AppState> {
         .route("/ready", get(system::handlers::health::readiness_check))
         .nest(
             "/api/admission",
-            school_admission::http::routes::admission_public_routes().with_state(
-                school_admission::http::state::AdmissionHttpState::from_ref(state),
+            school_admission_http::routes::admission_public_routes().with_state(
+                school_admission_http::state::AdmissionHttpState::from_ref(state),
             ),
         )
         .nest(
             "/api",
-            school_calendar::http::routes::public_routes().with_state(
-                school_calendar::http::state::CalendarHttpState::from_ref(state),
+            school_calendar_http::routes::public_routes().with_state(
+                school_calendar_http::state::CalendarHttpState::from_ref(state),
             ),
         )
         .nest(
@@ -69,14 +69,14 @@ fn public_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_administration::settings::http::routes::public_routes().with_state(
-                school_administration::http::state::AdministrationHttpState::from_ref(state),
+            school_administration_http::routes::settings::public_routes().with_state(
+                school_administration_http::state::AdministrationHttpState::from_ref(state),
             ),
         )
         .nest(
             "/api",
-            school_navigation::http::routes::public_system_routes()
-                .with_state(school_navigation::http::state::NavigationHttpState::from_ref(state)),
+            school_navigation_http::routes::public_system_routes()
+                .with_state(school_navigation_http::state::NavigationHttpState::from_ref(state)),
         )
         .nest(
             "/api",
@@ -127,8 +127,8 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_budget::http::routes()
-                .with_state(school_budget::http::BudgetHttpState::from_ref(state)),
+            school_budget_http::routes::protected_routes()
+                .with_state(school_budget_http::state::BudgetHttpState::from_ref(state)),
         )
         .nest(
             "/api",
@@ -155,8 +155,8 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_fonts::http::routes::protected_routes()
-                .with_state(school_fonts::http::state::FontHttpState::from_ref(state)),
+            school_fonts_http::routes::protected_routes()
+                .with_state(school_fonts_http::state::FontHttpState::from_ref(state)),
         )
         .nest(
             "/api",
@@ -165,14 +165,14 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_students::http::routes::protected_routes().with_state(
-                school_students::http::state::StudentHttpState::from_ref(state),
+            school_students_http::routes::protected_routes().with_state(
+                school_students_http::state::StudentHttpState::from_ref(state),
             ),
         )
         .nest(
             "/api",
-            school_students::parents::http::routes::protected_routes().with_state(
-                school_students::http::state::StudentHttpState::from_ref(state),
+            school_students_http::routes::parents::protected_routes().with_state(
+                school_students_http::state::StudentHttpState::from_ref(state),
             ),
         )
         .nest(
@@ -197,19 +197,19 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_calendar::http::routes::protected_routes().with_state(
-                school_calendar::http::state::CalendarHttpState::from_ref(state),
+            school_calendar_http::routes::protected_routes().with_state(
+                school_calendar_http::state::CalendarHttpState::from_ref(state),
             ),
         )
         .nest(
             "/api",
-            school_navigation::http::routes::protected_routes()
-                .with_state(school_navigation::http::state::NavigationHttpState::from_ref(state)),
+            school_navigation_http::routes::protected_routes()
+                .with_state(school_navigation_http::state::NavigationHttpState::from_ref(state)),
         )
         .nest(
             "/api",
-            school_navigation::http::routes::protected_system_routes()
-                .with_state(school_navigation::http::state::NavigationHttpState::from_ref(state)),
+            school_navigation_http::routes::protected_system_routes()
+                .with_state(school_navigation_http::state::NavigationHttpState::from_ref(state)),
         )
         .nest(
             "/api",
@@ -225,58 +225,54 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api",
-            school_administration::settings::http::routes::protected_routes().with_state(
-                school_administration::http::state::AdministrationHttpState::from_ref(state),
+            school_administration_http::routes::settings::protected_routes().with_state(
+                school_administration_http::state::AdministrationHttpState::from_ref(state),
             ),
         )
         .nest(
             "/api",
-            school_notifications::http::routes::protected_routes().with_state(
-                school_notifications::http::state::NotificationHttpState::from_ref(state),
+            school_notifications_http::routes::protected_routes().with_state(
+                school_notifications_http::state::NotificationHttpState::from_ref(state),
             ),
         )
         .nest(
             "/api",
-            school_administration::lookup::http::routes::protected_routes().with_state(
-                school_administration::http::state::AdministrationHttpState::from_ref(state),
+            school_administration_http::routes::lookup::protected_routes().with_state(
+                school_administration_http::state::AdministrationHttpState::from_ref(state),
             ),
         )
         .merge(
-            school_attendance::http::routes::protected_routes()
-                .with_state(school_attendance::http::state::AttendanceHttpState::from_ref(state)),
+            school_attendance_http::routes::protected_routes()
+                .with_state(school_attendance_http::state::AttendanceHttpState::from_ref(state)),
         )
         .merge(
-            school_student_care::http::routes::protected_routes().with_state(
-                school_student_care::http::state::StudentCareHttpState::from_ref(state),
-            ),
+            school_student_care_http::routes::protected_routes()
+                .with_state(school_student_care_http::state::StudentCareHttpState::from_ref(state)),
         )
-        .merge(
-            school_behavior::http::routes::protected_routes().with_state(
-                school_behavior::http::state::BehaviorHttpState::from_ref(state),
-            ),
-        )
+        .merge(school_behavior_http::routes::protected_routes().with_state(
+            school_behavior_http::state::BehaviorHttpState::from_ref(state),
+        ))
         .nest(
             "/api/supply-catalog",
-            school_administration::supply_catalog::http::routes::supply_catalog_routes()
-                .with_state(
-                    school_administration::http::state::AdministrationHttpState::from_ref(state),
-                ),
+            school_administration_http::routes::supply_catalog::supply_catalog_routes().with_state(
+                school_administration_http::state::AdministrationHttpState::from_ref(state),
+            ),
         )
         .nest(
             "/api/calendar",
-            school_calendar::http::routes::management_routes().with_state(
-                school_calendar::http::state::CalendarHttpState::from_ref(state),
+            school_calendar_http::routes::management_routes().with_state(
+                school_calendar_http::state::CalendarHttpState::from_ref(state),
             ),
         )
         .nest(
             "/api/supervision",
-            school_supervision::http::routes::protected_routes()
-                .with_state(school_supervision::http::state::SupervisionHttpState::from_ref(state)),
+            school_supervision_http::routes::protected_routes()
+                .with_state(school_supervision_http::state::SupervisionHttpState::from_ref(state)),
         )
         .nest(
             "/api/facilities",
-            school_administration::facility::http::routes::facility_routes().with_state(
-                school_administration::http::state::AdministrationHttpState::from_ref(state),
+            school_administration_http::routes::facility::facility_routes().with_state(
+                school_administration_http::state::AdministrationHttpState::from_ref(state),
             ),
         )
         .nest(
@@ -292,8 +288,8 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
         )
         .nest(
             "/api/admission",
-            school_admission::http::routes::admission_staff_routes().with_state(
-                school_admission::http::state::AdmissionHttpState::from_ref(state),
+            school_admission_http::routes::admission_staff_routes().with_state(
+                school_admission_http::state::AdmissionHttpState::from_ref(state),
             ),
         )
         .nest(
@@ -322,8 +318,8 @@ fn protected_routes(state: &AppState) -> Router<AppState> {
                 )
                 .nest(
                     "/question-bank",
-                    school_question_bank::http::routes::question_bank_routes().with_state(
-                        school_question_bank::http::state::QuestionBankHttpState::from_ref(state),
+                    school_question_bank_http::routes::question_bank_routes().with_state(
+                        school_question_bank_http::state::QuestionBankHttpState::from_ref(state),
                     ),
                 ),
         )

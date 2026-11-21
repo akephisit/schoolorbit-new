@@ -5,11 +5,7 @@ edition.workspace = true
 
 [features]
 test-support = ["school-tenancy/test-support"]
-api-docs = [
-    "school-http/api-docs",
-    "school-auth/api-docs",
-    "dep:utoipa",
-]
+api-docs = ["dep:utoipa"]
 
 [dependencies]
 school-database = { workspace = true }
@@ -18,14 +14,8 @@ sha2 = { workspace = true }
 reqwest = { workspace = true }
 url = { workspace = true }
 async-trait = { workspace = true }
-async-stream = { workspace = true }
 futures = { workspace = true }
-school-authorization = { workspace = true }
-school-http = { workspace = true }
-school-auth-http = { workspace = true }
-school-auth = { workspace = true }
 school-tenancy = { workspace = true }
-axum = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 school-errors = { workspace = true }
@@ -39,7 +29,6 @@ web-push = { workspace = true }
 
 [dev-dependencies]
 school-test-db = { workspace = true }
-school-auth = { workspace = true, features = ["test-support"] }
 
 [lints]
 workspace = true

@@ -74,7 +74,3 @@ pub mod selections {
         RoundRankingResult, TrackRankingEntry, TrackRankingResult,
     };
 }
-
-pub mod http;
-
-mod permission_codes_generated;

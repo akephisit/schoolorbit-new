@@ -780,7 +780,7 @@ test('student and parent history selectors use learner-scoped academic context e
 		'utf8'
 	);
 	const parentRoutes = await readFile(
-		path.join(repoRoot, 'backend-school/crates/school-students/src/parents/http/routes.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-students-http/src/routes/parents.rs'),
 		'utf8'
 	);
 	const coreHandlers = await readFile(
@@ -792,7 +792,7 @@ test('student and parent history selectors use learner-scoped academic context e
 		'utf8'
 	);
 	const parentHandlers = await readFile(
-		path.join(repoRoot, 'backend-school/crates/school-students/src/parents/http/handlers.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-students-http/src/handlers/parents.rs'),
 		'utf8'
 	);
 
@@ -808,7 +808,7 @@ test('student and parent history selectors use learner-scoped academic context e
 	assert.match(app, /\.nest\(\s*"\/api",\s*school_academic_core_http::routes::personal_routes\(\)/);
 	assert.match(
 		app,
-		/\.nest\(\s*"\/api",\s*school_students::parents::http::routes::protected_routes\(\)/
+		/\.nest\(\s*"\/api",\s*school_students_http::routes::parents::protected_routes\(\)/
 	);
 	assert.match(academicRoutes, /"\/me\/academic-context\/options"/);
 	assert.match(parentRoutes, /"\/parent\/academic-context\/options"/);
@@ -833,7 +833,7 @@ test('student and parent history selectors use learner-scoped academic context e
 test('admission round listing is scoped by the selected academic year', async () => {
 	const api = await readProjectFile('src/lib/api/admission.ts');
 	const handlers = await readFile(
-		path.join(repoRoot, 'backend-school/crates/school-admission/src/http/handlers/rounds.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-admission-http/src/handlers/rounds.rs'),
 		'utf8'
 	);
 	const service = await readFile(

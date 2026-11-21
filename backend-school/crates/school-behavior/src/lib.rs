@@ -3,7 +3,6 @@ pub mod models;
 pub mod rules;
 pub mod services;
 
-pub mod http;
 pub mod policy;
 
 mod permission_codes_generated;

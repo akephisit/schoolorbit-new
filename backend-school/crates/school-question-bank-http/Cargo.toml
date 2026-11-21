@@ -1,0 +1,25 @@
+[package]
+name = "school-question-bank-http"
+version.workspace = true
+edition.workspace = true
+
+[features]
+api-docs = [
+    "dep:utoipa",
+    "school-http/api-docs",
+    "school-question-bank/api-docs",
+]
+
+[dependencies]
+axum = { workspace = true }
+school-auth = { workspace = true }
+school-auth-http = { workspace = true }
+school-file-contracts = { workspace = true }
+school-file-platform = { workspace = true }
+school-http = { workspace = true }
+school-question-bank = { workspace = true }
+utoipa = { workspace = true, optional = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

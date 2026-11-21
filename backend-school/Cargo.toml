@@ -6,11 +6,16 @@ members = [
     "crates/school-staff-file-transfer",
     "crates/school-database",
     "crates/school-budget",
+    "crates/school-budget-http",
     "crates/school-student-care",
+    "crates/school-student-care-http",
     "crates/school-files-http",
     "crates/school-administration",
+    "crates/school-administration-http",
     "crates/school-attendance",
+    "crates/school-attendance-http",
     "crates/school-behavior",
+    "crates/school-behavior-http",
     "crates/school-academic-core-http",
     "crates/school-academic-delivery-http",
     "crates/school-academic-assessment-http",
@@ -21,7 +26,9 @@ members = [
     "crates/school-certificates-http",
     "crates/school-auth-http",
     "crates/school-notifications",
+    "crates/school-notifications-http",
     "crates/school-navigation",
+    "crates/school-navigation-http",
     "crates/school-errors",
     "crates/school-http",
     "crates/school-authorization",
@@ -35,16 +42,22 @@ members = [
     "crates/school-workflow",
     "crates/school-workflow-http",
     "crates/school-question-bank",
+    "crates/school-question-bank-http",
     "crates/school-admission",
+    "crates/school-admission-http",
     "crates/school-supervision",
+    "crates/school-supervision-http",
     "crates/school-students",
+    "crates/school-students-http",
     "crates/school-staff",
     "crates/school-calendar",
+    "crates/school-calendar-http",
     "crates/school-crypto",
     "crates/school-test-db",
     "crates/school-tenancy",
     "crates/school-file-platform",
     "crates/school-fonts",
+    "crates/school-fonts-http",
     "crates/school-certificates",
     "crates/school-migrations",
     "crates/school-permissions",
@@ -67,10 +80,13 @@ school-staff-file-transfer = { path = "crates/school-staff-file-transfer" }
 syn = { version = "=2.0.119", features = ["full", "visit"] }
 school-database = { path = "crates/school-database" }
 school-budget = { path = "crates/school-budget" }
+school-budget-http = { path = "crates/school-budget-http" }
 school-student-care = { path = "crates/school-student-care" }
+school-student-care-http = { path = "crates/school-student-care-http" }
 rustybuzz = "0.20.1"
 school-files-http = { path = "crates/school-files-http" }
 school-administration = { path = "crates/school-administration" }
+school-administration-http = { path = "crates/school-administration-http" }
 aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
 async-stream = "0.3.6"
 async-trait = "0.1.92"
@@ -132,21 +148,29 @@ school-academic-lifecycle = { path = "crates/school-academic-lifecycle" }
 school-workflow = { path = "crates/school-workflow" }
 school-workflow-http = { path = "crates/school-workflow-http" }
 school-question-bank = { path = "crates/school-question-bank" }
+school-question-bank-http = { path = "crates/school-question-bank-http" }
 school-admission = { path = "crates/school-admission" }
+school-admission-http = { path = "crates/school-admission-http" }
 school-supervision = { path = "crates/school-supervision" }
+school-supervision-http = { path = "crates/school-supervision-http" }
 school-students = { path = "crates/school-students" }
+school-students-http = { path = "crates/school-students-http" }
 school-staff = { path = "crates/school-staff" }
 school-calendar = { path = "crates/school-calendar" }
+school-calendar-http = { path = "crates/school-calendar-http" }
 school-crypto = { path = "crates/school-crypto" }
 school-test-db = { path = "crates/school-test-db" }
 school-tenancy = { path = "crates/school-tenancy" }
 school-file-platform = { path = "crates/school-file-platform" }
 school-fonts = { path = "crates/school-fonts" }
+school-fonts-http = { path = "crates/school-fonts-http" }
 school-certificates = { path = "crates/school-certificates" }
 
 school-navigation = { path = "crates/school-navigation" }
+school-navigation-http = { path = "crates/school-navigation-http" }
 
 school-notifications = { path = "crates/school-notifications" }
+school-notifications-http = { path = "crates/school-notifications-http" }
 
 school-auth-http = { path = "crates/school-auth-http" }
 
@@ -161,8 +185,10 @@ school-academic-lifecycle-http = { path = "crates/school-academic-lifecycle-http
 school-academic-realtime = { path = "crates/school-academic-realtime" }
 
 school-attendance = { path = "crates/school-attendance" }
+school-attendance-http = { path = "crates/school-attendance-http" }
 
 school-behavior = { path = "crates/school-behavior" }
+school-behavior-http = { path = "crates/school-behavior-http" }
 
 [package]
 name = "backend-school"
@@ -176,11 +202,14 @@ api-docs = [
     "school-staff-leave/api-docs",
     "school-staff-file-transfer/api-docs",
     "school-budget/api-docs",
+    "school-budget-http/api-docs",
     "school-student-care/api-docs",
+    "school-student-care-http/api-docs",
     "school-workflow/api-docs",
     "school-workflow-http/api-docs",
     "school-files-http/api-docs",
     "school-administration/api-docs",
+    "school-administration-http/api-docs",
     "dep:utoipa",
     "school-academic-assessment/api-docs",
     "school-academic-core/api-docs",
@@ -195,22 +224,32 @@ api-docs = [
     "school-academic-results/api-docs",
     "school-academic-timetable/api-docs",
     "school-admission/api-docs",
+    "school-admission-http/api-docs",
     "school-attendance/api-docs",
+    "school-attendance-http/api-docs",
     "school-auth/api-docs",
     "school-auth-http/api-docs",
     "school-behavior/api-docs",
+    "school-behavior-http/api-docs",
     "school-calendar/api-docs",
+    "school-calendar-http/api-docs",
     "school-certificates-http/api-docs",
     "school-certificates/api-docs",
     "school-file-platform/api-docs",
     "school-fonts/api-docs",
+    "school-fonts-http/api-docs",
     "school-http/api-docs",
     "school-navigation/api-docs",
+    "school-navigation-http/api-docs",
     "school-notifications/api-docs",
+    "school-notifications-http/api-docs",
     "school-question-bank/api-docs",
+    "school-question-bank-http/api-docs",
     "school-staff/api-docs",
     "school-students/api-docs",
+    "school-students-http/api-docs",
     "school-supervision/api-docs",
+    "school-supervision-http/api-docs",
 ]
 
 [dependencies]
@@ -220,9 +259,12 @@ school-staff-leave = { workspace = true }
 school-staff-file-transfer = { workspace = true }
 school-database = { workspace = true }
 school-budget = { workspace = true }
+school-budget-http = { workspace = true }
 school-student-care = { workspace = true }
+school-student-care-http = { workspace = true }
 school-files-http = { workspace = true }
 school-administration = { workspace = true }
+school-administration-http = { workspace = true }
 axum = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
@@ -270,22 +312,32 @@ school-academic-lifecycle = { workspace = true }
 school-workflow = { workspace = true }
 school-workflow-http = { workspace = true }
 school-question-bank = { workspace = true }
+school-question-bank-http = { workspace = true }
 school-admission = { workspace = true }
+school-admission-http = { workspace = true }
 school-supervision = { workspace = true }
+school-supervision-http = { workspace = true }
 school-students = { workspace = true }
+school-students-http = { workspace = true }
 school-staff = { workspace = true }
 school-calendar = { workspace = true }
+school-calendar-http = { workspace = true }
 school-attendance = { workspace = true }
+school-attendance-http = { workspace = true }
 school-behavior = { workspace = true }
+school-behavior-http = { workspace = true }
 school-crypto = { workspace = true }
 school-tenancy = { workspace = true }
 school-file-platform = { workspace = true }
 school-fonts = { workspace = true }
+school-fonts-http = { workspace = true }
 school-certificates = { workspace = true }
 
 school-navigation = { workspace = true }
+school-navigation-http = { workspace = true }
 
 school-notifications = { workspace = true }
+school-notifications-http = { workspace = true }
 
 school-auth-http = { workspace = true }
 

@@ -1,0 +1,601 @@
+//! Thin authenticated transport. Session, tenant and CSRF remain in existing middleware.
+use crate::state::BudgetHttpState;
+use axum::{
+    extract::{Path, Query, State},
+    Extension, Json,
+};
+use school_auth::session_service::AuthenticatedSession;
+use school_auth_http::context::actor_tenant_context_from_session;
+use school_budget::{adjustments, deletion, models::*, projects, queries, requests, settings};
+#[cfg(feature = "api-docs")]
+use school_http::ApiErrorResponse;
+use school_http::ApiResponse;
+use school_http::HttpError;
+use uuid::Uuid;
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/catalogs",operation_id="getBudgetCatalogs",tag="budget",params(BudgetCatalogQuery),responses((status=200, description = "Budget catalogs returned",body=ApiResponse<BudgetCatalogs>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn get_catalogs(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<BudgetCatalogQuery>,
+) -> Result<Json<ApiResponse<BudgetCatalogs>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = settings::catalogs(&c.tenant.pool, &c.actor, query).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/settings",operation_id="getBudgetSettings",tag="budget",responses((status=200, description = "Budget settings returned",body=ApiResponse<BudgetSettings>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn get_settings(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Json<ApiResponse<BudgetSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = settings::get(&c.tenant.pool, &c.actor).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/fiscal-years",operation_id="createBudgetFiscalYear",tag="budget",request_body=CreateBudgetFiscalYearRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn create_fiscal_year(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(input): Json<CreateBudgetFiscalYearRequest>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = settings::create_year(&c.tenant.pool, &c.actor, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/fiscal-years/{id}",operation_id="getBudgetYearSettings",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn get_year_settings(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = settings::get_year(&c.tenant.pool, &c.actor, id).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/budget/fiscal-years/{id}",operation_id="saveBudgetYearSettings",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=SaveBudgetYearSettingsRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn save_year_settings(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<SaveBudgetYearSettingsRequest>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = settings::save_year(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/budget/fiscal-years/{id}/funding",operation_id="saveBudgetReceivedFunding",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=SaveBudgetReceivedFundingRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn save_received_funding(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<SaveBudgetReceivedFundingRequest>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = settings::save_received(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/fiscal-years/{id}/close",operation_id="closeBudgetFiscalYear",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetYearSettings>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn close_fiscal_year(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetYearSettings>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = settings::close_year(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(delete,path="/api/budget/fiscal-years/{id}",operation_id="deleteBudgetFiscalYear",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetDeletedResource>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn delete_fiscal_year(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetDeletedResource>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = settings::delete_year(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(delete,path="/api/budget/projects/{id}",operation_id="deleteBudgetProject",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200,description="Budget operation result",body=ApiResponse<BudgetDeletedResource>),(status=400,description="Invalid input",body=ApiErrorResponse),(status=401,description="Authentication required",body=ApiErrorResponse),(status=403,description="Permission denied",body=ApiErrorResponse),(status=404,description="Resource not found",body=ApiErrorResponse),(status=409,description="Budget state conflict",body=ApiErrorResponse))))]
+pub async fn delete_project(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetDeletedResource>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = deletion::delete_project(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/projects",operation_id="listBudgetProjects",tag="budget",params(BudgetListQuery),responses((status=200, description = "Budget projects returned",body=ApiResponse<BudgetProjectPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn list_projects(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(q): Query<BudgetListQuery>,
+) -> Result<Json<ApiResponse<BudgetProjectPage>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::projects(&c.tenant.pool, &c.actor, q).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/projects",operation_id="createBudgetProject",tag="budget",request_body=CreateBudgetProjectRequest,responses((status=200, description = "Budget project created",body=ApiResponse<BudgetProjectWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn create_project(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(input): Json<CreateBudgetProjectRequest>,
+) -> Result<Json<ApiResponse<BudgetProjectWorkspace>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = projects::create(&c.tenant.pool, &c.actor, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/projects/{id}",operation_id="getBudgetProject",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),responses((status=200, description = "Budget project workspace returned",body=ApiResponse<BudgetProjectWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn get_project(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<BudgetProjectWorkspace>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::workspace(&c.tenant.pool, &c.actor, id).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/budget/projects/{id}",operation_id="saveBudgetProject",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=SaveBudgetProjectRequest,responses((status=200, description = "Budget project saved",body=ApiResponse<BudgetProjectWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn save_project(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<SaveBudgetProjectRequest>,
+) -> Result<Json<ApiResponse<BudgetProjectWorkspace>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = projects::save(&c.tenant.pool, &c.actor, id, input, s.catalog).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/projects/{id}/submit",operation_id="submitBudgetProject",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200, description = "Budget project submission result returned",body=ApiResponse<BudgetProjectWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn submit_project(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetProjectWorkspace>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = projects::submit(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/projects/{id}/actions",operation_id="actBudgetProject",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetActionRequest,responses((status=200, description = "Budget project action result returned",body=ApiResponse<BudgetProjectWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn act_project(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetActionRequest>,
+) -> Result<Json<ApiResponse<BudgetProjectWorkspace>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = projects::act(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/projects/{id}/amendments",operation_id="startBudgetAmendment",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=StartBudgetAmendmentRequest,responses((status=200, description = "Budget project amendment result returned",body=ApiResponse<BudgetProjectWorkspace>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn amend_project(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<StartBudgetAmendmentRequest>,
+) -> Result<Json<ApiResponse<BudgetProjectWorkspace>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = projects::amend(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/requests",operation_id="listBudgetRequests",tag="budget",params(BudgetListQuery),responses((status=200, description = "Budget spending requests returned",body=ApiResponse<BudgetRequestPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn list_requests(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(q): Query<BudgetListQuery>,
+) -> Result<Json<ApiResponse<BudgetRequestPage>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::requests(&c.tenant.pool, &c.actor, q).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/projects/{id}/requests",operation_id="createBudgetSpendingRequest",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=SaveBudgetSpendingRequestRequest,responses((status=200, description = "Budget spending request created",body=ApiResponse<BudgetSpendingRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn create_request(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<SaveBudgetSpendingRequestRequest>,
+) -> Result<Json<ApiResponse<BudgetSpendingRequestDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = requests::create(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/requests/{id}",operation_id="getBudgetSpendingRequest",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),responses((status=200, description = "Budget spending request detail returned",body=ApiResponse<BudgetSpendingRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn get_request(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<BudgetSpendingRequestDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::request_detail(&c.tenant.pool, &c.actor, id).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/budget/requests/{id}",operation_id="saveBudgetSpendingRequest",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=SaveBudgetSpendingRequestRequest,responses((status=200, description = "Budget spending request saved",body=ApiResponse<BudgetSpendingRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn save_request(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<SaveBudgetSpendingRequestRequest>,
+) -> Result<Json<ApiResponse<BudgetSpendingRequestDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = requests::save(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/requests/{id}/submit",operation_id="submitBudgetSpendingRequest",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200, description = "Budget spending request submission result returned",body=ApiResponse<BudgetSpendingRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn submit_request(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetSpendingRequestDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = requests::submit(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/requests/{id}/actions",operation_id="actBudgetSpendingRequest",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetActionRequest,responses((status=200, description = "Budget spending request action result returned",body=ApiResponse<BudgetSpendingRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn act_request(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetActionRequest>,
+) -> Result<Json<ApiResponse<BudgetSpendingRequestDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = requests::act(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/requests/{id}/close",operation_id="closeBudgetSpendingRequest",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=CloseBudgetRequestRequest,responses((status=200, description = "Budget spending request closure result returned",body=ApiResponse<BudgetSpendingRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn close_request(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<CloseBudgetRequestRequest>,
+) -> Result<Json<ApiResponse<BudgetSpendingRequestDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = requests::close(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/requests/{id}/payments",operation_id="listBudgetPayments",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID"),BudgetListQuery),responses((status=200, description = "Budget spending request payments returned",body=ApiResponse<BudgetPaymentPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn list_payments(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<BudgetListQuery>,
+) -> Result<Json<ApiResponse<BudgetPaymentPage>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::payments(&c.tenant.pool, &c.actor, id, q).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/requests/{id}/payments",operation_id="createBudgetPayment",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=CreateBudgetPaymentRequest,responses((status=200, description = "Budget payment recording result returned",body=ApiResponse<BudgetSpendingRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn create_payment(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<CreateBudgetPaymentRequest>,
+) -> Result<Json<ApiResponse<BudgetSpendingRequestDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = requests::pay(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/adjustments",operation_id="listBudgetAdjustments",tag="budget",params(BudgetListQuery),responses((status=200, description = "Budget adjustments returned",body=ApiResponse<BudgetAdjustmentPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn list_adjustments(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(q): Query<BudgetListQuery>,
+) -> Result<Json<ApiResponse<BudgetAdjustmentPage>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = adjustments::list(&c.tenant.pool, &c.actor, q).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/adjustments",operation_id="createBudgetAdjustment",tag="budget",request_body=SaveBudgetAdjustmentRequest,responses((status=200, description = "Budget adjustment created",body=ApiResponse<BudgetAdjustmentDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn create_adjustment(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Json(input): Json<SaveBudgetAdjustmentRequest>,
+) -> Result<Json<ApiResponse<BudgetAdjustmentDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = adjustments::create(&c.tenant.pool, &c.actor, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/adjustments/{id}",operation_id="getBudgetAdjustment",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),responses((status=200, description = "Budget adjustment detail returned",body=ApiResponse<BudgetAdjustmentDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn get_adjustment(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<BudgetAdjustmentDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = adjustments::detail(&c.tenant.pool, &c.actor, id).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(put,path="/api/budget/adjustments/{id}",operation_id="saveBudgetAdjustment",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=UpdateBudgetAdjustmentRequest,responses((status=200, description = "Budget adjustment saved",body=ApiResponse<BudgetAdjustmentDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn save_adjustment(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<UpdateBudgetAdjustmentRequest>,
+) -> Result<Json<ApiResponse<BudgetAdjustmentDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = adjustments::save(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/adjustments/{id}/submit",operation_id="submitBudgetAdjustment",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetMutationRequest,responses((status=200, description = "Budget adjustment submission result returned",body=ApiResponse<BudgetAdjustmentDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn submit_adjustment(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetMutationRequest>,
+) -> Result<Json<ApiResponse<BudgetAdjustmentDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = adjustments::submit(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/adjustments/{id}/actions",operation_id="actBudgetAdjustment",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),request_body=BudgetActionRequest,responses((status=200, description = "Budget adjustment action result returned",body=ApiResponse<BudgetAdjustmentDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn act_adjustment(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<BudgetActionRequest>,
+) -> Result<Json<ApiResponse<BudgetAdjustmentDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = adjustments::act(&c.tenant.pool, &c.actor, id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/dashboard",operation_id="getBudgetDashboard",tag="budget",params(BudgetReportQuery),responses((status=200, description = "Budget dashboard returned",body=ApiResponse<BudgetDashboard>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn get_dashboard(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(q): Query<BudgetReportQuery>,
+) -> Result<Json<ApiResponse<BudgetDashboard>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::dashboard(&c.tenant.pool, &c.actor, q, false).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/projects/{id}/process",operation_id="getBudgetProjectProcess",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),responses((status=200, description = "Budget project process detail returned",body=ApiResponse<BudgetProcessDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn project_process(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<BudgetProcessDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::resource_process(&c.tenant.pool, &c.actor, BudgetResourceKind::Project, id)
+        .await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/projects/{id}/history",operation_id="getBudgetProjectHistory",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID"),BudgetListQuery),responses((status=200, description = "Budget project history returned",body=ApiResponse<BudgetHistoryPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn project_history(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<BudgetListQuery>,
+) -> Result<Json<ApiResponse<BudgetHistoryPage>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data =
+        queries::history(&c.tenant.pool, &c.actor, BudgetResourceKind::Project, id, q).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/requests/{id}/process",operation_id="getBudgetRequestProcess",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),responses((status=200, description = "Budget spending request process detail returned",body=ApiResponse<BudgetProcessDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn request_process(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<BudgetProcessDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::resource_process(&c.tenant.pool, &c.actor, BudgetResourceKind::Request, id)
+        .await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/requests/{id}/history",operation_id="getBudgetRequestHistory",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID"),BudgetListQuery),responses((status=200, description = "Budget spending request history returned",body=ApiResponse<BudgetHistoryPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn request_history(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<BudgetListQuery>,
+) -> Result<Json<ApiResponse<BudgetHistoryPage>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data =
+        queries::history(&c.tenant.pool, &c.actor, BudgetResourceKind::Request, id, q).await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/adjustments/{id}/process",operation_id="getBudgetAdjustmentProcess",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID")),responses((status=200, description = "Budget adjustment process detail returned",body=ApiResponse<BudgetProcessDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn adjustment_process(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<ApiResponse<BudgetProcessDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data =
+        queries::resource_process(&c.tenant.pool, &c.actor, BudgetResourceKind::Adjustment, id)
+            .await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/adjustments/{id}/history",operation_id="getBudgetAdjustmentHistory",tag="budget",params(("id"=Uuid,Path,description="Budget resource ID"),BudgetListQuery),responses((status=200, description = "Budget adjustment history returned",body=ApiResponse<BudgetHistoryPage>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn adjustment_history(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Query(q): Query<BudgetListQuery>,
+) -> Result<Json<ApiResponse<BudgetHistoryPage>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::history(
+        &c.tenant.pool,
+        &c.actor,
+        BudgetResourceKind::Adjustment,
+        id,
+        q,
+    )
+    .await?;
+    Ok(Json(ApiResponse::ok(data)))
+}
+
+#[cfg_attr(feature="api-docs",utoipa::path(post,path="/api/budget/requests/{id}/payments/{paymentId}/refunds",operation_id="refundBudgetPayment",tag="budget",params(("id"=Uuid,Path,description="Request ID"),("paymentId"=Uuid,Path,description="Payment ID")),request_body=RefundBudgetPaymentRequest,responses((status=200, description = "Budget payment refund result returned",body=ApiResponse<BudgetSpendingRequestDetail>),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse),(status=404, description = "Resource not found",body=ApiErrorResponse),(status=409, description = "Request conflicts with the current resource state",body=ApiErrorResponse))))]
+pub async fn refund_payment(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path((id, payment_id)): Path<(Uuid, Uuid)>,
+    Json(input): Json<RefundBudgetPaymentRequest>,
+) -> Result<Json<ApiResponse<BudgetSpendingRequestDetail>>, HttpError> {
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = requests::refund(&c.tenant.pool, &c.actor, id, payment_id, input).await?;
+    s.after_commit(&c.tenant.subdomain);
+    Ok(Json(ApiResponse::ok(data)))
+}
+#[cfg_attr(feature="api-docs",utoipa::path(get,path="/api/budget/reports/export",operation_id="exportBudgetReport",tag="budget",params(BudgetReportQuery),responses((status=200,description="Budget pivot CSV",content_type="text/csv",body=String),(status=400, description = "Invalid input",body=ApiErrorResponse),(status=401, description = "Authentication required",body=ApiErrorResponse),(status=403, description = "Permission denied",body=ApiErrorResponse))))]
+pub async fn export_report(
+    State(s): State<BudgetHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(q): Query<BudgetReportQuery>,
+) -> Result<axum::response::Response, HttpError> {
+    use axum::response::IntoResponse;
+    let c = actor_tenant_context_from_session(&s.auth_runtime, &session).await?;
+    let data = queries::export_csv(&c.tenant.pool, &c.actor, q).await?;
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                "attachment; filename=budget-report.csv",
+            ),
+        ],
+        data,
+    )
+        .into_response())
+}
+
+#[cfg(feature = "api-docs")]
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(get_catalogs,get_settings,create_fiscal_year,get_year_settings,save_year_settings,save_received_funding,close_fiscal_year,delete_fiscal_year,delete_project,list_projects,create_project,get_project,save_project,submit_project,act_project,amend_project,list_requests,create_request,get_request,save_request,submit_request,act_request,close_request,list_payments,create_payment,list_adjustments,create_adjustment,get_adjustment,save_adjustment,submit_adjustment,act_adjustment,get_dashboard,project_process,project_history,request_process,request_history,adjustment_process,adjustment_history,refund_payment,export_report),components(schemas(BudgetStatus,BudgetAdjustmentKind,BudgetResourceKind,BudgetCatalogItem,BudgetFiscalYear,BudgetCatalogs,BudgetCatalogQuery,BudgetSettings,BudgetYearSettings,SaveBudgetYearSettingsRequest,CreateBudgetFiscalYearRequest,BudgetAuthorizedFundingInput,BudgetUnitAllocationInput,BudgetReceivedFundingInput,SaveBudgetReceivedFundingRequest,BudgetSourceBalance,BudgetUnitBalance,BudgetDeletionImpact,BudgetDeletedResource,BudgetProjectInput,CreateBudgetProjectRequest,SaveBudgetProjectRequest,BudgetActivityInput,BudgetPlanLineInput,BudgetActivity,BudgetPlanLine,BudgetPlanSnapshot,BudgetProjectSummary,BudgetCapabilities,BudgetAllocationRef,BudgetBalance,BudgetProjectWorkspace,BudgetProjectPage,BudgetMutationRequest,BudgetActionRequest,StartBudgetAmendmentRequest,BudgetRequestLineInput,BudgetSpendingRequestInput,SaveBudgetSpendingRequestRequest,BudgetRequestSummary,BudgetSpendingRequestDetail,BudgetRequestPage,BudgetPaymentAllocationInput,CreateBudgetPaymentRequest,RefundBudgetPaymentRequest,BudgetFileSnapshot,BudgetRefund,BudgetPayment,BudgetPaymentPage,CloseBudgetRequestRequest,BudgetAdjustmentInput,SaveBudgetAdjustmentRequest,BudgetAdjustmentDetail,BudgetAdjustmentPage,BudgetHistoryEntry,BudgetHistoryPage,BudgetProcessDetail,BudgetDashboardRow,BudgetDashboardTotals,BudgetDashboard,BudgetListQuery,BudgetReportQuery,BudgetRequestLine,UpdateBudgetAdjustmentRequest,BudgetCatalogItemInput,BudgetReportMetric,ApiResponse<BudgetAdjustmentDetail>,ApiResponse<BudgetAdjustmentPage>,ApiResponse<BudgetCatalogs>,ApiResponse<BudgetDashboard>,ApiResponse<BudgetHistoryPage>,ApiResponse<BudgetPaymentPage>,ApiResponse<BudgetProcessDetail>,ApiResponse<BudgetProjectPage>,ApiResponse<BudgetProjectWorkspace>,ApiResponse<BudgetRequestPage>,ApiResponse<BudgetSettings>,ApiResponse<BudgetYearSettings>,ApiResponse<BudgetDeletedResource>,ApiResponse<BudgetSpendingRequestDetail>)))]
+pub struct BudgetApi;
+
+#[cfg(all(test, feature = "api-docs"))]
+mod contract_tests {
+    use super::BudgetApi;
+    use utoipa::OpenApi;
+
+    #[test]
+    fn budget_query_contract_matches_registered_extractors() {
+        let document = serde_json::to_value(BudgetApi::openapi()).unwrap();
+        let paths = document["paths"].as_object().unwrap();
+        let list_filters = [
+            "fiscalYearId",
+            "projectId",
+            "activityId",
+            "organizationUnitId",
+            "status",
+            "search",
+            "limit",
+            "offset",
+        ];
+        let report_filters = [
+            "exportScope",
+            "metric",
+            "fiscalYearId",
+            "projectId",
+            "organizationUnitId",
+        ];
+        for path in [
+            "/api/budget/projects",
+            "/api/budget/requests",
+            "/api/budget/adjustments",
+            "/api/budget/projects/{id}/history",
+            "/api/budget/requests/{id}/history",
+            "/api/budget/adjustments/{id}/history",
+            "/api/budget/requests/{id}/payments",
+            "/api/budget/dashboard",
+            "/api/budget/reports/export",
+        ] {
+            let parameters = paths[path]["get"]["parameters"].as_array().unwrap();
+            let expected = if path.ends_with("dashboard") || path.ends_with("export") {
+                report_filters.as_slice()
+            } else {
+                list_filters.as_slice()
+            };
+            for name in expected {
+                let parameter = parameters
+                    .iter()
+                    .find(|p| p["name"] == *name)
+                    .unwrap_or_else(|| panic!("missing {name} parameter on GET {path}"));
+                assert_eq!(parameter["in"], "query", "GET {path}: {name}");
+                assert_eq!(parameter["required"], false, "GET {path}: optional {name}");
+            }
+        }
+        // Actual path parameters must occur in the URI. Optional query filters may
+        // never become synthetic required path arguments in the generated client.
+        for (path, item) in paths {
+            let Some(parameters) = item["get"]["parameters"].as_array() else {
+                continue;
+            };
+            for parameter in parameters {
+                let name = parameter["name"].as_str().unwrap();
+                match parameter["in"].as_str().unwrap() {
+                    "path" => {
+                        assert!(
+                            path.contains(&format!("{{{name}}}")),
+                            "GET {path}: phantom {name}"
+                        );
+                        assert_eq!(parameter["required"], true);
+                    }
+                    "query" => assert_eq!(parameter["required"], false, "GET {path}: {name}"),
+                    other => panic!("unexpected parameter location {other} on GET {path}"),
+                }
+            }
+        }
+    }
+}
