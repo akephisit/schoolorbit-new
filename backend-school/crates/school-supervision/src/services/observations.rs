@@ -672,7 +672,7 @@ pub async fn approve_observation_request(
 
     insert_supervision_evaluators(&mut tx, observation_id, &input.evaluators).await?;
 
-    insert_observation_action(
+    let action_id = insert_observation_action(
         &mut tx,
         observation_id,
         Some(actor_user_id),
@@ -680,6 +680,13 @@ pub async fn approve_observation_request(
         Some(observation.status),
         Some(SupervisionObservationStatus::Planned),
         None,
+    )
+    .await?;
+    super::notifications::request_approved(
+        &mut tx,
+        action_id,
+        &observation,
+        &requested_evaluator_user_ids,
     )
     .await?;
 
@@ -1296,7 +1303,7 @@ pub(super) async fn set_observation_status(
             AppError::InternalServerError("ไม่สามารถอัปเดตสถานะนิเทศได้".to_string())
         })?;
 
-    insert_observation_action(
+    let action_id = insert_observation_action(
         &mut tx,
         observation_id,
         Some(actor_user_id),
@@ -1306,6 +1313,7 @@ pub(super) async fn set_observation_status(
         comment,
     )
     .await?;
+    super::notifications::status_changed(&mut tx, action_id, &current, to_status).await?;
 
     tx.commit().await?;
     get_observation(pool, observation_id).await
@@ -1319,15 +1327,16 @@ pub(super) async fn insert_observation_action(
     from_status: Option<SupervisionObservationStatus>,
     to_status: Option<SupervisionObservationStatus>,
     comment: Option<String>,
-) -> Result<(), AppError> {
+) -> Result<Uuid, AppError> {
     DbSession::new(&mut **tx)
-        .query(
+        .scalar(
             "supervision.services.observations.insert_observation_action",
             r#"
         INSERT INTO supervision_actions (
             observation_id, actor_user_id, action_kind, from_status, to_status, comment
         )
         VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
         "#,
         )
         .bind(observation_id)
@@ -1336,7 +1345,7 @@ pub(super) async fn insert_observation_action(
         .bind(from_status.map(SupervisionObservationStatus::as_str))
         .bind(to_status.map(SupervisionObservationStatus::as_str))
         .bind(comment)
-        .execute()
+        .fetch_one()
         .await
         .map_err(|error| {
             tracing::error!(
@@ -1344,9 +1353,7 @@ pub(super) async fn insert_observation_action(
                 school_database::error_class(&error)
             );
             AppError::InternalServerError("ไม่สามารถบันทึกประวัตินิเทศได้".to_string())
-        })?;
-
-    Ok(())
+        })
 }
 
 #[cfg(test)]

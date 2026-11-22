@@ -73,7 +73,7 @@ async fn migration_145_enforces_pending_pair_digest_and_lifetime_bounds() {
 }
 
 #[tokio::test]
-async fn migration_167_enforces_device_same_user_links_and_does_not_backfill() {
+async fn migration_168_enforces_device_same_user_links_and_does_not_backfill() {
     let pool = create_named_test_pool("auth_remembered_schema").await;
     run_test_migrations(&pool).await;
     let user = create_test_user(&pool, "remembered-schema@example.test", "test-password")

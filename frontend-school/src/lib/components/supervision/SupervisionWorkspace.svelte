@@ -255,7 +255,7 @@
 	let observationsLoading = $state(false);
 	let observationsReadable = $state(true);
 	let observationsError = $state('');
-	let requestsView = $state('requests');
+	let queueView = $state('list');
 	let bookingCalendarDate = $state('');
 	let calendarReviewId = $state('');
 	let bookingOpen = $state(false);
@@ -265,7 +265,7 @@
 	let saving = $state(false);
 	let savingAction = $state<string | null>(null);
 	let savingTemplate = $state(false);
-	let savingEvaluation = $state<'submit' | null>(null);
+	let savingEvaluation = $state.raw<{ observationId: string } | null>(null);
 	let evaluationDialogOpen = $state(false);
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
@@ -374,10 +374,15 @@
 		assignedObservations.filter(canSubmitAssignedEvaluation)
 	);
 	const submittedAssignedObservations = $derived(
-		assignedObservations.filter(
-			(observation) => currentUserEvaluator(observation)?.status === 'submitted'
-		)
+		assignedObservations.filter(hasSubmittedEvaluation)
 	);
+	const evaluationCalendarObservations = $derived([
+		...new Map(
+			[...activeAssignedObservations, ...submittedAssignedObservations]
+				.filter((observation) => observation.status !== 'requested')
+				.map((observation) => [observation.id, observation])
+		).values()
+	]);
 	const selectedEvaluation = $derived(
 		observations.find((observation) => observation.id === evaluationObservationId) ?? null
 	);
@@ -442,7 +447,7 @@
 		allowSaveEvaluators: true
 	});
 	const calendarReviewObservation = $derived(
-		requestsView === 'calendar' && observationsLoaded && observationsReadable
+		queueView === 'calendar' && observationsLoaded && observationsReadable
 			? requestedObservations.find(
 					(item) => item.id === calendarReviewId && requestReview.canReview(item)
 				)
@@ -901,6 +906,21 @@
 		observations = items;
 		observationsReadable = readable;
 		observationsLoaded = true;
+		if (section === 'evaluate') {
+			if (!readable) {
+				managementRevision += 1;
+				bookingCalendarDate = '';
+				savingEvaluation = null;
+				clearEvaluationDraft();
+			} else if (freshRead) {
+				if (savingEvaluation && !hasActionableAssignment(savingEvaluation.observationId)) {
+					savingEvaluation = null;
+				}
+				if (evaluationObservationId && !hasActionableAssignment(evaluationObservationId)) {
+					clearEvaluationDraft();
+				}
+			}
+		}
 		requestReview.reconcile(freshRead);
 		if (calendarReviewId && !calendarReviewObservation) calendarReviewId = '';
 	}
@@ -915,7 +935,9 @@
 				{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
 				{ signal }
 			);
-			const items = await (section === 'requests' ? resolveSupervisionRead(read) : read);
+			const items = await (section === 'requests' || section === 'evaluate'
+				? resolveSupervisionRead(read)
+				: read);
 
 			if (owner !== currentManagementContext() || !observationRequest.isCurrent(revision)) return;
 			applyObservations(items ?? [], items !== null);
@@ -985,6 +1007,16 @@
 		return observation.evaluators.find((evaluator) => evaluator.evaluatorUserId === currentUserId);
 	}
 
+	function hasSubmittedEvaluation(observation: SupervisionObservation): boolean {
+		return currentUserEvaluator(observation)?.status === 'submitted';
+	}
+
+	function hasActionableAssignment(observationId: string) {
+		return observations.some(
+			(observation) => observation.id === observationId && canSubmitAssignedEvaluation(observation)
+		);
+	}
+
 	function canSubmitAssignedEvaluation(observation: SupervisionObservation): boolean {
 		const evaluator = currentUserEvaluator(observation);
 		return Boolean(
@@ -1033,7 +1065,7 @@
 	}
 
 	function prepareEvaluationDraft(observation: SupervisionObservation) {
-		if (!canEvaluate || !canReadObservations) return;
+		if (!canEvaluate || !canReadObservations || !observationsReadable) return;
 		if (!canSubmitAssignedEvaluation(observation)) return;
 		evaluationObservationId = observation.id;
 		responseDrafts = {};
@@ -1144,6 +1176,9 @@
 	async function saveEvaluation() {
 		if (
 			!canEvaluate ||
+			!canReadObservations ||
+			!observationsReadable ||
+			savingEvaluation !== null ||
 			!selectedEvaluation ||
 			!canSubmitAssignedEvaluation(selectedEvaluation) ||
 			evaluationTemplateLoading ||
@@ -1161,22 +1196,26 @@
 			return;
 		}
 
-		savingEvaluation = 'submit';
-		const ownsMutation = captureMutationOwner();
 		const observationId = evaluationObservationId;
+		const submission = { observationId };
+		savingEvaluation = submission;
+		const ownsMutation = captureMutationOwner();
+		const isCurrentSubmission = () => savingEvaluation === submission && ownsMutation();
 		try {
 			const payload = evaluationPayload();
 			const response = await submitMySupervisionEvaluation(observationId, payload);
-			if (!ownsMutation()) return;
+			if (!isCurrentSubmission()) return;
 			const observation = requireMutationData(response, 'บันทึกผลประเมินไม่สำเร็จ');
+			const refreshPending = observationsLoading;
 			replaceObservation(observation);
 			if (evaluationObservationId === observationId) clearEvaluationDraft();
 			toast.success('ส่งผลประเมินแล้ว');
+			if (refreshPending) void retryObservations();
 		} catch (error) {
-			if (!ownsMutation()) return;
+			if (!isCurrentSubmission()) return;
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
 		} finally {
-			if (ownsMutation()) savingEvaluation = null;
+			if (isCurrentSubmission()) savingEvaluation = null;
 		}
 	}
 
@@ -2008,9 +2047,9 @@
 		</div>
 	{:else if section === 'requests'}
 		<div data-testid="supervision-observations" aria-busy={observationsLoading} class="space-y-3">
-			<Tabs.Root bind:value={requestsView} onValueChange={() => (calendarReviewId = '')}>
+			<Tabs.Root bind:value={queueView} onValueChange={() => (calendarReviewId = '')}>
 				<Tabs.List class="self-start" aria-label="มุมมองคำขอจองนิเทศ">
-					<Tabs.Trigger value="requests">คำขอจอง</Tabs.Trigger>
+					<Tabs.Trigger value="list">คำขอจอง</Tabs.Trigger>
 					<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
 				</Tabs.List>
 				{@render managementFeedback(
@@ -2026,8 +2065,8 @@
 						description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
 					/>
 				{/if}
-				<Tabs.Content value="requests" class="space-y-3">
-					{#if requestsView === 'requests' && observationsLoaded && observationsReadable}
+				<Tabs.Content value="list" class="space-y-3">
+					{#if queueView === 'list' && observationsLoaded && observationsReadable}
 						<h2 class="text-lg font-semibold">คำขอจองที่รออนุมัติ</h2>
 						{#if requestedObservations.length === 0}
 							<PageState
@@ -2055,7 +2094,7 @@
 					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="calendar">
-					{#if requestsView === 'calendar' && observationsLoaded && observationsReadable}
+					{#if queueView === 'calendar' && observationsLoaded && observationsReadable}
 						<SupervisionBookingCalendar
 							{observations}
 							{cycles}
@@ -2063,7 +2102,7 @@
 							bind:selectedDate={bookingCalendarDate}
 							detailHref={observationDetailHref}
 						>
-							{#snippet requestAction(observation)}
+							{#snippet bookingAction(observation)}
 								{#if requestReview.canReview(observation)}
 									<Button
 										size="sm"
@@ -2103,29 +2142,34 @@
 			</Dialog.Root>
 		</div>
 	{:else if section === 'evaluate'}
-		<div class="space-y-4">
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>รายการที่ได้รับมอบหมายให้ประเมิน</Card.Title>
-				</Card.Header>
-				<Card.Content class="space-y-4">
-					<div
-						class="relative"
-						data-testid="supervision-observations"
-						aria-busy={observationsLoading}
-					>
-						{@render managementFeedback(
-							observationsLoaded,
-							observationsLoading,
-							observationsError,
-							retryObservations
-						)}
-						{#if observationsLoaded && !observationsReadable}<PageState
-								variant="permission"
-								title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
-								description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
-							/>{/if}
-						{#if observationsLoaded && observationsReadable}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>รายการที่ได้รับมอบหมายให้ประเมิน</Card.Title>
+			</Card.Header>
+			<Card.Content
+				class="relative space-y-4"
+				data-testid="supervision-observations"
+				aria-busy={observationsLoading}
+			>
+				{@render managementFeedback(
+					observationsLoaded,
+					observationsLoading,
+					observationsError,
+					retryObservations
+				)}
+				{#if observationsLoaded && (!observationsReadable || !canReadObservations || !canEvaluate)}
+					<PageState
+						variant="permission"
+						title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
+						description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
+					/>
+				{:else if observationsLoaded}
+					<Tabs.Root bind:value={queueView}>
+						<Tabs.List class="self-start" aria-label="มุมมองรายการประเมิน">
+							<Tabs.Trigger value="list">รายการ</Tabs.Trigger>
+							<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
+						</Tabs.List>
+						<Tabs.Content value="list" class="space-y-4">
 							{#if activeAssignedObservations.length === 0}
 								<PageState
 									title="ยังไม่มีรายการที่ต้องประเมิน"
@@ -2307,11 +2351,35 @@
 									</div>
 								</div>
 							{/if}
-						{/if}
-					</div></Card.Content
-				>
-			</Card.Root>
-		</div>
+						</Tabs.Content>
+						<Tabs.Content value="calendar">
+							{#if queueView === 'calendar'}
+								<SupervisionBookingCalendar
+									observations={evaluationCalendarObservations}
+									{cycles}
+									academicLabel={calendarAcademicLabel}
+									bind:selectedDate={bookingCalendarDate}
+									detailHref={observationDetailHref}
+									{hasSubmittedEvaluation}
+								>
+									{#snippet bookingAction(observation)}
+										{#if canSubmitAssignedEvaluation(observation)}
+											<Button
+												size="sm"
+												variant="outline"
+												onclick={() => prepareEvaluationDraft(observation)}
+											>
+												เปิดแบบประเมิน
+											</Button>
+										{/if}
+									{/snippet}
+								</SupervisionBookingCalendar>
+							{/if}
+						</Tabs.Content>
+					</Tabs.Root>
+				{/if}
+			</Card.Content>
+		</Card.Root>
 	{:else if section === 'cycles'}
 		<div class="space-y-4">
 			<Card.Root>
@@ -2826,7 +2894,7 @@
 </PageShell>
 
 <Dialog.Root bind:open={evaluationDialogOpen} onOpenChange={setEvaluationDialogOpen}>
-	<Dialog.Content class="flex max-h-[92vh] flex-col sm:max-w-5xl">
+	<Dialog.Content class="flex max-h-[92dvh] flex-col sm:max-w-5xl">
 		<Dialog.Header>
 			<Dialog.Title>ทำแบบประเมินนิเทศ</Dialog.Title>
 			<Dialog.Description>
@@ -2846,50 +2914,50 @@
 			() => void loadEvaluationTemplate()
 		)}
 		{#if selectedEvaluation && selectedEvaluationTemplate && !evaluationTemplateLoading}
-			<div
-				class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
-			>
-				<div>
-					<p class="text-xs text-muted-foreground">คะแนนรวม</p>
-					<p class="font-semibold">
-						{selectedEvaluationDraftSummary.totalScore} / {selectedEvaluationDraftSummary.maxScore}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-muted-foreground">ร้อยละ</p>
-					<p class="font-semibold">
-						{selectedEvaluationDraftSummary.percentage === null
-							? '-'
-							: selectedEvaluationDraftSummary.percentage.toFixed(2)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
-					<p class="font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</p>
-				</div>
-				<div>
-					<p class="text-xs text-muted-foreground">ตอบแล้ว</p>
-					<p class="font-semibold">
-						{selectedEvaluationDraftSummary.answeredRatingCount} /
-						{selectedEvaluationDraftSummary.ratingItemCount}
-					</p>
-				</div>
-			</div>
-
-			<div class="grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-				<div>
-					<p class="text-xs text-muted-foreground">นิเทศใคร</p>
-					<p class="font-medium">{selectedEvaluation.observedDisplayName ?? '-'}</p>
-				</div>
-				{#each observationDetailGrid(selectedEvaluation) as detail (detail.label)}
-					<div>
-						<p class="text-xs text-muted-foreground">{detail.label}</p>
-						<p class="font-medium">{detail.value}</p>
-					</div>
-				{/each}
-			</div>
-
 			<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+				<div
+					class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
+				>
+					<div>
+						<p class="text-xs text-muted-foreground">คะแนนรวม</p>
+						<p class="font-semibold">
+							{selectedEvaluationDraftSummary.totalScore} / {selectedEvaluationDraftSummary.maxScore}
+						</p>
+					</div>
+					<div>
+						<p class="text-xs text-muted-foreground">ร้อยละ</p>
+						<p class="font-semibold">
+							{selectedEvaluationDraftSummary.percentage === null
+								? '-'
+								: selectedEvaluationDraftSummary.percentage.toFixed(2)}
+						</p>
+					</div>
+					<div>
+						<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
+						<p class="font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</p>
+					</div>
+					<div>
+						<p class="text-xs text-muted-foreground">ตอบแล้ว</p>
+						<p class="font-semibold">
+							{selectedEvaluationDraftSummary.answeredRatingCount} /
+							{selectedEvaluationDraftSummary.ratingItemCount}
+						</p>
+					</div>
+				</div>
+
+				<div class="grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+					<div>
+						<p class="text-xs text-muted-foreground">นิเทศใคร</p>
+						<p class="font-medium">{selectedEvaluation.observedDisplayName ?? '-'}</p>
+					</div>
+					{#each observationDetailGrid(selectedEvaluation) as detail (detail.label)}
+						<div>
+							<p class="text-xs text-muted-foreground">{detail.label}</p>
+							<p class="font-medium">{detail.value}</p>
+						</div>
+					{/each}
+				</div>
+
 				{#each selectedEvaluationRubricSections as section (section.localId)}
 					{@const progress = sectionRubricProgress(
 						section,
@@ -2966,7 +3034,7 @@
 				</Button>
 				<LoadingButton
 					onclick={saveEvaluation}
-					loading={savingEvaluation === 'submit'}
+					loading={savingEvaluation !== null}
 					loadingLabel="กำลังส่ง..."
 					disabled={savingEvaluation !== null}
 				>

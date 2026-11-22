@@ -21,6 +21,7 @@ school-academic-core = { workspace = true }
 school-academic-delivery = { workspace = true }
 school-academic-timetable = { workspace = true }
 school-errors = { workspace = true }
+school-notifications = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 tracing = { workspace = true }
