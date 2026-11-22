@@ -847,6 +847,126 @@ async fn permission_coverage_academic_regions_and_context_use_independent_exact_
 }
 
 #[tokio::test]
+async fn permission_coverage_supervision_staff_can_read_visible_academic_context() {
+    let f = academic_fixture("permission_coverage_supervision_context").await;
+    let app = crate::app::build_app(f.application_state());
+    let supervisor = coverage_actor(
+        &f,
+        &[
+            codes::SUPERVISION_EVALUATE_ASSIGNED,
+            codes::SUPERVISION_READ_ASSIGNED,
+            codes::SUPERVISION_READ_OWN,
+            codes::SUPERVISION_REQUEST_OWN,
+        ],
+        87,
+    )
+    .await;
+    let context_reader = coverage_actor(&f, &[codes::ACADEMIC_CONTEXT_READ_SCHOOL], 88).await;
+    let unrelated = coverage_actor(&f, &[codes::FEATURES_READ_ALL], 89).await;
+
+    let (default_year, default_term, settings_version): (Uuid, Uuid, i64) = sqlx::query_as(
+        "SELECT default_academic_year_id,default_academic_term_id,row_version
+         FROM academic_context_settings WHERE singleton",
+    )
+    .fetch_one(&f.tenant_a_pool)
+    .await
+    .unwrap();
+    let hidden_year: Uuid = sqlx::query_scalar(
+        "UPDATE academic_years SET is_visible=false WHERE year=2026 RETURNING id",
+    )
+    .fetch_one(&f.tenant_a_pool)
+    .await
+    .unwrap();
+    let term_in_hidden_year: Uuid = sqlx::query_scalar(
+        "UPDATE academic_terms SET is_visible=true
+         WHERE academic_year_id=$1 AND sequence_no=1 RETURNING id",
+    )
+    .bind(hidden_year)
+    .fetch_one(&f.tenant_a_pool)
+    .await
+    .unwrap();
+    let hidden_term: Uuid = sqlx::query_scalar(
+        "UPDATE academic_terms SET is_visible=false
+         WHERE academic_year_id=$1 AND sequence_no=2 RETURNING id",
+    )
+    .bind(default_year)
+    .fetch_one(&f.tenant_a_pool)
+    .await
+    .unwrap();
+
+    let options_path = "/api/academic/context/options";
+    let (status, body) = coverage_request(
+        &app,
+        &f,
+        &supervisor,
+        Method::GET,
+        options_path,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["success"], true);
+    let data = &body["data"];
+    assert_eq!(data["defaultAcademicYearId"], json!(default_year));
+    assert_eq!(data["defaultAcademicTermId"], json!(default_term));
+    let years = data["years"].as_array().unwrap();
+    let terms = data["terms"].as_array().unwrap();
+    assert!(years.iter().any(|year| year["id"] == json!(default_year)));
+    assert!(years
+        .iter()
+        .all(|year| year["isVisible"] == true && year["id"] != json!(hidden_year)));
+    assert!(terms
+        .iter()
+        .any(|term| term["id"] == json!(default_term)
+            && term["academicYearId"] == json!(default_year)));
+    assert!(terms.iter().all(|term| term["isVisible"] == true
+        && term["id"] != json!(hidden_term)
+        && term["id"] != json!(term_in_hidden_year)));
+
+    let (status, explicit_read) = coverage_request(
+        &app,
+        &f,
+        &context_reader,
+        Method::GET,
+        options_path,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{explicit_read}");
+    assert_eq!(explicit_read["data"], *data);
+
+    for (actor, path) in [
+        (&unrelated, options_path),
+        (&supervisor, "/api/academic/years"),
+        (&supervisor, "/api/academic/setup/workspace"),
+    ] {
+        let (status, body) =
+            coverage_request(&app, &f, actor, Method::GET, path, Value::Null).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{path}: {body}");
+    }
+    let (status, body) = coverage_request(
+        &app,
+        &f,
+        &supervisor,
+        Method::PUT,
+        "/api/academic/context/settings",
+        json!({
+            "rowVersion": settings_version,
+            "defaultAcademicYearId": null,
+            "defaultAcademicTermId": null,
+            "years": [],
+            "terms": [],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(
+        body["error"],
+        format!("ไม่มีสิทธิ์ {}", codes::ACADEMIC_YEAR_MANAGE_SCHOOL)
+    );
+}
+
+#[tokio::test]
 async fn permission_coverage_admission_context_does_not_grant_applicant_reads() {
     let f = academic_fixture("permission_coverage_admission_context").await;
     let app = coverage_router(&f);
