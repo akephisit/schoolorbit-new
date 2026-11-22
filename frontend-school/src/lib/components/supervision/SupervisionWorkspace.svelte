@@ -1206,9 +1206,11 @@
 			const response = await submitMySupervisionEvaluation(observationId, payload);
 			if (!isCurrentSubmission()) return;
 			const observation = requireMutationData(response, 'บันทึกผลประเมินไม่สำเร็จ');
+			const refreshPending = observationsLoading;
 			replaceObservation(observation);
 			if (evaluationObservationId === observationId) clearEvaluationDraft();
 			toast.success('ส่งผลประเมินแล้ว');
+			if (refreshPending) void retryObservations();
 		} catch (error) {
 			if (!isCurrentSubmission()) return;
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
