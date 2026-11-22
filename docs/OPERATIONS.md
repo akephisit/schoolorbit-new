@@ -58,6 +58,24 @@ recover with a compatible release or roll forward; never rename the column back,
 modify accepted receipts or bypass migration history. Inspect only bounded
 `ACADEMIC_SCHOOL_DAYS155_*` refusal codes and aggregate audit evidence.
 
+### Remembered School device cutover
+
+School [migration 167](../backend-school/migrations/167_remembered_school_devices.sql) adds
+separate Auth device grants and nullable grant-owned Push bindings without promoting historical
+sessions or subscriptions. Enable universal Maintenance Mode, drain all old School writers and
+run the canonical all-tenant migration before starting the compatible release. Preserve the
+stable `SESSION_HMAC_KEY`: pending device/session credentials are reproduced with it after a
+lost response. Browser cookies remain backend-host-only; do not widen their Domain.
+
+Once the compatible release writes durable Push rows (`remembered_device_id` set and
+`session_id`/`expires_at` NULL), pre-167 School binaries are prohibited: their cleanup classifies
+these rows as invalid. Keep maintenance active on failure and use a schema-167-capable release
+or roll forward through the normal verified backup/WAL recovery procedure. Never delete grants,
+rewrite historical `remember_me` rows, patch SQLx history or reintroduce a 90-day Push horizon to
+force compatibility. Readiness, exact-tenant-Origin Auth restore, device revocation and authenticated
+proxy/browser acceptance must pass before reopening. No real account deactivation or production
+subscription deletion is required for deployment acceptance.
+
 ### Supervision observation date configuration
 
 Migration 166 adds nullable inclusive Bangkok civil-date bounds to supervision cycles.

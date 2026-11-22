@@ -74,17 +74,7 @@ impl NotificationService {
     ) -> Result<PreparedNotification, &'static str> {
         let mut subscriptions = Vec::new();
         if let Some(config) = devices::vapid_config() {
-            let mut c = school_tenancy::TenantPool::observed_checkout_pool(
-                pool,
-                "notifications.prepare_stored",
-            )
-            .await
-            .map_err(|_| "notification_database_unavailable")?;
-            subscriptions=school_database::DbSession::new(&mut *c).query_as("notifications.presentation.devices",r#"SELECT p.id,p.version,p.binding_token,p.endpoint,p.p256dh_key,p.auth_key FROM push_subscriptions p
-                JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id JOIN users u ON u.id=s.user_id
-                WHERE p.user_id=$1 AND p.key_id=$2 AND p.expires_at>now() AND s.revoked_at IS NULL
-                AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active' ORDER BY p.last_confirmed_at DESC,p.id LIMIT 20"#)
-                .bind(user).bind(config.key_id).fetch_all().await.map_err(|_|"notification_subscription_unavailable")?;
+            subscriptions = eligible_subscriptions(pool, user, &config.key_id).await?;
         }
         Ok(PreparedNotification {
             notification,
@@ -237,6 +227,31 @@ impl NotificationService {
         }
         receipt
     }
+}
+async fn eligible_subscriptions(
+    pool: &sqlx::PgPool,
+    user: Uuid,
+    key_id: &str,
+) -> Result<Vec<PushSubscription>, &'static str> {
+    let mut c =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.prepare_stored")
+            .await
+            .map_err(|_| "notification_database_unavailable")?;
+    school_database::DbSession::new(&mut *c).query_as("notifications.presentation.devices",r#"SELECT p.id,p.version,p.binding_token,p.endpoint,p.p256dh_key,p.auth_key FROM notification_eligible_push_subscriptions p
+        WHERE p.user_id=$1 AND p.key_id=$2 ORDER BY p.last_confirmed_at DESC,p.id LIMIT 20"#)
+        .bind(user).bind(key_id).fetch_all().await.map_err(|_|"notification_subscription_unavailable")
+}
+#[cfg(feature = "test-support")]
+pub async fn eligible_devices_for_tests(
+    pool: &sqlx::PgPool,
+    user: Uuid,
+    key_id: &str,
+) -> Result<Vec<(Uuid, Uuid)>, &'static str> {
+    Ok(eligible_subscriptions(pool, user, key_id)
+        .await?
+        .into_iter()
+        .map(|subscription| (subscription.id, subscription.version))
+        .collect())
 }
 /// The library's default client traces whole requests and has no native timeout.
 /// Keep its protocol/encryption builder, with a redacted, redirect-free bounded HTTP adapter.

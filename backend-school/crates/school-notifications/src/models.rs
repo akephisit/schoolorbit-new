@@ -59,7 +59,8 @@ pub struct PushDevice {
     pub binding_token: Uuid,
     pub key_id: String,
     pub last_confirmed_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub expires_at: Option<DateTime<Utc>>,
 }
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]

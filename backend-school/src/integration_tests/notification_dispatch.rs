@@ -1015,6 +1015,19 @@ async fn device_session(pool: &PgPool, user: Uuid) -> Uuid {
     sqlx::query("INSERT INTO auth_sessions(id,user_id,current_token_hash,remember_me,device_label,created_at,last_seen_at,idle_expires_at,absolute_expires_at,rotated_at) VALUES($1,$2,sha256(convert_to($1::text,'UTF8')),false,'Synthetic browser',now(),now(),now()+interval '1 day',now()+interval '30 days',now())").bind(id).bind(user).execute(pool).await.unwrap();
     id
 }
+async fn remembered_device_session(pool: &PgPool, user: Uuid) -> (Uuid, Uuid) {
+    let remembered = Uuid::new_v4();
+    sqlx::query("INSERT INTO auth_remembered_devices(id,user_id,current_token_hash,device_label,created_at,last_used_at) VALUES($1,$2,sha256(convert_to($1::text,'UTF8')),'Synthetic remembered browser',now(),now())")
+        .bind(remembered).bind(user).execute(pool).await.unwrap();
+    let session = session_for_remembered_device(pool, user, remembered).await;
+    (remembered, session)
+}
+async fn session_for_remembered_device(pool: &PgPool, user: Uuid, remembered: Uuid) -> Uuid {
+    let session = device_session(pool, user).await;
+    sqlx::query("UPDATE auth_sessions SET remembered_device_id=$1,idle_expires_at=now()+interval '2 hours',absolute_expires_at=now()+interval '12 hours' WHERE id=$2")
+        .bind(remembered).bind(session).execute(pool).await.unwrap();
+    session
+}
 fn device_request(
     installation_id: Uuid,
 ) -> school_notifications::models::RegisterPushDeviceRequest {
@@ -1044,6 +1057,7 @@ async fn notification_devices_preserve_identical_refresh_rotate_session_and_fenc
     )
     .await
     .unwrap();
+    assert!(first.expires_at.is_some());
     let again = devices::register_for_tests(
         &pool,
         user,
@@ -1116,6 +1130,262 @@ async fn notification_devices_preserve_identical_refresh_rotate_session_and_fenc
             .await
             .unwrap(),
         0
+    );
+}
+#[tokio::test]
+async fn notification_devices_remembered_owner_survives_expired_deleted_sessions_and_ninety_days() {
+    use school_notifications::{devices, publisher};
+    let (pool, user) = fixture("push_remembered_persistence").await;
+    let (remembered, first_session) = remembered_device_session(&pool, user).await;
+    let installation = Uuid::new_v4();
+    let first = devices::register_for_tests(
+        &pool,
+        user,
+        first_session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    assert!(first.expires_at.is_none());
+    assert!(serde_json::to_value(&first).unwrap()["expires_at"].is_null());
+    let ownership: (
+        Option<Uuid>,
+        Option<Uuid>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    ) = sqlx::query_as(
+        "SELECT session_id,remembered_device_id,expires_at FROM push_subscriptions WHERE id=$1",
+    )
+    .bind(first.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ownership, (None, Some(remembered), None));
+    sqlx::query("UPDATE auth_remembered_devices SET created_at=now()-interval '121 days',last_used_at=now()-interval '121 days' WHERE id=$1")
+        .bind(remembered).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE push_subscriptions SET created_at=now()-interval '121 days',last_confirmed_at=now()-interval '121 days' WHERE id=$1")
+        .bind(first.id).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE auth_sessions SET created_at=now()-interval '121 days',last_seen_at=now()-interval '121 days',rotated_at=now()-interval '121 days',idle_expires_at=now()-interval '120 days',absolute_expires_at=now()-interval '120 days' WHERE id=$1")
+        .bind(first_session).execute(&pool).await.unwrap();
+    assert!(matches!(
+        devices::register_for_tests(
+            &pool,
+            user,
+            first_session,
+            device_request(installation),
+            "synthetic-key"
+        )
+        .await,
+        Err(AppError::AuthError(_))
+    ));
+    for delete_session in [false, true] {
+        if delete_session {
+            sqlx::query("DELETE FROM auth_sessions WHERE id=$1")
+                .bind(first_session)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        devices::cleanup_for_tests(&pool).await.unwrap();
+        let listed = devices::list(&pool, user).await.unwrap().items;
+        assert_eq!(listed.len(), 1);
+        assert_eq!(
+            (listed[0].id, listed[0].version, listed[0].binding_token),
+            (first.id, first.version, first.binding_token)
+        );
+        assert_eq!(
+            publisher::eligible_devices_for_tests(&pool, user, "synthetic-key")
+                .await
+                .unwrap(),
+            vec![(first.id, first.version)]
+        );
+        assert!(
+            publisher::eligible_devices_for_tests(&pool, user, "other-key")
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+    let restored_session = session_for_remembered_device(&pool, user, remembered).await;
+    for rotate_session_token in [false, true] {
+        if rotate_session_token {
+            sqlx::query("UPDATE auth_sessions SET current_token_hash=sha256(convert_to($2::uuid::text,'UTF8')),rotated_at=now() WHERE id=$1")
+                .bind(restored_session).bind(Uuid::new_v4()).execute(&pool).await.unwrap();
+        }
+        let mut refresh = device_request(installation);
+        refresh.expected_version = Some(first.version);
+        let refreshed =
+            devices::register_for_tests(&pool, user, restored_session, refresh, "synthetic-key")
+                .await
+                .unwrap();
+        assert_eq!(
+            (refreshed.id, refreshed.version, refreshed.binding_token),
+            (first.id, first.version, first.binding_token)
+        );
+        assert!(refreshed.expires_at.is_none());
+    }
+}
+
+#[tokio::test]
+async fn notification_devices_remembered_revocation_fences_exact_owner_without_session_fallback() {
+    use school_notifications::{devices, publisher};
+    let (pool, user) = fixture("push_remembered_revoke").await;
+    let (remembered, session) = remembered_device_session(&pool, user).await;
+    let installation = Uuid::new_v4();
+    let first = devices::register_for_tests(
+        &pool,
+        user,
+        session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    let (_, other_remembered_session) = remembered_device_session(&pool, user).await;
+    let ordinary_session = device_session(&pool, user).await;
+    for other_owner in [other_remembered_session, ordinary_session] {
+        let mut refresh = device_request(installation);
+        refresh.expected_version = Some(first.version);
+        assert!(
+            matches!(devices::register_for_tests(&pool,user,other_owner,refresh,"synthetic-key").await,Err(AppError::Conflict(code)) if code=="push_binding_changed")
+        );
+    }
+    devices::unregister(&pool, user, first.id, first.version)
+        .await
+        .unwrap();
+    let mut refresh = device_request(installation);
+    refresh.expected_version = Some(first.version);
+    assert!(
+        matches!(devices::register_for_tests(&pool,user,session,refresh,"synthetic-key").await,Err(AppError::Conflict(code)) if code=="push_binding_changed")
+    );
+    let reenrolled = devices::register_for_tests(
+        &pool,
+        user,
+        session,
+        device_request(installation),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    assert_ne!(reenrolled.version, first.version);
+    assert_ne!(reenrolled.binding_token, first.binding_token);
+    let n = item(user);
+    enqueue(&pool, std::slice::from_ref(&n)).await;
+    let before:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_array((SELECT to_jsonb(n) FROM notifications n WHERE id=$1),(SELECT to_jsonb(r) FROM notification_receipts r WHERE id=$2))").bind(n.notification_id).bind(n.id).fetch_one(&pool).await.unwrap();
+    // Keep its finite session active to prove a revoked durable owner cannot fall back to it.
+    sqlx::query("UPDATE auth_remembered_devices SET revoked_at=now(),revocation_reason='synthetic_remote_revoke' WHERE id=$1")
+        .bind(remembered).execute(&pool).await.unwrap();
+    assert!(devices::list(&pool, user).await.unwrap().items.is_empty());
+    assert!(
+        publisher::eligible_devices_for_tests(&pool, user, "synthetic-key")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    for expected_version in [Some(reenrolled.version), None] {
+        let mut request = device_request(installation);
+        request.expected_version = expected_version;
+        assert!(matches!(
+            devices::register_for_tests(&pool, user, session, request, "synthetic-key").await,
+            Err(AppError::AuthError(_))
+        ));
+    }
+    let mut refresh = device_request(installation);
+    refresh.expected_version = Some(reenrolled.version);
+    assert!(
+        matches!(devices::register_for_tests(&pool,user,ordinary_session,refresh,"synthetic-key").await,Err(AppError::Conflict(code)) if code=="push_binding_changed")
+    );
+    let owner: (Option<Uuid>, Option<Uuid>) = sqlx::query_as(
+        "SELECT session_id,remembered_device_id FROM push_subscriptions WHERE id=$1",
+    )
+    .bind(reenrolled.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(owner, (None, Some(remembered)));
+    devices::cleanup_for_tests(&pool).await.unwrap();
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM push_subscriptions WHERE id=$1)"
+    )
+    .bind(reenrolled.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap());
+    let after:serde_json::Value=sqlx::query_scalar("SELECT jsonb_build_array((SELECT to_jsonb(n) FROM notifications n WHERE id=$1),(SELECT to_jsonb(r) FROM notification_receipts r WHERE id=$2))").bind(n.notification_id).bind(n.id).fetch_one(&pool).await.unwrap();
+    assert_eq!(before, after);
+}
+
+#[tokio::test]
+async fn notification_devices_remembered_and_ordinary_share_cap_and_cleanup_eligibility() {
+    use school_notifications::{devices, publisher};
+    let (pool, user) = fixture("push_remembered_cap").await;
+    let (remembered, remembered_session) = remembered_device_session(&pool, user).await;
+    let ordinary_session = device_session(&pool, user).await;
+    // The legacy flag alone never upgrades a finite session's Push ownership.
+    sqlx::query("UPDATE auth_sessions SET remember_me=true WHERE id=$1")
+        .bind(ordinary_session)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let durable = devices::register_for_tests(
+        &pool,
+        user,
+        remembered_session,
+        device_request(Uuid::new_v4()),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    for _ in 0..19 {
+        devices::register_for_tests(
+            &pool,
+            user,
+            ordinary_session,
+            device_request(Uuid::new_v4()),
+            "synthetic-key",
+        )
+        .await
+        .unwrap();
+    }
+    assert!(
+        matches!(devices::register_for_tests(&pool,user,ordinary_session,device_request(Uuid::new_v4()),"synthetic-key").await,Err(AppError::Conflict(code)) if code=="push_device_limit")
+    );
+    assert_eq!(
+        publisher::eligible_devices_for_tests(&pool, user, "synthetic-key")
+            .await
+            .unwrap()
+            .len(),
+        20
+    );
+    sqlx::query("UPDATE push_subscriptions SET expires_at=now()-interval '1 second' WHERE remembered_device_id IS NULL").execute(&pool).await.unwrap();
+    devices::cleanup_for_tests(&pool).await.unwrap();
+    assert_eq!(devices::list(&pool, user).await.unwrap().items.len(), 1);
+    assert_eq!(
+        publisher::eligible_devices_for_tests(&pool, user, "synthetic-key")
+            .await
+            .unwrap(),
+        vec![(durable.id, durable.version)]
+    );
+    let ordinary = devices::register_for_tests(
+        &pool,
+        user,
+        ordinary_session,
+        device_request(Uuid::new_v4()),
+        "synthetic-key",
+    )
+    .await
+    .unwrap();
+    assert!(ordinary.expires_at.is_some());
+    sqlx::query("UPDATE auth_remembered_devices SET revoked_at=now(),revocation_reason='synthetic' WHERE id=$1").bind(remembered).execute(&pool).await.unwrap();
+    devices::cleanup_for_tests(&pool).await.unwrap();
+    let listed = devices::list(&pool, user).await.unwrap().items;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, ordinary.id);
+    assert_eq!(
+        publisher::eligible_devices_for_tests(&pool, user, "synthetic-key")
+            .await
+            .unwrap(),
+        vec![(ordinary.id, ordinary.version)]
     );
 }
 #[tokio::test]
