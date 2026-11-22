@@ -138,7 +138,9 @@ pub async fn list_context_options(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     let pool = context.tenant.pool;
     let actor = context.actor;
-    actor.require_permission(codes::ACADEMIC_CONTEXT_READ_SCHOOL)?;
+    if session.user_type != "staff" || !actor.has_module_permission("supervision") {
+        actor.require_permission(codes::ACADEMIC_CONTEXT_READ_SCHOOL)?;
+    }
     Ok(ok(context::list_options(&pool).await?))
 }
 

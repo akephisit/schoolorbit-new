@@ -10,6 +10,7 @@ pub const ACADEMIC_CATALOG_MANAGE_ORGANIZATION_UNIT: &str =
     "academic_catalog.manage.organization_unit";
 pub const ACADEMIC_CATALOG_MANAGE_SCHOOL: &str = "academic_catalog.manage.school";
 pub const ACADEMIC_CATALOG_READ_SCHOOL: &str = "academic_catalog.read.school";
+pub const ACADEMIC_CONTEXT_READ_SCHOOL: &str = "academic_context.read.school";
 pub const ACADEMIC_CURRICULUM_MANAGE_SCHOOL: &str = "academic_curriculum.manage.school";
 pub const ACADEMIC_EXAM_SCHEDULE_MANAGE_SCHOOL: &str = "academic_exam_schedule.manage.school";
 pub const ACADEMIC_GRADEBOOK_MANAGE_ASSIGNED: &str = "academic_gradebook.manage.assigned";
@@ -127,7 +128,9 @@ pub const SUPERVISION_EVALUATE_ASSIGNED: &str = "supervision.evaluate.assigned";
 pub const SUPERVISION_MANAGE_ORGANIZATION_TREE: &str = "supervision.manage.organization_tree";
 pub const SUPERVISION_MANAGE_ORGANIZATION_UNIT: &str = "supervision.manage.organization_unit";
 pub const SUPERVISION_MANAGE_SCHOOL: &str = "supervision.manage.school";
+pub const SUPERVISION_READ_ASSIGNED: &str = "supervision.read.assigned";
 pub const SUPERVISION_READ_ORGANIZATION_UNIT: &str = "supervision.read.organization_unit";
+pub const SUPERVISION_READ_OWN: &str = "supervision.read.own";
 pub const SUPERVISION_READ_SCHOOL: &str = "supervision.read.school";
 pub const SUPERVISION_REQUEST_OWN: &str = "supervision.request.own";
 pub const SUPPLY_CATALOG_APPROVE_SCHOOL: &str = "supply_catalog.approve.school";
