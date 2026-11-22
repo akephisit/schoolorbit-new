@@ -255,7 +255,7 @@
 	let observationsLoading = $state(false);
 	let observationsReadable = $state(true);
 	let observationsError = $state('');
-	let requestsView = $state('requests');
+	let queueView = $state('list');
 	let bookingCalendarDate = $state('');
 	let calendarReviewId = $state('');
 	let bookingOpen = $state(false);
@@ -374,10 +374,15 @@
 		assignedObservations.filter(canSubmitAssignedEvaluation)
 	);
 	const submittedAssignedObservations = $derived(
-		assignedObservations.filter(
-			(observation) => currentUserEvaluator(observation)?.status === 'submitted'
-		)
+		assignedObservations.filter(hasSubmittedEvaluation)
 	);
+	const evaluationCalendarObservations = $derived.by(() => {
+		const bookings = new Map<string, SupervisionObservation>();
+		for (const observation of [...activeAssignedObservations, ...submittedAssignedObservations]) {
+			if (observation.status !== 'requested') bookings.set(observation.id, observation);
+		}
+		return [...bookings.values()];
+	});
 	const selectedEvaluation = $derived(
 		observations.find((observation) => observation.id === evaluationObservationId) ?? null
 	);
@@ -442,7 +447,7 @@
 		allowSaveEvaluators: true
 	});
 	const calendarReviewObservation = $derived(
-		requestsView === 'calendar' && observationsLoaded && observationsReadable
+		queueView === 'calendar' && observationsLoaded && observationsReadable
 			? requestedObservations.find(
 					(item) => item.id === calendarReviewId && requestReview.canReview(item)
 				)
@@ -901,6 +906,10 @@
 		observations = items;
 		observationsReadable = readable;
 		observationsLoaded = true;
+		if (section === 'evaluate' && !readable) {
+			bookingCalendarDate = '';
+			clearEvaluationDraft();
+		}
 		requestReview.reconcile(freshRead);
 		if (calendarReviewId && !calendarReviewObservation) calendarReviewId = '';
 	}
@@ -915,7 +924,9 @@
 				{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
 				{ signal }
 			);
-			const items = await (section === 'requests' ? resolveSupervisionRead(read) : read);
+			const items = await (section === 'requests' || section === 'evaluate'
+				? resolveSupervisionRead(read)
+				: read);
 
 			if (owner !== currentManagementContext() || !observationRequest.isCurrent(revision)) return;
 			applyObservations(items ?? [], items !== null);
@@ -985,6 +996,10 @@
 		return observation.evaluators.find((evaluator) => evaluator.evaluatorUserId === currentUserId);
 	}
 
+	function hasSubmittedEvaluation(observation: SupervisionObservation): boolean {
+		return currentUserEvaluator(observation)?.status === 'submitted';
+	}
+
 	function canSubmitAssignedEvaluation(observation: SupervisionObservation): boolean {
 		const evaluator = currentUserEvaluator(observation);
 		return Boolean(
@@ -1033,7 +1048,7 @@
 	}
 
 	function prepareEvaluationDraft(observation: SupervisionObservation) {
-		if (!canEvaluate || !canReadObservations) return;
+		if (!canEvaluate || !canReadObservations || !observationsReadable) return;
 		if (!canSubmitAssignedEvaluation(observation)) return;
 		evaluationObservationId = observation.id;
 		responseDrafts = {};
@@ -2008,9 +2023,9 @@
 		</div>
 	{:else if section === 'requests'}
 		<div data-testid="supervision-observations" aria-busy={observationsLoading} class="space-y-3">
-			<Tabs.Root bind:value={requestsView} onValueChange={() => (calendarReviewId = '')}>
+			<Tabs.Root bind:value={queueView} onValueChange={() => (calendarReviewId = '')}>
 				<Tabs.List class="self-start" aria-label="มุมมองคำขอจองนิเทศ">
-					<Tabs.Trigger value="requests">คำขอจอง</Tabs.Trigger>
+					<Tabs.Trigger value="list">คำขอจอง</Tabs.Trigger>
 					<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
 				</Tabs.List>
 				{@render managementFeedback(
@@ -2026,8 +2041,8 @@
 						description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
 					/>
 				{/if}
-				<Tabs.Content value="requests" class="space-y-3">
-					{#if requestsView === 'requests' && observationsLoaded && observationsReadable}
+				<Tabs.Content value="list" class="space-y-3">
+					{#if queueView === 'list' && observationsLoaded && observationsReadable}
 						<h2 class="text-lg font-semibold">คำขอจองที่รออนุมัติ</h2>
 						{#if requestedObservations.length === 0}
 							<PageState
@@ -2055,7 +2070,7 @@
 					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="calendar">
-					{#if requestsView === 'calendar' && observationsLoaded && observationsReadable}
+					{#if queueView === 'calendar' && observationsLoaded && observationsReadable}
 						<SupervisionBookingCalendar
 							{observations}
 							{cycles}
@@ -2063,7 +2078,7 @@
 							bind:selectedDate={bookingCalendarDate}
 							detailHref={observationDetailHref}
 						>
-							{#snippet requestAction(observation)}
+							{#snippet bookingAction(observation)}
 								{#if requestReview.canReview(observation)}
 									<Button
 										size="sm"
@@ -2103,29 +2118,34 @@
 			</Dialog.Root>
 		</div>
 	{:else if section === 'evaluate'}
-		<div class="space-y-4">
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>รายการที่ได้รับมอบหมายให้ประเมิน</Card.Title>
-				</Card.Header>
-				<Card.Content class="space-y-4">
-					<div
-						class="relative"
-						data-testid="supervision-observations"
-						aria-busy={observationsLoading}
-					>
-						{@render managementFeedback(
-							observationsLoaded,
-							observationsLoading,
-							observationsError,
-							retryObservations
-						)}
-						{#if observationsLoaded && !observationsReadable}<PageState
-								variant="permission"
-								title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
-								description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
-							/>{/if}
-						{#if observationsLoaded && observationsReadable}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>รายการที่ได้รับมอบหมายให้ประเมิน</Card.Title>
+			</Card.Header>
+			<Card.Content
+				class="relative space-y-4"
+				data-testid="supervision-observations"
+				aria-busy={observationsLoading}
+			>
+				{@render managementFeedback(
+					observationsLoaded,
+					observationsLoading,
+					observationsError,
+					retryObservations
+				)}
+				{#if observationsLoaded && (!observationsReadable || !canReadObservations || !canEvaluate)}
+					<PageState
+						variant="permission"
+						title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
+						description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
+					/>
+				{:else if observationsLoaded}
+					<Tabs.Root bind:value={queueView}>
+						<Tabs.List class="self-start" aria-label="มุมมองรายการประเมิน">
+							<Tabs.Trigger value="list">รายการ</Tabs.Trigger>
+							<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
+						</Tabs.List>
+						<Tabs.Content value="list" class="space-y-4">
 							{#if activeAssignedObservations.length === 0}
 								<PageState
 									title="ยังไม่มีรายการที่ต้องประเมิน"
@@ -2307,11 +2327,35 @@
 									</div>
 								</div>
 							{/if}
-						{/if}
-					</div></Card.Content
-				>
-			</Card.Root>
-		</div>
+						</Tabs.Content>
+						<Tabs.Content value="calendar">
+							{#if queueView === 'calendar'}
+								<SupervisionBookingCalendar
+									observations={evaluationCalendarObservations}
+									{cycles}
+									academicLabel={calendarAcademicLabel}
+									bind:selectedDate={bookingCalendarDate}
+									detailHref={observationDetailHref}
+									{hasSubmittedEvaluation}
+								>
+									{#snippet bookingAction(observation)}
+										{#if canSubmitAssignedEvaluation(observation)}
+											<Button
+												size="sm"
+												variant="outline"
+												onclick={() => prepareEvaluationDraft(observation)}
+											>
+												เปิดแบบประเมิน
+											</Button>
+										{/if}
+									{/snippet}
+								</SupervisionBookingCalendar>
+							{/if}
+						</Tabs.Content>
+					</Tabs.Root>
+				{/if}
+			</Card.Content>
+		</Card.Root>
 	{:else if section === 'cycles'}
 		<div class="space-y-4">
 			<Card.Root>

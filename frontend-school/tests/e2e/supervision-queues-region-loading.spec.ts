@@ -147,9 +147,41 @@ test('write-only evaluation permission does not grant observation reads', async 
 	const api = await mock(page, { permissions: ['supervision.evaluate.assigned'] });
 	await page.goto(path('evaluate'));
 	await expect(page.getByText('ยังไม่มีสิทธิ์ดูรายการนิเทศ')).toBeVisible();
+	await expect(page.getByRole('tablist', { name: 'มุมมองรายการประเมิน' })).toHaveCount(0);
 	expect(api.count(observationPath)).toBe(0);
 	expect(api.count('/api/supervision/cycles')).toBe(0);
 	expect(api.count('/api/supervision/templates/summaries')).toBe(0);
+});
+
+test('an empty successful evaluation read keeps both views available', async ({ page }) => {
+	const api = await mock(page, { permissions: assigned });
+	api.setObservationScope('hidden');
+	await page.goto(path('evaluate'));
+	await expect(page.getByText('ยังไม่มีรายการที่ต้องประเมิน')).toBeVisible();
+	await page.getByRole('tab', { name: 'ปฏิทิน', exact: true }).click();
+	await expect(page.getByText('ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้')).toBeVisible();
+	expect(api.count(observationPath)).toBe(1);
+});
+
+test('a denied evaluation refresh closes the form and hides both views', async ({ page }) => {
+	const api = await mock(page, {
+		permissions: assigned,
+		observationStatus: 'planned',
+		fail: 'observations',
+		failAt: 2,
+		failStatus: 403
+	});
+	await page.goto(path('evaluate'));
+	await page.getByRole('tab', { name: 'ปฏิทิน', exact: true }).click();
+	await page.locator('[data-calendar-date="2026-10-01"]').click();
+	await page.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true }).click();
+	await expect(page.getByRole('dialog').getByText('หัวข้อ rubric ที่โหลดเมื่อเปิด')).toBeVisible();
+	await revalidatePage(page);
+	await expect(page.getByText('ยังไม่มีสิทธิ์ดูรายการนิเทศ')).toBeVisible();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(page.getByRole('tablist', { name: 'มุมมองรายการประเมิน' })).toHaveCount(0);
+	await expect(page.getByText('ครู ในคิว', { exact: true })).toHaveCount(0);
+	expect(api.count(observationPath)).toBe(2);
 });
 
 test('mine loads its list first and keeps booking timetable behind opening the workflow', async ({
