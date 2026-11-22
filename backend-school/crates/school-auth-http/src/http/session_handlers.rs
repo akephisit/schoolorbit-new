@@ -132,6 +132,7 @@ pub async fn restore(
     headers: HeaderMap,
     payload_result: Result<Json<RestoreSessionRequest>, JsonRejection>,
 ) -> Result<Response, AppError> {
+    require_single_origin(&headers).map_err(audit_origin_rejection)?;
     let tenant = resolve_auth_tenant_context(&runtime, &headers, None)
         .await
         .map_err(audit_origin_rejection)?;
@@ -235,6 +236,7 @@ pub async fn logout_with_tenant(
         })?;
         session_service::logout(&context, &authentication.authenticated, now).await?;
     } else if let Some(device) = device {
+        require_single_origin(headers).map_err(audit_origin_rejection)?;
         session_service::logout_presented_device(&context, device.token_hash(), now).await?;
     }
     Ok(expired_auth_response("ออกจากระบบสำเร็จ"))
@@ -507,6 +509,17 @@ fn single_user_agent(headers: &HeaderMap) -> Option<&str> {
         return None;
     }
     Some(value)
+}
+
+// Credential issuance and remembered-grant logout require an actual browser Origin.
+// The shared resolver still validates its exact trusted tenant value; Referer is insufficient.
+fn require_single_origin(headers: &HeaderMap) -> Result<(), school_errors::AppError> {
+    let mut origins = headers.get_all(axum::http::header::ORIGIN).iter();
+    if origins.next().is_some() && origins.next().is_none() {
+        Ok(())
+    } else {
+        Err(school_errors::AppError::Forbidden("origin_rejected".into()))
+    }
 }
 
 fn audit_origin_rejection(error: school_errors::AppError) -> AppError {

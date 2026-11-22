@@ -62,6 +62,7 @@ export async function mockSessionActivity(
 				path = new URL(request.url()).pathname,
 				page = request.frame().page();
 			requests.push({ path, method: request.method(), page, body: request.postData() });
+			if (path === '/api/auth/restore') return reply(route, null, 401);
 			if (path === '/api/auth/login') {
 				loginPages.delete(page);
 				session = sessionState(now, { sessionId: '01900000-0000-7000-8000-000000000002' });
@@ -153,7 +154,9 @@ export async function mockSessionActivity(
 		},
 		async open(page: Page) {
 			if (!options.nativeTimers && !clockInstalled) {
-				await page.clock.install({ time: activityStart });
+				// Pause at a future instant before loading the app; host scheduling between the
+				// two protocol calls must not turn the requested pause into a past timestamp.
+				await page.clock.install({ time: activityStart - 10_000 });
 				await page.clock.pauseAt(activityStart);
 				clockInstalled = true;
 			}

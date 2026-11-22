@@ -188,9 +188,9 @@ pub async fn create_login_session_with_device(
     )
     .await
     .map_err(session_store_error)?;
-    crate::remembered_devices::lock_login_users(
+    let captured_devices = crate::remembered_devices::lock_login_users(
         &mut transaction,
-        verified_user.id,
+        Some(verified_user.id),
         presented_device,
     )
     .await?;
@@ -222,9 +222,9 @@ pub async fn create_login_session_with_device(
         transaction.rollback().await.map_err(session_store_error)?;
         return Ok((LoginSessionCreation::StaleIdentity, Vec::new()));
     }
-    let retired = crate::remembered_devices::retire_presented(
+    let retired = crate::remembered_devices::retire_devices(
         &mut transaction,
-        presented_device,
+        &captured_devices,
         "explicit_login",
         session.times.created_at,
     )

@@ -694,15 +694,10 @@ function createNotificationStore() {
 				if (generation !== pushGeneration) return;
 				const state = await readBrowserState();
 				if (generation !== pushGeneration) return;
-				const binding = await clearBinding(previous, state.intent);
+				// Auth revokes server eligibility atomically, including when the finite session expired.
+				// This operation owns only browser cleanup; an authenticated Push delete could be 401.
+				await clearBinding(previous, state.intent);
 				await closeDeviceNotifications();
-				if (binding) {
-					try {
-						await unregisterPushDevice(binding.id, binding.version);
-					} catch (error) {
-						console.error('Failed to revoke notification device during logout', error);
-					}
-				}
 				if (generation !== pushGeneration) return;
 				if (isPushMessagingSupported()) {
 					const registration = await navigator.serviceWorker.getRegistration('/');

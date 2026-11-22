@@ -129,6 +129,9 @@ for (const mode of ['standalone', 'ios'] as const) {
 		await page.goto(`${baseUrl}/`);
 		await expect(page).toHaveURL(`${baseUrl}/login`);
 		await expect(page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true })).toBeVisible();
+		await expect(page.getByLabel('จดจำฉันไว้', { exact: true })).toHaveAccessibleDescription(
+			'ใช้เฉพาะอุปกรณ์ส่วนตัว'
+		);
 		expect(authReads).toEqual(['/api/auth/me', '/api/auth/restore']);
 	});
 }

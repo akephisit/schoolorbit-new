@@ -9,7 +9,13 @@ use crate::session_crypto::{
     canonical_session_time, remembered_device_token, remembered_session_token, RawSessionToken,
     SessionHmacKey, TokenHash,
 };
-use crate::session_repository::{SessionRevocationReason, SessionRevocationTarget};
+use crate::session_repository::SessionRevocationReason;
+
+#[derive(Clone, Copy)]
+pub(crate) enum DeviceRevocationTarget {
+    Session(Uuid),
+    All,
+}
 
 pub struct NewRememberedDevice {
     pub id: Uuid,
@@ -55,16 +61,28 @@ pub struct ManagedSessionRow {
 
 pub(crate) async fn lock_login_users(
     tx: &mut Transaction<'_, Postgres>,
-    user_id: Uuid,
+    user_id: Option<Uuid>,
     presented: Option<TokenHash>,
-) -> Result<(), AppError> {
-    // Account switches may involve two users. Everyone takes user locks before grant locks.
-    school_database::DbSession::new(&mut **tx).query(
-        "auth.remembered_devices.lock_login_users",
-        "SELECT id FROM users WHERE id=$1 OR id IN (SELECT user_id FROM auth_remembered_devices WHERE current_token_hash=$2 OR pending_token_hash=$2) ORDER BY id FOR UPDATE",
-    ).bind(user_id).bind(presented.map(|hash| hash.as_bytes().to_vec()))
-        .execute().await.map_err(store_error)?;
-    Ok(())
+) -> Result<Vec<Uuid>, AppError> {
+    // Capture the recognized grant before waiting: acknowledgment may retire its old hash.
+    // A successful explicit login/logout still retires that exact prior browser grant.
+    let prior: Vec<(Uuid,Uuid)> = school_database::DbSession::new(&mut **tx).query_as(
+        "auth.remembered_devices.capture_presented",
+        "SELECT id,user_id FROM auth_remembered_devices WHERE current_token_hash=$1 OR pending_token_hash=$1",
+    ).bind(presented.map(|hash| hash.as_bytes().to_vec())).fetch_all().await.map_err(store_error)?;
+    let users: Vec<Uuid> = prior.iter().map(|(_, user)| *user).collect();
+    // Account switches may involve two users; lock all users before any grant/session.
+    school_database::DbSession::new(&mut **tx)
+        .query(
+            "auth.remembered_devices.lock_login_users",
+            "SELECT id FROM users WHERE id=$1 OR id=ANY($2) ORDER BY id FOR UPDATE",
+        )
+        .bind(user_id)
+        .bind(&users)
+        .execute()
+        .await
+        .map_err(store_error)?;
+    Ok(prior.into_iter().map(|(id, _)| id).collect())
 }
 
 pub(crate) async fn enroll(
@@ -83,19 +101,16 @@ pub(crate) async fn enroll(
     Ok(())
 }
 
-pub(crate) async fn retire_presented(
+pub(crate) async fn retire_devices(
     tx: &mut Transaction<'_, Postgres>,
-    presented: Option<TokenHash>,
+    captured: &[Uuid],
     reason: &str,
     now: DateTime<Utc>,
 ) -> Result<Vec<(Uuid, Uuid)>, AppError> {
-    let Some(hash) = presented else {
-        return Ok(Vec::new());
-    };
     let devices: Vec<Uuid> = school_database::DbSession::new(&mut **tx).scalar(
-        "auth.remembered_devices.retire_presented",
-        "SELECT id FROM auth_remembered_devices WHERE (current_token_hash=$1 OR pending_token_hash=$1) AND revoked_at IS NULL ORDER BY id FOR UPDATE",
-    ).bind(hash.as_bytes().as_slice()).fetch_all().await.map_err(store_error)?;
+        "auth.remembered_devices.retire_devices",
+        "SELECT id FROM auth_remembered_devices WHERE id=ANY($1) AND revoked_at IS NULL ORDER BY id FOR UPDATE",
+    ).bind(captured).fetch_all().await.map_err(store_error)?;
     revoke_grants(tx, &devices, reason, now).await
 }
 
@@ -267,10 +282,10 @@ pub async fn list(
         .bind(user_id).bind(current_session_id).bind(now).fetch_all().await.map_err(store_error)
 }
 
-pub async fn revoke(
+pub(crate) async fn revoke(
     pool: &PgPool,
     user_id: Uuid,
-    target: SessionRevocationTarget,
+    target: DeviceRevocationTarget,
     reason: SessionRevocationReason,
     now: DateTime<Utc>,
 ) -> Result<RevokedDeviceSessions, AppError> {
@@ -286,17 +301,17 @@ pub async fn revoke(
         .execute()
         .await
         .map_err(store_error)?;
-    let (selected, except) = match target {
-        SessionRevocationTarget::Session(id) => (Some(id), None),
-        SessionRevocationTarget::User { except_session_id } => (None, except_session_id),
+    let selected = match target {
+        DeviceRevocationTarget::Session(id) => Some(id),
+        DeviceRevocationTarget::All => None,
     };
     let devices:Vec<Uuid>=school_database::DbSession::new(&mut *tx).scalar("auth.remembered_devices.revoke_devices",
         "SELECT id FROM auth_remembered_devices WHERE user_id=$1 AND revoked_at IS NULL AND ($2::uuid IS NULL OR id=$2 OR id=(SELECT remembered_device_id FROM auth_sessions WHERE id=$2 AND user_id=$1)) ORDER BY id FOR UPDATE")
         .bind(user_id).bind(selected).fetch_all().await.map_err(store_error)?;
     let mut sessions = revoke_grants(&mut tx, &devices, reason.as_str(), now).await?;
     let ordinary:Vec<(Uuid,Uuid)>=school_database::DbSession::new(&mut *tx).query_as("auth.remembered_devices.revoke_sessions",
-        "UPDATE auth_sessions SET revoked_at=$1,revocation_reason=$2,pending_token_hash=NULL,pending_created_at=NULL WHERE user_id=$3 AND revoked_at IS NULL AND ($4::uuid IS NULL OR id=$4) AND ($5::uuid IS NULL OR id<>$5) RETURNING user_id,id")
-        .bind(now).bind(reason.as_str()).bind(user_id).bind(selected).bind(except).fetch_all().await.map_err(store_error)?;
+        "UPDATE auth_sessions SET revoked_at=$1,revocation_reason=$2,pending_token_hash=NULL,pending_created_at=NULL WHERE user_id=$3 AND revoked_at IS NULL AND ($4::uuid IS NULL OR id=$4) RETURNING user_id,id")
+        .bind(now).bind(reason.as_str()).bind(user_id).bind(selected).fetch_all().await.map_err(store_error)?;
     sessions.extend(ordinary);
     let found = !devices.is_empty() || !sessions.is_empty();
     tx.commit().await.map_err(store_error)?;
@@ -314,23 +329,13 @@ pub async fn revoke_presented(
     )
     .await
     .map_err(store_error)?;
-    let user:Option<Uuid>=school_database::DbSession::new(&mut *tx).scalar("auth.remembered_devices.logout_user",
-        "SELECT user_id FROM auth_remembered_devices WHERE current_token_hash=$1 OR pending_token_hash=$1 LIMIT 1")
-        .bind(hash.as_bytes().as_slice()).fetch_optional().await.map_err(store_error)?;
-    if let Some(user) = user {
-        lock_login_users(&mut tx, user, Some(hash)).await?;
-        let sessions = retire_presented(&mut tx, Some(hash), "logout", now).await?;
-        tx.commit().await.map_err(store_error)?;
-        Ok(RevokedDeviceSessions {
-            found: true,
-            sessions,
-        })
-    } else {
-        Ok(RevokedDeviceSessions {
-            found: false,
-            sessions: Vec::new(),
-        })
-    }
+    let captured = lock_login_users(&mut tx, None, Some(hash)).await?;
+    let sessions = retire_devices(&mut tx, &captured, "logout", now).await?;
+    tx.commit().await.map_err(store_error)?;
+    Ok(RevokedDeviceSessions {
+        found: !captured.is_empty(),
+        sessions,
+    })
 }
 
 fn store_error(_: sqlx::Error) -> AppError {

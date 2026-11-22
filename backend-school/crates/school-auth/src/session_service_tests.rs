@@ -189,6 +189,15 @@ async fn deactivated_account_is_rejected_after_identity_invalidation() {
 impl AuthServiceFixture {
     async fn new(test_name: &str) -> Self {
         let pool = create_named_test_pool(test_name).await;
+        Self::in_pool(pool, test_name).await
+    }
+
+    async fn concurrent(test_name: &str) -> Self {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(test_name, 5).await;
+        Self::in_pool(pool, test_name).await
+    }
+
+    async fn in_pool(pool: PgPool, test_name: &str) -> Self {
         run_test_migrations(&pool).await;
         let config = Arc::new(SessionConfig::for_tests(SessionHmacKey::for_tests(
             [19; 32],
@@ -1799,7 +1808,7 @@ async fn remembered_restore_survives_120_days_and_deleted_finite_child() {
 
 #[tokio::test]
 async fn remembered_concurrent_restore_and_lost_response_reproduce_pair_then_acknowledge() {
-    let fixture = AuthServiceFixture::new("remembered_restore_concurrent").await;
+    let fixture = AuthServiceFixture::concurrent("remembered_restore_concurrent").await;
     fixture
         .insert_user("remembered.teacher", "password-one", "active")
         .await;
@@ -2147,4 +2156,305 @@ async fn account_deactivation_then_reactivation_never_resurrects_device_or_child
         .status_code(),
         StatusCode::UNAUTHORIZED
     );
+}
+
+#[tokio::test]
+async fn remembered_logout_all_revokes_dormant_grants_without_touching_another_user() {
+    let fixture = AuthServiceFixture::new("remembered_dormant_logout_all").await;
+    let user = fixture
+        .insert_user("remembered.teacher", "password-one", "active")
+        .await;
+    fixture
+        .insert_user("other.teacher", "password-two", "active")
+        .await;
+    let first = fixture
+        .login_with_token(
+            "remembered.teacher",
+            "password-one",
+            true,
+            fixture.now,
+            [221; 32],
+        )
+        .await
+        .unwrap();
+    let second = fixture
+        .login_with_token(
+            "remembered.teacher",
+            "password-one",
+            true,
+            fixture.now,
+            [222; 32],
+        )
+        .await
+        .unwrap();
+    let foreign = fixture
+        .login_with_token(
+            "other.teacher",
+            "password-two",
+            true,
+            fixture.now,
+            [223; 32],
+        )
+        .await
+        .unwrap();
+    let first_device = remembered_raw(&first);
+    let second_device = remembered_raw(&second);
+    let foreign_device = remembered_raw(&foreign);
+    sqlx::query("DELETE FROM auth_sessions WHERE user_id=$1")
+        .bind(user)
+        .execute(&fixture.pool)
+        .await
+        .unwrap();
+    let current = fixture
+        .login("remembered.teacher", "password-one")
+        .await
+        .unwrap();
+    authenticate(
+        &fixture.context,
+        current.credential.token_hash(),
+        fixture.now,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    logout_all(&fixture.context, &current.authenticated, fixture.now)
+        .await
+        .unwrap();
+    assert!(authenticate(
+        &fixture.context,
+        current.credential.token_hash(),
+        fixture.now
+    )
+    .await
+    .unwrap()
+    .is_none());
+    for device in [&first_device, &second_device] {
+        assert_eq!(
+            super::session_service::restore(
+                &fixture.context,
+                device,
+                None,
+                fixture.now + Duration::days(120)
+            )
+            .await
+            .unwrap_err()
+            .status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert!(super::session_service::restore(
+        &fixture.context,
+        &foreign_device,
+        None,
+        fixture.now + Duration::days(120)
+    )
+    .await
+    .is_ok());
+}
+
+#[tokio::test]
+async fn remembered_explicit_login_retires_captured_grant_when_acknowledgment_wins_lock_wait() {
+    let fixture = AuthServiceFixture::concurrent("remembered_retirement_ack_race").await;
+    let prior_user = fixture
+        .insert_user("prior.teacher", "password-one", "active")
+        .await;
+    fixture
+        .insert_user("next.teacher", "password-two", "active")
+        .await;
+    let prior = fixture
+        .login_with_token(
+            "prior.teacher",
+            "password-one",
+            true,
+            fixture.now,
+            [224; 32],
+        )
+        .await
+        .unwrap();
+    let device = remembered_raw(&prior);
+    super::session_service::restore(
+        &fixture.context,
+        &device,
+        None,
+        fixture.now + Duration::seconds(1),
+    )
+    .await
+    .unwrap();
+    let mut blocker = fixture.pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR UPDATE")
+        .bind(prior_user)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    let blocker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *blocker)
+        .await
+        .unwrap();
+    let context = fixture.context.clone();
+    let hash = device.token_hash();
+    let now = fixture.now + Duration::seconds(2);
+    let login = tokio::spawn(async move {
+        super::session_service::login_with_device(
+            &context,
+            LoginCommand {
+                username: "next.teacher",
+                password: "password-two",
+                remember_me: false,
+                source: "203.0.113.9".parse().unwrap(),
+                user_agent: None,
+                now,
+            },
+            Some(hash),
+            AuthServiceFixture::credentials([225; 32]),
+        )
+        .await
+    });
+    // Observe the actual user-row wait, so the credential snapshot is already captured.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid)))",
+            )
+            .bind(blocker_pid)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+            if waiting {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("login must reach the user lock");
+    // Reproduce the earlier restore's pending acknowledgment before releasing the user lock.
+    sqlx::query("UPDATE auth_remembered_devices SET current_token_hash=pending_token_hash,pending_token_hash=NULL,pending_created_at=NULL,pending_session_id=NULL WHERE user_id=$1")
+        .bind(prior_user).execute(&mut *blocker).await.unwrap();
+    blocker.commit().await.unwrap();
+    login.await.unwrap().unwrap();
+    let revoked: bool = sqlx::query_scalar(
+        "SELECT revoked_at IS NOT NULL FROM auth_remembered_devices WHERE user_id=$1",
+    )
+    .bind(prior_user)
+    .fetch_one(&fixture.pool)
+    .await
+    .unwrap();
+    assert!(
+        revoked,
+        "the captured prior grant must retire even after its old hash disappears"
+    );
+    assert!(!revalidate(&prior.authenticated, now).await.unwrap());
+}
+
+#[tokio::test]
+async fn remembered_grant_and_child_revocation_roll_back_together_on_child_failure() {
+    let fixture = AuthServiceFixture::new("remembered_revoke_atomic_failure").await;
+    fixture
+        .insert_user("remembered.teacher", "password-one", "active")
+        .await;
+    let current = fixture
+        .login_with_token(
+            "remembered.teacher",
+            "password-one",
+            true,
+            fixture.now,
+            [226; 32],
+        )
+        .await
+        .unwrap();
+    sqlx::raw_sql("CREATE FUNCTION reject_test_device_child_revoke() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic-child-revoke-refusal'; END $$; CREATE TRIGGER reject_test_device_child_revoke BEFORE UPDATE OF revoked_at ON auth_sessions FOR EACH ROW EXECUTE FUNCTION reject_test_device_child_revoke();")
+        .execute(&fixture.pool).await.unwrap();
+    let error = logout(&fixture.context, &current.authenticated, fixture.now)
+        .await
+        .unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    let revoked: bool = sqlx::query_scalar(
+        "SELECT revoked_at IS NOT NULL FROM auth_remembered_devices WHERE user_id=$1",
+    )
+    .bind(current.user.id)
+    .fetch_one(&fixture.pool)
+    .await
+    .unwrap();
+    assert!(!revoked);
+    assert!(revalidate(&current.authenticated, fixture.now)
+        .await
+        .unwrap());
+}
+
+#[tokio::test]
+async fn remembered_restore_digest_collision_rolls_back_and_closed_store_is_unavailable() {
+    let fixture = AuthServiceFixture::new("remembered_restore_digest_refusal").await;
+    fixture
+        .insert_user("remembered.teacher", "password-one", "active")
+        .await;
+    let login = fixture
+        .login_with_token(
+            "remembered.teacher",
+            "password-one",
+            true,
+            fixture.now,
+            [227; 32],
+        )
+        .await
+        .unwrap();
+    let device = remembered_raw(&login);
+    let grant: Uuid =
+        sqlx::query_scalar("SELECT remembered_device_id FROM auth_sessions WHERE id=$1")
+            .bind(login.authenticated.session_id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+    let now = fixture.now + Duration::days(31);
+    let collision = super::session_crypto::remembered_device_token(
+        fixture.context.config().hmac_key(),
+        fixture.context.tenant().tenant_id,
+        grant,
+        &device,
+        now,
+    );
+    fixture
+        .login_with_token(
+            "remembered.teacher",
+            "password-one",
+            false,
+            fixture.now,
+            *collision.as_bytes(),
+        )
+        .await
+        .unwrap();
+    let before: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(g) FROM auth_remembered_devices g WHERE id=$1")
+            .bind(grant)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+    let error = super::session_service::restore(&fixture.context, &device, None, now)
+        .await
+        .unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    let after: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(g) FROM auth_remembered_devices g WHERE id=$1")
+            .bind(grant)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        after, before,
+        "digest allocation failure must roll back grant staging"
+    );
+    let children: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM auth_sessions WHERE remembered_device_id=$1")
+            .bind(grant)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        children, 1,
+        "digest allocation failure must not issue a restore child"
+    );
+    fixture.pool.close().await;
+    let closed = super::session_service::restore(&fixture.context, &device, None, now)
+        .await
+        .unwrap_err();
+    assert_eq!(closed.status_code(), StatusCode::SERVICE_UNAVAILABLE);
 }

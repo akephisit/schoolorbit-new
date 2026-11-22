@@ -17,7 +17,7 @@ async function load(relative, dependencies) {
 	}, exports);
 	return exports;
 }
-async function harness(extraClient = {}) {
+async function harness(extraClient = {}, notifications = { async prepareLogout() {} }) {
 	const { authStore } = await load('../../src/lib/stores/auth.ts', {
 		'svelte/store': { writable },
 		'./permissions': { setPermissions() {}, clearPermissions() {} }
@@ -44,7 +44,7 @@ async function harness(extraClient = {}) {
 		'#lib/auth/auth-refresh-policy.js': { authRefreshDecision },
 		'#lib/auth/session-awareness.js': { announceAuthenticatedSession() {} },
 		'#lib/stores/auth.js': { authStore },
-		'#lib/stores/notification.js': { notificationStore: { async prepareLogout() {} } },
+		'#lib/stores/notification.js': { notificationStore: notifications },
 		'svelte-sonner': { toast: { success() {}, error() {} } }
 	});
 	return {
@@ -159,6 +159,22 @@ test('explicit login fences delayed restore state and runs after its cookie resp
 	assert.equal(h.state.user.id, 'new');
 });
 
+test('login preserves the authoritative rejection after generic transport 401 cleanup changes epoch', async () => {
+	let h;
+	h = await harness({
+		post: async () => {
+			h.authStore.clearUser();
+			return { status: 401, success: false, error: 'incorrect credentials' };
+		}
+	});
+	await assert.rejects(
+		h.authAPI.login({ username: 'fixture', password: 'fixture', rememberMe: false }),
+		/incorrect credentials/
+	);
+	assert.equal(h.state.user, null);
+	assert.equal(h.state.isLoading, false);
+});
+
 for (const status of [200, 401, 503]) {
 	test(`a delayed restore ${status} cannot replace or erase a newer observed login`, async () => {
 		let release;
@@ -200,6 +216,30 @@ test('explicit logout waits for restore cookies and revokes even with an expired
 	writes[1].resolve({ status: 200, success: true, data: {} });
 	await logout;
 	assert.equal(h.state.user, null);
+});
+
+test('expired-session logout performs browser cleanup and explicit grant revocation without restore', async () => {
+	const posts = [];
+	let cleanups = 0;
+	const h = await harness(
+		{
+			get: async () => expired,
+			post: async (endpoint) => {
+				posts.push(endpoint);
+				return { status: 200, success: true, data: {} };
+			}
+		},
+		{
+			async prepareLogout() {
+				cleanups++;
+			}
+		}
+	);
+	h.authStore.setUser({ id: 'old', user_type: 'staff' }, [], response.data.session);
+	await h.authAPI.logout();
+	assert.deepEqual(posts, ['/api/auth/logout']);
+	assert.equal(cleanups, 1);
+	assert.equal(h.state.isAuthenticated, false);
 });
 
 test('revoke refuses a different current session or account without issuing the selected mutation', async () => {

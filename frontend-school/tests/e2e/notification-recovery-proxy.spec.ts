@@ -168,7 +168,7 @@ test('revoked session validation signs out and never reconnects', async ({ page 
 	await expect(page.getByText('Signed out', { exact: true })).toBeVisible();
 	await expect.poll(() => fixture.openStreams).toBe(0);
 	const sequence = pathsAfter(index);
-	expect(sequence).toEqual(['/api/auth/me']);
+	expect(sequence).toEqual(['/api/auth/me', '/api/auth/restore']);
 	// Let the real application reconnect deadline pass; a revoked identity must stay closed.
 	await page.waitForTimeout(3500);
 	expect(pathsAfter(index)).toEqual(sequence);

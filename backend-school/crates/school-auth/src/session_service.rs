@@ -9,6 +9,8 @@ use subtle::ConstantTimeEq;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use crate::remembered_devices::DeviceRevocationTarget;
+
 use super::{
     audit::{self, LoginRejectionReason},
     config::SessionConfig,
@@ -31,7 +33,7 @@ use super::{
         apply_password_change_with_device, cleanup_auth_state, load_password_change_snapshot,
         load_session_validity, lock_password_change, maintain_session, validate_session,
         ActivityTokenDerivation, MaintainedSession, NewSession, PresentedTokenKind,
-        SessionRevocationReason, SessionRevocationTarget,
+        SessionRevocationReason,
     },
     throttle_repository::{check_login_throttles, record_login_failure, ThrottleState},
 };
@@ -697,7 +699,7 @@ pub async fn logout(
     revoke(
         context,
         session,
-        SessionRevocationTarget::Session(session.session_id),
+        DeviceRevocationTarget::Session(session.session_id),
         SessionRevocationReason::Logout,
         now,
     )
@@ -714,7 +716,7 @@ pub async fn revoke_selected(
     let result = revoke(
         context,
         session,
-        SessionRevocationTarget::Session(selected_session_id),
+        DeviceRevocationTarget::Session(selected_session_id),
         SessionRevocationReason::UserSelected,
         now,
     )
@@ -731,9 +733,7 @@ pub async fn logout_all(
     revoke(
         context,
         session,
-        SessionRevocationTarget::User {
-            except_session_id: None,
-        },
+        DeviceRevocationTarget::All,
         SessionRevocationReason::LogoutAll,
         now,
     )
@@ -883,7 +883,7 @@ pub async fn revalidate(
 async fn revoke(
     context: &SessionServiceContext,
     session: &AuthenticatedSession,
-    target: SessionRevocationTarget,
+    target: DeviceRevocationTarget,
     reason: SessionRevocationReason,
     now: DateTime<Utc>,
 ) -> Result<SessionRevocationResult, AppError> {
@@ -895,7 +895,7 @@ async fn revoke(
         now,
     )
     .await?;
-    if !result.found && matches!(target, SessionRevocationTarget::Session(_)) {
+    if !result.found && matches!(target, DeviceRevocationTarget::Session(_)) {
         return Err(AppError::NotFound("ไม่พบเซสชัน".into()));
     }
     let mut revoked_session_ids: Vec<Uuid> = result.sessions.iter().map(|(_, id)| *id).collect();

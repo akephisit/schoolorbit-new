@@ -67,6 +67,11 @@ export async function mockStaffHome(
 				reads.push(resource);
 				counts.set(resource, (counts.get(resource) ?? 0) + 1);
 			} else writes.push(`${method} ${resource}`);
+			if (resource === '/api/auth/restore')
+				return route.fulfill({
+					status: 401,
+					json: { success: false, error: 'No remembered fixture device' }
+				});
 			if (resource === '/api/notifications/stream')
 				return route.fulfill({
 					status: 200,

@@ -132,10 +132,9 @@ class AuthAPI {
 				const changed = () => new ApiClientError('การเข้าสู่ระบบเปลี่ยนแปลง กรุณาลองอีกครั้ง', 409);
 				if (!this.currentIntent(intent, epoch)) throw changed();
 				const response = await apiClient.post<LoginData>('/api/auth/login', data);
+				const userData = requireApiData(response, 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ').user;
 				if (!this.currentIntent(intent, epoch)) throw changed();
-				const currentUser = normalizeCurrentUser(
-					requireApiData(response, 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ').user
-				);
+				const currentUser = normalizeCurrentUser(userData);
 				authStore.setUser(currentUser.user, currentUser.permissions, currentUser.session);
 				announceAuthenticatedSession(currentUser.session);
 				toast.success(response.message || 'เข้าสู่ระบบสำเร็จ');

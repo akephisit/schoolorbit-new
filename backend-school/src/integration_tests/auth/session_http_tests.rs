@@ -885,7 +885,7 @@ async fn logout_without_finite_session_revokes_presented_remembered_device_befor
     let grant = Uuid::new_v4();
     sqlx::query("INSERT INTO auth_remembered_devices(id,user_id,current_token_hash,device_label,created_at,last_used_at) VALUES($1,$2,$3,'Synthetic',now(),now())")
         .bind(grant).bind(user).bind(device.token_hash().as_bytes().as_slice()).execute(&fixture.pool).await.unwrap();
-    let headers = HeaderMap::from_iter([(
+    let mut headers = HeaderMap::from_iter([(
         header::COOKIE,
         HeaderValue::from_str(&format!(
             "__Host-schoolorbit_device={}",
@@ -893,6 +893,14 @@ async fn logout_without_finite_session_revokes_presented_remembered_device_befor
         ))
         .unwrap(),
     )]);
+    headers.insert(
+        header::ORIGIN,
+        HeaderValue::from_str(&format!(
+            "https://{}.schoolorbit.test",
+            fixture.tenant.subdomain
+        ))
+        .unwrap(),
+    );
     let success = response_from_result(
         logout_with_tenant(&fixture.runtime, fixture.tenant.clone(), &headers).await,
     );
@@ -3119,6 +3127,10 @@ pub(crate) mod protected_router {
                 "/api/auth/restore",
                 post(school_auth_http::http::session_handlers::restore),
             )
+            .route(
+                "/api/auth/logout",
+                post(school_auth_http::http::session_handlers::logout),
+            )
             .with_state(fixture.runtime.clone());
         let make = |origin: Option<&str>, body: &str, cookie: Option<&RawSessionToken>| {
             let mut req = request(Method::POST, "/api/auth/restore", origin, None, None);
@@ -3139,6 +3151,57 @@ pub(crate) mod protected_router {
             *req.body_mut() = Body::from(body.to_string());
             req
         };
+        let before_grant: serde_json::Value = sqlx::query_scalar(
+            "SELECT to_jsonb(g) FROM auth_remembered_devices g WHERE user_id=$1",
+        )
+        .bind(user)
+        .fetch_one(&fixture.tenant_a_pool)
+        .await
+        .unwrap();
+        for path in ["/api/auth/restore", "/api/auth/logout"] {
+            for duplicate in [false, true] {
+                let mut denied = make(None, "{}", Some(&device));
+                *denied.uri_mut() = path.parse().unwrap();
+                denied.headers_mut().insert(
+                    header::REFERER,
+                    HeaderValue::from_static("https://tenant-a.schoolorbit.test/account/security"),
+                );
+                if duplicate {
+                    denied.headers_mut().append(
+                        header::ORIGIN,
+                        HeaderValue::from_static("https://tenant-a.schoolorbit.test"),
+                    );
+                    denied.headers_mut().append(
+                        header::ORIGIN,
+                        HeaderValue::from_static("https://tenant-a.schoolorbit.test"),
+                    );
+                }
+                let denied = app.clone().oneshot(denied).await.unwrap();
+                assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+                assert_eq!(set_cookie_count(&denied), 0);
+                let after_grant: serde_json::Value = sqlx::query_scalar(
+                    "SELECT to_jsonb(g) FROM auth_remembered_devices g WHERE user_id=$1",
+                )
+                .bind(user)
+                .fetch_one(&fixture.tenant_a_pool)
+                .await
+                .unwrap();
+                assert_eq!(
+                    after_grant, before_grant,
+                    "rejected Origin must not mutate the grant"
+                );
+                let children: i64 =
+                    sqlx::query_scalar("SELECT count(*) FROM auth_sessions WHERE user_id=$1")
+                        .bind(user)
+                        .fetch_one(&fixture.tenant_a_pool)
+                        .await
+                        .unwrap();
+                assert_eq!(
+                    children, 0,
+                    "rejected Origin must not issue a finite session"
+                );
+            }
+        }
         for (origin, body, cookie, status) in [
             (None, "{}", Some(&device), StatusCode::FORBIDDEN),
             (
@@ -3218,8 +3281,36 @@ pub(crate) mod protected_router {
             header::COOKIE,
             HeaderValue::from_str(&session_cookie).unwrap(),
         );
-        let conflict = app.oneshot(conflict).await.unwrap();
+        let conflict = app.clone().oneshot(conflict).await.unwrap();
         assert_eq!(conflict.status(), StatusCode::CONFLICT);
         assert_eq!(set_cookie_count(&conflict), 0);
+        let mut logout = make(
+            Some("https://tenant-a.schoolorbit.test"),
+            "{}",
+            Some(&device),
+        );
+        *logout.uri_mut() = "/api/auth/logout".parse().unwrap();
+        let logout = app.oneshot(logout).await.unwrap();
+        assert_eq!(logout.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&logout), 3);
+        let revoked: bool = sqlx::query_scalar(
+            "SELECT revoked_at IS NOT NULL FROM auth_remembered_devices WHERE user_id=$1",
+        )
+        .bind(user)
+        .fetch_one(&fixture.tenant_a_pool)
+        .await
+        .unwrap();
+        assert!(
+            revoked,
+            "authorized stale-session logout must revoke the grant"
+        );
+        let live_children: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM auth_sessions WHERE user_id=$1 AND revoked_at IS NULL",
+        )
+        .bind(user)
+        .fetch_one(&fixture.tenant_a_pool)
+        .await
+        .unwrap();
+        assert_eq!(live_children, 0);
     }
 }

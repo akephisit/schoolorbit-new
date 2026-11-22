@@ -44,12 +44,12 @@ test('key rotation is silent until user action then recreates the exact old subs
 	assert.equal(h.calls.unsubscribe, 1);
 	assert.deepEqual([...h.calls.subscribe[0].applicationServerKey], [1, 2, 3]);
 });
-test('logout clears local binding, revokes only current version and closes browser notifications', async () => {
+test('auth logout cleans browser resources without a second authenticated Push revoke', async () => {
 	const h = deviceHarness();
 	await h.store.enablePushFromUserAction();
 	await h.store.prepareLogout();
 	assert.equal(h.state.binding, null);
-	assert.deepEqual(h.calls.revoke, [{ id: 'device-1', version: 'version-1' }]);
+	assert.deepEqual(h.calls.revoke, []);
 	assert.equal(h.calls.unsubscribe, 1);
 	assert.equal(h.calls.close, 1);
 });
