@@ -14,7 +14,7 @@ chrono = { workspace = true }
 lopdf = { workspace = true }
 rustybuzz = { workspace = true }
 school-auth = { workspace = true }
-school-auth-http = { workspace = true }
+school-auth-context = { workspace = true }
 school-authorization = { workspace = true }
 school-database = { workspace = true }
 school-errors = { workspace = true }

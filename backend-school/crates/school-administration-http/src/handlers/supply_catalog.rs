@@ -6,7 +6,7 @@ use axum::{
 };
 use school_administration::supply_catalog::{models::*, services};
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 use school_errors::AppError;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;

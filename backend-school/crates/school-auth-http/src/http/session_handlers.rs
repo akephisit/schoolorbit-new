@@ -14,14 +14,9 @@ use chrono::Utc;
 use school_tenancy::TenantContext;
 use uuid::Uuid;
 
-use crate::client_address::client_address;
-use crate::tenant::resolve_auth_tenant_context;
+use school_auth_context::client_address::client_address;
+use school_auth_context::tenant::resolve_auth_tenant_context;
 
-use crate::cookies::{
-    append_expired_auth_cookies, append_response_cookie, csrf_response_header,
-    expire_legacy_cookie, expire_remembered_device_cookie, presented_remembered_device_token,
-    presented_session_token, set_remembered_device_cookie, set_session_cookie, validate_csrf,
-};
 use school_auth::{
     audit::{self, SessionFailureReason},
     config::CSRF_HEADER_NAME,
@@ -32,6 +27,11 @@ use school_auth::{
     runtime::AuthRuntime,
     session_crypto::RawSessionToken,
     session_service::{self, AuthenticatedSession, LoginCommand, LoginUserSnapshot},
+};
+use school_auth_context::cookies::{
+    append_expired_auth_cookies, append_response_cookie, csrf_response_header,
+    expire_legacy_cookie, expire_remembered_device_cookie, presented_remembered_device_token,
+    presented_session_token, set_remembered_device_cookie, set_session_cookie, validate_csrf,
 };
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

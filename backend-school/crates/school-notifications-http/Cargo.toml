@@ -16,7 +16,7 @@ axum = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 school-auth = { workspace = true }
-school-auth-http = { workspace = true }
+school-auth-context = { workspace = true }
 school-http = { workspace = true }
 school-notifications = { workspace = true }
 serde_json = { workspace = true }

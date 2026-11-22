@@ -1855,7 +1855,7 @@ test('frontend permission contracts use organization units instead of department
 
 test('tenant routing uses Origin by default with explicit X-School-Subdomain override', async () => {
 	const subdomainResolver = await readFile(
-		path.join(repoRoot, 'backend-school/crates/school-auth-http/src/origin.rs'),
+		path.join(repoRoot, 'backend-school/crates/school-auth-context/src/origin.rs'),
 		'utf8'
 	);
 	const apiClient = await readFile(

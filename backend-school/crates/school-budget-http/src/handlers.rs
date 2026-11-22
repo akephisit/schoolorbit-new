@@ -5,7 +5,7 @@ use axum::{
     Extension, Json,
 };
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 use school_budget::{adjustments, deletion, models::*, projects, queries, requests, settings};
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;

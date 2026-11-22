@@ -286,7 +286,7 @@ pub async fn events(
             let session = check_session.clone();
             let state = state.clone();
             async move {
-                if !school_auth_http::tenant::revalidate_realtime_session(
+                if !school_auth_context::tenant::revalidate_realtime_session(
                     &state.auth_runtime,
                     &session,
                 )
@@ -294,7 +294,7 @@ pub async fn events(
                 {
                     return Ok(false);
                 }
-                let tenant = school_auth_http::tenant::resolve_tenant_context_by_subdomain(
+                let tenant = school_auth_context::tenant::resolve_tenant_context_by_subdomain(
                     &state.auth_runtime,
                     &session.tenant.subdomain,
                 )

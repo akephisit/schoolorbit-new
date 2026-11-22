@@ -30,11 +30,11 @@ test("UI, service, docs, tests and control changes have separate verification/de
   ]);
   assert.ok(
     classify([
-      "backend-school/crates/school-auth-http/src/origin.rs",
+      "backend-school/crates/school-auth-context/src/origin.rs",
     ]).verify.includes("frontend-school"),
   );
   assert.deepEqual(
-    classify(["backend-school/crates/school-auth-http/src/origin.rs"]).deploy,
+    classify(["backend-school/crates/school-auth-context/src/origin.rs"]).deploy,
     ["backend-school"],
   );
   assert.deepEqual(classify(["frontend-admin/tests/login.test.ts"]).deploy, []);

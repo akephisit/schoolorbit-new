@@ -97,6 +97,7 @@ test('local School verification executes tests and database fixtures rather than
  for(const owner of ['school-behavior','school-attendance'])assert.ok(!tests.some(args=>args.includes(owner)),`${owner} belongs exclusively to the owned fixture stage`);
  const httpBatch=tests.find(args=>args.includes('school-auth-http')&&args.includes('--lib'));
  assert.ok(httpBatch,'HTTP memory-only unit batch executes directly');
+ assert.ok(httpBatch.includes('school-auth-context'),'shared auth request-context unit tests execute');
  for(const owner of ['core','delivery','assessment','timetable','results','lifecycle'])assert.ok(httpBatch.includes('school-academic-'+owner+'-http'),owner);
  assert.ok(httpBatch.includes('school-academic-realtime'),'shared protocol unit owner executes');
  assert.ok(!httpBatch.includes('school-academic-http'),'retired combined owner must never be invoked');

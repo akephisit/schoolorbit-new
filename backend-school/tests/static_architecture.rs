@@ -831,7 +831,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-budget-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-budget",
                 "school-http",
                 "school-notifications",
@@ -854,7 +854,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-student-care-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-http",
                 "school-notifications",
                 "school-student-care",
@@ -896,7 +896,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-core",
                 "school-academic-realtime",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-authorization",
                 "school-http",
             ],
@@ -908,7 +908,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-delivery",
                 "school-academic-realtime",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-authorization",
                 "school-errors",
                 "school-http",
@@ -920,7 +920,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-assessment",
                 "school-academic-realtime",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-http",
             ],
         ),
@@ -931,7 +931,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-realtime",
                 "school-academic-timetable",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-authorization",
                 "school-errors",
                 "school-http",
@@ -944,7 +944,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-realtime",
                 "school-academic-results",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-http",
             ],
         ),
@@ -954,7 +954,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-lifecycle",
                 "school-academic-realtime",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-authorization",
                 "school-errors",
                 "school-http",
@@ -1017,7 +1017,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-core",
                 "school-administration",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-errors",
                 "school-file-contracts",
                 "school-file-platform",
@@ -1042,7 +1042,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-core",
                 "school-admission",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-file-contracts",
                 "school-file-platform",
                 "school-http",
@@ -1069,7 +1069,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             &[
                 "school-attendance",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-file-platform",
                 "school-http",
                 "school-notifications",
@@ -1086,10 +1086,19 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             ],
         ),
         (
-            "school-auth-http",
+            "school-auth-context",
             &[
                 "school-auth",
                 "school-authorization",
+                "school-errors",
+                "school-tenancy",
+            ],
+        ),
+        (
+            "school-auth-http",
+            &[
+                "school-auth",
+                "school-auth-context",
                 "school-errors",
                 "school-http",
                 "school-tenancy",
@@ -1113,7 +1122,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-behavior-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-behavior",
                 "school-errors",
                 "school-http",
@@ -1134,7 +1143,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-calendar-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-calendar",
                 "school-http",
                 "school-notifications",
@@ -1158,7 +1167,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             &[
                 "school-administration",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-certificates",
                 "school-errors",
                 "school-file-platform",
@@ -1184,7 +1193,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-administration",
                 "school-attendance",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-authorization",
                 "school-budget",
                 "school-certificates",
@@ -1216,7 +1225,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-fonts-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-file-platform",
                 "school-fonts",
                 "school-http",
@@ -1240,7 +1249,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-navigation-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-http",
                 "school-navigation",
             ],
@@ -1253,7 +1262,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-notifications-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-http",
                 "school-notifications",
             ],
@@ -1273,7 +1282,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-question-bank-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-file-contracts",
                 "school-file-platform",
                 "school-http",
@@ -1314,7 +1323,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
                 "school-academic-core",
                 "school-academic-timetable",
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-calendar",
                 "school-http",
                 "school-students",
@@ -1337,7 +1346,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-supervision-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-http",
                 "school-notifications",
                 "school-supervision",
@@ -1360,7 +1369,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-workflow-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-authorization",
                 "school-database",
                 "school-errors",
@@ -1380,7 +1389,7 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
             "school-staff-http",
             &[
                 "school-auth",
-                "school-auth-http",
+                "school-auth-context",
                 "school-authorization",
                 "school-errors",
                 "school-file-platform",
@@ -1423,6 +1432,10 @@ fn workspace_crates_follow_the_approved_dependency_graph() {
         assert!(!manifest.contains("path ="));
 
         let actual = school_dependencies_in_section(&manifest, "dependencies");
+        assert!(
+            !actual.contains("school-auth-http"),
+            "{package} must use school-auth-context for shared request adapters"
+        );
         let expected: BTreeSet<_> = expected_dependencies
             .iter()
             .map(|dependency| dependency.to_string())
@@ -2257,7 +2270,8 @@ fn school_tenancy_is_the_single_tenant_runtime_owner() {
     assert!(!manifest_dir().join("src/db/pool_manager.rs").exists());
     assert!(!manifest_dir().join("src/db/school_mapping.rs").exists());
 
-    let request_adapter = read_source(manifest_dir().join("crates/school-auth-http/src/tenant.rs"));
+    let request_adapter =
+        read_source(manifest_dir().join("crates/school-auth-context/src/tenant.rs"));
     let pool_manager =
         read_source(workspace_crate_dir("school-tenancy").join("src/pool_manager.rs"));
     assert!(request_adapter.contains("HeaderMap"));
@@ -2603,9 +2617,6 @@ fn school_auth_is_the_single_session_runtime_owner() {
             .join(adapter)
             .exists());
     }
-    assert!(workspace_crate_dir("school-auth-http")
-        .join("src/cookies.rs")
-        .exists());
     assert!(
         !read_source(manifest_dir().join("crates/school-notifications/src/events.rs"))
             .contains("pub struct PermissionChangeEvent")
@@ -2624,6 +2635,61 @@ fn school_auth_is_the_single_session_runtime_owner() {
         "purpose_code = 'profile_image'",
     ] {
         assert!(!strip_cfg_test_modules(&services).contains(file_sql));
+    }
+}
+
+#[test]
+fn school_auth_context_is_the_single_shared_request_adapter() {
+    let context = workspace_crate_dir("school-auth-context").join("src");
+    let endpoints = workspace_crate_dir("school-auth-http").join("src");
+    let owners = [
+        ("client_address", "client_address"),
+        ("ActorTenantContext", "context"),
+        ("CurrentUserTenantContext", "context"),
+        ("actor_tenant_context_from_session", "context"),
+        ("current_user_tenant_context_from_session", "context"),
+        ("presented_session_token", "cookies"),
+        ("validate_csrf", "cookies"),
+        ("TenantOriginPolicy", "origin"),
+        ("parse_realtime_tenant_hint", "origin"),
+        ("extract_subdomain_from_request", "origin"),
+        ("resolve_auth_tenant_context", "tenant"),
+        ("revalidate_realtime_session", "tenant"),
+    ];
+    let declaration = Regex::new(&format!(
+        r"\b(?:fn|struct)\s+(?P<name>{})\b",
+        owners.map(|(name, _)| name).join("|")
+    ))
+    .unwrap();
+    let mut declarations = BTreeSet::new();
+    for file in backend_rs_files() {
+        let source = read_source(&file);
+        let source = lexical_mask(&source, false).structural;
+        for item in declaration.captures_iter(&source) {
+            let name = &item["name"];
+            let (_, module) = owners.iter().find(|(symbol, _)| *symbol == name).unwrap();
+            assert_eq!(
+                file,
+                context.join(format!("{module}.rs")),
+                "{name} must live in the shared request adapter"
+            );
+            assert!(declarations.insert(name.to_string()), "duplicate {name}");
+        }
+    }
+    assert_eq!(declarations.len(), owners.len());
+
+    for module in ["client_address", "context", "cookies", "origin", "tenant"] {
+        assert!(!endpoints.join(format!("{module}.rs")).exists());
+    }
+    let reexport = Regex::new(r"\bpub\s+use\s+(?:::)?school_auth_context\b").unwrap();
+    for file in list_files(endpoints, |path| {
+        path.extension().is_some_and(|extension| extension == "rs")
+    }) {
+        let source = read_source(&file);
+        assert!(
+            !reexport.is_match(&lexical_mask(&source, false).structural),
+            "shared adapters must be imported directly"
+        );
     }
 }
 
@@ -2969,14 +3035,14 @@ fn remaining_vertical_handlers_use_typed_session_identity() {
 fn only_auth_boundary_parses_browser_session_credentials() {
     let credential_boundaries = [
         "src/middleware/session.rs",
-        "crates/school-auth-http/src/cookies.rs",
+        "crates/school-auth-context/src/cookies.rs",
         "crates/school-auth-http/src/http/session_handlers.rs",
         "crates/school-academic-timetable-http/src/websockets.rs",
     ];
     let cookie_name_owners = [
         "src/middleware/session.rs",
         "crates/school-auth/src/config.rs",
-        "crates/school-auth-http/src/cookies.rs",
+        "crates/school-auth-context/src/cookies.rs",
         "crates/school-auth-http/src/http/session_handlers.rs",
         "crates/school-academic-timetable-http/src/websockets.rs",
     ];
@@ -2998,7 +3064,7 @@ fn only_auth_boundary_parses_browser_session_credentials() {
         }
     }
 
-    let context = read_source(manifest_dir().join("crates/school-auth-http/src/context.rs"));
+    let context = read_source(manifest_dir().join("crates/school-auth-context/src/context.rs"));
     assert!(!context.contains("_from_headers"));
     assert!(!context.contains("HeaderMap"));
 }
@@ -7406,14 +7472,15 @@ fn timetable_websocket_handler_orders_session_auth_before_room_state() {
 
     let heartbeat = extract_braced_block(&socket_loop, "_ = heartbeat.tick() =>", false);
     let heartbeat_revalidation = heartbeat
-        .find("school_auth_http::tenant::revalidate_realtime_session(")
+        .find("school_auth_context::tenant::revalidate_realtime_session(")
         .expect("heartbeat must reacquire a tenant lease and revalidate the authoritative session");
     let heartbeat_ping = heartbeat
         .find("Message::Ping")
         .expect("heartbeat must send a ping after revalidation");
     assert!(heartbeat_revalidation < heartbeat_ping);
 
-    let tenant_adapter = read_source(manifest_dir().join("crates/school-auth-http/src/tenant.rs"));
+    let tenant_adapter =
+        read_source(manifest_dir().join("crates/school-auth-context/src/tenant.rs"));
     let revalidation = extract_braced_block(
         &tenant_adapter,
         "pub async fn revalidate_realtime_session",

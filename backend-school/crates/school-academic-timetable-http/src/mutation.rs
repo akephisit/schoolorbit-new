@@ -8,7 +8,7 @@ use school_academic_timetable::collaboration::{
 use school_academic_timetable::models::collaboration::TimetableMutationIdentity;
 use school_auth::runtime::AuthRuntime;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
+use school_auth_context::context::{actor_tenant_context_from_session, ActorTenantContext};
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use uuid::Uuid;
@@ -34,7 +34,7 @@ impl MutationAuthorizationPort for SessionMutationAuthorization {
                 "Authorization scope changed while the timetable operation was queued".into(),
             ));
         }
-        if !school_auth_http::tenant::revalidate_realtime_session(&self.runtime, &self.session)
+        if !school_auth_context::tenant::revalidate_realtime_session(&self.runtime, &self.session)
             .await?
         {
             return Err(AppError::AuthError("Session is no longer active".into()));

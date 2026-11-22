@@ -250,7 +250,7 @@ impl Fixture {
             &self.auth.tenant_a_pool,
             Uuid::parse_str(ACTOR).unwrap(),
         );
-        let tenant = school_auth_http::tenant::resolve_tenant_context_by_subdomain(
+        let tenant = school_auth_context::tenant::resolve_tenant_context_by_subdomain(
             &self.auth.runtime,
             "tenant-a",
         )
@@ -1669,7 +1669,7 @@ async fn real_cold_fill_overlapping_upstream_change_cannot_install_stale_valid_p
         }
     }
     let fixture = Fixture::new("collaboration_cold_fill_generation").await;
-    let tenant = school_auth_http::tenant::resolve_tenant_context_by_subdomain(
+    let tenant = school_auth_context::tenant::resolve_tenant_context_by_subdomain(
         &fixture.auth.runtime,
         "tenant-a",
     )

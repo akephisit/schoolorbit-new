@@ -1283,7 +1283,7 @@ async fn assert_appearance_http_boundaries(state: &AppState, a: &PgPool) {
     let origin = "https://school-a.schoolorbit.app";
     let mut headers = axum::http::HeaderMap::new();
     headers.insert("Origin", origin.parse().unwrap());
-    let tenant = school_auth_http::tenant::tenant_context(&state.auth_runtime, &headers)
+    let tenant = school_auth_context::tenant::tenant_context(&state.auth_runtime, &headers)
         .await
         .unwrap();
     let editor = user(a, "appearance-editor", "staff", None, "active").await;

@@ -1,6 +1,6 @@
 use crate::state::AcademicLifecycleHttpState;
 use school_academic_lifecycle::services;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 
 use axum::{
     extract::{Extension, Path, State},

@@ -1,4 +1,3 @@
-use crate::context::current_user_tenant_context_from_session;
 use crate::http::state::AuthHttpState;
 use axum::{
     extract::{Extension, State},
@@ -11,6 +10,7 @@ use school_auth::{
     services,
     session_service::AuthenticatedSession,
 };
+use school_auth_context::context::current_user_tenant_context_from_session;
 
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;

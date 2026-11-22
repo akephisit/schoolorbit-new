@@ -5,7 +5,7 @@ use school_academic_timetable::collaboration::{TimetableMember, TimetableRoom, T
 use school_academic_timetable::models::collaboration::{
     TimetableClientMessage, TimetableEventEnvelope,
 };
-use school_auth_http::context::ActorTenantContext;
+use school_auth_context::context::ActorTenantContext;
 
 use super::*;
 
@@ -138,7 +138,7 @@ pub(super) async fn handle(
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        let tenant = school_auth_http::tenant::resolve_tenant_context_by_subdomain(
+        let tenant = school_auth_context::tenant::resolve_tenant_context_by_subdomain(
             &state.auth_runtime,
             &authenticated.tenant.subdomain,
         )
@@ -214,7 +214,7 @@ pub(super) async fn handle(
                 }
             }
             _ = heartbeat.tick() => {
-                let reason = match school_auth_http::tenant::revalidate_realtime_session(&state.auth_runtime, &authenticated).await {
+                let reason = match school_auth_context::tenant::revalidate_realtime_session(&state.auth_runtime, &authenticated).await {
                     Ok(true) => None,
                     Ok(false) => Some(SocketCloseReason::SessionInvalid),
                     Err(_) => Some(SocketCloseReason::SessionUnavailable),

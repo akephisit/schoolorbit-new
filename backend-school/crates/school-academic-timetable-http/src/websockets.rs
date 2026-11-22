@@ -19,10 +19,10 @@ use school_auth::{
     events::SessionRevocationEvent,
     session_service::{self, AuthenticatedSession},
 };
-use school_auth_http::context::actor_tenant_context_from_session;
-use school_auth_http::cookies::presented_session_token;
-use school_auth_http::origin::parse_realtime_tenant_hint;
-use school_auth_http::tenant::resolve_auth_tenant_context;
+use school_auth_context::context::actor_tenant_context_from_session;
+use school_auth_context::cookies::presented_session_token;
+use school_auth_context::origin::parse_realtime_tenant_hint;
+use school_auth_context::tenant::resolve_auth_tenant_context;
 use school_http::HttpError as AppError;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
@@ -1079,7 +1079,7 @@ async fn handle_socket(
                     }
                 },
                 _ = heartbeat.tick() => {
-                    match school_auth_http::tenant::revalidate_realtime_session(&state.auth_runtime, &authenticated).await {
+                    match school_auth_context::tenant::revalidate_realtime_session(&state.auth_runtime, &authenticated).await {
                         Ok(true) => {}
                         Ok(false) => {
                             close_realtime_socket(

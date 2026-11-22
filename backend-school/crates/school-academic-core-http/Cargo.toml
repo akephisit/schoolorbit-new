@@ -18,7 +18,7 @@ chrono-tz = { workspace = true }
 school-academic-core = { workspace = true }
 school-academic-realtime = { workspace = true }
 school-auth = { workspace = true }
-school-auth-http = { workspace = true }
+school-auth-context = { workspace = true }
 school-authorization = { workspace = true }
 school-http = { workspace = true }
 serde = { workspace = true }

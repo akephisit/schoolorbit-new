@@ -1,5 +1,5 @@
 use super::*;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 
 #[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/academic/lifecycle/promotion-runs/{run_id}/impacts",operation_id="getPromotionRunImpacts",tag="academic",
  params(("run_id"=Uuid,Path),PromotionImpactQuery),

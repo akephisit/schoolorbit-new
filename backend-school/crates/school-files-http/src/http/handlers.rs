@@ -25,8 +25,8 @@ use uuid::Uuid;
 
 use crate::access_policy as file_access_policy;
 use crate::http::state::FileHttpState;
-use school_auth_http::context::actor_tenant_context_from_session;
-use school_auth_http::tenant::tenant_context;
+use school_auth_context::context::actor_tenant_context_from_session;
+use school_auth_context::tenant::tenant_context;
 use school_file_contracts::access::FilePolicyAction;
 
 use school_file_platform::consumer_service::{

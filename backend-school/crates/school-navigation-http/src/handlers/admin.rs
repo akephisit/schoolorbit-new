@@ -1,8 +1,8 @@
 use crate::permission_codes_generated as codes;
 use crate::state::NavigationHttpState;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
-use school_auth_http::context::ActorTenantContext;
+use school_auth_context::context::actor_tenant_context_from_session;
+use school_auth_context::context::ActorTenantContext;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]

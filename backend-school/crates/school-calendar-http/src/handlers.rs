@@ -9,9 +9,9 @@ use axum::{
     Json,
 };
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
-use school_auth_http::context::current_user_tenant_context_from_session;
-use school_auth_http::tenant::tenant_context;
+use school_auth_context::context::actor_tenant_context_from_session;
+use school_auth_context::context::current_user_tenant_context_from_session;
+use school_auth_context::tenant::tenant_context;
 use school_calendar::delivery as calendar_service;
 use school_calendar::models::{
     CalendarEventQuery, UpsertCalendarCategoryRequest, UpsertCalendarEventRequest,

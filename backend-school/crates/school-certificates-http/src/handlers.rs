@@ -47,7 +47,7 @@ use uuid::Uuid;
 
 use crate::state::CertificateHttpState;
 use school_administration::lookup::models::OrganizationUnitLookupItem;
-use school_auth_http::{
+use school_auth_context::{
     client_address::client_address, context::actor_tenant_context_from_session,
     tenant::tenant_context,
 };

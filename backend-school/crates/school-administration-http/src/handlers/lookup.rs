@@ -28,9 +28,9 @@ use school_administration::lookup::models::StudentLookupItem;
 use school_administration::lookup::models::{AcademicLookupQuery, SubjectLookupQuery};
 use school_administration::lookup::services as lookup_service;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
-use school_auth_http::context::current_user_tenant_context_from_session;
-use school_auth_http::context::CurrentUserTenantContext;
+use school_auth_context::context::actor_tenant_context_from_session;
+use school_auth_context::context::current_user_tenant_context_from_session;
+use school_auth_context::context::CurrentUserTenantContext;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;

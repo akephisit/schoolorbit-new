@@ -10,7 +10,7 @@ use chrono::NaiveDate;
 #[cfg(feature = "api-docs")]
 use school_academic_core::models::AcademicContextOptions;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;

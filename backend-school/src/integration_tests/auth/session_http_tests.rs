@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use school_auth_http::origin::{
+use school_auth_context::origin::{
     parse_realtime_tenant_hint, TenantOriginPolicy, SCHOOL_SUBDOMAIN_HEADER,
 };
 use school_test_db::{create_named_test_pool, run_test_migrations};
@@ -28,12 +28,12 @@ use school_auth::{
     session_policy::normalize_login_identifier,
     session_service::AuthenticatedSession,
 };
-use school_auth_http::{
-    cookies::{expire_auth_cookies, presented_session_token, set_session_cookie, validate_csrf},
-    http::session_handlers::{
-        change_password, list_sessions, login_with_tenant, logout_all, logout_with_tenant, me,
-        revoke_session,
-    },
+use school_auth_context::cookies::{
+    expire_auth_cookies, presented_session_token, set_session_cookie, validate_csrf,
+};
+use school_auth_http::http::session_handlers::{
+    change_password, list_sessions, login_with_tenant, logout_all, logout_with_tenant, me,
+    revoke_session,
 };
 
 struct HandlerFixture {
@@ -1898,7 +1898,7 @@ pub(crate) mod protected_router {
         assert_eq!(applied["success"], true);
         assert_eq!(applied["data"]["groups"].as_array().unwrap().len(), 2);
         let completion =
-            school_auth_http::tenant::tenant_context_by_subdomain(&fixture.runtime, "tenant-a")
+            school_auth_context::tenant::tenant_context_by_subdomain(&fixture.runtime, "tenant-a")
                 .await
                 .unwrap();
         for id in &group_ids[..2] {
@@ -2402,10 +2402,12 @@ pub(crate) mod protected_router {
                 .fetch_one(&fixture.tenant_a_pool).await.unwrap();
         // Setup is a separate managed operation; DELETE requests below acquire their own leases.
         let (subject, activity) = {
-            let tenant =
-                school_auth_http::tenant::tenant_context_by_subdomain(&fixture.runtime, "tenant-a")
-                    .await
-                    .unwrap();
+            let tenant = school_auth_context::tenant::tenant_context_by_subdomain(
+                &fixture.runtime,
+                "tenant-a",
+            )
+            .await
+            .unwrap();
             let subject = school_academic_core::services::catalog::create_subject(
                 &tenant.pool,
                 school_academic_core::models::CreateCatalogSubjectRequest {
@@ -2432,10 +2434,12 @@ pub(crate) mod protected_router {
                 models::{CreateCatalogSubjectRequest, CreateSubjectVersionRequest},
                 services::catalog,
             };
-            let tenant =
-                school_auth_http::tenant::tenant_context_by_subdomain(&fixture.runtime, "tenant-a")
-                    .await
-                    .unwrap();
+            let tenant = school_auth_context::tenant::tenant_context_by_subdomain(
+                &fixture.runtime,
+                "tenant-a",
+            )
+            .await
+            .unwrap();
             let today = Utc::now()
                 .with_timezone(&chrono_tz::Asia::Bangkok)
                 .date_naive();

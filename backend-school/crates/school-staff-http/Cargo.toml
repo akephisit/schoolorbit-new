@@ -19,7 +19,7 @@ axum = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 school-auth = { workspace = true }
-school-auth-http = { workspace = true }
+school-auth-context = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
 school-file-platform = { workspace = true }
