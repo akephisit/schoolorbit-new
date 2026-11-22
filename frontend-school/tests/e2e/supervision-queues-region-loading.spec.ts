@@ -1,5 +1,5 @@
 import { revalidatePage } from './fixtures/page-revalidation';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 import {
 	id,
 	year,
@@ -147,10 +147,172 @@ test('write-only evaluation permission does not grant observation reads', async 
 	const api = await mock(page, { permissions: ['supervision.evaluate.assigned'] });
 	await page.goto(path('evaluate'));
 	await expect(page.getByText('ยังไม่มีสิทธิ์ดูรายการนิเทศ')).toBeVisible();
+	await expect(page.getByRole('tablist', { name: 'มุมมองรายการประเมิน' })).toHaveCount(0);
 	expect(api.count(observationPath)).toBe(0);
 	expect(api.count('/api/supervision/cycles')).toBe(0);
 	expect(api.count('/api/supervision/templates/summaries')).toBe(0);
 });
+
+test('an empty successful evaluation read keeps both views available', async ({ page }) => {
+	const api = await mock(page, { permissions: assigned });
+	api.setObservationScope('hidden');
+	await page.goto(path('evaluate'));
+	await expect(page.getByText('ยังไม่มีรายการที่ต้องประเมิน')).toBeVisible();
+	await page.getByRole('tab', { name: 'ปฏิทิน', exact: true }).click();
+	await expect(page.getByText('ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้')).toBeVisible();
+	expect(api.count(observationPath)).toBe(1);
+});
+
+async function submitFromCalendar(page: Page) {
+	await page.goto(path('evaluate'));
+	await page.getByRole('tab', { name: 'ปฏิทิน', exact: true }).click();
+	const calendar = page.getByRole('tabpanel', { name: 'ปฏิทิน', exact: true });
+	const day = calendar.locator('[data-calendar-date="2026-10-01"]');
+	await day.click();
+	await expect(day).toHaveAttribute('aria-pressed', 'true');
+	await calendar.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByText('หัวข้อ rubric ที่โหลดเมื่อเปิด')).toBeVisible();
+	await dialog.getByRole('button', { name: '3', exact: true }).click();
+	const submit = dialog.getByRole('button', { name: 'ส่งผลประเมิน', exact: true });
+	await expect(submit).toBeInViewport();
+	const submitPath = `${observationPath}/${id(30)}/evaluations/me/submit`;
+	const pending = page.waitForRequest((request) => new URL(request.url()).pathname === submitPath);
+	await submit.click();
+	return { calendar, day, dialog, request: await pending };
+}
+
+async function revalidateWhileEvaluating(dialog: Locator) {
+	// Dispatch same-URL navigation from inside the modal while its submit is pending.
+	await dialog.evaluate((content) => {
+		const link = document.createElement('a');
+		link.href = window.location.href;
+		link.dataset.sveltekitPreloadData = 'off';
+		content.append(link);
+		link.click();
+		link.remove();
+	});
+}
+
+async function finishSuccessfulRequest(page: Page, request: Request) {
+	const response = await request.response();
+	expect(response?.ok()).toBe(true);
+	await response?.finished();
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+}
+
+test('a denied evaluation refresh closes the form and discards an in-flight submit result', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		permissions: assigned,
+		observationStatus: 'planned',
+		hold: 'patch',
+		fail: 'observations',
+		failAt: 2,
+		failStatus: 403
+	});
+	const { calendar, day, dialog, request } = await submitFromCalendar(page);
+	await revalidateWhileEvaluating(dialog);
+	await expect(page.getByText('ยังไม่มีสิทธิ์ดูรายการนิเทศ')).toBeVisible();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.getByRole('tablist', { name: 'มุมมองรายการประเมิน' })).toHaveCount(0);
+	await expect(page.getByText('ครู ในคิว', { exact: true })).toHaveCount(0);
+
+	api.setObservationScope('hidden');
+	await revalidatePage(page);
+	await expect(calendar.getByText('ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้')).toBeVisible();
+	api.release();
+	await finishSuccessfulRequest(page, request);
+	await day.click();
+	await expect(page.getByText('ส่งผลประเมินแล้ว', { exact: true })).toHaveCount(0);
+	await expect(calendar.getByText('ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้')).toBeVisible();
+	expect(api.count(observationPath)).toBe(3);
+});
+
+test('an evaluation submit overlapping a refresh still applies a fresh authorization decision', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		permissions: assigned,
+		observationStatus: 'planned',
+		hold: 'patch'
+	});
+	const { calendar, dialog, request } = await submitFromCalendar(page);
+	const releaseOlderRead = Promise.withResolvers<void>();
+	const releaseFreshRead = Promise.withResolvers<void>();
+	const staleObservation = api.observation();
+	let refreshes = 0;
+	await page.route(
+		(url) => url.pathname === observationPath,
+		async (route) => {
+			if (route.request().method() !== 'GET') return route.fallback();
+			if (++refreshes === 1) {
+				await releaseOlderRead.promise;
+				return route.fulfill({ json: { success: true, data: { items: [staleObservation] } } });
+			}
+			await releaseFreshRead.promise;
+			return route.fulfill({ status: 403, json: { success: false, error: 'denied' } });
+		}
+	);
+	const pendingRead = page.waitForRequest(
+		(read) => read.method() === 'GET' && new URL(read.url()).pathname === observationPath
+	);
+	await revalidateWhileEvaluating(dialog);
+	const olderRead = await pendingRead;
+	await expect(page.getByTestId('supervision-observations')).toHaveAttribute('aria-busy', 'true');
+	api.release();
+	await finishSuccessfulRequest(page, request);
+	await expect.poll(() => refreshes).toBe(2);
+	await expect(dialog).toHaveCount(0);
+	await expect(calendar.getByText('ส่งผลแล้ว', { exact: true })).toBeVisible();
+
+	releaseFreshRead.resolve();
+	const denied = page.getByText('ยังไม่มีสิทธิ์ดูรายการนิเทศ');
+	await expect(denied).toBeVisible();
+	releaseOlderRead.resolve();
+	await finishSuccessfulRequest(page, olderRead);
+	await expect(denied).toBeVisible();
+	await expect(page.getByRole('tablist', { name: 'มุมมองรายการประเมิน' })).toHaveCount(0);
+	await expect(page.getByText('ครู ในคิว', { exact: true })).toHaveCount(0);
+	expect(api.count(observationPath)).toBe(1);
+	expect(refreshes).toBe(2);
+});
+
+for (const closeBeforeRefresh of [false, true]) {
+	test(`a successful evaluation refresh discards a withdrawn assignment with the form ${closeBeforeRefresh ? 'closed' : 'open'}`, async ({
+		page
+	}) => {
+		const api = await mock(page, {
+			permissions: assigned,
+			observationStatus: 'planned',
+			hold: 'patch'
+		});
+		const { calendar, day, dialog, request } = await submitFromCalendar(page);
+		api.setObservationScope('hidden');
+		if (closeBeforeRefresh) {
+			await page.keyboard.press('Escape');
+			await expect(dialog).toHaveCount(0);
+			await revalidatePage(page);
+		} else {
+			await revalidateWhileEvaluating(dialog);
+		}
+		await expect(dialog).toHaveCount(0);
+		await expect(day).toHaveAttribute('aria-pressed', 'true');
+		const emptyAgenda = calendar.getByText('ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้');
+		await expect(emptyAgenda).toBeVisible();
+		api.release();
+		await finishSuccessfulRequest(page, request);
+		await expect(page.getByText('ส่งผลประเมินแล้ว', { exact: true })).toHaveCount(0);
+		await expect(emptyAgenda).toBeVisible();
+		expect(api.count(observationPath)).toBe(2);
+	});
+}
 
 test('mine loads its list first and keeps booking timetable behind opening the workflow', async ({
 	page

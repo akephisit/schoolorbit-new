@@ -439,10 +439,19 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 	const requests = supervisionWorkspace.match(
 		/\{:else if section === 'requests'\}([\s\S]*?)\{:else if section === 'evaluate'\}/
 	)?.[1];
+	const evaluate = supervisionWorkspace.match(
+		/\{:else if section === 'evaluate'\}([\s\S]*?)\{:else if section === 'cycles'\}/
+	)?.[1];
 	assert.ok(requests, 'request presentation stays in the requests route section');
-	assert.equal([...supervisionWorkspace.matchAll(/<Tabs\.Root\b/g)].length, 1);
-	assert.match(requests, /<Tabs\.Root\s+bind:value=\{requestsView\}/);
+	assert.ok(evaluate, 'evaluation presentation stays in the evaluate route section');
+	assert.equal([...supervisionWorkspace.matchAll(/<Tabs\.Root\b/g)].length, 2);
+	assert.match(requests, /<Tabs\.Root\s+bind:value=\{queueView\}/);
 	assert.match(requests, /<SupervisionBookingCalendar\s+\{observations\}/);
+	assert.match(evaluate, /<Tabs\.Root\s+bind:value=\{queueView\}/);
+	assert.match(
+		evaluate,
+		/<SupervisionBookingCalendar\s+observations=\{evaluationCalendarObservations\}/
+	);
 	assert.doesNotMatch(supervisionWorkspace, /bind:value=\{activeTab\}/);
 	assert.match(supervisionWorkspace, /export type SupervisionWorkspaceSection/);
 	assert.match(supervisionWorkspace, /section:/);

@@ -389,6 +389,504 @@ fn evaluation_responses(template: &SupervisionTemplate, score: f64) -> SaveEvalu
 }
 
 #[tokio::test]
+async fn supervision_action_notifications_are_atomic_and_follow_confirmed_participants() {
+    use crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY as ELIGIBILITY;
+    use school_notifications::{
+        dispatch::{
+            self, NewNotification, NotificationContent, NotificationSource, PendingPresentation,
+            Presentation,
+        },
+        publisher::NotificationType,
+    };
+    use std::collections::BTreeSet;
+
+    #[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
+    struct InboxRow {
+        receipt_id: Uuid,
+        notification_id: Uuid,
+        recipient_id: Uuid,
+        action_kind: String,
+        title: String,
+        message: String,
+        link: String,
+        presentation: String,
+    }
+
+    let pool = migrated_pool_through("supervision_action_notifications", 1, 166).await;
+    let f = insert_fixture(&pool).await;
+    let direct = NewNotification::new(
+        f.actor_id,
+        NotificationSource::Direct,
+        "existing-direct-notice".into(),
+        NotificationContent {
+            title: "Existing notice".into(),
+            message: "Existing text".into(),
+            type_: NotificationType::Info,
+            link: None,
+        },
+        Presentation::AlertOnce,
+    );
+    let mut tx = pool.begin().await.unwrap();
+    dispatch::create_in_transaction(&mut tx, std::slice::from_ref(&direct))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let direct_snapshot = |id| {
+        sqlx::query_scalar::<_, serde_json::Value>(
+            "SELECT jsonb_build_array(to_jsonb(r),to_jsonb(n),to_jsonb(p)) FROM notification_receipts r
+             JOIN notifications n ON n.id=r.notification_id
+             JOIN notification_presentations p ON p.receipt_id=r.id WHERE r.id=$1",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+    };
+    let original_direct = direct_snapshot(direct.id).await.unwrap();
+    for _ in 0..2 {
+        school_test_db::run_test_migrations(&pool).await;
+        assert_eq!(direct_snapshot(direct.id).await.unwrap(), original_direct);
+    }
+
+    let observation = request_observation(&pool, &f).await;
+    let id = observation.id;
+    let third = test_user(&pool, "third-evaluator").await;
+    let roster = |ids: &[Uuid]| -> Vec<_> {
+        ids.iter()
+            .map(|&evaluator_user_id| EvaluatorAssignmentInput {
+                evaluator_user_id,
+                role_label: Some("Synthetic role".into()),
+                is_required: Some(true),
+            })
+            .collect()
+    };
+    let replace = |evaluators| {
+        services::replace_observation_evaluators(
+            &pool,
+            f.actor_id,
+            id,
+            ReplaceObservationEvaluatorsRequest { evaluators },
+        )
+    };
+    let approve = || {
+        services::approve_observation_request(
+            &pool,
+            f.actor_id,
+            id,
+            ApproveObservationRequest {
+                evaluators: roster(&[f.evaluator_id, f.second_evaluator_id]),
+            },
+        )
+    };
+    let inboxes = |observation_id| {
+        sqlx::query_as::<_, InboxRow>(
+            "SELECT r.id AS receipt_id,n.id AS notification_id,r.recipient_id,a.action_kind,n.title,n.message,n.link,r.presentation
+             FROM notification_receipts r JOIN supervision_actions a ON a.id=r.source_id
+             JOIN notifications n ON n.id=r.notification_id AND n.user_id=r.recipient_id
+             WHERE r.source_kind='supervision_action' AND a.observation_id=$1 ORDER BY r.id",
+        )
+        .bind(observation_id)
+        .fetch_all(&pool)
+    };
+    let recipients = |rows: &[InboxRow]| {
+        rows.iter()
+            .map(|row| row.recipient_id)
+            .collect::<BTreeSet<_>>()
+    };
+    let delivery_counts = || {
+        sqlx::query_as::<_, (i64, i64, i64)>(
+            "SELECT (SELECT count(*) FROM notifications),(SELECT count(*) FROM notification_receipts),
+             (SELECT count(*) FROM notification_presentations)",
+        )
+        .fetch_one(&pool)
+    };
+    let action_source =
+        |observation: &SupervisionObservation, kind: &str| NotificationSource::SupervisionAction {
+            source_id: observation
+                .actions
+                .iter()
+                .find(|row| row.action_kind == kind)
+                .unwrap()
+                .id,
+        };
+    let prefetched = |pending: &[PendingPresentation], source, recipient_id| {
+        pending
+            .iter()
+            .find(|item| item.source == source && item.recipient_id == recipient_id)
+            .copied()
+            .unwrap()
+    };
+    let presentation_outcome = |receipt_id| {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT presentation_outcome FROM notification_receipts WHERE id=$1",
+        )
+        .bind(receipt_id)
+        .fetch_one(&pool)
+    };
+
+    let provisional = replace(roster(&[f.second_evaluator_id])).await.unwrap();
+    assert!(inboxes(id).await.unwrap().is_empty());
+    sqlx::raw_sql(
+        "CREATE FUNCTION reject_supervision_presentation() RETURNS trigger LANGUAGE plpgsql
+         AS $$ BEGIN RAISE EXCEPTION 'SUPERVISION_PRESENTATION_ROLLBACK'; END $$;
+         CREATE TRIGGER reject_supervision_presentation BEFORE INSERT ON notification_presentations
+         FOR EACH ROW EXECUTE FUNCTION reject_supervision_presentation();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(approve().await.is_err());
+    let rolled_back = services::get_observation(&pool, id).await.unwrap();
+    assert_eq!(rolled_back.status, SupervisionObservationStatus::Requested);
+    assert_eq!(rolled_back.actions.len(), provisional.actions.len());
+    assert_eq!(rolled_back.evaluators.len(), 1);
+    assert_eq!(
+        rolled_back.evaluators[0].evaluator_user_id,
+        f.second_evaluator_id
+    );
+    assert!(inboxes(id).await.unwrap().is_empty());
+    assert_eq!(delivery_counts().await.unwrap(), (1, 1, 1));
+    sqlx::raw_sql(
+        "DROP TRIGGER reject_supervision_presentation ON notification_presentations;
+         DROP FUNCTION reject_supervision_presentation();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let approved = approve().await.unwrap();
+    let approved_inboxes = inboxes(id).await.unwrap();
+    assert_eq!(approved_inboxes.len(), 3);
+    assert_eq!(
+        recipients(&approved_inboxes),
+        BTreeSet::from([f.teacher_id, f.evaluator_id, f.second_evaluator_id])
+    );
+    let destination = format!(
+        "/staff/academic/supervision/{id}?academicYearId={}&academicTermId={}",
+        f.cycle.academic_year_id, f.academic_term_id
+    );
+    let evaluator_destination = format!(
+        "/staff/academic/supervision/evaluate?academicYearId={}&academicTermId={}",
+        f.cycle.academic_year_id, f.academic_term_id
+    );
+    assert!(approved_inboxes
+        .iter()
+        .all(|row| row.action_kind == "planned" && row.presentation == "alert_once"));
+    assert!(approved_inboxes
+        .iter()
+        .any(|row| row.recipient_id == f.teacher_id
+            && row.title == "อนุมัติคำขอนิเทศแล้ว"
+            && row.link == destination));
+    assert!(approved_inboxes
+        .iter()
+        .filter(|row| row.recipient_id != f.teacher_id)
+        .all(|row| row.title == "ได้รับมอบหมายให้ประเมินการนิเทศ" && row.link == evaluator_destination));
+    assert!(approve().await.is_err());
+    assert_eq!(inboxes(id).await.unwrap(), approved_inboxes);
+
+    let second_input = input_at(&pool, &f, f.teacher_id, f.observed_at + Duration::hours(1)).await;
+    let second = services::request_observation(&pool, f.teacher_id, second_input)
+        .await
+        .unwrap();
+    let second = approve_with(&pool, &f, second.id, vec![f.second_evaluator_id]).await;
+    let approval_source = action_source(&approved, "planned");
+    let pending = dispatch::pending(&pool).await.unwrap();
+    let teacher_alert = prefetched(&pending, approval_source, f.teacher_id);
+    let retained_assignment = prefetched(&pending, approval_source, f.evaluator_id);
+    let removed_assignment = prefetched(&pending, approval_source, f.second_evaluator_id);
+    let other_observation_assignment = prefetched(
+        &pending,
+        action_source(&second, "planned"),
+        f.second_evaluator_id,
+    );
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(f.teacher_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let presented = dispatch::consume(&pool, &teacher_alert, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(presented.id, teacher_alert.notification_id);
+    assert_eq!(presented.link.as_deref(), Some(destination.as_str()));
+    assert!(dispatch::consume(&pool, &teacher_alert, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .is_none());
+    sqlx::query("UPDATE users SET status='active' WHERE id=$1")
+        .bind(f.teacher_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let replacement = replace(roster(&[f.evaluator_id, third])).await.unwrap();
+    let updated = inboxes(id).await.unwrap();
+    assert_eq!(updated.len(), 5);
+    assert_eq!(&updated[..3], approved_inboxes.as_slice());
+    let diff = &updated[3..];
+    assert_eq!(
+        recipients(diff),
+        BTreeSet::from([f.second_evaluator_id, third])
+    );
+    assert!(diff
+        .iter()
+        .all(|row| row.action_kind == "evaluators_updated" && row.presentation == "alert_once"));
+    assert!(diff.iter().all(|row| row.link == evaluator_destination));
+    assert_eq!(
+        presentation_outcome(removed_assignment.id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("skipped")
+    );
+    assert!(dispatch::consume(&pool, &removed_assignment, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .is_none());
+    let replacement_pending = dispatch::pending(&pool).await.unwrap();
+    let replacement_source = action_source(&replacement, "evaluators_updated");
+    let added_assignment = prefetched(&replacement_pending, replacement_source, third);
+    let removal_alert = prefetched(
+        &replacement_pending,
+        replacement_source,
+        f.second_evaluator_id,
+    );
+    let presented_removal = dispatch::consume(&pool, &removal_alert, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        presented_removal.link.as_deref(),
+        Some(evaluator_destination.as_str())
+    );
+    let mut same_people = roster(&[third, f.evaluator_id]);
+    same_people[0].role_label = None;
+    replace(same_people).await.unwrap();
+    assert_eq!(inboxes(id).await.unwrap(), updated);
+    let pending_after_noop: BTreeSet<_> = dispatch::pending(&pool)
+        .await
+        .unwrap()
+        .iter()
+        .map(|item| item.id)
+        .collect();
+    for unaffected in [
+        retained_assignment,
+        other_observation_assignment,
+        added_assignment,
+    ] {
+        assert!(pending_after_noop.contains(&unaffected.id));
+    }
+
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(third)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE supervision_observations SET requested_by=$2 WHERE id=$1")
+        .bind(id)
+        .bind(f.actor_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let return_request = || {
+        services::return_observation_request(
+            &pool,
+            f.actor_id,
+            id,
+            ReturnObservationRequest {
+                comment: Some("private return reason".into()),
+            },
+        )
+    };
+    let returned_observation = return_request().await.unwrap();
+    let returned = inboxes(id).await.unwrap();
+    assert_eq!(returned.len(), 7);
+    assert_eq!(&returned[..5], updated.as_slice());
+    assert_eq!(
+        recipients(&returned[5..]),
+        BTreeSet::from([f.teacher_id, f.evaluator_id])
+    );
+    assert!(returned[5..]
+        .iter()
+        .all(|row| row.action_kind == "request_returned"
+            && !row.message.contains("private return reason")));
+    for superseded in [retained_assignment, added_assignment] {
+        assert_eq!(
+            presentation_outcome(superseded.id)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("skipped")
+        );
+        assert!(dispatch::consume(&pool, &superseded, &ELIGIBILITY)
+            .await
+            .unwrap()
+            .is_none());
+    }
+    let pending_after_return = dispatch::pending(&pool).await.unwrap();
+    assert!(pending_after_return
+        .iter()
+        .any(|item| item.id == other_observation_assignment.id));
+    let withdrawal_alert = prefetched(
+        &pending_after_return,
+        action_source(&returned_observation, "request_returned"),
+        f.evaluator_id,
+    );
+    return_request().await.unwrap();
+    replace(roster(&[f.second_evaluator_id])).await.unwrap();
+    assert_eq!(inboxes(id).await.unwrap(), returned);
+
+    let replanned = approve().await.unwrap();
+    assert_eq!(inboxes(id).await.unwrap().len(), 10);
+    assert_eq!(
+        presentation_outcome(withdrawal_alert.id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("skipped")
+    );
+    assert!(dispatch::consume(&pool, &withdrawal_alert, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .is_none());
+    let stale = prefetched(
+        &dispatch::pending(&pool).await.unwrap(),
+        action_source(&replanned, "planned"),
+        f.evaluator_id,
+    );
+    let cancel = || {
+        services::cancel_observation(
+            &pool,
+            f.actor_id,
+            id,
+            CancelObservationRequest {
+                reason: Some("private cancellation reason".into()),
+            },
+        )
+    };
+    let cancelled = cancel().await.unwrap();
+    let cancellation = inboxes(id).await.unwrap();
+    assert_eq!(cancellation.len(), 13);
+    assert_eq!(
+        recipients(&cancellation[10..]),
+        recipients(&approved_inboxes)
+    );
+    assert!(cancellation[10..]
+        .iter()
+        .all(|row| row.action_kind == "cancelled"
+            && !row.message.contains("private cancellation reason")));
+    assert!(cancellation[10..]
+        .iter()
+        .any(|row| row.recipient_id == f.teacher_id && row.link == destination));
+    assert!(cancellation[10..]
+        .iter()
+        .filter(|row| row.recipient_id != f.teacher_id)
+        .all(|row| row.link == evaluator_destination));
+    cancel().await.unwrap();
+    assert_eq!(inboxes(id).await.unwrap(), cancellation);
+    assert!(dispatch::consume(&pool, &stale, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(replanned.status, SupervisionObservationStatus::Planned);
+    let new_alert = prefetched(
+        &dispatch::pending(&pool).await.unwrap(),
+        action_source(&cancelled, "cancelled"),
+        f.evaluator_id,
+    );
+    let presented_cancellation = dispatch::consume(&pool, &new_alert, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        presented_cancellation.link.as_deref(),
+        Some(evaluator_destination.as_str())
+    );
+
+    assert!(
+        dispatch::consume(&pool, &other_observation_assignment, &ELIGIBILITY)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    services::submit_my_evaluation(
+        &pool,
+        f.second_evaluator_id,
+        second.id,
+        evaluation_responses(&f.template, 3.0),
+    )
+    .await
+    .unwrap();
+    services::certify_observation(&pool, f.actor_id, second.id)
+        .await
+        .unwrap();
+    assert_eq!(inboxes(second.id).await.unwrap().len(), 2);
+    services::approve_observation(&pool, f.actor_id, second.id)
+        .await
+        .unwrap();
+    services::approve_observation(&pool, f.actor_id, second.id)
+        .await
+        .unwrap();
+    let published = inboxes(second.id).await.unwrap();
+    assert_eq!(published.len(), 3);
+    assert_eq!(published[2].recipient_id, f.teacher_id);
+    assert_eq!(published[2].action_kind, "academic_approved");
+
+    let already_withdrawn = request_observation(&pool, &f).await;
+    approve_with(&pool, &f, already_withdrawn.id, vec![f.evaluator_id]).await;
+    let already_withdrawn = services::return_observation_request(
+        &pool,
+        f.actor_id,
+        already_withdrawn.id,
+        ReturnObservationRequest { comment: None },
+    )
+    .await
+    .unwrap();
+    let outstanding_withdrawal = prefetched(
+        &dispatch::pending(&pool).await.unwrap(),
+        action_source(&already_withdrawn, "request_returned"),
+        f.evaluator_id,
+    );
+    services::cancel_requested_observation(&pool, f.teacher_id, already_withdrawn.id)
+        .await
+        .unwrap();
+    let requested_cancellation = inboxes(already_withdrawn.id).await.unwrap();
+    assert_eq!(requested_cancellation.len(), 5);
+    assert_eq!(requested_cancellation[4].action_kind, "request_cancelled");
+    assert_eq!(requested_cancellation[4].recipient_id, f.teacher_id);
+    assert!(
+        dispatch::consume(&pool, &outstanding_withdrawal, &ELIGIBILITY)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let before_delete = dispatch::pending(&pool).await.unwrap();
+    let impact = services::cycle_deletion_impact(&pool, f.cycle.id)
+        .await
+        .unwrap();
+    services::delete_cycle(
+        &pool,
+        f.cycle.id,
+        DeleteSupervisionCycleRequest {
+            expected_revision: impact.revision,
+        },
+    )
+    .await
+    .unwrap();
+    for item in before_delete
+        .iter()
+        .filter(|item| matches!(item.source, NotificationSource::SupervisionAction { .. }))
+    {
+        assert!(dispatch::consume(&pool, item, &ELIGIBILITY)
+            .await
+            .unwrap()
+            .is_none());
+    }
+    assert_eq!(delivery_counts().await.unwrap(), (1, 1, 1));
+    assert_eq!(direct_snapshot(direct.id).await.unwrap(), original_direct);
+}
+
+#[tokio::test]
 async fn supervision_lifecycle_cycles_reject_closed_contexts_without_losing_targets() {
     let pool = migrated_pool("supervision_lifecycle_cycles").await;
     let fixture = insert_fixture(&pool).await;

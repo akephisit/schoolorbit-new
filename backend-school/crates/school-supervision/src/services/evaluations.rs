@@ -120,7 +120,7 @@ pub async fn replace_observation_evaluators(
 
     insert_supervision_evaluators(&mut tx, observation_id, &insert_rows).await?;
 
-    insert_observation_action(
+    let action_id = insert_observation_action(
         &mut tx,
         observation_id,
         Some(actor_user_id),
@@ -130,6 +130,8 @@ pub async fn replace_observation_evaluators(
         None,
     )
     .await?;
+    super::notifications::evaluators_replaced(&mut tx, action_id, &current, &evaluator_user_ids)
+        .await?;
 
     tx.commit().await?;
     get_observation(pool, observation_id).await

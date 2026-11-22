@@ -33,14 +33,16 @@
 		academicLabel,
 		selectedDate = $bindable(''),
 		detailHref,
-		requestAction
+		hasSubmittedEvaluation,
+		bookingAction
 	}: {
 		observations: SupervisionObservation[];
 		cycles: SupervisionCycle[];
 		academicLabel: string;
 		selectedDate?: string;
 		detailHref: (observation: SupervisionObservation) => string;
-		requestAction?: Snippet<[SupervisionObservation]>;
+		hasSubmittedEvaluation?: (observation: SupervisionObservation) => boolean;
+		bookingAction?: Snippet<[SupervisionObservation]>;
 	} = $props();
 
 	const descriptionId = $props.id();
@@ -135,19 +137,21 @@
 			>
 		</div>
 	</div>
-	<div
-		class="flex flex-wrap gap-2 text-xs text-muted-foreground"
-		role="group"
-		aria-label="สถานะนัดนิเทศ"
-	>
-		<span class="inline-flex items-center gap-1.5"
-			><span class="size-2 rounded-full bg-primary" aria-hidden="true"></span>นัดหมายแล้ว</span
+	{#if !hasSubmittedEvaluation}
+		<div
+			class="flex flex-wrap gap-2 text-xs text-muted-foreground"
+			role="group"
+			aria-label="สถานะนัดนิเทศ"
 		>
-		<span class="inline-flex items-center gap-1.5"
-			><span class="size-2 rounded-sm border border-dashed border-primary" aria-hidden="true"
-			></span>รออนุมัติคำขอ</span
-		>
-	</div>
+			<span class="inline-flex items-center gap-1.5"
+				><span class="size-2 rounded-full bg-primary" aria-hidden="true"></span>นัดหมายแล้ว</span
+			>
+			<span class="inline-flex items-center gap-1.5"
+				><span class="size-2 rounded-sm border border-dashed border-primary" aria-hidden="true"
+				></span>รออนุมัติคำขอ</span
+			>
+		</div>
+	{/if}
 
 	<div class="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
 		<div class="h-[33rem] min-w-0 sm:h-[40rem]">
@@ -195,7 +199,12 @@
 								{#if observation.status === 'requested'}
 									<span class="sr-only">{supervisionStatusLabel(observation.status)}</span>
 								{:else}
-									<Badge variant="secondary">{supervisionStatusLabel(observation.status)}</Badge>
+									<div class="flex flex-wrap gap-1">
+										<Badge variant="secondary">{supervisionStatusLabel(observation.status)}</Badge>
+										{#if hasSubmittedEvaluation?.(observation)}
+											<Badge variant="outline">ส่งผลแล้ว</Badge>
+										{/if}
+									</div>
 								{/if}
 							</div>
 							<div class="text-sm">
@@ -241,13 +250,17 @@
 								>
 									รายละเอียด
 								</Button>
-								{@render requestAction?.(observation)}
+								{@render bookingAction?.(observation)}
 							</div>
 						</li>
 					{/each}
 				</ul>
 			{:else}
-				<p class="text-sm text-muted-foreground">ไม่มีรายการจองนิเทศในวันนี้</p>
+				<p class="text-sm text-muted-foreground">
+					{hasSubmittedEvaluation
+						? 'ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้'
+						: 'ไม่มีรายการจองนิเทศในวันนี้'}
+				</p>
 			{/if}
 		</Card.Root>
 	</div>

@@ -295,11 +295,11 @@ test('submitted evaluator evidence prevents returning or reassigning a legacy re
 		}
 	});
 	await page.goto(path('requests'));
-	await page.getByRole('combobox', { name: /เลือกผู้ประเมิน/ }).click();
-	await page.getByRole('option', { name: 'ผู้ประเมินที่ว่าง', exact: true }).click();
-	await page.keyboard.press('Escape');
+	await expect(page.getByText('ผู้ประเมินส่งแล้ว', { exact: true })).toBeVisible();
+	await expect(page.getByRole('combobox', { name: /เลือกผู้ประเมิน/ })).toBeDisabled();
 	await expect(page.getByRole('button', { name: 'ส่งกลับคำขอ', exact: true })).toBeDisabled();
 	await expect(page.getByRole('button', { name: 'อนุมัติและมอบหมาย', exact: true })).toBeDisabled();
+	expect(api.count(`${observationPath}/evaluator-availability`)).toBe(0);
 	expect(api.writes).toEqual([]);
 });
 

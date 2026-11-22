@@ -4,6 +4,7 @@ mod cycle_deletion;
 mod cycles;
 mod evaluations;
 mod lifecycle;
+mod notifications;
 mod observations;
 mod periods;
 mod response_visibility;
@@ -17,6 +18,7 @@ pub use cycle_deletion::{cycle_deletion_impact, delete_cycle};
 pub use cycles::{create_cycle, get_cycle, list_cycles, update_cycle};
 pub use evaluations::{replace_observation_evaluators, submit_my_evaluation};
 pub use lifecycle::pending_term_work;
+pub use notifications::authorize_notification_on_connection;
 pub use observations::{
     approve_observation_request, cancel_observation, cancel_requested_observation,
     evaluator_availability, get_observation, list_observations, observation_timetable_options,
