@@ -3,7 +3,10 @@ use crate::models::{SupervisionObservation, SupervisionObservationStatus};
 use school_database::DbSession;
 use school_errors::AppError;
 use school_notifications::{
-    dispatch::{self, NewNotification, NotificationContent, NotificationSource, Presentation},
+    dispatch::{
+        self, NewNotification, NotificationContent, NotificationSource, NotificationSourceKind,
+        Presentation,
+    },
     publisher::NotificationType,
 };
 use sqlx::{PgConnection, Postgres, Transaction};
@@ -20,6 +23,7 @@ enum Notice {
     RequestReturned,
     ScheduleWithdrawn,
     Cancelled,
+    AssignedObservationCancelled,
     ResultPublished,
 }
 
@@ -33,7 +37,7 @@ impl Notice {
             ),
             Self::Assigned => (
                 "ได้รับมอบหมายให้ประเมินการนิเทศ",
-                "เปิดรายการนิเทศเพื่อดูรายละเอียดงานประเมิน",
+                "เปิดรายการงานประเมินเพื่อดูงานที่ได้รับมอบหมาย",
                 NotificationType::Info,
             ),
             Self::AssignmentRemoved => (
@@ -56,6 +60,11 @@ impl Notice {
                 "เปิดรายการนิเทศเพื่อตรวจสอบสถานะล่าสุด",
                 NotificationType::Info,
             ),
+            Self::AssignedObservationCancelled => (
+                "ยกเลิกรายการนิเทศแล้ว",
+                "เปิดรายการงานประเมินเพื่อตรวจสอบงานที่ได้รับมอบหมาย",
+                NotificationType::Info,
+            ),
             Self::ResultPublished => (
                 "เผยแพร่ผลการนิเทศแล้ว",
                 "เปิดรายการนิเทศเพื่อดูผลการนิเทศในระบบ",
@@ -63,8 +72,14 @@ impl Notice {
             ),
         };
         let destination = match self {
-            Self::AssignmentRemoved | Self::ScheduleWithdrawn => "evaluate".to_owned(),
-            _ => observation.id.to_string(),
+            Self::Assigned
+            | Self::AssignmentRemoved
+            | Self::ScheduleWithdrawn
+            | Self::AssignedObservationCancelled => "evaluate".to_owned(),
+            Self::RequestApproved
+            | Self::RequestReturned
+            | Self::Cancelled
+            | Self::ResultPublished => observation.id.to_string(),
         };
         NotificationContent {
             title: title.to_owned(),
@@ -92,6 +107,16 @@ async fn accept(
         return Ok(());
     }
     let candidates: Vec<_> = notices.keys().copied().collect();
+    // The observation snapshot predates this mutation's action and is held under
+    // its write lock. An inactive recipient can still have an older pending alert.
+    let prior_actions: Vec<_> = observation.actions.iter().map(|action| action.id).collect();
+    dispatch::cancel_pending_for_recipients_in_transaction(
+        tx,
+        NotificationSourceKind::SupervisionAction,
+        &prior_actions,
+        &candidates,
+    )
+    .await?;
     let active = DbSession::new(&mut **tx)
         .scalar::<Uuid>(
             "supervision.notifications.active_recipients",
@@ -170,15 +195,12 @@ pub(super) async fn status_changed(
     }
     let (teacher, evaluator_notice) = match status {
         SupervisionObservationStatus::Returned => (
-            (
-                before.requested_by.unwrap_or(before.observed_user_id),
-                Notice::RequestReturned,
-            ),
+            (before.observed_user_id, Notice::RequestReturned),
             Some(Notice::ScheduleWithdrawn),
         ),
         SupervisionObservationStatus::Cancelled => (
             (before.observed_user_id, Notice::Cancelled),
-            Some(Notice::Cancelled),
+            Some(Notice::AssignedObservationCancelled),
         ),
         SupervisionObservationStatus::Published => {
             ((before.observed_user_id, Notice::ResultPublished), None)
@@ -205,8 +227,10 @@ pub async fn authorize_notification_on_connection(
 ) -> Result<bool, AppError> {
     let observation_id = DbSession::new(&mut *connection)
         .scalar::<Uuid>(
-            "supervision.notifications.source_observation",
-            "SELECT observation_id FROM supervision_actions WHERE id=$1",
+            "supervision.notifications.lock_observation",
+            "SELECT o.id FROM supervision_observations o
+             JOIN supervision_actions a ON a.observation_id=o.id
+             WHERE a.id=$1 FOR SHARE OF o",
         )
         .bind(source_id)
         .fetch_optional()
@@ -214,28 +238,13 @@ pub async fn authorize_notification_on_connection(
     let Some(observation_id) = observation_id else {
         return Ok(false);
     };
-    let status = DbSession::new(&mut *connection)
-        .scalar::<String>(
-            "supervision.notifications.lock_observation",
-            "SELECT status FROM supervision_observations WHERE id=$1 FOR SHARE",
-        )
-        .bind(observation_id)
-        .fetch_optional()
-        .await?;
-    let Some(status) = status else {
-        return Ok(false);
-    };
-    // Cancelling the observation invalidates older pending alerts, while its
-    // cancellation action still has a valid, previously accepted audience.
     let live = DbSession::new(connection)
         .scalar::<Uuid>(
             "supervision.notifications.lock_action",
-            "SELECT id FROM supervision_actions WHERE id=$1 AND observation_id=$2
-             AND ($3 <> 'cancelled' OR to_status='cancelled') FOR SHARE",
+            "SELECT id FROM supervision_actions WHERE id=$1 AND observation_id=$2 FOR SHARE",
         )
         .bind(source_id)
         .bind(observation_id)
-        .bind(status)
         .fetch_optional()
         .await?;
     Ok(live.is_some())

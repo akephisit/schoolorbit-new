@@ -507,6 +507,51 @@ pub async fn cancel_pending_in_transaction(
     Ok(changed)
 }
 
+/// Cancel pending presentations for the producer's explicit sources and audience.
+/// The caller holds the producing source lock; accepted inboxes and receipts stay.
+pub async fn cancel_pending_for_recipients_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    source: NotificationSourceKind,
+    source_ids: &[Uuid],
+    recipient_ids: &[Uuid],
+) -> Result<(), AppError> {
+    if source_ids.is_empty() || recipient_ids.is_empty() {
+        return Ok(());
+    }
+    loop {
+        let selected: Vec<(Uuid, Uuid, Uuid, Uuid)> = school_database::DbSession::new(&mut **tx)
+            .query_as(
+                "notifications.cancel_pending.for_recipients",
+                "SELECT r.id,r.notification_id,r.recipient_id,r.source_id
+                 FROM notification_receipts r JOIN notification_presentations p ON p.receipt_id=r.id
+                 WHERE r.source_kind=$1 AND r.source_id=ANY($2) AND r.recipient_id=ANY($3)
+                   AND r.presentation_consumed_at IS NULL
+                 ORDER BY r.id LIMIT $4 FOR UPDATE OF r",
+            )
+            .bind(source.as_str())
+            .bind(source_ids)
+            .bind(recipient_ids)
+            .bind(PENDING_CANCELLATION_BATCH_SIZE as i64)
+            .fetch_all()
+            .await?;
+        let items = selected
+            .into_iter()
+            .map(|(receipt_id, notification_id, recipient_id, source_id)| {
+                Ok(PendingCancellationIdentity {
+                    receipt_id,
+                    notification_id,
+                    recipient_id,
+                    source: NotificationSource::decode(source.as_str(), Some(source_id))?,
+                })
+            })
+            .collect::<Result<Vec<_>, AppError>>()?;
+        cancel_pending_in_transaction(tx, &items).await?;
+        if items.len() < PENDING_CANCELLATION_BATCH_SIZE {
+            return Ok(());
+        }
+    }
+}
+
 /// Producer-owned physical removal by exact source identities. The producer
 /// holds source locks; this owner resolves and locks every matching receipt,
 /// including consumed presentations and inboxes already removed by recipients.

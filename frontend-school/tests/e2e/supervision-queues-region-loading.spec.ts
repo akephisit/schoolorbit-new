@@ -1,5 +1,5 @@
 import { revalidatePage } from './fixtures/page-revalidation';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 import {
 	id,
 	year,
@@ -163,6 +163,49 @@ test('an empty successful evaluation read keeps both views available', async ({ 
 	expect(api.count(observationPath)).toBe(1);
 });
 
+async function submitFromCalendar(page: Page) {
+	await page.goto(path('evaluate'));
+	await page.getByRole('tab', { name: 'ปฏิทิน', exact: true }).click();
+	const calendar = page.getByRole('tabpanel', { name: 'ปฏิทิน', exact: true });
+	const day = calendar.locator('[data-calendar-date="2026-10-01"]');
+	await day.click();
+	await expect(day).toHaveAttribute('aria-pressed', 'true');
+	await calendar.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByText('หัวข้อ rubric ที่โหลดเมื่อเปิด')).toBeVisible();
+	await dialog.getByRole('button', { name: '3', exact: true }).click();
+	const submit = dialog.getByRole('button', { name: 'ส่งผลประเมิน', exact: true });
+	await expect(submit).toBeInViewport();
+	const submitPath = `${observationPath}/${id(30)}/evaluations/me/submit`;
+	const pending = page.waitForRequest((request) => new URL(request.url()).pathname === submitPath);
+	await submit.click();
+	return { calendar, day, dialog, request: await pending };
+}
+
+async function revalidateWhileEvaluating(dialog: Locator) {
+	// Dispatch same-URL navigation from inside the modal while its submit is pending.
+	await dialog.evaluate((content) => {
+		const link = document.createElement('a');
+		link.href = window.location.href;
+		link.dataset.sveltekitPreloadData = 'off';
+		content.append(link);
+		link.click();
+		link.remove();
+	});
+}
+
+async function finishEvaluationSubmit(page: Page, request: Request) {
+	const response = await request.response();
+	expect(response?.ok()).toBe(true);
+	await response?.finished();
+	await page.evaluate(
+		() =>
+			new Promise<void>((resolve) =>
+				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+			)
+	);
+}
+
 test('a denied evaluation refresh closes the form and discards an in-flight submit result', async ({
 	page
 }) => {
@@ -174,28 +217,8 @@ test('a denied evaluation refresh closes the form and discards an in-flight subm
 		failAt: 2,
 		failStatus: 403
 	});
-	await page.goto(path('evaluate'));
-	await page.getByRole('tab', { name: 'ปฏิทิน', exact: true }).click();
-	await page.locator('[data-calendar-date="2026-10-01"]').click();
-	await page.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByText('หัวข้อ rubric ที่โหลดเมื่อเปิด')).toBeVisible();
-	await dialog.getByRole('button', { name: '3', exact: true }).click();
-	const submit = dialog.getByRole('button', { name: 'ส่งผลประเมิน', exact: true });
-	await expect(submit).toBeInViewport();
-	const submitPath = `${observationPath}/${id(30)}/evaluations/me/submit`;
-	const pending = page.waitForRequest((request) => new URL(request.url()).pathname === submitPath);
-	await submit.click();
-	const request = await pending;
-	// Dispatch same-URL navigation from inside the modal while its submit is pending.
-	await dialog.evaluate((content) => {
-		const link = document.createElement('a');
-		link.href = window.location.href;
-		link.dataset.sveltekitPreloadData = 'off';
-		content.append(link);
-		link.click();
-		link.remove();
-	});
+	const { calendar, day, dialog, request } = await submitFromCalendar(page);
+	await revalidateWhileEvaluating(dialog);
 	await expect(page.getByText('ยังไม่มีสิทธิ์ดูรายการนิเทศ')).toBeVisible();
 	await expect(dialog).toHaveCount(0);
 	await expect(page.getByRole('tablist', { name: 'มุมมองรายการประเมิน' })).toHaveCount(0);
@@ -203,23 +226,44 @@ test('a denied evaluation refresh closes the form and discards an in-flight subm
 
 	api.setObservationScope('hidden');
 	await revalidatePage(page);
-	const calendar = page.getByRole('tabpanel', { name: 'ปฏิทิน', exact: true });
 	await expect(calendar.getByText('ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้')).toBeVisible();
 	api.release();
-	const response = await request.response();
-	expect(response?.ok()).toBe(true);
-	await response?.finished();
-	await page.evaluate(
-		() =>
-			new Promise<void>((resolve) =>
-				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-			)
-	);
-	await calendar.locator('[data-calendar-date="2026-10-01"]').click();
+	await finishEvaluationSubmit(page, request);
+	await day.click();
 	await expect(page.getByText('ส่งผลประเมินแล้ว', { exact: true })).toHaveCount(0);
 	await expect(calendar.getByText('ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้')).toBeVisible();
 	expect(api.count(observationPath)).toBe(3);
 });
+
+for (const closeBeforeRefresh of [false, true]) {
+	test(`a successful evaluation refresh discards a withdrawn assignment with the form ${closeBeforeRefresh ? 'closed' : 'open'}`, async ({
+		page
+	}) => {
+		const api = await mock(page, {
+			permissions: assigned,
+			observationStatus: 'planned',
+			hold: 'patch'
+		});
+		const { calendar, day, dialog, request } = await submitFromCalendar(page);
+		api.setObservationScope('hidden');
+		if (closeBeforeRefresh) {
+			await page.keyboard.press('Escape');
+			await expect(dialog).toHaveCount(0);
+			await revalidatePage(page);
+		} else {
+			await revalidateWhileEvaluating(dialog);
+		}
+		await expect(dialog).toHaveCount(0);
+		await expect(day).toHaveAttribute('aria-pressed', 'true');
+		const emptyAgenda = calendar.getByText('ไม่มีรายการนิเทศที่ได้รับมอบหมายในวันนี้');
+		await expect(emptyAgenda).toBeVisible();
+		api.release();
+		await finishEvaluationSubmit(page, request);
+		await expect(page.getByText('ส่งผลประเมินแล้ว', { exact: true })).toHaveCount(0);
+		await expect(emptyAgenda).toBeVisible();
+		expect(api.count(observationPath)).toBe(2);
+	});
+}
 
 test('mine loads its list first and keeps booking timetable behind opening the workflow', async ({
 	page

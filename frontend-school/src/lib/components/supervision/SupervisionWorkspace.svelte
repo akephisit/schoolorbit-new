@@ -265,7 +265,7 @@
 	let saving = $state(false);
 	let savingAction = $state<string | null>(null);
 	let savingTemplate = $state(false);
-	let savingEvaluation = $state<'submit' | null>(null);
+	let savingEvaluation = $state.raw<{ observationId: string } | null>(null);
 	let evaluationDialogOpen = $state(false);
 	let cycles = $state<SupervisionCycle[]>([]);
 	let templates = $state<SupervisionTemplate[]>([]);
@@ -906,11 +906,20 @@
 		observations = items;
 		observationsReadable = readable;
 		observationsLoaded = true;
-		if (section === 'evaluate' && !readable) {
-			managementRevision += 1;
-			bookingCalendarDate = '';
-			savingEvaluation = null;
-			clearEvaluationDraft();
+		if (section === 'evaluate') {
+			if (!readable) {
+				managementRevision += 1;
+				bookingCalendarDate = '';
+				savingEvaluation = null;
+				clearEvaluationDraft();
+			} else if (freshRead) {
+				if (savingEvaluation && !hasActionableAssignment(savingEvaluation.observationId)) {
+					savingEvaluation = null;
+				}
+				if (evaluationObservationId && !hasActionableAssignment(evaluationObservationId)) {
+					clearEvaluationDraft();
+				}
+			}
 		}
 		requestReview.reconcile(freshRead);
 		if (calendarReviewId && !calendarReviewObservation) calendarReviewId = '';
@@ -1000,6 +1009,12 @@
 
 	function hasSubmittedEvaluation(observation: SupervisionObservation): boolean {
 		return currentUserEvaluator(observation)?.status === 'submitted';
+	}
+
+	function hasActionableAssignment(observationId: string) {
+		return observations.some(
+			(observation) => observation.id === observationId && canSubmitAssignedEvaluation(observation)
+		);
 	}
 
 	function canSubmitAssignedEvaluation(observation: SupervisionObservation): boolean {
@@ -1163,6 +1178,7 @@
 			!canEvaluate ||
 			!canReadObservations ||
 			!observationsReadable ||
+			savingEvaluation !== null ||
 			!selectedEvaluation ||
 			!canSubmitAssignedEvaluation(selectedEvaluation) ||
 			evaluationTemplateLoading ||
@@ -1180,22 +1196,24 @@
 			return;
 		}
 
-		savingEvaluation = 'submit';
-		const ownsMutation = captureMutationOwner();
 		const observationId = evaluationObservationId;
+		const submission = { observationId };
+		savingEvaluation = submission;
+		const ownsMutation = captureMutationOwner();
+		const isCurrentSubmission = () => savingEvaluation === submission && ownsMutation();
 		try {
 			const payload = evaluationPayload();
 			const response = await submitMySupervisionEvaluation(observationId, payload);
-			if (!ownsMutation()) return;
+			if (!isCurrentSubmission()) return;
 			const observation = requireMutationData(response, 'บันทึกผลประเมินไม่สำเร็จ');
 			replaceObservation(observation);
 			if (evaluationObservationId === observationId) clearEvaluationDraft();
 			toast.success('ส่งผลประเมินแล้ว');
 		} catch (error) {
-			if (!ownsMutation()) return;
+			if (!isCurrentSubmission()) return;
 			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
 		} finally {
-			if (ownsMutation()) savingEvaluation = null;
+			if (isCurrentSubmission()) savingEvaluation = null;
 		}
 	}
 
@@ -3014,7 +3032,7 @@
 				</Button>
 				<LoadingButton
 					onclick={saveEvaluation}
-					loading={savingEvaluation === 'submit'}
+					loading={savingEvaluation !== null}
 					loadingLabel="กำลังส่ง..."
 					disabled={savingEvaluation !== null}
 				>

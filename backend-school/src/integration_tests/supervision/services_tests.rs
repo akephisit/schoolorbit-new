@@ -392,13 +392,18 @@ fn evaluation_responses(template: &SupervisionTemplate, score: f64) -> SaveEvalu
 async fn supervision_action_notifications_are_atomic_and_follow_confirmed_participants() {
     use crate::adapters::notification_delivery::APPLICATION_NOTIFICATION_ELIGIBILITY as ELIGIBILITY;
     use school_notifications::{
-        dispatch::{self, NewNotification, NotificationContent, NotificationSource, Presentation},
+        dispatch::{
+            self, NewNotification, NotificationContent, NotificationSource, PendingPresentation,
+            Presentation,
+        },
         publisher::NotificationType,
     };
     use std::collections::BTreeSet;
 
     #[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
     struct InboxRow {
+        receipt_id: Uuid,
+        notification_id: Uuid,
         recipient_id: Uuid,
         action_kind: String,
         title: String,
@@ -473,7 +478,7 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
     };
     let inboxes = |observation_id| {
         sqlx::query_as::<_, InboxRow>(
-            "SELECT r.recipient_id,a.action_kind,n.title,n.message,n.link,r.presentation
+            "SELECT r.id AS receipt_id,n.id AS notification_id,r.recipient_id,a.action_kind,n.title,n.message,n.link,r.presentation
              FROM notification_receipts r JOIN supervision_actions a ON a.id=r.source_id
              JOIN notifications n ON n.id=r.notification_id AND n.user_id=r.recipient_id
              WHERE r.source_kind='supervision_action' AND a.observation_id=$1 ORDER BY r.id",
@@ -491,6 +496,29 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
             "SELECT (SELECT count(*) FROM notifications),(SELECT count(*) FROM notification_receipts),
              (SELECT count(*) FROM notification_presentations)",
         )
+        .fetch_one(&pool)
+    };
+    let action_source =
+        |observation: &SupervisionObservation, kind: &str| NotificationSource::SupervisionAction {
+            source_id: observation
+                .actions
+                .iter()
+                .find(|row| row.action_kind == kind)
+                .unwrap()
+                .id,
+        };
+    let prefetched = |pending: &[PendingPresentation], source, recipient_id| {
+        pending
+            .iter()
+            .find(|item| item.source == source && item.recipient_id == recipient_id)
+            .copied()
+            .unwrap()
+    };
+    let presentation_outcome = |receipt_id| {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT presentation_outcome FROM notification_receipts WHERE id=$1",
+        )
+        .bind(receipt_id)
         .fetch_one(&pool)
     };
 
@@ -525,11 +553,6 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
     .unwrap();
 
     let approved = approve().await.unwrap();
-    let approval_action = approved
-        .actions
-        .iter()
-        .find(|row| row.action_kind == "planned")
-        .unwrap();
     let approved_inboxes = inboxes(id).await.unwrap();
     assert_eq!(approved_inboxes.len(), 3);
     assert_eq!(
@@ -540,41 +563,52 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
         "/staff/academic/supervision/{id}?academicYearId={}&academicTermId={}",
         f.cycle.academic_year_id, f.academic_term_id
     );
+    let evaluator_destination = format!(
+        "/staff/academic/supervision/evaluate?academicYearId={}&academicTermId={}",
+        f.cycle.academic_year_id, f.academic_term_id
+    );
     assert!(approved_inboxes
         .iter()
-        .all(|row| row.action_kind == "planned"
-            && row.link == destination
-            && row.presentation == "alert_once"));
+        .all(|row| row.action_kind == "planned" && row.presentation == "alert_once"));
     assert!(approved_inboxes
         .iter()
-        .any(|row| row.recipient_id == f.teacher_id && row.title == "อนุมัติคำขอนิเทศแล้ว"));
+        .any(|row| row.recipient_id == f.teacher_id
+            && row.title == "อนุมัติคำขอนิเทศแล้ว"
+            && row.link == destination));
     assert!(approved_inboxes
         .iter()
         .filter(|row| row.recipient_id != f.teacher_id)
-        .all(|row| row.title == "ได้รับมอบหมายให้ประเมินการนิเทศ"));
+        .all(|row| row.title == "ได้รับมอบหมายให้ประเมินการนิเทศ" && row.link == evaluator_destination));
     assert!(approve().await.is_err());
     assert_eq!(inboxes(id).await.unwrap(), approved_inboxes);
 
-    let approval_source = NotificationSource::SupervisionAction {
-        source_id: approval_action.id,
-    };
-    let pending = dispatch::pending(&pool).await.unwrap();
-    let teacher_alert = pending
-        .iter()
-        .find(|item| item.source == approval_source && item.recipient_id == f.teacher_id)
+    let second_input = input_at(&pool, &f, f.teacher_id, f.observed_at + Duration::hours(1)).await;
+    let second = services::request_observation(&pool, f.teacher_id, second_input)
+        .await
         .unwrap();
+    let second = approve_with(&pool, &f, second.id, vec![f.second_evaluator_id]).await;
+    let approval_source = action_source(&approved, "planned");
+    let pending = dispatch::pending(&pool).await.unwrap();
+    let teacher_alert = prefetched(&pending, approval_source, f.teacher_id);
+    let retained_assignment = prefetched(&pending, approval_source, f.evaluator_id);
+    let removed_assignment = prefetched(&pending, approval_source, f.second_evaluator_id);
+    let other_observation_assignment = prefetched(
+        &pending,
+        action_source(&second, "planned"),
+        f.second_evaluator_id,
+    );
     sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
         .bind(f.teacher_id)
         .execute(&pool)
         .await
         .unwrap();
-    let presented = dispatch::consume(&pool, teacher_alert, &ELIGIBILITY)
+    let presented = dispatch::consume(&pool, &teacher_alert, &ELIGIBILITY)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(presented.id, teacher_alert.notification_id);
     assert_eq!(presented.link.as_deref(), Some(destination.as_str()));
-    assert!(dispatch::consume(&pool, teacher_alert, &ELIGIBILITY)
+    assert!(dispatch::consume(&pool, &teacher_alert, &ELIGIBILITY)
         .await
         .unwrap()
         .is_none());
@@ -584,9 +618,10 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
         .await
         .unwrap();
 
-    replace(roster(&[f.evaluator_id, third])).await.unwrap();
+    let replacement = replace(roster(&[f.evaluator_id, third])).await.unwrap();
     let updated = inboxes(id).await.unwrap();
     assert_eq!(updated.len(), 5);
+    assert_eq!(&updated[..3], approved_inboxes.as_slice());
     let diff = &updated[3..];
     assert_eq!(
         recipients(diff),
@@ -595,22 +630,60 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
     assert!(diff
         .iter()
         .all(|row| row.action_kind == "evaluators_updated" && row.presentation == "alert_once"));
-    assert!(diff
-        .iter()
-        .any(|row| row.recipient_id == f.second_evaluator_id
-            && row
-                .link
-                .starts_with("/staff/academic/supervision/evaluate?")));
-    assert!(diff
-        .iter()
-        .any(|row| row.recipient_id == third && row.link == destination));
+    assert!(diff.iter().all(|row| row.link == evaluator_destination));
+    assert_eq!(
+        presentation_outcome(removed_assignment.id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("skipped")
+    );
+    assert!(dispatch::consume(&pool, &removed_assignment, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .is_none());
+    let replacement_pending = dispatch::pending(&pool).await.unwrap();
+    let replacement_source = action_source(&replacement, "evaluators_updated");
+    let added_assignment = prefetched(&replacement_pending, replacement_source, third);
+    let removal_alert = prefetched(
+        &replacement_pending,
+        replacement_source,
+        f.second_evaluator_id,
+    );
+    let presented_removal = dispatch::consume(&pool, &removal_alert, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        presented_removal.link.as_deref(),
+        Some(evaluator_destination.as_str())
+    );
     let mut same_people = roster(&[third, f.evaluator_id]);
     same_people[0].role_label = None;
     replace(same_people).await.unwrap();
     assert_eq!(inboxes(id).await.unwrap(), updated);
+    let pending_after_noop: BTreeSet<_> = dispatch::pending(&pool)
+        .await
+        .unwrap()
+        .iter()
+        .map(|item| item.id)
+        .collect();
+    for unaffected in [
+        retained_assignment,
+        other_observation_assignment,
+        added_assignment,
+    ] {
+        assert!(pending_after_noop.contains(&unaffected.id));
+    }
 
     sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
         .bind(third)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE supervision_observations SET requested_by=$2 WHERE id=$1")
+        .bind(id)
+        .bind(f.actor_id)
         .execute(&pool)
         .await
         .unwrap();
@@ -624,9 +697,10 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
             },
         )
     };
-    return_request().await.unwrap();
+    let returned_observation = return_request().await.unwrap();
     let returned = inboxes(id).await.unwrap();
     assert_eq!(returned.len(), 7);
+    assert_eq!(&returned[..5], updated.as_slice());
     assert_eq!(
         recipients(&returned[5..]),
         BTreeSet::from([f.teacher_id, f.evaluator_id])
@@ -635,12 +709,50 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
         .iter()
         .all(|row| row.action_kind == "request_returned"
             && !row.message.contains("private return reason")));
+    for superseded in [retained_assignment, added_assignment] {
+        assert_eq!(
+            presentation_outcome(superseded.id)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("skipped")
+        );
+        assert!(dispatch::consume(&pool, &superseded, &ELIGIBILITY)
+            .await
+            .unwrap()
+            .is_none());
+    }
+    let pending_after_return = dispatch::pending(&pool).await.unwrap();
+    assert!(pending_after_return
+        .iter()
+        .any(|item| item.id == other_observation_assignment.id));
+    let withdrawal_alert = prefetched(
+        &pending_after_return,
+        action_source(&returned_observation, "request_returned"),
+        f.evaluator_id,
+    );
     return_request().await.unwrap();
     replace(roster(&[f.second_evaluator_id])).await.unwrap();
     assert_eq!(inboxes(id).await.unwrap(), returned);
 
     let replanned = approve().await.unwrap();
     assert_eq!(inboxes(id).await.unwrap().len(), 10);
+    assert_eq!(
+        presentation_outcome(withdrawal_alert.id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("skipped")
+    );
+    assert!(dispatch::consume(&pool, &withdrawal_alert, &ELIGIBILITY)
+        .await
+        .unwrap()
+        .is_none());
+    let stale = prefetched(
+        &dispatch::pending(&pool).await.unwrap(),
+        action_source(&replanned, "planned"),
+        f.evaluator_id,
+    );
     let cancel = || {
         services::cancel_observation(
             &pool,
@@ -662,40 +774,43 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
         .iter()
         .all(|row| row.action_kind == "cancelled"
             && !row.message.contains("private cancellation reason")));
+    assert!(cancellation[10..]
+        .iter()
+        .any(|row| row.recipient_id == f.teacher_id && row.link == destination));
+    assert!(cancellation[10..]
+        .iter()
+        .filter(|row| row.recipient_id != f.teacher_id)
+        .all(|row| row.link == evaluator_destination));
     cancel().await.unwrap();
     assert_eq!(inboxes(id).await.unwrap(), cancellation);
-    let stale = pending
-        .iter()
-        .find(|item| item.source == approval_source && item.recipient_id == f.evaluator_id)
-        .unwrap();
-    assert!(dispatch::consume(&pool, stale, &ELIGIBILITY)
+    assert!(dispatch::consume(&pool, &stale, &ELIGIBILITY)
         .await
         .unwrap()
         .is_none());
     assert_eq!(replanned.status, SupervisionObservationStatus::Planned);
-    let cancel_source = NotificationSource::SupervisionAction {
-        source_id: cancelled
-            .actions
-            .iter()
-            .find(|row| row.action_kind == "cancelled")
-            .unwrap()
-            .id,
-    };
-    let cancellation_preview = dispatch::pending(&pool).await.unwrap();
-    let new_alert = cancellation_preview
-        .iter()
-        .find(|item| item.source == cancel_source)
-        .unwrap();
-    assert!(dispatch::consume(&pool, new_alert, &ELIGIBILITY)
+    let new_alert = prefetched(
+        &dispatch::pending(&pool).await.unwrap(),
+        action_source(&cancelled, "cancelled"),
+        f.evaluator_id,
+    );
+    let presented_cancellation = dispatch::consume(&pool, &new_alert, &ELIGIBILITY)
         .await
         .unwrap()
-        .is_some());
+        .unwrap();
+    assert_eq!(
+        presented_cancellation.link.as_deref(),
+        Some(evaluator_destination.as_str())
+    );
 
-    let second = request_observation(&pool, &f).await;
-    approve_with(&pool, &f, second.id, vec![f.evaluator_id]).await;
+    assert!(
+        dispatch::consume(&pool, &other_observation_assignment, &ELIGIBILITY)
+            .await
+            .unwrap()
+            .is_some()
+    );
     services::submit_my_evaluation(
         &pool,
-        f.evaluator_id,
+        f.second_evaluator_id,
         second.id,
         evaluation_responses(&f.template, 3.0),
     )
@@ -715,6 +830,35 @@ async fn supervision_action_notifications_are_atomic_and_follow_confirmed_partic
     assert_eq!(published.len(), 3);
     assert_eq!(published[2].recipient_id, f.teacher_id);
     assert_eq!(published[2].action_kind, "academic_approved");
+
+    let already_withdrawn = request_observation(&pool, &f).await;
+    approve_with(&pool, &f, already_withdrawn.id, vec![f.evaluator_id]).await;
+    let already_withdrawn = services::return_observation_request(
+        &pool,
+        f.actor_id,
+        already_withdrawn.id,
+        ReturnObservationRequest { comment: None },
+    )
+    .await
+    .unwrap();
+    let outstanding_withdrawal = prefetched(
+        &dispatch::pending(&pool).await.unwrap(),
+        action_source(&already_withdrawn, "request_returned"),
+        f.evaluator_id,
+    );
+    services::cancel_requested_observation(&pool, f.teacher_id, already_withdrawn.id)
+        .await
+        .unwrap();
+    let requested_cancellation = inboxes(already_withdrawn.id).await.unwrap();
+    assert_eq!(requested_cancellation.len(), 5);
+    assert_eq!(requested_cancellation[4].action_kind, "request_cancelled");
+    assert_eq!(requested_cancellation[4].recipient_id, f.teacher_id);
+    assert!(
+        dispatch::consume(&pool, &outstanding_withdrawal, &ELIGIBILITY)
+            .await
+            .unwrap()
+            .is_some()
+    );
 
     let before_delete = dispatch::pending(&pool).await.unwrap();
     let impact = services::cycle_deletion_impact(&pool, f.cycle.id)
