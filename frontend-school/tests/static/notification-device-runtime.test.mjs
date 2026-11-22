@@ -19,6 +19,14 @@ test('existing subscription sync uses runtime key and persists server binding wi
 	assert.equal(h.state.binding.binding_token, 'token-1');
 	assert.equal((await h.store.getPushStatus()).synced, true);
 });
+test('durable registration has no expiry and remains synced with exact version and token', async () => {
+	const h = deviceHarness({ durable: true });
+	assert.equal(await h.store.enablePushFromUserAction(), true);
+	assert.equal(h.state.binding.expires_at, null);
+	assert.equal((await h.store.getPushStatus()).synced, true);
+	h.state.binding = { ...h.state.binding, binding_token: 'stale-token' };
+	assert.equal((await h.store.getPushStatus()).synced, false);
+});
 test('unavailable key is degraded even with a browser subscription', async () => {
 	const h = deviceHarness({ config: { available: false, public_key: null, key_id: null } });
 	assert.equal(await h.store.syncExistingPushSubscription(), false);

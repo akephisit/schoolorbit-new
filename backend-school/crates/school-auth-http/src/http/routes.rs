@@ -14,6 +14,10 @@ pub fn public_routes() -> Router<AuthHttpState> {
             "/auth/login",
             post(session_handlers::login).layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)),
         )
+        .route(
+            "/auth/restore",
+            post(session_handlers::restore).layer(DefaultBodyLimit::max(AUTH_JSON_BODY_LIMIT)),
+        )
         .route("/auth/logout", post(session_handlers::logout))
 }
 

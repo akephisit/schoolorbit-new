@@ -15050,7 +15050,10 @@
               },
               "expires_at": {
                 "format": "date-time",
-                "type": "string"
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "id": {
                 "format": "uuid",
@@ -56010,7 +56013,10 @@
           },
           "expires_at": {
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "id": {
             "format": "uuid",
@@ -57476,6 +57482,10 @@
           "subjectTermCriterionId",
           "studentAcademicYearId"
         ],
+        "type": "object"
+      },
+      "RestoreSessionRequest": {
+        "additionalProperties": false,
         "type": "object"
       },
       "RestoreTimetableBlockGroupRequest": {
@@ -60236,7 +60246,10 @@
         "properties": {
           "absoluteExpiresAt": {
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "createdAt": {
             "format": "date-time",
@@ -60251,7 +60264,10 @@
           },
           "idleExpiresAt": {
             "format": "date-time",
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "isCurrent": {
             "type": "boolean"
@@ -97632,6 +97648,86 @@
         ]
       }
     },
+    "/api/auth/restore": {
+      "post": {
+        "operationId": "restoreAuthSession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_LoginData"
+                }
+              }
+            },
+            "description": "Remembered device restored"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Deliberate empty JSON object required"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Remembered device absent or revoked"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Origin rejected"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Live session takes precedence"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication service unavailable"
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/sessions": {
       "get": {
         "operationId": "listAuthSessions",
@@ -97644,7 +97740,7 @@
                 }
               }
             },
-            "description": "Active sessions"
+            "description": "Active sessions and remembered devices"
           },
           "401": {
             "content": {
@@ -97677,7 +97773,7 @@
         "operationId": "revokeAuthSession",
         "parameters": [
           {
-            "description": "Owned session identifier",
+            "description": "Owned session or remembered device identifier",
             "in": "path",
             "name": "id",
             "required": true,

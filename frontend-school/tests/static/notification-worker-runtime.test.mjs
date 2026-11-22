@@ -108,6 +108,29 @@ test('push worker suppresses expired, missing, old-version and old-account bindi
 	await h.push();
 	assert.equal(h.shown.length, 0);
 });
+test('durable push remains eligible after ninety days but still requires a finite event deadline', async () => {
+	const h = harness();
+	h.setBinding({ id: 'device', version: 'v1', binding_token: 'token', expires_at: null });
+	const realNow = Date.now;
+	const later = realNow() + 91 * 86400_000;
+	try {
+		Date.now = () => later;
+		for (const expires_at of [
+			null,
+			undefined,
+			'',
+			'invalid',
+			'Infinity',
+			new Date(later - 1).toISOString()
+		])
+			await h.push({ expires_at });
+		assert.equal(h.shown.length, 0);
+		await h.push({ expires_at: new Date(later + 60_000).toISOString() });
+		assert.equal(h.shown.length, 1);
+	} finally {
+		Date.now = realNow;
+	}
+});
 test('duplicate pushes use one generic OS notification with stable id tag and renotify disabled', async () => {
 	const h = harness();
 	await h.push({ title: 'private', body: 'private' });

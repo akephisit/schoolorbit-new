@@ -128,6 +128,63 @@ pub fn pending_session_token(
     RawSessionToken(bytes)
 }
 
+/// Device rotation and child session issuance use distinct domains from ordinary rotation.
+pub fn remembered_device_token(
+    key: &SessionHmacKey,
+    tenant_id: Uuid,
+    device_id: Uuid,
+    current: &RawSessionToken,
+    generation_at: chrono::DateTime<chrono::Utc>,
+) -> RawSessionToken {
+    remembered_credential(
+        key,
+        b"schoolorbit/device/pending/v1",
+        tenant_id,
+        device_id,
+        Uuid::nil(),
+        current,
+        generation_at,
+    )
+}
+
+pub fn remembered_session_token(
+    key: &SessionHmacKey,
+    tenant_id: Uuid,
+    device_id: Uuid,
+    session_id: Uuid,
+    current: &RawSessionToken,
+    generation_at: chrono::DateTime<chrono::Utc>,
+) -> RawSessionToken {
+    remembered_credential(
+        key,
+        b"schoolorbit/device/session/v1",
+        tenant_id,
+        device_id,
+        session_id,
+        current,
+        generation_at,
+    )
+}
+
+fn remembered_credential(
+    key: &SessionHmacKey,
+    domain: &[u8],
+    tenant_id: Uuid,
+    device_id: Uuid,
+    session_id: Uuid,
+    current: &RawSessionToken,
+    generation_at: chrono::DateTime<chrono::Utc>,
+) -> RawSessionToken {
+    let mut mac = key.hmac();
+    mac.update(domain);
+    mac.update(tenant_id.as_bytes());
+    mac.update(device_id.as_bytes());
+    mac.update(session_id.as_bytes());
+    mac.update(current.as_bytes());
+    mac.update(&generation_at.timestamp_micros().to_be_bytes());
+    RawSessionToken(finalize_hmac(mac))
+}
+
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct EncodedSessionToken(String);
 
@@ -479,5 +536,42 @@ mod pending_derivation_tests {
         ] {
             assert_ne!(original, different.token_hash());
         }
+    }
+    #[test]
+    fn remembered_derivations_reproduce_and_separate_device_session_and_periodic_domains() {
+        let key = SessionHmacKey::for_tests([51; 32]);
+        let tenant = Uuid::new_v4();
+        let device = Uuid::new_v4();
+        let session = Uuid::new_v4();
+        let raw = RawSessionToken::from_bytes([52; 32]);
+        let now = canonical_session_time(chrono::Utc::now()).unwrap();
+        let next = remembered_device_token(&key, tenant, device, &raw, now);
+        assert_eq!(
+            next.token_hash(),
+            remembered_device_token(&key, tenant, device, &raw, now).token_hash()
+        );
+        assert_ne!(
+            next.token_hash(),
+            remembered_session_token(&key, tenant, device, session, &raw, now).token_hash()
+        );
+        assert_ne!(
+            next.token_hash(),
+            pending_session_token(&key, tenant, session, &raw, now).token_hash()
+        );
+        assert_ne!(
+            next.token_hash(),
+            remembered_device_token(&key, Uuid::new_v4(), device, &raw, now).token_hash()
+        );
+        assert_ne!(
+            next.token_hash(),
+            remembered_device_token(
+                &key,
+                tenant,
+                device,
+                &raw,
+                now + chrono::Duration::microseconds(1)
+            )
+            .token_hash()
+        );
     }
 }

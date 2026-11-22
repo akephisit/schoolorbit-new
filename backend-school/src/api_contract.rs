@@ -319,6 +319,7 @@ use utoipa::OpenApi;
         school_attendance_http::handlers::purge_impact,
         school_attendance_http::handlers::purge_term,
         school_auth_http::http::session_handlers::login,
+        school_auth_http::http::session_handlers::restore,
         school_auth_http::http::session_handlers::logout,
         school_auth_http::http::session_handlers::me,
         school_auth_http::http::session_handlers::activity,
@@ -2784,6 +2785,21 @@ mod tests {
         for status in ["400", "401", "403", "409", "503"] {
             assert!(!activity["responses"][status].is_null());
         }
+        assert_eq!(
+            schemas["RestoreSessionRequest"]["additionalProperties"],
+            false
+        );
+        let restore = &document["paths"]["/api/auth/restore"]["post"];
+        assert_eq!(restore["operationId"], "restoreAuthSession");
+        for status in ["200", "400", "401", "403", "409", "503"] {
+            assert!(!restore["responses"][status].is_null());
+        }
+        assert!(contains_null(
+            &schemas["SessionResponse"]["properties"]["idleExpiresAt"]
+        ));
+        assert!(contains_null(
+            &schemas["SessionResponse"]["properties"]["absoluteExpiresAt"]
+        ));
         let current_user = &schemas["CurrentUserResponse"];
         assert_eq!(
             required(current_user),

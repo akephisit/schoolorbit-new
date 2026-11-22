@@ -54,6 +54,25 @@ pub struct LoginRequest {
     pub remember_me: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(
+    deny_unknown_fields,
+    try_from = "serde_json::Map<String, serde_json::Value>"
+)]
+pub struct RestoreSessionRequest {}
+
+impl TryFrom<serde_json::Map<String, serde_json::Value>> for RestoreSessionRequest {
+    type Error = &'static str;
+    fn try_from(value: serde_json::Map<String, serde_json::Value>) -> Result<Self, Self::Error> {
+        if value.is_empty() {
+            Ok(Self {})
+        } else {
+            Err("empty_object_required")
+        }
+    }
+}
+
 // Update profile request (editable fields only)
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
@@ -211,8 +230,10 @@ pub struct SessionResponse {
     pub remember_me: bool,
     pub created_at: DateTime<Utc>,
     pub last_seen_at: DateTime<Utc>,
-    pub idle_expires_at: DateTime<Utc>,
-    pub absolute_expires_at: DateTime<Utc>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub idle_expires_at: Option<DateTime<Utc>>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub absolute_expires_at: Option<DateTime<Utc>>,
     pub is_current: bool,
 }
 
@@ -226,6 +247,22 @@ pub struct SessionListData {
 #[cfg(test)]
 mod tests {
     use super::UpdateProfileRequest;
+
+    #[test]
+    fn restore_requires_an_empty_object() {
+        assert!(serde_json::from_str::<super::RestoreSessionRequest>("{}").is_ok());
+        for invalid in [
+            "null",
+            "[]",
+            "[{}]",
+            "true",
+            "1",
+            "\"\"",
+            "{\"rememberMe\":true}",
+        ] {
+            assert!(serde_json::from_str::<super::RestoreSessionRequest>(invalid).is_err());
+        }
+    }
 
     #[test]
     fn update_profile_distinguishes_omitted_image_from_explicit_null() {

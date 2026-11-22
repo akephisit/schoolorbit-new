@@ -28,11 +28,10 @@ use super::{
         validate_login_input, validate_new_password, SessionLifetime, SessionTimes,
     },
     session_repository::{
-        apply_password_change, cleanup_auth_state, list_user_sessions,
-        load_password_change_snapshot, load_session_validity, lock_password_change,
-        maintain_session, revoke_sessions, validate_session, ActivityTokenDerivation,
-        MaintainedSession, NewSession, PresentedTokenKind, SessionRevocationReason,
-        SessionRevocationTarget, SessionRow,
+        apply_password_change_with_device, cleanup_auth_state, load_password_change_snapshot,
+        load_session_validity, lock_password_change, maintain_session, validate_session,
+        ActivityTokenDerivation, MaintainedSession, NewSession, PresentedTokenKind,
+        SessionRevocationReason, SessionRevocationTarget,
     },
     throttle_repository::{check_login_throttles, record_login_failure, ThrottleState},
 };
@@ -207,6 +206,7 @@ pub struct LoginUserSnapshot {
 }
 
 pub struct LoginResult {
+    pub remembered_device_credential: Option<SessionCredential>,
     pub user: LoginUserSnapshot,
     pub authenticated: AuthenticatedSession,
     pub credential: SessionCredential,
@@ -233,6 +233,7 @@ pub struct SessionRevocationResult {
 
 #[derive(Debug)]
 pub struct PasswordChangeResult {
+    pub remembered_device_credential: Option<SessionCredential>,
     pub credential: SessionCredential,
     pub csrf_token: CsrfToken,
     #[cfg(test)]
@@ -242,6 +243,18 @@ pub struct PasswordChangeResult {
 pub async fn login<G>(
     context: &SessionServiceContext,
     command: LoginCommand<'_>,
+    generate: G,
+) -> Result<LoginResult, AppError>
+where
+    G: FnOnce() -> Result<RawSessionToken, AppError>,
+{
+    login_with_device(context, command, None, generate).await
+}
+
+pub async fn login_with_device<G>(
+    context: &SessionServiceContext,
+    command: LoginCommand<'_>,
+    presented_device: Option<TokenHash>,
     generate: G,
 ) -> Result<LoginResult, AppError>
 where
@@ -354,13 +367,28 @@ where
             rotated_at: command.now,
         },
     };
-    let creation = super::session_repository::create_login_session(
+    let device_raw = if command.remember_me {
+        Some(RawSessionToken::generate()?)
+    } else {
+        None
+    };
+    let new_device =
+        device_raw
+            .as_ref()
+            .map(|raw| crate::remembered_devices::NewRememberedDevice {
+                id: Uuid::new_v4(),
+                token_hash: raw.token_hash(),
+            });
+    let (creation, retired) = super::session_repository::create_login_session_with_device(
         &context.tenant.pool,
         &new_session,
         identifier_hash,
         &user,
+        new_device.as_ref(),
+        presented_device,
     )
     .await?;
+    publish_device_revocations(context, &retired, SessionRevocationReason::ExplicitLogin);
     if creation == super::session_repository::LoginSessionCreation::StaleIdentity {
         let throttle = record_login_failure(
             &context.tenant.pool,
@@ -411,11 +439,83 @@ where
     cleanup_after_operation(&context.tenant.pool, command.now).await;
 
     Ok(LoginResult {
+        remembered_device_credential: device_raw.map(device_credential),
         user: user_snapshot,
         authenticated,
         credential,
         csrf_token,
     })
+}
+
+pub async fn restore(
+    context: &SessionServiceContext,
+    device: &RawSessionToken,
+    incoming_session: Option<TokenHash>,
+    now: DateTime<Utc>,
+) -> Result<LoginResult, AppError> {
+    let now = super::session_crypto::canonical_session_time(now)?;
+    let restored = crate::remembered_devices::restore(
+        &context.tenant.pool,
+        context.config.hmac_key(),
+        context.tenant.tenant_id,
+        device,
+        incoming_session,
+        now,
+    )
+    .await?;
+    let authentication = authenticate(context, restored.session_token.token_hash(), now)
+        .await?
+        .ok_or_else(authentication_required)?;
+    if authentication.authenticated.user_id != restored.user_id {
+        return Err(authentication_required());
+    }
+    let user = load_current_user(context, &authentication.authenticated).await?;
+    let absolute_expires_at = authentication
+        .authenticated
+        .session_state()
+        .absolute_expires_at;
+    Ok(LoginResult {
+        user,
+        authenticated: authentication.authenticated,
+        credential: credential(restored.session_token, true, absolute_expires_at, now),
+        remembered_device_credential: Some(device_credential(restored.device_token)),
+        csrf_token: authentication.csrf_token,
+    })
+}
+
+pub async fn logout_presented_device(
+    context: &SessionServiceContext,
+    device: TokenHash,
+    now: DateTime<Utc>,
+) -> Result<(), AppError> {
+    let revoked =
+        crate::remembered_devices::revoke_presented(&context.tenant.pool, device, now).await?;
+    publish_device_revocations(context, &revoked.sessions, SessionRevocationReason::Logout);
+    Ok(())
+}
+
+fn device_credential(raw: RawSessionToken) -> SessionCredential {
+    SessionCredential {
+        raw,
+        cookie_max_age_seconds: Some(crate::config::REMEMBERED_DEVICE_COOKIE_MAX_AGE),
+    }
+}
+
+fn publish_device_revocations(
+    context: &SessionServiceContext,
+    sessions: &[(Uuid, Uuid)],
+    reason: SessionRevocationReason,
+) {
+    for (user_id, session_id) in sessions {
+        context
+            .identity_cache
+            .invalidate_identity_user(&context.tenant.subdomain, *user_id);
+        publish(
+            &context.session_events,
+            SessionRevocationEvent::session(&context.tenant.subdomain, *user_id, *session_id),
+        );
+        audit::session_revoked(context.tenant.tenant_id, *user_id, *session_id, reason);
+    }
 }
 
 /// Read-only authentication; callers perform security checks before acknowledgment/activity.
@@ -576,8 +676,14 @@ pub async fn load_current_user(
 pub async fn list_sessions(
     session: &AuthenticatedSession,
     now: DateTime<Utc>,
-) -> Result<Vec<SessionRow>, AppError> {
-    let sessions = list_user_sessions(&session.tenant.pool, session.user_id, now).await?;
+) -> Result<Vec<crate::remembered_devices::ManagedSessionRow>, AppError> {
+    let sessions = crate::remembered_devices::list(
+        &session.tenant.pool,
+        session.user_id,
+        session.session_id,
+        now,
+    )
+    .await?;
     cleanup_after_operation(&session.tenant.pool, now).await;
     Ok(sessions)
 }
@@ -613,11 +719,7 @@ pub async fn revoke_selected(
         now,
     )
     .await?;
-    if result.revoked_session_ids.is_empty() {
-        Err(AppError::NotFound("ไม่พบเซสชัน".to_string()))
-    } else {
-        Ok(result)
-    }
+    Ok(result)
 }
 
 pub async fn logout_all(
@@ -686,12 +788,20 @@ where
         ));
     }
 
-    let revoked_session_ids = apply_password_change(
+    let device_replacement = if locked.remembered_device_id.is_some() {
+        Some(RawSessionToken::generate()?)
+    } else {
+        None
+    };
+    let revoked_session_ids = apply_password_change_with_device(
         &mut transaction,
         session.user_id,
         session.session_id,
         &new_password_hash,
         replacement_hash,
+        locked
+            .remembered_device_id
+            .zip(device_replacement.as_ref().map(|raw| raw.token_hash())),
         now,
     )
     .await?;
@@ -734,6 +844,7 @@ where
         session.session_id,
     );
     Ok(PasswordChangeResult {
+        remembered_device_credential: device_replacement.map(device_credential),
         credential: credential(
             replacement,
             locked.remember_me,
@@ -776,8 +887,18 @@ async fn revoke(
     reason: SessionRevocationReason,
     now: DateTime<Utc>,
 ) -> Result<SessionRevocationResult, AppError> {
-    let mut revoked_session_ids =
-        revoke_sessions(&session.tenant.pool, session.user_id, target, reason, now).await?;
+    let result = crate::remembered_devices::revoke(
+        &session.tenant.pool,
+        session.user_id,
+        target,
+        reason,
+        now,
+    )
+    .await?;
+    if !result.found && matches!(target, SessionRevocationTarget::Session(_)) {
+        return Err(AppError::NotFound("ไม่พบเซสชัน".into()));
+    }
+    let mut revoked_session_ids: Vec<Uuid> = result.sessions.iter().map(|(_, id)| *id).collect();
     context
         .identity_cache
         .invalidate_identity_user(&context.tenant.subdomain, session.user_id);
@@ -785,19 +906,16 @@ async fn revoke(
     let current_revoked = revoked_session_ids.contains(&session.session_id);
 
     if !revoked_session_ids.is_empty() {
-        let event = match target {
-            SessionRevocationTarget::Session(session_id) => SessionRevocationEvent::session(
-                &context.tenant.subdomain,
-                session.user_id,
-                session_id,
-            ),
-            SessionRevocationTarget::User { except_session_id } => SessionRevocationEvent::user(
-                &context.tenant.subdomain,
-                session.user_id,
-                except_session_id,
-            ),
-        };
-        publish(&context.session_events, event);
+        for revoked_id in &revoked_session_ids {
+            publish(
+                &context.session_events,
+                SessionRevocationEvent::session(
+                    &context.tenant.subdomain,
+                    session.user_id,
+                    *revoked_id,
+                ),
+            );
+        }
         for revoked_session_id in &revoked_session_ids {
             audit::session_revoked(
                 context.tenant.tenant_id,

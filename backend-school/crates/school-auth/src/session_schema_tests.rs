@@ -71,3 +71,35 @@ async fn migration_145_enforces_pending_pair_digest_and_lifetime_bounds() {
     let index: bool = sqlx::query_scalar("SELECT indisunique FROM pg_index WHERE indexrelid='auth_sessions_pending_token_hash_key'::regclass").fetch_one(&pool).await.unwrap();
     assert!(index);
 }
+
+#[tokio::test]
+async fn migration_167_enforces_device_same_user_links_and_does_not_backfill() {
+    let pool = create_named_test_pool("auth_remembered_schema").await;
+    run_test_migrations(&pool).await;
+    let user = create_test_user(&pool, "remembered-schema@example.test", "test-password")
+        .await
+        .unwrap();
+    let other = create_test_user(&pool, "remembered-other@example.test", "test-password")
+        .await
+        .unwrap();
+    let grant = uuid::Uuid::new_v4();
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM auth_remembered_devices")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    sqlx::query("INSERT INTO auth_remembered_devices(id,user_id,current_token_hash,device_label,created_at,last_used_at) VALUES($1,$2,decode(repeat('a1',32),'hex'),'Synthetic',now(),now())")
+        .bind(grant).bind(user).execute(&pool).await.unwrap();
+    for sql in [
+        "UPDATE auth_remembered_devices SET pending_token_hash=decode(repeat('a2',32),'hex') WHERE id=$1",
+        "UPDATE auth_remembered_devices SET current_token_hash=decode('a1','hex') WHERE id=$1",
+    ] { assert!(sqlx::query(sql).bind(grant).execute(&pool).await.is_err()); }
+    let invalid=sqlx::query("INSERT INTO auth_sessions(user_id,current_token_hash,remember_me,device_label,created_at,last_seen_at,idle_expires_at,absolute_expires_at,rotated_at,remembered_device_id) VALUES($1,decode(repeat('a3',32),'hex'),true,'Synthetic',now(),now(),now()+interval '7 days',now()+interval '30 days',now(),$2)")
+        .bind(other).bind(grant).execute(&pool).await;
+    assert!(
+        invalid.is_err(),
+        "a different user's session cannot adopt a remembered device"
+    );
+    let security_invoker:bool=sqlx::query_scalar("SELECT 'security_invoker=true'=ANY(reloptions) FROM pg_class WHERE oid='notification_eligible_push_subscriptions'::regclass").fetch_one(&pool).await.unwrap();
+    assert!(security_invoker);
+}

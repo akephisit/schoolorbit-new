@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { authRefreshDecision } from '../../src/lib/auth/auth-refresh-policy.ts';
 
 async function load(relative, dependencies) {
@@ -26,10 +26,17 @@ async function harness(extraClient = {}) {
 	authStore.subscribe((value) => (state = value));
 	const requests = [];
 	const { authAPI } = await load('../../src/lib/api/auth.ts', {
+		'svelte/store': { get },
 		'#lib/api/client.js': {
+			ApiClientError: class extends Error {
+				constructor(message, status) {
+					super(message);
+					this.status = status;
+				}
+			},
 			apiClient: { get: () => new Promise((resolve) => requests.push(resolve)), ...extraClient },
 			requireApiData(response) {
-				assert.equal(response.success, true);
+				if (!response.success) throw new Error(response.error || 'request failed');
 				return response.data;
 			}
 		},
@@ -38,7 +45,7 @@ async function harness(extraClient = {}) {
 		'#lib/auth/session-awareness.js': { announceAuthenticatedSession() {} },
 		'#lib/stores/auth.js': { authStore },
 		'#lib/stores/notification.js': { notificationStore: { async prepareLogout() {} } },
-		'svelte-sonner': { toast: { success() {} } }
+		'svelte-sonner': { toast: { success() {}, error() {} } }
 	});
 	return {
 		authAPI,
@@ -68,6 +75,167 @@ const response = {
 		permissions: []
 	}
 };
+const expired = { status: 401, success: false, error: 'expired' };
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+const restored = (user = response.data) => ({ status: 200, success: true, data: { user } });
+
+test('current-user 401 restores once with deliberate empty JSON and shares the whole refresh', async () => {
+	const writes = [];
+	let release;
+	const h = await harness({
+		post: (endpoint, body) => {
+			writes.push({ endpoint, body });
+			return new Promise((resolve) => (release = resolve));
+		}
+	});
+	const first = h.authAPI.refreshCurrentUser();
+	h.requests[0](expired);
+	await flush();
+	const concurrent = h.authAPI.refreshCurrentUser();
+	assert.deepEqual(writes, [{ endpoint: '/api/auth/restore', body: {} }]);
+	release(restored());
+	assert.deepEqual(await Promise.all([first, concurrent]), ['authenticated', 'authenticated']);
+	assert.equal(h.requests.length, 1);
+	assert.equal(h.state.user.id, 'old');
+});
+
+for (const [status, expected] of [
+	[401, 'unauthenticated'],
+	[503, 'unavailable']
+]) {
+	test(`restore ${status} has an explicit ${expected} outcome`, async () => {
+		const h = await harness({ post: async () => ({ status, success: false, error: 'refused' }) });
+		h.authStore.setUser({ id: 'old', user_type: 'staff' }, [], response.data.session);
+		const pending = h.authAPI.refreshCurrentUser();
+		h.requests[0](expired);
+		assert.equal(await pending, expected);
+		assert.equal(h.state.isAuthenticated, status === 503);
+		assert.equal(h.state.isUnavailable, status === 503);
+	});
+}
+
+test('restore 409 re-reads current user once and never restores again in that refresh', async () => {
+	for (const current of [response, expired]) {
+		let attempts = 0;
+		const h = await harness({
+			post: async () => {
+				attempts++;
+				return { status: 409, success: false, error: 'session_exists' };
+			}
+		});
+		const pending = h.authAPI.refreshCurrentUser();
+		h.requests[0](expired);
+		await flush();
+		assert.equal(h.requests.length, 2);
+		h.requests[1](current);
+		assert.equal(await pending, current === response ? 'authenticated' : 'unauthenticated');
+		assert.equal(attempts, 1);
+	}
+});
+
+test('explicit login fences delayed restore state and runs after its cookie response', async () => {
+	const writes = [];
+	const h = await harness({
+		post: (endpoint) => new Promise((resolve) => writes.push({ endpoint, resolve }))
+	});
+	const refresh = h.authAPI.refreshCurrentUser();
+	h.requests[0](expired);
+	await flush();
+	const login = h.authAPI.login({ username: 'new', password: 'fixture', rememberMe: true });
+	assert.deepEqual(
+		writes.map((item) => item.endpoint),
+		['/api/auth/restore']
+	);
+	writes[0].resolve(restored());
+	assert.equal(await refresh, 'unauthenticated');
+	await flush();
+	assert.equal(h.state.user, null);
+	assert.deepEqual(
+		writes.map((item) => item.endpoint),
+		['/api/auth/restore', '/api/auth/login']
+	);
+	writes[1].resolve(restored({ ...response.data, id: 'new' }));
+	assert.equal((await login).id, 'new');
+	assert.equal(h.state.user.id, 'new');
+});
+
+for (const status of [200, 401, 503]) {
+	test(`a delayed restore ${status} cannot replace or erase a newer observed login`, async () => {
+		let release;
+		const h = await harness({ post: () => new Promise((resolve) => (release = resolve)) });
+		const pending = h.authAPI.refreshCurrentUser();
+		h.requests[0](expired);
+		await flush();
+		h.authStore.setUser({ id: 'new', user_type: 'staff' }, [], {
+			...response.data.session,
+			sessionId: 'new-session'
+		});
+		release(status === 200 ? restored() : { status, success: false, error: 'refused' });
+		assert.equal(await pending, 'authenticated', 'stale callers must not redirect a newer login');
+		assert.equal(h.state.user.id, 'new');
+		assert.equal(h.state.isUnavailable, false);
+	});
+}
+
+test('explicit logout waits for restore cookies and revokes even with an expired child session', async () => {
+	const writes = [];
+	const h = await harness({
+		post: (endpoint) => new Promise((resolve) => writes.push({ endpoint, resolve }))
+	});
+	h.authStore.setUser({ id: 'old', user_type: 'staff' }, [], response.data.session);
+	const refresh = h.authAPI.refreshCurrentUser();
+	h.requests[0](expired);
+	await flush();
+	const logout = h.authAPI.logout();
+	writes[0].resolve(restored());
+	await refresh;
+	await flush();
+	assert.equal(h.requests.length, 2);
+	h.requests[1](expired);
+	await flush();
+	assert.deepEqual(
+		writes.map((item) => item.endpoint),
+		['/api/auth/restore', '/api/auth/logout']
+	);
+	writes[1].resolve({ status: 200, success: true, data: {} });
+	await logout;
+	assert.equal(h.state.user, null);
+});
+
+test('revoke refuses a different current session or account without issuing the selected mutation', async () => {
+	for (const current of [
+		{ ...response.data, id: 'another' },
+		{ ...response.data, session: { ...response.data.session, sessionId: 'another-session' } }
+	]) {
+		let deletes = 0;
+		const h = await harness({
+			get: async () => ({ ...response, data: current }),
+			delete: async () => {
+				deletes++;
+				return { success: true, data: {} };
+			}
+		});
+		h.authStore.setUser({ id: 'old', user_type: 'staff' }, [], response.data.session);
+		await assert.rejects(h.authAPI.revokeSession('selected', { current: true }), /เปลี่ยนแปลง/);
+		assert.equal(deletes, 0);
+		assert.equal(h.state.user.id, 'old');
+	}
+});
+
+test('denied revoke preserves the authenticated user and is never retried', async () => {
+	let deletes = 0;
+	const h = await harness({
+		get: async () => response,
+		delete: async () => {
+			deletes++;
+			return { status: 403, success: false, error: 'forbidden' };
+		}
+	});
+	h.authStore.setUser({ id: 'old', user_type: 'staff' }, [], response.data.session);
+	await assert.rejects(h.authAPI.revokeSession('selected', { current: true }), /forbidden/);
+	assert.equal(deletes, 1);
+	assert.equal(h.state.user.id, 'old');
+});
 test('concurrent current-user refreshes share one request', async () => {
 	const h = await harness();
 	const a = h.authAPI.refreshCurrentUser();
@@ -269,14 +437,18 @@ for (const action of ['logout', 'logoutAll', 'revokeSession']) {
 			new Promise((resolve) => {
 				release = resolve;
 			});
-		const h = await harness({ post: operation, delete: operation });
+		const h = await harness({
+			get: async () => ({ ...response, data: { ...response.data, id: 'same' } }),
+			post: operation,
+			delete: operation
+		});
 		const user = { id: 'same', firstName: 'Same', lastName: 'User', user_type: 'staff' };
-		h.authStore.setUser(user, []);
+		h.authStore.setUser(user, [], response.data.session);
 		const pending =
 			action === 'revokeSession'
 				? h.authAPI.revokeSession('current', { current: true })
 				: h.authAPI[action]();
-		await Promise.resolve();
+		await new Promise((resolve) => setImmediate(resolve));
 		h.authStore.clearUser();
 		h.authStore.setUser(user, []);
 		release({ success: true, data: {} });
@@ -289,15 +461,19 @@ for (const action of ['logout', 'logoutAll', 'revokeSession']) {
 			new Promise((resolve) => {
 				release = resolve;
 			});
-		const h = await harness({ post: operation, delete: operation });
+		const h = await harness({
+			get: async () => ({ ...response, data: { ...response.data, id: 'same' } }),
+			post: operation,
+			delete: operation
+		});
 		const user = { id: 'same', firstName: 'Same', lastName: 'User', user_type: 'staff' };
-		h.authStore.setUser(user, []);
+		h.authStore.setUser(user, [], response.data.session);
 		const pending =
 			action === 'revokeSession'
 				? h.authAPI.revokeSession('current', { current: true })
 				: h.authAPI[action]();
-		await Promise.resolve();
-		h.authStore.setUser(user, []);
+		await new Promise((resolve) => setImmediate(resolve));
+		h.authStore.setUser(user, [], response.data.session);
 		release({ success: true, data: {} });
 		await pending;
 		assert.equal(h.state.user, null);
@@ -435,3 +611,59 @@ test('a current-session 401 still clears authentication after an ordinary refres
 	await pending;
 	assert.equal(h.state.user, null);
 });
+
+for (const endpoint of ['/api/auth/me', '/api/auth/restore']) {
+	test(`${endpoint}: controlled 401 preserves identity until AuthAPI decides the outcome`, async () => {
+		const h = await transportHarness();
+		h.authStore.setUser({ id: 'same' }, []);
+		let request;
+		const options = {
+			requestFetch: async (_url, init) => {
+				request = init;
+				return new Response(JSON.stringify(expired), {
+					status: 401,
+					headers: { 'Content-Type': 'application/json' }
+				});
+			}
+		};
+		if (endpoint.endsWith('/restore')) await h.apiClient.post(endpoint, {}, options);
+		else await h.apiClient.get(endpoint, options);
+		assert.equal(h.state.user.id, 'same');
+		assert.equal(request.credentials, 'include');
+		if (endpoint.endsWith('/restore')) {
+			assert.equal(request.body, '{}');
+			assert.equal(request.headers.get('Content-Type'), 'application/json');
+		}
+	});
+}
+
+for (const status of [200, 401]) {
+	test(`a delayed restore ${status} cannot capture CSRF after explicit auth intent starts`, async () => {
+		const h = await transportHarness();
+		h.authStore.setUser({ id: 'same' }, []);
+		const epoch = h.authStore.sessionEpoch;
+		let release;
+		const pending = h.apiClient.post(
+			'/api/auth/restore',
+			{},
+			{
+				requestFetch: () => new Promise((resolve) => (release = resolve))
+			}
+		);
+		h.authStore.beginAuthChange();
+		assert.equal(
+			h.authStore.sessionEpoch,
+			epoch,
+			'intent fences before the selected session changes'
+		);
+		release(
+			new Response(JSON.stringify(status === 200 ? restored() : expired), {
+				status,
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': 'stale-restore-csrf' }
+			})
+		);
+		await pending;
+		assert.deepEqual(h.captured, []);
+		assert.equal(h.state.user.id, 'same');
+	});
+}

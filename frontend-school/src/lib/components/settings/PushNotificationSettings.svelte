@@ -212,7 +212,8 @@
 					อุปกรณ์ของคุณ ({status.devices.length}/{status.config.max_devices})
 				</h3>
 				<p class="text-xs text-muted-foreground">
-					การเชื่อมต่อหมดอายุเมื่อไม่มีการยืนยันเป็นเวลา {status.config.device_expiry_days} วัน การยกเลิกเครื่องอื่นไม่ปิดการแจ้งเตือนบนเครื่องนี้
+					อุปกรณ์ที่จดจำไว้รับการแจ้งเตือนได้จนกว่าจะออกจากระบบหรือนำอุปกรณ์ออก
+					การเชื่อมต่อแบบปกติหมดอายุเมื่อไม่มีการยืนยันเป็นเวลา {status.config.device_expiry_days} วัน
 				</p>
 				{#each status.devices as device (device.id)}
 					<div
@@ -226,7 +227,13 @@
 							<p class="text-xs text-muted-foreground">
 								ยืนยันล่าสุด {formatDate(device.last_confirmed_at)}
 							</p>
-							<p class="text-xs text-muted-foreground">หมดอายุ {formatDate(device.expires_at)}</p>
+							<p class="text-xs text-muted-foreground">
+								{#if device.expires_at === null}
+									เชื่อมโยงกับอุปกรณ์ที่จดจำไว้
+								{:else}
+									หมดอายุ {formatDate(device.expires_at)}
+								{/if}
+							</p>
 						</div>
 						<LoadingButton
 							variant="outline"

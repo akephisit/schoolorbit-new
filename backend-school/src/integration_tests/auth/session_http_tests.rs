@@ -197,7 +197,7 @@ fn session_cookie_has_host_prefix_and_required_attributes() {
 #[test]
 fn logout_expires_new_and_legacy_cookies() {
     let headers = expire_auth_cookies();
-    assert_eq!(headers.len(), 2);
+    assert_eq!(headers.len(), 3);
     assert!(headers.iter().any(|value| {
         value
             .to_str()
@@ -518,7 +518,7 @@ async fn login_errors_use_generic_envelopes_and_retry_after() {
         .await,
     );
     assert_eq!(successful.status(), StatusCode::OK);
-    assert_eq!(set_cookie_count(&successful), 2);
+    assert_eq!(set_cookie_count(&successful), 3);
     let session_cookie = successful
         .headers()
         .get_all(header::SET_COOKIE)
@@ -575,7 +575,7 @@ async fn logout_expires_credentials_only_after_revocation_can_commit() {
         logout_with_tenant(&fixture.runtime, fixture.tenant.clone(), &malformed_headers).await,
     );
     assert_eq!(malformed.status(), StatusCode::OK);
-    assert_eq!(set_cookie_count(&malformed), 2);
+    assert_eq!(set_cookie_count(&malformed), 3);
 
     let stale_token = RawSessionToken::from_bytes([99; 32]);
     let stale_headers = auth_headers(&fixture, Uuid::new_v4(), &stale_token);
@@ -583,7 +583,7 @@ async fn logout_expires_credentials_only_after_revocation_can_commit() {
         logout_with_tenant(&fixture.runtime, fixture.tenant.clone(), &stale_headers).await,
     );
     assert_eq!(stale.status(), StatusCode::OK);
-    assert_eq!(set_cookie_count(&stale), 2);
+    assert_eq!(set_cookie_count(&stale), 3);
 
     let mut duplicate_headers = headers.clone();
     duplicate_headers.append(
@@ -604,7 +604,7 @@ async fn logout_expires_credentials_only_after_revocation_can_commit() {
         logout_with_tenant(&fixture.runtime, fixture.tenant.clone(), &headers).await,
     );
     assert_eq!(success.status(), StatusCode::OK);
-    assert_eq!(set_cookie_count(&success), 2);
+    assert_eq!(set_cookie_count(&success), 3);
     assert!(success
         .headers()
         .get_all(header::SET_COOKIE)
@@ -794,7 +794,7 @@ async fn protected_mutation_headers_follow_committed_results() {
         .await
         .expect("password success response must resolve");
     assert_eq!(password_success.status(), StatusCode::OK);
-    assert_eq!(set_cookie_count(&password_success), 1);
+    assert_eq!(set_cookie_count(&password_success), 2);
     let replacement_cookie = password_success
         .headers()
         .get(header::SET_COOKIE)
@@ -833,7 +833,7 @@ async fn protected_mutation_headers_follow_committed_results() {
         .await
         .expect("current revoke response must resolve");
     assert_eq!(current_revoke.status(), StatusCode::OK);
-    assert_eq!(set_cookie_count(&current_revoke), 2);
+    assert_eq!(set_cookie_count(&current_revoke), 3);
 
     let logout_all_id = Uuid::new_v4();
     fixture.insert_session(user_id, logout_all_id, 54).await;
@@ -852,7 +852,7 @@ async fn protected_mutation_headers_follow_committed_results() {
         .await
         .expect("logout-all response must resolve");
     assert_eq!(logout_all_response.status(), StatusCode::OK);
-    assert_eq!(set_cookie_count(&logout_all_response), 2);
+    assert_eq!(set_cookie_count(&logout_all_response), 3);
 
     let unavailable_id = Uuid::new_v4();
     fixture.insert_session(user_id, unavailable_id, 55).await;
@@ -871,6 +871,55 @@ async fn protected_mutation_headers_follow_committed_results() {
         )
         .await
         .expect("unavailable logout-all response must resolve");
+    assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(set_cookie_count(&unavailable), 0);
+}
+
+#[tokio::test]
+async fn logout_without_finite_session_revokes_presented_remembered_device_before_expiry_cookie() {
+    let fixture = HandlerFixture::new("remembered_logout_no_session").await;
+    let user = fixture
+        .insert_user("remembered-logout", "password-one")
+        .await;
+    let device = RawSessionToken::from_bytes([94; 32]);
+    let grant = Uuid::new_v4();
+    sqlx::query("INSERT INTO auth_remembered_devices(id,user_id,current_token_hash,device_label,created_at,last_used_at) VALUES($1,$2,$3,'Synthetic',now(),now())")
+        .bind(grant).bind(user).bind(device.token_hash().as_bytes().as_slice()).execute(&fixture.pool).await.unwrap();
+    let headers = HeaderMap::from_iter([(
+        header::COOKIE,
+        HeaderValue::from_str(&format!(
+            "__Host-schoolorbit_device={}",
+            device.encode().expose_for_cookie()
+        ))
+        .unwrap(),
+    )]);
+    let success = response_from_result(
+        logout_with_tenant(&fixture.runtime, fixture.tenant.clone(), &headers).await,
+    );
+    assert_eq!(success.status(), StatusCode::OK);
+    assert_eq!(set_cookie_count(&success), 3);
+    let revoked: bool = sqlx::query_scalar(
+        "SELECT revoked_at IS NOT NULL FROM auth_remembered_devices WHERE id=$1",
+    )
+    .bind(grant)
+    .fetch_one(&fixture.pool)
+    .await
+    .unwrap();
+    assert!(revoked);
+    let rejected = response_from_result(
+        school_auth_http::http::session_handlers::restore_with_tenant(
+            &fixture.runtime,
+            fixture.tenant.clone(),
+            &headers,
+        )
+        .await,
+    );
+    assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(set_cookie_count(&rejected), 0);
+    fixture.pool.close().await;
+    let unavailable = response_from_result(
+        logout_with_tenant(&fixture.runtime, fixture.tenant.clone(), &headers).await,
+    );
     assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(set_cookie_count(&unavailable), 0);
 }
@@ -3055,5 +3104,122 @@ pub(crate) mod protected_router {
             .expect("feature-cookie response must resolve");
         assert_eq!(feature.status(), StatusCode::OK);
         assert_eq!(set_cookie_count(&feature), 1);
+    }
+    #[tokio::test]
+    async fn remembered_restore_requires_exact_origin_empty_json_and_never_clears_on_rejection() {
+        let fixture = ProtectedFixture::new("remembered_restore_http").await;
+        let user = fixture
+            .insert_user(&fixture.tenant_a_pool, "remembered-http", "active")
+            .await;
+        let device = RawSessionToken::from_bytes([93; 32]);
+        sqlx::query("INSERT INTO auth_remembered_devices(id,user_id,current_token_hash,device_label,created_at,last_used_at) VALUES($1,$2,$3,'Synthetic',now(),now())")
+            .bind(Uuid::new_v4()).bind(user).bind(device.token_hash().as_bytes().as_slice()).execute(&fixture.tenant_a_pool).await.unwrap();
+        let app = Router::new()
+            .route(
+                "/api/auth/restore",
+                post(school_auth_http::http::session_handlers::restore),
+            )
+            .with_state(fixture.runtime.clone());
+        let make = |origin: Option<&str>, body: &str, cookie: Option<&RawSessionToken>| {
+            let mut req = request(Method::POST, "/api/auth/restore", origin, None, None);
+            req.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            if let Some(cookie) = cookie {
+                req.headers_mut().insert(
+                    header::COOKIE,
+                    HeaderValue::from_str(&format!(
+                        "__Host-schoolorbit_device={}",
+                        cookie.encode().expose_for_cookie()
+                    ))
+                    .unwrap(),
+                );
+            }
+            *req.body_mut() = Body::from(body.to_string());
+            req
+        };
+        for (origin, body, cookie, status) in [
+            (None, "{}", Some(&device), StatusCode::FORBIDDEN),
+            (
+                Some("https://tenant-a.schoolorbit.test.evil.test"),
+                "{}",
+                Some(&device),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                Some("https://tenant-a.schoolorbit.test"),
+                "[]",
+                Some(&device),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                Some("https://tenant-a.schoolorbit.test"),
+                "{\"rememberMe\":true}",
+                Some(&device),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                Some("https://tenant-a.schoolorbit.test"),
+                "{}",
+                None,
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                Some("https://tenant-b.schoolorbit.test"),
+                "{}",
+                Some(&device),
+                StatusCode::UNAUTHORIZED,
+            ),
+        ] {
+            let denied = app
+                .clone()
+                .oneshot(make(origin, body, cookie))
+                .await
+                .unwrap();
+            assert_eq!(denied.status(), status);
+            assert_eq!(set_cookie_count(&denied), 0);
+        }
+        let accepted = app
+            .clone()
+            .oneshot(make(
+                Some("https://tenant-a.schoolorbit.test"),
+                "{}",
+                Some(&device),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), StatusCode::OK);
+        assert_eq!(set_cookie_count(&accepted), 2);
+        assert!(accepted.headers().get("x-csrf-token").is_some());
+        let session_cookie = accepted
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .find(|value| {
+                value
+                    .to_str()
+                    .unwrap()
+                    .starts_with("__Host-schoolorbit_session=")
+            })
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string();
+        let mut conflict = make(
+            Some("https://tenant-a.schoolorbit.test"),
+            "{}",
+            Some(&device),
+        );
+        conflict.headers_mut().append(
+            header::COOKIE,
+            HeaderValue::from_str(&session_cookie).unwrap(),
+        );
+        let conflict = app.oneshot(conflict).await.unwrap();
+        assert_eq!(conflict.status(), StatusCode::CONFLICT);
+        assert_eq!(set_cookie_count(&conflict), 0);
     }
 }

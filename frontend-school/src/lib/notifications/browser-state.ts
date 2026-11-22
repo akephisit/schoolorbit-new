@@ -6,7 +6,7 @@ export interface DeviceBinding {
 	version: string;
 	binding_token: string;
 	installation_id: string;
-	expires_at: string;
+	expires_at: string | null;
 }
 interface BrowserState {
 	installation_id: string;
@@ -154,8 +154,15 @@ export function bindingMatches(
 		binding.id === payload.device_id &&
 		binding.version === payload.device_version &&
 		binding.binding_token === payload.binding_token &&
-		Date.parse(binding.expires_at) > now &&
+		bindingIsActive(binding.expires_at, now) &&
+		Number.isFinite(Date.parse(payload.expires_at)) &&
 		Date.parse(payload.expires_at) > now
+	);
+}
+/** Null belongs only to durable registrations; presentation payloads always have a deadline. */
+export function bindingIsActive(expiresAt: string | null, now = Date.now()): boolean {
+	return (
+		expiresAt === null || (Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) > now)
 	);
 }
 /** Atomic across tabs and the worker. Failure to coordinate means presentation is suppressed. */

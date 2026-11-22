@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { writable, get } from 'svelte/store';
+import { bindingIsActive } from '../../src/lib/notifications/browser-state.ts';
 
 const source = await readFile(
 	new URL('../../src/lib/stores/notification.ts', import.meta.url),
@@ -85,6 +86,7 @@ export function deviceHarness(options = {}) {
 	const devices = [];
 	let deviceVersion = 0;
 	const browserState = {
+		bindingIsActive,
 		watchIdentityChanges: () => () => {},
 		async beginBinding(identity, intent) {
 			if (state.identity !== identity) state.binding = null;
@@ -158,7 +160,7 @@ export function deviceHarness(options = {}) {
 					version: existing?.version ?? `version-${deviceVersion}`,
 					binding_token: existing?.binding_token ?? `token-${deviceVersion}`,
 					last_confirmed_at: new Date().toISOString(),
-					expires_at: new Date(Date.now() + 86400_000).toISOString()
+					expires_at: options.durable ? null : new Date(Date.now() + 86400_000).toISOString()
 				};
 				devices.splice(0, devices.length, device);
 				return device;
@@ -186,6 +188,7 @@ export function deviceHarness(options = {}) {
 				return registration;
 			}
 		},
+		'#lib/pwa/display-mode.js': { isStandalonePWA: () => false },
 		'svelte/store': { writable, get },
 		'svelte-sonner': { toast: { success: (...args) => calls.toasts.push(args) } }
 	};

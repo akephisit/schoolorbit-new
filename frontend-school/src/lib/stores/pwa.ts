@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { isStandalonePWA } from '#lib/pwa/display-mode.js';
 
 // BeforeInstallPrompt event type
 export interface BeforeInstallPromptEvent extends Event {
@@ -38,7 +39,7 @@ export const pwaStore = createPWAStore();
 // Initialize PWA listeners (call once in app root)
 export function initPWA() {
 	// Check if already installed
-	if (typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches) {
+	if (isStandalonePWA()) {
 		pwaStore.setInstalled(true);
 	}
 

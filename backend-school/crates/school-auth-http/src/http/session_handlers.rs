@@ -19,13 +19,14 @@ use crate::tenant::resolve_auth_tenant_context;
 
 use crate::cookies::{
     append_expired_auth_cookies, append_response_cookie, csrf_response_header,
-    expire_legacy_cookie, presented_session_token, set_session_cookie, validate_csrf,
+    expire_legacy_cookie, expire_remembered_device_cookie, presented_remembered_device_token,
+    presented_session_token, set_remembered_device_cookie, set_session_cookie, validate_csrf,
 };
 use school_auth::{
     audit::{self, SessionFailureReason},
     config::CSRF_HEADER_NAME,
     models::{
-        ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest,
+        ChangePasswordRequest, CurrentUserResponse, LoginData, LoginRequest, RestoreSessionRequest,
         SessionActivityRequest, SessionListData, SessionResponse, SessionState,
     },
     runtime::AuthRuntime,
@@ -71,7 +72,7 @@ pub async fn login_with_tenant(
     let source = client_address(peer, headers, &runtime.config.trusted_proxy_cidrs);
     let user_agent = single_user_agent(headers);
     let context = runtime.service_context(tenant);
-    let result = session_service::login(
+    let result = session_service::login_with_device(
         &context,
         LoginCommand {
             username: &payload.username,
@@ -81,6 +82,9 @@ pub async fn login_with_tenant(
             user_agent,
             now: Utc::now(),
         },
+        presented_remembered_device_token(headers)?
+            .as_ref()
+            .map(|raw| raw.token_hash()),
         RawSessionToken::generate,
     )
     .await?;
@@ -98,6 +102,88 @@ pub async fn login_with_tenant(
         ),
     );
     append_response_cookie(&mut response, expire_legacy_cookie());
+    if let Some(device) = result.remembered_device_credential {
+        append_response_cookie(
+            &mut response,
+            set_remembered_device_cookie(device.encoded().expose_for_cookie()),
+        );
+    } else {
+        append_response_cookie(&mut response, expire_remembered_device_cookie());
+    }
+    insert_csrf_header(&mut response, &result.csrf_token);
+    no_store(&mut response);
+    Ok(response)
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    post, path = "/api/auth/restore", operation_id = "restoreAuthSession", tag = "auth",
+    request_body = RestoreSessionRequest,
+    responses(
+        (status = 200, description = "Remembered device restored", body = ApiResponse<LoginData>),
+        (status = 400, description = "Deliberate empty JSON object required", body = school_http::ApiErrorResponse),
+        (status = 401, description = "Remembered device absent or revoked", body = school_http::ApiErrorResponse),
+        (status = 403, description = "Origin rejected", body = school_http::ApiErrorResponse),
+        (status = 409, description = "Live session takes precedence", body = school_http::ApiErrorResponse),
+        (status = 503, description = "Authentication service unavailable", body = school_http::ApiErrorResponse)
+    )
+))]
+pub async fn restore(
+    State(runtime): State<AuthRuntime>,
+    headers: HeaderMap,
+    payload_result: Result<Json<RestoreSessionRequest>, JsonRejection>,
+) -> Result<Response, AppError> {
+    let tenant = resolve_auth_tenant_context(&runtime, &headers, None)
+        .await
+        .map_err(audit_origin_rejection)?;
+    let _payload = parse_json_payload(payload_result)?;
+    restore_with_tenant(&runtime, tenant, &headers).await
+}
+
+pub async fn restore_with_tenant(
+    runtime: &AuthRuntime,
+    tenant: TenantContext,
+    headers: &HeaderMap,
+) -> Result<Response, AppError> {
+    let context = runtime.service_context(tenant);
+    let incoming = presented_session_token(headers)?;
+    let now = Utc::now();
+    if let Some(incoming) = incoming.as_ref() {
+        if session_service::authenticate(&context, incoming.token_hash(), now)
+            .await?
+            .is_some()
+        {
+            return Err(AppError::Conflict("session_changed".into()));
+        }
+    }
+    let device = presented_remembered_device_token(headers)?
+        .ok_or_else(|| AppError::AuthError("กรุณาเข้าสู่ระบบ".into()))?;
+    let result = session_service::restore(
+        &context,
+        &device,
+        incoming.as_ref().map(|raw| raw.token_hash()),
+        now,
+    )
+    .await?;
+    let mut response = (
+        StatusCode::OK,
+        Json(ApiResponse::ok(LoginData {
+            user: current_user_response(result.user, result.authenticated.session_state()),
+        })),
+    )
+        .into_response();
+    append_response_cookie(
+        &mut response,
+        set_session_cookie(
+            result.credential.encoded().expose_for_cookie(),
+            result.credential.cookie_max_age_seconds,
+        ),
+    );
+    if let Some(device) = result.remembered_device_credential {
+        append_response_cookie(
+            &mut response,
+            set_remembered_device_cookie(device.encoded().expose_for_cookie()),
+        );
+    }
     insert_csrf_header(&mut response, &result.csrf_token);
     no_store(&mut response);
     Ok(response)
@@ -130,25 +216,27 @@ pub async fn logout_with_tenant(
     tenant: TenantContext,
     headers: &HeaderMap,
 ) -> Result<Response, AppError> {
-    let Some(token) = presented_session_token(headers)? else {
-        return Ok(expired_auth_response("ออกจากระบบสำเร็จ"));
-    };
+    let token = presented_session_token(headers)?;
+    let device = presented_remembered_device_token(headers)?;
     let context = runtime.service_context(tenant);
     let now = Utc::now();
-    let Some(authentication) =
+    let authentication = if let Some(token) = token {
         session_service::authenticate(&context, token.token_hash(), now).await?
-    else {
-        return Ok(expired_auth_response("ออกจากระบบสำเร็จ"));
+    } else {
+        None
     };
-
-    validate_csrf(headers, &authentication.csrf_token).map_err(|error| {
-        audit::csrf_rejected(
-            context.tenant().tenant_id,
-            SessionFailureReason::InvalidCsrf,
-        );
-        error
-    })?;
-    session_service::logout(&context, &authentication.authenticated, now).await?;
+    if let Some(authentication) = authentication {
+        validate_csrf(headers, &authentication.csrf_token).map_err(|error| {
+            audit::csrf_rejected(
+                context.tenant().tenant_id,
+                SessionFailureReason::InvalidCsrf,
+            );
+            error
+        })?;
+        session_service::logout(&context, &authentication.authenticated, now).await?;
+    } else if let Some(device) = device {
+        session_service::logout_presented_device(&context, device.token_hash(), now).await?;
+    }
     Ok(expired_auth_response("ออกจากระบบสำเร็จ"))
 }
 
@@ -235,7 +323,7 @@ pub async fn activity(
     operation_id = "listAuthSessions",
     tag = "auth",
     responses(
-        (status = 200, description = "Active sessions", body = ApiResponse<SessionListData>),
+        (status = 200, description = "Active sessions and remembered devices", body = ApiResponse<SessionListData>),
         (status = 401, description = "Authentication required", body = school_http::ApiErrorResponse),
         (status = 503, description = "Session store unavailable", body = school_http::ApiErrorResponse)
     )
@@ -255,7 +343,7 @@ pub async fn list_sessions(
             last_seen_at: row.last_seen_at,
             idle_expires_at: row.idle_expires_at,
             absolute_expires_at: row.absolute_expires_at,
-            is_current: row.id == session.session_id,
+            is_current: row.is_current,
         })
         .collect();
     Ok((
@@ -270,7 +358,7 @@ pub async fn list_sessions(
     path = "/api/auth/sessions/{id}",
     operation_id = "revokeAuthSession",
     tag = "auth",
-    params(("id" = Uuid, Path, description = "Owned session identifier")),
+    params(("id" = Uuid, Path, description = "Owned session or remembered device identifier")),
     responses(
         (status = 200, description = "Owned session revoked", body = ApiResponse<EmptyData>),
         (status = 404, description = "Owned session not found", body = school_http::ApiErrorResponse),
@@ -352,6 +440,14 @@ pub async fn change_password(
             result.credential.cookie_max_age_seconds,
         ),
     );
+    if let Some(device) = result.remembered_device_credential {
+        append_response_cookie(
+            &mut response,
+            set_remembered_device_cookie(device.encoded().expose_for_cookie()),
+        );
+    } else {
+        append_response_cookie(&mut response, expire_remembered_device_cookie());
+    }
     insert_csrf_header(&mut response, &result.csrf_token);
     no_store(&mut response);
     Ok(response)

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { isStandalonePWA } from '#lib/pwa/display-mode.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { X, Share, Plus } from '@lucide/svelte';
 	import { fade, slide } from 'svelte/transition';
@@ -15,9 +16,7 @@
 			!(window as Window & { MSStream?: unknown }).MSStream;
 
 		// Check if already installed (standalone mode)
-		isStandalone =
-			window.matchMedia('(display-mode: standalone)').matches ||
-			(navigator as Navigator & { standalone?: boolean }).standalone === true;
+		isStandalone = isStandalonePWA();
 
 		// Show prompt if iOS and not installed
 		if (isIOS && !isStandalone) {

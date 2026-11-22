@@ -26,6 +26,7 @@ export interface AuthState {
 function createAuthStore() {
 	let generation = 0;
 	let sessionEpoch = 0;
+	let authIntentEpoch = 0;
 	let identity = '';
 	let currentSession: SessionState | null = null;
 	const { subscribe, set, update } = writable<AuthState>({
@@ -43,6 +44,14 @@ function createAuthStore() {
 		},
 		get sessionEpoch() {
 			return sessionEpoch;
+		},
+		get authIntentEpoch() {
+			return authIntentEpoch;
+		},
+		/** Fence reads and response headers before an explicit cookie-changing action starts. */
+		beginAuthChange: () => {
+			generation++;
+			return ++authIntentEpoch;
 		},
 		setUser: (user: User, permissions: string[], session?: SessionState) => {
 			const nextSession =

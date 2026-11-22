@@ -218,6 +218,41 @@ test('Chromium: actual built worker enforces binding, freshness, deduplication a
 			const state: typeof import('../../src/lib/notifications/browser-state.js') = await import(
 				`${location.origin}/state.js`
 			);
+			const current = await state.readBrowserState();
+			if (!current.binding) throw new Error('fixture binding missing');
+			await state.saveBinding({ ...current.binding, expires_at: null });
+			for (const notification of await (await navigator.serviceWorker.ready).getNotifications())
+				notification.close();
+		});
+		const later = Date.now() + 91 * 86400_000;
+		await worker.evaluate((now) => {
+			Date.now = () => now;
+		}, later);
+		await push({
+			...payload,
+			id: 'durable-expired-event',
+			expires_at: new Date(later - 1).toISOString()
+		});
+		await push({ ...payload, id: 'durable-invalid-event', expires_at: 'Infinity' });
+		await push({
+			...payload,
+			id: 'durable-stale-token',
+			binding_token: 'old-token',
+			expires_at: new Date(later + 60_000).toISOString()
+		});
+		expect(await notifications()).toEqual([]);
+		await push({
+			...payload,
+			id: 'durable-after-90-days',
+			expires_at: new Date(later + 60_000).toISOString()
+		});
+		expect((await notifications()).map((item) => item.tag)).toEqual([
+			'schoolorbit:durable-after-90-days'
+		]);
+		await page.evaluate(async () => {
+			const state: typeof import('../../src/lib/notifications/browser-state.js') = await import(
+				`${location.origin}/state.js`
+			);
 			await state.clearBinding('fixture-user');
 			for (const notification of await (await navigator.serviceWorker.ready).getNotifications())
 				notification.close();

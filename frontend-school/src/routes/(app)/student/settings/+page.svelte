@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { isStandalonePWA } from '#lib/pwa/display-mode.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { LoadingButton } from '#lib/components/app-state/index.js';
@@ -39,8 +40,7 @@
 		isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
 		// Check if already installed
-		isStandalone =
-			window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+		isStandalone = isStandalonePWA();
 	});
 
 	async function handleInstallPWA() {

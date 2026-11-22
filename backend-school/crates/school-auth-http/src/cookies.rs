@@ -6,7 +6,10 @@ use axum::{
 use school_errors::AppError;
 
 use school_auth::{
-    config::{CSRF_HEADER_NAME, LEGACY_COOKIE_NAME, SESSION_COOKIE_NAME},
+    config::{
+        CSRF_HEADER_NAME, LEGACY_COOKIE_NAME, REMEMBERED_DEVICE_COOKIE_MAX_AGE,
+        REMEMBERED_DEVICE_COOKIE_NAME, SESSION_COOKIE_NAME,
+    },
     session_crypto::{CsrfToken, RawSessionToken},
 };
 
@@ -31,16 +34,40 @@ pub fn set_session_cookie(encoded: &str, max_age_seconds: Option<u64>) -> Header
         .unwrap_or_else(|_| HeaderValue::from_static(SESSION_EXPIRY_FALLBACK))
 }
 
+pub fn set_remembered_device_cookie(encoded: &str) -> HeaderValue {
+    let mut value = set_session_cookie(encoded, Some(REMEMBERED_DEVICE_COOKIE_MAX_AGE));
+    if let Ok(cookie) = value.to_str() {
+        if let Ok(renamed) = HeaderValue::from_str(&cookie.replacen(
+            SESSION_COOKIE_NAME,
+            REMEMBERED_DEVICE_COOKIE_NAME,
+            1,
+        )) {
+            value = renamed;
+        }
+    }
+    value
+}
+
+pub fn expire_remembered_device_cookie() -> HeaderValue {
+    HeaderValue::from_static(
+        "__Host-schoolorbit_device=; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=0",
+    )
+}
+
 pub fn expire_auth_cookies() -> Vec<HeaderValue> {
-    [SESSION_COOKIE_NAME, LEGACY_COOKIE_NAME]
-        .into_iter()
-        .filter_map(|name| {
-            HeaderValue::from_str(&format!(
-                "{name}=; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=0"
-            ))
-            .ok()
-        })
-        .collect()
+    [
+        SESSION_COOKIE_NAME,
+        LEGACY_COOKIE_NAME,
+        REMEMBERED_DEVICE_COOKIE_NAME,
+    ]
+    .into_iter()
+    .filter_map(|name| {
+        HeaderValue::from_str(&format!(
+            "{name}=; HttpOnly; SameSite=Lax; Secure; Path=/; Max-Age=0"
+        ))
+        .ok()
+    })
+    .collect()
 }
 
 pub fn expire_legacy_cookie() -> HeaderValue {
@@ -63,6 +90,19 @@ pub fn csrf_response_header(token: &CsrfToken) -> HeaderValue {
 }
 
 pub fn presented_session_token(headers: &HeaderMap) -> Result<Option<RawSessionToken>, AppError> {
+    presented_token(headers, SESSION_COOKIE_NAME)
+}
+
+pub fn presented_remembered_device_token(
+    headers: &HeaderMap,
+) -> Result<Option<RawSessionToken>, AppError> {
+    presented_token(headers, REMEMBERED_DEVICE_COOKIE_NAME)
+}
+
+fn presented_token(
+    headers: &HeaderMap,
+    cookie_name: &str,
+) -> Result<Option<RawSessionToken>, AppError> {
     let mut presented = None;
     let mut matching_names = 0_u8;
 
@@ -76,7 +116,7 @@ pub fn presented_session_token(headers: &HeaderMap) -> Result<Option<RawSessionT
             let Some((name, value)) = pair.split_once('=') else {
                 continue;
             };
-            if name.trim() != SESSION_COOKIE_NAME {
+            if name.trim() != cookie_name {
                 continue;
             }
 
@@ -84,7 +124,7 @@ pub fn presented_session_token(headers: &HeaderMap) -> Result<Option<RawSessionT
             if matching_names > 1 {
                 return Err(authentication_required());
             }
-            if name != SESSION_COOKIE_NAME || value.trim() != value {
+            if name != cookie_name || value.trim() != value {
                 presented = None;
                 continue;
             }
@@ -136,5 +176,48 @@ mod tests {
         assert!(presented_session_token(&headers)
             .expect("one malformed cookie must not panic")
             .is_none());
+    }
+    #[test]
+    fn remembered_cookie_is_host_only_persistent_and_rejects_duplicate_credentials() {
+        let raw = school_auth::session_crypto::RawSessionToken::from_bytes([92; 32]);
+        let encoded = raw.encode();
+        let cookie = super::set_remembered_device_cookie(encoded.expose_for_cookie());
+        let value = cookie.to_str().unwrap();
+        assert!(value.starts_with("__Host-schoolorbit_device="));
+        for attribute in [
+            "HttpOnly",
+            "Secure",
+            "SameSite=Lax",
+            "Path=/",
+            "Max-Age=34560000",
+        ] {
+            assert!(value.split("; ").any(|part| part == attribute));
+        }
+        assert!(!value.contains("Domain="));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::COOKIE,
+            HeaderValue::from_str(&format!(
+                "__Host-schoolorbit_device={}",
+                encoded.expose_for_cookie()
+            ))
+            .unwrap(),
+        );
+        assert_eq!(
+            super::presented_remembered_device_token(&headers)
+                .unwrap()
+                .unwrap()
+                .token_hash(),
+            raw.token_hash()
+        );
+        headers.append(
+            header::COOKIE,
+            HeaderValue::from_str(&format!(
+                "__Host-schoolorbit_device={}",
+                encoded.expose_for_cookie()
+            ))
+            .unwrap(),
+        );
+        assert!(super::presented_remembered_device_token(&headers).is_err());
     }
 }
