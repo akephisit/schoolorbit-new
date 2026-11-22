@@ -18,6 +18,7 @@ pub enum NotificationSource {
     Attendance { source_id: Uuid },
     Process { source_id: Uuid },
     CalendarReminder { source_id: Uuid },
+    SupervisionAction { source_id: Uuid },
 }
 #[derive(Clone, Copy)]
 pub enum NotificationSourceKind {
@@ -25,6 +26,7 @@ pub enum NotificationSourceKind {
     Attendance,
     Process,
     CalendarReminder,
+    SupervisionAction,
 }
 impl NotificationSourceKind {
     fn as_str(self) -> &'static str {
@@ -33,6 +35,7 @@ impl NotificationSourceKind {
             Self::Attendance => "attendance",
             Self::Process => "process",
             Self::CalendarReminder => "calendar_reminder",
+            Self::SupervisionAction => "supervision_action",
         }
     }
 }
@@ -43,6 +46,7 @@ impl NotificationSource {
             Self::Attendance { source_id } => ("attendance", Some(source_id)),
             Self::Process { source_id } => ("process", Some(source_id)),
             Self::CalendarReminder { source_id } => ("calendar_reminder", Some(source_id)),
+            Self::SupervisionAction { source_id } => ("supervision_action", Some(source_id)),
         }
     }
     fn decode(kind: &str, id: Option<Uuid>) -> Result<Self, AppError> {
@@ -51,6 +55,7 @@ impl NotificationSource {
             ("attendance", Some(source_id)) => Ok(Self::Attendance { source_id }),
             ("process", Some(source_id)) => Ok(Self::Process { source_id }),
             ("calendar_reminder", Some(source_id)) => Ok(Self::CalendarReminder { source_id }),
+            ("supervision_action", Some(source_id)) => Ok(Self::SupervisionAction { source_id }),
             _ => Err(integrity("notification_source_unsupported")),
         }
     }

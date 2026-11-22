@@ -778,6 +778,7 @@ pub async fn cancel_requested_observation(
     let observation =
         services::cancel_requested_observation(&context.tenant.pool, context.actor.user_id, id)
             .await?;
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
             .await?;
@@ -870,6 +871,7 @@ pub async fn replace_observation_evaluators(
         parse_request_body(payload)?,
     )
     .await?;
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
             .await?;
@@ -911,6 +913,7 @@ pub async fn cancel_observation(
     let observation =
         services::cancel_observation(&context.tenant.pool, context.actor.user_id, id, payload)
             .await?;
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
             .await?;
@@ -957,6 +960,7 @@ pub async fn approve_observation_request(
         parse_request_body(payload)?,
     )
     .await?;
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
             .await?;
@@ -1002,6 +1006,7 @@ pub async fn return_observation_request(
         payload,
     )
     .await?;
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
             .await?;
@@ -1107,6 +1112,7 @@ pub async fn approve_observation(
 
     let observation =
         services::approve_observation(&context.tenant.pool, context.actor.user_id, id).await?;
+    school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
             .await?;

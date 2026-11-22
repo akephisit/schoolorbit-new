@@ -23,6 +23,12 @@ impl DeliveryEligibilityPort for ApplicationNotificationEligibility {
                 school_calendar::delivery::authorize_reminder_on_connection(connection, *source_id)
                     .await
             }
+            NotificationSource::SupervisionAction { source_id } => {
+                school_supervision::services::authorize_notification_on_connection(
+                    connection, *source_id,
+                )
+                .await
+            }
             NotificationSource::Process { source_id } => {
                 school_workflow::process::authorize_notification_on_connection(
                     connection,

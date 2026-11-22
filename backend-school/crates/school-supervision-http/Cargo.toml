@@ -16,6 +16,7 @@ axum = { workspace = true }
 school-auth = { workspace = true }
 school-auth-http = { workspace = true }
 school-http = { workspace = true }
+school-notifications = { workspace = true }
 school-supervision = { workspace = true }
 serde = { workspace = true }
 utoipa = { workspace = true, optional = true }

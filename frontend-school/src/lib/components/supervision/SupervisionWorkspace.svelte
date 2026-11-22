@@ -376,13 +376,13 @@
 	const submittedAssignedObservations = $derived(
 		assignedObservations.filter(hasSubmittedEvaluation)
 	);
-	const evaluationCalendarObservations = $derived.by(() => {
-		const bookings = new Map<string, SupervisionObservation>();
-		for (const observation of [...activeAssignedObservations, ...submittedAssignedObservations]) {
-			if (observation.status !== 'requested') bookings.set(observation.id, observation);
-		}
-		return [...bookings.values()];
-	});
+	const evaluationCalendarObservations = $derived([
+		...new Map(
+			[...activeAssignedObservations, ...submittedAssignedObservations]
+				.filter((observation) => observation.status !== 'requested')
+				.map((observation) => [observation.id, observation])
+		).values()
+	]);
 	const selectedEvaluation = $derived(
 		observations.find((observation) => observation.id === evaluationObservationId) ?? null
 	);
@@ -907,7 +907,9 @@
 		observationsReadable = readable;
 		observationsLoaded = true;
 		if (section === 'evaluate' && !readable) {
+			managementRevision += 1;
 			bookingCalendarDate = '';
+			savingEvaluation = null;
 			clearEvaluationDraft();
 		}
 		requestReview.reconcile(freshRead);
@@ -1159,6 +1161,8 @@
 	async function saveEvaluation() {
 		if (
 			!canEvaluate ||
+			!canReadObservations ||
+			!observationsReadable ||
 			!selectedEvaluation ||
 			!canSubmitAssignedEvaluation(selectedEvaluation) ||
 			evaluationTemplateLoading ||
@@ -2870,7 +2874,7 @@
 </PageShell>
 
 <Dialog.Root bind:open={evaluationDialogOpen} onOpenChange={setEvaluationDialogOpen}>
-	<Dialog.Content class="flex max-h-[92vh] flex-col sm:max-w-5xl">
+	<Dialog.Content class="flex max-h-[92dvh] flex-col sm:max-w-5xl">
 		<Dialog.Header>
 			<Dialog.Title>ทำแบบประเมินนิเทศ</Dialog.Title>
 			<Dialog.Description>
@@ -2890,50 +2894,50 @@
 			() => void loadEvaluationTemplate()
 		)}
 		{#if selectedEvaluation && selectedEvaluationTemplate && !evaluationTemplateLoading}
-			<div
-				class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
-			>
-				<div>
-					<p class="text-xs text-muted-foreground">คะแนนรวม</p>
-					<p class="font-semibold">
-						{selectedEvaluationDraftSummary.totalScore} / {selectedEvaluationDraftSummary.maxScore}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-muted-foreground">ร้อยละ</p>
-					<p class="font-semibold">
-						{selectedEvaluationDraftSummary.percentage === null
-							? '-'
-							: selectedEvaluationDraftSummary.percentage.toFixed(2)}
-					</p>
-				</div>
-				<div>
-					<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
-					<p class="font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</p>
-				</div>
-				<div>
-					<p class="text-xs text-muted-foreground">ตอบแล้ว</p>
-					<p class="font-semibold">
-						{selectedEvaluationDraftSummary.answeredRatingCount} /
-						{selectedEvaluationDraftSummary.ratingItemCount}
-					</p>
-				</div>
-			</div>
-
-			<div class="grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-				<div>
-					<p class="text-xs text-muted-foreground">นิเทศใคร</p>
-					<p class="font-medium">{selectedEvaluation.observedDisplayName ?? '-'}</p>
-				</div>
-				{#each observationDetailGrid(selectedEvaluation) as detail (detail.label)}
-					<div>
-						<p class="text-xs text-muted-foreground">{detail.label}</p>
-						<p class="font-medium">{detail.value}</p>
-					</div>
-				{/each}
-			</div>
-
 			<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+				<div
+					class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
+				>
+					<div>
+						<p class="text-xs text-muted-foreground">คะแนนรวม</p>
+						<p class="font-semibold">
+							{selectedEvaluationDraftSummary.totalScore} / {selectedEvaluationDraftSummary.maxScore}
+						</p>
+					</div>
+					<div>
+						<p class="text-xs text-muted-foreground">ร้อยละ</p>
+						<p class="font-semibold">
+							{selectedEvaluationDraftSummary.percentage === null
+								? '-'
+								: selectedEvaluationDraftSummary.percentage.toFixed(2)}
+						</p>
+					</div>
+					<div>
+						<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
+						<p class="font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</p>
+					</div>
+					<div>
+						<p class="text-xs text-muted-foreground">ตอบแล้ว</p>
+						<p class="font-semibold">
+							{selectedEvaluationDraftSummary.answeredRatingCount} /
+							{selectedEvaluationDraftSummary.ratingItemCount}
+						</p>
+					</div>
+				</div>
+
+				<div class="grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+					<div>
+						<p class="text-xs text-muted-foreground">นิเทศใคร</p>
+						<p class="font-medium">{selectedEvaluation.observedDisplayName ?? '-'}</p>
+					</div>
+					{#each observationDetailGrid(selectedEvaluation) as detail (detail.label)}
+						<div>
+							<p class="text-xs text-muted-foreground">{detail.label}</p>
+							<p class="font-medium">{detail.value}</p>
+						</div>
+					{/each}
+				</div>
+
 				{#each selectedEvaluationRubricSections as section (section.localId)}
 					{@const progress = sectionRubricProgress(
 						section,

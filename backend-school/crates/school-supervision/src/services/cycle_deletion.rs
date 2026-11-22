@@ -5,6 +5,7 @@ use crate::models::{
 };
 use school_database::DbSession;
 use school_errors::AppError;
+use school_notifications::dispatch::{self, NotificationSourceKind};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
@@ -192,10 +193,28 @@ pub async fn delete_cycle(
     DbSession::new(&mut tx).query("supervision.cycle_deletion.lock_evaluators",
         "SELECT e.id FROM supervision_evaluators e JOIN supervision_observations o ON o.id=e.observation_id
          WHERE o.cycle_id=$1 ORDER BY e.id FOR UPDATE OF e").bind(id).execute().await?;
+    let action_ids: Vec<Uuid> = DbSession::new(&mut tx)
+        .scalar(
+            "supervision.cycle_deletion.lock_actions",
+            "SELECT a.id FROM supervision_actions a JOIN supervision_observations o ON o.id=a.observation_id
+             WHERE o.cycle_id=$1 ORDER BY a.id FOR UPDATE OF a",
+        )
+        .bind(id)
+        .fetch_all()
+        .await?;
     validate_graph(&mut tx, id).await?;
     let result = impact(&mut tx, id).await?;
     if result.revision != input.expected_revision {
         return Err(stale());
+    }
+    if !action_ids.is_empty() {
+        dispatch::cancel_sources_in_transaction(
+            &mut tx,
+            NotificationSourceKind::SupervisionAction,
+            &action_ids,
+            true,
+        )
+        .await?;
     }
     DbSession::new(&mut tx)
         .query(

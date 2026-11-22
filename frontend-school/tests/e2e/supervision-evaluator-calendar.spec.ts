@@ -116,15 +116,18 @@ test('evaluators plan and complete only their assignments from the Bangkok calen
 	await details.click();
 	await expect(page).toHaveURL(exactDetailPath);
 	await expect(
-		page.getByTestId('supervision-detail').getByRole('heading', { name: 'ครู ในคิว', exact: true })
+		page.getByRole('heading', { name: 'ครู ในคิว', exact: true, level: 1 })
 	).toBeVisible();
 	await navigate(page, evaluatePath);
 	await monthTab.click();
 	await ownBooking.getByRole('button', openForm).click();
 	const dialog = page.getByRole('dialog', { name: 'ทำแบบประเมินนิเทศ' });
 	await expect(dialog.getByText('หัวข้อ rubric ที่โหลดเมื่อเปิด')).toBeVisible();
+	const submit = dialog.getByRole('button', { name: 'ส่งผลประเมิน', exact: true });
+	await expect(submit).toBeInViewport();
 	await dialog.getByRole('button', { name: '3', exact: true }).click();
-	await dialog.getByRole('button', { name: 'ส่งผลประเมิน', exact: true }).click();
+	await expect(submit).toBeInViewport();
+	await submit.click();
 	await expect(dialog).toHaveCount(0);
 	await expect(ownBooking.getByText('ส่งผลแล้ว', { exact: true })).toBeVisible();
 	await expect(ownBooking.getByRole('button', openForm)).toHaveCount(0);
