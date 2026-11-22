@@ -5,7 +5,7 @@ import { activityStart, mockSessionActivity } from './fixtures/session-activity'
 test.use({ serviceWorkers: 'block', launchOptions: { args: ['--no-proxy-server'] } });
 
 for (const width of [320, 1280]) {
-	test(`login personal-device hint preserves its label and compact form at ${width}px`, async ({
+	test(`login remember-me checkbox keeps a compact form at ${width}px`, async ({
 		context,
 		page
 	}) => {
@@ -17,8 +17,10 @@ for (const width of [320, 1280]) {
 			route.fulfill({ status: 401, json: { success: false, error: 'No fixture grant' } })
 		);
 		await page.goto('/login');
-		const remember = page.getByLabel('จดจำฉันไว้', { exact: true });
-		await expect(remember).toHaveAccessibleDescription('ใช้เฉพาะอุปกรณ์ส่วนตัว');
+		const remember = page.getByRole('checkbox', { name: 'จดจำฉันไว้', exact: true });
+		await expect(remember).toBeVisible();
+		await expect(remember).toHaveAccessibleDescription('');
+		await expect(page.getByText('ใช้เฉพาะอุปกรณ์ส่วนตัว', { exact: true })).toHaveCount(0);
 		await remember.click();
 		await expect(remember).toBeChecked();
 		for (const dark of [false, true]) {
@@ -30,7 +32,7 @@ for (const width of [320, 1280]) {
 				}))
 			).toEqual({ width: true, height: true });
 			await page.screenshot({
-				path: `/tmp/schoolorbit-login-personal-device-${width}-${dark ? 'dark' : 'light'}.png`,
+				path: `/tmp/schoolorbit-login-remember-me-${width}-${dark ? 'dark' : 'light'}.png`,
 				fullPage: true
 			});
 		}
