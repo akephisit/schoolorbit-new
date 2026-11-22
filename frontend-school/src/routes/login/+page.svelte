@@ -193,18 +193,12 @@
 						<div class="flex items-center gap-2 cursor-pointer">
 							<Checkbox
 								id="remember-me"
-								aria-describedby="remember-me-hint"
 								checked={rememberMe}
 								onCheckedChange={(checked) => (rememberMe = checked ?? false)}
 							/>
-							<div>
-								<Label for="remember-me" class="cursor-pointer font-normal text-muted-foreground"
-									>จดจำฉันไว้</Label
-								>
-								<p id="remember-me-hint" class="text-xs text-muted-foreground">
-									ใช้เฉพาะอุปกรณ์ส่วนตัว
-								</p>
-							</div>
+							<Label for="remember-me" class="cursor-pointer font-normal text-muted-foreground"
+								>จดจำฉันไว้</Label
+							>
 						</div>
 						<Button type="button" variant="link" class="p-0 h-auto text-sm"
 							>ติดต่อผู้ดูแลระบบ</Button
