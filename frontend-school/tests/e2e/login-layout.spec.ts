@@ -14,11 +14,17 @@ let releaseBranding: (() => void) | undefined;
 let loginGate: Promise<void> | undefined;
 let releaseLogin: (() => void) | undefined;
 const brandingRequests: { cookie?: string; origin?: string }[] = [];
+const authReads: string[] = [];
 test.describe.configure({ mode: 'serial' });
 test.use({ serviceWorkers: 'block' });
 test.beforeAll(async () => {
 	apiServer = createHttpServer(async (req, res) => {
 		const endpoint = new URL(req.url ?? '/', 'http://test').pathname;
+		if (
+			req.method !== 'OPTIONS' &&
+			(endpoint === '/api/auth/me' || endpoint === '/api/auth/restore')
+		)
+			authReads.push(endpoint);
 		res.setHeader('access-control-allow-origin', req.headers.origin ?? '*');
 		res.setHeader('access-control-allow-credentials', 'true');
 		res.setHeader('access-control-allow-headers', 'Content-Type,X-School-Subdomain');
@@ -87,11 +93,48 @@ test.beforeAll(async () => {
 test.beforeEach(() => {
 	brandingMode = 'available';
 	brandingRequests.length = 0;
+	authReads.length = 0;
 	brandingGate = undefined;
 	releaseBranding = undefined;
 	loginGate = undefined;
 	releaseLogin = undefined;
 });
+
+test('ordinary browser root stays on the public school homepage without auth reads', async ({
+	page
+}) => {
+	await page.goto(`${baseUrl}/`);
+	await expect(page.getByText('ข้อมูลและบริการสาธารณะของโรงเรียน', { exact: true })).toBeVisible();
+	await page.waitForLoadState('networkidle');
+	await expect(page).toHaveURL(`${baseUrl}/`);
+	expect(authReads).toEqual([]);
+});
+
+for (const mode of ['standalone', 'ios'] as const) {
+	test(`${mode} installed root enters the login and remembered-device restore flow`, async ({
+		page
+	}) => {
+		await page.addInitScript((mode) => {
+			if (mode === 'ios') Object.defineProperty(navigator, 'standalone', { value: true });
+			else {
+				const matchMedia = window.matchMedia.bind(window);
+				window.matchMedia = (query) => {
+					const result = matchMedia(query);
+					if (query === '(display-mode: standalone)')
+						Object.defineProperty(result, 'matches', { value: true });
+					return result;
+				};
+			}
+		}, mode);
+		await page.goto(`${baseUrl}/`);
+		await expect(page).toHaveURL(`${baseUrl}/login`);
+		await expect(page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true })).toBeVisible();
+		await expect(page.getByLabel('จดจำฉันไว้', { exact: true })).toHaveAccessibleDescription(
+			'ใช้เฉพาะอุปกรณ์ส่วนตัว'
+		);
+		expect(authReads).toEqual(['/api/auth/me', '/api/auth/restore']);
+	});
+}
 test.afterEach(() => {
 	releaseBranding?.();
 	releaseLogin?.();

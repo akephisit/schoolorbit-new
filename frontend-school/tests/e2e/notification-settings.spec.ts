@@ -27,7 +27,7 @@ const stubs = new Map([
 		const device=(id,label)=>({id,installation_id:id,label,version:'v1',binding_token:'token',key_id:'key',last_confirmed_at:'2026-10-20T10:00:00Z',expires_at:'2027-01-20T10:00:00Z'});
 		let status={supported:true,permission:'granted',hasSubscription:true,isIOS:false,isStandalone:false,serverAvailable:true,synced:true,currentDeviceId:'current',devices:[device('current','เว็บเบราว์เซอร์'),device('other','โทรศัพท์ของฉัน')],config:{available:true,public_key:'AQID',key_id:'key',max_devices:20,device_expiry_days:90},error:null};
 		export const notificationStore={
-		 async getPushStatus(){if(window.__scenario==='unavailable')return {...status,serverAvailable:false,synced:false}; if(window.__scenario==='error')return {...status,synced:false,devices:[],config:null,error:'ไม่สามารถตรวจสอบการเชื่อมต่อกับระบบได้'};return structuredClone(status);},
+		 async getPushStatus(){if(window.__scenario==='unavailable')return {...status,serverAvailable:false,synced:false}; if(window.__scenario==='error')return {...status,synced:false,devices:[],config:null,error:'ไม่สามารถตรวจสอบการเชื่อมต่อกับระบบได้'};if(window.__scenario==='durable')return {...structuredClone(status),devices:status.devices.map(d=>({...d,expires_at:null}))};return structuredClone(status);},
 		 async enablePushFromUserAction(){window.__actions.push('enable');status.synced=true;return true;},
 		 async revokePushDevice(device){window.__actions.push('revoke:'+device.id);status.devices=status.devices.filter(d=>d.id!==device.id);if(device.id==='current')status.synced=false;}
 		};
@@ -104,6 +104,18 @@ for (const width of [390, 1280]) {
 		]);
 	});
 }
+test('durable devices describe their remembered link and never display a fabricated expiry', async ({
+	page
+}) => {
+	await page.addInitScript(() => Object.assign(window, { __scenario: 'durable' }));
+	await page.goto(`${origin}/__notification-settings`);
+	await expect(page.getByText('เชื่อมโยงกับอุปกรณ์ที่จดจำไว้', { exact: true })).toHaveCount(2);
+	await expect(page.getByText(/^หมดอายุ /)).toHaveCount(0);
+	await expect(
+		page.getByText(/การเชื่อมต่อแบบปกติหมดอายุเมื่อไม่มีการยืนยันเป็นเวลา 90 วัน/)
+	).toBeVisible();
+	await expect(page.getByText('เชื่อมต่อแล้ว', { exact: true }).first()).toBeVisible();
+});
 test('unavailable and error configurations never claim the browser subscription is connected', async ({
 	page
 }) => {

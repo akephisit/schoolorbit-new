@@ -1,4 +1,4 @@
-//! Tenant/user/session-owned Web Push bindings. Registration secrets never leave this owner.
+//! Tenant/user-owned Web Push bindings. Registration secrets never leave this owner.
 use crate::models::{
     ListPushDevicesResponse, PushConfigResponse, PushDevice, RegisterPushDeviceRequest,
 };
@@ -10,6 +10,25 @@ use uuid::Uuid;
 
 pub const MAX_DEVICES: usize = 20;
 pub const DEVICE_EXPIRY_DAYS: i64 = 90;
+#[derive(Clone, Copy)]
+enum BindingOwner {
+    Session(Uuid),
+    RememberedDevice(Uuid),
+}
+impl BindingOwner {
+    fn session_id(self) -> Option<Uuid> {
+        match self {
+            Self::Session(id) => Some(id),
+            Self::RememberedDevice(_) => None,
+        }
+    }
+    fn remembered_device_id(self) -> Option<Uuid> {
+        match self {
+            Self::Session(_) => None,
+            Self::RememberedDevice(id) => Some(id),
+        }
+    }
+}
 pub(crate) struct VapidConfig {
     pub public_key: String,
     pub private_key: String,
@@ -107,8 +126,7 @@ pub async fn list(pool: &PgPool, user: Uuid) -> Result<ListPushDevicesResponse, 
         school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.devices.list")
             .await?;
     let items=school_database::DbSession::new(&mut *connection).query_as("notifications.devices.list",r#"SELECT p.id,p.installation_id,p.label,p.version,p.binding_token,p.key_id,p.last_confirmed_at,p.expires_at
-        FROM push_subscriptions p JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id JOIN users u ON u.id=s.user_id
-        WHERE p.user_id=$1 AND p.expires_at>now() AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active'
+        FROM notification_eligible_push_subscriptions p WHERE p.user_id=$1
         ORDER BY p.last_confirmed_at DESC,p.id LIMIT 20"#).bind(user).fetch_all().await?;
     Ok(ListPushDevicesResponse { items })
 }
@@ -149,42 +167,85 @@ async fn register_with_key(
         .bind(user)
         .execute()
         .await?;
-    let session_valid:bool=school_database::DbSession::new(&mut *tx).scalar("notifications.devices.session","SELECT EXISTS(SELECT 1 FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active' FOR SHARE OF s)").bind(session).bind(user).fetch_one().await?;
-    if !session_valid {
-        return Err(AppError::AuthError("session_invalid".into()));
-    }
+    let owner = lock_registration_owner(&mut tx, user, session).await?;
     if let Some(expected) = request.expected_version {
-        let binding:Option<(Uuid,Option<Uuid>,Uuid)>=school_database::DbSession::new(&mut *tx).query_as("notifications.devices.conditional_refresh","SELECT user_id,session_id,version FROM push_subscriptions WHERE installation_id=$1 FOR UPDATE").bind(request.installation_id).fetch_optional().await?;
-        if binding != Some((user, Some(session), expected)) {
+        let binding:Option<(Uuid,Option<Uuid>,Option<Uuid>,Uuid)>=school_database::DbSession::new(&mut *tx).query_as("notifications.devices.conditional_refresh","SELECT user_id,session_id,remembered_device_id,version FROM push_subscriptions WHERE installation_id=$1 FOR UPDATE").bind(request.installation_id).fetch_optional().await?;
+        if binding
+            != Some((
+                user,
+                owner.session_id(),
+                owner.remembered_device_id(),
+                expected,
+            ))
+        {
             return Err(AppError::Conflict("push_binding_changed".into()));
         }
     }
-    let count:i64=school_database::DbSession::new(&mut *tx).scalar("notifications.devices.admission",r#"SELECT count(*) FROM push_subscriptions p JOIN auth_sessions s ON s.id=p.session_id AND s.user_id=p.user_id JOIN users u ON u.id=s.user_id
-        WHERE p.user_id=$1 AND p.installation_id IS DISTINCT FROM $2 AND p.expires_at>now()
-        AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active'"#).bind(user).bind(request.installation_id).fetch_one().await?;
+    let count: i64 = school_database::DbSession::new(&mut *tx)
+        .scalar(
+            "notifications.devices.admission",
+            r#"SELECT count(*) FROM notification_eligible_push_subscriptions p
+        WHERE p.user_id=$1 AND p.installation_id IS DISTINCT FROM $2"#,
+        )
+        .bind(user)
+        .bind(request.installation_id)
+        .fetch_one()
+        .await?;
     if count >= MAX_DEVICES as i64 {
         return Err(AppError::Conflict("push_device_limit".into()));
     }
     // A browser subscription has one account binding, including legacy endpoint-only registrations.
     school_database::DbSession::new(&mut *tx).query("notifications.devices.retire_old_endpoint","DELETE FROM push_subscriptions WHERE endpoint=$1 AND installation_id IS DISTINCT FROM $2").bind(&request.endpoint).bind(request.installation_id).execute().await?;
-    let device = register_in_transaction(&mut tx, user, session, &request).await?;
+    let device = register_in_transaction(&mut tx, user, owner, &request).await?;
     tx.commit().await?;
     Ok(device)
+}
+async fn lock_registration_owner(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+    session: Uuid,
+) -> Result<BindingOwner, AppError> {
+    // Discover only from the authenticated current session. The user lock is held;
+    // lock its remembered grant before the session to match Auth's lock order.
+    let remembered: Option<Option<Uuid>> = school_database::DbSession::new(&mut **tx)
+        .scalar("notifications.devices.session_owner", "SELECT s.remembered_device_id FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active'")
+        .bind(session).bind(user).fetch_optional().await?;
+    let Some(remembered) = remembered else {
+        return Err(AppError::AuthError("session_invalid".into()));
+    };
+    if let Some(id) = remembered {
+        let valid: bool = school_database::DbSession::new(&mut **tx)
+            .scalar("notifications.devices.remembered_owner", "SELECT EXISTS(SELECT 1 FROM auth_remembered_devices WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL FOR SHARE)")
+            .bind(id).bind(user).fetch_one().await?;
+        if !valid {
+            return Err(AppError::AuthError("session_invalid".into()));
+        }
+    }
+    let valid: bool = school_database::DbSession::new(&mut **tx)
+        .scalar("notifications.devices.session", "SELECT EXISTS(SELECT 1 FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=$1 AND s.user_id=$2 AND s.remembered_device_id IS NOT DISTINCT FROM $3 AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active' FOR SHARE OF s)")
+        .bind(session).bind(user).bind(remembered).fetch_one().await?;
+    if !valid {
+        return Err(AppError::AuthError("session_invalid".into()));
+    }
+    Ok(match remembered {
+        Some(id) => BindingOwner::RememberedDevice(id),
+        None => BindingOwner::Session(session),
+    })
 }
 async fn register_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
     user: Uuid,
-    session: Uuid,
+    owner: BindingOwner,
     request: &RegisterPushDeviceRequest,
 ) -> Result<PushDevice, AppError> {
-    Ok(school_database::DbSession::new(&mut **tx).query_as("notifications.devices.upsert",r#"INSERT INTO push_subscriptions(user_id,session_id,installation_id,label,endpoint,p256dh_key,auth_key,key_id,last_confirmed_at,expires_at)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,now(),now()+interval '90 days')
+    Ok(school_database::DbSession::new(&mut **tx).query_as("notifications.devices.upsert",r#"INSERT INTO push_subscriptions(user_id,session_id,remembered_device_id,installation_id,label,endpoint,p256dh_key,auth_key,key_id,last_confirmed_at,expires_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),CASE WHEN $3::uuid IS NULL THEN now()+interval '90 days' ELSE NULL END)
         ON CONFLICT(installation_id) WHERE installation_id IS NOT NULL DO UPDATE SET
-        version=CASE WHEN push_subscriptions.user_id=EXCLUDED.user_id AND push_subscriptions.session_id=EXCLUDED.session_id AND push_subscriptions.endpoint=EXCLUDED.endpoint AND push_subscriptions.p256dh_key=EXCLUDED.p256dh_key AND push_subscriptions.auth_key=EXCLUDED.auth_key AND push_subscriptions.key_id=EXCLUDED.key_id AND push_subscriptions.expires_at>now() THEN push_subscriptions.version ELSE gen_random_uuid() END,
-        binding_token=CASE WHEN push_subscriptions.user_id=EXCLUDED.user_id AND push_subscriptions.session_id=EXCLUDED.session_id AND push_subscriptions.endpoint=EXCLUDED.endpoint AND push_subscriptions.p256dh_key=EXCLUDED.p256dh_key AND push_subscriptions.auth_key=EXCLUDED.auth_key AND push_subscriptions.key_id=EXCLUDED.key_id AND push_subscriptions.expires_at>now() THEN push_subscriptions.binding_token ELSE gen_random_uuid() END,
-        user_id=EXCLUDED.user_id,session_id=EXCLUDED.session_id,label=EXCLUDED.label,endpoint=EXCLUDED.endpoint,p256dh_key=EXCLUDED.p256dh_key,auth_key=EXCLUDED.auth_key,key_id=EXCLUDED.key_id,last_confirmed_at=now(),updated_at=now(),expires_at=EXCLUDED.expires_at
+        version=CASE WHEN push_subscriptions.user_id=EXCLUDED.user_id AND push_subscriptions.session_id IS NOT DISTINCT FROM EXCLUDED.session_id AND push_subscriptions.remembered_device_id IS NOT DISTINCT FROM EXCLUDED.remembered_device_id AND push_subscriptions.endpoint=EXCLUDED.endpoint AND push_subscriptions.p256dh_key=EXCLUDED.p256dh_key AND push_subscriptions.auth_key=EXCLUDED.auth_key AND push_subscriptions.key_id=EXCLUDED.key_id AND (EXCLUDED.remembered_device_id IS NOT NULL OR push_subscriptions.expires_at>now()) THEN push_subscriptions.version ELSE gen_random_uuid() END,
+        binding_token=CASE WHEN push_subscriptions.user_id=EXCLUDED.user_id AND push_subscriptions.session_id IS NOT DISTINCT FROM EXCLUDED.session_id AND push_subscriptions.remembered_device_id IS NOT DISTINCT FROM EXCLUDED.remembered_device_id AND push_subscriptions.endpoint=EXCLUDED.endpoint AND push_subscriptions.p256dh_key=EXCLUDED.p256dh_key AND push_subscriptions.auth_key=EXCLUDED.auth_key AND push_subscriptions.key_id=EXCLUDED.key_id AND (EXCLUDED.remembered_device_id IS NOT NULL OR push_subscriptions.expires_at>now()) THEN push_subscriptions.binding_token ELSE gen_random_uuid() END,
+        user_id=EXCLUDED.user_id,session_id=EXCLUDED.session_id,remembered_device_id=EXCLUDED.remembered_device_id,label=EXCLUDED.label,endpoint=EXCLUDED.endpoint,p256dh_key=EXCLUDED.p256dh_key,auth_key=EXCLUDED.auth_key,key_id=EXCLUDED.key_id,last_confirmed_at=now(),updated_at=now(),expires_at=EXCLUDED.expires_at
         RETURNING id,installation_id,label,version,binding_token,key_id,last_confirmed_at,expires_at"#)
-        .bind(user).bind(session).bind(request.installation_id).bind(request.label.trim()).bind(&request.endpoint).bind(&request.p256dh).bind(&request.auth).bind(&request.key_id).fetch_one().await?)
+        .bind(user).bind(owner.session_id()).bind(owner.remembered_device_id()).bind(request.installation_id).bind(request.label.trim()).bind(&request.endpoint).bind(&request.p256dh).bind(&request.auth).bind(&request.key_id).fetch_one().await?)
 }
 pub async fn unregister(
     pool: &PgPool,
@@ -213,7 +274,7 @@ pub(crate) async fn cleanup(pool: &PgPool) -> Result<(), AppError> {
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.devices.cleanup")
             .await?;
-    school_database::DbSession::new(&mut *connection).query("notifications.devices.cleanup",r#"WITH stale AS (SELECT p.id FROM push_subscriptions p WHERE p.expires_at<=now() OR NOT EXISTS(SELECT 1 FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=p.session_id AND s.user_id=p.user_id AND s.revoked_at IS NULL AND s.idle_expires_at>now() AND s.absolute_expires_at>now() AND u.status='active') ORDER BY p.expires_at,p.id LIMIT 100 FOR UPDATE OF p SKIP LOCKED) DELETE FROM push_subscriptions p USING stale WHERE p.id=stale.id"#).execute().await?;
+    school_database::DbSession::new(&mut *connection).query("notifications.devices.cleanup",r#"WITH stale AS (SELECT p.id FROM push_subscriptions p WHERE NOT EXISTS(SELECT 1 FROM notification_eligible_push_subscriptions e WHERE e.id=p.id) ORDER BY p.expires_at,p.id LIMIT 100 FOR UPDATE OF p SKIP LOCKED) DELETE FROM push_subscriptions p USING stale WHERE p.id=stale.id"#).execute().await?;
     Ok(())
 }
 #[cfg(test)]

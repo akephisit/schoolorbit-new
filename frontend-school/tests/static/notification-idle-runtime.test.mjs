@@ -55,6 +55,7 @@ test('notification hidden pause suppresses recovery and resumes authoritative st
 			}
 		},
 		'#lib/realtime/auth-recovery.js': { realtimeAuthRecovery },
+		'#lib/pwa/display-mode.js': { isStandalonePWA: () => false },
 		'#lib/pwa/service-worker-registration.js': {
 			getServiceWorkerRegistration: () => {
 				throw new Error('push registration is not part of idle reconciliation');

@@ -164,15 +164,23 @@ test('revoked session validation signs out and never reconnects', async ({ page 
 	const index = fixture.requests.length;
 	fixture.setAuthStatus(401);
 	fixture.send('session_invalid');
-	await expect(page).toHaveURL(`${fixture.baseUrl}/login`);
-	await expect(page.getByText('Signed out', { exact: true })).toBeVisible();
+	// This harness mounts store owners; app-layout navigation is covered by the preview tests.
+	await expect(page.locator('#identity')).toHaveText('signed-out');
+	await expect(page.locator('#unread')).toHaveText('0');
+	await expect(page.locator('#inbox')).toBeEmpty();
+	await expect(page.locator('#work')).toHaveText('0');
+	await expect(page.locator('#error')).toBeEmpty();
 	await expect.poll(() => fixture.openStreams).toBe(0);
 	const sequence = pathsAfter(index);
-	expect(sequence).toEqual(['/api/auth/me']);
+	expect(sequence).toEqual(['/api/auth/me', '/api/auth/restore']);
 	// Let the real application reconnect deadline pass; a revoked identity must stay closed.
 	await page.waitForTimeout(3500);
 	expect(pathsAfter(index)).toEqual(sequence);
 	expect(fixture.connections).toBe(1);
+	await expect(page.locator('#identity')).toHaveText('signed-out');
+	await expect(page.locator('#unread')).toHaveText('0');
+	await expect(page.locator('#inbox')).toBeEmpty();
+	await expect(page.locator('#work')).toHaveText('0');
 });
 
 test('logout fences pending authoritative catch-up and clears its session cookie', async ({

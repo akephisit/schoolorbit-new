@@ -145,6 +145,8 @@ export async function startNotificationRecoveryProxy() {
 			response.writeHead(status);
 			response.end(JSON.stringify(status === 200 ? { success: true, data } : data));
 		};
+		if (url.pathname === '/api/auth/restore')
+			return send({ success: false, error: 'No remembered fixture device' }, 401);
 		if (url.pathname === '/api/auth/me') {
 			if (authStatus !== 200)
 				return send({ success: false, error: 'fixture auth refusal' }, authStatus);

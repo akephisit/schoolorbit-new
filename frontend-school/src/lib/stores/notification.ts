@@ -3,6 +3,7 @@ import {
 	browserVisibilityDependencies
 } from '#lib/realtime/visibility-idle.js';
 import { getServiceWorkerRegistration } from '#lib/pwa/service-worker-registration.js';
+import { isStandalonePWA } from '#lib/pwa/display-mode.js';
 import {
 	beginBinding,
 	beginBindingRefresh,
@@ -11,6 +12,7 @@ import {
 	readBrowserState,
 	saveBinding,
 	bindingMatches,
+	bindingIsActive,
 	claimPresentation,
 	watchIdentityChanges,
 	type DeviceBinding
@@ -58,14 +60,6 @@ function isIOSDevice() {
 	return (
 		/iPad|iPhone|iPod/.test(navigator.userAgent) ||
 		(navigatorWithPlatform.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-	);
-}
-
-function isStandalonePWA() {
-	const standaloneNavigator = navigator as Navigator & { standalone?: boolean };
-	return (
-		window.matchMedia('(display-mode: standalone)').matches ||
-		standaloneNavigator.standalone === true
 	);
 }
 
@@ -700,15 +694,10 @@ function createNotificationStore() {
 				if (generation !== pushGeneration) return;
 				const state = await readBrowserState();
 				if (generation !== pushGeneration) return;
-				const binding = await clearBinding(previous, state.intent);
+				// Auth revokes server eligibility atomically, including when the finite session expired.
+				// This operation owns only browser cleanup; an authenticated Push delete could be 401.
+				await clearBinding(previous, state.intent);
 				await closeDeviceNotifications();
-				if (binding) {
-					try {
-						await unregisterPushDevice(binding.id, binding.version);
-					} catch (error) {
-						console.error('Failed to revoke notification device during logout', error);
-					}
-				}
 				if (generation !== pushGeneration) return;
 				if (isPushMessagingSupported()) {
 					const registration = await navigator.serviceWorker.getRegistration('/');
@@ -861,7 +850,8 @@ function createNotificationStore() {
 						current &&
 						state.binding?.id === current.id &&
 						state.binding.version === current.version &&
-						Date.parse(current.expires_at) > Date.now()
+						state.binding.binding_token === current.binding_token &&
+						bindingIsActive(current.expires_at)
 					);
 				}
 			} catch (error) {

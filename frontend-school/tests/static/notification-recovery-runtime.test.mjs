@@ -141,6 +141,7 @@ function harness(options = {}) {
 			},
 			'#lib/realtime/auth-recovery.js': { realtimeAuthRecovery },
 			'#lib/pwa/service-worker-registration.js': {},
+			'#lib/pwa/display-mode.js': { isStandalonePWA: () => false },
 			'#lib/realtime/visibility-idle.js': {
 				createVisibilityIdle,
 				browserVisibilityDependencies: () => ({

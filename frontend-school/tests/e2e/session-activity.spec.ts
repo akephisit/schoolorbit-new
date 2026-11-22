@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Request } from '@playwright/test';
+import { sessionActivityKeys } from '../../src/lib/auth/session-activity-coordination';
 import { activityStart, mockSessionActivity } from './fixtures/session-activity';
 
 test.use({ serviceWorkers: 'block', launchOptions: { args: ['--no-proxy-server'] } });
@@ -120,7 +121,11 @@ test('absolute warning explains that activity cannot extend the sign-in limit', 
 		absoluteExpiresAt: new Date(activityStart + 180_000).toISOString()
 	});
 	await api.open(page);
-	await expect(page.getByTestId('session-warning')).toContainText('เข้าสู่ระบบอีกครั้ง');
+	await expect(page.getByTestId('session-warning')).toContainText('ช่วงการใช้งานนี้จะสิ้นสุด');
+	await expect(page.getByTestId('session-warning')).toContainText('กรุณาบันทึกงาน');
+	await expect(page.getByTestId('session-warning')).toContainText(
+		'ระบบจะตรวจสอบการเข้าสู่ระบบอีกครั้งเมื่อใช้งานต่อ'
+	);
 	await expect(page.getByTestId('session-warning')).toContainText('ไม่สามารถขยายเวลานี้ได้');
 	await expect(page.getByTestId('session-warning').getByRole('button')).toHaveCount(0);
 	expect(api.count('/api/auth/activity')).toBe(0);
@@ -139,18 +144,40 @@ for (const fallback of [false, true]) {
 		await api.open(page);
 		const other = await context.newPage();
 		await api.open(other);
+		const pending = new Set<Request>();
+		context.on('request', (request) => {
+			if (new URL(request.url()).pathname === '/api/auth/activity') pending.add(request);
+		});
+		context.on('requestfinished', (request) => pending.delete(request));
+		context.on('requestfailed', (request) => pending.delete(request));
 		api.setNow(300_100);
 		await page.clock.runFor(300_000);
 		await page.keyboard.press('ArrowDown');
 		await other.mouse.move(650, 350);
 		await page.clock.runFor(200);
 		await expect.poll(() => api.activityWrites).toBe(1);
+		// Server acceptance precedes response settlement and shared publication. Drain the initial
+		// concurrent attempt(s) before testing whether fresh input causes any later request.
+		const key = sessionActivityKeys(
+			new URL(page.url()).origin,
+			'01900000-0000-7000-8000-000000000001'
+		).metadata;
+		await expect
+			.poll(() =>
+				page.evaluate((key) => {
+					const shared = JSON.parse(localStorage.getItem(key) ?? 'null');
+					return Date.parse(shared?.nextRenewalAt ?? '');
+				}, key)
+			)
+			.toBeGreaterThan(activityStart + 300_100);
+		await expect.poll(() => pending.size).toBe(0);
 		const attempts = api.count('/api/auth/activity');
 		expect(attempts).toBeGreaterThanOrEqual(1);
 		expect(attempts).toBeLessThanOrEqual(fallback ? 2 : 1);
 		await other.mouse.wheel(0, 100);
 		await other.clock.runFor(200);
 		expect(api.count('/api/auth/activity')).toBe(attempts);
+		expect(api.activityWrites).toBe(1);
 		expect(api.count('/api/auth/me')).toBe(2);
 	});
 }

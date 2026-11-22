@@ -11,19 +11,20 @@
 {#if warning}
 	<div class="px-4 pt-3 sm:px-6" data-testid="session-warning">
 		<Alert class="border-warning/40 bg-warning/10">
-			<AlertTitle>การเข้าสู่ระบบใกล้หมดเวลา</AlertTitle>
+			<AlertTitle>ระยะเวลาการใช้งานใกล้สิ้นสุด</AlertTitle>
 			<AlertDescription class="flex flex-wrap items-center justify-between gap-3">
 				<p aria-live="polite">
 					{#if warning.kind === 'absolute'}
-						ครบระยะเวลาการเข้าสู่ระบบ{warning.remainingMinutes > 0
-							? `ใน ${warning.remainingMinutes} นาที`
-							: 'แล้ว'} กรุณาบันทึกงานและเข้าสู่ระบบอีกครั้ง การใช้งานต่อไม่สามารถขยายเวลานี้ได้
+						{warning.remainingMinutes > 0
+							? `ช่วงการใช้งานนี้จะสิ้นสุดใน ${warning.remainingMinutes} นาที`
+							: 'ช่วงการใช้งานนี้สิ้นสุดแล้ว'} กรุณาบันทึกงาน ระบบจะตรวจสอบการเข้าสู่ระบบอีกครั้งเมื่อใช้งานต่อ
+						การใช้งานต่อไม่สามารถขยายเวลานี้ได้
 					{:else if warning.unavailable}
 						ยังต่อเวลาการใช้งานไม่ได้ กรุณาตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง
 					{:else}
 						{warning.remainingMinutes > 0
-							? `หากไม่มีการใช้งาน คุณจะออกจากระบบใน ${warning.remainingMinutes} นาที`
-							: 'การใช้งานอาจหมดเวลาแล้ว กรุณาตรวจสอบก่อนทำงานต่อ'}
+							? `ช่วงการใช้งานนี้จะหมดเวลาใน ${warning.remainingMinutes} นาทีหากไม่มีการใช้งาน`
+							: 'ช่วงการใช้งานนี้อาจหมดเวลาแล้ว'} กรุณาบันทึกงาน ระบบจะตรวจสอบการเข้าสู่ระบบอีกครั้งเมื่อใช้งานต่อ
 					{/if}
 				</p>
 				{#if warning.kind === 'idle'}

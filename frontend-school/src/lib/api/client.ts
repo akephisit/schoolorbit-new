@@ -207,6 +207,7 @@ class APIClient {
 		requestFetch: typeof globalThis.fetch = globalThis.fetch
 	): Promise<Response> {
 		const sessionEpoch = authStore.sessionEpoch;
+		const authIntentEpoch = authStore.authIntentEpoch;
 		const method = (options.method ?? 'GET').toUpperCase();
 		const callerHeaders = new Headers(options.headers);
 		callerHeaders.delete(SCHOOL_SUBDOMAIN_HEADER);
@@ -234,9 +235,17 @@ class APIClient {
 			}
 			throw error;
 		}
-		if (usesSession && sessionEpoch === authStore.sessionEpoch) {
+		if (
+			usesSession &&
+			sessionEpoch === authStore.sessionEpoch &&
+			authIntentEpoch === authStore.authIntentEpoch
+		) {
 			captureSessionSecurityHeaders(response.headers);
-			if (response.status === 401) this.handleUnauthorized();
+			// These exact auth reads are reconciled by AuthAPI, including remembered-device restore.
+			// Business operations retain their existing 401 behavior and are never replayed.
+			const path = endpoint.split('?')[0];
+			if (response.status === 401 && path !== '/api/auth/me' && path !== '/api/auth/restore')
+				this.handleUnauthorized();
 		}
 		return response;
 	}

@@ -3993,6 +3993,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/auth/restore': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['restoreAuthSession'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/auth/sessions': {
 		parameters: {
 			query?: never;
@@ -12735,7 +12751,7 @@ export interface components {
 				/** Format: uuid */
 				binding_token: string;
 				/** Format: date-time */
-				expires_at: string;
+				expires_at: string | null;
 				/** Format: uuid */
 				id: string;
 				/** Format: uuid */
@@ -23950,7 +23966,7 @@ export interface components {
 			/** Format: uuid */
 			binding_token: string;
 			/** Format: date-time */
-			expires_at: string;
+			expires_at: string | null;
 			/** Format: uuid */
 			id: string;
 			/** Format: uuid */
@@ -24371,6 +24387,7 @@ export interface components {
 			/** Format: uuid */
 			subjectTermCriterionId: string;
 		};
+		RestoreSessionRequest: Record<string, never>;
 		RestoreTimetableBlockGroupRequest: {
 			/** Format: int64 */
 			blockRowVersion: number;
@@ -25131,14 +25148,14 @@ export interface components {
 		};
 		SessionResponse: {
 			/** Format: date-time */
-			absoluteExpiresAt: string;
+			absoluteExpiresAt: string | null;
 			/** Format: date-time */
 			createdAt: string;
 			deviceLabel: string;
 			/** Format: uuid */
 			id: string;
 			/** Format: date-time */
-			idleExpiresAt: string;
+			idleExpiresAt: string | null;
 			isCurrent: boolean;
 			/** Format: date-time */
 			lastSeenAt: string;
@@ -47324,6 +47341,75 @@ export interface operations {
 			};
 		};
 	};
+	restoreAuthSession: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['RestoreSessionRequest'];
+			};
+		};
+		responses: {
+			/** @description Remembered device restored */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_LoginData'];
+				};
+			};
+			/** @description Deliberate empty JSON object required */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Remembered device absent or revoked */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Origin rejected */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Live session takes precedence */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication service unavailable */
+			503: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listAuthSessions: {
 		parameters: {
 			query?: never;
@@ -47333,7 +47419,7 @@ export interface operations {
 		};
 		requestBody?: never;
 		responses: {
-			/** @description Active sessions */
+			/** @description Active sessions and remembered devices */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -47367,7 +47453,7 @@ export interface operations {
 			query?: never;
 			header?: never;
 			path: {
-				/** @description Owned session identifier */
+				/** @description Owned session or remembered device identifier */
 				id: string;
 			};
 			cookie?: never;

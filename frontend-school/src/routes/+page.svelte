@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { isStandalonePWA } from '#lib/pwa/display-mode.js';
 	import type { PublicSchoolInfo } from '#lib/api/school.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import PublicSchoolHeader from '#lib/components/school-public/PublicSchoolHeader.svelte';
@@ -21,6 +24,9 @@
 		Orbit
 	} from '@lucide/svelte';
 	let { data }: PageProps = $props();
+	onMount(() => {
+		if (isStandalonePWA()) void goto(resolve('login'), { replace: true });
+	});
 	let identityRetry = $state<Promise<RouteLoadResult<PublicSchoolInfo>> | null>(null);
 	const identityOperation = $derived(identityRetry ?? data.identity);
 	const services = [

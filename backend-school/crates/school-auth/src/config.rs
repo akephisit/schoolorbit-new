@@ -8,6 +8,8 @@ use school_errors::AppError;
 use super::session_crypto::SessionHmacKey;
 
 pub const SESSION_COOKIE_NAME: &str = "__Host-schoolorbit_session";
+pub const REMEMBERED_DEVICE_COOKIE_NAME: &str = "__Host-schoolorbit_device";
+pub const REMEMBERED_DEVICE_COOKIE_MAX_AGE: u64 = 400 * 24 * 60 * 60;
 pub const LEGACY_COOKIE_NAME: &str = "auth_token";
 pub const CSRF_HEADER_NAME: &str = "x-csrf-token";
 

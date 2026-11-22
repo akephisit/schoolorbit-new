@@ -68,6 +68,9 @@ test('dependent academic pages provide local next actions without a global readi
 	const supervisionPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/supervision/+page.svelte'
 	);
+	const supervisionWorkspace = await readProjectFile(
+		'src/lib/components/supervision/SupervisionWorkspace.svelte'
+	);
 	const gradebookPage = await readProjectFile(
 		'src/routes/(app)/staff/academic/gradebook/+page.svelte'
 	);
@@ -103,7 +106,38 @@ test('dependent academic pages provide local next actions without a global readi
 	assert.match(examListPage, /\/staff\/academic\/assessments/);
 	assert.match(examDetailPage, /\/staff\/academic\/assessments/);
 	assert.doesNotMatch(examDetailPage, /deliveryTargets|แก้ข้อมูลต้นทาง:/);
-	assert.match(supervisionPage, /AcademicPrerequisiteNotice/);
+	assert.match(
+		supervisionPage,
+		/<SupervisionWorkspace\s+section="mine"\s+routeData=\{data\}\s*\/>/
+	);
+	assert.doesNotMatch(
+		supervisionPage,
+		/AcademicPrerequisiteNotice|bookingTermPrerequisite|\{#if\s+!academicTermId/
+	);
+	for (const field of ['academicYearId', 'academicTermId']) {
+		assert.match(
+			supervisionWorkspace,
+			new RegExp(`${field} = \\$derived\\(\\s*routeData \\? routeData\\.${field}`)
+		);
+	}
+	assert.match(
+		supervisionWorkspace,
+		/\{#if cyclesLoaded && currentBookingCycle && academicYearId && academicTermId\}/
+	);
+	assert.match(
+		supervisionWorkspace,
+		/<SupervisionLessonPicker[\s\S]*?\{academicYearId\}[\s\S]*?\{academicTermId\}/
+	);
+	assert.match(
+		supervisionWorkspace,
+		/createBookingRequest[\s\S]*?if \(!canRequest \|\| !currentBookingCycle \|\| !academicTermId\)/
+	);
+	assert.match(
+		supervisionWorkspace,
+		/hidden=\{!referenceFeedbackVisible\}[\s\S]*?data-testid="supervision-references"[\s\S]*?managementFeedback/
+	);
+	assert.match(supervisionWorkspace, /title="ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้"/);
+	assert.match(supervisionWorkspace, /เมื่อผู้ดูแลเปิดรับคำขอ คุณจะเลือกคาบจากตารางสอนได้ที่นี่/);
 	assert.match(gradebookPage, /AcademicPrerequisiteNotice/);
 	assert.match(gradebookPage, /\/staff\/academic\/delivery/);
 	assert.match(gradebookPage, /\/staff\/academic\/assessments/);

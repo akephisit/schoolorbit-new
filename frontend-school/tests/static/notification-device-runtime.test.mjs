@@ -19,6 +19,14 @@ test('existing subscription sync uses runtime key and persists server binding wi
 	assert.equal(h.state.binding.binding_token, 'token-1');
 	assert.equal((await h.store.getPushStatus()).synced, true);
 });
+test('durable registration has no expiry and remains synced with exact version and token', async () => {
+	const h = deviceHarness({ durable: true });
+	assert.equal(await h.store.enablePushFromUserAction(), true);
+	assert.equal(h.state.binding.expires_at, null);
+	assert.equal((await h.store.getPushStatus()).synced, true);
+	h.state.binding = { ...h.state.binding, binding_token: 'stale-token' };
+	assert.equal((await h.store.getPushStatus()).synced, false);
+});
 test('unavailable key is degraded even with a browser subscription', async () => {
 	const h = deviceHarness({ config: { available: false, public_key: null, key_id: null } });
 	assert.equal(await h.store.syncExistingPushSubscription(), false);
@@ -36,12 +44,12 @@ test('key rotation is silent until user action then recreates the exact old subs
 	assert.equal(h.calls.unsubscribe, 1);
 	assert.deepEqual([...h.calls.subscribe[0].applicationServerKey], [1, 2, 3]);
 });
-test('logout clears local binding, revokes only current version and closes browser notifications', async () => {
+test('auth logout cleans browser resources without a second authenticated Push revoke', async () => {
 	const h = deviceHarness();
 	await h.store.enablePushFromUserAction();
 	await h.store.prepareLogout();
 	assert.equal(h.state.binding, null);
-	assert.deepEqual(h.calls.revoke, [{ id: 'device-1', version: 'version-1' }]);
+	assert.deepEqual(h.calls.revoke, []);
 	assert.equal(h.calls.unsubscribe, 1);
 	assert.equal(h.calls.close, 1);
 });

@@ -44,6 +44,7 @@ pub enum SessionRevocationReason {
     UserSelected,
     LogoutAll,
     PasswordChanged,
+    ExplicitLogin,
 }
 
 impl SessionRevocationReason {
@@ -53,6 +54,7 @@ impl SessionRevocationReason {
             Self::UserSelected => "user_selected",
             Self::LogoutAll => "logout_all",
             Self::PasswordChanged => "password_changed",
+            Self::ExplicitLogin => "explicit_login",
         }
     }
 }
@@ -112,6 +114,7 @@ pub struct PasswordChangeSnapshot {
 }
 
 pub struct LockedPasswordChange {
+    pub remembered_device_id: Option<Uuid>,
     pub password_hash: String,
     pub remember_me: bool,
     pub absolute_expires_at: DateTime<Utc>,
@@ -166,12 +169,31 @@ pub async fn create_login_session(
     identifier_hash: ThrottleBucketHash,
     verified_user: &SessionLoginUser,
 ) -> Result<LoginSessionCreation, AppError> {
+    create_login_session_with_device(pool, session, identifier_hash, verified_user, None, None)
+        .await
+        .map(|result| result.0)
+}
+
+pub async fn create_login_session_with_device(
+    pool: &PgPool,
+    session: &NewSession,
+    identifier_hash: ThrottleBucketHash,
+    verified_user: &SessionLoginUser,
+    new_device: Option<&crate::remembered_devices::NewRememberedDevice>,
+    presented_device: Option<TokenHash>,
+) -> Result<(LoginSessionCreation, Vec<(Uuid, Uuid)>), AppError> {
     let mut transaction = school_tenancy::TenantPool::begin_observed(
         &pool,
         "auth.session_repository.create_login_session",
     )
     .await
     .map_err(session_store_error)?;
+    let captured_devices = crate::remembered_devices::lock_login_users(
+        &mut transaction,
+        Some(verified_user.id),
+        presented_device,
+    )
+    .await?;
     // Serialize final credential validation with password changes and account updates.
     // User locks precede session/token locks; bcrypt has already completed outside this tx.
     let locked: Option<(String, String, String, String)> =
@@ -198,7 +220,24 @@ pub async fn create_login_session(
     });
     if !valid {
         transaction.rollback().await.map_err(session_store_error)?;
-        return Ok(LoginSessionCreation::StaleIdentity);
+        return Ok((LoginSessionCreation::StaleIdentity, Vec::new()));
+    }
+    let retired = crate::remembered_devices::retire_devices(
+        &mut transaction,
+        &captured_devices,
+        "explicit_login",
+        session.times.created_at,
+    )
+    .await?;
+    if let Some(device) = new_device {
+        crate::remembered_devices::enroll(
+            &mut transaction,
+            device,
+            session.user_id,
+            &session.device_label,
+            session.times.created_at,
+        )
+        .await?;
     }
     lock_token_hash(&mut transaction, session.current_token_hash).await?;
     ensure_token_hash_available(&mut transaction, session.current_token_hash).await?;
@@ -209,9 +248,9 @@ pub async fn create_login_session(
             r#"
         INSERT INTO auth_sessions (
             id, user_id, current_token_hash, remember_me, device_label,
-            created_at, last_seen_at, idle_expires_at, absolute_expires_at, rotated_at
+            created_at, last_seen_at, idle_expires_at, absolute_expires_at, rotated_at, remembered_device_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         "#,
         )
         .bind(session.id)
@@ -224,6 +263,7 @@ pub async fn create_login_session(
         .bind(session.times.idle_expires_at)
         .bind(session.times.absolute_expires_at)
         .bind(session.times.rotated_at)
+        .bind(new_device.map(|device| device.id))
         .execute()
         .await
         .map_err(session_store_error)?;
@@ -237,7 +277,7 @@ pub async fn create_login_session(
     .map_err(session_store_error)?;
 
     transaction.commit().await.map_err(session_store_error)?;
-    Ok(LoginSessionCreation::Created)
+    Ok((LoginSessionCreation::Created, retired))
 }
 
 /// Validation has no persistent side effects, including expired-credential rejection.
@@ -510,10 +550,21 @@ pub async fn lock_password_change<'a>(
     now: DateTime<Utc>,
 ) -> Result<LockedPasswordChange, AppError> {
     school_database::DbSession::new(&mut **transaction)
-        .query_as::<(String, bool, DateTime<Utc>)>(
+        .query(
+            "auth.lock_password_change.user",
+            "SELECT id FROM users WHERE id=$1 FOR UPDATE",
+        )
+        .bind(user_id)
+        .execute()
+        .await
+        .map_err(session_store_error)?;
+    school_database::DbSession::new(&mut **transaction).query("auth.lock_password_change.devices", "SELECT id FROM auth_remembered_devices WHERE user_id=$1 AND revoked_at IS NULL ORDER BY id FOR UPDATE")
+        .bind(user_id).execute().await.map_err(session_store_error)?;
+    school_database::DbSession::new(&mut **transaction)
+        .query_as::<(String, bool, DateTime<Utc>, Option<Uuid>)>(
             "auth.src.session_repository.lock_password_change",
             r#"
-        SELECT u.password_hash, s.remember_me, s.absolute_expires_at
+        SELECT u.password_hash, s.remember_me, s.absolute_expires_at, s.remembered_device_id
         FROM users u
         JOIN auth_sessions s ON s.user_id = u.id
         WHERE u.id = $1
@@ -532,10 +583,13 @@ pub async fn lock_password_change<'a>(
         .await
         .map_err(session_store_error)?
         .map(
-            |(password_hash, remember_me, absolute_expires_at)| LockedPasswordChange {
-                password_hash,
-                remember_me,
-                absolute_expires_at,
+            |(password_hash, remember_me, absolute_expires_at, remembered_device_id)| {
+                LockedPasswordChange {
+                    remembered_device_id,
+                    password_hash,
+                    remember_me,
+                    absolute_expires_at,
+                }
             },
         )
         .ok_or_else(authentication_required)
@@ -549,9 +603,44 @@ pub async fn apply_password_change<'a>(
     new_token_hash: TokenHash,
     now: DateTime<Utc>,
 ) -> Result<Vec<Uuid>, AppError> {
+    apply_password_change_with_device(
+        transaction,
+        user_id,
+        session_id,
+        new_password_hash,
+        new_token_hash,
+        None,
+        now,
+    )
+    .await
+}
+
+pub async fn apply_password_change_with_device<'a>(
+    transaction: &mut Transaction<'a, Postgres>,
+    user_id: Uuid,
+    session_id: Uuid,
+    new_password_hash: &str,
+    new_token_hash: TokenHash,
+    current_device: Option<(Uuid, TokenHash)>,
+    now: DateTime<Utc>,
+) -> Result<Vec<Uuid>, AppError> {
     lock_token_hash(transaction, new_token_hash).await?;
     ensure_token_hash_available(transaction, new_token_hash).await?;
 
+    let retained_device = current_device.map(|(id, _)| id);
+    school_database::DbSession::new(&mut **transaction).query("auth.apply_password_change.devices",
+        "UPDATE auth_remembered_devices SET revoked_at=$1,revocation_reason='password_changed',pending_token_hash=NULL,pending_created_at=NULL,pending_session_id=NULL WHERE user_id=$2 AND revoked_at IS NULL AND ($3::uuid IS NULL OR id<>$3)")
+        .bind(now).bind(user_id).bind(retained_device).execute().await.map_err(session_store_error)?;
+    if let Some((id, hash)) = current_device {
+        lock_token_hash(transaction, hash).await?;
+        ensure_token_hash_available(transaction, hash).await?;
+        let updated=school_database::DbSession::new(&mut **transaction).query("auth.apply_password_change.current_device",
+            "UPDATE auth_remembered_devices SET current_token_hash=$1,pending_token_hash=NULL,pending_created_at=NULL,pending_session_id=NULL,last_used_at=GREATEST(last_used_at,$2) WHERE id=$3 AND user_id=$4 AND revoked_at IS NULL")
+            .bind(hash.as_bytes().as_slice()).bind(now).bind(id).bind(user_id).execute().await.map_err(session_store_error)?.rows_affected();
+        if updated != 1 {
+            return Err(authentication_required());
+        }
+    }
     let updated_user = school_database::DbSession::new(&mut **transaction)
         .query(
             "auth.src.session_repository.apply_password_change",
@@ -577,8 +666,7 @@ pub async fn apply_password_change<'a>(
         WHERE user_id = $3
           AND id <> $4
           AND revoked_at IS NULL
-          AND idle_expires_at > $1
-          AND absolute_expires_at > $1
+          AND (remembered_device_id IS NOT NULL OR (idle_expires_at > $1 AND absolute_expires_at > $1))
         RETURNING id
         "#,
         )
@@ -590,6 +678,18 @@ pub async fn apply_password_change<'a>(
         .await
         .map_err(session_store_error)?;
 
+    if retained_device.is_none() {
+        school_database::DbSession::new(&mut **transaction)
+            .query(
+                "auth.apply_password_change.unlink_device",
+                "UPDATE auth_sessions SET remembered_device_id=NULL WHERE id=$1 AND user_id=$2",
+            )
+            .bind(session_id)
+            .bind(user_id)
+            .execute()
+            .await
+            .map_err(session_store_error)?;
+    }
     let updated_session = school_database::DbSession::new(&mut **transaction)
         .query(
             "auth.src.session_repository.apply_password_change",
@@ -940,7 +1040,7 @@ fn maintained(
     }
 }
 
-async fn lock_token_hash(
+pub(crate) async fn lock_token_hash(
     transaction: &mut Transaction<'_, Postgres>,
     token_hash: TokenHash,
 ) -> Result<(), AppError> {
@@ -959,7 +1059,7 @@ async fn lock_token_hash(
     Ok(())
 }
 
-async fn ensure_token_hash_available(
+pub(crate) async fn ensure_token_hash_available(
     transaction: &mut Transaction<'_, Postgres>,
     token_hash: TokenHash,
 ) -> Result<(), AppError> {
@@ -967,7 +1067,7 @@ async fn ensure_token_hash_available(
         .scalar(
             "auth.src.session_repository.ensure_token_hash_available",
             "SELECT EXISTS (SELECT 1 FROM auth_sessions \
-         WHERE current_token_hash = $1 OR previous_token_hash = $1 OR pending_token_hash = $1)",
+         WHERE current_token_hash = $1 OR previous_token_hash = $1 OR pending_token_hash = $1) OR EXISTS (SELECT 1 FROM auth_remembered_devices WHERE current_token_hash=$1 OR pending_token_hash=$1)",
         )
         .bind(token_hash.as_bytes().as_slice())
         .fetch_one()

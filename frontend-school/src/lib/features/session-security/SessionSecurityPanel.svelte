@@ -307,8 +307,14 @@
 										ใช้งานล่าสุด {formatDateTime(session.lastSeenAt)}
 									</span>
 									<span>เข้าสู่ระบบเมื่อ {formatDateTime(session.createdAt)}</span>
-									<span>หมดอายุเมื่อ {formatDateTime(session.idleExpiresAt)}</span>
-									<span>หมดอายุสูงสุด {formatDateTime(session.absoluteExpiresAt)}</span>
+									{#if session.idleExpiresAt !== null && session.absoluteExpiresAt !== null}
+										<span>หมดอายุเมื่อ {formatDateTime(session.idleExpiresAt)}</span>
+										<span>หมดอายุสูงสุด {formatDateTime(session.absoluteExpiresAt)}</span>
+									{:else}
+										<span class="sm:col-span-2"
+											>จดจำอุปกรณ์นี้จนกว่าจะออกจากระบบหรือนำอุปกรณ์ออก</span
+										>
+									{/if}
 								</div>
 							</div>
 
