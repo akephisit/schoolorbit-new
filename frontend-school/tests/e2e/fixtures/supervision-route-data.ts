@@ -114,6 +114,7 @@ export async function mock(
 		failStatus?: number;
 		holdAt?: number;
 		term?: boolean | Pick<AcademicTermOption, 'name' | 'sequence' | 'termType'>;
+		schoolDays?: AcademicTermOption['schoolDays'];
 		yearName?: string;
 		observationStatus?: SupervisionObservationStatus;
 		observation?: Partial<SupervisionObservation>;
@@ -296,7 +297,7 @@ export async function mock(
 									code: String(options.term === true ? 1 : options.term.sequence),
 									includedInYearResult: true,
 									isVisible: true,
-									schoolDays: [],
+									schoolDays: options.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 									status: 'active',
 									...(options.term === true
 										? { name: 'ภาคเรียนที่ 1', sequence: 1, termType: 'regular' }

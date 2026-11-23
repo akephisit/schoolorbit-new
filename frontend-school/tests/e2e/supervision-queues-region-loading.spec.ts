@@ -5,6 +5,7 @@ import {
 	year,
 	nextYear,
 	templateId,
+	timetableOption,
 	path,
 	mock,
 	navigate
@@ -330,6 +331,122 @@ test('mine loads its list first and keeps booking timetable behind opening the w
 	await expect(page.getByText('ไม่พบคาบสอนในสัปดาห์นี้')).toBeVisible();
 	expect(api.count('/api/supervision/booking-options')).toBe(2);
 	expect(api.count(observationPath)).toBe(1);
+});
+
+test.describe('supervision at 360 pixels', () => {
+	test.use({ viewport: { width: 360, height: 800 }, hasTouch: true });
+
+	test('booking shows two complete lesson columns with the date pinned while scrolling', async ({
+		page
+	}) => {
+		await mock(page, {
+			permissions: own,
+			term: true,
+			bookingItems: [0, 1, 2, 3].map((index) => timetableOption(index))
+		});
+		await page.goto(path('').replace('/supervision/?', '/supervision?'));
+		await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).tap();
+		const grid = page.getByTestId('supervision-booking-grid');
+		const rowDates = grid.getByRole('rowheader').locator('time');
+		await expect(rowDates).toHaveCount(5);
+		expect(
+			await rowDates.evaluateAll((dates) => dates.map((date) => date.getAttribute('datetime')))
+		).toEqual(['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02']);
+		const thursday = grid.locator('time[datetime="2026-10-01"]');
+		await expect(thursday.locator('span')).toHaveText(['พฤหัส', '1 ต.ค.']);
+		const weekday = await thursday.locator('span').first().boundingBox();
+		const date = await thursday.locator('span').last().boundingBox();
+		expect(date!.y).toBeGreaterThanOrEqual(weekday!.y + weekday!.height);
+
+		const scrollport = grid.locator('[data-slot="table-container"]');
+		const initial = await scrollport.boundingBox();
+		const secondPeriod = await grid.getByRole('columnheader', { name: /^คาบ 2 / }).boundingBox();
+		expect(secondPeriod!.x + secondPeriod!.width).toBeLessThanOrEqual(initial!.x + initial!.width);
+		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+		const first = grid.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ });
+		await expect(first).toHaveAccessibleDescription(/วิชาปัจจุบัน 1.*ว่าง/);
+		await first.focus();
+		await first.press('Enter');
+		await expect(first).toHaveAttribute('aria-pressed', 'true');
+		await grid.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).tap();
+		await expect(page.getByTestId('supervision-booking-selection')).toContainText('2 คาบต่อเนื่อง');
+
+		const pinned = grid.getByRole('columnheader', { name: 'วันที่' });
+		const pinnedBefore = await pinned.boundingBox();
+		const scrolled = await scrollport.evaluate((element) => {
+			element.scrollLeft = element.scrollWidth;
+			return element.scrollLeft;
+		});
+		expect(scrolled).toBeGreaterThan(0);
+		const pinnedAfter = await pinned.boundingBox();
+		expect(pinnedAfter?.x).toBe(pinnedBefore?.x);
+	});
+
+	test('booking uses the custom term timetable and keeps open days without lessons', async ({
+		page
+	}) => {
+		await mock(page, {
+			permissions: own,
+			term: true,
+			schoolDays: ['SUN', 'SAT', 'THU', 'TUE'],
+			bookingItems: [
+				timetableOption(0),
+				timetableOption(1, { observedDate: '2026-10-03' }),
+				timetableOption(2, { observedDate: '2026-10-02' })
+			]
+		});
+		await page.goto(path('').replace('/supervision/?', '/supervision?'));
+		await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).tap();
+		const grid = page.getByTestId('supervision-booking-grid');
+		const rowDates = grid.getByRole('rowheader').locator('time');
+		await expect(rowDates).toHaveCount(4);
+		expect(
+			await rowDates.evaluateAll((dates) => dates.map((date) => date.getAttribute('datetime')))
+		).toEqual(['2026-09-29', '2026-10-01', '2026-10-03', '2026-10-04']);
+		await expect(
+			grid
+				.getByRole('row')
+				.filter({ has: grid.locator('time[datetime="2026-09-29"]') })
+				.getByRole('button')
+		).toHaveCount(0);
+		await expect(grid.getByRole('columnheader', { name: /^คาบ 3 / })).toHaveCount(0);
+		const saturday = grid.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ });
+		await saturday.tap();
+		await expect(saturday).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	test('evaluation calendar is as wide as the requests calendar and still opens the rubric', async ({
+		page
+	}) => {
+		await mock(page, {
+			permissions: ['supervision.manage.school', 'supervision.read.school', ...assigned],
+			observationStatus: 'planned'
+		});
+		const tab = page.getByRole('tab', { name: 'ปฏิทิน', exact: true });
+		const panel = page.getByRole('tabpanel', { name: 'ปฏิทิน', exact: true });
+		const firstDate = panel.locator('[data-calendar-date="2026-09-27"]');
+		const lastDate = panel.locator('[data-calendar-date="2026-10-03"]');
+		await page.goto(path('requests'));
+		await tab.tap();
+		const requestsFirst = await firstDate.boundingBox();
+		const requestsLast = await lastDate.boundingBox();
+		await page.goto(path('evaluate'));
+		await expect(
+			page.getByRole('heading', { name: 'รายการที่ได้รับมอบหมายให้ประเมิน' })
+		).toBeVisible();
+		await tab.tap();
+		const evaluationFirst = await firstDate.boundingBox();
+		const evaluationLast = await lastDate.boundingBox();
+		expect(evaluationFirst?.x).toBe(requestsFirst?.x);
+		expect(evaluationLast!.x + evaluationLast!.width).toBe(requestsLast!.x + requestsLast!.width);
+		const day = panel.locator('[data-calendar-date="2026-10-01"]');
+		await day.tap();
+		await expect(day).toHaveAttribute('aria-pressed', 'true');
+		await panel.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true }).tap();
+		await expect(
+			page.getByRole('dialog').getByText('หัวข้อ rubric ที่โหลดเมื่อเปิด')
+		).toBeVisible();
+	});
 });
 
 test('the retired approvals URL has no approval view or observation reads', async ({ page }) => {

@@ -64,6 +64,7 @@
 		submitLabel?: string;
 	} = $props();
 
+	const pickerId = $props.id();
 	let weekStartDate = $state(bookingWeekStart());
 	let options = $state<SupervisionBookingOptions | null>(null);
 	let selected = $state<SupervisionTimetableOption[]>([]);
@@ -421,6 +422,7 @@
 							>{#each periods as period (period.key)}<Table.Cell
 									class="space-y-1.5 p-1 align-top whitespace-normal sm:p-1.5"
 									>{#each cellItems(day, period.start, period.end) as item (item.blockGroupId)}
+										{@const detailsId = `${pickerId}-${day}-${item.blockGroupId}`}
 										{@const booked = bookedObservationFor(item, observations, observationId)}
 										{@const unavailable = bookingOptionUnavailable(
 											item,
@@ -445,41 +447,46 @@
 													!item.homeroomId}
 												aria-pressed={chosen}
 												aria-label={`เลือก ${item.periodName} ${item.homeroomName} ${bookingDateLabel(day)}${selected.length ? ' เป็นคาบแรกของช่วงใหม่' : ''}`}
+												aria-describedby={detailsId}
 												onclick={() => startSelection(item)}
 											>
-												<p class="font-medium">
-													{item.subjectName ?? item.learningGroupName}
-												</p>
-												<p class="mt-0.5 sm:mt-1">{item.homeroomName}</p>
-												{#if item.roomName}<p
-														class="text-[0.6875rem] text-muted-foreground sm:text-xs"
-													>
-														{item.roomName}
-													</p>{/if}
-												<Badge
-													variant={item.bookingAvailability.blocked ? 'destructive' : 'outline'}
-													class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
-													>{bookingAvailabilityLabel(item)}</Badge
-												>
-												{#if unavailable}<p
-														class="mt-1 text-[0.6875rem] text-muted-foreground sm:text-xs"
-													>
-														{unavailable}
-													</p>{/if}
-												{#if booked}<Badge
-														variant="secondary"
+												<span id={detailsId} class="block">
+													<span class="block font-medium">
+														{item.subjectName ?? item.learningGroupName}
+													</span>
+													<span class="mt-0.5 block sm:mt-1">{item.homeroomName}</span>
+													{#if item.roomName}<span
+															class="block text-[0.6875rem] text-muted-foreground sm:text-xs"
+														>
+															{item.roomName}
+														</span>{/if}
+													<Badge
+														variant={item.bookingAvailability.blocked ? 'destructive' : 'outline'}
 														class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
-														>{supervisionStatusLabel(booked.status)}</Badge
-													>{:else if chosen}<Badge class="mt-1 sm:mt-2">เลือกแล้ว</Badge>{/if}
+														>{bookingAvailabilityLabel(item)}</Badge
+													>
+													{#if unavailable}<span
+															class="mt-1 block text-[0.6875rem] text-muted-foreground sm:text-xs"
+														>
+															{unavailable}
+														</span>{/if}
+													{#if booked}<Badge
+															variant="secondary"
+															class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
+															>{supervisionStatusLabel(booked.status)}</Badge
+														>{:else if chosen}<Badge class="mt-1 sm:mt-2">เลือกแล้ว</Badge>{/if}
+												</span>
 											</button>
 											{#if !stale && adjacent.some((value) => value.blockGroupId === item.blockGroupId && value.observedDate === day)}<Button
 													variant="outline"
 													size="sm"
-													class="w-full px-1 sm:px-3"
+													class="w-full text-xs sm:text-sm"
 													disabled={saving}
 													aria-label={`เพิ่ม ${item.periodName} ${item.homeroomName}`}
 													onclick={() => extendSelection(item)}
-													><Plus class="hidden size-4 sm:block" />เพิ่มคาบติดกัน</Button
+													><Plus class="size-3 sm:size-4" /><span
+														>เพิ่มคาบ<span class="hidden sm:inline">ติดกัน</span></span
+													></Button
 												>{:else if selected.length && !chosen && !booked && item.observedDate === ordered[0]?.observedDate && item.homeroomId !== ordered[0]?.homeroomId}<p
 													class="px-1 text-xs text-muted-foreground"
 												>
