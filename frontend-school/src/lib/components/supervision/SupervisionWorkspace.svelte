@@ -19,7 +19,10 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { SupervisionWorkspaceRouteData } from '#lib/supervision/workspace-route-data.js';
-	import { resolveSupervisionRead } from '#lib/supervision/supervision-access.js';
+	import {
+		resolveSupervisionRead,
+		SUPERVISION_SCHOOL_REPORT_PERMISSIONS
+	} from '#lib/supervision/supervision-access.js';
 	import {
 		BarChart3,
 		ArrowDown,
@@ -91,7 +94,7 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
 	export type SupervisionWorkspaceSection =
-		'mine' | 'evaluate' | 'requests' | 'cycles' | 'templates' | 'overview' | 'approvals';
+		'mine' | 'evaluate' | 'requests' | 'cycles' | 'templates' | 'overview';
 
 	type SectionConfig = {
 		title: string;
@@ -196,10 +199,6 @@
 		overview: {
 			title: 'ภาพรวมนิเทศการสอน',
 			description: 'ติดตามสถานะครูและความคืบหน้าของรอบนิเทศ'
-		},
-		approvals: {
-			title: 'รับรองและอนุมัติผลนิเทศ',
-			description: 'ตรวจผลประเมิน รับรองผล และอนุมัติผลนิเทศขั้นสุดท้าย'
 		}
 	};
 
@@ -237,6 +236,7 @@
 	let managementContext = '';
 	let observedCycleUrl = '';
 	let renderedTeacherCycleId = '';
+	let renderedProgressCycleId = '';
 	let cyclesLoaded = $state(false);
 	let cyclesLoading = $state(true);
 	let cyclesError = $state('');
@@ -274,7 +274,7 @@
 	let evaluationObservationId = $state('');
 	let responseDrafts = $state<{ [itemId: string]: ResponseDraft }>({});
 	let acknowledgeComment = $state('');
-	let progressCycleId = $state('');
+	let overviewCycleId = $state('');
 	let progress = $state<SupervisionCycleProgress | null>(null);
 	let teacherStatusRows = $state<SupervisionTeacherStatusRow[]>([]);
 	let loadingProgress = $state(false);
@@ -328,7 +328,6 @@
 		)
 	);
 	const canEvaluate = $derived($can.has(PERMISSIONS.SUPERVISION_EVALUATE_ASSIGNED));
-	const canApprove = $derived($can.has(PERMISSIONS.SUPERVISION_APPROVE_SCHOOL));
 	const canReadObservations = $derived(
 		$can.hasAny(
 			PERMISSIONS.SUPERVISION_READ_OWN,
@@ -336,23 +335,10 @@
 			PERMISSIONS.SUPERVISION_READ_ORGANIZATION_UNIT,
 			PERMISSIONS.SUPERVISION_READ_ORGANIZATION_TREE,
 			PERMISSIONS.SUPERVISION_READ_SCHOOL
-		) ||
-			canManageRequests ||
-			canApprove
+		) || canManageRequests
 	);
-	const canReadSchoolReport = $derived(
-		$can.hasAny(
-			PERMISSIONS.SUPERVISION_READ_SCHOOL,
-			PERMISSIONS.SUPERVISION_MANAGE_SCHOOL,
-			PERMISSIONS.SUPERVISION_APPROVE_SCHOOL
-		)
-	);
-	const canReport = $derived(
-		$can.has(PERMISSIONS.SUPERVISION_READ_SCHOOL) ||
-			canManageSchool ||
-			canManageRequests ||
-			canApprove
-	);
+	const canReadSchoolReport = $derived($can.hasAny(...SUPERVISION_SCHOOL_REPORT_PERMISSIONS));
+	const canReport = $derived(canReadSchoolReport || canManageRequests);
 	const activeBookingCycles = $derived(cycles.filter(cycleAcceptsBookings));
 	const currentBookingCycle = $derived(
 		activeBookingCycles.find((cycle) => cycle.id === selectedCycleId) ??
@@ -406,19 +392,6 @@
 			selectedEvaluationTemplate?.ratingMax ?? 5
 		)
 	);
-
-	const certifiableObservations = $derived(
-		canManageRequests ? observations.filter((item) => item.status === 'evaluators_submitted') : []
-	);
-
-	const approvableObservations = $derived(
-		canApprove ? observations.filter((item) => item.status === 'approved') : []
-	);
-
-	const approvalWorkflowObservations = $derived([
-		...certifiableObservations,
-		...approvableObservations
-	]);
 
 	const progressPercent = $derived(
 		progress && progress.totalObservations > 0
@@ -511,6 +484,7 @@
 				templatesLoaded = false;
 				teacherStatusLoaded = false;
 				renderedTeacherCycleId = '';
+				renderedProgressCycleId = '';
 				createCycleDialogOpen = false;
 				createTemplateDialogOpen = false;
 				setTemplatePreviewDialogOpen(false);
@@ -524,17 +498,19 @@
 					observationEndDate: ''
 				};
 				cycleFormError = '';
-				progressCycleId = source.cycleId;
+				overviewCycleId = source.cycleId;
 			}
 			observationsLoading = source.observations !== null;
 			observationsError = '';
 			observedCycleUrl = source.cycleId;
 			cyclesLoading = source.cycles !== null;
 			templatesLoading = source.templates !== null;
+			loadingProgress = Boolean(source.progress);
 			loadingTeacherStatus = source.teacherStatus !== null;
 			cyclesError = '';
 			templatesError = '';
 			teacherStatusError = '';
+			progressError = '';
 			const observationRead = observationRequest.begin();
 			if (source.observations)
 				void Promise.all([source.identity, source.observations]).then(([owner, result]) => {
@@ -554,6 +530,7 @@
 			const cycleRead = managementCyclesRequest.begin();
 			const templateRead = managementTemplatesRequest.begin();
 			const statusRead = teacherStatusRequest.begin();
+			const progressRead = progressRequest.begin();
 			if (source.cycles)
 				void Promise.all([source.identity, source.cycles]).then(([owner, result]) => {
 					if (
@@ -577,10 +554,9 @@
 						? source.cycleId
 						: (cycles[0]?.id ?? '');
 
-					progressCycleId = selected;
+					overviewCycleId = selected;
 					if (section === 'overview' && source.cycleId && selected !== source.cycleId) {
-						teacherStatusRequest.abort();
-						void loadTeacherStatusOverview();
+						loadOverviewReports();
 					}
 				});
 			if (source.templates)
@@ -599,6 +575,23 @@
 					templateSummaries = result.data;
 					templatesLoaded = true;
 				});
+			if (source.progress)
+				void Promise.all([source.identity, source.progress]).then(([owner, result]) => {
+					if (
+						owner !== appIdentityKey() ||
+						key !== currentManagementContext() ||
+						!progressRequest.isCurrent(progressRead.revision) ||
+						!canReadSchoolReport
+					)
+						return;
+					loadingProgress = false;
+					if (!result.ok) {
+						progressError = result.error;
+						return;
+					}
+					progress = result.data.report;
+					renderedProgressCycleId = result.data.cycleId;
+				});
 			if (source.teacherStatus)
 				void Promise.all([source.identity, source.teacherStatus]).then(([owner, result]) => {
 					if (
@@ -613,7 +606,7 @@
 						return;
 					}
 					teacherStatusRows = result.data.items;
-					progressCycleId = result.data.cycleId;
+					overviewCycleId = result.data.cycleId;
 					renderedTeacherCycleId = result.data.cycleId;
 					teacherStatusLoaded = true;
 				});
@@ -636,20 +629,20 @@
 		untrack(() => {
 			if (selected === observedCycleUrl) return;
 			observedCycleUrl = selected;
-			progressCycleId = cycles.some((item) => item.id === selected)
+			overviewCycleId = cycles.some((item) => item.id === selected)
 				? selected
 				: (cycles[0]?.id ?? '');
-			void loadTeacherStatusOverview();
+			loadOverviewReports();
 		});
 	});
 
 	function selectOverviewCycle(id: string) {
 		if (!routeData) {
-			progressCycleId = id;
+			overviewCycleId = id;
 			return;
 		}
 		observedCycleUrl = id;
-		progressCycleId = id;
+		overviewCycleId = id;
 		const url = new URL(page.url.href);
 
 		if (id) url.searchParams.set('cycleId', id);
@@ -659,16 +652,16 @@
 			shallow: true,
 			state: page.state
 		});
+		loadOverviewReports();
+	}
+
+	function loadOverviewReports() {
 		void loadTeacherStatusOverview();
+		void loadProgress();
 	}
 
 	async function retryManagementCycles() {
-		if (
-			!academicYearId ||
-			(section === 'approvals' && !canReadSchoolReport) ||
-			(section === 'evaluate' && !canReadObservations)
-		)
-			return;
+		if (!academicYearId || (section === 'evaluate' && !canReadObservations)) return;
 
 		const key = currentManagementContext();
 		const { revision, signal } = managementCyclesRequest.begin();
@@ -682,10 +675,10 @@
 			cyclesLoaded = true;
 			if (
 				section === 'overview' &&
-				(!cycles.some((item) => item.id === progressCycleId) || !teacherStatusLoaded)
+				(!cycles.some((item) => item.id === overviewCycleId) || !teacherStatusLoaded)
 			) {
-				progressCycleId = cycles[0]?.id ?? '';
-				void loadTeacherStatusOverview();
+				overviewCycleId = cycles[0]?.id ?? '';
+				loadOverviewReports();
 			}
 		} catch (error) {
 			if (!isAbortError(error) && managementCyclesRequest.isCurrent(revision))
@@ -828,10 +821,6 @@
 		return cycle.status === 'open';
 	}
 
-	function observationLessonTitle(observation: SupervisionObservation): string {
-		return savedLessonLabels(observation).subject;
-	}
-
 	function observationDetailHref(item: SupervisionObservation): string {
 		return academicContextualMenuPath(
 			`/staff/academic/supervision/${item.id}`,
@@ -892,7 +881,6 @@
 				{ key: 'evaluate', label: 'ประเมิน', visible: canEvaluate },
 				{ key: 'requests', label: 'คำขอจอง', visible: canManageRequests },
 				{ key: 'overview', label: 'ภาพรวม', visible: canReport },
-				{ key: 'approvals', label: 'รับรอง/อนุมัติ', visible: canReport },
 				{ key: 'cycles', label: 'รอบนิเทศ', visible: canManageSchool },
 				{ key: 'templates', label: 'แบบประเมิน', visible: canManageSchool }
 			] satisfies { key: SupervisionWorkspaceSection; label: string; visible: boolean }[]
@@ -963,7 +951,7 @@
 			? cycles.map((item) => (item.id === cycle.id ? cycle : item))
 			: [cycle, ...cycles];
 		selectedCycleId ||= cycle.id;
-		progressCycleId ||= cycle.id;
+		overviewCycleId ||= cycle.id;
 	}
 
 	function replaceTemplate(template: SupervisionTemplate) {
@@ -1022,9 +1010,7 @@
 		return Boolean(
 			evaluator &&
 			evaluator.status !== 'submitted' &&
-			(observation.status === 'planned' ||
-				observation.status === 'in_progress' ||
-				(observation.status === 'evaluators_submitted' && !evaluator.isRequired))
+			(observation.status === 'planned' || observation.status === 'in_progress')
 		);
 	}
 
@@ -1539,26 +1525,7 @@
 					required: item.required,
 					sortOrder: item.sortOrder
 				}))
-			})),
-			steps: [
-				{
-					stepOrder: 1,
-					stepCode: 'approve',
-					label: 'อนุมัติผลนิเทศ',
-					actorKind: 'permission',
-					actorPermission: PERMISSIONS.SUPERVISION_APPROVE_SCHOOL,
-					actionKind: 'approve',
-					required: true
-				},
-				{
-					stepOrder: 2,
-					stepCode: 'acknowledge',
-					label: 'ครูรับทราบผล',
-					actorKind: 'observed_teacher',
-					actionKind: 'acknowledge',
-					required: true
-				}
-			]
+			}))
 		};
 	}
 
@@ -1602,7 +1569,19 @@
 			const payload = templatePayload();
 			const response = submittedTemplateId
 				? await updateSupervisionTemplate(submittedTemplateId, payload)
-				: await createSupervisionTemplate(payload);
+				: await createSupervisionTemplate({
+						...payload,
+						steps: [
+							{
+								stepOrder: 1,
+								stepCode: 'acknowledge',
+								label: 'ครูรับทราบผล',
+								actorKind: 'observed_teacher',
+								actionKind: 'acknowledge',
+								required: true
+							}
+						]
+					});
 			if (!ownsMutation()) return;
 			if (!response.success) throw new Error(response.error || 'บันทึกแบบประเมินไม่สำเร็จ');
 			if (response.data) {
@@ -1626,23 +1605,30 @@
 
 	async function loadProgress() {
 		if (!canReadSchoolReport) return;
-		if (!progressCycleId) {
-			toast.error('เลือกรอบนิเทศก่อน');
+		const cycleId = overviewCycleId;
+		if (!cycleId && !cyclesLoaded) {
+			await retryManagementCycles();
 			return;
 		}
-
-		const cycleId = progressCycleId;
+		const key = currentManagementContext();
 		const { revision, signal } = progressRequest.begin();
+		if (renderedProgressCycleId !== cycleId) progress = null;
 		progressError = '';
-		loadingProgress = true;
+		loadingProgress = Boolean(cycleId);
+		if (!cycleId) return;
 		try {
-			const nextProgress = await getSupervisionCycleProgress(cycleId, { signal });
-			if (!progressRequest.isCurrent(revision)) return;
-			progress = nextProgress;
+			const report = await getSupervisionCycleProgress(cycleId, { signal });
+			if (
+				!progressRequest.isCurrent(revision) ||
+				cycleId !== overviewCycleId ||
+				key !== currentManagementContext()
+			)
+				return;
+			progress = report;
+			renderedProgressCycleId = cycleId;
 		} catch (error) {
-			if (isAbortError(error)) return;
-			if (progressRequest.isCurrent(revision))
-				progressError = error instanceof Error ? error.message : 'โหลดรายงานไม่สำเร็จ';
+			if (isAbortError(error) || !progressRequest.isCurrent(revision)) return;
+			progressError = error instanceof Error ? error.message : 'โหลดความคืบหน้ารอบนิเทศไม่สำเร็จ';
 		} finally {
 			if (progressRequest.isCurrent(revision)) loadingProgress = false;
 		}
@@ -1650,7 +1636,7 @@
 
 	async function loadTeacherStatusOverview() {
 		if (!canReport) return;
-		const cycleId = progressCycleId;
+		const cycleId = overviewCycleId;
 		if (routeData && !cycleId && !cyclesLoaded) {
 			await retryManagementCycles();
 			return;
@@ -1674,7 +1660,7 @@
 			const rows = await getSupervisionTeacherStatusOverview(cycleId, { signal });
 			if (
 				!teacherStatusRequest.isCurrent(revision) ||
-				cycleId !== progressCycleId ||
+				cycleId !== overviewCycleId ||
 				key !== currentManagementContext()
 			)
 				return;
@@ -1764,11 +1750,7 @@
 		<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 			<div class="rounded-md border bg-background px-3 py-2 text-center">
 				<p class="text-lg font-semibold">
-					{!cyclesLoaded ||
-					(section === 'approvals' && !canReadSchoolReport) ||
-					(section === 'evaluate' && !canReadObservations)
-						? '—'
-						: cycles.length}
+					{!cyclesLoaded || (section === 'evaluate' && !canReadObservations) ? '—' : cycles.length}
 				</p>
 				<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
 			</div>
@@ -1797,7 +1779,7 @@
 		</div>
 	{/if}
 
-	{#if ['mine', 'requests', 'evaluate', 'approvals'].includes(section)}
+	{#if ['mine', 'requests', 'evaluate'].includes(section)}
 		<div
 			class="relative space-y-2"
 			hidden={!referenceFeedbackVisible}
@@ -2526,7 +2508,7 @@
 				<Card.Header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 					<div>
 						<Card.Title>แบบประเมิน</Card.Title>
-						<Card.Description>แบบประเมินใช้กับรอบนิเทศและขั้นตอนอนุมัติผล</Card.Description>
+						<Card.Description>แบบประเมินสำหรับใช้ในรอบนิเทศ</Card.Description>
 					</div>
 					{#if canManageSchool}
 						<Button onclick={openCreateTemplateDialog}>
@@ -2646,11 +2628,11 @@
 							<div class="flex flex-col gap-2 md:flex-row">
 								<Select.Root
 									type="single"
-									value={progressCycleId}
+									value={overviewCycleId}
 									onValueChange={selectOverviewCycle}
 								>
 									<Select.Trigger aria-label="รอบนิเทศ" class="w-full md:w-[360px]">
-										{cycles.find((cycle) => cycle.id === progressCycleId)?.title ?? 'เลือกรอบนิเทศ'}
+										{cycles.find((cycle) => cycle.id === overviewCycleId)?.title ?? 'เลือกรอบนิเทศ'}
 									</Select.Trigger>
 									<Select.Content>
 										{#each cycles as cycle (cycle.id)}
@@ -2668,6 +2650,50 @@
 							</div>
 						{/if}
 					</div>
+					{#if canReadSchoolReport}
+						<section
+							class="space-y-3"
+							aria-busy={loadingProgress}
+							data-testid="supervision-progress"
+						>
+							<h3 class="text-sm font-semibold">ความคืบหน้ารอบนิเทศ</h3>
+							{@render managementFeedback(
+								!!progress,
+								loadingProgress,
+								progressError,
+								() => void loadProgress()
+							)}
+							{#if progress}
+								<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+									<div class="rounded-md border px-3 py-2">
+										<p class="text-xl font-semibold">{progress.totalObservations}</p>
+										<p class="text-xs text-muted-foreground">ทั้งหมด</p>
+									</div>
+									<div class="rounded-md border px-3 py-2">
+										<p class="text-xl font-semibold">{progress.completedCount}</p>
+										<p class="text-xs text-muted-foreground">เสร็จสิ้น</p>
+									</div>
+									<div class="rounded-md border px-3 py-2">
+										<p class="text-xl font-semibold">
+											{progress.publishedCount}
+										</p>
+										<p class="text-xs text-muted-foreground">รอครูรับทราบ</p>
+									</div>
+									<div class="rounded-md border px-3 py-2">
+										<p class="text-xl font-semibold">{progress.averageRating?.toFixed(2) ?? '-'}</p>
+										<p class="text-xs text-muted-foreground">คะแนนเฉลี่ย</p>
+									</div>
+								</div>
+								<div class="space-y-2">
+									<div class="flex items-center justify-between text-sm">
+										<span>ความคืบหน้ารวม</span>
+										<span>{progressPercent}%</span>
+									</div>
+									<Progress value={progressPercent} />
+								</div>
+							{/if}
+						</section>
+					{/if}
 					<div
 						class="relative space-y-3"
 						aria-busy={loadingTeacherStatus}
@@ -2738,154 +2764,6 @@
 								</Table.Root>
 							</div>
 						{/if}
-					</div>
-				</Card.Content>
-			</Card.Root>
-		</div>
-	{:else if section === 'approvals'}
-		<div class="space-y-4">
-			<Card.Root>
-				<Card.Header>
-					<Card.Title class="flex items-center gap-2">
-						<BarChart3 class="h-5 w-5" />
-						รับรองและอนุมัติผลนิเทศ
-					</Card.Title>
-					<Card.Description>
-						หัวหน้ากลุ่มสาระรับรองผลก่อน แล้วฝ่ายวิชาการอนุมัติผลเพื่อให้ครูรับทราบ
-					</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-4">
-					<div
-						class="relative space-y-3"
-						data-testid="supervision-progress"
-						aria-busy={loadingProgress}
-					>
-						{#if canReadSchoolReport && cyclesLoaded}<div class="flex flex-col gap-2 md:flex-row">
-								<Select.Root
-									type="single"
-									value={progressCycleId}
-									onValueChange={(id) => {
-										progressCycleId = id;
-										progressRequest.abort();
-										progress = null;
-										progressError = '';
-										loadingProgress = false;
-									}}
-								>
-									<Select.Trigger class="w-full md:w-[360px]">
-										{cycles.find((cycle) => cycle.id === progressCycleId)?.title ?? 'เลือกรอบนิเทศ'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each cycles as cycle (cycle.id)}
-											<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-								<LoadingButton
-									onclick={loadProgress}
-									loading={loadingProgress}
-									loadingLabel="กำลังโหลด..."
-								>
-									โหลดรายงาน
-								</LoadingButton>
-							</div>
-						{/if}
-						{@render managementFeedback(
-							!!progress,
-							loadingProgress,
-							progressError,
-							() => void loadProgress()
-						)}
-						{#if progress}
-							<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-								<div class="rounded-md border px-3 py-2">
-									<p class="text-xl font-semibold">{progress.totalObservations}</p>
-									<p class="text-xs text-muted-foreground">ทั้งหมด</p>
-								</div>
-								<div class="rounded-md border px-3 py-2">
-									<p class="text-xl font-semibold">{progress.completedCount}</p>
-									<p class="text-xs text-muted-foreground">เสร็จสิ้น/รับทราบ</p>
-								</div>
-								<div class="rounded-md border px-3 py-2">
-									<p class="text-xl font-semibold">
-										{progress.underReviewCount + progress.approvedCount}
-									</p>
-									<p class="text-xs text-muted-foreground">รอรับรอง/อนุมัติ</p>
-								</div>
-								<div class="rounded-md border px-3 py-2">
-									<p class="text-xl font-semibold">{progress.averageRating?.toFixed(2) ?? '-'}</p>
-									<p class="text-xs text-muted-foreground">คะแนนเฉลี่ย</p>
-								</div>
-							</div>
-							<div class="space-y-2">
-								<div class="flex items-center justify-between text-sm">
-									<span>ความคืบหน้ารวม</span>
-									<span>{progressPercent}%</span>
-								</div>
-								<Progress value={progressPercent} />
-							</div>
-						{/if}
-					</div>
-					<div
-						class="relative space-y-2"
-						data-testid="supervision-observations"
-						aria-busy={observationsLoading}
-					>
-						{@render managementFeedback(
-							observationsLoaded,
-							observationsLoading,
-							observationsError,
-							retryObservations
-						)}
-						{#if observationsLoaded && observationsReadable}
-							<Table.Root>
-								<Table.Header>
-									<Table.Row>
-										<Table.Head>ครูผู้ถูกนิเทศ</Table.Head>
-										<Table.Head>คาบ</Table.Head>
-										<Table.Head>สถานะ</Table.Head>
-										<Table.Head class="text-right">คำสั่ง</Table.Head>
-									</Table.Row>
-								</Table.Header>
-								<Table.Body>
-									{#if approvalWorkflowObservations.length === 0}
-										<Table.Row>
-											<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
-												ยังไม่มีรายการที่ต้องรับรองหรืออนุมัติ
-											</Table.Cell>
-										</Table.Row>
-									{:else}
-										{#each approvalWorkflowObservations as observation (observation.id)}
-											<Table.Row>
-												<Table.Cell>{observation.observedDisplayName ?? 'ครู'}</Table.Cell>
-												<Table.Cell>{observationLessonTitle(observation)}</Table.Cell>
-												<Table.Cell>
-													<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-													<p class="text-xs text-muted-foreground">
-														{observationWorkflow(observation).stageLabel} · ถัดไป: {observationWorkflow(
-															observation
-														).nextOwner}
-													</p>
-												</Table.Cell>
-												<Table.Cell>
-													<div class="flex flex-wrap items-center justify-end gap-2">
-														<Button
-															size="sm"
-															variant="outline"
-															class="h-8"
-															href={observationDetailHref(observation)}
-															data-sveltekit-preload-data="tap"
-														>
-															<Eye class="h-4 w-4" />
-															ตรวจผล
-														</Button>
-													</div>
-												</Table.Cell>
-											</Table.Row>
-										{/each}
-									{/if}
-								</Table.Body>
-							</Table.Root>{/if}
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -3024,6 +2902,9 @@
 				{/each}
 			</div>
 
+			<p class="text-sm text-muted-foreground">
+				เมื่อผู้ประเมินที่จำเป็นส่งผลครบ ระบบจะแจ้งให้ครูรับทราบผล
+			</p>
 			<Dialog.Footer>
 				<Button
 					variant="outline"

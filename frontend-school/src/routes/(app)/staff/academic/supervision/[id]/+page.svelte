@@ -41,10 +41,8 @@
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import {
-		approveSupervisionObservation,
 		cancelRequestedSupervisionObservation,
 		cancelSupervisionObservation,
-		certifySupervisionObservation,
 		getSupervisionEvaluatorAvailability,
 		getSupervisionObservation,
 		getSupervisionObservationReview,
@@ -168,21 +166,10 @@
 				PERMISSIONS.SUPERVISION_MANAGE_SCHOOL
 			)
 	);
-	const canApproveSchool = $derived($can.has(PERMISSIONS.SUPERVISION_APPROVE_SCHOOL));
 	const canViewReviewDetails = $derived(
-		Boolean(
-			observation?.canReview === true && $can.hasAny(...SUPERVISION_OBSERVATION_READ_PERMISSIONS)
-		)
-	);
-	const canCertifyResult = $derived(
-		Boolean(
-			observation &&
-			canManageObservation &&
-			(observation.status === 'evaluators_submitted' || observation.status === 'under_review')
-		)
-	);
-	const canApproveResult = $derived(
-		Boolean(observation && canApproveSchool && observation.status === 'approved')
+		observation?.canReview === true &&
+			observationResultsReleased(observation.status) &&
+			$can.hasAny(...SUPERVISION_OBSERVATION_READ_PERMISSIONS)
 	);
 	const canCancelOwnRequest = $derived(
 		Boolean(
@@ -428,26 +415,10 @@
 	}
 
 	function observationAverageScoreLabel(item: SupervisionObservation): string {
-		if (!item.canReview && !observationResultsReleased(item.status))
-			return 'รอหัวหน้ากลุ่มบริหารวิชาการอนุมัติผล';
-		if (item.averageRating !== null && item.averageRating !== undefined) {
-			return item.averageRating.toFixed(2);
-		}
-		if (!observationResultsReleased(item.status)) {
-			return 'รอหัวหน้ากลุ่มบริหารวิชาการอนุมัติผล';
-		}
-		return '-';
-	}
-
-	function reviewableStatus(status: SupervisionObservationStatus): boolean {
-		return [
-			'evaluators_submitted',
-			'under_review',
-			'approved',
-			'published',
-			'acknowledged',
-			'completed'
-		].includes(status);
+		if (item.canReview && item.averageRating != null) return item.averageRating.toFixed(2);
+		return observationResultsReleased(item.status) || item.status === 'cancelled'
+			? '—'
+			: 'รอเผยแพร่ผล';
 	}
 
 	function templateSectionsToRubricForm(source: SupervisionTemplate): RubricFormSection[] {
@@ -635,12 +606,6 @@
 		loading = false;
 		loadingReview = false;
 		applyObservation(updated, false);
-		if (review)
-			review = {
-				...review,
-				observation: updated,
-				averageRating: updated.averageRating ?? review.averageRating
-			};
 	}
 
 	async function retryObservation() {
@@ -703,14 +668,7 @@
 	}
 
 	async function loadReviewDetail(id = observation?.id) {
-		if (
-			!id ||
-			!canViewReviewDetails ||
-			!reviewOpen ||
-			!observation ||
-			!reviewableStatus(observation.status)
-		)
-			return;
+		if (!id || !canViewReviewDetails || !reviewOpen) return;
 		const ticket = reviewRequest.begin();
 		loadingReview = true;
 		reviewError = '';
@@ -737,48 +695,6 @@
 	function openReview() {
 		reviewOpen = true;
 		void loadReviewDetail();
-	}
-
-	function replaceReviewObservation(updated: SupervisionObservation) {
-		replaceObservation(updated);
-	}
-
-	async function certifyResult() {
-		if (!observation || !canCertifyResult) return;
-		const ownsMutation = captureMutationOwner();
-		const submittedId = observation.id;
-		savingAction = `certify-result:${observation.id}`;
-		try {
-			const response = await certifySupervisionObservation(submittedId);
-			if (!ownsMutation()) return;
-			const updated = mutationData(response, 'รับรองผลไม่สำเร็จ');
-			replaceReviewObservation(updated);
-			toast.success('รับรองผลนิเทศแล้ว');
-		} catch (saveError) {
-			if (!ownsMutation()) return;
-			toast.error(saveError instanceof Error ? saveError.message : 'รับรองผลไม่สำเร็จ');
-		} finally {
-			if (ownsMutation()) savingAction = null;
-		}
-	}
-
-	async function approveResult() {
-		if (!observation || !canApproveResult) return;
-		const ownsMutation = captureMutationOwner();
-		const submittedId = observation.id;
-		savingAction = `approve-result:${observation.id}`;
-		try {
-			const response = await approveSupervisionObservation(submittedId);
-			if (!ownsMutation()) return;
-			const updated = mutationData(response, 'อนุมัติผลไม่สำเร็จ');
-			replaceReviewObservation(updated);
-			toast.success('อนุมัติผลนิเทศแล้ว');
-		} catch (saveError) {
-			if (!ownsMutation()) return;
-			toast.error(saveError instanceof Error ? saveError.message : 'อนุมัติผลไม่สำเร็จ');
-		} finally {
-			if (ownsMutation()) savingAction = null;
-		}
 	}
 
 	function openLessonEditor() {
@@ -1133,36 +1049,8 @@
 
 					<Card.Root>
 						<Card.Header>
-							<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-								<div>
-									<Card.Title>แบบประเมินและผล</Card.Title>
-									<Card.Description>
-										ตรวจคำตอบรายข้อ คะแนนเฉลี่ย และรับรอง/อนุมัติผลจากหน้านี้
-									</Card.Description>
-								</div>
-								<div class="flex flex-wrap gap-2">
-									{#if canCertifyResult}
-										<LoadingButton
-											variant="outline"
-											onclick={certifyResult}
-											loading={savingAction === `certify-result:${observation.id}`}
-											loadingLabel="กำลังรับรอง..."
-										>
-											รับรองผล
-										</LoadingButton>
-									{/if}
-									{#if canApproveResult}
-										<LoadingButton
-											variant="outline"
-											onclick={approveResult}
-											loading={savingAction === `approve-result:${observation.id}`}
-											loadingLabel="กำลังอนุมัติ..."
-										>
-											อนุมัติผล
-										</LoadingButton>
-									{/if}
-								</div>
-							</div>
+							<Card.Title>แบบประเมินและผล</Card.Title>
+							<Card.Description>ดูคำตอบรายข้อและคะแนนเฉลี่ยของการนิเทศ</Card.Description>
 						</Card.Header>
 						<Card.Content class="space-y-4">
 							<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -1199,12 +1087,16 @@
 								{#if reviewOpen}<Button variant="outline" onclick={() => (reviewOpen = false)}
 										>ปิดผลรายข้อ</Button
 									>{/if}
-								{#if !canViewReviewDetails}
+								{#if !observationResultsReleased(observation.status)}
 									<PageState
-										title="ยังไม่เปิดเผยผลประเมินรายข้อ"
-										description="ผลคะแนนรายข้อจะแสดงหลังหัวหน้ากลุ่มบริหารวิชาการอนุมัติผลแล้ว"
+										title="ยังไม่มีผลประเมินรายข้อ"
+										description={observation.status === 'cancelled'
+											? undefined
+											: 'ระบบเผยแพร่ผลเมื่อผู้ประเมินที่จำเป็นส่งผลครบ'}
 									/>
-								{:else if !reviewOpen && reviewableStatus(observation.status)}
+								{:else if !canViewReviewDetails}
+									<PageState title="คุณไม่มีสิทธิ์ดูผลประเมินรายข้อ" />
+								{:else if !reviewOpen}
 									<Button variant="outline" onclick={openReview}>ดูผลประเมินรายข้อ</Button>
 								{:else if loadingReview && !review}
 									<div role="status" aria-label="กำลังโหลดผลประเมิน">
@@ -1404,11 +1296,6 @@
 											</div>
 										{/each}
 									</div>
-								{:else}
-									<PageState
-										title="ยังไม่มีผลประเมินสำหรับตรวจ"
-										description="ผลรายข้อจะแสดงเมื่อผู้ประเมินส่งแบบประเมินครบและรายการเข้าสู่ขั้นตอนรับรองผล"
-									/>
 								{/if}
 							</div>
 						</Card.Content>

@@ -378,18 +378,6 @@ export function submitMySupervisionEvaluation(
 	);
 }
 
-export function certifySupervisionObservation(
-	id: ObservationId
-): Promise<ApiResponse<SupervisionObservation>> {
-	return apiClient.post<SupervisionObservation>(`/api/supervision/observations/${id}/certify`);
-}
-
-export function approveSupervisionObservation(
-	id: ObservationId
-): Promise<ApiResponse<SupervisionObservation>> {
-	return apiClient.post<SupervisionObservation>(`/api/supervision/observations/${id}/approve`);
-}
-
 export function acknowledgeSupervisionObservation(
 	id: ObservationId,
 	payload: AcknowledgeObservationRequest

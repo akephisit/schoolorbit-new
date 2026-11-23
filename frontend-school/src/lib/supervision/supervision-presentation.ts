@@ -14,9 +14,6 @@ const statusLabels = {
 	returned: 'ส่งกลับให้แก้ไข',
 	planned: 'นัดหมายแล้ว',
 	in_progress: 'กำลังประเมิน',
-	evaluators_submitted: 'รอรับรองผล',
-	under_review: 'รอรับรองผล',
-	approved: 'รออนุมัติผล',
 	published: 'รอครูรับทราบ',
 	acknowledged: 'เสร็จสิ้น',
 	completed: 'เสร็จสิ้น',
@@ -29,30 +26,16 @@ export function supervisionStatusLabel(
 	return statusLabels[status];
 }
 
-export const supervisionStages = [
-	'คำขอ',
-	'ประเมิน',
-	'รับรองผล',
-	'อนุมัติผล',
-	'รับทราบ',
-	'เสร็จสิ้น'
-];
+export const supervisionStages = ['คำขอ', 'ประเมิน', 'รับทราบ', 'เสร็จสิ้น'];
 
 const workflowByStatus = {
 	requested: { stage: 0, nextOwner: 'ผู้รับผิดชอบตรวจคำขอ', nextAction: 'ตรวจและอนุมัติคำขอ' },
 	returned: { stage: 0, nextOwner: 'ครูผู้ขอรับนิเทศ', nextAction: 'แก้ไขและส่งใหม่' },
 	planned: { stage: 1, nextOwner: 'ผู้ประเมิน', nextAction: 'นิเทศและส่งผลประเมิน' },
 	in_progress: { stage: 1, nextOwner: 'ผู้ประเมิน', nextAction: 'ส่งผลประเมินที่ยังค้าง' },
-	evaluators_submitted: {
-		stage: 2,
-		nextOwner: 'ผู้มีสิทธิ์รับรองผล',
-		nextAction: 'ตรวจและรับรองผล'
-	},
-	under_review: { stage: 2, nextOwner: 'ผู้มีสิทธิ์รับรองผล', nextAction: 'ตรวจและรับรองผล' },
-	approved: { stage: 3, nextOwner: 'ผู้มีสิทธิ์อนุมัติผล', nextAction: 'ตรวจและอนุมัติผล' },
-	published: { stage: 4, nextOwner: 'ครูผู้รับการนิเทศ', nextAction: 'อ่านและรับทราบผล' },
-	acknowledged: { stage: 5, nextOwner: 'ไม่มีงานค้าง', nextAction: 'รับทราบผลแล้ว' },
-	completed: { stage: 5, nextOwner: 'ไม่มีงานค้าง', nextAction: 'รับทราบผลแล้ว' },
+	published: { stage: 2, nextOwner: 'ครูผู้รับการนิเทศ', nextAction: 'อ่านและรับทราบผล' },
+	acknowledged: { stage: 3, nextOwner: 'ไม่มีงานค้าง', nextAction: 'รับทราบผลแล้ว' },
+	completed: { stage: 3, nextOwner: 'ไม่มีงานค้าง', nextAction: 'รับทราบผลแล้ว' },
 	cancelled: { stage: -1, nextOwner: 'ไม่มีงานค้าง', nextAction: 'รายการถูกยกเลิก' }
 } satisfies Record<
 	SupervisionObservationStatus,

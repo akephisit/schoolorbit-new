@@ -9,7 +9,6 @@ export function menuPreloadPolicy(item: { path: string }): 'hover' | 'tap' | fal
 		path === '/staff/academic/supervision' ||
 		path === '/staff/academic/supervision/requests' ||
 		path === '/staff/academic/supervision/evaluate' ||
-		path === '/staff/academic/supervision/approvals' ||
 		path === '/staff/academic/supervision/cycles' ||
 		path === '/staff/academic/supervision/templates'
 	)
