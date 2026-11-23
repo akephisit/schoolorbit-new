@@ -339,19 +339,44 @@ test.describe('supervision at 360 pixels', () => {
 	test('booking shows two complete lesson columns with the date pinned while scrolling', async ({
 		page
 	}) => {
+		const longSubject = 'คณิตศาสตร์พื้นฐานและการแก้ปัญหาในชีวิตประจำวันสำหรับนักเรียนมัธยมศึกษา';
+		const stackedSlot = {
+			observedDate: '2026-09-30',
+			startTime: '08:00:00',
+			endTime: '09:00:00',
+			periodName: 'คาบ 1'
+		};
 		await mock(page, {
 			permissions: own,
 			term: true,
-			bookingItems: [0, 1, 2, 3].map((index) => timetableOption(index))
+			bookingItems: [
+				...[0, 1, 2, 3].map((index) => timetableOption(index)),
+				timetableOption(4, { ...stackedSlot, subjectName: longSubject, homeroomName: 'ม.2/1' }),
+				timetableOption(5, { ...stackedSlot, homeroomName: 'ม.2/2' })
+			]
 		});
 		await page.goto(path('').replace('/supervision/?', '/supervision?'));
 		await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).tap();
 		const grid = page.getByTestId('supervision-booking-grid');
 		const rowDates = grid.getByRole('rowheader').locator('time');
+		const expectUniformDayRows = async () => {
+			const heights = await grid
+				.getByRole('rowheader')
+				.evaluateAll((headers) =>
+					headers.map((header) => header.closest('tr')!.getBoundingClientRect().height)
+				);
+			expect(heights).toHaveLength(5);
+			expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1);
+		};
 		await expect(rowDates).toHaveCount(5);
 		expect(
 			await rowDates.evaluateAll((dates) => dates.map((date) => date.getAttribute('datetime')))
 		).toEqual(['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02']);
+		await expectUniformDayRows();
+		const stackedCell = grid.getByRole('cell').filter({ hasText: longSubject });
+		await expect(stackedCell.getByRole('button')).toHaveCount(2);
+		await expect(stackedCell.getByText(longSubject, { exact: true })).toBeVisible();
+		expect(await stackedCell.evaluate((cell) => cell.scrollHeight <= cell.clientHeight)).toBe(true);
 		const thursday = grid.locator('time[datetime="2026-10-01"]');
 		await expect(thursday.locator('span')).toHaveText(['พฤหัส', '1 ต.ค.']);
 		const weekday = await thursday.locator('span').first().boundingBox();
@@ -365,11 +390,20 @@ test.describe('supervision at 360 pixels', () => {
 		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 		const first = grid.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ });
 		await expect(first).toHaveAccessibleDescription(/วิชาปัจจุบัน 1.*ว่าง/);
+		const unselectedFill = await first.evaluate(
+			(button) => getComputedStyle(button).backgroundColor
+		);
 		await first.focus();
 		await first.press('Enter');
 		await expect(first).toHaveAttribute('aria-pressed', 'true');
+		await expect
+			.poll(() => first.evaluate((button) => getComputedStyle(button).backgroundColor))
+			.not.toBe(unselectedFill);
+		await expect(grid.getByText('เลือกแล้ว', { exact: true })).toHaveCount(0);
+		await expectUniformDayRows();
 		await grid.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).tap();
 		await expect(page.getByTestId('supervision-booking-selection')).toContainText('2 คาบต่อเนื่อง');
+		await expectUniformDayRows();
 
 		const pinned = grid.getByRole('columnheader', { name: 'วันที่' });
 		const pinnedBefore = await pinned.boundingBox();

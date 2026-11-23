@@ -387,18 +387,21 @@
 		</p>
 		<div class="min-w-0 rounded-xl border" data-testid="supervision-booking-grid">
 			<Table.Root
-				class="w-(--booking-grid-width) table-fixed text-xs sm:w-full sm:min-w-(--booking-grid-wide-width) sm:text-sm"
-				style={`--booking-grid-width: ${3.5 + periods.length * 6}rem; --booking-grid-wide-width: ${7 + periods.length * 12}rem`}
+				role="table"
+				class="grid w-(--booking-grid-width) grid-cols-[var(--booking-date-width)_repeat(var(--booking-period-count),minmax(0,1fr))] text-xs [--booking-date-width:3.5rem] sm:w-full sm:min-w-(--booking-grid-wide-width) sm:text-sm sm:[--booking-date-width:7rem]"
+				style={`--booking-period-count: ${periods.length}; --booking-grid-width: ${3.5 + periods.length * 6}rem; --booking-grid-wide-width: ${7 + periods.length * 12}rem`}
 			>
-				<Table.Header
-					><Table.Row
+				<Table.Header role="rowgroup" class="col-span-full grid grid-cols-subgrid"
+					><Table.Row role="row" class="col-span-full grid grid-cols-subgrid"
 						><Table.Head
+							role="columnheader"
 							scope="col"
-							class="sticky left-0 z-10 w-14 bg-background px-1.5 sm:w-28 sm:px-2"
+							class="sticky left-0 z-10 flex h-auto min-h-10 items-center bg-background px-1.5 sm:px-2"
 							>วันที่</Table.Head
 						>{#each periods as period (period.key)}<Table.Head
+								role="columnheader"
 								scope="col"
-								class="w-24 px-1 text-center whitespace-normal wrap-anywhere sm:w-48 sm:px-2"
+								class="flex h-auto flex-col justify-center px-1 text-center whitespace-normal wrap-anywhere sm:px-2"
 								><p>{period.label}</p>
 								<p class="text-[0.6875rem] font-normal sm:text-xs">
 									{period.start.slice(0, 5)}–{period.end.slice(0, 5)}
@@ -406,11 +409,14 @@
 							>{/each}</Table.Row
 					></Table.Header
 				>
-				<Table.Body
+				<Table.Body role="rowgroup" class="col-span-full grid auto-rows-fr grid-cols-subgrid"
 					>{#each days as { date: day, weekdayLabel, dateLabel } (day)}<Table.Row
+							role="row"
+							class="col-span-full grid grid-cols-subgrid"
 							><Table.Head
+								role="rowheader"
 								scope="row"
-								class="sticky left-0 z-10 h-auto bg-background px-1.5 py-2 align-top font-medium sm:px-2"
+								class="sticky left-0 z-10 h-auto bg-background px-1.5 py-2 font-medium sm:px-2"
 								><time datetime={day}>
 									<span class="block">{weekdayLabel}</span>
 									<span class="block font-normal text-muted-foreground">{dateLabel}</span>
@@ -420,7 +426,8 @@
 										นอกช่วงนิเทศ
 									</p>{/if}</Table.Head
 							>{#each periods as period (period.key)}<Table.Cell
-									class="space-y-1.5 p-1 align-top whitespace-normal sm:p-1.5"
+									role="cell"
+									class="space-y-1.5 p-1 whitespace-normal sm:p-1.5"
 									>{#each cellItems(day, period.start, period.end) as item (item.blockGroupId)}
 										{@const detailsId = `${pickerId}-${day}-${item.blockGroupId}`}
 										{@const booked = bookedObservationFor(item, observations, observationId)}
@@ -436,10 +443,7 @@
 										<div class="space-y-1">
 											<button
 												type="button"
-												class={[
-													'min-h-20 w-full rounded-lg border p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-28 sm:p-3',
-													chosen ? 'border-primary bg-primary/10' : ''
-												].join(' ')}
+												class="min-h-20 w-full rounded-lg border p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:border-primary aria-pressed:bg-primary/10 sm:min-h-28 sm:p-3"
 												disabled={!allowed ||
 													!!booked ||
 													!!unavailable ||
@@ -474,7 +478,7 @@
 															variant="secondary"
 															class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
 															>{supervisionStatusLabel(booked.status)}</Badge
-														>{:else if chosen}<Badge class="mt-1 sm:mt-2">เลือกแล้ว</Badge>{/if}
+														>{/if}
 												</span>
 											</button>
 											{#if !stale && adjacent.some((value) => value.blockGroupId === item.blockGroupId && value.observedDate === day)}<Button

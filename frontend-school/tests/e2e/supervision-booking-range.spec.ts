@@ -264,6 +264,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
 			await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
 			await page.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
 			await page.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
+			const dayRowHeights = await picker
+				.getByRole('rowheader')
+				.evaluateAll((headers) =>
+					headers.map((header) => header.closest('tr')!.getBoundingClientRect().height)
+				);
+			expect(dayRowHeights).toHaveLength(5);
+			expect(Math.max(...dayRowHeights) - Math.min(...dayRowHeights)).toBeLessThan(1);
 			const bounds = await picker
 				.getByRole('button', { name: /^เลือก คาบ/ })
 				.evaluateAll((buttons) =>
