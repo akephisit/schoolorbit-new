@@ -277,10 +277,13 @@ for (const colorScheme of ['light', 'dark'] as const) {
 					})
 				);
 			expect(bounds).toHaveLength(3);
+			const rem = await page.evaluate(() =>
+				Number.parseFloat(getComputedStyle(document.documentElement).fontSize)
+			);
 			for (const bound of bounds) {
 				expect(bound.within).toBe(true);
-				expect(bound.width).toBeGreaterThanOrEqual(mobile ? 80 : 150);
-				if (mobile) expect(bound.width).toBeLessThanOrEqual(96);
+				expect(bound.width).toBeGreaterThanOrEqual(mobile ? 5.5 * rem - 1 : 150);
+				if (mobile) expect(bound.width).toBeLessThanOrEqual(6 * rem + 1);
 			}
 			expect(
 				await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)

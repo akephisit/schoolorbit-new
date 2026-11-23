@@ -403,12 +403,11 @@ test.describe('supervision at 360 pixels', () => {
 		expect(
 			await rowDates.evaluateAll((dates) => dates.map((date) => date.getAttribute('datetime')))
 		).toEqual(['2026-09-29', '2026-10-01', '2026-10-03', '2026-10-04']);
-		await expect(
-			grid
-				.getByRole('row')
-				.filter({ has: grid.locator('time[datetime="2026-09-29"]') })
-				.getByRole('button')
-		).toHaveCount(0);
+		const emptyTeachingDay = grid
+			.getByRole('row')
+			.filter({ has: page.locator('time[datetime="2026-09-29"]') });
+		await expect(emptyTeachingDay).toBeVisible();
+		await expect(emptyTeachingDay.getByRole('button')).toHaveCount(0);
 		await expect(grid.getByRole('columnheader', { name: /^คาบ 3 / })).toHaveCount(0);
 		const saturday = grid.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ });
 		await saturday.tap();
