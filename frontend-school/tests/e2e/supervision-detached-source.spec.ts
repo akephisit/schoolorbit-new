@@ -122,8 +122,8 @@ test('returned legacy evidence is never rebound until the teacher explicitly sel
 	);
 	await expect(dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true })).toBeDisabled();
 	await dialog.getByRole('button', { name: /เลือก คาบ 1 ม.1\/1/ }).click();
-	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
-	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
+	await dialog.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ }).click();
+	await dialog.getByRole('button', { name: /^เลือก คาบ 3 ม.1\/1/ }).click();
 	await dialog.getByRole('button', { name: 'แก้ไขและส่งใหม่', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 	expect(api.writes).toEqual([`PATCH ${resource}/request`]);
@@ -152,8 +152,8 @@ test('before first approval a manager deliberately replaces the whole range thro
 	const dialog = page.getByRole('dialog');
 	await expect(dialog.getByRole('button', { name: 'บันทึกคาบนิเทศ', exact: true })).toBeDisabled();
 	await dialog.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
-	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
-	await dialog.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
+	await dialog.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ }).click();
+	await dialog.getByRole('button', { name: /^เลือก คาบ 3 ม.1\/1/ }).click();
 	await dialog.getByRole('button', { name: 'บันทึกคาบนิเทศ', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
 	expect(api.writes).toEqual([`PATCH ${resource}`]);

@@ -399,13 +399,23 @@ test.describe('supervision at 360 pixels', () => {
 		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 		const first = grid.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ });
 		const second = grid.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ });
-		const addSecond = grid.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true });
+		const third = grid.getByRole('button', { name: /^เลือก คาบ 3 ม.1\/1/ });
+		const fourth = grid.getByRole('button', { name: /^เลือก คาบ 4 ม.1\/1/ });
+		const otherDay = grid.getByRole('button', { name: /^เลือก คาบ 1 ม.2\/1/ });
+		const subjectLabel = second.getByText(adjacentSubject, { exact: true });
 		const statusLabel = second.getByText('รออนุมัติ 2 · นัดหมาย 1 · จองขนานได้', { exact: true });
 		const roomLabel = second.getByText(adjacentRoom, { exact: true });
-		await expect(addSecond).toHaveCount(0);
-		const cardBefore = (await second.boundingBox())!;
-		const statusBefore = (await statusLabel.boundingBox())!;
-		const roomBefore = (await roomLabel.boundingBox())!;
+		const cardSizes = () =>
+			Promise.all(
+				[second, subjectLabel, roomLabel, statusLabel].map(async (part) => {
+					const { width, height } = (await part.boundingBox())!;
+					return { width, height };
+				})
+			);
+		await expect(grid.getByRole('button')).toHaveCount(6);
+		await expect(third).toBeEnabled();
+		await expect(otherDay).toBeEnabled();
+		const sizesBefore = await cardSizes();
 		await expect(first).toHaveAccessibleDescription(/วิชาปัจจุบัน 1.*ว่าง/);
 		const unselectedFill = await first.evaluate(
 			(button) => getComputedStyle(button).backgroundColor
@@ -413,47 +423,33 @@ test.describe('supervision at 360 pixels', () => {
 		await first.focus();
 		await first.press('Enter');
 		await expect(first).toHaveAttribute('aria-pressed', 'true');
+		await expect(first).toHaveAttribute('aria-disabled', 'true');
 		await expect
 			.poll(() => first.evaluate((button) => getComputedStyle(button).backgroundColor))
 			.not.toBe(unselectedFill);
 		await expect(grid.getByText('เลือกแล้ว', { exact: true })).toHaveCount(0);
+		await expect(grid.getByRole('button')).toHaveCount(6);
+		await expect(third).toHaveJSProperty('disabled', true);
+		await expect(otherDay).toHaveJSProperty('disabled', true);
+		expect(await cardSizes()).toEqual(sizesBefore);
 		await expectUniformDayRows();
-		await expect(addSecond).toBeVisible();
-		await expect(addSecond).toHaveText('');
-		const card = (await second.boundingBox())!;
-		const plus = (await addSecond.boundingBox())!;
-		const status = (await statusLabel.boundingBox())!;
-		const subject = (await second.getByText(adjacentSubject, { exact: true }).boundingBox())!;
-		const homeroom = (await second.getByText('ม.1/1', { exact: true }).boundingBox())!;
-		const room = (await roomLabel.boundingBox())!;
-		expect(plus.width).toBeGreaterThanOrEqual(24);
-		expect(plus.height).toBeGreaterThanOrEqual(24);
-		expect(plus.x).toBeGreaterThan(card.x);
-		expect(plus.y).toBeGreaterThan(card.y);
-		expect(plus.x + plus.width).toBeLessThan(card.x + card.width);
-		expect(plus.y + plus.height).toBeLessThan(card.y + card.height);
-		expect(subject.y + subject.height).toBeLessThanOrEqual(plus.y);
-		expect(homeroom.x + homeroom.width).toBeLessThanOrEqual(plus.x);
-		expect(plus.y + plus.height).toBeLessThanOrEqual(room.y);
-		expect(plus.y + plus.height).toBeLessThanOrEqual(status.y);
-		expect(status.width).toBeCloseTo(statusBefore.width, 0);
-		expect(status.height).toBeCloseTo(statusBefore.height, 0);
-		expect(room.width).toBeCloseTo(roomBefore.width, 0);
-		expect(room.height).toBeCloseTo(roomBefore.height, 0);
-		expect(card.height).toBeLessThanOrEqual(cardBefore.height + plus.height);
-		await second.focus();
 		await page.keyboard.press('Tab');
-		await expect(addSecond).toBeFocused();
-		await addSecond.tap();
+		await expect(second).toBeFocused();
+		await second.tap();
 		const selection = page.getByTestId('supervision-booking-selection');
 		await expect(selection).toContainText('2 คาบต่อเนื่อง');
 		await expect(first).toHaveAttribute('aria-pressed', 'true');
 		await expect(second).toHaveAttribute('aria-pressed', 'true');
+		await expect(third).toBeEnabled();
+		await expect(fourth).toHaveJSProperty('disabled', true);
+		expect(await cardSizes()).toEqual(sizesBefore);
 		await expectUniformDayRows();
-		await second.tap();
-		await expect(selection).toContainText('1 คาบต่อเนื่อง');
+		await second.evaluate((button) => (button as HTMLButtonElement).click());
+		await expect(selection).toContainText('2 คาบต่อเนื่อง');
+		await selection.getByRole('button', { name: 'ล้างทั้งหมด', exact: true }).click();
 		await expect(first).toHaveAttribute('aria-pressed', 'false');
-		await expect(second).toHaveAttribute('aria-pressed', 'true');
+		await expect(second).toHaveAttribute('aria-pressed', 'false');
+		await expect(fourth).toBeEnabled();
 
 		const pinned = grid.getByRole('columnheader', { name: 'วันที่' });
 		const pinnedBefore = await pinned.boundingBox();
