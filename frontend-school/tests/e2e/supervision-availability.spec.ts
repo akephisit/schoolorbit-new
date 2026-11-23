@@ -179,7 +179,9 @@ for (const blocked of [false, true]) {
 			await expect(
 				selection.getByRole('button', { name: 'ส่งคำขอจอง', exact: true })
 			).toBeDisabled();
-			await expect(page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ })).toBeDisabled();
+			const blockedLesson = page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ });
+			await expect(blockedLesson).toHaveJSProperty('disabled', true);
+			await expect(blockedLesson).toHaveAttribute('aria-pressed', 'false');
 		} else {
 			await expect(selection).toContainText('2 คาบต่อเนื่อง');
 			await expect(

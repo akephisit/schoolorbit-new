@@ -97,10 +97,13 @@ for (const count of [1, 2, 3]) {
 				expectedSourceDigest: 'source-1'
 			}
 		]);
-		for (let index = 0; index < count; index++)
-			await expect(
-				page.getByRole('button', { name: new RegExp(`^เลือก คาบ ${index + 1} ม.1/1`) })
-			).toBeDisabled();
+		for (let index = 0; index < count; index++) {
+			const savedCell = page.getByRole('button', {
+				name: new RegExp(`^เลือก คาบ ${index + 1} ม\\.1/1`)
+			});
+			await expect(savedCell).toHaveJSProperty('disabled', true);
+			await expect(savedCell).toHaveAttribute('aria-pressed', 'false');
+		}
 		expect(api.count(observationsPath)).toBe(initialListReads);
 	});
 }
