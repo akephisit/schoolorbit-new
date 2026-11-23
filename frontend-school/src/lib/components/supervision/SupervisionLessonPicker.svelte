@@ -440,58 +440,73 @@
 											(value) =>
 												value.blockGroupId === item.blockGroupId && value.observedDate === day
 										)}
+										{@const canExtend =
+											!stale &&
+											adjacent.some(
+												(value) =>
+													value.blockGroupId === item.blockGroupId && value.observedDate === day
+											)}
 										<div class="space-y-1">
-											<button
-												type="button"
-												class="min-h-20 w-full rounded-lg border p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:border-primary aria-pressed:bg-primary/10 sm:min-h-28 sm:p-3"
-												disabled={!allowed ||
-													!!booked ||
-													!!unavailable ||
-													saving ||
-													!item.homeroomId}
-												aria-pressed={chosen}
-												aria-label={`เลือก ${item.periodName} ${item.homeroomName} ${bookingDateLabel(day)}${selected.length ? ' เป็นคาบแรกของช่วงใหม่' : ''}`}
-												aria-describedby={detailsId}
-												onclick={() => startSelection(item)}
-											>
-												<span id={detailsId} class="block">
-													<span class="block font-medium">
-														{item.subjectName ?? item.learningGroupName}
+											<div class="relative">
+												<button
+													type="button"
+													class="min-h-20 w-full rounded-lg border p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:border-primary aria-pressed:bg-primary/10 sm:min-h-28 sm:p-3"
+													disabled={!allowed ||
+														!!booked ||
+														!!unavailable ||
+														saving ||
+														!item.homeroomId}
+													aria-pressed={chosen}
+													aria-label={`เลือก ${item.periodName} ${item.homeroomName} ${bookingDateLabel(day)}${selected.length ? ' เป็นคาบแรกของช่วงใหม่' : ''}`}
+													aria-describedby={detailsId}
+													onclick={() => startSelection(item)}
+												>
+													<span id={detailsId} class="block">
+														<span class="block font-medium">
+															{item.subjectName ?? item.learningGroupName}
+														</span>
+														<span class="mt-0.5 block sm:mt-1">{item.homeroomName}</span>
+														{#if item.roomName}<span
+																class="block text-[0.6875rem] text-muted-foreground sm:text-xs"
+															>
+																{item.roomName}
+															</span>{/if}
+														<span
+															class={[
+																'mt-1 sm:mt-2',
+																canExtend ? 'flex min-h-8 items-end pe-9' : 'block'
+															]}
+															><Badge
+																variant={item.bookingAvailability.blocked
+																	? 'destructive'
+																	: 'outline'}
+																class="max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:px-2 sm:text-xs"
+																>{bookingAvailabilityLabel(item)}</Badge
+															></span
+														>
+														{#if unavailable}<span
+																class="mt-1 block text-[0.6875rem] text-muted-foreground sm:text-xs"
+															>
+																{unavailable}
+															</span>{/if}
+														{#if booked}<Badge
+																variant="secondary"
+																class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
+																>{supervisionStatusLabel(booked.status)}</Badge
+															>{/if}
 													</span>
-													<span class="mt-0.5 block sm:mt-1">{item.homeroomName}</span>
-													{#if item.roomName}<span
-															class="block text-[0.6875rem] text-muted-foreground sm:text-xs"
-														>
-															{item.roomName}
-														</span>{/if}
-													<Badge
-														variant={item.bookingAvailability.blocked ? 'destructive' : 'outline'}
-														class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
-														>{bookingAvailabilityLabel(item)}</Badge
-													>
-													{#if unavailable}<span
-															class="mt-1 block text-[0.6875rem] text-muted-foreground sm:text-xs"
-														>
-															{unavailable}
-														</span>{/if}
-													{#if booked}<Badge
-															variant="secondary"
-															class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
-															>{supervisionStatusLabel(booked.status)}</Badge
-														>{/if}
-												</span>
-											</button>
-											{#if !stale && adjacent.some((value) => value.blockGroupId === item.blockGroupId && value.observedDate === day)}<Button
-													variant="outline"
-													size="sm"
-													class="w-full text-xs sm:text-sm"
-													disabled={saving}
-													aria-label={`เพิ่ม ${item.periodName} ${item.homeroomName}`}
-													onclick={() => extendSelection(item)}
-													><Plus class="size-3 sm:size-4" /><span
-														>เพิ่มคาบ<span class="hidden sm:inline">ติดกัน</span></span
-													></Button
-												>{:else if selected.length && !chosen && !booked && item.observedDate === ordered[0]?.observedDate && item.homeroomId !== ordered[0]?.homeroomId}<p
+												</button>
+												{#if canExtend}<Button
+														variant="outline"
+														size="icon-sm"
+														class="absolute end-1.5 bottom-1.5 sm:end-3 sm:bottom-3"
+														disabled={saving}
+														aria-label={`เพิ่ม ${item.periodName} ${item.homeroomName}`}
+														onclick={() => extendSelection(item)}
+														><Plus class="size-4" aria-hidden="true" /></Button
+													>{/if}
+											</div>
+											{#if !canExtend && selected.length && !chosen && !booked && item.observedDate === ordered[0]?.observedDate && item.homeroomId !== ordered[0]?.homeroomId}<p
 													class="px-1 text-xs text-muted-foreground"
 												>
 													เพิ่มไม่ได้: คนละห้องประจำชั้น
