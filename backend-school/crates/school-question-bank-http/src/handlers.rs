@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::state::QuestionBankHttpState;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 use school_file_contracts::access as file_access_policy;
 use school_file_contracts::platform_types::DownloadGrant;
 use school_file_platform::consumer_service::map_platform_error;

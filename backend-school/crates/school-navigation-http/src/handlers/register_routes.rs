@@ -1,6 +1,6 @@
 use crate::state::NavigationHttpState;
-use school_auth_http::origin::extract_subdomain_from_request;
-use school_auth_http::tenant::tenant_context_by_subdomain;
+use school_auth_context::origin::extract_subdomain_from_request;
+use school_auth_context::tenant::tenant_context_by_subdomain;
 use school_http::HttpError as AppError;
 use school_navigation::models::RouteRegistration;
 use school_navigation::models::RouteRegistrationResponse;

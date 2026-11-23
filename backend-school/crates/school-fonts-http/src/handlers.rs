@@ -12,7 +12,7 @@ use school_http::{ApiErrorResponseWithData, ApiResponse};
 use uuid::Uuid;
 
 use crate::state::FontHttpState;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 use school_file_platform::consumer_service::request_deletions;
 
 use school_fonts::models::{AttachSchoolFontBatchRequest, InspectSchoolFontUploadsRequest};

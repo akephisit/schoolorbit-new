@@ -2,7 +2,7 @@ use crate::state::AcademicLifecycleHttpState;
 use async_trait::async_trait;
 use school_academic_lifecycle::ports::{PreparationAuthorizationPort, PreparationCommandContext};
 use school_auth::{runtime::AuthRuntime, session_service::AuthenticatedSession};
-use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
+use school_auth_context::context::{actor_tenant_context_from_session, ActorTenantContext};
 use school_authorization::ActorContext;
 use school_errors::AppError;
 use std::sync::Arc;
@@ -27,7 +27,7 @@ impl PreparationAuthorizationPort for SessionPreparationAuthorization {
                 "Authorization scope changed while the term preparation was queued".into(),
             ));
         }
-        if !school_auth_http::tenant::revalidate_realtime_session(&self.runtime, &self.session)
+        if !school_auth_context::tenant::revalidate_realtime_session(&self.runtime, &self.session)
             .await?
         {
             return Err(AppError::AuthError("Session is no longer active".into()));

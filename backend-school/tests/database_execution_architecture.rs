@@ -211,6 +211,9 @@ fn private_work_entry(file: &Path, function: &str) -> bool {
             "school-academic-lifecycle/src/services/term_activation.rs",
             &["activate_term"],
         ),
+        // Remembered-device revocation owns the transaction for user and device locks,
+        // grant and session updates, and commit.
+        ("school-auth/src/remembered_devices.rs", &["revoke"]),
         // Device cleanup is a bounded runtime DB phase, independently admitted after presentation.
         (
             "school-notifications/src/devices.rs",

@@ -22,7 +22,7 @@ school-academic-delivery = { workspace = true }
 school-academic-realtime = { workspace = true }
 school-academic-timetable = { workspace = true }
 school-auth = { workspace = true }
-school-auth-http = { workspace = true }
+school-auth-context = { workspace = true }
 school-authorization = { workspace = true }
 school-errors = { workspace = true }
 school-http = { workspace = true }

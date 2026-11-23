@@ -21,7 +21,7 @@ school-academic-assessment = { workspace = true, optional = true }
 school-academic-core = { workspace = true }
 school-academic-timetable = { workspace = true, optional = true }
 school-auth = { workspace = true }
-school-auth-http = { workspace = true }
+school-auth-context = { workspace = true }
 school-calendar = { workspace = true }
 school-http = { workspace = true }
 school-students = { workspace = true }

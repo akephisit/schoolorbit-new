@@ -18,7 +18,7 @@ use school_academic_assessment::exam_schedule::models::{
 };
 use school_academic_assessment::exam_schedule::services as exam_schedule_service;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::{
+use school_auth_context::context::{
     actor_tenant_context_from_session, current_user_tenant_context_from_session,
 };
 #[cfg(feature = "api-docs")]

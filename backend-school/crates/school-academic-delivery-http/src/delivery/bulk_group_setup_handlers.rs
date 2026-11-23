@@ -12,7 +12,7 @@ use school_academic_delivery::models::{BulkGroupSetupPreview, BulkGroupSetupResp
 use school_academic_delivery::policies::learning_offering_access_policy::{self, OfferingAction};
 use school_academic_delivery::services::bulk_group_setup;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, HttpError};

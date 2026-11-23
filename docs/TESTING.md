@@ -303,7 +303,8 @@ responsibilities change. The workspace manifest lists the six Academic HTTP comp
 Auth, Staff, Files, Certificate and Workflow HTTP owners, and the Administration, Admission,
 Attendance, Behavior, Budget, Calendar, Fonts, Navigation, Notifications, Question Bank, Student
 Care, Students and Supervision HTTP companions. The backend pipeline's direct `--lib` batch
-includes all six Academic HTTP owners, the realtime contract, and both Notification owners.
+includes all six Academic HTTP owners, the realtime contract, both Notification owners, and the
+shared `school-auth-context` request adapter.
 Timetable HTTP's socket/security units use memory, channels and a lazy invalid pool without
 database queries. Run that unit batch without a database wrapper. Use the disposable database
 wrapper for focused route or service cases that exercise PostgreSQL.
@@ -563,9 +564,9 @@ normal release dependency trees must expose neither `test-support` nor `school-t
 
 `school-auth` owns session credentials, policy, persistence, throttling, audit events, the identity
 cache, user-profile domain operations, and the root-independent auth runtime. Its package tests use
-dev-only database and test-support edges. `school-auth-http` owns cookie/CSRF, origin,
-trusted-client-address and tenant/session request-context adapters, plus Auth/Consent handlers
-including login and profile transport. The application supplies its narrow `ProfileUpdatePort`
+dev-only database and test-support edges. `school-auth-context` owns cookie/CSRF, origin,
+trusted-client-address and tenant/session request adapters. `school-auth-http` owns the session,
+profile and consent endpoints. The application supplies its narrow `ProfileUpdatePort`
 with atomic Auth/File Platform profile-image orchestration and retains deliberate cross-domain
 tests such as staff soft-delete followed by session invalidation.
 
@@ -929,10 +930,10 @@ The academic domain crates retain business logic and transactions. `school-acade
 contains only the shared event/port contract; Timetable HTTP owns the socket manager and uses
 one application-composed collaboration runtime for HTTP, sockets and facility invalidation.
 Every transport owner receives concrete narrow state through application-owned `FromRef` implementations.
-`school-auth-http` owns the shared session-derived request context, tenant-origin resolution,
-client-address checks, and cookie/CSRF helpers. It uses the existing `AuthRuntime` and shared
-permission/identity caches, with no application dependency. Navigation owns menu persistence,
-templates, route synchronization and feature toggles; Notifications owns persistence,
+`school-auth-context` owns the shared session-derived request context, tenant-origin resolution,
+client-address checks, and cookie/CSRF helpers. Application middleware and HTTP consumers call it
+directly with the existing `AuthRuntime` and shared permission and identity caches. Navigation owns
+menu persistence, templates, route synchronization and feature toggles; Notifications owns persistence,
 tenant/user events, the publisher and Web Push. Startup, routing and middleware remain in the application; Timetable HTTP owns Academic realtime
 connection management. Use at most eight test
 threads for the database-heavy font and certificate package suites so concurrent migration
@@ -1005,6 +1006,13 @@ delete, and HTTP disconnect after admission; cancellation cannot release the gat
 actual commit. Separate fake-port unit tests do not establish cross-owner cascade acceptance.
 
 ### School session authentication
+
+Run the shared HTTP request adapter's own cookie, origin, client-address, tenant lookup and
+typed-context fixtures from the repository root:
+
+```bash
+cargo test --locked --manifest-path backend-school/Cargo.toml -p school-auth-context --lib
+```
 
 Session changes require the schema, repository, service, HTTP/middleware, and realtime
 boundaries—not only a login happy path. From the repository root, run the crate-owned schema,

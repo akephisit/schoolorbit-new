@@ -18,7 +18,7 @@ axum = { workspace = true }
 school-academic-core = { workspace = true, optional = true }
 school-administration = { workspace = true }
 school-auth = { workspace = true }
-school-auth-http = { workspace = true }
+school-auth-context = { workspace = true }
 school-errors = { workspace = true }
 school-file-contracts = { workspace = true }
 school-file-platform = { workspace = true }

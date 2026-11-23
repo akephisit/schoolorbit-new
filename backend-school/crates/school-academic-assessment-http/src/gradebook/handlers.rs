@@ -7,7 +7,7 @@ use school_academic_assessment::gradebook::models::*;
 use school_academic_assessment::gradebook::services as gradebook_adapter;
 use school_academic_assessment::gradebook::services as gradebook_service;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
+use school_auth_context::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;

@@ -26,8 +26,8 @@ use school_academic_timetable::services::{
     daily_teaching as daily_teaching_service, timetable_block_service, timetable_service,
 };
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::{actor_tenant_context_from_session, ActorTenantContext};
-use school_auth_http::origin::extract_subdomain_from_request;
+use school_auth_context::context::{actor_tenant_context_from_session, ActorTenantContext};
+use school_auth_context::origin::extract_subdomain_from_request;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;

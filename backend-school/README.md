@@ -31,10 +31,12 @@ Each has its own concrete state and route factories. Core and Delivery own their
 transport consumes those public operations. `school-academic-realtime` owns the existing event/port
 contract, while Timetable HTTP owns the socket manager. Application composition injects one manager
 and collaboration runtime into all HTTP/socket consumers and facility-change adapters.
-Certificate transport stays in `school-certificates-http`. `school-auth` owns identity/session
-operations and consent; `school-auth-http` owns canonical cookie/origin/tenant/session context and
-Auth/Consent transport. `school-file-contracts` owns provider-neutral File values and the
-authorization port; `school-file-platform` owns storage/lifecycle and implementation provider ports;
+Certificate transport stays in `school-certificates-http`. `school-auth` owns identity, session and
+remembered-device policy and consent operations. `school-auth-context` adapts client addresses,
+origin, tenant/session context and cookies/CSRF for application middleware and HTTP consumers.
+`school-auth-http` owns the session, profile and consent endpoints. `school-file-contracts` owns
+provider-neutral File values and the authorization port; `school-file-platform` owns
+storage/lifecycle and implementation provider ports;
 `school-files-http` composes consumer-specific file authorization without a dependency back from
 storage to its consumers. Auth HTTP receives profile updates through `ProfileUpdatePort`;
 `src/adapters/auth_profile.rs` composes Auth's user mutation and Files' relationship promotion in
@@ -51,8 +53,8 @@ on core and File Platform; core does not re-export that implementation. Budget a
 retain core operations without inheriting renderer implementation changes. `school-staff-file-transfer` owns pure
 ephemeral discovery, pairing and signaling state; the application supplies its single process
 runtime. `school-staff-http` owns all four transport families with separate Staff, Leave and
-FileTransfer states and the existing canonical Auth HTTP context. Staff core retains Auth's name
-validators while using File contracts directly for license policy; storage fixtures are dev-only.
+FileTransfer states and the shared `school-auth-context` request adapter. Staff core retains Auth's
+name validators while using File contracts directly for license policy; storage fixtures are dev-only.
 The [identity query provider](crates/school-staff/src/services/staff_identity_query.rs) owns SQL
 observations under `staff.services.staff_identity_query`; FileTransfer retains its existing
 observed-checkout label. Career parsing retains `ValidationError("ประเภทบุคลากรไม่ถูกต้อง")`,

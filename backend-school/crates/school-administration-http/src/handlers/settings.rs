@@ -12,8 +12,8 @@ use crate::permission_codes_generated as codes;
 use crate::state::AdministrationHttpState;
 use school_administration::settings::services as school_service;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_http::context::actor_tenant_context_from_session;
-use school_auth_http::tenant::tenant_context;
+use school_auth_context::context::actor_tenant_context_from_session;
+use school_auth_context::tenant::tenant_context;
 #[cfg(feature = "api-docs")]
 use school_file_platform::http_models::{PublicFileFaviconPng, PublicSchoolShareImagePng};
 #[cfg(feature = "api-docs")]

@@ -13,7 +13,7 @@ use school_auth::{
     events::{PermissionChangeEvent, SessionRevocationEvent},
     session_service::{self, AuthenticatedSession},
 };
-use school_auth_http::context::current_user_tenant_context_from_session;
+use school_auth_context::context::current_user_tenant_context_from_session;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]
@@ -273,7 +273,7 @@ pub async fn stream_notifications(
             let session = revalidation_session.clone();
             let runtime = revalidation_runtime.clone();
             async move {
-                school_auth_http::tenant::revalidate_realtime_session(&runtime, &session).await
+                school_auth_context::tenant::revalidate_realtime_session(&runtime, &session).await
             }
         },
     );

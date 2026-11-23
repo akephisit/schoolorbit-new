@@ -72,10 +72,17 @@ impl NotificationService {
         notification: Notification,
         expires_at: DateTime<Utc>,
     ) -> Result<PreparedNotification, &'static str> {
-        let mut subscriptions = Vec::new();
-        if let Some(config) = devices::vapid_config() {
-            subscriptions = eligible_subscriptions(pool, user, &config.key_id).await?;
-        }
+        let subscriptions = if let Some(config) = devices::vapid_config() {
+            let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+                pool,
+                "notifications.prepare_stored",
+            )
+            .await
+            .map_err(|_| "notification_database_unavailable")?;
+            eligible_subscriptions(&mut *connection, user, &config.key_id).await?
+        } else {
+            Vec::new()
+        };
         Ok(PreparedNotification {
             notification,
             expires_at,
@@ -229,15 +236,11 @@ impl NotificationService {
     }
 }
 async fn eligible_subscriptions(
-    pool: &sqlx::PgPool,
+    connection: &mut sqlx::PgConnection,
     user: Uuid,
     key_id: &str,
 ) -> Result<Vec<PushSubscription>, &'static str> {
-    let mut c =
-        school_tenancy::TenantPool::observed_checkout_pool(pool, "notifications.prepare_stored")
-            .await
-            .map_err(|_| "notification_database_unavailable")?;
-    school_database::DbSession::new(&mut *c).query_as("notifications.presentation.devices",r#"SELECT p.id,p.version,p.binding_token,p.endpoint,p.p256dh_key,p.auth_key FROM notification_eligible_push_subscriptions p
+    school_database::DbSession::new(connection).query_as("notifications.presentation.devices",r#"SELECT p.id,p.version,p.binding_token,p.endpoint,p.p256dh_key,p.auth_key FROM notification_eligible_push_subscriptions p
         WHERE p.user_id=$1 AND p.key_id=$2 ORDER BY p.last_confirmed_at DESC,p.id LIMIT 20"#)
         .bind(user).bind(key_id).fetch_all().await.map_err(|_|"notification_subscription_unavailable")
 }
@@ -247,8 +250,16 @@ pub async fn eligible_devices_for_tests(
     user: Uuid,
     key_id: &str,
 ) -> Result<Vec<(Uuid, Uuid)>, &'static str> {
-    Ok(eligible_subscriptions(pool, user, key_id)
-        .await?
+    let subscriptions = {
+        let mut connection = school_tenancy::TenantPool::observed_checkout_pool(
+            pool,
+            "notifications.prepare_stored",
+        )
+        .await
+        .map_err(|_| "notification_database_unavailable")?;
+        eligible_subscriptions(&mut *connection, user, key_id).await?
+    };
+    Ok(subscriptions
         .into_iter()
         .map(|subscription| (subscription.id, subscription.version))
         .collect())

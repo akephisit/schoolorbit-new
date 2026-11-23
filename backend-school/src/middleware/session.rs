@@ -13,7 +13,7 @@ use school_auth::{
     runtime::AuthRuntime,
     session_service,
 };
-use school_auth_http::{
+use school_auth_context::{
     cookies::{csrf_response_header, presented_session_token, validate_csrf},
     origin::parse_realtime_tenant_hint,
     tenant::resolve_auth_tenant_context,

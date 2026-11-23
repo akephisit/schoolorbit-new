@@ -9,15 +9,15 @@ use axum::{
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::context::current_user_tenant_context_from_session;
 use crate::http::state::AuthHttpState;
-use crate::tenant::tenant_pool;
 use school_auth::consent::models::CreateConsentRequest;
 #[cfg(feature = "api-docs")]
 use school_auth::consent::models::UserConsentStatus;
 use school_auth::consent::services as consent_service;
 use school_auth::consent::services::ConsentRequestContext;
 use school_auth::session_service::AuthenticatedSession;
+use school_auth_context::context::current_user_tenant_context_from_session;
+use school_auth_context::tenant::tenant_pool;
 use school_http::ApiResponse;
 use school_http::HttpError as AppError;
 #[cfg(feature = "api-docs")]

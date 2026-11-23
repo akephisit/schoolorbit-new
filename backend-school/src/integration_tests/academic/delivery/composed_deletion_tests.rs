@@ -554,7 +554,7 @@ async fn wait_for_delete_gate(pool: &PgPool) {
 async fn current_composed_http_abort_keeps_accepted_delete_and_serializes_queued_save() {
     let f = composed("delivery_composed_abort").await;
     let completion =
-        school_auth_http::tenant::tenant_context_by_subdomain(&f.fixture.runtime, "tenant-a")
+        school_auth_context::tenant::tenant_context_by_subdomain(&f.fixture.runtime, "tenant-a")
             .await
             .unwrap();
     let preview = f.preview().await;
@@ -671,7 +671,7 @@ async fn cleanup_race(explicit_term: bool) {
     )
     .await;
     let completion =
-        school_auth_http::tenant::tenant_context_by_subdomain(&f.fixture.runtime, "tenant-a")
+        school_auth_context::tenant::tenant_context_by_subdomain(&f.fixture.runtime, "tenant-a")
             .await
             .unwrap();
     let preview = f.preview().await;

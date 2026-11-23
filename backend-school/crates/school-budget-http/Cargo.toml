@@ -13,7 +13,7 @@ api-docs = [
 [dependencies]
 axum = { workspace = true }
 school-auth = { workspace = true }
-school-auth-http = { workspace = true }
+school-auth-context = { workspace = true }
 school-budget = { workspace = true }
 school-http = { workspace = true }
 school-notifications = { workspace = true }

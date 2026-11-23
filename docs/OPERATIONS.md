@@ -1506,9 +1506,9 @@ HTTP owners under `backend-school/crates/school-academic-*-http`. Shared academi
 belong to `school-academic-realtime`; the Timetable owner retains its WebSocket manager. Certificate
 handlers remain in `school-certificates-http`. Menu models, templates, route synchronization and feature
 toggles compile in `school-navigation`; notification persistence, tenant/user events,
-publishing and Web Push compile in `school-notifications`. `school-auth-http` provides
-their shared HTTP authentication context. The application owns routing, middleware,
-startup and OpenAPI composition, and supplies narrow realtime, result-lock, lifecycle
+publishing and Web Push compile in `school-notifications`. `school-auth-context` provides
+their shared HTTP request context, and `school-auth-http` owns the Auth endpoints. The application
+owns routing, middleware, startup and OpenAPI composition, and supplies narrow realtime, result-lock, lifecycle
 and file-deletion adapters through `FromRef`. All contexts retain the same process-owned
 identity and permission caches. New crates must never depend on the application or
 accept its whole `AppState`.
