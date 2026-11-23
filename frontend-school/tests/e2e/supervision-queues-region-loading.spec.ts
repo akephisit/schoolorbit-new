@@ -350,7 +350,12 @@ test.describe('supervision at 360 pixels', () => {
 			permissions: own,
 			term: true,
 			bookingItems: [
-				...[0, 1, 2, 3].map((index) => timetableOption(index)),
+				timetableOption(0),
+				timetableOption(1, {
+					bookingAvailability: { pendingCount: 2, confirmedCount: 1, blocked: false }
+				}),
+				timetableOption(2),
+				timetableOption(3),
 				timetableOption(4, { ...stackedSlot, subjectName: longSubject, homeroomName: 'ม.2/1' }),
 				timetableOption(5, { ...stackedSlot, homeroomName: 'ม.2/2' })
 			]
@@ -389,6 +394,9 @@ test.describe('supervision at 360 pixels', () => {
 		expect(secondPeriod!.x + secondPeriod!.width).toBeLessThanOrEqual(initial!.x + initial!.width);
 		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 		const first = grid.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ });
+		const second = grid.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ });
+		const addSecond = grid.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true });
+		await expect(addSecond).toHaveCount(0);
 		await expect(first).toHaveAccessibleDescription(/วิชาปัจจุบัน 1.*ว่าง/);
 		const unselectedFill = await first.evaluate(
 			(button) => getComputedStyle(button).backgroundColor
@@ -401,9 +409,33 @@ test.describe('supervision at 360 pixels', () => {
 			.not.toBe(unselectedFill);
 		await expect(grid.getByText('เลือกแล้ว', { exact: true })).toHaveCount(0);
 		await expectUniformDayRows();
-		await grid.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).tap();
-		await expect(page.getByTestId('supervision-booking-selection')).toContainText('2 คาบต่อเนื่อง');
+		await expect(addSecond).toBeVisible();
+		await expect(addSecond).toHaveText('');
+		const card = (await second.boundingBox())!;
+		const plus = (await addSecond.boundingBox())!;
+		const status = (await second
+			.getByText('รออนุมัติ 2 · นัดหมาย 1 · จองขนานได้', { exact: true })
+			.boundingBox())!;
+		expect(plus.width).toBeGreaterThanOrEqual(24);
+		expect(plus.height).toBeGreaterThanOrEqual(24);
+		expect(plus.x).toBeGreaterThan(card.x);
+		expect(plus.y).toBeGreaterThan(card.y);
+		expect(plus.x + plus.width).toBeLessThan(card.x + card.width);
+		expect(plus.y + plus.height).toBeLessThan(card.y + card.height);
+		expect(status.x + status.width).toBeLessThanOrEqual(plus.x);
+		await second.focus();
+		await page.keyboard.press('Tab');
+		await expect(addSecond).toBeFocused();
+		await addSecond.tap();
+		const selection = page.getByTestId('supervision-booking-selection');
+		await expect(selection).toContainText('2 คาบต่อเนื่อง');
+		await expect(first).toHaveAttribute('aria-pressed', 'true');
+		await expect(second).toHaveAttribute('aria-pressed', 'true');
 		await expectUniformDayRows();
+		await second.tap();
+		await expect(selection).toContainText('1 คาบต่อเนื่อง');
+		await expect(first).toHaveAttribute('aria-pressed', 'false');
+		await expect(second).toHaveAttribute('aria-pressed', 'true');
 
 		const pinned = grid.getByRole('columnheader', { name: 'วันที่' });
 		const pinnedBefore = await pinned.boundingBox();
