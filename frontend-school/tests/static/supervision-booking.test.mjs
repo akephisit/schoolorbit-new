@@ -80,15 +80,7 @@ test('teaching supervision booking relies on required route context while manage
 	assert.match(routeLoader, /academicContext:\s*'term_required'/);
 	assert.match(routePage, /<SupervisionWorkspace section="mine"/);
 	assert.doesNotMatch(routePage, /AcademicPrerequisiteNotice|bookingTermPrerequisite/);
-	for (const child of [
-		'evaluate',
-		'requests',
-		'cycles',
-		'templates',
-		'overview',
-		'approvals',
-		'[id]'
-	]) {
+	for (const child of ['evaluate', 'requests', 'cycles', 'templates', 'overview', '[id]']) {
 		const loader = await readRepoFile(`${root}/${child}/+page.ts`);
 		assert.match(loader, /academicContext:\s*'term_optional'/, child);
 	}
@@ -116,6 +108,9 @@ test('teaching supervision request approval renders request rows with multiple e
 	);
 	const review = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionRequestReview.svelte'
+	);
+	const requestCard = await readRepoFile(
+		'frontend-school/src/lib/components/supervision/SupervisionRequestCard.svelte'
 	);
 	const controller = await readRepoFile(
 		'frontend-school/src/lib/supervision/request-review.svelte.ts'
@@ -153,7 +148,7 @@ test('teaching supervision request approval renders request rows with multiple e
 	assert.match(controller, /state\?\.evaluatorIds \?\? observation\.evaluators\.map/);
 	assert.match(controller, /evaluatorUserId:\s*id,\s*isRequired,/);
 	assert.match(controller, /returnSupervisionObservationRequest\(id, \{ comment: drafts\[id\]/);
-	assert.match(supervisionPage, /observationLessonTitle\(observation\)/);
+	assert.match(requestCard, /savedLessonLabels\(observation\)/);
 	assert.match(supervisionHandlers, /evaluator_availability/);
 	assert.match(supervisionService, /validate_evaluator_availability_for_observation/);
 	assert.doesNotMatch(
@@ -229,56 +224,36 @@ test('teaching supervision evaluation uses a dialog workflow', async () => {
 	assert.doesNotMatch(supervisionPage, /กำลังเปิดแบบประเมิน/);
 });
 
-test('teaching supervision approval workflow skips review submission', async () => {
+test('teaching supervision publishes after evaluation and retains request approval and teacher acknowledgment', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
-	const supervisionPage = await readRepoFile(
+	const workspace = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
-	const supervisionDetailPage = await readRepoFile(
+	const detailPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
 	);
-	const supervisionHandlers = await readRepoFile(
+	const handlers = await readRepoFile(
 		'backend-school/crates/school-supervision-http/src/handlers.rs'
 	);
-	const supervisionService = await readSupervisionServices();
 
-	assert.match(supervisionApi, /certifySupervisionObservation/);
-	assert.match(supervisionApi, /\/api\/supervision\/observations\/\$\{id\}\/certify/);
-	assert.doesNotMatch(supervisionApi, /submitSupervisionObservationForReview/);
-	assert.doesNotMatch(supervisionApi, /publishSupervisionObservation/);
-	assert.doesNotMatch(supervisionApi, /returnSupervisionObservation\(/);
-	assert.match(supervisionPage, /const canReport = \$derived\([\s\S]*canManageRequests/);
-	assert.match(supervisionPage, /certifiableObservations/);
-	assert.match(supervisionPage, /approvableObservations/);
+	assert.match(supervisionApi, /\/api\/supervision\/observations\/\$\{id\}\/approve-request/);
 	assert.match(
-		supervisionPage,
-		/const certifiableObservations = \$derived\([\s\S]*canManageRequests[\s\S]*item\.status === 'evaluators_submitted'/
+		supervisionApi,
+		/\/api\/supervision\/observations\/\$\{id\}\/evaluations\/me\/submit/
 	);
-	assert.match(
-		supervisionPage,
-		/const approvableObservations = \$derived\([\s\S]*canApprove[\s\S]*item\.status === 'approved'/
+	assert.match(supervisionApi, /\/api\/supervision\/observations\/\$\{id\}\/acknowledge/);
+	assert.doesNotMatch(
+		supervisionApi,
+		/\/observations\/\$\{id\}\/(?:certify|approve|submit-review)`/
 	);
-	assert.doesNotMatch(supervisionPage, /certifyResult\(observation\.id\)/);
-	assert.doesNotMatch(supervisionPage, /approveResult\(observation\.id\)/);
-	assert.match(supervisionPage, />\s*ตรวจผล\s*</);
-	assert.match(supervisionDetailPage, /async function certifyResult\(\)/);
-	assert.match(supervisionDetailPage, /async function approveResult\(\)/);
-	assert.match(supervisionDetailPage, />\s*รับรองผล\s*</);
-	assert.match(supervisionDetailPage, />\s*อนุมัติผล\s*</);
-	assert.match(
-		await readRepoFile('frontend-school/src/lib/supervision/supervision-presentation.ts'),
-		/รอครูรับทราบ/
+	assert.doesNotMatch(handlers, /\/observations\/\{id\}\/(?:certify|approve|submit-review)"/);
+	assert.doesNotMatch(
+		workspace + detailPage,
+		/รับรองผล|อนุมัติผล|evaluators_submitted|under_review/
 	);
-	assert.doesNotMatch(supervisionPage, /ส่งตรวจทาน/);
-	assert.doesNotMatch(supervisionPage, /ส่งกลับผล/);
-	assert.doesNotMatch(supervisionPage, /returnResult/);
-	assert.doesNotMatch(supervisionDetailPage, /actionKindLabel|<Card\.Title>ประวัติ<\/Card\.Title>/);
-	assert.doesNotMatch(supervisionDetailPage, /ส่งตรวจทาน/);
-	assert.match(supervisionHandlers, /\/observations\/\{id\}\/certify/);
-	assert.doesNotMatch(supervisionHandlers, /submit-review/);
-	assert.match(supervisionService, /SupervisionObservationStatus::Completed/);
-	assert.match(supervisionService, /status IN \('evaluators_submitted', 'under_review'\)/);
-	assert.match(supervisionService, /academic_approved/);
+	assert.match(workspace, /เมื่อผู้ประเมินที่จำเป็นส่งผลครบ ระบบจะแจ้งให้ครูรับทราบผล/);
+	assert.match(workspace, /{#if observation\.status === 'published'}/);
+	assert.doesNotMatch(detailPage, /actionKindLabel|<Card\.Title>ประวัติ<\/Card\.Title>/);
 });
 
 test('teaching supervision observation detail supports safe edit actions', async () => {
@@ -323,7 +298,7 @@ test('teaching supervision observation detail supports safe edit actions', async
 	assert.match(parentPage, /href=\{observationDetailHref\(observation\)\}/);
 });
 
-test('teaching supervision detail hides scores until academic approval releases results', async () => {
+test('teaching supervision detail protects scores until results are published', async () => {
 	const detailPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
 	);
@@ -334,7 +309,7 @@ test('teaching supervision detail hides scores until academic approval releases 
 
 	assert.match(detailPage, /function observationResultsReleased/);
 	assert.match(detailPage, /function observationAverageScoreLabel/);
-	assert.match(detailPage, /รอหัวหน้ากลุ่มบริหารวิชาการอนุมัติผล/);
+	assert.match(detailPage, /รอเผยแพร่ผล/);
 	assert.match(detailPage, /observationAverageScoreLabel\(observation\)/);
 	assert.match(supervisionHandlers, /services::redacted_observation_for_actor/);
 	assert.match(supervisionHandlers, /services::redact_observations_results_for_actor/);
@@ -347,11 +322,8 @@ test('teaching supervision detail hides scores until academic approval releases 
 	assert.match(supervisionService, /SupervisionObservationStatus::Completed/);
 });
 
-test('teaching supervision approval review shows completed rubric before approving', async () => {
+test('teaching supervision published results retain the read-only rubric and evaluator breakdown', async () => {
 	const supervisionApi = await readRepoFile('frontend-school/src/lib/api/supervision.ts');
-	const supervisionWorkspace = await readRepoFile(
-		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
-	);
 	const detailPage = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/[id]/+page.svelte'
 	);
@@ -380,11 +352,8 @@ test('teaching supervision approval review shows completed rubric before approvi
 	assert.match(detailPage, /selectedReviewEvaluatorId/);
 	assert.match(detailPage, /reviewItemRatingFor/);
 	assert.match(detailPage, /data-supervision-review-rubric="readonly"/);
-	assert.match(detailPage, />\s*รับรองผล\s*</);
-	assert.match(detailPage, />\s*อนุมัติผล\s*</);
-	assert.doesNotMatch(supervisionWorkspace, /onclick=\{\(\) => certifyResult\(observation\.id\)\}/);
-	assert.doesNotMatch(supervisionWorkspace, /onclick=\{\(\) => approveResult\(observation\.id\)\}/);
-	assert.match(supervisionWorkspace, />\s*ตรวจผล\s*</);
+	assert.match(detailPage, /observationResultsReleased\(observation\.status\)/);
+	assert.match(detailPage, /ดูผลประเมินรายข้อ/);
 });
 
 test('supervision keeps separate workflow routes with an in-place requests calendar', async () => {
@@ -405,9 +374,6 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 		overview: await readRepoFile(
 			'frontend-school/src/routes/(app)/staff/academic/supervision/overview/+page.svelte'
 		),
-		approvals: await readRepoFile(
-			'frontend-school/src/routes/(app)/staff/academic/supervision/approvals/+page.svelte'
-		),
 		cycles: await readRepoFile(
 			'frontend-school/src/routes/(app)/staff/academic/supervision/cycles/+page.svelte'
 		),
@@ -424,9 +390,6 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 		),
 		overview: await readRepoFile(
 			'frontend-school/src/routes/(app)/staff/academic/supervision/overview/+page.ts'
-		),
-		approvals: await readRepoFile(
-			'frontend-school/src/routes/(app)/staff/academic/supervision/approvals/+page.ts'
 		),
 		cycles: await readRepoFile(
 			'frontend-school/src/routes/(app)/staff/academic/supervision/cycles/+page.ts'
@@ -502,8 +465,9 @@ test('teaching supervision manager view exposes teacher status overview and alig
 	assert.match(supervisionWorkspace, /<Table\.Head>กลุ่มสาระ<\/Table\.Head>/);
 	assert.match(supervisionWorkspace, /nextStepLabel/);
 	assert.match(supervisionWorkspace, /averageRating/);
-	assert.match(supervisionWorkspace, /class="flex flex-wrap items-center justify-end gap-2"/);
-	assert.match(supervisionWorkspace, /class="h-8"/);
+	assert.match(supervisionWorkspace, /data-testid="supervision-progress"/);
+	assert.match(supervisionWorkspace, /progress\.publishedCount/);
+	assert.match(supervisionWorkspace, /progress\.completedCount/);
 	assert.match(supervisionHandlers, /teacher_status_overview/);
 	assert.match(supervisionService, /cycle_teacher_status/);
 	assert.match(supervisionService, /JOIN subject_groups sg ON sg\.id = ou\.subject_group_id/);

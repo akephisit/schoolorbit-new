@@ -16,16 +16,15 @@ use school_errors::AppError;
 
 use super::cycles::SupervisionCycleTargetRow;
 use super::evaluations::{
-    insert_supervision_evaluators, load_evaluator_submission_states,
-    validate_evaluator_availability_for_observation,
+    insert_supervision_evaluators, validate_evaluator_availability_for_observation,
 };
 use super::lifecycle::{require_cycle_write, require_observation_write};
 use super::shared::{
-    all_required_evaluators_submitted, can_transition_observation_status, has_approval_evidence,
-    has_required_evaluator, manager_can_edit_observation, parse_cycle_status,
-    parse_evaluator_status, parse_observation_status, parse_optional_observation_status,
-    parse_target_type, resolve_supervision_target_rule, teacher_can_edit_requested_observation,
-    SupervisionObservationListAccess, SupervisionTargetMatch, SupervisionTargetRule,
+    can_transition_observation_status, has_approval_evidence, has_required_evaluator,
+    manager_can_edit_observation, parse_cycle_status, parse_evaluator_status,
+    parse_observation_status, parse_target_type, resolve_supervision_target_rule,
+    teacher_can_edit_requested_observation, SupervisionObservationListAccess,
+    SupervisionTargetMatch, SupervisionTargetRule,
 };
 
 use super::{booking, periods};
@@ -960,7 +959,7 @@ async fn load_observation_actions(
         FROM supervision_actions a
         LEFT JOIN user_display_names u ON u.id = a.actor_user_id
         WHERE a.observation_id = ANY($1)
-        ORDER BY a.observation_id, a.created_at DESC
+        ORDER BY a.observation_id, a.created_at DESC, a.id DESC
         "#,
         )
         .bind(observation_ids)
@@ -980,7 +979,7 @@ async fn load_observation_actions(
         actions_by_observation
             .entry(observation_id)
             .or_insert_with(Vec::new)
-            .push(action_from_row(row)?);
+            .push(action_from_row(row));
     }
     Ok(actions_by_observation)
 }
@@ -1023,18 +1022,18 @@ async fn load_observation_average_ratings(
     Ok(rows.into_iter().collect())
 }
 
-fn action_from_row(row: SupervisionActionRow) -> Result<SupervisionAction, AppError> {
-    Ok(SupervisionAction {
+fn action_from_row(row: SupervisionActionRow) -> SupervisionAction {
+    SupervisionAction {
         id: row.id,
         observation_id: row.observation_id,
         actor_user_id: row.actor_user_id,
         actor_display_name: row.actor_display_name,
         action_kind: row.action_kind,
-        from_status: parse_optional_observation_status(row.from_status)?,
-        to_status: parse_optional_observation_status(row.to_status)?,
+        from_status: row.from_status,
+        to_status: row.to_status,
         comment: row.comment,
         created_at: row.created_at,
-    })
+    }
 }
 
 pub(super) async fn load_cycle_for_request(
@@ -1226,7 +1225,6 @@ fn ensure_no_submitted_evaluators(observation: &SupervisionObservation) -> Resul
 pub(super) enum ObservationTransitionPolicy {
     Manager,
     RequestedTeacher,
-    Certification,
     ObservedTeacher,
 }
 
@@ -1266,12 +1264,6 @@ pub(super) async fn set_observation_status(
             return Err(AppError::ValidationError(
                 "ยกเลิกคำขอนิเทศได้เฉพาะสถานะรออนุมัติหรือส่งกลับ".into(),
             ));
-        }
-        ObservationTransitionPolicy::Certification => {
-            let states = load_evaluator_submission_states(&mut *tx, observation_id).await?;
-            if !all_required_evaluators_submitted(&states) {
-                return Err(AppError::ValidationError("ผู้ประเมินหลักยังส่งผลไม่ครบ".into()));
-            }
         }
         _ => {}
     }

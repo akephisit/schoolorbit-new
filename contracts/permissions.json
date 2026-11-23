@@ -1018,13 +1018,6 @@
       "description": "กรอกและส่งผลประเมินรายการนิเทศที่ตนเองได้รับมอบหมาย"
     },
     {
-      "module": "supervision",
-      "action": "approve",
-      "scope": "school",
-      "name": "อนุมัติผลนิเทศทั้งโรงเรียน",
-      "description": "ตรวจสอบและอนุมัติผลนิเทศการสอนทั้งโรงเรียนก่อนให้ครูรับทราบผล"
-    },
-    {
       "module": "certificate",
       "action": "read",
       "scope": "own",

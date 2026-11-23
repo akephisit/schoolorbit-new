@@ -155,7 +155,7 @@ test('a delayed first ID cannot replace the next selected observation', async ({
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toHaveCount(0);
 });
 test('review is lazy and retries without reloading identity', async ({ page }) => {
-	const api = await mock(page, { fail: 'review', observationStatus: 'evaluators_submitted' });
+	const api = await mock(page, { fail: 'review', observationStatus: 'published' });
 	await page.goto(detailPath());
 	await page.getByRole('button', { name: 'ดูผลประเมินรายข้อ' }).click();
 	const region = page.getByTestId('supervision-review');
@@ -166,7 +166,7 @@ test('review is lazy and retries without reloading identity', async ({ page }) =
 	expect(api.count(observationPath)).toBe(1);
 });
 test('closing pending review aborts it and keeps it closed', async ({ page }) => {
-	const api = await mock(page, { hold: 'review', observationStatus: 'evaluators_submitted' });
+	const api = await mock(page, { hold: 'review', observationStatus: 'published' });
 	await page.goto(detailPath());
 	await page.getByRole('button', { name: 'ดูผลประเมินรายข้อ' }).click();
 	await expect.poll(() => api.count(`${observationPath}/review`)).toBe(1);
@@ -236,16 +236,14 @@ test('unit manager reading another unit cannot manage or review its unreleased o
 }) => {
 	const api = await mock(page, {
 		permissions: ['supervision.read.school', 'supervision.manage.organization_unit'],
-		observationStatus: 'evaluators_submitted',
+		observationStatus: 'in_progress',
 		canManage: false,
 		canReview: false,
 		averageRating: 4.875
 	});
 	await page.goto(detailPath());
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
-	await expect(
-		page.getByRole('button', { name: /รับรอง|แก้ไข|ยกเลิก|ดูรายละเอียดผล/ })
-	).toHaveCount(0);
+	await expect(page.getByRole('button', { name: /แก้ไข|ยกเลิก|ดูผลประเมินรายข้อ/ })).toHaveCount(0);
 	await expect(page.getByTestId('supervision-detail')).not.toContainText('4.88');
 	expect(api.count(`${observationPath}/review`)).toBe(0);
 	expect(api.count(`${observationPath}/timetable-options`)).toBe(0);

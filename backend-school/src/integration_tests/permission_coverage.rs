@@ -34,7 +34,7 @@ pub(crate) async fn coverage_actor(
     coverage_actor_for_user(f, id, permissions, token_byte).await
 }
 
-async fn coverage_actor_for_user(
+pub(crate) async fn coverage_actor_for_user(
     f: &ProtectedFixture,
     id: Uuid,
     permissions: &[&str],

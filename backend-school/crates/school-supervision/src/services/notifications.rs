@@ -1,5 +1,7 @@
 use super::shared::evaluator_conflict_status_codes;
-use crate::models::{SupervisionObservation, SupervisionObservationStatus};
+use crate::models::{
+    SupervisionEvaluatorStatus, SupervisionObservation, SupervisionObservationStatus,
+};
 use school_database::DbSession;
 use school_errors::AppError;
 use school_notifications::{
@@ -162,6 +164,7 @@ pub(super) async fn evaluators_replaced(
     action_id: Uuid,
     before: &SupervisionObservation,
     evaluator_ids: &[Uuid],
+    published: bool,
 ) -> Result<(), AppError> {
     if !evaluator_conflict_status_codes().contains(&before.status.as_str()) {
         return Ok(());
@@ -174,6 +177,7 @@ pub(super) async fn evaluators_replaced(
     let current: BTreeSet<_> = evaluator_ids.iter().copied().collect();
     let recipients = current
         .difference(&previous)
+        .filter(|_| !published)
         .map(|&id| (id, Notice::Assigned))
         .chain(
             previous
@@ -203,6 +207,23 @@ pub(super) async fn status_changed(
             Some(Notice::AssignedObservationCancelled),
         ),
         SupervisionObservationStatus::Published => {
+            let recipients: Vec<_> = before
+                .evaluators
+                .iter()
+                .filter(|evaluator| {
+                    !evaluator.is_required
+                        && evaluator.status != SupervisionEvaluatorStatus::Submitted
+                })
+                .map(|evaluator| evaluator.evaluator_user_id)
+                .collect();
+            let prior_actions: Vec<_> = before.actions.iter().map(|action| action.id).collect();
+            dispatch::cancel_pending_for_recipients_in_transaction(
+                tx,
+                NotificationSourceKind::SupervisionAction,
+                &prior_actions,
+                &recipients,
+            )
+            .await?;
             ((before.observed_user_id, Notice::ResultPublished), None)
         }
         _ => return Ok(()),

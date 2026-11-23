@@ -531,15 +531,7 @@ test('application route metadata uses only supported academic context requiremen
 	assert.ok(Object.keys(routeModules).length > 0, 'expected route metadata fixtures');
 	const resolveRequirement = createAcademicContextRouteResolver(routeModules);
 	assert.equal(resolveRequirement('/(app)/staff/academic/supervision'), 'term_required');
-	for (const child of [
-		'evaluate',
-		'requests',
-		'cycles',
-		'templates',
-		'overview',
-		'approvals',
-		'[id]'
-	]) {
+	for (const child of ['evaluate', 'requests', 'cycles', 'templates', 'overview', '[id]']) {
 		assert.equal(
 			resolveRequirement(`/(app)/staff/academic/supervision/${child}`),
 			'term_optional',
@@ -692,7 +684,6 @@ test('existing staff academic consumers declare their exact context requirement'
 		['staff/academic/supervision/cycles', 'term_optional'],
 		['staff/academic/supervision/templates', 'term_optional'],
 		['staff/academic/supervision/overview', 'term_optional'],
-		['staff/academic/supervision/approvals', 'term_optional'],
 		['staff/academic/supervision/[id]', 'term_optional'],
 		['staff/academic/admission', 'year_required'],
 		['staff/timetable', 'term_required'],

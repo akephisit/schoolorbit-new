@@ -573,16 +573,6 @@
 			"notes": "Selected observation route region; cycle and minimal template summary depend only on identity, then read concurrently. Review rubric, timetable edit and evaluator options load on open with focused retries and stale/close supersession; typed actions patch only the observation."
 		},
 		{
-			"route": "staff/academic/supervision/approvals",
-			"wave": "admission-supervision",
-			"dataOwner": "route",
-			"preload": "none",
-			"context": "term_optional",
-			"status": "complete",
-			"backendOwner": "school-supervision",
-			"notes": "Route owns scoped approval queue independently. School-report cycle options require exact school report access, and progress loads only on explicit report action with regional retry/selection supersession. Organization managers avoid school report reads on initial load and refresh. Unbounded list preload disabled."
-		},
-		{
 			"route": "staff/academic/supervision/cycles",
 			"wave": "admission-supervision",
 			"dataOwner": "route",
@@ -610,7 +600,7 @@
 			"context": "term_optional",
 			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Route starts cycle options and explicit selected-cycle teacher status independently; default status depends only on selecting a cycle ID. Organization-scoped readers do not request school-only progress. Focused status retry/selection/Back supersede stale responses; contextual links preserve preload destinations. Volatile status uses tap preload."
+			"notes": "Route starts cycle options and explicit selected-cycle teacher status and school progress independently. Default reports depend only on selecting a cycle ID. Organization-scoped readers only load teacher status. Focused retries, cycle selection and Back supersede stale report responses without rereading options. Volatile reports use tap preload."
 		},
 		{
 			"route": "staff/academic/supervision/requests",

@@ -222,17 +222,23 @@ pub async fn update_cycle(
         }
     };
     if let Some((start, end)) = requested_dates {
+        let confirmed_states = super::shared::evaluator_conflict_status_codes();
+        let historical_confirmed_states: Vec<_> = confirmed_states
+            .iter()
+            .copied()
+            .chain(super::shared::LEGACY_RESULT_STATUS_CODES)
+            .collect();
         let outside:bool=DbSession::new(&mut tx).scalar("supervision.cycles.protect_approved_dates",r#"
             SELECT EXISTS(SELECT 1 FROM supervision_observations o
                 JOIN supervision_observation_periods p ON p.observation_id=o.id
                 WHERE o.cycle_id=$1 AND o.status<>'cancelled'
                   AND (o.approved_at IS NOT NULL OR o.status=ANY($4) OR EXISTS(
                     SELECT 1 FROM supervision_actions a WHERE a.observation_id=o.id
-                      AND (a.from_status=ANY($4) OR a.to_status=ANY($4))))
+                      AND (a.from_status=ANY($5) OR a.to_status=ANY($5))))
                   AND ((p.observed_at AT TIME ZONE 'Asia/Bangkok')::date<$2
                     OR (p.observed_at AT TIME ZONE 'Asia/Bangkok')::date>$3
                     OR ((COALESCE(p.ends_at-interval '1 microsecond',p.observed_at)) AT TIME ZONE 'Asia/Bangkok')::date>$3))
-        "#).bind(id).bind(start).bind(end).bind(super::shared::evaluator_conflict_status_codes()).fetch_one().await?;
+        "#).bind(id).bind(start).bind(end).bind(confirmed_states).bind(historical_confirmed_states).fetch_one().await?;
         if outside {
             return Err(AppError::Conflict(
                 "ช่วงวันที่ใหม่ต้องครอบคลุมรายการนิเทศที่เคยอนุมัติแล้วและยังไม่ยกเลิก".into(),

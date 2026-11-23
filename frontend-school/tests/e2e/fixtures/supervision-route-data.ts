@@ -131,6 +131,7 @@ export async function mock(
 	const payloads: unknown[] = [];
 	const held = gate();
 	const counts = new Map<string, number>();
+	let authUserId = id(20);
 	let authFirstName = 'นิเทศ';
 	let authSessionId = sessionState().sessionId;
 	let authPermissions = options.permissions ?? [
@@ -140,6 +141,8 @@ export async function mock(
 	const cycleStatus = options.cycleStatus ?? 'open';
 	const cyclePatches: Record<string, Partial<SupervisionCycle>> = {};
 	let observationStatus = options.observationStatus ?? 'requested';
+	const resultPublished = () =>
+		['published', 'acknowledged', 'completed'].includes(observationStatus);
 	let periodsLocked =
 		options.observation?.periodsLocked ?? !['requested', 'returned'].includes(observationStatus);
 	let observationPatch: Partial<SupervisionObservation> = {};
@@ -155,7 +158,7 @@ export async function mock(
 	];
 	const observation = (academicYearId = year): SupervisionObservation => ({
 		canManage: observationScope ? observationScope === 'manage' : (options.canManage ?? true),
-		canReview: options.canReview ?? true,
+		canReview: options.canReview ?? (options.canManage !== false || resultPublished()),
 		averageRating: options.averageRating ?? null,
 		id: id(30),
 		cycleId: firstCycle,
@@ -184,7 +187,7 @@ export async function mock(
 							evaluatorDisplayName: 'ผู้ประเมินทดสอบ',
 							roleLabel: 'ผู้ประเมิน',
 							isRequired: true,
-							status: observationStatus === 'evaluators_submitted' ? 'submitted' : 'assigned'
+							status: resultPublished() ? 'submitted' : 'assigned'
 						}
 					],
 		actions: [],
@@ -257,7 +260,7 @@ export async function mock(
 			}
 			if (resource === '/api/auth/me')
 				return reply(route, {
-					id: id(20),
+					id: authUserId,
 					username: 'E2E-supervision',
 					firstName: authFirstName,
 					displayName: `${authFirstName} ทดสอบ`,
@@ -384,7 +387,8 @@ export async function mock(
 					return reply(route, 'region ไม่พร้อม', options.failStatus ?? 503);
 			}
 			if (selectedId && method === 'GET') return reply(route, snapshot);
-			if (resource.endsWith('/review') && method === 'GET')
+			if (resource.endsWith('/review') && method === 'GET') {
+				if (!snapshot.canReview) return reply(route, 'ยังไม่เผยแพร่ผล', 403);
 				return reply(route, {
 					observation: observation(),
 					template: detail(),
@@ -392,6 +396,7 @@ export async function mock(
 					itemSummaries: [{ templateItemId: id(7), averageRating: 4, responseCount: 1 }],
 					averageRating: 4
 				});
+			}
 			if (
 				resource.endsWith('/timetable-options') ||
 				resource === '/api/supervision/booking-options'
@@ -428,22 +433,26 @@ export async function mock(
 					withinCycleDates: true,
 					overlappingBookings: []
 				});
-			if (resource.endsWith('/progress'))
+			if (resource.endsWith('/progress')) {
+				const first = resource.includes(firstCycle);
 				return reply(route, {
-					cycleId: firstCycle,
-					totalObservations: 1,
-					completedCount: 0,
-					underReviewCount: 0,
-					approvedCount: 0,
-					averageRating: null
+					cycleId: first ? firstCycle : secondCycle,
+					totalObservations: first ? 7 : 3,
+					requestedCount: first ? 1 : 2,
+					plannedCount: first ? 1 : 0,
+					publishedCount: first ? 2 : 1,
+					completedCount: first ? 3 : 0,
+					cancelledCount: 0,
+					averageRating: first ? 4.25 : 4.5
 				});
+			}
 			if (method === 'POST' && resource.includes(`/observations/${id(30)}/`)) {
 				if (options.hold === 'patch') await held.promise;
 				if (resource.endsWith('/approve-request')) {
 					periodsLocked = true;
 					applyEvaluators(route);
-				}
-				if (resource.endsWith('/return-request')) {
+					observationStatus = 'planned';
+				} else if (resource.endsWith('/return-request')) {
 					const { comment }: ReturnObservationRequest = route.request().postDataJSON();
 					observationPatch = {
 						...observationPatch,
@@ -460,29 +469,32 @@ export async function mock(
 							}
 						]
 					};
+					observationStatus = 'returned';
+				} else if (resource.endsWith('/resubmit-request')) {
+					observationStatus = 'requested';
+				} else if (resource.endsWith('/cancel')) {
+					observationStatus = 'cancelled';
+				} else if (resource.endsWith('/evaluations/me/submit')) {
+					if (observationStatus !== 'planned' && observationStatus !== 'in_progress')
+						return reply(route, 'รายการนี้ไม่รับผลประเมินแล้ว', 409);
+					const evaluators = observation().evaluators.map((evaluator): SupervisionEvaluator =>
+						evaluator.evaluatorUserId === authUserId
+							? { ...evaluator, status: 'submitted' }
+							: evaluator
+					);
+					const required = evaluators.filter((evaluator) => evaluator.isRequired);
+					observationStatus =
+						required.length && required.every(({ status }) => status === 'submitted')
+							? 'published'
+							: 'in_progress';
+					observationPatch = { ...observationPatch, evaluators };
+				} else if (resource.endsWith('/acknowledge')) {
+					if (observationStatus !== 'published' || observation().observedUserId !== authUserId)
+						return reply(route, 'รายการนี้ยังรับทราบผลไม่ได้', 403);
+					observationStatus = 'completed';
+				} else {
+					return reply(route, 'unmocked supervision action', 404);
 				}
-				observationStatus = resource.endsWith('/resubmit-request')
-					? 'requested'
-					: resource.endsWith('/cancel')
-						? 'cancelled'
-						: resource.endsWith('/certify')
-							? 'approved'
-							: resource.endsWith('/approve')
-								? 'published'
-								: resource.endsWith('/return-request')
-									? 'returned'
-									: resource.includes('/evaluations/')
-										? 'evaluators_submitted'
-										: 'planned';
-				if (resource.includes('/evaluations/'))
-					observationPatch = {
-						...observationPatch,
-						evaluators: observation().evaluators.map((evaluator): SupervisionEvaluator =>
-							evaluator.evaluatorUserId === id(20)
-								? { ...evaluator, status: 'submitted' }
-								: evaluator
-						)
-					};
 				return reply(route, observation());
 			}
 			if (method === 'PUT' && resource === `/api/supervision/observations/${id(30)}/evaluators`) {
@@ -577,6 +589,11 @@ export async function mock(
 		}
 	);
 	return {
+		switchUser: (userId: string, permissions: string[]) => {
+			authUserId = userId;
+			authSessionId = userId;
+			authPermissions = [...permissions];
+		},
 		replaceIdentity: async (permissions: string[], sessionId = authSessionId) => {
 			authPermissions = [...permissions];
 			authSessionId = sessionId;

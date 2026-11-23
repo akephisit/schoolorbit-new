@@ -28,7 +28,7 @@ for (const [name, snapshot] of [
 		page
 	}) => {
 		const api = await mock(page, {
-			observationStatus: 'evaluators_submitted',
+			observationStatus: 'published',
 			averageRating: 4,
 			observation: { periods: [savedPeriod({ lessonSnapshot: snapshot })] }
 		});

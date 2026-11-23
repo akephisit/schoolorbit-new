@@ -1,7 +1,7 @@
 use school_database::DbSession;
 use std::collections::{HashMap, HashSet};
 
-use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{PgConnection, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
 use crate::models::{
@@ -16,9 +16,9 @@ use super::observations::{
     get_observation, get_observation_with_connection, insert_observation_action,
 };
 use super::shared::{
-    all_required_evaluators_submitted, can_transition_observation_status,
-    manager_can_edit_observation, normalize_evaluator_replacement, parse_template_item_type,
-    EvaluatorReplacementState, EvaluatorSubmissionState,
+    all_required_evaluators_submitted, can_view_observation_results, manager_can_edit_observation,
+    normalize_evaluator_replacement, parse_template_item_type, EvaluatorReplacementState,
+    EvaluatorSubmissionState,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +26,7 @@ pub(super) struct EvaluationItemSpec {
     pub(super) item_type: SupervisionTemplateItemType,
     pub(super) rating_min: i32,
     pub(super) rating_max: i32,
+    pub(super) required: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +69,7 @@ pub async fn replace_observation_evaluators(
         .map(|evaluator| EvaluatorReplacementState {
             evaluator_user_id: evaluator.evaluator_user_id,
             submitted: evaluator.status == SupervisionEvaluatorStatus::Submitted,
+            is_required: evaluator.is_required,
         })
         .collect::<Vec<_>>();
     let submitted_user_ids = existing_states
@@ -130,8 +132,15 @@ pub async fn replace_observation_evaluators(
         None,
     )
     .await?;
-    super::notifications::evaluators_replaced(&mut tx, action_id, &current, &evaluator_user_ids)
-        .await?;
+    let published = publish_completed_evaluations(&mut tx, &current, actor_user_id).await?;
+    super::notifications::evaluators_replaced(
+        &mut tx,
+        action_id,
+        &current,
+        &evaluator_user_ids,
+        published,
+    )
+    .await?;
 
     tx.commit().await?;
     get_observation(pool, observation_id).await
@@ -203,38 +212,39 @@ pub async fn submit_my_evaluation(
     require_observation_write(&mut tx, observation_id).await?;
     let evaluator = load_evaluator_for_user(&mut *tx, observation_id, evaluator_user_id).await?;
     let observation = get_observation_with_connection(&mut tx, observation_id).await?;
-    let can_submit = matches!(
-        observation.status,
-        SupervisionObservationStatus::Planned | SupervisionObservationStatus::InProgress
-    );
-    let optional_before_certification = !evaluator.is_required
-        && observation.status == SupervisionObservationStatus::EvaluatorsSubmitted;
-    let submitted_replay = observation.status == SupervisionObservationStatus::EvaluatorsSubmitted
-        && evaluator.status == "submitted"
-        && input.responses.is_empty();
-    if !can_submit && !optional_before_certification && !submitted_replay {
+    let already_submitted = evaluator.status == "submitted";
+    let released = can_view_observation_results(observation.status, false);
+    if !(accepts_evaluations(observation.status) || already_submitted && released) {
         return Err(AppError::ValidationError(
-            "ส่งผลประเมินได้เฉพาะรายการที่ยังไม่รับรองผล".into(),
+            "ส่งผลประเมินได้เฉพาะรายการที่ยังเปิดรับผลประเมิน".into(),
         ));
     }
-    if !input.responses.is_empty() {
-        if evaluator.status == "submitted" {
+    let responses = dedupe_evaluation_responses(input.responses);
+    let template_item_ids = responses
+        .iter()
+        .map(|response| response.template_item_id)
+        .collect::<Vec<_>>();
+    let item_specs = load_evaluation_item_specs(
+        &mut tx,
+        observation_id,
+        &template_item_ids,
+        !already_submitted,
+    )
+    .await?;
+    let response_rows = build_evaluation_response_bulk_rows(&responses, &item_specs)?;
+
+    if already_submitted {
+        if !matches_submitted_responses(&mut tx, evaluator.id, &response_rows).await? {
             return Err(AppError::ValidationError(
                 "ส่งผลประเมินแล้ว ไม่สามารถแก้ไขได้".into(),
             ));
         }
-        let responses = dedupe_evaluation_responses(input.responses);
-        let template_item_ids = responses
-            .iter()
-            .map(|response| response.template_item_id)
-            .collect::<Vec<_>>();
-        let item_specs =
-            load_evaluation_item_specs(&mut *tx, observation_id, &template_item_ids).await?;
-        let response_rows = build_evaluation_response_bulk_rows(&responses, &item_specs)?;
-        bulk_upsert_evaluation_responses(&mut tx, observation_id, evaluator.id, &response_rows)
-            .await?;
+        tx.commit().await?;
+        return Ok(observation);
     }
 
+    require_completed_evaluation(&item_specs, &response_rows)?;
+    bulk_upsert_evaluation_responses(&mut tx, observation_id, evaluator.id, &response_rows).await?;
     DbSession::new(&mut *tx)
         .query(
             "supervision.services.evaluations.submit_my_evaluation",
@@ -255,26 +265,6 @@ pub async fn submit_my_evaluation(
             AppError::InternalServerError("ไม่สามารถส่งผลประเมินได้".to_string())
         })?;
 
-    let states = load_evaluator_submission_states(&mut *tx, observation_id).await?;
-    if all_required_evaluators_submitted(&states) {
-        let current = get_observation_with_connection(&mut tx, observation_id).await?;
-        if can_transition_observation_status(
-            current.status,
-            SupervisionObservationStatus::EvaluatorsSubmitted,
-        ) {
-            DbSession::new(&mut *tx).query("supervision.services.evaluations.submit_my_evaluation",
-                "UPDATE supervision_observations SET status = 'evaluators_submitted' WHERE id = $1",
-            )
-            .bind(observation_id)
-            .execute()
-            .await
-            .map_err(|error| {
-                tracing::error!("Failed to mark supervision evaluators submitted: {}", school_database::error_class(&error));
-                AppError::InternalServerError("ไม่สามารถอัปเดตสถานะนิเทศได้".to_string())
-            })?;
-        }
-    }
-
     insert_observation_action(
         &mut tx,
         observation_id,
@@ -285,16 +275,61 @@ pub async fn submit_my_evaluation(
         None,
     )
     .await?;
+    publish_completed_evaluations(&mut tx, &observation, evaluator_user_id).await?;
 
     tx.commit().await?;
     get_observation(pool, observation_id).await
+}
+
+fn accepts_evaluations(status: SupervisionObservationStatus) -> bool {
+    matches!(
+        status,
+        SupervisionObservationStatus::Planned | SupervisionObservationStatus::InProgress
+    )
+}
+
+/// The caller holds the observation write lock for the evaluation or roster change.
+async fn publish_completed_evaluations(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    observation: &SupervisionObservation,
+    actor_user_id: Uuid,
+) -> Result<bool, AppError> {
+    if !accepts_evaluations(observation.status)
+        || !all_required_evaluators_submitted(
+            &load_evaluator_submission_states(tx, observation.id).await?,
+        )
+    {
+        return Ok(false);
+    }
+
+    let published = SupervisionObservationStatus::Published;
+    DbSession::new(&mut **tx)
+        .query(
+            "supervision.evaluations.publish_completed_evaluations",
+            "UPDATE supervision_observations SET status = $2 WHERE id = $1",
+        )
+        .bind(observation.id)
+        .bind(published.as_str())
+        .execute()
+        .await?;
+    let action_id = insert_observation_action(
+        tx,
+        observation.id,
+        Some(actor_user_id),
+        "result_published",
+        Some(observation.status),
+        Some(published),
+        None,
+    )
+    .await?;
+    super::notifications::status_changed(tx, action_id, observation, published).await?;
+    Ok(true)
 }
 
 #[derive(Debug, sqlx::FromRow)]
 struct EvaluatorForUserRow {
     id: Uuid,
     status: String,
-    is_required: bool,
 }
 
 async fn load_evaluator_for_user(
@@ -306,7 +341,7 @@ async fn load_evaluator_for_user(
         .query_as::<EvaluatorForUserRow>(
             "supervision.services.evaluations.load_evaluator_for_user",
             r#"
-        SELECT id, status, is_required
+        SELECT id, status
         FROM supervision_evaluators
         WHERE observation_id = $1 AND evaluator_user_id = $2
         "#,
@@ -323,6 +358,45 @@ async fn load_evaluator_for_user(
             AppError::InternalServerError("ไม่สามารถตรวจสอบผู้ประเมินได้".to_string())
         })?
         .ok_or_else(|| AppError::Forbidden("ไม่ได้รับมอบหมายให้ประเมินรายการนี้".to_string()))
+}
+
+async fn matches_submitted_responses(
+    connection: &mut PgConnection,
+    evaluator_id: Uuid,
+    rows: &[EvaluationResponseBulkRow],
+) -> Result<bool, AppError> {
+    if rows.is_empty() {
+        return Ok(true);
+    }
+
+    let item_ids: Vec<_> = rows.iter().map(|row| row.template_item_id).collect();
+    let scores: Vec<_> = rows.iter().map(|row| row.rating_score).collect();
+    let texts: Vec<_> = rows
+        .iter()
+        .map(|row| row.text_response.as_deref())
+        .collect();
+    Ok(DbSession::new(connection)
+        .scalar(
+            "supervision.evaluations.matches_submitted_responses",
+            r#"
+            SELECT NOT EXISTS (
+                SELECT 1
+                FROM UNNEST($2::uuid[], $3::double precision[], $4::text[])
+                     AS incoming(item_id, score, answer)
+                LEFT JOIN supervision_evaluator_responses saved
+                  ON saved.evaluator_id = $1 AND saved.template_item_id = incoming.item_id
+                WHERE saved.id IS NULL
+                   OR saved.rating_score IS DISTINCT FROM incoming.score::numeric(6,2)
+                   OR saved.text_response IS DISTINCT FROM incoming.answer
+            )
+            "#,
+        )
+        .bind(evaluator_id)
+        .bind(item_ids)
+        .bind(scores)
+        .bind(texts)
+        .fetch_one()
+        .await?)
 }
 
 pub(super) fn dedupe_evaluation_responses(
@@ -347,25 +421,27 @@ async fn load_evaluation_item_specs(
     connection: &mut PgConnection,
     observation_id: Uuid,
     template_item_ids: &[Uuid],
+    include_required: bool,
 ) -> Result<HashMap<Uuid, EvaluationItemSpec>, AppError> {
-    if template_item_ids.is_empty() {
+    if template_item_ids.is_empty() && !include_required {
         return Ok(HashMap::new());
     }
 
     let rows = DbSession::new(&mut *connection)
-        .query(
+        .query_as::<(Uuid, String, i32, i32, bool)>(
             "supervision.services.evaluations.load_evaluation_item_specs",
             r#"
-        SELECT i.id, i.item_type, t.rating_min, t.rating_max
+        SELECT i.id, i.item_type, t.rating_min, t.rating_max, i.required
         FROM supervision_template_items i
         JOIN supervision_template_sections s ON i.section_id = s.id
         JOIN supervision_templates t ON s.template_id = t.id
         JOIN supervision_observations o ON o.template_id = t.id
-        WHERE o.id = $1 AND i.id = ANY($2)
+        WHERE o.id = $1 AND (i.id = ANY($2) OR ($3 AND i.required))
         "#,
         )
         .bind(observation_id)
         .bind(template_item_ids)
+        .bind(include_required)
         .fetch_all()
         .await
         .map_err(|error| {
@@ -376,36 +452,45 @@ async fn load_evaluation_item_specs(
             AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
         })?;
 
-    let mut specs = HashMap::with_capacity(rows.len());
-    for row in rows {
-        let item_id: Uuid = row.try_get("id").map_err(|error| {
-            tracing::error!("Failed to read supervision item id: {}", error);
-            AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
-        })?;
-        let item_type: String = row.try_get("item_type").map_err(|error| {
-            tracing::error!("Failed to read supervision item type: {}", error);
-            AppError::InternalServerError("ไม่สามารถตรวจสอบหัวข้อประเมินได้".to_string())
-        })?;
-        let rating_min: i32 = row.try_get("rating_min").map_err(|error| {
-            tracing::error!("Failed to read supervision rating min: {}", error);
-            AppError::InternalServerError("ไม่สามารถตรวจสอบคะแนนประเมินได้".to_string())
-        })?;
-        let rating_max: i32 = row.try_get("rating_max").map_err(|error| {
-            tracing::error!("Failed to read supervision rating max: {}", error);
-            AppError::InternalServerError("ไม่สามารถตรวจสอบคะแนนประเมินได้".to_string())
-        })?;
+    rows.into_iter()
+        .map(|(item_id, item_type, rating_min, rating_max, required)| {
+            Ok((
+                item_id,
+                EvaluationItemSpec {
+                    item_type: parse_template_item_type(&item_type)?,
+                    rating_min,
+                    rating_max,
+                    required,
+                },
+            ))
+        })
+        .collect()
+}
 
-        specs.insert(
-            item_id,
-            EvaluationItemSpec {
-                item_type: parse_template_item_type(&item_type)?,
-                rating_min,
-                rating_max,
-            },
-        );
+fn require_completed_evaluation(
+    item_specs: &HashMap<Uuid, EvaluationItemSpec>,
+    responses: &[EvaluationResponseBulkRow],
+) -> Result<(), AppError> {
+    let answered: HashSet<_> = responses
+        .iter()
+        .filter(|response| {
+            response.rating_score.is_some()
+                || response
+                    .text_response
+                    .as_deref()
+                    .is_some_and(|text| !text.trim().is_empty())
+        })
+        .map(|response| response.template_item_id)
+        .collect();
+    if item_specs
+        .iter()
+        .any(|(id, spec)| spec.required && !answered.contains(id))
+    {
+        return Err(AppError::ValidationError(
+            "กรุณาตอบหัวข้อประเมินที่จำเป็นให้ครบ".into(),
+        ));
     }
-
-    Ok(specs)
+    Ok(())
 }
 
 pub(super) fn build_evaluation_response_bulk_rows(
@@ -431,7 +516,7 @@ pub(super) fn build_evaluation_response_bulk_rows(
                     ));
                 }
                 if let Some(score) = response.rating_score {
-                    if score < spec.rating_min as f64 || score > spec.rating_max as f64 {
+                    if !(spec.rating_min as f64..=spec.rating_max as f64).contains(&score) {
                         return Err(AppError::ValidationError(
                             "คะแนนอยู่นอกช่วงที่แบบประเมินกำหนด".to_string(),
                         ));
@@ -511,7 +596,7 @@ async fn bulk_upsert_evaluation_responses(
     Ok(())
 }
 
-pub(super) async fn load_evaluator_submission_states(
+async fn load_evaluator_submission_states(
     connection: &mut PgConnection,
     observation_id: Uuid,
 ) -> Result<Vec<EvaluatorSubmissionState>, AppError> {
@@ -599,6 +684,7 @@ mod tests {
                     item_type: SupervisionTemplateItemType::Rating,
                     rating_min: 1,
                     rating_max: 5,
+                    required: true,
                 },
             ),
             (
@@ -607,6 +693,7 @@ mod tests {
                     item_type: SupervisionTemplateItemType::Text,
                     rating_min: 1,
                     rating_max: 5,
+                    required: true,
                 },
             ),
         ]);

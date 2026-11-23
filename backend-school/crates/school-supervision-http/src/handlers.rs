@@ -542,9 +542,7 @@ pub async fn get_observation_review(
             &evaluator_user_ids,
         )
         .await?;
-    } else if !supervision_access_policy::can_approve_school(&context.actor)
-        && !supervision_access_policy::can_manage_school(&context.actor)
-    {
+    } else {
         supervision_access_policy::require_observation_management_access(
             &context.tenant.pool,
             &context.actor,
@@ -841,7 +839,7 @@ pub async fn update_observation(
     request_body = ReplaceObservationEvaluatorsRequest,
     responses(
         (status = 422, description = "Request validation failed", body = ApiErrorResponse),
-        (status = 200, description = "Supervision evaluators replaced", body = ApiResponse<SupervisionObservation>),
+        (status = 200, description = "Supervision evaluators replaced and results published if the confirmed roster has submitted all required evaluations", body = ApiResponse<SupervisionObservation>),
         (status = 400, description = "Invalid evaluator assignment", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Observation management denied", body = ApiErrorResponse),
@@ -1022,7 +1020,7 @@ pub async fn return_observation_request(
     params(("id" = Uuid, Path, description = "Supervision observation ID")),
     request_body = SaveEvaluationRequest,
     responses(
-        (status = 200, description = "Supervision evaluation submitted", body = ApiResponse<SupervisionObservation>),
+        (status = 200, description = "Supervision evaluation submitted and results published when all required evaluators have submitted", body = ApiResponse<SupervisionObservation>),
         (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
         (status = 400, description = "Invalid supervision evaluation", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
@@ -1042,76 +1040,6 @@ pub async fn submit_my_evaluation(
     let observation =
         services::submit_my_evaluation(&context.tenant.pool, context.actor.user_id, id, payload)
             .await?;
-    let observation =
-        services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
-            .await?;
-
-    Ok(Json(ApiResponse::ok(observation)).into_response())
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    post,
-    path = "/api/supervision/observations/{id}/certify",
-    operation_id = "certifySupervisionObservation",
-    tag = "supervision",
-    params(("id" = Uuid, Path, description = "Supervision observation ID")),
-    responses(
-        (status = 200, description = "Supervision observation certified", body = ApiResponse<SupervisionObservation>),
-        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
-        (status = 400, description = "Observation cannot be certified", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Observation management denied", body = ApiErrorResponse),
-        (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
-    )
-))]
-pub async fn certify_observation(
-    State(state): State<SupervisionHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    let current = services::get_observation(&context.tenant.pool, id).await?;
-    supervision_access_policy::require_observation_management_access(
-        &context.tenant.pool,
-        &context.actor,
-        current.observed_user_id,
-    )
-    .await?;
-
-    let observation =
-        services::certify_observation(&context.tenant.pool, context.actor.user_id, id).await?;
-    let observation =
-        services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)
-            .await?;
-
-    Ok(Json(ApiResponse::ok(observation)).into_response())
-}
-
-#[cfg_attr(feature = "api-docs", utoipa::path(
-    post,
-    path = "/api/supervision/observations/{id}/approve",
-    operation_id = "approveSupervisionObservation",
-    tag = "supervision",
-    params(("id" = Uuid, Path, description = "Supervision observation ID")),
-    responses(
-        (status = 200, description = "Supervision observation approved", body = ApiResponse<SupervisionObservation>),
-        (status = 409, description = "Academic year or term is closed", body = ApiErrorResponse),
-        (status = 400, description = "Observation cannot be approved", body = ApiErrorResponse),
-        (status = 401, description = "Authentication required", body = ApiErrorResponse),
-        (status = 403, description = "Academic approval denied", body = ApiErrorResponse),
-        (status = 404, description = "Supervision observation not found", body = ApiErrorResponse)
-    )
-))]
-pub async fn approve_observation(
-    State(state): State<SupervisionHttpState>,
-    Extension(session): Extension<AuthenticatedSession>,
-    Path(id): Path<Uuid>,
-) -> Result<impl IntoResponse, AppError> {
-    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
-    supervision_access_policy::require_approve_school(&context.actor)?;
-
-    let observation =
-        services::approve_observation(&context.tenant.pool, context.actor.user_id, id).await?;
     school_notifications::runtime::wake_after_commit(&context.tenant.subdomain);
     let observation =
         services::redacted_observation_for_actor(&context.tenant.pool, &context.actor, observation)

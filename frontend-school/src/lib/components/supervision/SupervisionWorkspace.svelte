@@ -673,10 +673,7 @@
 				return;
 			cycles = items;
 			cyclesLoaded = true;
-			if (
-				section === 'overview' &&
-				(!cycles.some((item) => item.id === overviewCycleId) || !teacherStatusLoaded)
-			) {
+			if (section === 'overview' && !cycles.some((item) => item.id === overviewCycleId)) {
 				overviewCycleId = cycles[0]?.id ?? '';
 				loadOverviewReports();
 			}

@@ -8150,22 +8150,6 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
-	'/api/supervision/observations/{id}/approve': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['approveSupervisionObservation'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
 	'/api/supervision/observations/{id}/approve-request': {
 		parameters: {
 			query?: never;
@@ -8192,22 +8176,6 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['cancelSupervisionObservation'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/supervision/observations/{id}/certify': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post: operations['certifySupervisionObservation'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -13314,8 +13282,6 @@ export interface components {
 		};
 		ApiResponse_SupervisionCycleProgress: {
 			data: {
-				/** Format: int64 */
-				approvedCount: number;
 				/** Format: double */
 				averageRating?: number | null;
 				/** Format: int64 */
@@ -13332,8 +13298,6 @@ export interface components {
 				requestedCount: number;
 				/** Format: int64 */
 				totalObservations: number;
-				/** Format: int64 */
-				underReviewCount: number;
 			};
 			message?: string;
 			success: boolean;
@@ -25866,12 +25830,12 @@ export interface components {
 			comment?: string | null;
 			/** Format: date-time */
 			createdAt: string;
-			fromStatus?: components['schemas']['SupervisionObservationStatus'] | null;
+			fromStatus?: string | null;
 			/** Format: uuid */
 			id: string;
 			/** Format: uuid */
 			observationId: string;
-			toStatus?: components['schemas']['SupervisionObservationStatus'] | null;
+			toStatus?: string | null;
 		};
 		SupervisionBookingAvailability: {
 			blocked: boolean;
@@ -25943,8 +25907,6 @@ export interface components {
 			revision: string;
 		};
 		SupervisionCycleProgress: {
-			/** Format: int64 */
-			approvedCount: number;
 			/** Format: double */
 			averageRating?: number | null;
 			/** Format: int64 */
@@ -25961,8 +25923,6 @@ export interface components {
 			requestedCount: number;
 			/** Format: int64 */
 			totalObservations: number;
-			/** Format: int64 */
-			underReviewCount: number;
 		};
 		SupervisionCycleQuery: {
 			/** Format: uuid */
@@ -26108,10 +26068,7 @@ export interface components {
 			| 'requested'
 			| 'planned'
 			| 'in_progress'
-			| 'evaluators_submitted'
-			| 'under_review'
 			| 'returned'
-			| 'approved'
 			| 'published'
 			| 'acknowledged'
 			| 'completed'
@@ -66393,74 +66350,6 @@ export interface operations {
 			};
 		};
 	};
-	approveSupervisionObservation: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Supervision observation ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Supervision observation approved */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
-				};
-			};
-			/** @description Observation cannot be approved */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic approval denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Supervision observation not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year or term is closed */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	approveSupervisionObservationRequest: {
 		parameters: {
 			query?: never;
@@ -66614,74 +66503,6 @@ export interface operations {
 			};
 		};
 	};
-	certifySupervisionObservation: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				/** @description Supervision observation ID */
-				id: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Supervision observation certified */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiResponse_SupervisionObservation'];
-				};
-			};
-			/** @description Observation cannot be certified */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Authentication required */
-			401: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Observation management denied */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Supervision observation not found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-			/** @description Academic year or term is closed */
-			409: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ApiErrorResponse'];
-				};
-			};
-		};
-	};
 	submitMySupervisionEvaluation: {
 		parameters: {
 			query?: never;
@@ -66698,7 +66519,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Supervision evaluation submitted */
+			/** @description Supervision evaluation submitted and results published when all required evaluators have submitted */
 			200: {
 				headers: {
 					[name: string]: unknown;
@@ -66829,7 +66650,7 @@ export interface operations {
 			};
 		};
 		responses: {
-			/** @description Supervision evaluators replaced */
+			/** @description Supervision evaluators replaced and results published if the confirmed roster has submitted all required evaluations */
 			200: {
 				headers: {
 					[name: string]: unknown;

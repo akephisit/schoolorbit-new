@@ -33,6 +33,7 @@ test('explicit overview renders teacher status while cycle options are pending',
 		path('requests')
 	);
 	await expect(page.getByTestId('supervision-cycle-selector').getByRole('status')).toBeVisible();
+	await expect(page.getByTestId('supervision-progress')).toHaveCount(0);
 	expect(api.count(`/api/supervision/reports/cycles/${firstCycle}/teacher-status`)).toBe(1);
 	expect(api.reads.some((value) => value.endsWith('/progress'))).toBe(false);
 	api.release();
@@ -41,6 +42,41 @@ test('explicit overview renders teacher status while cycle options are pending',
 			.getByTestId('supervision-cycle-selector')
 			.getByRole('combobox', { name: 'รอบนิเทศ', exact: true })
 	).toHaveText('รอบแรก');
+});
+
+test('school progress loads independently of cycle options and retains published counts', async ({
+	page
+}) => {
+	const api = await mock(page, { hold: 'cycles', permissions: ['supervision.read.school'] });
+	await page.goto(path('overview', year, firstCycle));
+	const progress = page.getByTestId('supervision-progress');
+	await expect(progress.getByText('รอครูรับทราบ', { exact: true }).locator('..')).toHaveText(
+		/^2\s*รอครูรับทราบ$/
+	);
+	await expect(progress.getByText('เสร็จสิ้น', { exact: true }).locator('..')).toHaveText(
+		/^3\s*เสร็จสิ้น$/
+	);
+	await expect(progress).toContainText('4.25');
+	await expect(page.getByTestId('supervision-cycle-selector').getByRole('status')).toBeVisible();
+	await expect(page.getByText(/รับรองผล|อนุมัติผล|รับรอง\/อนุมัติ/)).toHaveCount(0);
+	expect(api.count(`/api/supervision/reports/cycles/${firstCycle}/progress`)).toBe(1);
+	expect(api.count('/api/supervision/observations')).toBe(0);
+	api.release();
+});
+
+test('school progress retry leaves the cycle selector and teacher status intact', async ({
+	page
+}) => {
+	const api = await mock(page, { fail: 'progress' });
+	await page.goto(path('overview', year, firstCycle));
+	const progress = page.getByTestId('supervision-progress');
+	await expect(progress.getByText('region ไม่พร้อม')).toBeVisible();
+	await expect(page.getByText('ครู รอบแรก')).toBeVisible();
+	await progress.getByRole('button', { name: 'ลองใหม่' }).click();
+	await expect(progress.getByText('ความคืบหน้ารวม')).toBeVisible();
+	expect(api.count(`/api/supervision/reports/cycles/${firstCycle}/progress`)).toBe(2);
+	expect(api.count(`/api/supervision/reports/cycles/${firstCycle}/teacher-status`)).toBe(1);
+	expect(api.count('/api/supervision/cycles')).toBe(1);
 });
 
 test('default overview waits only for cycles to select the first ID', async ({ page }) => {
@@ -73,6 +109,8 @@ test('overview cycle selection and Back supersede pending status without broad r
 	const api = await mock(page, { hold: 'teacher-status' });
 	await page.goto(path('overview', year, firstCycle));
 	await expect(page.getByText('ครู รอบแรก')).toBeVisible();
+	const progress = page.getByTestId('supervision-progress');
+	await expect(progress).toContainText('4.25');
 	await expect(
 		page
 			.getByTestId('supervision-cycle-selector')
@@ -85,8 +123,10 @@ test('overview cycle selection and Back supersede pending status without broad r
 	await page.getByRole('option', { name: /รอบที่สอง/ }).click();
 	await expect(page).toHaveURL(new RegExp(`cycleId=${secondCycle}`));
 	await expect(page.getByText('ครู รอบแรก')).toHaveCount(0);
+	await expect(progress).toContainText('4.50');
 	await page.goBack();
 	await expect(page.getByText('ครู รอบแรก')).toBeVisible();
+	await expect(progress).toContainText('4.25');
 	api.release();
 	await expect(page.getByText('ครู รอบสอง')).toHaveCount(0);
 	expect(api.count('/api/supervision/cycles')).toBe(1);
@@ -177,6 +217,7 @@ test('template edit patches the returned summary without rereading any list', as
 	await expect(
 		page.getByTestId('supervision-templates-ready').getByText('แบบประเมินที่แก้แล้ว')
 	).toBeVisible();
+	expect(api.payloads[0]).not.toHaveProperty('steps');
 	expect(api.count('/api/supervision/templates/summaries')).toBe(1);
 	expect(api.count('/api/supervision/cycles')).toBe(0);
 });

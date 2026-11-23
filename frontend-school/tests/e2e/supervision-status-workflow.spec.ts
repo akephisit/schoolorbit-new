@@ -267,7 +267,7 @@ test('own returned row names the next teacher action and links to correction', a
 	});
 	await page.goto(path('').replace('/supervision/?', '/supervision?'));
 	const row = page.locator('[data-supervision-own-list="cards"]');
-	await expect(row).toContainText('ขั้น 1/6 คำขอ');
+	await expect(row).toContainText('ขั้น 1/4 คำขอ');
 	await expect(row).toContainText('ถัดไป: ครูผู้ขอรับนิเทศ');
 	await expect(row.getByRole('link', { name: 'แก้ไขและส่งใหม่', exact: true })).toHaveAttribute(
 		'href',
@@ -340,40 +340,141 @@ test('own legacy returned request can cancel without editing submitted results',
 	expect(api.count(observationPath)).toBe(1);
 });
 
-test('an optional assigned evaluator can submit while the item waits for certification', async ({
+test('an optional evaluator can submit while a required evaluation is pending', async ({
 	page
 }) => {
 	const api = await mock(page, {
 		permissions: ['supervision.read.assigned', 'supervision.evaluate.assigned'],
-		observationStatus: 'evaluators_submitted',
+		observationStatus: 'in_progress',
 		observation: {
 			observedUserId: id(21),
-			evaluators: [
-				{
-					id: id(31),
-					observationId: id(30),
-					evaluatorUserId: id(20),
-					evaluatorDisplayName: 'ผู้ประเมินเสริม',
-					isRequired: false,
-					status: 'assigned',
-					createdAt: '2026-10-01T00:00:00Z',
-					updatedAt: '2026-10-01T00:00:00Z'
-				}
-			]
+			evaluators: (
+				[
+					[20, 'ผู้ประเมินเสริม', false],
+					[22, 'ผู้ประเมินหลัก', true]
+				] as const
+			).map(([userId, name, required], index) => ({
+				id: id(31 + index),
+				observationId: id(30),
+				evaluatorUserId: id(userId),
+				evaluatorDisplayName: name,
+				isRequired: required,
+				status: 'assigned',
+				createdAt: '2026-10-01T00:00:00Z',
+				updatedAt: '2026-10-01T00:00:00Z'
+			}))
 		}
 	});
 	await page.goto(path('evaluate'));
 	const row = page.locator('[data-supervision-assigned-list="cards"]');
-	await expect(row).toContainText('รอรับรองผล');
-	await expect(row).toContainText('ถัดไป: ผู้มีสิทธิ์รับรองผล');
+	await expect(row).toContainText('กำลังประเมิน');
 	await row.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await dialog.getByRole('button', { name: '4', exact: true }).click();
 	await dialog.getByRole('button', { name: 'ส่งผลประเมิน', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
+	await expect(page.locator('[data-supervision-submitted-assigned-list]')).toContainText(
+		'กำลังประเมิน'
+	);
 	await expect(page.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true })).toHaveCount(0);
 	expect(api.writes).toEqual([`POST ${observationPath}/evaluations/me/submit`]);
 	expect(api.count('/api/supervision/observations')).toBe(1);
+});
+
+test('the last required submission publishes the rubric and the teacher completes the visit', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 390, height: 900 });
+	const evaluatorPermissions = ['supervision.read.assigned', 'supervision.evaluate.assigned'];
+	const api = await mock(page, {
+		permissions: evaluatorPermissions,
+		canManage: false,
+		averageRating: 4.25,
+		term: true,
+		observationStatus: 'planned',
+		observation: {
+			observedUserId: id(21),
+			evaluators: (
+				[
+					[20, 'ผู้ประเมินหลักคนแรก', true],
+					[22, 'ผู้ประเมินหลักคนสุดท้าย', true],
+					[23, 'ผู้ประเมินเสริม', false]
+				] as const
+			).map(([userId, name, required], index) => ({
+				id: id(31 + index),
+				observationId: id(30),
+				evaluatorUserId: id(userId),
+				evaluatorDisplayName: name,
+				isRequired: required,
+				status: 'assigned',
+				createdAt: '2026-10-01T00:00:00Z',
+				updatedAt: '2026-10-01T00:00:00Z'
+			}))
+		}
+	});
+	const yearAndTerm = `&academicTermId=${id(8)}`;
+	const evaluate = `${path('evaluate')}${yearAndTerm}`;
+	const detail = `${detailPath}${yearAndTerm}`;
+	const mine = `${path('').replace('/supervision/?', '/supervision?')}${yearAndTerm}`;
+	const submitted = page.locator('[data-supervision-submitted-assigned-list]');
+	const workflow = page.getByTestId('supervision-workflow');
+	const rubric = page.getByTestId('supervision-review');
+	const acknowledge = page.getByRole('button', { name: 'รับทราบผล', exact: true });
+
+	async function submitEvaluation() {
+		await page.goto(evaluate);
+		await page.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		await expect(dialog).toContainText(
+			'เมื่อผู้ประเมินที่จำเป็นส่งผลครบ ระบบจะแจ้งให้ครูรับทราบผล'
+		);
+		await dialog.getByRole('button', { name: '4', exact: true }).click();
+		await dialog.getByRole('button', { name: 'ส่งผลประเมิน', exact: true }).click();
+		await expect(dialog).toHaveCount(0);
+	}
+
+	await submitEvaluation();
+	await expect(submitted).toContainText('กำลังประเมิน');
+	api.switchUser(id(21), teacherPermissions);
+	await page.goto(detail);
+	await expect(workflow).toContainText('ผู้ประเมินที่จำเป็นส่งแล้ว 1/2 คน');
+	await expect(rubric).toContainText('ระบบเผยแพร่ผลเมื่อผู้ประเมินที่จำเป็นส่งผลครบ');
+	await expect(page.getByTestId('supervision-detail')).not.toContainText('4.25');
+	await expect(page.getByRole('button', { name: 'ดูผลประเมินรายข้อ' })).toHaveCount(0);
+	await expect(acknowledge).toHaveCount(0);
+	expect(api.count(`${observationPath}/review`)).toBe(0);
+
+	api.switchUser(id(22), evaluatorPermissions);
+	await submitEvaluation();
+	await expect(submitted).toContainText('รอครูรับทราบ');
+	api.switchUser(id(23), evaluatorPermissions);
+	await page.goto(evaluate);
+	await expect(page.getByText('ยังไม่มีรายการที่ต้องประเมิน', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'เปิดแบบประเมิน', exact: true })).toHaveCount(0);
+
+	api.switchUser(id(21), teacherPermissions);
+	await page.goto(detail);
+	await expect(workflow).toContainText('ขั้น 3/4 รับทราบ');
+	await expect(workflow.getByRole('listitem')).toHaveCount(4);
+	await expect(page.getByText(/รับรองผล|อนุมัติผล|รับรอง\/อนุมัติ/)).toHaveCount(0);
+	await page.getByRole('button', { name: 'ดูผลประเมินรายข้อ' }).click();
+	await expect(rubric.getByText('หัวข้อ rubric ที่โหลดเมื่อเปิด', { exact: true })).toBeVisible();
+	expect(api.count(`${observationPath}/review`)).toBe(1);
+	await page.goto(mine);
+	await expect(acknowledge).toBeVisible();
+	await acknowledge.click();
+	const dialog = page.getByRole('dialog');
+	await dialog.getByPlaceholder('ความคิดเห็นเพิ่มเติม (ถ้ามี)').fill('รับทราบผลแล้ว');
+	await dialog.getByRole('button', { name: 'ยืนยันรับทราบ', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.locator('[data-supervision-own-list]')).toContainText('ขั้น 4/4 เสร็จสิ้น');
+	await expect(acknowledge).toHaveCount(0);
+	expect(api.writes.filter((value) => value.includes('/api/supervision/'))).toEqual([
+		`POST ${observationPath}/evaluations/me/submit`,
+		`POST ${observationPath}/evaluations/me/submit`,
+		`POST ${observationPath}/acknowledge`
+	]);
+	expect(api.payloads.at(-1)).toEqual({ comment: 'รับทราบผลแล้ว' });
 });
 
 for (const referenceState of ['pending', 'failed'] as const) {

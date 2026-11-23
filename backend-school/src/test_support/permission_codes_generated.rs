@@ -123,7 +123,6 @@ pub const STUDENT_READ_ASSIGNED: &str = "student.read.assigned";
 pub const STUDENT_READ_OWN: &str = "student.read.own";
 pub const STUDENT_READ_SCHOOL: &str = "student.read.school";
 pub const STUDENT_UPDATE_ALL: &str = "student.update.all";
-pub const SUPERVISION_APPROVE_SCHOOL: &str = "supervision.approve.school";
 pub const SUPERVISION_EVALUATE_ASSIGNED: &str = "supervision.evaluate.assigned";
 pub const SUPERVISION_MANAGE_ORGANIZATION_TREE: &str = "supervision.manage.organization_tree";
 pub const SUPERVISION_MANAGE_ORGANIZATION_UNIT: &str = "supervision.manage.organization_unit";

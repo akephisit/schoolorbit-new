@@ -773,8 +773,6 @@ use utoipa::OpenApi;
         school_supervision_http::handlers::approve_observation_request,
         school_supervision_http::handlers::return_observation_request,
         school_supervision_http::handlers::submit_my_evaluation,
-        school_supervision_http::handlers::certify_observation,
-        school_supervision_http::handlers::approve_observation,
         school_supervision_http::handlers::acknowledge_observation,
         school_supervision_http::handlers::cycle_progress,
         school_supervision_http::handlers::teacher_status_overview,
@@ -4712,16 +4710,6 @@ mod tests {
                 "submitMySupervisionEvaluation",
             ),
             (
-                "/api/supervision/observations/{id}/certify",
-                "post",
-                "certifySupervisionObservation",
-            ),
-            (
-                "/api/supervision/observations/{id}/approve",
-                "post",
-                "approveSupervisionObservation",
-            ),
-            (
                 "/api/supervision/observations/{id}/acknowledge",
                 "post",
                 "acknowledgeSupervisionObservation",
@@ -4738,6 +4726,12 @@ mod tests {
             ),
         ];
         assert_operations(&document, &expected);
+        for removed in [
+            "/api/supervision/observations/{id}/certify",
+            "/api/supervision/observations/{id}/approve",
+        ] {
+            assert!(document["paths"].get(removed).is_none());
+        }
 
         assert_eq!(
             query_contract(&document, "/api/supervision/cycles", "get"),
@@ -4765,6 +4759,30 @@ mod tests {
             ])
         );
         let schemas = &document["components"]["schemas"];
+        assert_eq!(
+            schemas["SupervisionObservationStatus"]["enum"],
+            serde_json::json!([
+                "requested",
+                "planned",
+                "in_progress",
+                "returned",
+                "published",
+                "acknowledged",
+                "completed",
+                "cancelled"
+            ])
+        );
+        for status in ["fromStatus", "toStatus"] {
+            assert_eq!(
+                schemas["SupervisionAction"]["properties"][status]["type"],
+                serde_json::json!(["string", "null"])
+            );
+        }
+        for count in ["underReviewCount", "approvedCount"] {
+            assert!(schemas["SupervisionCycleProgress"]["properties"]
+                .get(count)
+                .is_none());
+        }
         for field in ["observationStartDate", "observationEndDate"] {
             assert!(schemas["CreateSupervisionCycleRequest"]["required"]
                 .as_array()

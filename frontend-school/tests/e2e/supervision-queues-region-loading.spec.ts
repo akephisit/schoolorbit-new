@@ -5,7 +5,6 @@ import {
 	year,
 	nextYear,
 	templateId,
-	firstCycle,
 	path,
 	mock,
 	navigate
@@ -333,33 +332,12 @@ test('mine loads its list first and keeps booking timetable behind opening the w
 	expect(api.count(observationPath)).toBe(1);
 });
 
-test('organization approvals avoid school report reads and options', async ({ page }) => {
-	const api = await mock(page, {
-		permissions: ['supervision.manage.organization_unit'],
-		observationStatus: 'evaluators_submitted'
-	});
+test('the retired approvals URL has no approval view or observation reads', async ({ page }) => {
+	const api = await mock(page);
 	await page.goto(path('approvals'));
-	await expect(
-		page.getByTestId('supervision-observations').getByText('ครู ในคิว', { exact: true })
-	).toBeVisible();
-	await expect(page.getByRole('button', { name: 'โหลดรายงาน', exact: true })).toHaveCount(0);
-	await revalidatePage(page);
-	await expect(page.getByTestId('supervision-observations')).toHaveAttribute('aria-busy', 'false');
-	expect(api.count('/api/supervision/cycles')).toBe(0);
-	expect(api.reads.some((value) => value.endsWith('/progress'))).toBe(false);
-});
-
-test('school progress stays lazy and has a focused report retry', async ({ page }) => {
-	const api = await mock(page, { observationStatus: 'evaluators_submitted', fail: 'progress' });
-	await page.goto(path('approvals'));
-	await expect(page.getByRole('button', { name: 'โหลดรายงาน', exact: true })).toBeVisible();
-	expect(api.reads.some((value) => value.endsWith('/progress'))).toBe(false);
-	await page.getByRole('button', { name: 'โหลดรายงาน', exact: true }).click();
-	await expect(page.getByText('region ไม่พร้อม')).toBeVisible();
-	await page.getByRole('button', { name: 'ลองใหม่' }).click();
-	await expect(page.getByText('ความคืบหน้ารวม')).toBeVisible();
-	expect(api.count(`/api/supervision/reports/cycles/${firstCycle}/progress`)).toBe(2);
-	expect(api.count(observationPath)).toBe(1);
+	await expect(page.getByRole('heading', { name: 'ไม่พบรายการนิเทศ', exact: true })).toBeVisible();
+	await expect(page.getByRole('link', { name: /รับรอง\/อนุมัติ/ })).toHaveCount(0);
+	expect(api.reads.filter((value) => value.startsWith('/api/supervision/'))).toEqual([]);
 });
 
 test('denied queue route cannot preload an otherwise readable list', async ({ page }) => {
