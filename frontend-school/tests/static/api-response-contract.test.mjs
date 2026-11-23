@@ -976,6 +976,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	const supervisionLessonPicker = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionLessonPicker.svelte'
 	);
+	const table = await readRepoFile('frontend-school/src/lib/components/ui/table/table.svelte');
 	const supervisionReview = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionRequestReview.svelte'
 	);
@@ -1018,20 +1019,34 @@ test('teaching supervision frontend contract uses typed API and permission metad
 		supervisionLessonPicker,
 		/!request\.isCurrent\(ticket\.revision\)[\s\S]*sourceContext !== ownerKey\(\)/
 	);
-	assert.match(supervisionLessonPicker, /onclick=\{\(\) => startSelection\(item\)\}/);
+	assert.match(supervisionLessonPicker, /onclick=\{\(\) => selectLesson\(item\)\}/);
+	assert.match(
+		supervisionLessonPicker,
+		/function selectLesson\([^)]*\) \{\s*if \(!selectable\.has\(item\)\) return/
+	);
+	assert.match(supervisionLessonPicker, /disabled=\{!chosen && !selectable\.has\(item\)\}/);
+	assert.match(supervisionLessonPicker, /aria-disabled=\{chosen \|\| undefined\}/);
 	assert.match(supervisionLessonPicker, /aria-pressed=\{chosen\}/);
 	assert.match(supervisionLessonPicker, /item\.periodName/);
 	assert.doesNotMatch(supervisionLessonPicker, /period_name\?\.match\(/);
-	assert.match(supervisionLessonPicker, /class="overflow-x-auto rounded-xl border"/);
+	assert.match(supervisionLessonPicker, /data-testid="supervision-booking-grid">\s*<Table\.Root\b/);
+	assert.match(table, /<div\s+data-slot="table-container"\s+class="[^"]*\boverflow-x-auto\b/);
 	assert.match(
 		supervisionLessonPicker,
-		/<Table\.Head\s+class="sticky left-0 z-10 w-28 bg-background">วันที่<\/Table\.Head/
+		/<Table\.Head\s+role="columnheader"\s+scope="col"\s+class="sticky left-0\b[^>]*>วันที่<\/Table\.Head/
 	);
 	assert.match(
 		supervisionLessonPicker,
 		/<Table\.Header[\s\S]*\{#each periods as period \(period\.key\)\}/
 	);
-	assert.match(supervisionLessonPicker, /<Table\.Body[\s\S]*\{#each days as day \(day\)\}/);
+	assert.match(
+		supervisionLessonPicker,
+		/<Table\.Body[^>]*\bauto-rows-fr\b[^>]*>\s*\{#each days as \{ date: day, weekdayLabel, dateLabel \} \(day\)\}/
+	);
+	assert.match(
+		supervisionLessonPicker,
+		/<Table\.Head\s+role="rowheader"\s+scope="row"\s+class="sticky left-0\b[^>]*><time datetime=\{day\}>\s*<span class="block[^>]*>\{weekdayLabel\}<\/span>\s*<span class="block[^>]*>\{dateLabel\}<\/span>\s*<\/time>/
+	);
 	assert.match(supervisionLessonPicker, /bookingDateLabel\(\s*day\s*\)/);
 	assert.doesNotMatch(
 		supervisionWorkspace,

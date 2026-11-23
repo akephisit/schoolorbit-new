@@ -340,6 +340,8 @@ test.describe('supervision at 360 pixels', () => {
 		page
 	}) => {
 		const longSubject = 'คณิตศาสตร์พื้นฐานและการแก้ปัญหาในชีวิตประจำวันสำหรับนักเรียนมัธยมศึกษา';
+		const adjacentSubject = 'ภาษาไทยสำหรับนักเรียนมัธยมต้น';
+		const adjacentRoom = 'ห้องปฏิบัติการวิทยาศาสตร์';
 		const stackedSlot = {
 			observedDate: '2026-09-30',
 			startTime: '08:00:00',
@@ -350,7 +352,14 @@ test.describe('supervision at 360 pixels', () => {
 			permissions: own,
 			term: true,
 			bookingItems: [
-				...[0, 1, 2, 3].map((index) => timetableOption(index)),
+				timetableOption(0),
+				timetableOption(1, {
+					subjectName: adjacentSubject,
+					roomName: adjacentRoom,
+					bookingAvailability: { pendingCount: 2, confirmedCount: 1, blocked: false }
+				}),
+				timetableOption(2),
+				timetableOption(3),
 				timetableOption(4, { ...stackedSlot, subjectName: longSubject, homeroomName: 'ม.2/1' }),
 				timetableOption(5, { ...stackedSlot, homeroomName: 'ม.2/2' })
 			]
@@ -389,6 +398,24 @@ test.describe('supervision at 360 pixels', () => {
 		expect(secondPeriod!.x + secondPeriod!.width).toBeLessThanOrEqual(initial!.x + initial!.width);
 		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
 		const first = grid.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ });
+		const second = grid.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ });
+		const third = grid.getByRole('button', { name: /^เลือก คาบ 3 ม.1\/1/ });
+		const fourth = grid.getByRole('button', { name: /^เลือก คาบ 4 ม.1\/1/ });
+		const otherDay = grid.getByRole('button', { name: /^เลือก คาบ 1 ม.2\/1/ });
+		const subjectLabel = second.getByText(adjacentSubject, { exact: true });
+		const statusLabel = second.getByText('รออนุมัติ 2 · นัดหมาย 1 · จองขนานได้', { exact: true });
+		const roomLabel = second.getByText(adjacentRoom, { exact: true });
+		const cardSizes = () =>
+			Promise.all(
+				[second, subjectLabel, roomLabel, statusLabel].map(async (part) => {
+					const { width, height } = (await part.boundingBox())!;
+					return { width, height };
+				})
+			);
+		await expect(grid.getByRole('button')).toHaveCount(6);
+		await expect(third).toBeEnabled();
+		await expect(otherDay).toBeEnabled();
+		const sizesBefore = await cardSizes();
 		await expect(first).toHaveAccessibleDescription(/วิชาปัจจุบัน 1.*ว่าง/);
 		const unselectedFill = await first.evaluate(
 			(button) => getComputedStyle(button).backgroundColor
@@ -396,14 +423,33 @@ test.describe('supervision at 360 pixels', () => {
 		await first.focus();
 		await first.press('Enter');
 		await expect(first).toHaveAttribute('aria-pressed', 'true');
+		await expect(first).toHaveAttribute('aria-disabled', 'true');
 		await expect
 			.poll(() => first.evaluate((button) => getComputedStyle(button).backgroundColor))
 			.not.toBe(unselectedFill);
 		await expect(grid.getByText('เลือกแล้ว', { exact: true })).toHaveCount(0);
+		await expect(grid.getByRole('button')).toHaveCount(6);
+		await expect(third).toHaveJSProperty('disabled', true);
+		await expect(otherDay).toHaveJSProperty('disabled', true);
+		expect(await cardSizes()).toEqual(sizesBefore);
 		await expectUniformDayRows();
-		await grid.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).tap();
-		await expect(page.getByTestId('supervision-booking-selection')).toContainText('2 คาบต่อเนื่อง');
+		await page.keyboard.press('Tab');
+		await expect(second).toBeFocused();
+		await second.tap();
+		const selection = page.getByTestId('supervision-booking-selection');
+		await expect(selection).toContainText('2 คาบต่อเนื่อง');
+		await expect(first).toHaveAttribute('aria-pressed', 'true');
+		await expect(second).toHaveAttribute('aria-pressed', 'true');
+		await expect(third).toBeEnabled();
+		await expect(fourth).toHaveJSProperty('disabled', true);
+		expect(await cardSizes()).toEqual(sizesBefore);
 		await expectUniformDayRows();
+		await second.evaluate((button) => (button as HTMLButtonElement).click());
+		await expect(selection).toContainText('2 คาบต่อเนื่อง');
+		await selection.getByRole('button', { name: 'ล้างทั้งหมด', exact: true }).click();
+		await expect(first).toHaveAttribute('aria-pressed', 'false');
+		await expect(second).toHaveAttribute('aria-pressed', 'false');
+		await expect(fourth).toBeEnabled();
 
 		const pinned = grid.getByRole('columnheader', { name: 'วันที่' });
 		const pinnedBefore = await pinned.boundingBox();

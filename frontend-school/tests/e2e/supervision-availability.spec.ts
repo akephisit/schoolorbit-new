@@ -122,10 +122,14 @@ test('free, pending and parallel lessons stay selectable while a blocked edge ca
 	).toBeVisible();
 	await expect(picker.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ })).toBeDisabled();
 	await picker.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
-	await expect(picker.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true })).toHaveCount(
-		0
+	await expect(picker.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ })).toHaveJSProperty(
+		'disabled',
+		true
 	);
-	await picker.getByRole('button', { name: /^เลือก คาบ 3 ม.1\/1/ }).click();
+	const parallel = picker.getByRole('button', { name: /^เลือก คาบ 3 ม.1\/1/ });
+	await expect(parallel).toHaveJSProperty('disabled', true);
+	await picker.getByRole('button', { name: 'ล้างทั้งหมด', exact: true }).click();
+	await parallel.click();
 	await expect(page.getByTestId('supervision-booking-selection')).toContainText('คาบ 3');
 	expect(api.count(`/api/supervision/observations/${id(30)}/evaluator-availability`)).toBe(0);
 });
@@ -160,7 +164,7 @@ for (const blocked of [false, true]) {
 		});
 		await open(page);
 		await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
-		await page.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
+		await page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ }).click();
 		await page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true }).click();
 		const selection = page.getByTestId('supervision-booking-selection');
 		await expect(
@@ -175,7 +179,9 @@ for (const blocked of [false, true]) {
 			await expect(
 				selection.getByRole('button', { name: 'ส่งคำขอจอง', exact: true })
 			).toBeDisabled();
-			await expect(page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ })).toBeDisabled();
+			const blockedLesson = page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ });
+			await expect(blockedLesson).toHaveJSProperty('disabled', true);
+			await expect(blockedLesson).toHaveAttribute('aria-pressed', 'false');
 		} else {
 			await expect(selection).toContainText('2 คาบต่อเนื่อง');
 			await expect(

@@ -77,7 +77,9 @@ for (const count of [1, 2, 3]) {
 		});
 		await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
 		for (let index = 1; index < count; index++)
-			await page.getByRole('button', { name: `เพิ่ม คาบ ${index + 1} ม.1/1`, exact: true }).click();
+			await page
+				.getByRole('button', { name: new RegExp(`^เลือก คาบ ${index + 1} ม\\.1/1`) })
+				.click();
 		await expect(page.getByTestId('supervision-booking-selection')).toContainText(
 			`${count} คาบต่อเนื่อง`
 		);
@@ -95,15 +97,18 @@ for (const count of [1, 2, 3]) {
 				expectedSourceDigest: 'source-1'
 			}
 		]);
-		for (let index = 0; index < count; index++)
-			await expect(
-				page.getByRole('button', { name: new RegExp(`^เลือก คาบ ${index + 1} ม.1/1`) })
-			).toBeDisabled();
+		for (let index = 0; index < count; index++) {
+			const savedCell = page.getByRole('button', {
+				name: new RegExp(`^เลือก คาบ ${index + 1} ม\\.1/1`)
+			});
+			await expect(savedCell).toHaveJSProperty('disabled', true);
+			await expect(savedCell).toHaveAttribute('aria-pressed', 'false');
+		}
 		expect(api.count(observationsPath)).toBe(initialListReads);
 	});
 }
 
-test('extensions exclude other exact classes, lunch gaps and other dates; edges can be removed and new first cells replace the range', async ({
+test('only adjacent lessons can extend in either direction, and clearing allows a new first lesson', async ({
 	page
 }) => {
 	const items = [
@@ -114,18 +119,26 @@ test('extensions exclude other exact classes, lunch gaps and other dates; edges 
 	];
 	await openBooking(page, items);
 	await page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ }).click();
-	await page.getByRole('button', { name: 'เพิ่ม คาบ 1 ม.1/1', exact: true }).click();
-	await page.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
-	await expect(page.getByRole('button', { name: 'เพิ่ม คาบ 4 ม.1/2', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'เพิ่ม คาบ 5 ม.1/1', exact: true })).toHaveCount(0);
-	await expect(page.getByRole('button', { name: 'เพิ่ม คาบ 6 ม.1/1', exact: true })).toHaveCount(0);
-	await expect(page.getByText('เพิ่มไม่ได้: คนละห้องประจำชั้น', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
+	await page.getByRole('button', { name: /^เลือก คาบ 3 ม.1\/1/ }).click();
+	const otherClass = page.getByRole('button', { name: /^เลือก คาบ 4 ม.1\/2/ });
+	await expect(otherClass).toHaveJSProperty('disabled', true);
+	await expect(page.getByRole('button', { name: /^เลือก คาบ 5 ม.1\/1/ })).toHaveJSProperty(
+		'disabled',
+		true
+	);
+	await expect(page.getByRole('button', { name: /^เลือก คาบ 6 ม.1\/1/ })).toHaveJSProperty(
+		'disabled',
+		true
+	);
 	await expect(page.getByRole('button', { name: 'นำ คาบ 2 ออกจากช่วง', exact: true })).toHaveCount(
 		0
 	);
 	await page.getByRole('button', { name: 'นำ คาบ 1 ออกจากช่วง', exact: true }).click();
 	await expect(page.getByTestId('supervision-booking-selection')).toContainText('2 คาบต่อเนื่อง');
-	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
+	await expect(page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ })).toBeEnabled();
+	await page.getByRole('button', { name: 'ล้างทั้งหมด', exact: true }).click();
+	await otherClass.click();
 	await expect(page.getByTestId('supervision-booking-selection')).toContainText('1 คาบต่อเนื่อง');
 	await page.getByRole('button', { name: 'ล้างทั้งหมด', exact: true }).click();
 	await expect(page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true })).toBeDisabled();
@@ -150,7 +163,7 @@ test('stale refusal keeps the selected draft and explicit refresh requires choos
 		return reply(route, { ...api.observation(), periods: savedSelection(payload, refreshedItems) });
 	});
 	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
-	await page.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
+	await page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ }).click();
 	const selection = page.getByTestId('supervision-booking-selection');
 	const submit = selection.getByRole('button', { name: 'ส่งคำขอจอง', exact: true });
 	await submit.click();
@@ -170,7 +183,7 @@ test('stale refusal keeps the selected draft and explicit refresh requires choos
 	await expect(submit).toBeDisabled();
 	expect(payloads).toHaveLength(1);
 	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
-	await page.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
+	await page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ }).click();
 	await expect(selection).toContainText('2 คาบต่อเนื่อง · 08:15–10:15');
 	await submit.click();
 	await expect(selection).toContainText('ส่งคำขอสำเร็จ');
@@ -262,8 +275,8 @@ for (const colorScheme of ['light', 'dark'] as const) {
 				);
 			}
 			await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
-			await page.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
-			await page.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
+			await page.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ }).click();
+			await page.getByRole('button', { name: /^เลือก คาบ 3 ม.1\/1/ }).click();
 			const dayRowHeights = await picker
 				.getByRole('rowheader')
 				.evaluateAll((headers) =>
