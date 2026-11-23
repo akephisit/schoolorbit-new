@@ -340,6 +340,8 @@ test.describe('supervision at 360 pixels', () => {
 		page
 	}) => {
 		const longSubject = 'คณิตศาสตร์พื้นฐานและการแก้ปัญหาในชีวิตประจำวันสำหรับนักเรียนมัธยมศึกษา';
+		const adjacentSubject = 'ภาษาไทยสำหรับนักเรียนมัธยมต้น';
+		const adjacentRoom = 'ห้องปฏิบัติการวิทยาศาสตร์';
 		const stackedSlot = {
 			observedDate: '2026-09-30',
 			startTime: '08:00:00',
@@ -352,6 +354,8 @@ test.describe('supervision at 360 pixels', () => {
 			bookingItems: [
 				timetableOption(0),
 				timetableOption(1, {
+					subjectName: adjacentSubject,
+					roomName: adjacentRoom,
 					bookingAvailability: { pendingCount: 2, confirmedCount: 1, blocked: false }
 				}),
 				timetableOption(2),
@@ -396,7 +400,10 @@ test.describe('supervision at 360 pixels', () => {
 		const first = grid.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ });
 		const second = grid.getByRole('button', { name: /^เลือก คาบ 2 ม.1\/1/ });
 		const addSecond = grid.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true });
+		const statusLabel = second.getByText('รออนุมัติ 2 · นัดหมาย 1 · จองขนานได้', { exact: true });
 		await expect(addSecond).toHaveCount(0);
+		const cardBefore = (await second.boundingBox())!;
+		const statusBefore = (await statusLabel.boundingBox())!;
 		await expect(first).toHaveAccessibleDescription(/วิชาปัจจุบัน 1.*ว่าง/);
 		const unselectedFill = await first.evaluate(
 			(button) => getComputedStyle(button).backgroundColor
@@ -413,16 +420,21 @@ test.describe('supervision at 360 pixels', () => {
 		await expect(addSecond).toHaveText('');
 		const card = (await second.boundingBox())!;
 		const plus = (await addSecond.boundingBox())!;
-		const status = (await second
-			.getByText('รออนุมัติ 2 · นัดหมาย 1 · จองขนานได้', { exact: true })
-			.boundingBox())!;
+		const status = (await statusLabel.boundingBox())!;
+		const subject = (await second.getByText(adjacentSubject, { exact: true }).boundingBox())!;
+		const room = (await second.getByText(adjacentRoom, { exact: true }).boundingBox())!;
 		expect(plus.width).toBeGreaterThanOrEqual(24);
 		expect(plus.height).toBeGreaterThanOrEqual(24);
 		expect(plus.x).toBeGreaterThan(card.x);
 		expect(plus.y).toBeGreaterThan(card.y);
 		expect(plus.x + plus.width).toBeLessThan(card.x + card.width);
 		expect(plus.y + plus.height).toBeLessThan(card.y + card.height);
-		expect(status.x + status.width).toBeLessThanOrEqual(plus.x);
+		expect(subject.y + subject.height).toBeLessThanOrEqual(plus.y);
+		expect(room.x + room.width).toBeLessThanOrEqual(plus.x);
+		expect(plus.y + plus.height).toBeLessThanOrEqual(status.y);
+		expect(status.width).toBeCloseTo(statusBefore.width, 0);
+		expect(status.height).toBeCloseTo(statusBefore.height, 0);
+		expect(card.height).toBeLessThanOrEqual(cardBefore.height + plus.height);
 		await second.focus();
 		await page.keyboard.press('Tab');
 		await expect(addSecond).toBeFocused();
