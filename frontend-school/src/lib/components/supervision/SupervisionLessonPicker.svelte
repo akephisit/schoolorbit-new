@@ -447,7 +447,9 @@
 													value.blockGroupId === item.blockGroupId && value.observedDate === day
 											)}
 										<div class="space-y-1">
-											<div class="grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto_auto]">
+											<div
+												class="grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto_max-content_auto]"
+											>
 												<button
 													type="button"
 													class="col-span-full row-span-full grid min-h-20 min-w-0 grid-cols-subgrid grid-rows-subgrid rounded-lg border p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:border-primary aria-pressed:bg-primary/10 sm:min-h-28 sm:p-3"
@@ -469,14 +471,14 @@
 															{item.subjectName ?? item.learningGroupName}
 														</span>
 														<span class="col-start-1 row-start-2 mt-0.5 self-center sm:mt-1">
-															<span class="block">{item.homeroomName}</span>
-															{#if item.roomName}<span
-																	class="block text-[0.6875rem] text-muted-foreground sm:text-xs"
-																>
-																	{item.roomName}
-																</span>{/if}
+															{item.homeroomName}
 														</span>
-														<span class="col-span-full row-start-3 mt-1 sm:mt-2"
+														{#if item.roomName}<span
+																class="col-span-full row-start-3 text-[0.6875rem] text-muted-foreground sm:text-xs"
+															>
+																{item.roomName}
+															</span>{/if}
+														<span class="col-span-full row-start-4 mt-1 sm:mt-2"
 															><Badge
 																variant={item.bookingAvailability.blocked
 																	? 'destructive'
