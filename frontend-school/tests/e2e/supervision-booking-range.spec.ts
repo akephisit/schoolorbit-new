@@ -250,10 +250,20 @@ for (const colorScheme of ['light', 'dark'] as const) {
 			await page.setViewportSize({ width, height: 900 });
 			await page.emulateMedia({ colorScheme });
 			await openBooking(page);
+			const picker = page.getByTestId('supervision-lesson-picker');
+			const mobile = width === 390;
+			if (mobile) {
+				const scrollport = await picker.locator('[data-slot="table-container"]').boundingBox();
+				const secondPeriod = await picker
+					.getByRole('columnheader', { name: /^คาบ 2 / })
+					.boundingBox();
+				expect(secondPeriod!.x + secondPeriod!.width).toBeLessThanOrEqual(
+					scrollport!.x + scrollport!.width
+				);
+			}
 			await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
 			await page.getByRole('button', { name: 'เพิ่ม คาบ 2 ม.1/1', exact: true }).click();
 			await page.getByRole('button', { name: 'เพิ่ม คาบ 3 ม.1/1', exact: true }).click();
-			const picker = page.getByTestId('supervision-lesson-picker');
 			const bounds = await picker
 				.getByRole('button', { name: /^เลือก คาบ/ })
 				.evaluateAll((buttons) =>
@@ -266,7 +276,12 @@ for (const colorScheme of ['light', 'dark'] as const) {
 						};
 					})
 				);
-			expect(bounds.every((bound) => bound.within && bound.width >= 150)).toBe(true);
+			expect(bounds).toHaveLength(3);
+			for (const bound of bounds) {
+				expect(bound.within).toBe(true);
+				expect(bound.width).toBeGreaterThanOrEqual(mobile ? 80 : 150);
+				if (mobile) expect(bound.width).toBeLessThanOrEqual(96);
+			}
 			expect(
 				await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 			).toBe(true);
