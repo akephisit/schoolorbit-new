@@ -88,14 +88,6 @@ pub fn protected_routes() -> Router<SupervisionHttpState> {
             post(handlers::submit_my_evaluation),
         )
         .route(
-            "/observations/{id}/certify",
-            post(handlers::certify_observation),
-        )
-        .route(
-            "/observations/{id}/approve",
-            post(handlers::approve_observation),
-        )
-        .route(
             "/observations/{id}/acknowledge",
             post(handlers::acknowledge_observation),
         )

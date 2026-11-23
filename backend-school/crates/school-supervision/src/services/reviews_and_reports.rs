@@ -14,7 +14,10 @@ use crate::models::{
 use school_errors::AppError;
 
 use super::observations::{get_observation, set_observation_status};
-use super::shared::{parse_optional_observation_status, SupervisionObservationListAccess};
+use super::shared::{
+    can_view_observation_results, parse_optional_observation_status,
+    SupervisionObservationListAccess,
+};
 
 #[derive(Debug, sqlx::FromRow)]
 struct TeacherStatusOverviewRow {
@@ -51,8 +54,9 @@ pub async fn get_observation_review(
     let template =
         super::templates::get_template_on_connection(&mut connection, observation.template_id)
             .await?;
+    let released = can_view_observation_results(observation.status, false);
     let response_rows =
-        load_observation_review_responses_on_connection(&mut connection, id).await?;
+        load_observation_review_responses_on_connection(&mut connection, id, released).await?;
     let average_rating = observation.average_rating;
     let evaluator_results = build_review_evaluator_results(&observation.evaluators, response_rows);
     let item_summaries = build_review_item_summaries(&evaluator_results);
@@ -64,40 +68,6 @@ pub async fn get_observation_review(
         item_summaries,
         average_rating,
     })
-}
-
-pub async fn certify_observation(
-    pool: &PgPool,
-    actor_user_id: Uuid,
-    observation_id: Uuid,
-) -> Result<SupervisionObservation, AppError> {
-    set_observation_status(
-        pool,
-        observation_id,
-        actor_user_id,
-        SupervisionObservationStatus::Approved,
-        "subject_group_certified",
-        None,
-        super::observations::ObservationTransitionPolicy::Certification,
-    )
-    .await
-}
-
-pub async fn approve_observation(
-    pool: &PgPool,
-    actor_user_id: Uuid,
-    observation_id: Uuid,
-) -> Result<SupervisionObservation, AppError> {
-    set_observation_status(
-        pool,
-        observation_id,
-        actor_user_id,
-        SupervisionObservationStatus::Published,
-        "academic_approved",
-        None,
-        super::observations::ObservationTransitionPolicy::Manager,
-    )
-    .await
 }
 
 pub async fn acknowledge_observation(
@@ -142,8 +112,7 @@ pub async fn cycle_progress(
     let mut connection =
         school_tenancy::TenantPool::observed_checkout_pool(pool, "supervision.cycle_progress")
             .await?;
-    let can_view_all = crate::access_policy::can_manage_school(actor)
-        || crate::access_policy::can_approve_school(actor);
+    let can_view_all = crate::access_policy::can_manage_school(actor);
     let managed_user_ids = if can_view_all {
         Vec::new()
     } else {
@@ -173,28 +142,31 @@ async fn cycle_progress_on_connection(
     can_view_all: bool,
     managed_user_ids: &[Uuid],
 ) -> Result<SupervisionCycleProgress, AppError> {
-    let row = DbSession::new(&mut *connection).query("supervision.services.reviews_and_reports.cycle_progress_on_connection",
-        r#"
+    let row = DbSession::new(&mut *connection)
+        .query(
+            "supervision.services.reviews_and_reports.cycle_progress_on_connection",
+            r#"
         SELECT
             COUNT(*) AS total_observations,
             COUNT(*) FILTER (WHERE status = 'requested') AS requested_count,
             COUNT(*) FILTER (WHERE status = 'planned') AS planned_count,
-            COUNT(*) FILTER (WHERE status IN ('evaluators_submitted', 'under_review')) AS under_review_count,
-            COUNT(*) FILTER (WHERE status = 'approved') AS approved_count,
             COUNT(*) FILTER (WHERE status = 'published') AS published_count,
             COUNT(*) FILTER (WHERE status IN ('acknowledged', 'completed')) AS completed_count,
             COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled_count
         FROM supervision_observations
         WHERE cycle_id = $1
         "#,
-    )
-    .bind(cycle_id)
-    .fetch_one()
-    .await
-    .map_err(|error| {
-        tracing::error!("Failed to load supervision cycle progress: {}", school_database::error_class(&error));
-        AppError::InternalServerError("ไม่สามารถดึงรายงานรอบนิเทศได้".to_string())
-    })?;
+        )
+        .bind(cycle_id)
+        .fetch_one()
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                "Failed to load supervision cycle progress: {}",
+                school_database::error_class(&error)
+            );
+            AppError::InternalServerError("ไม่สามารถดึงรายงานรอบนิเทศได้".to_string())
+        })?;
 
     let average_rating = DbSession::new(&mut *connection)
         .scalar::<Option<f64>>(
@@ -235,8 +207,6 @@ async fn cycle_progress_on_connection(
         total_observations: row.try_get("total_observations").unwrap_or(0),
         requested_count: row.try_get("requested_count").unwrap_or(0),
         planned_count: row.try_get("planned_count").unwrap_or(0),
-        under_review_count: row.try_get("under_review_count").unwrap_or(0),
-        approved_count: row.try_get("approved_count").unwrap_or(0),
         published_count: row.try_get("published_count").unwrap_or(0),
         completed_count: row.try_get("completed_count").unwrap_or(0),
         cancelled_count: row.try_get("cancelled_count").unwrap_or(0),
@@ -381,19 +351,23 @@ pub async fn cycle_teacher_status(
 async fn load_observation_review_responses_on_connection(
     connection: &mut sqlx::PgConnection,
     observation_id: Uuid,
+    released: bool,
 ) -> Result<Vec<SupervisionReviewResponseRow>, AppError> {
     DbSession::new(&mut *connection).query_as::<SupervisionReviewResponseRow>("supervision.services.reviews_and_reports.load_observation_review_responses_on_connection",
         r#"
-        SELECT evaluator_id,
-               template_item_id,
-               rating_score::double precision AS rating_score,
-               text_response
-        FROM supervision_evaluator_responses
-        WHERE observation_id = $1
-        ORDER BY updated_at
+        SELECT r.evaluator_id,
+               r.template_item_id,
+               r.rating_score::double precision AS rating_score,
+               r.text_response
+        FROM supervision_evaluator_responses r
+        JOIN supervision_evaluators e ON e.id = r.evaluator_id
+        WHERE r.observation_id = $1
+          AND (NOT $2 OR e.status = 'submitted')
+        ORDER BY r.updated_at
         "#,
     )
     .bind(observation_id)
+    .bind(released)
     .fetch_all()
     .await
     .map_err(|error| {
@@ -511,12 +485,7 @@ fn teacher_status_next_step_label(status: Option<SupervisionObservationStatus>) 
         Some(SupervisionObservationStatus::Planned | SupervisionObservationStatus::InProgress) => {
             "รอผู้ประเมินส่งผล"
         }
-        Some(
-            SupervisionObservationStatus::EvaluatorsSubmitted
-            | SupervisionObservationStatus::UnderReview,
-        ) => "รอผู้มีสิทธิ์รับรองผล",
         Some(SupervisionObservationStatus::Returned) => "รอครูแก้ไขและส่งใหม่",
-        Some(SupervisionObservationStatus::Approved) => "รอผู้มีสิทธิ์อนุมัติผล",
         Some(SupervisionObservationStatus::Published) => "รอครูรับทราบผล",
         Some(
             SupervisionObservationStatus::Acknowledged | SupervisionObservationStatus::Completed,

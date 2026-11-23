@@ -3001,7 +3001,12 @@ therefore also uses the disposable database runner. The supervision cases includ
 populated 158→159 preservation, unknown dependency
 refusal with atomic rollback/retry and native migration replay, strict retired-field
 API rejection, explicit booking states, returned correction/audit atomicity and
-return versus evaluator submission serialization. The existing completed workflow
-also runs evaluation, certification, approval and acknowledgement after cycle closure.
+return versus evaluator submission serialization. The result workflow checks automatic
+publication on the final required submission, acknowledgement after cycle closure,
+partial-result access, optional evaluation cutoff, and a single notification under
+concurrent submits and retries. Accepted evaluations also protect the rubric, including
+empty evaluations of templates with optional items only. The 168→169 fixture checks
+status reconciliation, correction of incomplete required evaluations, preserved
+history and evaluator evidence, read-grant migration, and rollback before retry.
 Preparation verifies fresh draft cycles/staff targets without date mappings or
 operational observation copies; exam date mapping checks remain separate.

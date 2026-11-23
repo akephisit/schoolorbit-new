@@ -30,8 +30,7 @@ pub use response_visibility::{
     redacted_observation_for_actor,
 };
 pub use reviews_and_reports::{
-    acknowledge_observation, approve_observation, certify_observation, cycle_progress,
-    cycle_teacher_status, get_observation_review,
+    acknowledge_observation, cycle_progress, cycle_teacher_status, get_observation_review,
 };
 pub use shared::{
     can_view_observation_results, teacher_can_edit_requested_observation,

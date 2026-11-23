@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
 	currentReturnReason,
 	observationWorkflow,
+	supervisionStages,
 	supervisionStatusLabel
 } from '../../src/lib/supervision/supervision-presentation.ts';
 
@@ -19,11 +20,13 @@ test('manual cycle states and observation stages have distinct Thai meanings', (
 		'ผู้รับผิดชอบตรวจคำขอ'
 	);
 	assert.equal(
-		observationWorkflow({ status: 'approved', evaluators: [] }).nextOwner,
-		'ผู้มีสิทธิ์อนุมัติผล'
+		observationWorkflow({ status: 'published', evaluators: [] }).nextOwner,
+		'ครูผู้รับการนิเทศ'
 	);
-	assert.equal(observationWorkflow({ status: 'published', evaluators: [] }).stage, 4);
-	assert.equal(observationWorkflow({ status: 'completed', evaluators: [] }).stage, 5);
+	assert.deepEqual(supervisionStages, ['คำขอ', 'ประเมิน', 'รับทราบ', 'เสร็จสิ้น']);
+	assert.equal(observationWorkflow({ status: 'published', evaluators: [] }).stage, 2);
+	assert.equal(observationWorkflow({ status: 'completed', evaluators: [] }).stage, 3);
+	assert.equal(observationWorkflow({ status: 'acknowledged', evaluators: [] }).stage, 3);
 	assert.equal(observationWorkflow({ status: 'cancelled', evaluators: [] }).stage, -1);
 });
 
@@ -49,7 +52,10 @@ test('required evaluator progress names only required pending evaluators and nev
 	assert.equal(pending.nextOwner, 'ผู้ประเมินที่ยังค้าง');
 	assert.equal(pending.pendingRequiredLabel, 'ยังรอผู้ประเมินที่จำเป็น: ผู้ประเมินที่ยังค้าง');
 	assert.equal(observationWorkflow({ status: 'in_progress', evaluators: [] }).stage, 1);
-	assert.equal(observationWorkflow({ status: 'evaluators_submitted', evaluators }).stage, 2);
+	assert.equal(
+		observationWorkflow({ status: 'published', evaluators }).nextAction,
+		'อ่านและรับทราบผล'
+	);
 });
 
 test('only the most recent current return reason is exposed, without mutating audit facts', () => {

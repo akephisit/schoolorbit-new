@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_sha256": "574d6e0f91287a318aa4c8059cec5a72a8b2448c451a979d2b3f584cf61ae36a",
+  "contract_sha256": "b9d618a344f6647fec4270a733c1521a623f437e2a460bf0a6932769b54b7bbf",
   "permission_codes": [
     "*",
     "academic_assessment.manage.assigned",
@@ -224,7 +224,6 @@
     "student_pii.read.assigned",
     "student_pii.read.own",
     "student_pii.read.school",
-    "supervision.approve.school",
     "supervision.evaluate.assigned",
     "supervision.manage.organization_tree",
     "supervision.manage.organization_unit",

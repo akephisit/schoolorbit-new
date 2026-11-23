@@ -26,7 +26,7 @@ pub struct SupervisionTargetMatch {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EvaluatorSubmissionState {
+pub(super) struct EvaluatorSubmissionState {
     pub is_required: bool,
     pub submitted: bool,
 }
@@ -34,7 +34,8 @@ pub struct EvaluatorSubmissionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct EvaluatorReplacementState {
     pub(super) evaluator_user_id: Uuid,
-    pub(super) submitted: bool,
+    pub(super) retain: bool,
+    pub(super) is_required: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -94,12 +95,12 @@ pub(super) fn normalize_evaluator_replacement(
     let mut normalized = Vec::new();
     let mut seen = HashSet::new();
 
-    for evaluator in existing.iter().filter(|evaluator| evaluator.submitted) {
+    for evaluator in existing.iter().filter(|evaluator| evaluator.retain) {
         if seen.insert(evaluator.evaluator_user_id) {
             normalized.push(EvaluatorAssignmentInput {
                 evaluator_user_id: evaluator.evaluator_user_id,
                 role_label: None,
-                is_required: Some(true),
+                is_required: Some(evaluator.is_required),
             });
         }
     }
@@ -109,7 +110,7 @@ pub(super) fn normalize_evaluator_replacement(
             normalized.push(evaluator);
         } else if !existing
             .iter()
-            .any(|state| state.submitted && state.evaluator_user_id == evaluator.evaluator_user_id)
+            .any(|state| state.retain && state.evaluator_user_id == evaluator.evaluator_user_id)
         {
             if let Some(existing_evaluator) = normalized
                 .iter_mut()
@@ -156,11 +157,9 @@ pub fn can_view_observation_results(
     can_view_unreleased_results || released_result_status_codes().contains(&status.as_str())
 }
 
-pub fn all_required_evaluators_submitted(states: &[EvaluatorSubmissionState]) -> bool {
-    states
-        .iter()
-        .filter(|state| state.is_required)
-        .all(|state| state.submitted)
+pub(super) fn all_required_evaluators_submitted(states: &[EvaluatorSubmissionState]) -> bool {
+    let mut required = states.iter().filter(|state| state.is_required).peekable();
+    required.peek().is_some() && required.all(|state| state.submitted)
 }
 
 pub fn can_transition_observation_status(
@@ -168,8 +167,7 @@ pub fn can_transition_observation_status(
     to: SupervisionObservationStatus,
 ) -> bool {
     use SupervisionObservationStatus::{
-        Acknowledged, Approved, Cancelled, Completed, EvaluatorsSubmitted, InProgress, Planned,
-        Published, Requested, Returned,
+        Acknowledged, Cancelled, Completed, InProgress, Planned, Published, Requested, Returned,
     };
 
     if from == to {
@@ -185,16 +183,12 @@ pub fn can_transition_observation_status(
             | (Returned, Planned)
             | (Returned, Cancelled)
             | (Planned, InProgress)
-            | (Planned, EvaluatorsSubmitted)
+            | (Planned, Published)
             | (Planned, Returned)
             | (Planned, Cancelled)
-            | (InProgress, EvaluatorsSubmitted)
+            | (InProgress, Published)
             | (InProgress, Returned)
             | (InProgress, Cancelled)
-            | (EvaluatorsSubmitted, Approved)
-            | (EvaluatorsSubmitted, Cancelled)
-            | (Approved, Published)
-            | (Approved, Cancelled)
             | (Published, Completed)
             | (Acknowledged, Completed)
     )
@@ -286,14 +280,14 @@ pub fn evaluator_conflict_status_codes() -> &'static [&'static str] {
     &[
         "planned",
         "in_progress",
-        "evaluators_submitted",
-        "under_review",
-        "approved",
         "published",
         "acknowledged",
         "completed",
     ]
 }
+
+pub(super) const LEGACY_RESULT_STATUS_CODES: [&str; 3] =
+    ["evaluators_submitted", "under_review", "approved"];
 
 pub(super) fn has_approval_evidence(
     status: SupervisionObservationStatus,
@@ -305,9 +299,13 @@ pub(super) fn has_approval_evidence(
         || actions.iter().any(|action| {
             action
                 .from_status
+                .as_deref()
                 .into_iter()
-                .chain(action.to_status)
-                .any(|state| evaluator_conflict_status_codes().contains(&state.as_str()))
+                .chain(action.to_status.as_deref())
+                .any(|state| {
+                    evaluator_conflict_status_codes().contains(&state)
+                        || LEGACY_RESULT_STATUS_CODES.contains(&state)
+                })
         })
 }
 
@@ -412,10 +410,7 @@ mod tests {
             SupervisionObservationStatus::Returned
         ));
         assert!(!manager_can_edit_observation(
-            SupervisionObservationStatus::UnderReview
-        ));
-        assert!(!manager_can_edit_observation(
-            SupervisionObservationStatus::Approved
+            SupervisionObservationStatus::InProgress
         ));
         assert!(!manager_can_edit_observation(
             SupervisionObservationStatus::Published
@@ -461,7 +456,8 @@ mod tests {
         let retained = normalize_evaluator_replacement(
             &[EvaluatorReplacementState {
                 evaluator_user_id: submitted_user_id,
-                submitted: true,
+                retain: true,
+                is_required: false,
             }],
             vec![EvaluatorAssignmentInput {
                 evaluator_user_id: requested_user_id,
@@ -473,19 +469,20 @@ mod tests {
 
         assert!(retained
             .iter()
-            .any(|evaluator| evaluator.evaluator_user_id == submitted_user_id));
+            .any(|evaluator| evaluator.evaluator_user_id == submitted_user_id
+                && evaluator.is_required == Some(false)));
         assert!(retained
             .iter()
             .any(|evaluator| evaluator.evaluator_user_id == requested_user_id));
     }
     #[test]
-    fn observation_results_release_after_academic_approval_for_regular_readers() {
+    fn observation_results_release_after_publication_for_regular_readers() {
         assert!(!can_view_observation_results(
-            SupervisionObservationStatus::EvaluatorsSubmitted,
+            SupervisionObservationStatus::Planned,
             false
         ));
         assert!(!can_view_observation_results(
-            SupervisionObservationStatus::Approved,
+            SupervisionObservationStatus::InProgress,
             false
         ));
         assert!(can_view_observation_results(
@@ -500,16 +497,16 @@ mod tests {
     #[test]
     fn observation_result_reviewers_can_view_unreleased_scores() {
         assert!(can_view_observation_results(
-            SupervisionObservationStatus::EvaluatorsSubmitted,
+            SupervisionObservationStatus::Planned,
             true
         ));
         assert!(can_view_observation_results(
-            SupervisionObservationStatus::Approved,
+            SupervisionObservationStatus::InProgress,
             true
         ));
     }
     #[test]
-    fn all_required_evaluators_must_submit_before_review() {
+    fn publication_requires_at_least_one_required_evaluator_and_all_required_submissions() {
         let states = vec![
             EvaluatorSubmissionState {
                 is_required: true,
@@ -526,6 +523,13 @@ mod tests {
         ];
 
         assert!(!all_required_evaluators_submitted(&states));
+        assert!(!all_required_evaluators_submitted(&[]));
+        assert!(!all_required_evaluators_submitted(&[
+            EvaluatorSubmissionState {
+                is_required: false,
+                submitted: true,
+            }
+        ]));
 
         let submitted_states = vec![
             EvaluatorSubmissionState {
@@ -550,8 +554,8 @@ mod tests {
 
         assert!(conflict_statuses.contains(&"planned"));
         assert!(conflict_statuses.contains(&"in_progress"));
-        assert!(conflict_statuses.contains(&"evaluators_submitted"));
-        assert!(conflict_statuses.contains(&"approved"));
+        assert!(!conflict_statuses.contains(&"evaluators_submitted"));
+        assert!(!conflict_statuses.contains(&"approved"));
         assert!(conflict_statuses.contains(&"published"));
         assert!(conflict_statuses.contains(&"completed"));
         assert!(!conflict_statuses.contains(&"requested"));
@@ -565,11 +569,11 @@ mod tests {
             SupervisionObservationStatus::Planned
         ));
         assert!(can_transition_observation_status(
-            SupervisionObservationStatus::EvaluatorsSubmitted,
-            SupervisionObservationStatus::Approved
+            SupervisionObservationStatus::Planned,
+            SupervisionObservationStatus::Published
         ));
         assert!(can_transition_observation_status(
-            SupervisionObservationStatus::Approved,
+            SupervisionObservationStatus::InProgress,
             SupervisionObservationStatus::Published
         ));
         assert!(can_transition_observation_status(
@@ -578,14 +582,14 @@ mod tests {
         ));
         assert!(!can_transition_observation_status(
             SupervisionObservationStatus::Requested,
-            SupervisionObservationStatus::Approved
+            SupervisionObservationStatus::Published
         ));
         assert!(!can_transition_observation_status(
-            SupervisionObservationStatus::EvaluatorsSubmitted,
-            SupervisionObservationStatus::UnderReview
+            SupervisionObservationStatus::Returned,
+            SupervisionObservationStatus::Published
         ));
         assert!(!can_transition_observation_status(
-            SupervisionObservationStatus::Approved,
+            SupervisionObservationStatus::Published,
             SupervisionObservationStatus::Returned
         ));
         assert!(!can_transition_observation_status(

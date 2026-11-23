@@ -28,7 +28,7 @@ export const load: PageLoad = ({ params, fetch, url, depends }) => {
 		waitForSupervisionAccess(_meta.access.permission),
 		waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS)
 	]).then(([route, read]) =>
-		route && read
+		route && read && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(params.id)
 			? resolveSupervisionRead(getSupervisionObservation(params.id, { requestFetch: fetch }))
 			: null
 	);

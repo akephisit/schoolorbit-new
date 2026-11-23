@@ -7,14 +7,12 @@ use uuid::Uuid;
 use super::shared::can_view_observation_results;
 
 fn redact_observation_results_for_actor(
-    actor: &ActorContext,
     managed_user_ids: &std::collections::HashSet<Uuid>,
     observation: &mut SupervisionObservation,
 ) {
     observation.can_manage = managed_user_ids.contains(&observation.observed_user_id);
-    let can_view_unreleased =
-        observation.can_manage || supervision_access_policy::can_approve_school(actor);
-    observation.can_review = can_view_observation_results(observation.status, can_view_unreleased);
+    observation.can_review =
+        can_view_observation_results(observation.status, observation.can_manage);
     if !observation.can_review {
         observation.average_rating = None;
     }
@@ -42,7 +40,7 @@ pub async fn redact_observations_results_for_actor(
     let managed_user_ids =
         supervision_access_policy::observation_management_user_ids(pool, actor, &user_ids).await?;
     for observation in observations {
-        redact_observation_results_for_actor(actor, &managed_user_ids, observation);
+        redact_observation_results_for_actor(&managed_user_ids, observation);
     }
     Ok(())
 }
@@ -57,8 +55,7 @@ pub async fn redact_teacher_status_results_for_actor(
         supervision_access_policy::observation_management_user_ids(pool, actor, &user_ids).await?;
     for row in rows {
         if let Some(status) = row.status {
-            let can_view_unreleased = managed_user_ids.contains(&row.teacher_id)
-                || supervision_access_policy::can_approve_school(actor);
+            let can_view_unreleased = managed_user_ids.contains(&row.teacher_id);
             if !can_view_observation_results(status, can_view_unreleased) {
                 row.average_rating = None;
             }

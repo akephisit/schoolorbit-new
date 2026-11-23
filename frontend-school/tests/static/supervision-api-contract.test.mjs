@@ -86,8 +86,21 @@ test('supervision workspace owns and cleans up cancellable refreshes', async () 
 	assert.match(workspace, /\.isCurrent\(revision\)/);
 	assert.match(workspace, /\{ signal \}/);
 	assert.match(workspace, /\.abort\(\)/);
-	assert.match(workspace, /if \(isAbortError\(error\)\) return/);
 	assert.doesNotMatch(workspace, /let refreshRevision = 0/);
+
+	const loadProgress = workspace.match(/\n\tasync function loadProgress\(\) \{[\s\S]*?\n\t\}/)?.[0];
+	assert.ok(loadProgress, 'expected the progress refresh');
+	const errorGuard = loadProgress.match(
+		/catch\s*\(error\)\s*\{\s*if\s*\(([\s\S]*?)\)\s*return;\s*progressError\s*=/
+	)?.[1];
+	assert.ok(errorGuard, 'progress must check request ownership before reporting errors');
+	assert.deepEqual(
+		errorGuard
+			.trim()
+			.split(/\s*\|\|\s*/)
+			.sort(),
+		['!progressRequest.isCurrent(revision)', 'isAbortError(error)']
+	);
 });
 
 test('cycle deletion uses the central typed JSON DELETE and canonical preview revision', async () => {

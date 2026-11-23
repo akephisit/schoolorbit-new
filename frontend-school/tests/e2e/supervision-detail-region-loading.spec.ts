@@ -154,8 +154,43 @@ test('a delayed first ID cannot replace the next selected observation', async ({
 	api.release();
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toHaveCount(0);
 });
+
+test('a reopened evaluator no longer displays the historical submission time', async ({ page }) => {
+	const evaluators = (
+		[
+			[20, 'ผู้ประเมินที่ต้องส่งใหม่', 'draft', '2026-10-01T09:00:00Z'],
+			[22, 'ผู้ประเมินที่ส่งครบ', 'submitted', '2026-10-02T09:00:00Z']
+		] as const
+	).map(([userId, name, status, submittedAt], index) => ({
+		id: id(31 + index),
+		observationId: id(30),
+		evaluatorUserId: id(userId),
+		evaluatorDisplayName: name,
+		isRequired: true,
+		status,
+		submittedAt,
+		createdAt: '2026-10-01T00:00:00Z',
+		updatedAt: '2026-10-02T09:00:00Z'
+	}));
+	await mock(page, { observationStatus: 'planned', observation: { evaluators } });
+	await page.goto(detailPath());
+	const evaluatorCard = page.locator('[data-slot="card"]').filter({
+		has: page.locator('[data-slot="card-title"]').filter({ hasText: /^ผู้ประเมิน$/ })
+	});
+	const draft = evaluatorCard
+		.getByText('ผู้ประเมินที่ต้องส่งใหม่', { exact: true })
+		.locator('../..');
+	const submitted = evaluatorCard
+		.getByText('ผู้ประเมินที่ส่งครบ', { exact: true })
+		.locator('../..');
+	await expect(draft).toContainText('ยังไม่ส่ง');
+	await expect(draft).not.toContainText('1 ต.ค. 2569');
+	await expect(submitted).toContainText('ส่งผลแล้ว');
+	await expect(submitted.locator('time')).toHaveAttribute('datetime', evaluators[1].submittedAt);
+});
+
 test('review is lazy and retries without reloading identity', async ({ page }) => {
-	const api = await mock(page, { fail: 'review', observationStatus: 'evaluators_submitted' });
+	const api = await mock(page, { fail: 'review', observationStatus: 'published' });
 	await page.goto(detailPath());
 	await page.getByRole('button', { name: 'ดูผลประเมินรายข้อ' }).click();
 	const region = page.getByTestId('supervision-review');
@@ -166,7 +201,7 @@ test('review is lazy and retries without reloading identity', async ({ page }) =
 	expect(api.count(observationPath)).toBe(1);
 });
 test('closing pending review aborts it and keeps it closed', async ({ page }) => {
-	const api = await mock(page, { hold: 'review', observationStatus: 'evaluators_submitted' });
+	const api = await mock(page, { hold: 'review', observationStatus: 'published' });
 	await page.goto(detailPath());
 	await page.getByRole('button', { name: 'ดูผลประเมินรายข้อ' }).click();
 	await expect.poll(() => api.count(`${observationPath}/review`)).toBe(1);
@@ -236,16 +271,14 @@ test('unit manager reading another unit cannot manage or review its unreleased o
 }) => {
 	const api = await mock(page, {
 		permissions: ['supervision.read.school', 'supervision.manage.organization_unit'],
-		observationStatus: 'evaluators_submitted',
+		observationStatus: 'in_progress',
 		canManage: false,
 		canReview: false,
 		averageRating: 4.875
 	});
 	await page.goto(detailPath());
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toBeVisible();
-	await expect(
-		page.getByRole('button', { name: /รับรอง|แก้ไข|ยกเลิก|ดูรายละเอียดผล/ })
-	).toHaveCount(0);
+	await expect(page.getByRole('button', { name: /แก้ไข|ยกเลิก|ดูผลประเมินรายข้อ/ })).toHaveCount(0);
 	await expect(page.getByTestId('supervision-detail')).not.toContainText('4.88');
 	expect(api.count(`${observationPath}/review`)).toBe(0);
 	expect(api.count(`${observationPath}/timetable-options`)).toBe(0);

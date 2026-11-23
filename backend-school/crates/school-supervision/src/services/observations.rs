@@ -16,16 +16,16 @@ use school_errors::AppError;
 
 use super::cycles::SupervisionCycleTargetRow;
 use super::evaluations::{
-    insert_supervision_evaluators, load_evaluator_submission_states,
+    evaluator_submission_evidence_user_ids, insert_supervision_evaluators,
     validate_evaluator_availability_for_observation,
 };
 use super::lifecycle::{require_cycle_write, require_observation_write};
 use super::shared::{
-    all_required_evaluators_submitted, can_transition_observation_status, has_approval_evidence,
-    has_required_evaluator, manager_can_edit_observation, parse_cycle_status,
-    parse_evaluator_status, parse_observation_status, parse_optional_observation_status,
-    parse_target_type, resolve_supervision_target_rule, teacher_can_edit_requested_observation,
-    SupervisionObservationListAccess, SupervisionTargetMatch, SupervisionTargetRule,
+    can_transition_observation_status, has_approval_evidence, has_required_evaluator,
+    manager_can_edit_observation, parse_cycle_status, parse_evaluator_status,
+    parse_observation_status, parse_target_type, resolve_supervision_target_rule,
+    teacher_can_edit_requested_observation, SupervisionObservationListAccess,
+    SupervisionTargetMatch, SupervisionTargetRule,
 };
 
 use super::{booking, periods};
@@ -346,7 +346,7 @@ pub async fn update_requested_observation(
     if current.status == SupervisionObservationStatus::Returned {
         validate_cycle_accepts_requests(&cycle)?;
     }
-    ensure_no_submitted_evaluators(&current)?;
+    require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
     ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
     let selected = booking::resolve(
         &mut tx,
@@ -421,7 +421,7 @@ pub async fn resubmit_observation_request(
             "ส่งคำขอเดิมได้เฉพาะรายการที่เคยอนุมัติและถูกส่งกลับ".into(),
         ));
     }
-    ensure_no_submitted_evaluators(&current)?;
+    require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
     let cycle = load_cycle_for_request(&mut tx, current.cycle_id).await?;
     validate_cycle_accepts_requests(&cycle)?;
     cycle.require_periods(&current.periods)?;
@@ -503,7 +503,7 @@ pub async fn update_observation(
         }
         let cycle = load_cycle_for_request(&mut tx, current.cycle_id).await?;
         ensure_cycle_target_allows_teacher(&mut tx, cycle.id, current.observed_user_id).await?;
-        ensure_no_submitted_evaluators(&current)?;
+        require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
         let selected = booking::resolve(
             &mut tx,
             current.observed_user_id,
@@ -536,7 +536,7 @@ pub async fn update_observation(
         .await?;
     }
     if let Some(template_id) = input.template_id {
-        ensure_no_submitted_evaluators(&current)?;
+        require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
         DbSession::new(&mut tx)
             .query(
                 "supervision.observations.update_template",
@@ -610,7 +610,7 @@ pub async fn approve_observation_request(
 
     let cycle = load_cycle_for_request(&mut tx, observation.cycle_id).await?;
     cycle.require_periods(&observation.periods)?;
-    ensure_no_submitted_evaluators(&observation)?;
+    require_no_evaluator_submission_evidence(&mut tx, observation.id).await?;
 
     if input
         .evaluators
@@ -960,7 +960,7 @@ async fn load_observation_actions(
         FROM supervision_actions a
         LEFT JOIN user_display_names u ON u.id = a.actor_user_id
         WHERE a.observation_id = ANY($1)
-        ORDER BY a.observation_id, a.created_at DESC
+        ORDER BY a.observation_id, a.created_at DESC, a.id DESC
         "#,
         )
         .bind(observation_ids)
@@ -980,7 +980,7 @@ async fn load_observation_actions(
         actions_by_observation
             .entry(observation_id)
             .or_insert_with(Vec::new)
-            .push(action_from_row(row)?);
+            .push(action_from_row(row));
     }
     Ok(actions_by_observation)
 }
@@ -1023,18 +1023,18 @@ async fn load_observation_average_ratings(
     Ok(rows.into_iter().collect())
 }
 
-fn action_from_row(row: SupervisionActionRow) -> Result<SupervisionAction, AppError> {
-    Ok(SupervisionAction {
+fn action_from_row(row: SupervisionActionRow) -> SupervisionAction {
+    SupervisionAction {
         id: row.id,
         observation_id: row.observation_id,
         actor_user_id: row.actor_user_id,
         actor_display_name: row.actor_display_name,
         action_kind: row.action_kind,
-        from_status: parse_optional_observation_status(row.from_status)?,
-        to_status: parse_optional_observation_status(row.to_status)?,
+        from_status: row.from_status,
+        to_status: row.to_status,
         comment: row.comment,
         created_at: row.created_at,
-    })
+    }
 }
 
 pub(super) async fn load_cycle_for_request(
@@ -1210,11 +1210,13 @@ fn manager_selection(
     }
 }
 
-fn ensure_no_submitted_evaluators(observation: &SupervisionObservation) -> Result<(), AppError> {
-    if observation
-        .evaluators
-        .iter()
-        .any(|evaluator| evaluator.status == crate::models::SupervisionEvaluatorStatus::Submitted)
+async fn require_no_evaluator_submission_evidence(
+    connection: &mut PgConnection,
+    observation_id: Uuid,
+) -> Result<(), AppError> {
+    if !evaluator_submission_evidence_user_ids(connection, observation_id)
+        .await?
+        .is_empty()
     {
         return Err(AppError::ValidationError(
             "รายการนี้มีผลประเมินที่ส่งแล้ว ไม่สามารถส่งกลับ ส่งคำขอใหม่ หรือกำหนดผู้ประเมินใหม่ได้".into(),
@@ -1226,7 +1228,6 @@ fn ensure_no_submitted_evaluators(observation: &SupervisionObservation) -> Resul
 pub(super) enum ObservationTransitionPolicy {
     Manager,
     RequestedTeacher,
-    Certification,
     ObservedTeacher,
 }
 
@@ -1257,7 +1258,7 @@ pub(super) async fn set_observation_status(
     require_observation_write(&mut tx, observation_id).await?;
     let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if to_status == SupervisionObservationStatus::Returned {
-        ensure_no_submitted_evaluators(&current)?;
+        require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
     }
     match policy {
         ObservationTransitionPolicy::RequestedTeacher
@@ -1266,12 +1267,6 @@ pub(super) async fn set_observation_status(
             return Err(AppError::ValidationError(
                 "ยกเลิกคำขอนิเทศได้เฉพาะสถานะรออนุมัติหรือส่งกลับ".into(),
             ));
-        }
-        ObservationTransitionPolicy::Certification => {
-            let states = load_evaluator_submission_states(&mut *tx, observation_id).await?;
-            if !all_required_evaluators_submitted(&states) {
-                return Err(AppError::ValidationError("ผู้ประเมินหลักยังส่งผลไม่ครบ".into()));
-            }
         }
         _ => {}
     }

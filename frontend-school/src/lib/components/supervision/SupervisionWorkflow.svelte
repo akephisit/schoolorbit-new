@@ -21,7 +21,7 @@
 		</p>
 	</div>
 	{#if workflow.stage >= 0}
-		<ol class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6" aria-label="ขั้นตอนการนิเทศ">
+		<ol class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="ขั้นตอนการนิเทศ">
 			{#each supervisionStages as label, index (label)}
 				<li
 					class={cn(

@@ -3147,12 +3147,10 @@ fn supervision_service_facade_is_thin_and_preserves_public_surface() {
 
     for public_item in [
         "acknowledge_observation",
-        "approve_observation",
         "approve_observation_request",
         "cancel_observation",
         "cancel_requested_observation",
         "can_view_observation_results",
-        "certify_observation",
         "create_cycle",
         "create_template",
         "cycle_progress",
@@ -8344,11 +8342,10 @@ fn teaching_supervision_registry_and_module_are_registered() {
         "SUPERVISION_MANAGE_ORGANIZATION_TREE",
         "SUPERVISION_MANAGE_SCHOOL",
         "SUPERVISION_EVALUATE_ASSIGNED",
-        "SUPERVISION_APPROVE_SCHOOL",
         "supervision.read.own",
         "supervision.manage.organization_unit",
         "supervision.manage.organization_tree",
-        "supervision.approve.school",
+        "supervision.read.school",
     ] {
         assert!(
             registry.contains(expected),
@@ -8356,6 +8353,7 @@ fn teaching_supervision_registry_and_module_are_registered() {
         );
     }
 
+    assert!(!registry.contains("supervision.approve.school"));
     assert!(modules.contains("pub mod supervision;"));
 }
 

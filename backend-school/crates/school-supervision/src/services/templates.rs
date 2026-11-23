@@ -531,6 +531,27 @@ pub async fn update_template(
         })?;
 
     if let Some(sections) = input.sections {
+        // The UPDATE above holds the template lock shared by evaluation submissions.
+        let has_submission_evidence: bool = DbSession::new(&mut tx)
+            .scalar(
+                "supervision.templates.has_submission_evidence",
+                "SELECT EXISTS (
+                    SELECT 1 FROM supervision_observations o
+                    JOIN supervision_evaluators e ON e.observation_id = o.id
+                    WHERE o.template_id = $1 AND
+                        (e.status = 'submitted' OR e.submission_reopened
+                         OR (e.status = 'draft' AND e.submitted_at IS NOT NULL))
+                )",
+            )
+            .bind(id)
+            .fetch_one()
+            .await?;
+        if has_submission_evidence {
+            return Err(AppError::Conflict(
+                "เปลี่ยนหัวข้อในแบบประเมินที่มีการส่งผลประเมินแล้วไม่ได้".into(),
+            ));
+        }
+
         DbSession::new(&mut *tx)
             .query(
                 "supervision.services.templates.update_template",

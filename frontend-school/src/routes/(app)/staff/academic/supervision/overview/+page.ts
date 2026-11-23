@@ -1,9 +1,13 @@
 import { appIdentityKey, waitForAuthenticatedUser } from '#lib/auth/settled-user.js';
 import {
 	listSupervisionCycles,
+	getSupervisionCycleProgress,
 	getSupervisionTeacherStatusOverview
 } from '#lib/api/supervision.js';
-import { waitForSupervisionAccess } from '#lib/supervision/supervision-access.js';
+import {
+	SUPERVISION_SCHOOL_REPORT_PERMISSIONS,
+	waitForSupervisionAccess
+} from '#lib/supervision/supervision-access.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
 import type { PageLoad } from './$types';
@@ -13,11 +17,9 @@ export const _meta = {
 	access: {
 		user_type: 'staff',
 		permission: [
-			PERMISSIONS.SUPERVISION_READ_SCHOOL,
-			PERMISSIONS.SUPERVISION_MANAGE_SCHOOL,
+			...SUPERVISION_SCHOOL_REPORT_PERMISSIONS,
 			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_UNIT,
-			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_TREE,
-			PERMISSIONS.SUPERVISION_APPROVE_SCHOOL
+			PERMISSIONS.SUPERVISION_MANAGE_ORGANIZATION_TREE
 		]
 	}
 };
@@ -46,15 +48,28 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 			items:
 				allowed && id ? await getSupervisionTeacherStatusOverview(id, { requestFetch: fetch }) : []
 		}));
-	const teacherStatus = cycles
+	const selectedCycle = cycles
+		? cycleId
+			? Promise.resolve(cycleId)
+			: cycles.then((result) => {
+					if (!result.ok) throw new Error(result.error);
+					return result.data[0]?.id ?? '';
+				})
+		: null;
+	const teacherStatus = selectedCycle
+		? captureRouteLoad(selectedCycle.then(loadStatus), 'โหลดสถานะครูไม่สำเร็จ')
+		: null;
+	const progress = selectedCycle
 		? captureRouteLoad(
-				cycleId
-					? loadStatus(cycleId)
-					: cycles.then((result) => {
-							if (!result.ok) throw new Error(result.error);
-							return loadStatus(result.data[0]?.id ?? '');
-						}),
-				'โหลดสถานะครูไม่สำเร็จ'
+				Promise.all([
+					selectedCycle,
+					waitForSupervisionAccess(SUPERVISION_SCHOOL_REPORT_PERMISSIONS)
+				]).then(async ([id, allowed]) => ({
+					cycleId: id,
+					report:
+						allowed && id ? await getSupervisionCycleProgress(id, { requestFetch: fetch }) : null
+				})),
+				'โหลดความคืบหน้ารอบนิเทศไม่สำเร็จ'
 			)
 		: null;
 	return {
@@ -66,6 +81,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		academicTermId,
 		cycleId,
 		cycles,
+		progress,
 		teacherStatus,
 		templates: null
 	};

@@ -1,5 +1,6 @@
 import type {
 	SupervisionCycle,
+	SupervisionCycleProgress,
 	SupervisionTemplateSummary,
 	SupervisionTeacherStatusRow,
 	SupervisionObservation
@@ -7,8 +8,9 @@ import type {
 import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 
 export type WorkspaceSection =
-	'overview' | 'cycles' | 'templates' | 'mine' | 'requests' | 'evaluate' | 'approvals';
+	'overview' | 'cycles' | 'templates' | 'mine' | 'requests' | 'evaluate';
 export type ObservationRegion = { readable: boolean; items: SupervisionObservation[] };
+export type CycleProgressRegion = { cycleId: string; report: SupervisionCycleProgress | null };
 export type TeacherStatusRegion = { cycleId: string; items: SupervisionTeacherStatusRow[] };
 export type SupervisionWorkspaceRouteData = {
 	identity: Promise<string>;
@@ -19,5 +21,6 @@ export type SupervisionWorkspaceRouteData = {
 	cycles: Promise<RouteLoadResult<SupervisionCycle[]>> | null;
 	templates: Promise<RouteLoadResult<SupervisionTemplateSummary[]>> | null;
 	observations: Promise<RouteLoadResult<ObservationRegion>> | null;
+	progress?: Promise<RouteLoadResult<CycleProgressRegion>> | null;
 	teacherStatus: Promise<RouteLoadResult<TeacherStatusRegion>> | null;
 };

@@ -29,10 +29,6 @@ pub fn can_evaluate_assigned(actor: &ActorContext) -> bool {
     actor.has_permission(codes::SUPERVISION_EVALUATE_ASSIGNED)
 }
 
-pub fn can_approve_school(actor: &ActorContext) -> bool {
-    actor.has_permission(codes::SUPERVISION_APPROVE_SCHOOL)
-}
-
 pub fn require_supervision_access(actor: &ActorContext) -> Result<(), AppError> {
     if actor.has_module_permission("supervision") {
         Ok(())
@@ -42,10 +38,7 @@ pub fn require_supervision_access(actor: &ActorContext) -> Result<(), AppError> 
 }
 
 pub fn require_school_report_access(actor: &ActorContext) -> Result<(), AppError> {
-    if can_manage_school(actor)
-        || can_approve_school(actor)
-        || actor.has_permission(codes::SUPERVISION_READ_SCHOOL)
-    {
+    if can_manage_school(actor) || actor.has_permission(codes::SUPERVISION_READ_SCHOOL) {
         Ok(())
     } else {
         Err(AppError::Forbidden(
@@ -77,14 +70,6 @@ pub fn require_evaluate_assigned(actor: &ActorContext) -> Result<(), AppError> {
         Err(AppError::Forbidden(
             "ไม่มีสิทธิ์ประเมินรายการนิเทศที่ได้รับมอบหมาย".to_string(),
         ))
-    }
-}
-
-pub fn require_approve_school(actor: &ActorContext) -> Result<(), AppError> {
-    if can_approve_school(actor) {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("ไม่มีสิทธิ์อนุมัติผลนิเทศการสอน".to_string()))
     }
 }
 
@@ -187,7 +172,7 @@ pub async fn require_observation_read_access(
     observed_user_id: Uuid,
     evaluator_user_ids: &[Uuid],
 ) -> Result<(), AppError> {
-    if can_manage_school(actor) || can_approve_school(actor) {
+    if can_manage_school(actor) || actor.has_permission(codes::SUPERVISION_READ_SCHOOL) {
         return Ok(());
     }
 
@@ -215,10 +200,7 @@ pub async fn require_observation_read_access(
 }
 
 fn observation_base_list_access(actor: &ActorContext) -> Option<SupervisionObservationListAccess> {
-    if can_manage_school(actor)
-        || can_approve_school(actor)
-        || actor.has_permission(codes::SUPERVISION_READ_SCHOOL)
-    {
+    if can_manage_school(actor) || actor.has_permission(codes::SUPERVISION_READ_SCHOOL) {
         return Some(SupervisionObservationListAccess::school());
     }
 
