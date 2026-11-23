@@ -401,7 +401,8 @@ pub async fn get_template(
         (status = 400, description = "Invalid supervision template", body = ApiErrorResponse),
         (status = 401, description = "Authentication required", body = ApiErrorResponse),
         (status = 403, description = "Supervision management denied", body = ApiErrorResponse),
-        (status = 404, description = "Supervision template not found", body = ApiErrorResponse)
+        (status = 404, description = "Supervision template not found", body = ApiErrorResponse),
+        (status = 409, description = "Template rubric already has submission evidence", body = ApiErrorResponse)
     )
 ))]
 pub async fn update_template(

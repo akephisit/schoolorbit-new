@@ -154,6 +154,41 @@ test('a delayed first ID cannot replace the next selected observation', async ({
 	api.release();
 	await expect(page.getByRole('heading', { name: 'ครู ในคิว', exact: true })).toHaveCount(0);
 });
+
+test('a reopened evaluator no longer displays the historical submission time', async ({ page }) => {
+	const evaluators = (
+		[
+			[20, 'ผู้ประเมินที่ต้องส่งใหม่', 'draft', '2026-10-01T09:00:00Z'],
+			[22, 'ผู้ประเมินที่ส่งครบ', 'submitted', '2026-10-02T09:00:00Z']
+		] as const
+	).map(([userId, name, status, submittedAt], index) => ({
+		id: id(31 + index),
+		observationId: id(30),
+		evaluatorUserId: id(userId),
+		evaluatorDisplayName: name,
+		isRequired: true,
+		status,
+		submittedAt,
+		createdAt: '2026-10-01T00:00:00Z',
+		updatedAt: '2026-10-02T09:00:00Z'
+	}));
+	await mock(page, { observationStatus: 'planned', observation: { evaluators } });
+	await page.goto(detailPath());
+	const evaluatorCard = page.locator('[data-slot="card"]').filter({
+		has: page.locator('[data-slot="card-title"]').filter({ hasText: /^ผู้ประเมิน$/ })
+	});
+	const draft = evaluatorCard
+		.getByText('ผู้ประเมินที่ต้องส่งใหม่', { exact: true })
+		.locator('../..');
+	const submitted = evaluatorCard
+		.getByText('ผู้ประเมินที่ส่งครบ', { exact: true })
+		.locator('../..');
+	await expect(draft).toContainText('ยังไม่ส่ง');
+	await expect(draft).not.toContainText('1 ต.ค. 2569');
+	await expect(submitted).toContainText('ส่งผลแล้ว');
+	await expect(submitted.locator('time')).toHaveAttribute('datetime', evaluators[1].submittedAt);
+});
+
 test('review is lazy and retries without reloading identity', async ({ page }) => {
 	const api = await mock(page, { fail: 'review', observationStatus: 'published' });
 	await page.goto(detailPath());

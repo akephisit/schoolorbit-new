@@ -6,8 +6,7 @@ use uuid::Uuid;
 
 use crate::models::{
     EvaluationResponseInput, ReplaceObservationEvaluatorsRequest, SaveEvaluationRequest,
-    SupervisionEvaluatorStatus, SupervisionObservation, SupervisionObservationStatus,
-    SupervisionTemplateItemType,
+    SupervisionObservation, SupervisionObservationStatus, SupervisionTemplateItemType,
 };
 use school_errors::AppError;
 
@@ -63,22 +62,18 @@ pub async fn replace_observation_evaluators(
             "ครูผู้ถูกนิเทศเป็นผู้ประเมินรายการของตนเองไม่ได้".to_string(),
         ));
     }
+    let retained_user_ids = evaluator_submission_evidence_user_ids(&mut tx, observation_id).await?;
     let existing_states = current
         .evaluators
         .iter()
         .map(|evaluator| EvaluatorReplacementState {
             evaluator_user_id: evaluator.evaluator_user_id,
-            submitted: evaluator.status == SupervisionEvaluatorStatus::Submitted,
+            retain: retained_user_ids.contains(&evaluator.evaluator_user_id),
             is_required: evaluator.is_required,
         })
         .collect::<Vec<_>>();
-    let submitted_user_ids = existing_states
-        .iter()
-        .filter(|state| state.submitted)
-        .map(|state| state.evaluator_user_id)
-        .collect::<HashSet<_>>();
     let replacement = normalize_evaluator_replacement(&existing_states, input.evaluators)?;
-    // Submitted evaluators are retained even when omitted from the requested
+    // Evaluators with submission evidence are retained even when omitted from the requested
     // replacement. Validate the complete accepted assignment set under its locks.
     let evaluator_user_ids = replacement
         .iter()
@@ -86,7 +81,7 @@ pub async fn replace_observation_evaluators(
         .collect::<Vec<_>>();
     let insert_rows = replacement
         .into_iter()
-        .filter(|evaluator| !submitted_user_ids.contains(&evaluator.evaluator_user_id))
+        .filter(|evaluator| !retained_user_ids.contains(&evaluator.evaluator_user_id))
         .collect::<Vec<_>>();
     let new_evaluator_user_ids = insert_rows
         .iter()
@@ -100,21 +95,23 @@ pub async fn replace_observation_evaluators(
     )
     .await?;
 
+    let retained_user_ids: Vec<_> = retained_user_ids.into_iter().collect();
     DbSession::new(&mut *tx)
         .query(
             "supervision.services.evaluations.replace_observation_evaluators",
             r#"
         DELETE FROM supervision_evaluators
         WHERE observation_id = $1
-          AND status <> 'submitted'
+          AND evaluator_user_id <> ALL($2)
         "#,
         )
         .bind(observation_id)
+        .bind(retained_user_ids)
         .execute()
         .await
         .map_err(|error| {
             tracing::error!(
-                "Failed to clear non-submitted supervision evaluators: {}",
+                "Failed to clear replaceable supervision evaluators: {}",
                 school_database::error_class(&error)
             );
             AppError::InternalServerError("ไม่สามารถแก้ไขผู้ประเมินได้".to_string())
@@ -144,6 +141,23 @@ pub async fn replace_observation_evaluators(
 
     tx.commit().await?;
     get_observation(pool, observation_id).await
+}
+
+pub(super) async fn evaluator_submission_evidence_user_ids(
+    connection: &mut PgConnection,
+    observation_id: Uuid,
+) -> Result<HashSet<Uuid>, AppError> {
+    let user_ids = DbSession::new(connection)
+        .scalar(
+            "supervision.evaluations.retained_evaluator_users",
+            "SELECT evaluator_user_id FROM supervision_evaluators
+             WHERE observation_id = $1 AND
+                 (status = 'submitted' OR submission_reopened OR (status = 'draft' AND submitted_at IS NOT NULL))",
+        )
+        .bind(observation_id)
+        .fetch_all()
+        .await?;
+    Ok(user_ids.into_iter().collect())
 }
 
 pub(super) async fn insert_supervision_evaluators(
@@ -220,21 +234,8 @@ pub async fn submit_my_evaluation(
         ));
     }
     let responses = dedupe_evaluation_responses(input.responses);
-    let template_item_ids = responses
-        .iter()
-        .map(|response| response.template_item_id)
-        .collect::<Vec<_>>();
-    let item_specs = load_evaluation_item_specs(
-        &mut tx,
-        observation_id,
-        &template_item_ids,
-        !already_submitted,
-    )
-    .await?;
-    let response_rows = build_evaluation_response_bulk_rows(&responses, &item_specs)?;
-
     if already_submitted {
-        if !matches_submitted_responses(&mut tx, evaluator.id, &response_rows).await? {
+        if !matches_submitted_responses(&mut tx, evaluator.id, &responses).await? {
             return Err(AppError::ValidationError(
                 "ส่งผลประเมินแล้ว ไม่สามารถแก้ไขได้".into(),
             ));
@@ -243,6 +244,21 @@ pub async fn submit_my_evaluation(
         return Ok(observation);
     }
 
+    let _: Uuid = DbSession::new(&mut tx)
+        .scalar(
+            "supervision.evaluations.lock_template_for_submission",
+            "SELECT id FROM supervision_templates WHERE id = $1 FOR SHARE",
+        )
+        .bind(observation.template_id)
+        .fetch_one()
+        .await?;
+    let template_item_ids: Vec<_> = responses
+        .iter()
+        .map(|response| response.template_item_id)
+        .collect();
+    let item_specs =
+        load_evaluation_item_specs(&mut tx, observation_id, &template_item_ids).await?;
+    let response_rows = build_evaluation_response_bulk_rows(&responses, &item_specs)?;
     require_completed_evaluation(&item_specs, &response_rows)?;
     bulk_upsert_evaluation_responses(&mut tx, observation_id, evaluator.id, &response_rows).await?;
     DbSession::new(&mut *tx)
@@ -363,7 +379,7 @@ async fn load_evaluator_for_user(
 async fn matches_submitted_responses(
     connection: &mut PgConnection,
     evaluator_id: Uuid,
-    rows: &[EvaluationResponseBulkRow],
+    rows: &[EvaluationResponseInput],
 ) -> Result<bool, AppError> {
     if rows.is_empty() {
         return Ok(true);
@@ -386,7 +402,7 @@ async fn matches_submitted_responses(
                 LEFT JOIN supervision_evaluator_responses saved
                   ON saved.evaluator_id = $1 AND saved.template_item_id = incoming.item_id
                 WHERE saved.id IS NULL
-                   OR saved.rating_score IS DISTINCT FROM incoming.score::numeric(6,2)
+                   OR saved.rating_score IS DISTINCT FROM round(incoming.score::numeric, 2)
                    OR saved.text_response IS DISTINCT FROM incoming.answer
             )
             "#,
@@ -421,12 +437,7 @@ async fn load_evaluation_item_specs(
     connection: &mut PgConnection,
     observation_id: Uuid,
     template_item_ids: &[Uuid],
-    include_required: bool,
 ) -> Result<HashMap<Uuid, EvaluationItemSpec>, AppError> {
-    if template_item_ids.is_empty() && !include_required {
-        return Ok(HashMap::new());
-    }
-
     let rows = DbSession::new(&mut *connection)
         .query_as::<(Uuid, String, i32, i32, bool)>(
             "supervision.services.evaluations.load_evaluation_item_specs",
@@ -436,12 +447,11 @@ async fn load_evaluation_item_specs(
         JOIN supervision_template_sections s ON i.section_id = s.id
         JOIN supervision_templates t ON s.template_id = t.id
         JOIN supervision_observations o ON o.template_id = t.id
-        WHERE o.id = $1 AND (i.id = ANY($2) OR ($3 AND i.required))
+        WHERE o.id = $1 AND (i.id = ANY($2) OR i.required)
         "#,
         )
         .bind(observation_id)
         .bind(template_item_ids)
-        .bind(include_required)
         .fetch_all()
         .await
         .map_err(|error| {

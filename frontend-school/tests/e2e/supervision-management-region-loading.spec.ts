@@ -79,6 +79,22 @@ test('school progress retry leaves the cycle selector and teacher status intact'
 	expect(api.count('/api/supervision/cycles')).toBe(1);
 });
 
+test('a full route navigation clears progress from the previous cycle while the next report loads', async ({
+	page
+}) => {
+	const api = await mock(page, { hold: 'progress' });
+	await page.goto(path('overview', year, firstCycle));
+	const progress = page.getByTestId('supervision-progress');
+	await expect(progress).toContainText('4.25');
+	await navigate(page, path('overview', year, secondCycle));
+	await expect(page.getByText('ครู รอบสอง')).toBeVisible();
+	await expect(progress).toHaveAttribute('aria-busy', 'true');
+	await expect(progress.getByRole('status')).toBeVisible();
+	await expect(progress).not.toContainText('4.25');
+	api.release();
+	await expect(progress).toContainText('4.50');
+});
+
 test('default overview waits only for cycles to select the first ID', async ({ page }) => {
 	const api = await mock(page, { hold: 'cycles' });
 	await page.goto(path('overview'));

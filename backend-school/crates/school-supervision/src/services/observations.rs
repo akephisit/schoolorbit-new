@@ -16,7 +16,8 @@ use school_errors::AppError;
 
 use super::cycles::SupervisionCycleTargetRow;
 use super::evaluations::{
-    insert_supervision_evaluators, validate_evaluator_availability_for_observation,
+    evaluator_submission_evidence_user_ids, insert_supervision_evaluators,
+    validate_evaluator_availability_for_observation,
 };
 use super::lifecycle::{require_cycle_write, require_observation_write};
 use super::shared::{
@@ -345,7 +346,7 @@ pub async fn update_requested_observation(
     if current.status == SupervisionObservationStatus::Returned {
         validate_cycle_accepts_requests(&cycle)?;
     }
-    ensure_no_submitted_evaluators(&current)?;
+    require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
     ensure_cycle_target_allows_teacher(&mut tx, cycle.id, actor_user_id).await?;
     let selected = booking::resolve(
         &mut tx,
@@ -420,7 +421,7 @@ pub async fn resubmit_observation_request(
             "ส่งคำขอเดิมได้เฉพาะรายการที่เคยอนุมัติและถูกส่งกลับ".into(),
         ));
     }
-    ensure_no_submitted_evaluators(&current)?;
+    require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
     let cycle = load_cycle_for_request(&mut tx, current.cycle_id).await?;
     validate_cycle_accepts_requests(&cycle)?;
     cycle.require_periods(&current.periods)?;
@@ -502,7 +503,7 @@ pub async fn update_observation(
         }
         let cycle = load_cycle_for_request(&mut tx, current.cycle_id).await?;
         ensure_cycle_target_allows_teacher(&mut tx, cycle.id, current.observed_user_id).await?;
-        ensure_no_submitted_evaluators(&current)?;
+        require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
         let selected = booking::resolve(
             &mut tx,
             current.observed_user_id,
@@ -535,7 +536,7 @@ pub async fn update_observation(
         .await?;
     }
     if let Some(template_id) = input.template_id {
-        ensure_no_submitted_evaluators(&current)?;
+        require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
         DbSession::new(&mut tx)
             .query(
                 "supervision.observations.update_template",
@@ -609,7 +610,7 @@ pub async fn approve_observation_request(
 
     let cycle = load_cycle_for_request(&mut tx, observation.cycle_id).await?;
     cycle.require_periods(&observation.periods)?;
-    ensure_no_submitted_evaluators(&observation)?;
+    require_no_evaluator_submission_evidence(&mut tx, observation.id).await?;
 
     if input
         .evaluators
@@ -1209,11 +1210,13 @@ fn manager_selection(
     }
 }
 
-fn ensure_no_submitted_evaluators(observation: &SupervisionObservation) -> Result<(), AppError> {
-    if observation
-        .evaluators
-        .iter()
-        .any(|evaluator| evaluator.status == crate::models::SupervisionEvaluatorStatus::Submitted)
+async fn require_no_evaluator_submission_evidence(
+    connection: &mut PgConnection,
+    observation_id: Uuid,
+) -> Result<(), AppError> {
+    if !evaluator_submission_evidence_user_ids(connection, observation_id)
+        .await?
+        .is_empty()
     {
         return Err(AppError::ValidationError(
             "รายการนี้มีผลประเมินที่ส่งแล้ว ไม่สามารถส่งกลับ ส่งคำขอใหม่ หรือกำหนดผู้ประเมินใหม่ได้".into(),
@@ -1255,7 +1258,7 @@ pub(super) async fn set_observation_status(
     require_observation_write(&mut tx, observation_id).await?;
     let current = get_observation_with_connection(&mut tx, observation_id).await?;
     if to_status == SupervisionObservationStatus::Returned {
-        ensure_no_submitted_evaluators(&current)?;
+        require_no_evaluator_submission_evidence(&mut tx, current.id).await?;
     }
     match policy {
         ObservationTransitionPolicy::RequestedTeacher

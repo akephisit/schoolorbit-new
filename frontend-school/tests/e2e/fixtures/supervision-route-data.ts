@@ -379,7 +379,7 @@ export async function mock(
 					(!options.holdAt || counts.get(resource) === options.holdAt) &&
 					(!['cycles', 'observations'].includes(kind) ||
 						url.searchParams.get('academicYearId') === year) &&
-					(kind !== 'teacher-status' || resource.includes(secondCycle)) &&
+					(!['teacher-status', 'progress'].includes(kind) || resource.includes(secondCycle)) &&
 					(kind !== 'observation-detail' || selectedId === id(30))
 				)
 					await held.promise;

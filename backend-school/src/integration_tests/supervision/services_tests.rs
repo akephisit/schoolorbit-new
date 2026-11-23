@@ -1922,21 +1922,14 @@ async fn list_hydrators_preserve_multi_parent_relations() {
     )
     .await
     .expect("first observation evaluation should submit");
-    let first_rating_item_id = fixture.template.sections[0].items[0].id;
-    services::submit_my_evaluation(
-        &pool,
-        fixture.second_evaluator_id,
-        first.id,
-        SaveEvaluationRequest {
-            responses: vec![EvaluationResponseInput {
-                template_item_id: first_rating_item_id,
-                rating_score: Some(1.0),
-                text_response: None,
-            }],
-        },
-    )
-    .await
-    .expect("second evaluator should submit a partial rating set");
+    let optional_rating_id = fixture.template.sections[1].items[0].id;
+    let mut fewer_ratings = evaluation_responses(&fixture.template, 1.0);
+    fewer_ratings
+        .responses
+        .retain(|response| response.template_item_id != optional_rating_id);
+    services::submit_my_evaluation(&pool, fixture.second_evaluator_id, first.id, fewer_ratings)
+        .await
+        .expect("second evaluator may omit the optional rating");
 
     let second = services::request_observation(
         &pool,
@@ -3333,7 +3326,7 @@ async fn optional_evaluators_may_contribute_until_automatic_publication() {
     let booking_action = planned
         .actions
         .iter()
-        .find(|action| action.action_kind == "request_approved")
+        .find(|action| action.action_kind == "planned")
         .unwrap();
     let stale_assignment = dispatch::pending(&pool)
         .await
@@ -3575,6 +3568,84 @@ async fn supervision_concurrent_required_submissions_publish_once_and_preserve_r
 }
 
 #[tokio::test]
+async fn supervision_accepted_empty_evaluation_protects_the_rubric_structure() {
+    let pool = migrated_pool("supervision_empty_evaluation_rubric_lock").await;
+    let f = insert_fixture(&pool).await;
+    let mut optional_sections = template_input().sections;
+    for item in optional_sections
+        .iter_mut()
+        .flat_map(|section| &mut section.items)
+    {
+        item.required = false;
+    }
+    let optional_template = services::update_template(
+        &pool,
+        f.template.id,
+        UpdateSupervisionTemplateRequest {
+            sections: Some(optional_sections),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let observation = request_observation(&pool, &f).await;
+    approve_with(
+        &pool,
+        &f,
+        observation.id,
+        vec![f.evaluator_id, f.second_evaluator_id],
+    )
+    .await;
+    let partial = services::submit_my_evaluation(
+        &pool,
+        f.evaluator_id,
+        observation.id,
+        SaveEvaluationRequest::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(partial.status, SupervisionObservationStatus::Planned);
+    assert!(matches!(
+        services::update_template(
+            &pool,
+            f.template.id,
+            UpdateSupervisionTemplateRequest {
+                title: Some("Changed in a denied update".into()),
+                sections: Some(template_input().sections),
+                ..Default::default()
+            },
+        )
+        .await,
+        Err(AppError::Conflict(_))
+    ));
+    let current = services::get_template(&pool, f.template.id).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(current).unwrap(),
+        serde_json::to_value(optional_template).unwrap()
+    );
+    services::update_template(
+        &pool,
+        f.template.id,
+        UpdateSupervisionTemplateRequest {
+            title: Some("Refined title".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let published = services::submit_my_evaluation(
+        &pool,
+        f.second_evaluator_id,
+        observation.id,
+        SaveEvaluationRequest::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(published.status, SupervisionObservationStatus::Published);
+    assert_eq!(published.average_rating, None);
+}
+
+#[tokio::test]
 async fn supervision_confirmed_roster_replacement_releases_only_with_submitted_required_evidence() {
     let pool = migrated_pool("supervision_roster_publication").await;
     let f = insert_fixture(&pool).await;
@@ -3671,27 +3742,47 @@ async fn supervision_publication_migration_reconciles_pending_rows_and_preserves
     let pool = migrated_pool_through("supervision_publication_migration", 1, 168).await;
     let f = insert_fixture(&pool).await;
     let observation = request_observation(&pool, &f).await;
-    approve_with(&pool, &f, observation.id, vec![f.evaluator_id]).await;
+    sqlx::query("UPDATE supervision_observations SET status='planned',approved_at=now(),approved_by=$2 WHERE id=$1")
+        .bind(observation.id).bind(f.actor_id).execute(&pool).await.unwrap();
 
+    let complete = (true, "submitted", Some(Some(4.0)), "Retained answer");
+    let missing_rating = (true, "submitted", None, "Retained answer");
+    let null_rating = (true, "submitted", Some(None), "Retained answer");
+    let blank_text = (true, "submitted", Some(Some(4.0)), " \u{00a0}\t");
     let fixtures = [
         (
             "evaluators_submitted",
-            vec![(true, "submitted"), (false, "draft")],
+            vec![complete, (false, "draft", None, "")],
             "published",
+            false,
         ),
         (
             "under_review",
-            vec![(true, "submitted"), (true, "assigned")],
+            vec![complete, (true, "assigned", None, "")],
             "planned",
+            false,
         ),
-        ("approved", vec![(false, "submitted")], "planned"),
-        ("approved", vec![], "planned"),
-        ("published", vec![(false, "submitted")], "published"),
-        ("completed", vec![], "completed"),
+        (
+            "approved",
+            vec![(false, "submitted", None, "")],
+            "planned",
+            false,
+        ),
+        ("approved", vec![missing_rating], "planned", true),
+        ("approved", vec![null_rating], "planned", true),
+        ("under_review", vec![blank_text], "planned", true),
+        ("approved", vec![], "planned", false),
+        ("planned", vec![missing_rating], "planned", true),
+        ("in_progress", vec![blank_text], "in_progress", true),
+        ("requested", vec![null_rating], "requested", false),
+        ("published", vec![missing_rating], "published", false),
+        ("completed", vec![blank_text], "completed", false),
     ];
-    let item_id = f.template.sections[0].items[0].id;
+    let rating_id = f.template.sections[0].items[0].id;
+    let text_id = f.template.sections[0].items[1].id;
+    let mut reopened = Vec::new();
     let mut migrated = Vec::new();
-    for (status, evidence, expected) in fixtures {
+    for (index, (status, evidence, expected, should_reopen)) in fixtures.into_iter().enumerate() {
         let id = Uuid::now_v7();
         sqlx::query(
             "INSERT INTO supervision_observations
@@ -3716,26 +3807,44 @@ async fn supervision_publication_migration_reconciles_pending_rows_and_preserves
         .execute(&pool)
         .await
         .unwrap();
-        for (user_id, (required, evaluator_status)) in [f.evaluator_id, f.second_evaluator_id]
-            .into_iter()
-            .zip(evidence)
+        // A legacy import may have a submitted status without a timestamp.
+        let imported_without_timestamp = index == 3;
+        let first_evaluator = if imported_without_timestamp {
+            f.actor_id
+        } else {
+            f.evaluator_id
+        };
+        for (user_id, (required, evaluator_status, score, answer)) in
+            [first_evaluator, f.second_evaluator_id]
+                .into_iter()
+                .zip(evidence)
         {
             let evaluator_id: Uuid = sqlx::query_scalar(
                 "INSERT INTO supervision_evaluators
                     (observation_id,evaluator_user_id,status,is_required,submitted_at)
-                 VALUES ($1,$2,$3,$4,CASE WHEN $3='submitted' THEN now() END) RETURNING id",
+                 VALUES ($1,$2,$3,$4,CASE WHEN $5 THEN now() END) RETURNING id",
             )
             .bind(id)
             .bind(user_id)
             .bind(evaluator_status)
             .bind(required)
+            .bind(evaluator_status == "submitted" && !imported_without_timestamp)
             .fetch_one(&pool)
             .await
             .unwrap();
+            if should_reopen {
+                reopened.push(evaluator_id);
+            }
+            if let Some(score) = score {
+                sqlx::query(
+                    "INSERT INTO supervision_evaluator_responses
+                        (observation_id,evaluator_id,template_item_id,rating_score) VALUES ($1,$2,$3,$4::numeric)",
+                ).bind(id).bind(evaluator_id).bind(rating_id).bind(score).execute(&pool).await.unwrap();
+            }
             sqlx::query(
                 "INSERT INTO supervision_evaluator_responses
-                    (observation_id,evaluator_id,template_item_id,rating_score) VALUES ($1,$2,$3,4)",
-            ).bind(id).bind(evaluator_id).bind(item_id).execute(&pool).await.unwrap();
+                    (observation_id,evaluator_id,template_item_id,text_response) VALUES ($1,$2,$3,$4)",
+            ).bind(id).bind(evaluator_id).bind(text_id).bind(answer).execute(&pool).await.unwrap();
         }
         sqlx::query(
             "INSERT INTO supervision_actions (observation_id,actor_user_id,action_kind,from_status,to_status,comment)
@@ -3749,12 +3858,14 @@ async fn supervision_publication_migration_reconciles_pending_rows_and_preserves
         "SELECT jsonb_build_array(
             (SELECT jsonb_agg(to_jsonb(o)-'status' ORDER BY id) FROM supervision_observations o WHERE id=ANY($1)),
             (SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM supervision_observation_periods p WHERE observation_id=ANY($1)),
-            (SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM supervision_evaluators e WHERE observation_id=ANY($1)),
+            (SELECT jsonb_agg(to_jsonb(e)-'submission_reopened'-
+                CASE WHEN id=ANY($2) THEN 'status' ELSE '' END ORDER BY id)
+                FROM supervision_evaluators e WHERE observation_id=ANY($1)),
             (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM supervision_evaluator_responses r WHERE observation_id=ANY($1)),
             (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM supervision_actions a WHERE observation_id=ANY($1)
               AND action_kind<>'result_status_migrated'),
             (SELECT count(*) FROM notification_receipts))",
-    ).bind(ids).fetch_one(&pool)
+    ).bind(ids).bind(&reopened).fetch_one(&pool)
     };
     let ids: Vec<_> = migrated.iter().map(|row| row.0).collect();
     let before = snapshot(ids.clone()).await.unwrap();
@@ -3880,6 +3991,18 @@ async fn supervision_publication_migration_reconciles_pending_rows_and_preserves
             }
         }
     }
+    let actual_reopened: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM supervision_evaluators WHERE observation_id=ANY($1) AND submission_reopened AND status='draft'",
+    ).bind(&ids).fetch_all(&pool).await.unwrap();
+    assert_eq!(
+        actual_reopened
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>(),
+        reopened
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>()
+    );
     assert!(
         sqlx::query("UPDATE supervision_observations SET status='approved' WHERE id=$1")
             .bind(ids[0])
@@ -3932,6 +4055,58 @@ async fn supervision_publication_migration_reconciles_pending_rows_and_preserves
     .await
     .unwrap();
     assert_eq!(revoked_permission, approval_id);
+
+    let repair_id = migrated[3].0;
+    let assignment_id = reopened[0];
+    assert!(matches!(
+        services::return_observation_request(
+            &pool,
+            f.actor_id,
+            repair_id,
+            ReturnObservationRequest { comment: None }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    assert!(matches!(
+        services::update_observation(
+            &pool,
+            f.actor_id,
+            repair_id,
+            UpdateSupervisionObservationRequest {
+                template_id: Some(f.template.id),
+                ..Default::default()
+            }
+        )
+        .await,
+        Err(AppError::ValidationError(_))
+    ));
+    let roster = services::replace_observation_evaluators(
+        &pool,
+        f.actor_id,
+        repair_id,
+        ReplaceObservationEvaluatorsRequest { evaluators: vec![] },
+    )
+    .await
+    .unwrap();
+    assert_eq!(roster.status, SupervisionObservationStatus::Planned);
+    assert_eq!(roster.evaluators.len(), 1);
+    assert_eq!(roster.evaluators[0].id, assignment_id);
+    assert_eq!(roster.evaluators[0].submitted_at, None);
+    assert_eq!(
+        roster.evaluators[0].status,
+        SupervisionEvaluatorStatus::Draft
+    );
+    let repaired = services::submit_my_evaluation(
+        &pool,
+        f.actor_id,
+        repair_id,
+        evaluation_responses(&f.template, 4.0),
+    )
+    .await
+    .unwrap();
+    assert_eq!(repaired.status, SupervisionObservationStatus::Published);
+    assert_eq!(repaired.evaluators[0].id, assignment_id);
 }
 
 async fn options_for(
@@ -5543,7 +5718,7 @@ async fn supervision_date_migration_preserves_populated_165_evidence_and_replays
         .unwrap();
     assert!(!periods.as_array().unwrap().is_empty());
     for _ in 0..2 {
-        school_test_db::run_test_migrations(&pool).await;
+        apply_migrations_through(&pool, 166).await.unwrap();
         assert_eq!(supervision_graph_snapshot(&pool).await, expected);
         assert_eq!(
             sqlx::query_scalar::<_, serde_json::Value>(period_snapshot)

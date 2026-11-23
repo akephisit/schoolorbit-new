@@ -500,6 +500,18 @@
 				cycleFormError = '';
 				overviewCycleId = source.cycleId;
 			}
+			if (section === 'overview') {
+				overviewCycleId = source.cycleId || (cycles[0]?.id ?? '');
+				if (renderedProgressCycleId !== overviewCycleId) {
+					progress = null;
+					renderedProgressCycleId = '';
+				}
+				if (renderedTeacherCycleId !== overviewCycleId) {
+					teacherStatusRows = [];
+					teacherStatusLoaded = false;
+					renderedTeacherCycleId = '';
+				}
+			}
 			observationsLoading = source.observations !== null;
 			observationsError = '';
 			observedCycleUrl = source.cycleId;

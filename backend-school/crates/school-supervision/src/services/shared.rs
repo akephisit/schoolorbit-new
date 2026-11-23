@@ -34,7 +34,7 @@ pub(super) struct EvaluatorSubmissionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct EvaluatorReplacementState {
     pub(super) evaluator_user_id: Uuid,
-    pub(super) submitted: bool,
+    pub(super) retain: bool,
     pub(super) is_required: bool,
 }
 
@@ -95,7 +95,7 @@ pub(super) fn normalize_evaluator_replacement(
     let mut normalized = Vec::new();
     let mut seen = HashSet::new();
 
-    for evaluator in existing.iter().filter(|evaluator| evaluator.submitted) {
+    for evaluator in existing.iter().filter(|evaluator| evaluator.retain) {
         if seen.insert(evaluator.evaluator_user_id) {
             normalized.push(EvaluatorAssignmentInput {
                 evaluator_user_id: evaluator.evaluator_user_id,
@@ -110,7 +110,7 @@ pub(super) fn normalize_evaluator_replacement(
             normalized.push(evaluator);
         } else if !existing
             .iter()
-            .any(|state| state.submitted && state.evaluator_user_id == evaluator.evaluator_user_id)
+            .any(|state| state.retain && state.evaluator_user_id == evaluator.evaluator_user_id)
         {
             if let Some(existing_evaluator) = normalized
                 .iter_mut()
@@ -456,7 +456,7 @@ mod tests {
         let retained = normalize_evaluator_replacement(
             &[EvaluatorReplacementState {
                 evaluator_user_id: submitted_user_id,
-                submitted: true,
+                retain: true,
                 is_required: false,
             }],
             vec![EvaluatorAssignmentInput {

@@ -124292,6 +124292,16 @@
               }
             },
             "description": "Supervision template not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Template rubric already has submission evidence"
           }
         },
         "tags": [

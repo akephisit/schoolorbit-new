@@ -1037,9 +1037,14 @@
 											>
 												{evaluatorStatusLabel(evaluator.status)}
 											</Badge>
-											<span class="text-sm text-muted-foreground">
-												{formatDateTime(evaluator.submittedAt)}
-											</span>
+											{#if evaluator.status === 'submitted' && evaluator.submittedAt}
+												<time
+													datetime={evaluator.submittedAt}
+													class="text-sm text-muted-foreground"
+												>
+													{formatDateTime(evaluator.submittedAt)}
+												</time>
+											{/if}
 										</div>
 									</div>
 								{/each}

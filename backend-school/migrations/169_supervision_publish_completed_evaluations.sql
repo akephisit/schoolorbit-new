@@ -1,6 +1,42 @@
 SET LOCAL lock_timeout = '30s';
 LOCK TABLE supervision_observations IN ACCESS EXCLUSIVE MODE;
-LOCK TABLE supervision_evaluators IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE supervision_evaluators IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE supervision_template_sections, supervision_template_items,
+    supervision_evaluator_responses IN SHARE ROW EXCLUSIVE MODE;
+
+-- Preserve evidence even when an imported submission has no submitted_at.
+ALTER TABLE supervision_evaluators
+    ADD COLUMN submission_reopened boolean NOT NULL DEFAULT false;
+
+CREATE TEMP TABLE supervision_169_reopened_evaluators ON COMMIT DROP AS
+SELECT e.id, to_jsonb(e) - 'status' - 'submission_reopened' AS retained_evaluator
+FROM supervision_evaluators e
+JOIN supervision_observations o ON o.id = e.observation_id
+WHERE o.status IN ('planned', 'in_progress', 'evaluators_submitted', 'under_review', 'approved')
+  AND e.is_required AND e.status = 'submitted'
+  AND EXISTS (
+      SELECT 1
+      FROM supervision_template_sections s
+      JOIN supervision_template_items i ON i.section_id = s.id
+      WHERE s.template_id = o.template_id AND i.required
+        AND NOT EXISTS (
+            SELECT 1 FROM supervision_evaluator_responses r
+            WHERE r.observation_id = o.id AND r.evaluator_id = e.id AND r.template_item_id = i.id
+              AND (
+                  (i.item_type = 'rating' AND r.rating_score <> 'NaN'::numeric)
+                  OR (i.item_type = 'text' AND
+                      -- Match the Unicode whitespace recognized in evaluation validation.
+                      btrim(r.text_response, U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000') <> '')
+              )
+        )
+  );
+
+ALTER TABLE supervision_evaluators DISABLE TRIGGER update_supervision_evaluators_updated_at;
+UPDATE supervision_evaluators e
+SET status = 'draft', submission_reopened = true
+FROM supervision_169_reopened_evaluators reopened
+WHERE e.id = reopened.id;
+ALTER TABLE supervision_evaluators ENABLE TRIGGER update_supervision_evaluators_updated_at;
 
 -- Capture the existing facts so the cutover cannot change booking or audit evidence.
 CREATE TEMP TABLE supervision_169_status_changes ON COMMIT DROP AS
@@ -26,6 +62,16 @@ ALTER TABLE supervision_observations ENABLE TRIGGER update_supervision_observati
 
 DO $$
 BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM supervision_169_reopened_evaluators reopened
+        LEFT JOIN supervision_evaluators e ON e.id = reopened.id
+        WHERE e.status IS DISTINCT FROM 'draft'
+           OR e.submission_reopened IS DISTINCT FROM true
+           OR to_jsonb(e) - 'status' - 'submission_reopened' IS DISTINCT FROM reopened.retained_evaluator
+    ) THEN
+        RAISE EXCEPTION 'SUPERVISION169_EVALUATOR_RECONCILIATION_FAILED' USING ERRCODE = 'check_violation';
+    END IF;
     IF EXISTS (
         SELECT 1
         FROM supervision_169_status_changes changes
