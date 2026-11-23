@@ -3,6 +3,8 @@
 	import { page } from '$app/state';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import { ArrowLeft, ArrowRight, Plus, X, Send } from '@lucide/svelte';
+	import { getAcademicContextStore } from '#lib/academic-context/store.js';
+	import { ACADEMIC_WEEKDAYS } from '#lib/academic-core/foundation-presentation.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { userPermissions } from '#lib/stores/permissions.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
@@ -62,6 +64,7 @@
 		submitLabel?: string;
 	} = $props();
 
+	const pickerId = $props.id();
 	let weekStartDate = $state(bookingWeekStart());
 	let options = $state<SupervisionBookingOptions | null>(null);
 	let selected = $state<SupervisionTimetableOption[]>([]);
@@ -73,6 +76,13 @@
 	let reloadingCycle = $state(false);
 	let selectionDigest = $state('');
 	const request = new LatestRequest();
+	const academicContext = getAcademicContextStore();
+	const weekdayFormatter = new Intl.DateTimeFormat('th-TH', { timeZone: 'UTC', weekday: 'short' });
+	const dateFormatter = new Intl.DateTimeFormat('th-TH', {
+		timeZone: 'UTC',
+		day: 'numeric',
+		month: 'short'
+	});
 	let context = '';
 	function ownerKey() {
 		return `${appIdentityKey()}|${page.url.pathname}|${academicYearId}|${academicTermId}|${cycle.id}|${cycle.observationStartDate ?? ''}|${cycle.observationEndDate ?? ''}|${cycle.status}|${observationId ?? ''}|${allowed}`;
@@ -103,12 +113,33 @@
 			null
 	);
 	const stale = $derived(ordered.length > 0 && selectionDigest !== options?.sourceDigest);
-	const days = $derived(
-		Array.from({ length: 7 }, (_, index) => addCivilDays(weekStartDate, index))
+	const schoolDays = $derived(
+		$academicContext.options?.terms.find(
+			(term) => term.id === academicTermId && term.academicYearId === academicYearId
+		)?.schoolDays
+	);
+	const days = $derived.by(() => {
+		const optionDates = new Set(options?.items.map((item) => item.observedDate));
+		return ACADEMIC_WEEKDAYS.map((weekday, index) => ({
+			weekday,
+			date: addCivilDays(weekStartDate, index)
+		}))
+			.filter(({ weekday, date }) => schoolDays?.includes(weekday) ?? optionDates.has(date))
+			.map(({ date }) => {
+				const civilDay = new Date(`${date}T00:00:00Z`);
+				return {
+					date,
+					weekdayLabel: weekdayFormatter.format(civilDay),
+					dateLabel: dateFormatter.format(civilDay)
+				};
+			});
+	});
+	const visibleItems = $derived(
+		(options?.items ?? []).filter((item) => days.some(({ date }) => date === item.observedDate))
 	);
 	const periods = $derived.by(() => {
 		const rows: { key: string; label: string; start: string; end: string }[] = [];
-		for (const item of options?.items ?? []) {
+		for (const item of visibleItems) {
 			const key = `${item.startTime}-${item.endTime}`;
 			if (!rows.some((row) => row.key === key))
 				rows.push({ key, label: item.periodName, start: item.startTime, end: item.endTime });
@@ -272,7 +303,7 @@
 		success = '';
 	}
 	function cellItems(date: string, start: string, end: string) {
-		return (options?.items ?? []).filter(
+		return visibleItems.filter(
 			(item) => item.observedDate === date && item.startTime === start && item.endTime === end
 		);
 	}
@@ -344,7 +375,7 @@
 		/>
 	{:else if loading && !options}
 		<PageSkeleton variant="table" />
-	{:else if options?.items.length === 0}
+	{:else if options && periods.length === 0}
 		<PageState
 			variant="empty"
 			title="ไม่พบคาบสอนในสัปดาห์นี้"
@@ -354,33 +385,44 @@
 		<p class="text-xs text-muted-foreground">
 			ว่าง / รออนุมัติ / จองขนานได้: เลือกได้ · จองไม่ได้: คาบนี้มีนัดนิเทศที่ทับกัน
 		</p>
-		<div class="overflow-x-auto rounded-xl border">
-			<Table.Root class="table-fixed" style={`min-width: ${112 + periods.length * 192}px`}>
+		<div class="min-w-0 rounded-xl border" data-testid="supervision-booking-grid">
+			<Table.Root
+				class="w-(--booking-grid-width) table-fixed text-xs sm:w-full sm:min-w-(--booking-grid-wide-width) sm:text-sm"
+				style={`--booking-grid-width: ${3.5 + periods.length * 6}rem; --booking-grid-wide-width: ${7 + periods.length * 12}rem`}
+			>
 				<Table.Header
 					><Table.Row
-						><Table.Head class="sticky left-0 z-10 w-28 bg-background">วันที่</Table.Head
+						><Table.Head
+							scope="col"
+							class="sticky left-0 z-10 w-14 bg-background px-1.5 sm:w-28 sm:px-2"
+							>วันที่</Table.Head
 						>{#each periods as period (period.key)}<Table.Head
-								class="w-48 text-center whitespace-normal break-words"
+								scope="col"
+								class="w-24 px-1 text-center whitespace-normal wrap-anywhere sm:w-48 sm:px-2"
 								><p>{period.label}</p>
-								<p class="text-xs font-normal">
+								<p class="text-[0.6875rem] font-normal sm:text-xs">
 									{period.start.slice(0, 5)}–{period.end.slice(0, 5)}
 								</p></Table.Head
 							>{/each}</Table.Row
 					></Table.Header
 				>
 				<Table.Body
-					>{#each days as day (day)}<Table.Row
-							><Table.Cell class="sticky left-0 z-10 bg-background align-top font-medium"
-								>{bookingDateLabel(
-									day
-								)}{#if !withinCycleDates(day, cycle.observationStartDate, cycle.observationEndDate)}<p
-										class="mt-1 text-xs font-normal text-muted-foreground"
+					>{#each days as { date: day, weekdayLabel, dateLabel } (day)}<Table.Row
+							><Table.Head
+								scope="row"
+								class="sticky left-0 z-10 h-auto bg-background px-1.5 py-2 align-top font-medium sm:px-2"
+								><time datetime={day}>
+									<span class="block">{weekdayLabel}</span>
+									<span class="block font-normal text-muted-foreground">{dateLabel}</span>
+								</time>{#if !withinCycleDates(day, cycle.observationStartDate, cycle.observationEndDate)}<p
+										class="mt-1 text-[0.6875rem] font-normal whitespace-normal text-muted-foreground sm:text-xs"
 									>
 										นอกช่วงนิเทศ
-									</p>{/if}</Table.Cell
+									</p>{/if}</Table.Head
 							>{#each periods as period (period.key)}<Table.Cell
-									class="w-48 p-1.5 align-top whitespace-normal"
+									class="space-y-1.5 p-1 align-top whitespace-normal sm:p-1.5"
 									>{#each cellItems(day, period.start, period.end) as item (item.blockGroupId)}
+										{@const detailsId = `${pickerId}-${day}-${item.blockGroupId}`}
 										{@const booked = bookedObservationFor(item, observations, observationId)}
 										{@const unavailable = bookingOptionUnavailable(
 											item,
@@ -395,7 +437,7 @@
 											<button
 												type="button"
 												class={[
-													'min-h-28 w-full whitespace-normal break-words rounded-lg border p-3 text-left transition hover:border-primary disabled:cursor-not-allowed disabled:opacity-60',
+													'min-h-20 w-full rounded-lg border p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-28 sm:p-3',
 													chosen ? 'border-primary bg-primary/10' : ''
 												].join(' ')}
 												disabled={!allowed ||
@@ -405,35 +447,46 @@
 													!item.homeroomId}
 												aria-pressed={chosen}
 												aria-label={`เลือก ${item.periodName} ${item.homeroomName} ${bookingDateLabel(day)}${selected.length ? ' เป็นคาบแรกของช่วงใหม่' : ''}`}
+												aria-describedby={detailsId}
 												onclick={() => startSelection(item)}
 											>
-												<p class="text-sm font-medium">
-													{item.subjectName ?? item.learningGroupName}
-												</p>
-												<p class="mt-1 text-sm">{item.homeroomName}</p>
-												{#if item.roomName}<p class="text-xs text-muted-foreground">
-														{item.roomName}
-													</p>{/if}
-												<Badge
-													variant={item.bookingAvailability.blocked ? 'destructive' : 'outline'}
-													class="mt-2 max-w-full whitespace-normal"
-													>{bookingAvailabilityLabel(item)}</Badge
-												>
-												{#if unavailable}<p class="mt-1 text-xs text-muted-foreground">
-														{unavailable}
-													</p>{/if}
-												{#if booked}<Badge variant="secondary" class="mt-2"
-														>{supervisionStatusLabel(booked.status)}</Badge
-													>{:else if chosen}<Badge class="mt-2">เลือกแล้ว</Badge>{/if}
+												<span id={detailsId} class="block">
+													<span class="block font-medium">
+														{item.subjectName ?? item.learningGroupName}
+													</span>
+													<span class="mt-0.5 block sm:mt-1">{item.homeroomName}</span>
+													{#if item.roomName}<span
+															class="block text-[0.6875rem] text-muted-foreground sm:text-xs"
+														>
+															{item.roomName}
+														</span>{/if}
+													<Badge
+														variant={item.bookingAvailability.blocked ? 'destructive' : 'outline'}
+														class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
+														>{bookingAvailabilityLabel(item)}</Badge
+													>
+													{#if unavailable}<span
+															class="mt-1 block text-[0.6875rem] text-muted-foreground sm:text-xs"
+														>
+															{unavailable}
+														</span>{/if}
+													{#if booked}<Badge
+															variant="secondary"
+															class="mt-1 max-w-full px-1 text-[0.6875rem] leading-snug whitespace-normal sm:mt-2 sm:px-2 sm:text-xs"
+															>{supervisionStatusLabel(booked.status)}</Badge
+														>{:else if chosen}<Badge class="mt-1 sm:mt-2">เลือกแล้ว</Badge>{/if}
+												</span>
 											</button>
 											{#if !stale && adjacent.some((value) => value.blockGroupId === item.blockGroupId && value.observedDate === day)}<Button
 													variant="outline"
 													size="sm"
-													class="w-full"
+													class="w-full text-xs sm:text-sm"
 													disabled={saving}
 													aria-label={`เพิ่ม ${item.periodName} ${item.homeroomName}`}
 													onclick={() => extendSelection(item)}
-													><Plus class="size-4" />เพิ่มคาบติดกัน</Button
+													><Plus class="size-3 sm:size-4" /><span
+														>เพิ่มคาบ<span class="hidden sm:inline">ติดกัน</span></span
+													></Button
 												>{:else if selected.length && !chosen && !booked && item.observedDate === ordered[0]?.observedDate && item.homeroomId !== ordered[0]?.homeroomId}<p
 													class="px-1 text-xs text-muted-foreground"
 												>

@@ -1822,7 +1822,7 @@
 							>ปิดหน้าจอง</Button
 						>
 					</Card.Header>
-					<Card.Content class="space-y-4 pt-4">
+					<Card.Content class="space-y-4 px-2 pt-4 sm:px-6">
 						{#if cyclesLoaded && currentBookingCycle && academicYearId && academicTermId}
 							<div class="flex flex-wrap items-center gap-3 rounded-lg bg-muted/40 p-3">
 								<Label for="booking-cycle">รอบนิเทศ</Label><Select.Root
@@ -2133,48 +2133,139 @@
 			</Dialog.Root>
 		</div>
 	{:else if section === 'evaluate'}
-		<Card.Root>
-			<Card.Header>
-				<Card.Title>รายการที่ได้รับมอบหมายให้ประเมิน</Card.Title>
-			</Card.Header>
-			<Card.Content
-				class="relative space-y-4"
-				data-testid="supervision-observations"
-				aria-busy={observationsLoading}
-			>
-				{@render managementFeedback(
-					observationsLoaded,
-					observationsLoading,
-					observationsError,
-					retryObservations
-				)}
-				{#if observationsLoaded && (!observationsReadable || !canReadObservations || !canEvaluate)}
-					<PageState
-						variant="permission"
-						title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
-						description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
-					/>
-				{:else if observationsLoaded}
-					<Tabs.Root bind:value={queueView}>
-						<Tabs.List class="self-start" aria-label="มุมมองรายการประเมิน">
-							<Tabs.Trigger value="list">รายการ</Tabs.Trigger>
-							<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
-						</Tabs.List>
-						<Tabs.Content value="list" class="space-y-4">
-							{#if activeAssignedObservations.length === 0}
-								<PageState
-									title="ยังไม่มีรายการที่ต้องประเมิน"
-									description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน หรือเมื่อมีงานที่ยังไม่ได้ส่งผล"
-								/>
-							{:else}
-								<div class="space-y-3" data-supervision-assigned-list="cards">
-									{#each activeAssignedObservations as observation (observation.id)}
+		<div data-testid="supervision-observations" aria-busy={observationsLoading} class="space-y-3">
+			{@render managementFeedback(
+				observationsLoaded,
+				observationsLoading,
+				observationsError,
+				retryObservations
+			)}
+			{#if observationsLoaded && (!observationsReadable || !canReadObservations || !canEvaluate)}
+				<PageState
+					variant="permission"
+					title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
+					description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
+				/>
+			{:else if observationsLoaded}
+				<Tabs.Root bind:value={queueView}>
+					<Tabs.List class="self-start" aria-label="มุมมองรายการประเมิน">
+						<Tabs.Trigger value="list">รายการ</Tabs.Trigger>
+						<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
+					</Tabs.List>
+					<Tabs.Content value="list" class="space-y-4">
+						<h2 class="text-lg font-semibold">รายการที่ได้รับมอบหมายให้ประเมิน</h2>
+						{#if activeAssignedObservations.length === 0}
+							<PageState
+								title="ยังไม่มีรายการที่ต้องประเมิน"
+								description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน หรือเมื่อมีงานที่ยังไม่ได้ส่งผล"
+							/>
+						{:else}
+							<div class="space-y-3" data-supervision-assigned-list="cards">
+								{#each activeAssignedObservations as observation (observation.id)}
+									<div
+										class={cn(
+											'rounded-md border bg-background p-4 transition',
+											evaluationObservationId === observation.id && 'border-primary bg-primary/5'
+										)}
+									>
+										<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+											<div class="min-w-0 space-y-1">
+												<div class="flex flex-wrap items-center gap-2">
+													<h3 class="font-semibold">
+														{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
+													</h3>
+													<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+													<p class="text-xs text-muted-foreground">
+														{observationWorkflow(observation).stageLabel} · ถัดไป: {observationWorkflow(
+															observation
+														).nextOwner}
+													</p>
+												</div>
+												<p class="text-sm text-muted-foreground">
+													{observationSubjectLabel(observation)} · {observationPeriodLabel(
+														observation
+													)}
+												</p>
+											</div>
+											<div class="shrink-0 text-sm text-muted-foreground">
+												{formatDate(observation.observedAt)}
+											</div>
+										</div>
+
+										<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
+											<div>
+												<p class="text-xs text-muted-foreground">นิเทศใคร</p>
+												<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
+											</div>
+											{#each observationDetailGrid(observation) as detail (detail.label)}
+												<div>
+													<p class="text-xs text-muted-foreground">{detail.label}</p>
+													<p class="font-medium">{detail.value}</p>
+												</div>
+											{/each}
+										</div>
+
 										<div
-											class={cn(
-												'rounded-md border bg-background p-4 transition',
-												evaluationObservationId === observation.id && 'border-primary bg-primary/5'
-											)}
+											class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
 										>
+											<div class="min-w-0">
+												<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
+												<div class="mt-1 flex flex-wrap gap-2">
+													{#if observation.evaluators.length === 0}
+														<Badge variant="outline">ยังไม่มอบหมาย</Badge>
+													{:else}
+														{#each observation.evaluators as evaluator (evaluator.id)}
+															<Badge
+																variant={evaluator.evaluatorUserId === currentUserId
+																	? 'default'
+																	: 'secondary'}
+															>
+																{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+															</Badge>
+														{/each}
+													{/if}
+												</div>
+											</div>
+											<div class="flex shrink-0 flex-wrap gap-2">
+												<Button
+													size="sm"
+													variant="outline"
+													href={observationDetailHref(observation)}
+													data-sveltekit-preload-data="tap"
+												>
+													<Eye class="h-4 w-4" />
+													รายละเอียด
+												</Button>
+												<Button
+													type="button"
+													size="sm"
+													variant={evaluationObservationId === observation.id
+														? 'default'
+														: 'outline'}
+													onclick={() => prepareEvaluationDraft(observation)}
+												>
+													เปิดแบบประเมิน
+												</Button>
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						{#if submittedAssignedObservations.length > 0}
+							<div class="space-y-3 border-t pt-4">
+								<div>
+									<h3 class="text-sm font-semibold">ผลประเมินที่ส่งแล้ว</h3>
+									<p class="text-xs text-muted-foreground">
+										รายการที่ส่งผลประเมินแล้วจะเก็บไว้ตรวจสอบย้อนหลัง ไม่แสดงปนกับคิวที่ต้องทำ
+									</p>
+								</div>
+
+								<div class="space-y-3" data-supervision-submitted-assigned-list="cards">
+									{#each submittedAssignedObservations as observation (observation.id)}
+										{@const submittedEvaluator = currentUserEvaluator(observation)}
+										<div class="rounded-md border bg-muted/20 p-4">
 											<div
 												class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
 											>
@@ -2183,12 +2274,8 @@
 														<h3 class="font-semibold">
 															{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
 														</h3>
-														<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-														<p class="text-xs text-muted-foreground">
-															{observationWorkflow(observation).stageLabel} · ถัดไป: {observationWorkflow(
-																observation
-															).nextOwner}
-														</p>
+														<Badge variant="secondary">ส่งผลแล้ว</Badge>
+														<Badge variant="outline">{statusLabel(observation.status)}</Badge>
 													</div>
 													<p class="text-sm text-muted-foreground">
 														{observationSubjectLabel(observation)} · {observationPeriodLabel(
@@ -2197,7 +2284,7 @@
 													</p>
 												</div>
 												<div class="shrink-0 text-sm text-muted-foreground">
-													{formatDate(observation.observedAt)}
+													ส่งเมื่อ {formatDate(submittedEvaluator?.submittedAt)}
 												</div>
 											</div>
 
@@ -2220,157 +2307,60 @@
 												<div class="min-w-0">
 													<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
 													<div class="mt-1 flex flex-wrap gap-2">
-														{#if observation.evaluators.length === 0}
-															<Badge variant="outline">ยังไม่มอบหมาย</Badge>
-														{:else}
-															{#each observation.evaluators as evaluator (evaluator.id)}
-																<Badge
-																	variant={evaluator.evaluatorUserId === currentUserId
-																		? 'default'
-																		: 'secondary'}
-																>
-																	{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
-																</Badge>
-															{/each}
-														{/if}
+														{#each observation.evaluators as evaluator (evaluator.id)}
+															<Badge
+																variant={evaluator.evaluatorUserId === currentUserId
+																	? 'default'
+																	: 'secondary'}
+															>
+																{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+															</Badge>
+														{/each}
 													</div>
 												</div>
-												<div class="flex shrink-0 flex-wrap gap-2">
-													<Button
-														size="sm"
-														variant="outline"
-														href={observationDetailHref(observation)}
-														data-sveltekit-preload-data="tap"
-													>
-														<Eye class="h-4 w-4" />
-														รายละเอียด
-													</Button>
-													<Button
-														type="button"
-														size="sm"
-														variant={evaluationObservationId === observation.id
-															? 'default'
-															: 'outline'}
-														onclick={() => prepareEvaluationDraft(observation)}
-													>
-														เปิดแบบประเมิน
-													</Button>
-												</div>
+												<Button
+													size="sm"
+													variant="outline"
+													href={observationDetailHref(observation)}
+													data-sveltekit-preload-data="tap"
+												>
+													<Eye class="h-4 w-4" />
+													รายละเอียด
+												</Button>
 											</div>
 										</div>
 									{/each}
 								</div>
-							{/if}
-
-							{#if submittedAssignedObservations.length > 0}
-								<div class="space-y-3 border-t pt-4">
-									<div>
-										<h3 class="text-sm font-semibold">ผลประเมินที่ส่งแล้ว</h3>
-										<p class="text-xs text-muted-foreground">
-											รายการที่ส่งผลประเมินแล้วจะเก็บไว้ตรวจสอบย้อนหลัง ไม่แสดงปนกับคิวที่ต้องทำ
-										</p>
-									</div>
-
-									<div class="space-y-3" data-supervision-submitted-assigned-list="cards">
-										{#each submittedAssignedObservations as observation (observation.id)}
-											{@const submittedEvaluator = currentUserEvaluator(observation)}
-											<div class="rounded-md border bg-muted/20 p-4">
-												<div
-													class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
-												>
-													<div class="min-w-0 space-y-1">
-														<div class="flex flex-wrap items-center gap-2">
-															<h3 class="font-semibold">
-																{observation.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
-															</h3>
-															<Badge variant="secondary">ส่งผลแล้ว</Badge>
-															<Badge variant="outline">{statusLabel(observation.status)}</Badge>
-														</div>
-														<p class="text-sm text-muted-foreground">
-															{observationSubjectLabel(observation)} · {observationPeriodLabel(
-																observation
-															)}
-														</p>
-													</div>
-													<div class="shrink-0 text-sm text-muted-foreground">
-														ส่งเมื่อ {formatDate(submittedEvaluator?.submittedAt)}
-													</div>
-												</div>
-
-												<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
-													<div>
-														<p class="text-xs text-muted-foreground">นิเทศใคร</p>
-														<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-													</div>
-													{#each observationDetailGrid(observation) as detail (detail.label)}
-														<div>
-															<p class="text-xs text-muted-foreground">{detail.label}</p>
-															<p class="font-medium">{detail.value}</p>
-														</div>
-													{/each}
-												</div>
-
-												<div
-													class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-												>
-													<div class="min-w-0">
-														<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
-														<div class="mt-1 flex flex-wrap gap-2">
-															{#each observation.evaluators as evaluator (evaluator.id)}
-																<Badge
-																	variant={evaluator.evaluatorUserId === currentUserId
-																		? 'default'
-																		: 'secondary'}
-																>
-																	{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
-																</Badge>
-															{/each}
-														</div>
-													</div>
-													<Button
-														size="sm"
-														variant="outline"
-														href={observationDetailHref(observation)}
-														data-sveltekit-preload-data="tap"
-													>
-														<Eye class="h-4 w-4" />
-														รายละเอียด
-													</Button>
-												</div>
-											</div>
-										{/each}
-									</div>
-								</div>
-							{/if}
-						</Tabs.Content>
-						<Tabs.Content value="calendar">
-							{#if queueView === 'calendar'}
-								<SupervisionBookingCalendar
-									observations={evaluationCalendarObservations}
-									{cycles}
-									academicLabel={calendarAcademicLabel}
-									bind:selectedDate={bookingCalendarDate}
-									detailHref={observationDetailHref}
-									{hasSubmittedEvaluation}
-								>
-									{#snippet bookingAction(observation)}
-										{#if canSubmitAssignedEvaluation(observation)}
-											<Button
-												size="sm"
-												variant="outline"
-												onclick={() => prepareEvaluationDraft(observation)}
-											>
-												เปิดแบบประเมิน
-											</Button>
-										{/if}
-									{/snippet}
-								</SupervisionBookingCalendar>
-							{/if}
-						</Tabs.Content>
-					</Tabs.Root>
-				{/if}
-			</Card.Content>
-		</Card.Root>
+							</div>
+						{/if}
+					</Tabs.Content>
+					<Tabs.Content value="calendar">
+						{#if queueView === 'calendar'}
+							<SupervisionBookingCalendar
+								observations={evaluationCalendarObservations}
+								{cycles}
+								academicLabel={calendarAcademicLabel}
+								bind:selectedDate={bookingCalendarDate}
+								detailHref={observationDetailHref}
+								{hasSubmittedEvaluation}
+							>
+								{#snippet bookingAction(observation)}
+									{#if canSubmitAssignedEvaluation(observation)}
+										<Button
+											size="sm"
+											variant="outline"
+											onclick={() => prepareEvaluationDraft(observation)}
+										>
+											เปิดแบบประเมิน
+										</Button>
+									{/if}
+								{/snippet}
+							</SupervisionBookingCalendar>
+						{/if}
+					</Tabs.Content>
+				</Tabs.Root>
+			{/if}
+		</div>
 	{:else if section === 'cycles'}
 		<div class="space-y-4">
 			<Card.Root>
