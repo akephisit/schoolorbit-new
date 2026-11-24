@@ -2,6 +2,15 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
+	import {
+		arrangementLabel,
+		buildAssessmentReport,
+		hasScheduledAssessmentExam,
+		phaseCodes,
+		phaseFor,
+		phaseLabel,
+		type AssessmentReportKind
+	} from '#lib/academic/assessment-report.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		getAcademicContextStore,
@@ -14,7 +23,6 @@
 		saveAssessmentPlan,
 		updateAssessmentPhaseControl,
 		type AssessmentExamArrangement,
-		type AssessmentPhase,
 		type AssessmentPhaseCode,
 		type AssessmentPhaseControl,
 		type AssessmentPlanDetail,
@@ -31,6 +39,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -40,6 +49,7 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { can } from '#lib/stores/permissions.js';
+	import { downloadXlsxWorkbook } from '#lib/utils/spreadsheet.js';
 	import {
 		BookOpenCheck,
 		CalendarClock,
@@ -49,6 +59,7 @@
 		Clock3,
 		CloudAlert,
 		CloudCheck,
+		Download,
 		Loader2,
 		Search,
 		ShieldCheck,
@@ -64,7 +75,6 @@
 	type PhaseControlField = 'planEditingEnabled' | 'examArrangementEditingEnabled';
 
 	let { data }: PageProps = $props();
-	const phaseCodes: AssessmentPhaseCode[] = ['before_midterm', 'midterm', 'after_midterm', 'final'];
 	const academicContext = getAcademicContextStore();
 	const academicYearId = $derived(data.academicYearId);
 	const academicTermId = $derived(data.academicTermId);
@@ -83,6 +93,7 @@
 	let plansLoading = $state(true);
 	let plansLoaded = $state(false);
 	let plansError = $state('');
+	let exporting = $state(false);
 	let controlsLoading = $state(true);
 	let controlsLoaded = $state(false);
 	let controlsError = $state('');
@@ -162,6 +173,16 @@
 			].some((value) => value.toLocaleLowerCase('th').includes(query));
 		});
 	});
+	const examPlans = $derived(filteredPlans.filter(hasScheduledAssessmentExam));
+	const canDownloadReports = $derived(
+		canRead &&
+			Boolean(academicTermId) &&
+			plansLoaded &&
+			!plansLoading &&
+			!plansError &&
+			filteredPlans.length > 0 &&
+			!exporting
+	);
 	const savedCoordinatorOutsideCandidates = $derived(
 		Boolean(
 			detail?.assessmentCoordinatorId &&
@@ -214,11 +235,21 @@
 		href: '/staff/academic/delivery'
 	};
 
-	function phaseFor(
-		plan: AssessmentPlanSummary,
-		code: AssessmentPhaseCode
-	): AssessmentPhase | null {
-		return plan.phases.find((phase) => phase.phaseCode === code) ?? null;
+	async function exportAssessmentReport(kind: AssessmentReportKind): Promise<void> {
+		if (!canDownloadReports) return;
+		const rows = kind === 'overview' ? filteredPlans : examPlans;
+		if (rows.length === 0) return;
+		exporting = true;
+		try {
+			await downloadXlsxWorkbook(
+				[buildAssessmentReport(kind, rows)],
+				`โครงสร้างคะแนน-${kind === 'overview' ? 'ภาพรวม' : 'รูปแบบการสอบ'}.xlsx`
+			);
+		} catch {
+			toast.error('ดาวน์โหลดไฟล์ Excel ไม่สำเร็จ กรุณาลองอีกครั้ง');
+		} finally {
+			exporting = false;
+		}
 	}
 
 	function canEditPlanPhase(code: AssessmentPhaseCode): boolean {
@@ -234,27 +265,6 @@
 		return Boolean(
 			phaseControls.find((control) => control.phaseCode === code)?.examArrangementEditingEnabled
 		);
-	}
-
-	function phaseLabel(code: AssessmentPhaseCode): string {
-		return (
-			{
-				before_midterm: 'ก่อนกลางภาค',
-				midterm: 'กลางภาค',
-				after_midterm: 'หลังกลางภาค',
-				final: 'ปลายภาค'
-			} satisfies Record<AssessmentPhaseCode, string>
-		)[code];
-	}
-
-	function arrangementLabel(arrangement: AssessmentExamArrangement): string {
-		return (
-			{
-				none: 'ไม่จัดสอบ',
-				in_timetable: 'ในตาราง',
-				outside_timetable: 'นอกตาราง'
-			} satisfies Record<AssessmentExamArrangement, string>
-		)[arrangement];
 	}
 
 	function findingLabel(finding: AssessmentReadinessFinding): string {
@@ -640,6 +650,33 @@
 			<Button variant="outline" href={gradebookHref}>
 				<BookOpenCheck class="size-4" /> ไปหน้ากรอกคะแนน
 			</Button>
+		{/if}
+		{#if canRead}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger disabled={!canDownloadReports}>
+					{#snippet child({ props })}
+						<Button {...props} variant="outline" aria-busy={exporting}>
+							{#if exporting}
+								<Loader2 class="size-4 motion-safe:animate-spin" aria-hidden="true" />
+							{:else}
+								<Download class="size-4" aria-hidden="true" />
+							{/if}
+							ดาวน์โหลด Excel
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end">
+					<DropdownMenu.Item onSelect={() => exportAssessmentReport('overview')}>
+						ภาพรวมโครงสร้างคะแนน
+					</DropdownMenu.Item>
+					<DropdownMenu.Item
+						disabled={examPlans.length === 0}
+						onSelect={() => exportAssessmentReport('exam')}
+					>
+						รายวิชาที่มีการสอบ
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
 		{/if}
 	{/snippet}
 

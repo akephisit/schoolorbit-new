@@ -1,4 +1,6 @@
 import type {
+	AssessmentPhase,
+	AssessmentPlanSummary,
 	AssessmentReadinessFinding,
 	SaveAssessmentPlanRequest,
 	UpdateAssessmentPhaseControlRequest
@@ -6,6 +8,7 @@ import type {
 import { sessionState } from './fixtures/session-state';
 import { revalidatePage, expectSilentBackground } from './fixtures/page-revalidation';
 import { expect, test, type Page, type Route } from '@playwright/test';
+import ExcelJS from 'exceljs';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -19,7 +22,7 @@ const offeringIds = {
 
 const phaseCodes = ['before_midterm', 'midterm', 'after_midterm', 'final'] as const;
 
-function phases(scores = ['20', '20', '30', '30']) {
+function phases(scores = ['20', '20', '30', '30']): AssessmentPhase[] {
 	return phaseCodes.map((phaseCode, index) => ({
 		id: `50000000-0000-4000-8000-00000000000${index + 1}`,
 		phaseCode,
@@ -95,6 +98,8 @@ function deferred() {
 async function mockAssessmentApis(
 	page: Page,
 	options: {
+		planSummaries?: AssessmentPlanSummary[];
+		readOnly?: boolean;
 		plansWait?: Promise<void>;
 		plansRefreshWait?: Promise<void>;
 		controlsWait?: Promise<void>;
@@ -178,9 +183,11 @@ async function mockAssessmentApis(
 					nationalId: null,
 					phone: null,
 					profileImageFileId: null,
-					permissions: options.assignedTeacher
-						? ['academic_assessment.read.assigned', 'academic_assessment.manage.assigned']
-						: ['academic_assessment.read.school', 'academic_assessment.manage.school']
+					permissions: options.readOnly
+						? ['academic_assessment.read.assigned']
+						: options.assignedTeacher
+							? ['academic_assessment.read.assigned', 'academic_assessment.manage.assigned']
+							: ['academic_assessment.read.school', 'academic_assessment.manage.school']
 				});
 				return;
 			}
@@ -227,7 +234,7 @@ async function mockAssessmentApis(
 					});
 					return;
 				}
-				await fulfill(route, [mathematics, science]);
+				await fulfill(route, options.planSummaries ?? [mathematics, science]);
 				return;
 			}
 			if (url.pathname === '/api/academic/assessments/phase-controls') {
@@ -338,10 +345,12 @@ test('phase controls render while the plan list is still pending', async ({ page
 		await expect(page.getByRole('heading', { name: 'ช่วงการทำงานของครู' })).toBeVisible();
 		await expect(page.getByLabel('แก้คะแนนเต็ม', { exact: true }).first()).toBeVisible();
 		await expect(page.getByTestId('assessment-plans-loading')).toBeVisible();
+		await expect(page.getByRole('button', { name: 'ดาวน์โหลด Excel' })).toBeDisabled();
 	} finally {
 		plans.resolve();
 	}
 	await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ดาวน์โหลด Excel' })).toBeEnabled();
 });
 
 test('plan list renders while phase controls are still pending', async ({ page }) => {
@@ -366,8 +375,149 @@ test('a failed plan list retries without hiding ready phase controls', async ({ 
 	);
 	await expect(page.getByLabel('แก้คะแนนเต็ม', { exact: true }).first()).toBeVisible();
 	await expect(page.getByText('plans failed')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'ดาวน์โหลด Excel' })).toBeDisabled();
 	await page.getByRole('button', { name: 'ลองอีกครั้ง' }).click();
 	await expect(page.getByText('ค21101 · คณิตศาสตร์พื้นฐาน', { exact: true })).toBeVisible();
+});
+
+test('assessment readers can download Excel overviews and scheduled exams using the table filters', async ({
+	page
+}) => {
+	const mathematics = assessmentPlan(offeringIds.mathematics, 'ค21101', 'คณิตศาสตร์พื้นฐาน', [
+		'0',
+		'19.5',
+		'40.5',
+		'40'
+	]);
+	mathematics.phases[3] = {
+		...mathematics.phases[3],
+		examArrangement: 'outside_timetable',
+		examDurationMinutes: null
+	};
+	const science = assessmentPlan(offeringIds.science, 'ว21101', 'วิทยาศาสตร์พื้นฐาน');
+	science.phases = science.phases.map((phase) => ({
+		...phase,
+		examArrangement: 'none',
+		examDurationMinutes: null
+	}));
+	const language: AssessmentPlanSummary = assessmentPlan(
+		'40000000-0000-4000-8000-000000000003',
+		'ท21101',
+		'ภาษาไทยพื้นฐาน',
+		['20', '20', '30', '20']
+	);
+	language.readiness = {
+		...language.readiness,
+		ready: false,
+		findings: ['total_mismatch']
+	};
+	language.phases = language.phases.map((phase) => ({
+		...phase,
+		examArrangement: phase.phaseCode === 'final' ? 'outside_timetable' : 'none',
+		examDurationMinutes: null
+	}));
+	const unsaved: AssessmentPlanSummary = assessmentPlan(
+		'40000000-0000-4000-8000-000000000004',
+		'ศ21101',
+		'ศิลปะพื้นฐาน',
+		['0', '0', '0', '0']
+	);
+	unsaved.planId = null;
+	unsaved.assessmentCoordinatorId = null;
+	unsaved.assessmentCoordinatorName = null;
+	unsaved.readiness = { ...unsaved.readiness, ready: false, findings: ['missing_coordinator'] };
+	unsaved.phases = unsaved.phases.map((phase) => ({
+		...phase,
+		id: null,
+		rowVersion: null,
+		examArrangement: 'none',
+		examDurationMinutes: null
+	}));
+	let plansReadCount = 0;
+	await mockAssessmentApis(page, {
+		readOnly: true,
+		planSummaries: [science, mathematics, language, unsaved],
+		onPlansRead: () => (plansReadCount += 1)
+	});
+	await page.goto(
+		`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+	);
+	const trigger = page.getByRole('button', { name: 'ดาวน์โหลด Excel' });
+	const overviewLabel = 'ภาพรวมโครงสร้างคะแนน';
+	const examsLabel = 'รายวิชาที่มีการสอบ';
+
+	async function downloadReport(kind: 'Overview' | 'Exams') {
+		await trigger.click();
+		const downloadPromise = page.waitForEvent('download');
+		await page
+			.getByRole('menuitem', { name: kind === 'Overview' ? overviewLabel : examsLabel })
+			.click();
+		const download = await downloadPromise;
+		expect(download.suggestedFilename()).toBe(
+			`โครงสร้างคะแนน-${kind === 'Overview' ? 'ภาพรวม' : 'รูปแบบการสอบ'}.xlsx`
+		);
+		const workbook = new ExcelJS.Workbook();
+		await workbook.xlsx.readFile((await download.path())!);
+		expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([kind]);
+		return workbook.worksheets[0];
+	}
+
+	function courseCodes(sheet: ExcelJS.Worksheet) {
+		return Array.from(
+			{ length: sheet.rowCount - 1 },
+			(_, index) => sheet.getCell(index + 2, 1).value
+		);
+	}
+
+	const overview = await downloadReport('Overview');
+	expect(courseCodes(overview)).toEqual(['ว21101', 'ค21101', 'ท21101', 'ศ21101']);
+	expect(Array.from({ length: 16 }, (_, index) => overview.getCell(3, index + 1).value)).toEqual([
+		'ค21101',
+		'คณิตศาสตร์พื้นฐาน',
+		'มัธยมศึกษาปีที่ 1',
+		1,
+		'ครูทดสอบ ระบบ',
+		'พร้อมใช้',
+		0,
+		19.5,
+		40.5,
+		40,
+		100,
+		100,
+		'ในตาราง',
+		60,
+		'นอกตาราง',
+		null
+	]);
+	expect(overview.getCell('F5').value).toBe('ยังไม่บันทึก');
+	expect(
+		['G5', 'H5', 'I5', 'J5', 'K5', 'M5', 'N5', 'O5', 'P5'].map(
+			(cell) => overview.getCell(cell).value
+		)
+	).toEqual(Array(9).fill(null));
+	expect(overview.getCell('L5').value).toBe(100);
+	const exams = await downloadReport('Exams');
+	expect(courseCodes(exams)).toEqual(['ค21101', 'ท21101']);
+	expect(exams.getCell('O3').value).toBe('นอกตาราง');
+	expect(exams.getCell('P3').value).toBeNull();
+
+	const search = page.getByRole('textbox', { name: 'ค้นหารายวิชา' });
+	await search.fill('ไม่มีรายวิชานี้');
+	await expect(trigger).toBeDisabled();
+	await search.fill('วิทยาศาสตร์');
+	await trigger.press('Enter');
+	await expect(page.getByRole('menuitem', { name: examsLabel })).toBeDisabled();
+	await page.keyboard.press('Escape');
+	expect(courseCodes(await downloadReport('Overview'))).toEqual(['ว21101']);
+
+	await search.clear();
+	await page.getByRole('combobox').filter({ hasText: 'ทุกสถานะ' }).click();
+	await page.getByRole('option', { name: 'ต้องตรวจสอบ' }).click();
+	await page.getByRole('combobox').filter({ hasText: 'การสอบทุกแบบ' }).click();
+	await page.getByRole('option', { name: 'สอบนอกตาราง' }).click();
+	expect(courseCodes(await downloadReport('Overview'))).toEqual(['ท21101']);
+	expect(courseCodes(await downloadReport('Exams'))).toEqual(['ท21101']);
+	expect(plansReadCount).toBe(1);
 });
 
 test('failed phase controls retry without hiding the plan list', async ({ page }) => {
