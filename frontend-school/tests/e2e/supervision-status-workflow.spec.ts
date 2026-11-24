@@ -143,7 +143,7 @@ for (const status of ['draft', 'open', 'closed', 'archived'] as const) {
 			term: true
 		});
 		await page.goto(path('').replace('/supervision/?', '/supervision?'));
-		await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
+		await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 		if (status === 'open') {
 			await expect(
 				page.getByText('เปิดรับคำขอจนกว่าผู้ดูแลจะเปลี่ยนสถานะรอบนิเทศ', { exact: true })

@@ -1019,13 +1019,15 @@ test('teaching supervision frontend contract uses typed API and permission metad
 		supervisionLessonPicker,
 		/!request\.isCurrent\(ticket\.revision\)[\s\S]*sourceContext !== ownerKey\(\)/
 	);
-	assert.match(supervisionLessonPicker, /onclick=\{\(\) => selectLesson\(item\)\}/);
+	assert.match(supervisionLessonPicker, /onclick=\{\(\) => toggleLesson\(item\)\}/);
 	assert.match(
 		supervisionLessonPicker,
-		/function selectLesson\([^)]*\) \{\s*if \(!selectable\.has\(item\)\) return/
+		/function toggleLesson\([^)]*\) \{\s*if \(!canChangeCards\) return[\s\S]*?if \(!selectable\.has\(item\)\) return/
 	);
-	assert.match(supervisionLessonPicker, /disabled=\{!chosen && !selectable\.has\(item\)\}/);
-	assert.match(supervisionLessonPicker, /aria-disabled=\{chosen \|\| undefined\}/);
+	assert.match(
+		supervisionLessonPicker,
+		/disabled=\{!canChangeCards \|\| \(!chosen && !selectable\.has\(item\)\)\}/
+	);
 	assert.match(supervisionLessonPicker, /aria-pressed=\{chosen\}/);
 	assert.match(supervisionLessonPicker, /item\.periodName/);
 	assert.doesNotMatch(supervisionLessonPicker, /period_name\?\.match\(/);

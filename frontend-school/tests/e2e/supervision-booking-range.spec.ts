@@ -23,10 +23,10 @@ async function openBooking(page: Page, items = choices()) {
 	await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
 	const api = await mock(page, { permissions, term: true, bookingItems: items, canManage: false });
 	await page.goto(root);
-	await expect(page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true })).toHaveCount(1);
+	await expect(page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true })).toHaveCount(1);
 	await expect(page.getByTestId('supervision-lesson-picker')).toHaveCount(0);
 	expect(api.count(optionsPath)).toBe(0);
-	await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
+	await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 	await expect(page.getByTestId('supervision-lesson-picker')).toBeVisible();
 	await expect(
 		page.getByRole('button', { name: new RegExp(`^เลือก ${items[0].periodName} `) })
@@ -107,6 +107,48 @@ for (const count of [1, 2, 3]) {
 		expect(api.count(observationsPath)).toBe(initialListReads);
 	});
 }
+
+test('toggling a middle lesson keeps and submits the earlier consecutive range', async ({
+	page
+}) => {
+	const items = [...choices(), timetableOption(3)];
+	const api = await openBooking(page, items);
+	const payloads: RequestSupervisionObservationRequest[] = [];
+	await page.route(`**${observationsPath}/requests`, async (route) => {
+		if (route.request().method() !== 'POST') return route.fallback();
+		const payload: RequestSupervisionObservationRequest = route.request().postDataJSON();
+		payloads.push(payload);
+		await reply(route, {
+			...api.observation(),
+			status: 'requested',
+			periods: savedSelection(payload, items)
+		});
+	});
+	const cards = items.map((item) =>
+		page.getByRole('button', { name: new RegExp(`^เลือก ${item.periodName} `) })
+	);
+	for (const card of cards) await card.click();
+	const selection = page.getByTestId('supervision-booking-selection');
+	await expect(selection).toContainText('4 คาบต่อเนื่อง');
+	await cards[2].click();
+	await expect(selection).toContainText('2 คาบต่อเนื่อง · 08:00–10:00');
+	for (const card of cards.slice(0, 2)) await expect(card).toHaveAttribute('aria-pressed', 'true');
+	await expect(cards[2]).toHaveAttribute('aria-pressed', 'false');
+	await expect(cards[2]).toBeEnabled();
+	await expect(cards[3]).toHaveAttribute('aria-pressed', 'false');
+	await expect(cards[3]).toBeDisabled();
+	await selection.getByRole('button', { name: 'ส่งคำขอจอง', exact: true }).click();
+	await expect(selection).toContainText('ส่งคำขอสำเร็จ');
+	expect(payloads).toEqual([
+		{
+			cycleId: api.observation().cycleId,
+			academicTermId: id(8),
+			observedDate: '2026-10-01',
+			timetableBlockGroupIds: items.slice(0, 2).map((item) => item.blockGroupId),
+			expectedSourceDigest: 'source-1'
+		}
+	]);
+});
 
 test('only adjacent lessons can extend in either direction, and clearing allows a new first lesson', async ({
 	page
@@ -249,7 +291,7 @@ test('a booking in another cycle leaves the same dated lesson available in the s
 		}
 	});
 	await page.goto(root);
-	await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
+	await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 	await expect(page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ })).toBeEnabled();
 	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
 	await expect(page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true })).toBeEnabled();
@@ -370,7 +412,7 @@ test('a replaced session discards pending old-session options and the old select
 	await api.replaceIdentity(permissions, '01900000-0000-7000-8000-000000000002');
 	await expect(page.getByTestId('supervision-lesson-picker')).toHaveCount(0);
 	gate.resolve();
-	await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
+	await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 	await expect(page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ })).toBeVisible();
 	await expect(page.getByText('คำตอบจากเซสชันเดิม', { exact: true })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true })).toBeDisabled();
