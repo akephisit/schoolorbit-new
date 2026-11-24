@@ -329,7 +329,7 @@
 									type="single"
 									bind:value={termSelectValue}
 									onValueChange={(value) => handleTermChange(value, true)}
-									disabled={!contextState.selected.academicYearId}
+									disabled={!selectedYear}
 								>
 									<Select.Trigger aria-label="เลือกภาคเรียน (มือถือ)" class="w-full">
 										<span data-slot="select-value">

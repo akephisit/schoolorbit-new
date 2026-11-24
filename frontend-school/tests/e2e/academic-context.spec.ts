@@ -579,7 +579,9 @@ test('mobile year-only label and invalid optional term/year prompts keep the sel
 
 	const invalidYear = '/staff/academic/supervision/cycles?academicYearId=unavailable';
 	await page.goto(invalidYear);
-	await expectMobileContext(page, 'เลือกปี');
+	const invalidYearTrigger = await expectMobileContext(page, 'เลือกปี');
+	await invalidYearTrigger.click();
+	await expect(term).toBeDisabled();
 	await expect(page).toHaveURL(invalidYear);
 });
 
