@@ -1,4 +1,5 @@
 import { mockYearManagement, openRoster, id as yearManagementId } from './fixtures/year-management';
+import type { AcademicContextOptionsResponse } from '../../src/lib/api/academic-context';
 import type { HomeroomDeliveryWorkspace } from '../../src/lib/api/learning-delivery';
 import { sessionState } from './fixtures/session-state';
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -21,7 +22,7 @@ const ids = {
 	planningTerm: '20000000-0000-4000-8000-000000000003'
 };
 
-const contextOptions = {
+const contextOptions: AcademicContextOptionsResponse = {
 	defaultAcademicYearId: ids.activeYear,
 	defaultAcademicTermId: ids.activeTerm,
 	years: [
@@ -56,6 +57,7 @@ const contextOptions = {
 			code: '1',
 			sequence: 1,
 			termType: 'regular',
+			schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 			status: 'active',
 			includedInYearResult: true,
 			blocksYearClosure: true
@@ -68,6 +70,7 @@ const contextOptions = {
 			code: '2',
 			sequence: 2,
 			termType: 'regular',
+			schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 			status: 'ready',
 			includedInYearResult: true,
 			blocksYearClosure: true
@@ -80,6 +83,7 @@ const contextOptions = {
 			code: 'summer',
 			sequence: 1,
 			termType: 'summer',
+			schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI'],
 			status: 'planning',
 			includedInYearResult: false,
 			blocksYearClosure: true
@@ -98,6 +102,7 @@ function fulfillJson(route: Route, data: unknown, status = 200) {
 async function mockAcademicContextApis(
 	page: Page,
 	options: {
+		contextOptions?: AcademicContextOptionsResponse;
 		contextFailure?: boolean;
 		contextGate?: Promise<void>;
 		navigationMenu?: boolean;
@@ -140,7 +145,7 @@ async function mockAcademicContextApis(
 				if (options.contextFailure) {
 					await fulfillJson(route, 'ไม่สามารถโหลดบริบทการศึกษาได้', 503);
 				} else {
-					await fulfillJson(route, contextOptions);
+					await fulfillJson(route, options.contextOptions ?? contextOptions);
 				}
 				return;
 			}
@@ -452,18 +457,123 @@ test('dirty roster drafts require confirmation and cancelling preserves the cont
 	await expect(page).toHaveURL(new RegExp(`academicYearId=${yearManagementId(2)}`));
 });
 
-test('mobile trigger summarizes the context and exposes both controls', async ({ page }) => {
-	await page.setViewportSize({ width: 390, height: 844 });
-	await mockAcademicContextApis(page);
-	await openDelivery(page, `?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`);
-
+async function expectMobileContext(page: Page, context: string, description?: string) {
 	const trigger = page.getByTestId('academic-context-mobile-trigger');
-	await expect(trigger).toContainText('2570');
-	await expect(trigger).toContainText('ภาคเรียนที่ 1');
-	await trigger.click();
-	await expect(page.getByRole('dialog', { name: 'เลือกบริบทการศึกษา' })).toBeVisible();
-	await expect(page.getByLabel('เลือกปีการศึกษา (มือถือ)')).toBeVisible();
-	await expect(page.getByLabel('เลือกภาคเรียน (มือถือ)')).toBeVisible();
+	await expect(trigger).toHaveText(context);
+	if (description) await expect(trigger).toHaveAccessibleDescription(description);
+	const fits = await trigger.getByText(context, { exact: true }).evaluate((label) => {
+		const range = document.createRange();
+		range.selectNodeContents(label);
+		const text = range.getBoundingClientRect();
+		const button = label.closest('button')!.getBoundingClientRect();
+		return (
+			range.getClientRects().length === 1 &&
+			text.width <= label.clientWidth + 1 &&
+			text.left >= button.left &&
+			text.right <= button.right &&
+			text.top >= button.top &&
+			text.bottom <= button.bottom
+		);
+	});
+	expect(fits).toBe(true);
+	return trigger;
+}
+
+for (const width of [320, 390]) {
+	test(`mobile trigger shows the entire term/year at ${width}px and keeps full names in the sheet`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 844 });
+		await mockAcademicContextApis(page);
+		await openDelivery(page, `?academicYearId=${ids.activeYear}&academicTermId=${ids.readyTerm}`);
+		const trigger = await expectMobileContext(page, '2/2570', 'ภาคเรียนที่ 2');
+		await expect(trigger).toHaveAccessibleName('ปีการศึกษาและภาคเรียน 2/2570');
+		await trigger.click();
+		await expect(page.getByRole('dialog', { name: 'เลือกบริบทการศึกษา' })).toBeVisible();
+		await expect(page.getByLabel('เลือกปีการศึกษา (มือถือ)')).toContainText('ปีการศึกษา 2570');
+		await expect(page.getByLabel('เลือกภาคเรียน (มือถือ)')).toContainText('ภาคเรียนที่ 2');
+	});
+}
+
+test('mobile labels distinguish custom and special terms while using their full names in the sheet', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 320, height: 844 });
+	const specialTerms = [
+		{
+			id: '20000000-0000-4000-8000-000000000011',
+			name: 'ภาคเรียนโครงการทักษะเฉพาะทาง',
+			termType: 'custom',
+			sequence: 3,
+			label: 'ภาค 3/2570'
+		},
+		{
+			id: '20000000-0000-4000-8000-000000000012',
+			name: 'ภาคฤดูร้อนช่วงแรก',
+			termType: 'summer',
+			sequence: 4,
+			label: 'ฤดูร้อน 4/2570'
+		},
+		{
+			id: '20000000-0000-4000-8000-000000000013',
+			name: 'ภาคฤดูร้อนช่วงที่สอง',
+			termType: 'summer',
+			sequence: 5,
+			label: 'ฤดูร้อน 5/2570'
+		},
+		{
+			id: '20000000-0000-4000-8000-000000000014',
+			name: 'ภาคซ่อมเสริมรายวิชา',
+			termType: 'remedial',
+			sequence: 6,
+			label: 'ซ่อมเสริม/2570'
+		}
+	] as const;
+	await mockAcademicContextApis(page, {
+		contextOptions: {
+			...contextOptions,
+			terms: [
+				...contextOptions.terms,
+				...specialTerms.map(({ id, name, termType, sequence }) => ({
+					...contextOptions.terms[0],
+					id,
+					name,
+					termType,
+					sequence,
+					code: `${termType}-${sequence}`
+				}))
+			]
+		}
+	});
+	await page.goto(`/staff/academic/supervision/cycles?academicYearId=${ids.activeYear}`);
+	const trigger = await expectMobileContext(page, 'ทั้งปี/2570');
+	for (const term of specialTerms) {
+		await trigger.click();
+		await page.getByLabel('เลือกภาคเรียน (มือถือ)').click();
+		await page.getByRole('option', { name: new RegExp(term.name) }).click();
+		await expect(page).toHaveURL(new RegExp(`academicTermId=${term.id}`));
+		await expectMobileContext(page, term.label, term.name);
+	}
+});
+
+test('mobile year-only label and invalid optional term/year prompts keep the selected scope truthful', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 320, height: 844 });
+	await mockAcademicContextApis(page);
+	await page.goto(`/staff?academicYearId=${ids.activeYear}`);
+	const year = await expectMobileContext(page, '2570');
+	await expect(year).toHaveAccessibleName('ปีการศึกษา 2570');
+
+	const invalidTerm = `/staff/academic/supervision/cycles?academicYearId=${ids.activeYear}&academicTermId=unavailable`;
+	await page.goto(invalidTerm);
+	await expectMobileContext(page, 'เลือกภาคเรียน', 'ปีการศึกษา 2570');
+	await expect(page).toHaveURL(invalidTerm);
+
+	const invalidYear = '/staff/academic/supervision/cycles?academicYearId=unavailable';
+	await page.goto(invalidYear);
+	await expectMobileContext(page, 'เลือกปี');
+	await expect(page).toHaveURL(invalidYear);
 });
 
 for (const explicit of [

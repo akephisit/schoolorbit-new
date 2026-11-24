@@ -17,11 +17,12 @@ async function expectRequestedContext(page: Page) {
 	// AcademicContextSwitcher uses Tailwind's lg breakpoint for its desktop controls.
 	if (!(await page.evaluate(() => matchMedia('(min-width: 64rem)').matches))) {
 		const context = page.getByRole('banner').getByRole('button', {
-			name: 'ปีการศึกษาและภาคเรียน 2570 · ภาคเรียนที่ 2',
+			name: 'ปีการศึกษาและภาคเรียน 2/2570',
 			exact: true
 		});
 		await expect(context).toBeVisible();
-		await expect(context).toHaveText('2570 · ภาคเรียนที่ 2');
+		await expect(context).toHaveText('2/2570');
+		await expect(context).toHaveAccessibleDescription('ภาคเรียนที่ 2');
 		return;
 	}
 	await expect(page.getByRole('combobox', { name: 'เลือกปีการศึกษา', exact: true })).toContainText(
