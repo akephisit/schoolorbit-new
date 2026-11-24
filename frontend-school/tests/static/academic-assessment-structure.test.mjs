@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { phaseCodes } from '../../src/lib/academic/assessment-report.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
@@ -186,12 +187,15 @@ test('assessment workspace guides an empty term to Learning Delivery without ext
 test('assessment editor fixes four phases, assigns a coordinator, and auto-saves', async () => {
 	const page = await readProjectFile('src/routes/(app)/staff/academic/assessments/+page.svelte');
 
-	for (const symbol of ['phaseCodes', 'draftCoordinatorId', 'persistDraft', 'saveAssessmentPlan']) {
+	for (const symbol of ['draftCoordinatorId', 'persistDraft', 'saveAssessmentPlan']) {
 		assert.match(page, new RegExp(symbol));
 	}
-	for (const phase of ['before_midterm', 'midterm', 'after_midterm', 'final']) {
-		assert.match(page, new RegExp(`'${phase}'`));
-	}
+	assert.deepEqual(phaseCodes, ['before_midterm', 'midterm', 'after_midterm', 'final']);
+	assert.match(
+		page,
+		/import \{[^}]*\bphaseCodes\b[^}]*\} from '#lib\/academic\/assessment-report\.js'/
+	);
+	assert.match(page, /\{#each phaseCodes as code \(code\)\}/);
 	for (const mode of ['none', 'in_timetable', 'outside_timetable']) {
 		assert.match(page, new RegExp(`value: '${mode}'`));
 	}

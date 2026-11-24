@@ -2,6 +2,19 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
+	import {
+		assessmentIdentityKey,
+		assessmentReadPermissions
+	} from '#lib/academic/assessment-access.js';
+	import {
+		arrangementLabel,
+		buildAssessmentReport,
+		hasScheduledAssessmentExam,
+		phaseCodes,
+		phaseFor,
+		phaseLabel,
+		type AssessmentReportKind
+	} from '#lib/academic/assessment-report.js';
 	import { LatestRequest, isAbortError } from '#lib/async/latest-request.js';
 	import {
 		getAcademicContextStore,
@@ -14,7 +27,6 @@
 		saveAssessmentPlan,
 		updateAssessmentPhaseControl,
 		type AssessmentExamArrangement,
-		type AssessmentPhase,
 		type AssessmentPhaseCode,
 		type AssessmentPhaseControl,
 		type AssessmentPlanDetail,
@@ -31,6 +43,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
@@ -40,6 +53,7 @@
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { can } from '#lib/stores/permissions.js';
+	import { downloadXlsxWorkbook } from '#lib/utils/spreadsheet.js';
 	import {
 		BookOpenCheck,
 		CalendarClock,
@@ -49,6 +63,7 @@
 		Clock3,
 		CloudAlert,
 		CloudCheck,
+		Download,
 		Loader2,
 		Search,
 		ShieldCheck,
@@ -64,11 +79,14 @@
 	type PhaseControlField = 'planEditingEnabled' | 'examArrangementEditingEnabled';
 
 	let { data }: PageProps = $props();
-	const phaseCodes: AssessmentPhaseCode[] = ['before_midterm', 'midterm', 'after_midterm', 'final'];
 	const academicContext = getAcademicContextStore();
 	const academicYearId = $derived(data.academicYearId);
 	const academicTermId = $derived(data.academicTermId);
 	const currentUserId = $derived($authStore.user?.id ?? '');
+	const identity = $derived(
+		assessmentIdentityKey($authStore.user, authStore.sessionEpoch, $can.has)
+	);
+	const contextKey = $derived(`${academicYearId}:${academicTermId}|${identity}`);
 
 	let plans = $state.raw<AssessmentPlanSummary[]>([]);
 	let phaseControls = $state.raw<AssessmentPhaseControl[]>([]);
@@ -83,6 +101,7 @@
 	let plansLoading = $state(true);
 	let plansLoaded = $state(false);
 	let plansError = $state('');
+	let exporting = $state(false);
 	let controlsLoading = $state(true);
 	let controlsLoaded = $state(false);
 	let controlsError = $state('');
@@ -94,7 +113,10 @@
 	let errorMessage = $state('');
 	let lastSavedAt = $state<Date | null>(null);
 	let closeRequested = false;
-	let activeContextKey = '';
+	let activeContextKey = $state('');
+	let contextRevision = 0;
+	let consumedPlans: typeof data.plans = null;
+	let consumedControls: typeof data.phaseControls = null;
 	let plansRevision = 0;
 	let controlsRevision = 0;
 	let detailRevision = 0;
@@ -103,18 +125,13 @@
 	const plansRequest = new LatestRequest();
 	const controlsRequest = new LatestRequest();
 	onDestroy(() => {
+		contextRevision += 1;
 		plansRequest.abort();
 		controlsRequest.abort();
 	});
 
 	const canRead = $derived(
-		$can.hasAny(
-			PERMISSIONS.ACADEMIC_ASSESSMENT_READ_ASSIGNED,
-			PERMISSIONS.ACADEMIC_ASSESSMENT_READ_ORGANIZATION_UNIT,
-			PERMISSIONS.ACADEMIC_ASSESSMENT_READ_SCHOOL,
-			PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED,
-			PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_SCHOOL
-		)
+		$authStore.user?.user_type === 'staff' && $can.hasAny(...assessmentReadPermissions)
 	);
 	const canManageSchool = $derived($can.has(PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_SCHOOL));
 	const canManageAssigned = $derived($can.has(PERMISSIONS.ACADEMIC_ASSESSMENT_MANAGE_ASSIGNED));
@@ -162,6 +179,16 @@
 			].some((value) => value.toLocaleLowerCase('th').includes(query));
 		});
 	});
+	const examPlans = $derived(filteredPlans.filter(hasScheduledAssessmentExam));
+	const canDownloadReports = $derived(
+		canRead &&
+			activeContextKey === contextKey &&
+			Boolean(academicTermId) &&
+			plansLoaded &&
+			!plansLoading &&
+			!plansError &&
+			filteredPlans.length > 0
+	);
 	const savedCoordinatorOutsideCandidates = $derived(
 		Boolean(
 			detail?.assessmentCoordinatorId &&
@@ -214,11 +241,25 @@
 		href: '/staff/academic/delivery'
 	};
 
-	function phaseFor(
-		plan: AssessmentPlanSummary,
-		code: AssessmentPhaseCode
-	): AssessmentPhase | null {
-		return plan.phases.find((phase) => phase.phaseCode === code) ?? null;
+	async function exportAssessmentReport(kind: AssessmentReportKind): Promise<void> {
+		if (!canDownloadReports || exporting) return;
+		const rows = kind === 'overview' ? filteredPlans : examPlans;
+		if (rows.length === 0) return;
+		const key = contextKey;
+		const revision = contextRevision;
+		const stillAuthorized = () => canRead && contextKey === key && contextRevision === revision;
+		exporting = true;
+		try {
+			await downloadXlsxWorkbook(
+				[buildAssessmentReport(kind, rows)],
+				`โครงสร้างคะแนน-${kind === 'overview' ? 'ภาพรวม' : 'รูปแบบการสอบ'}.xlsx`,
+				stillAuthorized
+			);
+		} catch {
+			if (stillAuthorized()) toast.error('ดาวน์โหลดไฟล์ Excel ไม่สำเร็จ กรุณาลองอีกครั้ง');
+		} finally {
+			exporting = false;
+		}
 	}
 
 	function canEditPlanPhase(code: AssessmentPhaseCode): boolean {
@@ -234,27 +275,6 @@
 		return Boolean(
 			phaseControls.find((control) => control.phaseCode === code)?.examArrangementEditingEnabled
 		);
-	}
-
-	function phaseLabel(code: AssessmentPhaseCode): string {
-		return (
-			{
-				before_midterm: 'ก่อนกลางภาค',
-				midterm: 'กลางภาค',
-				after_midterm: 'หลังกลางภาค',
-				final: 'ปลายภาค'
-			} satisfies Record<AssessmentPhaseCode, string>
-		)[code];
-	}
-
-	function arrangementLabel(arrangement: AssessmentExamArrangement): string {
-		return (
-			{
-				none: 'ไม่จัดสอบ',
-				in_timetable: 'ในตาราง',
-				outside_timetable: 'นอกตาราง'
-			} satisfies Record<AssessmentExamArrangement, string>
-		)[arrangement];
 	}
 
 	function findingLabel(finding: AssessmentReadinessFinding): string {
@@ -316,43 +336,45 @@
 
 	async function loadPlans(): Promise<void> {
 		const termId = academicTermId;
-		if (!termId) return;
+		const key = contextKey;
+		if (!termId || !canRead || activeContextKey !== key) return;
 		const { revision, signal } = plansRequest.begin();
 		plansRevision += 1;
 		plansLoading = true;
 		plansError = '';
 		try {
 			const rows = await listAssessmentPlans({ academicTermId: termId }, { signal });
-			if (plansRequest.isCurrent(revision) && academicTermId === termId) {
+			if (plansRequest.isCurrent(revision) && contextKey === key) {
 				plans = rows;
 				plansLoaded = true;
 			}
 		} catch (error) {
-			if (!isAbortError(error) && plansRequest.isCurrent(revision))
+			if (!isAbortError(error) && plansRequest.isCurrent(revision) && contextKey === key)
 				plansError = error instanceof Error ? error.message : 'โหลดโครงสร้างคะแนนไม่สำเร็จ';
 		} finally {
-			if (plansRequest.isCurrent(revision)) plansLoading = false;
+			if (plansRequest.isCurrent(revision) && contextKey === key) plansLoading = false;
 		}
 	}
 
 	async function loadControls(): Promise<void> {
 		const termId = academicTermId;
-		if (!termId) return;
+		const key = contextKey;
+		if (!termId || !canRead || activeContextKey !== key) return;
 		const { revision, signal } = controlsRequest.begin();
 		controlsRevision += 1;
 		controlsLoading = true;
 		controlsError = '';
 		try {
 			const rows = await listAssessmentPhaseControls(termId, { signal });
-			if (controlsRequest.isCurrent(revision) && academicTermId === termId) {
+			if (controlsRequest.isCurrent(revision) && contextKey === key) {
 				phaseControls = rows;
 				controlsLoaded = true;
 			}
 		} catch (error) {
-			if (!isAbortError(error) && controlsRequest.isCurrent(revision))
+			if (!isAbortError(error) && controlsRequest.isCurrent(revision) && contextKey === key)
 				controlsError = error instanceof Error ? error.message : 'โหลดช่วงการทำงานของครูไม่สำเร็จ';
 		} finally {
-			if (controlsRequest.isCurrent(revision)) controlsLoading = false;
+			if (controlsRequest.isCurrent(revision) && contextKey === key) controlsLoading = false;
 		}
 	}
 
@@ -379,12 +401,15 @@
 	}
 
 	async function openPlan(plan: AssessmentPlanSummary): Promise<void> {
+		const key = contextKey;
+		if (activeContextKey !== key) return;
 		if (saving) {
 			toast.info('กำลังบันทึกรายการเดิม กรุณารอสักครู่');
 			return;
 		}
 		if (dirty) {
 			await persistDraft();
+			if (contextKey !== key) return;
 			if (dirty) {
 				toast.warning('แก้ข้อมูลที่แจ้งเตือนให้เรียบร้อยก่อนเปิดรายวิชาอื่น');
 				return;
@@ -395,12 +420,11 @@
 		detailLoading = true;
 		selectedPlan = plan;
 		const requestRevision = ++detailRevision;
-		const termId = academicTermId;
 		detail = null;
 		errorMessage = '';
 		try {
 			const loaded = await getAssessmentPlan(plan.offeringId);
-			if (requestRevision !== detailRevision || academicTermId !== termId || !sheetOpen) return;
+			if (requestRevision !== detailRevision || contextKey !== key || !sheetOpen) return;
 			detail = loaded;
 			draftPhases = clonePhases(loaded);
 			draftCoordinatorId =
@@ -414,18 +438,19 @@
 			saveState = 'idle';
 			lastSavedAt = null;
 		} catch (error) {
-			if (requestRevision === detailRevision)
+			if (requestRevision === detailRevision && contextKey === key)
 				errorMessage =
 					error instanceof Error ? error.message : 'โหลดรายละเอียดโครงสร้างคะแนนไม่สำเร็จ';
 		} finally {
-			if (requestRevision === detailRevision) detailLoading = false;
+			if (requestRevision === detailRevision && contextKey === key) detailLoading = false;
 		}
 	}
 
 	async function persistDraft(): Promise<void> {
 		if (saveTimer) clearTimeout(saveTimer);
 		saveTimer = undefined;
-		if (!detail || !dirty || !canEditDetail || saving) return;
+		const key = contextKey;
+		if (!detail || !dirty || !canEditDetail || saving || activeContextKey !== key) return;
 		const validationError = localDraftError();
 		if (validationError) {
 			errorMessage = validationError;
@@ -434,7 +459,6 @@
 		}
 
 		const offeringId = detail.offeringId;
-		const termId = academicTermId;
 		const requestRevision = detailRevision;
 		const revisionAtStart = draftRevision;
 		const payloadPhases = draftPhases.map((phase) => ({
@@ -453,7 +477,7 @@
 			});
 			if (
 				detail?.offeringId !== offeringId ||
-				academicTermId !== termId ||
+				contextKey !== key ||
 				requestRevision !== detailRevision
 			)
 				return;
@@ -469,14 +493,14 @@
 				saveState = 'pending';
 			}
 		} catch (error) {
-			if (requestRevision !== detailRevision || academicTermId !== termId) return;
+			if (requestRevision !== detailRevision || contextKey !== key) return;
 			closeRequested = false;
 			errorMessage = error instanceof Error ? error.message : 'บันทึกโครงสร้างคะแนนไม่สำเร็จ';
 			saveState = 'error';
 			toast.error(errorMessage);
 		} finally {
 			saving = false;
-			if (requestRevision === detailRevision && academicTermId === termId) {
+			if (requestRevision === detailRevision && contextKey === key) {
 				if (dirty && draftRevision !== revisionAtStart && saveState !== 'error') markDirty();
 				if (closeRequested && !dirty && saveState !== 'error') {
 					closeRequested = false;
@@ -534,15 +558,16 @@
 		control: AssessmentPhaseControl,
 		field: PhaseControlField
 	): Promise<void> {
-		if (!canManageSchool || controlBusyId) return;
+		const key = contextKey;
+		if (!canManageSchool || controlBusyId || activeContextKey !== key) return;
+		const revision = contextRevision;
 		controlBusyId = control.id;
-		const termId = academicTermId;
 		try {
 			const saved = await updateAssessmentPhaseControl(control.id, {
 				rowVersion: control.rowVersion,
 				[field]: !control[field]
 			});
-			if (termId !== academicTermId) return;
+			if (contextKey !== key || contextRevision !== revision) return;
 			controlsRequest.abort();
 			controlsRevision += 1;
 			controlsLoading = false;
@@ -550,7 +575,7 @@
 			phaseControls = phaseControls.map((item) => (item.id === saved.id ? saved : item));
 			toast.success(`บันทึกสิทธิ์ช่วง${phaseLabel(saved.phaseCode)}แล้ว`);
 		} catch (error) {
-			if (termId !== academicTermId) return;
+			if (contextKey !== key || contextRevision !== revision) return;
 			controlsError = error instanceof Error ? error.message : 'บันทึกสิทธิ์แก้ไขไม่สำเร็จ';
 			toast.error(controlsError);
 		} finally {
@@ -570,64 +595,74 @@
 	});
 
 	$effect.pre(() => {
-		const contextKey = `${data.academicYearId}:${data.academicTermId}`;
+		const key = contextKey;
+		const currentIdentity = identity;
+		const canLoad = canRead;
 		const routePlans = data.plans;
 		const routeControls = data.phaseControls;
-		const initialPlansRevision = plansRevision;
-		const initialControlsRevision = controlsRevision;
-		let current = true;
 		untrack(() => {
-			if (activeContextKey !== contextKey) {
-				activeContextKey = contextKey;
+			if (activeContextKey !== key) {
+				activeContextKey = key;
+				contextRevision += 1;
 				plansRequest.abort();
 				controlsRequest.abort();
 				plans = [];
 				phaseControls = [];
 				plansLoaded = false;
 				controlsLoaded = false;
+				plansLoading = Boolean(routePlans);
+				controlsLoading = Boolean(routeControls);
+				plansError = '';
+				controlsError = '';
 				detailRevision += 1;
 				detail = null;
 				selectedPlan = null;
 				draftPhases = [];
 				draftCoordinatorId = '';
+				detailLoading = false;
 				sheetOpen = false;
 				dirty = false;
 				saveState = 'idle';
 				closeRequested = false;
 				if (saveTimer) clearTimeout(saveTimer);
 			}
-			plansLoading = Boolean(routePlans);
-			controlsLoading = Boolean(routeControls);
-			plansError = '';
-			controlsError = '';
-		});
-		if (routePlans)
-			void routePlans.then((result) => {
-				if (!current) return;
-				untrack(() => {
-					if (plansRevision !== initialPlansRevision) return;
+			if (!currentIdentity || !canLoad) return;
+			const ownerRevision = contextRevision;
+			const isCurrent = (resultIdentity: string) =>
+				resultIdentity === currentIdentity &&
+				contextKey === key &&
+				contextRevision === ownerRevision;
+			if (routePlans && routePlans !== consumedPlans) {
+				consumedPlans = routePlans;
+				plansRequest.abort();
+				const revision = ++plansRevision;
+				plansLoading = true;
+				plansError = '';
+				void routePlans.then(({ identity, result }) => {
+					if (!isCurrent(identity) || revision !== plansRevision || !result) return;
 					if (result.ok) {
 						plans = result.data;
 						plansLoaded = true;
 					} else plansError = result.error;
 					plansLoading = false;
 				});
-			});
-		if (routeControls)
-			void routeControls.then((result) => {
-				if (!current) return;
-				untrack(() => {
-					if (controlsRevision !== initialControlsRevision) return;
+			}
+			if (routeControls && routeControls !== consumedControls) {
+				consumedControls = routeControls;
+				controlsRequest.abort();
+				const revision = ++controlsRevision;
+				controlsLoading = true;
+				controlsError = '';
+				void routeControls.then(({ identity, result }) => {
+					if (!isCurrent(identity) || revision !== controlsRevision || !result) return;
 					if (result.ok) {
 						phaseControls = result.data;
 						controlsLoaded = true;
 					} else controlsError = result.error;
 					controlsLoading = false;
 				});
-			});
-		return () => {
-			current = false;
-		};
+			}
+		});
 	});
 </script>
 
@@ -640,6 +675,36 @@
 			<Button variant="outline" href={gradebookHref}>
 				<BookOpenCheck class="size-4" /> ไปหน้ากรอกคะแนน
 			</Button>
+		{/if}
+		{#if canRead}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger disabled={!canDownloadReports}>
+					{#snippet child({ props })}
+						<Button {...props} variant="outline" aria-busy={exporting}>
+							{#if exporting}
+								<Loader2 class="size-4 motion-safe:animate-spin" aria-hidden="true" />
+							{:else}
+								<Download class="size-4" aria-hidden="true" />
+							{/if}
+							ดาวน์โหลด Excel
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end">
+					<DropdownMenu.Item
+						disabled={exporting}
+						onSelect={() => exportAssessmentReport('overview')}
+					>
+						ภาพรวมโครงสร้างคะแนน
+					</DropdownMenu.Item>
+					<DropdownMenu.Item
+						disabled={exporting || examPlans.length === 0}
+						onSelect={() => exportAssessmentReport('exam')}
+					>
+						รายวิชาที่มีการสอบ
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
 		{/if}
 	{/snippet}
 
