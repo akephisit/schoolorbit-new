@@ -29,9 +29,11 @@ export async function buildXlsxWorkbook(sheets: SpreadsheetSheet[]): Promise<Uin
 
 export async function downloadXlsxWorkbook(
 	sheets: SpreadsheetSheet[],
-	filename: string
+	filename: string,
+	shouldDownload?: () => boolean
 ): Promise<void> {
 	const bytes = await buildXlsxWorkbook(sheets);
+	if (shouldDownload && !shouldDownload()) return;
 	const url = URL.createObjectURL(
 		new Blob([Uint8Array.from(bytes).buffer], {
 			type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
