@@ -567,7 +567,14 @@ test('mobile year-only label and invalid optional term/year prompts keep the sel
 
 	const invalidTerm = `/staff/academic/supervision/cycles?academicYearId=${ids.activeYear}&academicTermId=unavailable`;
 	await page.goto(invalidTerm);
-	await expectMobileContext(page, 'เลือกภาคเรียน', 'ปีการศึกษา 2570');
+	const invalidTermTrigger = await expectMobileContext(page, 'เลือกภาคเรียน', 'ปีการศึกษา 2570');
+	await invalidTermTrigger.click();
+	const term = page.getByRole('combobox', { name: 'เลือกภาคเรียน (มือถือ)', exact: true });
+	await expect(term).toHaveText('เลือกภาคเรียน');
+	await term.click();
+	await expect(
+		page.getByRole('option', { name: 'ทั้งปี', exact: true, selected: false })
+	).toBeEnabled();
 	await expect(page).toHaveURL(invalidTerm);
 
 	const invalidYear = '/staff/academic/supervision/cycles?academicYearId=unavailable';
