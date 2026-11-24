@@ -113,6 +113,7 @@
 			null
 	);
 	const stale = $derived(ordered.length > 0 && selectionDigest !== options?.sourceDigest);
+	const canChangeCards = $derived(allowed && !saving && !loading && !stale);
 	const schoolDays = $derived(
 		$academicContext.options?.terms.find(
 			(term) => term.id === academicTermId && term.academicYearId === academicYearId
@@ -147,7 +148,7 @@
 		return rows.sort((a, b) => a.start.localeCompare(b.start));
 	});
 	const selectable = $derived.by(() => {
-		if (!allowed || saving || loading || stale) return new Set<SupervisionTimetableOption>();
+		if (!canChangeCards) return new Set<SupervisionTimetableOption>();
 		const candidates = ordered.length
 			? adjacentBookingOptions(visibleItems, ordered)
 			: visibleItems.filter((item) => !bookingRangeError([item]));
@@ -271,22 +272,34 @@
 		void loadOptions();
 	}
 	function clearSelection() {
-		selected = [];
-		selectionDigest = '';
+		setSelection([]);
+	}
+	function setSelection(items: SupervisionTimetableOption[]) {
+		selected = items;
+		if (items.length === 0) selectionDigest = '';
 		saveError = '';
 		success = '';
 	}
-	function selectLesson(item: SupervisionTimetableOption) {
+	function selectedLessonIndex(item: SupervisionTimetableOption) {
+		return ordered.findIndex(
+			(value) =>
+				value.blockGroupId === item.blockGroupId && value.observedDate === item.observedDate
+		);
+	}
+	function toggleLesson(item: SupervisionTimetableOption) {
+		if (!canChangeCards) return;
+		const index = selectedLessonIndex(item);
+		if (index >= 0) {
+			removeSelectedLesson(index);
+			return;
+		}
 		if (!selectable.has(item)) return;
-		selected = orderedBookingRange([...ordered, item]);
 		selectionDigest = options?.sourceDigest ?? '';
-		saveError = '';
-		success = '';
+		setSelection(orderedBookingRange([...ordered, item]));
 	}
-	function removeEdge(index: number) {
-		selected = ordered.filter((_, position) => position !== index);
-		saveError = '';
-		success = '';
+	function removeSelectedLesson(index: number) {
+		// Removing a middle lesson keeps the earlier uninterrupted range.
+		setSelection(index === 0 ? ordered.slice(1) : ordered.slice(0, index));
 	}
 	function cellItems(date: string, start: string, end: string) {
 		return visibleItems.filter(
@@ -326,7 +339,7 @@
 				{bookingDateLabel(weekStartDate)} – {bookingDateLabel(addCivilDays(weekStartDate, 6))}
 			</p>
 			<p class="text-sm text-muted-foreground">
-				เลือกคาบแรก แล้วเลือกคาบติดกันในวันและห้องเดียวกันได้
+				เลือกคาบติดกันในวันและห้องเดียวกัน กดคาบที่เลือกซ้ำเพื่อยกเลิก
 			</p>
 		</div>
 		<div class="flex flex-wrap gap-1">
@@ -422,19 +435,15 @@
 											cycle.observationStartDate,
 											cycle.observationEndDate
 										)}
-										{@const chosen = selected.some(
-											(value) =>
-												value.blockGroupId === item.blockGroupId && value.observedDate === day
-										)}
+										{@const chosen = selectedLessonIndex(item) >= 0}
 										<button
 											type="button"
 											class="min-h-20 w-full rounded-lg border p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:border-primary aria-pressed:bg-primary/10 sm:min-h-28 sm:p-3"
-											disabled={!chosen && !selectable.has(item)}
-											aria-disabled={chosen || undefined}
+											disabled={!canChangeCards || (!chosen && !selectable.has(item))}
 											aria-pressed={chosen}
 											aria-label={`เลือก ${item.periodName} ${item.homeroomName} ${bookingDateLabel(day)}`}
 											aria-describedby={detailsId}
-											onclick={() => selectLesson(item)}
+											onclick={() => toggleLesson(item)}
 										>
 											<span id={detailsId} class="block">
 												<span class="block font-medium">
@@ -501,7 +510,7 @@
 								disabled={saving}
 								class="shrink-0"
 								aria-label={`นำ ${item.periodName} ออกจากช่วง`}
-								onclick={() => removeEdge(index)}><X class="size-3.5" /></button
+								onclick={() => removeSelectedLesson(index)}><X class="size-3.5" /></button
 							>{/if}</Badge
 					>{/each}
 			</div>

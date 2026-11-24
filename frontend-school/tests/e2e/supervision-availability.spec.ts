@@ -36,7 +36,7 @@ const option = (index: number, patch: Partial<SupervisionTimetableOption> = {}) 
 	timetableOption(index, patch);
 async function open(page: Page) {
 	await page.goto(root);
-	await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
+	await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 }
 
 test('an open legacy round without dates remains readable but cannot load or select new lessons', async ({

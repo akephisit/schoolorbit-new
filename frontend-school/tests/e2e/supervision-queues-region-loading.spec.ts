@@ -325,7 +325,7 @@ test('mine loads its list first and keeps booking timetable behind opening the w
 			.getByRole('heading', { name: 'วิชาทดสอบ', exact: true })
 	).toBeVisible();
 	expect(api.count('/api/supervision/booking-options')).toBe(0);
-	await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).click();
+	await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 	await expect(page.getByText('region ไม่พร้อม')).toBeVisible();
 	await page.getByRole('button', { name: 'ลองใหม่' }).click();
 	await expect(page.getByText('ไม่พบคาบสอนในสัปดาห์นี้')).toBeVisible();
@@ -365,7 +365,7 @@ test.describe('supervision at 360 pixels', () => {
 			]
 		});
 		await page.goto(path('').replace('/supervision/?', '/supervision?'));
-		await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).tap();
+		await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).tap();
 		const grid = page.getByTestId('supervision-booking-grid');
 		const rowDates = grid.getByRole('rowheader').locator('time');
 		const expectUniformDayRows = async () => {
@@ -423,7 +423,7 @@ test.describe('supervision at 360 pixels', () => {
 		await first.focus();
 		await first.press('Enter');
 		await expect(first).toHaveAttribute('aria-pressed', 'true');
-		await expect(first).toHaveAttribute('aria-disabled', 'true');
+		await expect(first).toBeEnabled();
 		await expect
 			.poll(() => first.evaluate((button) => getComputedStyle(button).backgroundColor))
 			.not.toBe(unselectedFill);
@@ -444,12 +444,25 @@ test.describe('supervision at 360 pixels', () => {
 		await expect(fourth).toHaveJSProperty('disabled', true);
 		expect(await cardSizes()).toEqual(sizesBefore);
 		await expectUniformDayRows();
-		await second.evaluate((button) => (button as HTMLButtonElement).click());
-		await expect(selection).toContainText('2 คาบต่อเนื่อง');
-		await selection.getByRole('button', { name: 'ล้างทั้งหมด', exact: true }).click();
+		await second.tap();
+		await expect(first).toHaveAttribute('aria-pressed', 'true');
+		await expect(second).toHaveAttribute('aria-pressed', 'false');
+		await expect(third).toBeDisabled();
+		await expect(selection).toContainText('1 คาบต่อเนื่อง · 08:00–09:00');
+		await second.tap();
+		await first.press('Space');
 		await expect(first).toHaveAttribute('aria-pressed', 'false');
+		await expect(second).toHaveAttribute('aria-pressed', 'true');
+		await expect(third).toBeEnabled();
+		await expect(selection).toContainText('1 คาบต่อเนื่อง · 09:00–10:00');
+		await second.tap();
 		await expect(second).toHaveAttribute('aria-pressed', 'false');
 		await expect(fourth).toBeEnabled();
+		await expect(otherDay).toBeEnabled();
+		await expect(selection).toContainText('ยังไม่ได้เลือกคาบ');
+		await expect(selection.getByRole('button', { name: 'ส่งคำขอจอง', exact: true })).toBeDisabled();
+		expect(await cardSizes()).toEqual(sizesBefore);
+		await expectUniformDayRows();
 
 		const pinned = grid.getByRole('columnheader', { name: 'วันที่' });
 		const pinnedBefore = await pinned.boundingBox();
@@ -476,7 +489,7 @@ test.describe('supervision at 360 pixels', () => {
 			]
 		});
 		await page.goto(path('').replace('/supervision/?', '/supervision?'));
-		await page.getByRole('button', { name: 'เปิดจองคาบนิเทศ', exact: true }).tap();
+		await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).tap();
 		const grid = page.getByTestId('supervision-booking-grid');
 		const rowDates = grid.getByRole('rowheader').locator('time');
 		await expect(rowDates).toHaveCount(4);
