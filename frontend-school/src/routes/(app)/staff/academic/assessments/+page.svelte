@@ -2,7 +2,10 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import type { PageProps } from './$types';
-	import { assessmentReadPermissions } from '#lib/academic/assessment-access.js';
+	import {
+		assessmentIdentityKey,
+		assessmentReadPermissions
+	} from '#lib/academic/assessment-access.js';
 	import {
 		arrangementLabel,
 		buildAssessmentReport,
@@ -17,7 +20,6 @@
 		getAcademicContextStore,
 		registerAcademicContextDirtySource
 	} from '#lib/academic-context/store.js';
-	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import {
 		getAssessmentPlan,
 		listAssessmentPhaseControls,
@@ -50,7 +52,7 @@
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import { can, userPermissions } from '#lib/stores/permissions.js';
+	import { can } from '#lib/stores/permissions.js';
 	import { downloadXlsxWorkbook } from '#lib/utils/spreadsheet.js';
 	import {
 		BookOpenCheck,
@@ -81,11 +83,9 @@
 	const academicYearId = $derived(data.academicYearId);
 	const academicTermId = $derived(data.academicTermId);
 	const currentUserId = $derived($authStore.user?.id ?? '');
-	const identity = $derived.by(() => {
-		void $authStore;
-		void $userPermissions;
-		return appIdentityKey();
-	});
+	const identity = $derived(
+		assessmentIdentityKey($authStore.user, authStore.sessionEpoch, $can.has)
+	);
 	const contextKey = $derived(`${academicYearId}:${academicTermId}|${identity}`);
 
 	let plans = $state.raw<AssessmentPlanSummary[]>([]);
@@ -560,13 +560,14 @@
 	): Promise<void> {
 		const key = contextKey;
 		if (!canManageSchool || controlBusyId || activeContextKey !== key) return;
+		const revision = contextRevision;
 		controlBusyId = control.id;
 		try {
 			const saved = await updateAssessmentPhaseControl(control.id, {
 				rowVersion: control.rowVersion,
 				[field]: !control[field]
 			});
-			if (contextKey !== key) return;
+			if (contextKey !== key || contextRevision !== revision) return;
 			controlsRequest.abort();
 			controlsRevision += 1;
 			controlsLoading = false;
@@ -574,7 +575,7 @@
 			phaseControls = phaseControls.map((item) => (item.id === saved.id ? saved : item));
 			toast.success(`บันทึกสิทธิ์ช่วง${phaseLabel(saved.phaseCode)}แล้ว`);
 		} catch (error) {
-			if (contextKey !== key) return;
+			if (contextKey !== key || contextRevision !== revision) return;
 			controlsError = error instanceof Error ? error.message : 'บันทึกสิทธิ์แก้ไขไม่สำเร็จ';
 			toast.error(controlsError);
 		} finally {

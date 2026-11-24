@@ -96,6 +96,19 @@ function deferred() {
 	return { promise, resolve };
 }
 
+async function holdAssessmentPermissionChange(page: Page) {
+	const change = deferred();
+	await page.route('**/api/notifications/stream', async (route) => {
+		await change.promise;
+		await route.fulfill({
+			status: 200,
+			contentType: 'text/event-stream',
+			body: 'event: permission_changed\ndata: {}\n\n'
+		});
+	});
+	return change.resolve;
+}
+
 async function mockAssessmentApis(
 	page: Page,
 	options: {
@@ -559,15 +572,7 @@ test('an in-progress assessment export keeps keyboard focus and is discarded aft
 			assignedOnly ? 'academic_assessment.read.assigned' : 'academic_assessment.read.school'
 		]
 	});
-	const permissionChange = deferred();
-	await page.route('**/api/notifications/stream', async (route) => {
-		await permissionChange.promise;
-		await route.fulfill({
-			status: 200,
-			contentType: 'text/event-stream',
-			body: 'event: permission_changed\ndata: {}\n\n'
-		});
-	});
+	const releasePermissionChange = await holdAssessmentPermissionChange(page);
 	const olderRead = deferred();
 	const assignedRead = deferred();
 	const mathematics = assessmentPlan(offeringIds.mathematics, 'ค21101', 'คณิตศาสตร์พื้นฐาน');
@@ -604,7 +609,7 @@ test('an in-progress assessment export keeps keyboard focus and is discarded aft
 		await expect.poll(() => reads).toBe(2);
 		await expect(schoolOnlySubject).toBeVisible();
 		assignedOnly = true;
-		permissionChange.resolve();
+		releasePermissionChange();
 		await expect.poll(() => reads).toBe(3);
 		await expect(schoolOnlySubject).toHaveCount(0);
 		await expect(page.getByTestId('assessment-plans-loading')).toBeVisible();
@@ -616,7 +621,7 @@ test('an in-progress assessment export keeps keyboard focus and is discarded aft
 		await expect(schoolOnlySubject).toHaveCount(0);
 		await expect(trigger).toBeDisabled();
 	} finally {
-		permissionChange.resolve();
+		releasePermissionChange();
 		olderRead.resolve();
 		assignedRead.resolve();
 		chunk.resolve();
@@ -710,6 +715,38 @@ test('closes after an in-flight autosave and opens the next subject editor', asy
 	await page.getByText('ว21101 · วิทยาศาสตร์พื้นฐาน', { exact: true }).click();
 	await expect(page.getByRole('heading', { name: 'ว21101 · วิทยาศาสตร์พื้นฐาน' })).toBeVisible();
 	await expect(page.getByLabel('คะแนนเต็ม', { exact: true }).first()).toHaveValue('20');
+});
+
+test('an unrelated permission change preserves an unsaved assessment draft', async ({ page }) => {
+	const permissions = ['academic_assessment.read.school', 'academic_assessment.manage.school'];
+	const writes: SaveAssessmentPlanRequest[] = [];
+	let planReads = 0;
+	await mockAssessmentApis(page, {
+		permissions: () => permissions,
+		onPlansRead: () => (planReads += 1),
+		onPlanWrite: (payload) => writes.push(payload)
+	});
+	const releasePermissionChange = await holdAssessmentPermissionChange(page);
+	try {
+		await page.goto(
+			`/staff/academic/assessments?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
+		);
+		const course = 'ค21101 · คณิตศาสตร์พื้นฐาน';
+		await page.getByText(course, { exact: true }).click();
+		const score = page.getByLabel('คะแนนเต็ม', { exact: true }).first();
+		await expect(score).toHaveValue('20');
+		await score.clear();
+		permissions.push('academic_gradebook.read.assigned');
+		releasePermissionChange();
+		await expect.poll(() => planReads).toBe(2);
+		await expect(page.getByRole('heading', { name: course })).toBeVisible();
+		await expect(score).toHaveValue('');
+		expect(writes).toHaveLength(0);
+		await score.fill('21');
+		await expect.poll(() => writes.map((write) => write.phases[0].maxScore)).toEqual(['21']);
+	} finally {
+		releasePermissionChange();
+	}
 });
 
 test('school managers toggle score and exam editing independently with minimal versioned patches', async ({
