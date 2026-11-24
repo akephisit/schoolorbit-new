@@ -44,14 +44,24 @@
 		contextState.requirement === 'term_required' || contextState.requirement === 'term_optional'
 	);
 	const contextLabel = $derived(showsTerm ? 'ปีการศึกษาและภาคเรียน' : 'ปีการศึกษา');
-	const mobileSummary = $derived(
-		showsTerm
-			? `${selectedYear?.year ?? 'เลือกปี'} · ${
-					selectedTerm?.name ??
-					(contextState.requirement === 'term_optional' ? 'ทั้งปี' : 'เลือกภาคเรียน')
-				}`
-			: `${selectedYear?.year ?? 'เลือกปี'}`
-	);
+	const mobileSummary = $derived.by(() => {
+		if (!selectedYear) return { label: 'เลือกปี' };
+		const { year, name } = selectedYear;
+		const yearDetail = name === `${year}` || name === `ปีการศึกษา ${year}` ? undefined : name;
+		if (!showsTerm) return { label: `${year}`, description: yearDetail };
+		if (selectedTerm) {
+			return {
+				label: `${compactTermLabel(selectedTerm, termOptions)}/${year}`,
+				description: [selectedTerm.name, yearDetail].filter(Boolean).join(' · ')
+			};
+		}
+		if (
+			contextState.requirement === 'term_optional' &&
+			contextState.selected.academicTermId === null
+		)
+			return { label: `ทั้งปี/${year}`, description: yearDetail };
+		return { label: 'เลือกภาคเรียน', description: name };
+	});
 
 	let mobileOpen = $state(false);
 	let pendingChange = $state<PendingChange | null>(null);
@@ -62,6 +72,24 @@
 		contextState.selected.academicTermId ??
 			(contextState.requirement === 'term_optional' ? ALL_YEAR_VALUE : undefined)
 	);
+
+	function compactTermLabel(term: AcademicTermOption, terms: AcademicTermOption[]): string {
+		switch (term.termType) {
+			case 'regular':
+				return `${term.sequence}`;
+			case 'custom':
+				return `ภาค ${term.sequence}`;
+			case 'summer':
+			case 'remedial': {
+				const label = term.termType === 'summer' ? 'ฤดูร้อน' : 'ซ่อมเสริม';
+				return terms.some(
+					(candidate) => candidate.id !== term.id && candidate.termType === term.termType
+				)
+					? `${label} ${term.sequence}`
+					: label;
+			}
+		}
+	}
 
 	function statusClass(status: ContextStatus): string {
 		if (status === 'active' || status === 'closing')
@@ -240,14 +268,15 @@
 							{...props}
 							variant="outline"
 							size="sm"
-							class="max-w-32 gap-2 sm:max-w-40 lg:hidden"
+							class="max-w-full gap-1.5 text-xs has-[>svg]:px-1.5 sm:gap-2 sm:text-sm sm:has-[>svg]:px-2.5 lg:hidden"
 							data-testid="academic-context-mobile-trigger"
-							aria-label={`${contextLabel} ${mobileSummary}`}
+							aria-label={`${contextLabel} ${mobileSummary.label}`}
+							aria-description={mobileSummary.description}
 						>
-							<CalendarRange class="size-4 shrink-0 text-primary" />
-							<span class="truncate">{mobileSummary}</span>
+							<CalendarRange class="size-4 shrink-0 text-primary" aria-hidden="true" />
+							<span class="min-w-0 leading-tight whitespace-normal">{mobileSummary.label}</span>
 							{#if contextState.status === 'unavailable'}
-								<TriangleAlert class="size-3.5 shrink-0 text-amber-600" />
+								<TriangleAlert class="size-3.5 shrink-0 text-amber-600" aria-hidden="true" />
 							{/if}
 						</Button>
 					{/snippet}
