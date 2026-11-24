@@ -28,17 +28,46 @@ const MARKDOWN_ALLOWLIST = [
 	'frontend-school/README.md'
 ].sort();
 
+const VENDORED_SKILL_RESOURCES = {
+	'frontend-design': ['LICENSE.txt'],
+	antislop: ['LICENSE', 'VERSION'],
+	'antislop-ui': [
+		'LICENSE-web-quality-skills',
+		'references/CORE-WEB-VITALS.md',
+		'references/WEB-BASELINE.md'
+	],
+	'antislop-human': [
+		'LICENSE-web-quality-skills',
+		'contrast-check.py',
+		'contrast-mcp.py',
+		'references/A11Y-PATTERNS.md',
+		'references/WCAG.md'
+	],
+	'antislop-layoutmobile': [],
+	'antislop-copywriting': [],
+	'antislop-code': []
+};
+
+const VENDORED_MARKDOWN = Object.entries(VENDORED_SKILL_RESOURCES).flatMap(([name, resources]) =>
+	['SKILL.md', ...resources]
+		.filter((file) => file.endsWith('.md'))
+		.map((file) => `.agents/skills/${name}/${file}`)
+);
+
 const WORKFLOW_SPEC_PATTERN =
 	/^docs\/workflows\/specs\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*-design\.md$/;
 const WORKFLOW_PLAN_PATTERN =
 	/^docs\/workflows\/plans\/\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
+const ANTISLOP_AUDIT_PATTERN = /^anti-slop\/audit-\d{3}-\d{4}-\d{2}-\d{2}\.md$/;
 
 function isAllowedMarkdown(relativePath) {
 	return (
 		MARKDOWN_ALLOWLIST.includes(relativePath) ||
 		relativePath === '.agents/skills/schoolorbit-development/SKILL.md' ||
+		VENDORED_MARKDOWN.includes(relativePath) ||
 		WORKFLOW_SPEC_PATTERN.test(relativePath) ||
-		WORKFLOW_PLAN_PATTERN.test(relativePath)
+		WORKFLOW_PLAN_PATTERN.test(relativePath) ||
+		ANTISLOP_AUDIT_PATTERN.test(relativePath)
 	);
 }
 
@@ -102,15 +131,31 @@ function assertNonblankString(value, label) {
 	assert.ok(value.trim(), `${label} must not be blank`);
 }
 
-test('project skill has valid YAML frontmatter and an instruction body', async () => {
-	const source = await readFile(path.join(skillRoot, 'SKILL.md'), 'utf8');
+async function assertSkillInstructions(directory) {
+	const source = await readFile(path.join(directory, 'SKILL.md'), 'utf8');
 	const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
 	assert.ok(frontmatter, 'SKILL.md must start with delimited YAML frontmatter');
 	const metadata = parseYaml(frontmatter[1]);
 	assertMapping(metadata, 'skill frontmatter');
-	assert.equal(metadata.name, path.basename(skillRoot), 'skill name must match its directory');
+	assert.equal(metadata.name, path.basename(directory), 'skill name must match its directory');
 	assertNonblankString(metadata.description, 'skill description');
 	assert.ok(source.slice(frontmatter[0].length).trim(), 'skill must contain instructions');
+}
+
+test('project skill has valid YAML frontmatter and an instruction body', async () => {
+	await assertSkillInstructions(skillRoot);
+});
+
+test('vendored skills include their resources and require explicit invocation', async () => {
+	for (const [name, resources] of Object.entries(VENDORED_SKILL_RESOURCES)) {
+		const directory = path.join(repoRoot, '.agents/skills', name);
+		await assertSkillInstructions(directory);
+		const metadata = parseYaml(await readFile(path.join(directory, 'agents/openai.yaml'), 'utf8'));
+		assert.deepEqual(metadata, { policy: { allow_implicit_invocation: false } }, name);
+		for (const resource of resources) {
+			await access(path.join(directory, resource));
+		}
+	}
 });
 
 test('project skill invocation metadata has valid types and references the skill', async () => {
@@ -313,21 +358,31 @@ test('development workflow routes reports through recovery and verified delivery
 	assert.match(testing, /Static checks alone do not establish\s+that these scenarios ran/);
 });
 
-test('Workflow Markdown is limited to dated spec and plan artifacts', () => {
+test('Markdown scope permits only approved skill files and named workflow artifacts', () => {
 	const accepted = [
 		'.agents/skills/schoolorbit-development/SKILL.md',
+		'.agents/skills/frontend-design/SKILL.md',
+		'.agents/skills/antislop-human/references/WCAG.md',
 		'docs/workflows/specs/2026-07-26-admin-auth-design.md',
-		'docs/workflows/plans/2026-07-26-admin-auth.md'
+		'docs/workflows/plans/2026-07-26-admin-auth.md',
+		'anti-slop/audit-001-2026-07-26.md'
 	];
 	const rejected = [
 		'.agents/skills/another-skill/SKILL.md',
 		'.agents/skills/schoolorbit-development/README.md',
+		'.agents/skills/frontend-design/README.md',
+		'.agents/skills/antislop-human/references/extra.md',
 		'docs/workflows/README.md',
 		'docs/workflows/specs/admin-auth-design.md',
 		'docs/workflows/specs/2026-07-26-admin-auth.md',
 		'docs/workflows/plans/admin-auth.md',
 		'docs/workflows/notes/2026-07-26-admin-auth.md',
-		'docs/another-plan.md'
+		'docs/another-plan.md',
+		'anti-slop/README.md',
+		'anti-slop/audit-1-2026-07-26.md',
+		'anti-slop/audit-0001-2026-07-26.md',
+		'anti-slop/audit-001-2026-07-26-follow-up.md',
+		'anti-slop/archive/audit-001-2026-07-26.md'
 	];
 
 	for (const relativePath of accepted) {
@@ -338,7 +393,7 @@ test('Workflow Markdown is limited to dated spec and plan artifacts', () => {
 	}
 });
 
-test('repository Markdown is limited to canonical docs and workflow artifacts', async () => {
+test('repository Markdown is limited to canonical docs, skill files and approved artifacts', async () => {
 	const existing = await existingRepositoryMarkdown();
 	const missingCanonical = MARKDOWN_ALLOWLIST.filter(
 		(relativePath) => !existing.includes(relativePath)
@@ -349,7 +404,7 @@ test('repository Markdown is limited to canonical docs and workflow artifacts', 
 	assert.deepEqual(unexpected, []);
 });
 
-test('canonical Markdown local links resolve', async () => {
+test('repository Markdown local links resolve', async () => {
 	const broken = [];
 
 	for (const relativePath of await existingRepositoryMarkdown()) {

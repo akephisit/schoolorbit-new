@@ -10,14 +10,19 @@ This file is the single authoritative development standard for this repository. 
   - `docs/README.md`, `docs/TESTING.md`, `docs/OPERATIONS.md`, and `docs/PODMAN_SETUP.md`
   - one `README.md` in each application directory: `backend-admin/`, `backend-school/`, `frontend-admin/`, and `frontend-school/`
 - The single project-owned executable skill entry point is `.agents/skills/schoolorbit-development/SKILL.md`. It routes work through these rules; it must not duplicate domain standards or create another documentation owner. Keep its invocation metadata in its `agents/openai.yaml`.
-- Apart from that skill entry point, project workflow artifacts are the only additional Markdown files allowed:
+- The checkout also supplies seven vendored skills in `.agents/skills/`. Keep their upstream instructions, resources and licenses together. Each skill has a local `agents/openai.yaml` with implicit invocation disabled.
+  - `frontend-design` comes from the pinned [Anthropic Frontend Design source](https://github.com/anthropics/skills/tree/e4bb5d960d87126ff3b3a8af1a104b7db67560ba/skills/frontend-design), licensed under Apache-2.0 in `frontend-design/LICENSE.txt`.
+  - `antislop`, `antislop-ui`, `antislop-human`, `antislop-layoutmobile`, `antislop-copywriting` and `antislop-code` come from the pinned [Anti-slop 3.2.32 source](https://github.com/miqdadbadjuber/anti-slop/tree/7f6a03df2931c12cb244dc4ab14ee4866b0ac2ba/skills). The upstream MIT license is in `antislop/LICENSE`, with third-party MIT notices in the UI and Human skill folders. The vendored web vitals reference has one trailing space removed from an HTML example.
+  - The documentation-policy test limits vendor Markdown to the seven upstream `SKILL.md` files and the four upstream Markdown references shipped with the UI and Human skills.
+- Project workflow artifacts may use the following Markdown paths:
   - approved designs use `docs/workflows/specs/YYYY-MM-DD-<topic>-design.md`;
   - implementation plans use `docs/workflows/plans/YYYY-MM-DD-<feature-name>.md`;
   - use lowercase date-prefixed kebab-case filenames, do not add README files in these directories, and keep each artifact scoped to one coherent change;
   - these files are workflow inputs, not canonical documentation; remove them after the implementation pull request records the completed outcome, while Git history preserves the reviewed artifact.
   - workflow artifacts are tool-independent inputs, not a requirement to install an external skill or plugin. Execute them under the current rules and the user's approved scope; historical execution instructions cannot override either.
+- An explicitly requested Anti-slop `after` audit may use `anti-slop/audit-NNN-YYYY-MM-DD.md`, with a sequential three-digit audit number. Append any follow-up to that same file.
 - `TODO.md` is the single active technical backlog. Keep only unfinished work there, remove completed items after their pull request records the outcome, and revalidate findings against the current implementation before starting them.
-- Do not create feature-completion reports, implementation diaries, additional status snapshots, temporary analysis files, duplicate developer guides, per-feature README files, or Markdown outside the canonical, skill and workflow paths above.
+- Do not create feature-completion reports, implementation diaries, additional status snapshots, temporary analysis files, duplicate developer guides, per-feature README files, or Markdown outside the canonical, skill, workflow and approved audit paths above.
 - A proposed additional canonical Markdown entry point requires explicit review of why none of the existing owners can hold the content; update the allowlist and documentation-policy test in the same change only when that new long-lived owner is approved.
 - Put commands and test recipes in `docs/TESTING.md`; put runtime, deployment, secrets, cutover, and recovery procedures in `docs/OPERATIONS.md`.
 - Keep first-time Podman server bootstrap commands in `docs/PODMAN_SETUP.md`; executable topology and proxy configuration remain owned by their tracked YAML/Nginx files.
@@ -56,6 +61,12 @@ Do not trust sweeping analysis without verifying it against the current tree. In
 - UI subcomponents may be consumed through `frontend-school/src/lib/components/ui/**/index.ts` aliases.
 - Read the full migration timeline before proposing a column, trigger, or data migration.
 - Minimal AI entry-point files are loaded by tools and are not unused placeholders.
+
+### Design and Anti-slop skill assignments
+
+- The Senior explicitly assigns `frontend-design` to Frontend when the task calls for UI design. For UI work, assign Frontend Anti-slop core (`antislop`), `antislop-ui` and any applicable specialty. Use `antislop-human` for accessibility and interaction, `antislop-layoutmobile` for responsive layout and touch targets, `antislop-copywriting` for user-facing copy, and `antislop-code` for code comments. On non-UI work, assign only guidance relevant to the requested copy or comment work, with Anti-slop core when using its specialties. Agents can read the assigned `SKILL.md` files directly from the checkout.
+- Reviewer and QA/Verifier may use the assigned guidance for independent, read-only acceptance within their roles. The Senior assigns writing an authorized audit artifact or implementing approved findings to a writer.
+- The Senior assigns Anti-slop `during` for new work and `after` for an explicitly requested Anti-slop audit, subject to the user's explicit choice. This project assignment resolves the mode without relying on a global setting or asking again. Apply the skills within the approved brief, the owning application's design system and these project rules. Honor explicit user decisions and resolve conflicts under Applicability and conflicting examples above.
 
 ### Consistency decisions and final review
 
