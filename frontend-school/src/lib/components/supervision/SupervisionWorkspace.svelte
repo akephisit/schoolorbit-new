@@ -1710,7 +1710,7 @@
 	{#snippet actions()}
 		{#if section === 'mine' && canRequest && !bookingOpen}
 			<Button size="sm" onclick={() => (bookingOpen = true)}
-				><Plus class="size-4" />เปิดจองคาบนิเทศ</Button
+				><Plus class="size-4" />จองคาบนิเทศ</Button
 			>
 		{/if}
 		{#if canManageSchool && section === 'cycles'}
