@@ -795,11 +795,16 @@ for (const width of [1280, 375]) {
 		await expect(page).not.toHaveURL(/q=/);
 		await expect(page.getByRole('button', { name: /^ดูรายละเอียด / }).first()).toBeVisible();
 		await filter.click();
-		await form.getByRole('combobox', { name: 'ทุกสถานะ', exact: true }).click();
+		await form.getByPlaceholder('ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก').clear();
+		await form.getByRole('combobox').filter({ hasText: 'ทุกสถานะ' }).click();
 		await page.getByRole('option', { name: 'สาธารณะ', exact: true }).click();
+		const eventsBeforeFilter = api.count(eventsPath);
 		await form.getByRole('button', { name: /^กรอง(?: \d+)?$/ }).click();
 		await expect(page).toHaveURL(/visibility=public/);
-		await expect.poll(() => api.count(eventsPath)).toBe(2);
+		await expect.poll(() => api.count(eventsPath)).toBe(eventsBeforeFilter + 1);
+		expect(
+			api.reads.findLast((url) => url.pathname === eventsPath)?.searchParams.get('visibility')
+		).toBe('public');
 		await expect(badge(page)).toHaveText('12345');
 		expect(count.reads).toHaveLength(1);
 		await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
