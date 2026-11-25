@@ -14,7 +14,8 @@ export const calendarPath = (academicYearId = year, month = '2026-10') =>
 	`/staff/calendar?academicYearId=${academicYearId}&month=${month}`;
 export const eventsPath = '/api/calendar/events',
 	categoriesPath = '/api/calendar/categories',
-	tagsPath = '/api/calendar/tags';
+	tagsPath = '/api/calendar/tags',
+	pendingPath = '/api/calendar/requests/calendar';
 export async function mockCalendar(
 	page: Page,
 	options: {
@@ -126,7 +127,9 @@ export async function mockCalendar(
 							? 'categories'
 							: path === tagsPath
 								? 'tags'
-								: 'options';
+								: path === pendingPath
+									? 'pending'
+									: 'options';
 			if (request.method() === 'GET') {
 				counts.set(path, (counts.get(path) ?? 0) + 1);
 				reads.push(url);
@@ -155,6 +158,7 @@ export async function mockCalendar(
 				);
 			if (kind === 'categories') return reply(route, categories);
 			if (kind === 'tags') return reply(route, tags);
+			if (kind === 'pending') return reply(route, { records: [], hasMore: false });
 			if (kind === 'options')
 				return reply(
 					route,
