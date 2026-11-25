@@ -394,6 +394,15 @@ for (const [width, minimumVisiblePeriods] of [
 				'เสาร์',
 				'อาทิตย์'
 			]);
+			if (width <= 614) {
+				const thursday = weekly.getByRole('rowheader', { name: 'พฤหัสบดี', exact: true });
+				const lineCount = await thursday.evaluate((header) => {
+					const text = document.createRange();
+					text.selectNodeContents(header);
+					return text.getClientRects().length;
+				});
+				expect(lineCount).toBe(1);
+			}
 			await expect(weekly.getByRole('columnheader')).toHaveCount(10);
 			const lastPeriod = weekly.getByRole('columnheader', { name: /คาบ 9.*16:00–17:00/ });
 			await expect(lastPeriod).toBeVisible();
@@ -483,8 +492,6 @@ for (const [width, minimumVisiblePeriods] of [
 
 			if (width < 1533) {
 				expect(overflowX).toBeGreaterThan(0);
-				await swipePane(page, scroll, true);
-				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
 				await scroll.hover();
 				await page.mouse.wheel(10000, 0);
 				await expect
@@ -504,6 +511,11 @@ for (const [width, minimumVisiblePeriods] of [
 				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
 				await page.keyboard.press('ArrowLeft');
 				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBe(0);
+
+				await swipePane(page, scroll, true);
+				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+				expect((await firstDay.boundingBox())!.x).toBeCloseTo(startDayX, 0);
+				await expectNoOuterOverflow(page);
 			} else {
 				expect(overflowX).toBe(0);
 			}
@@ -596,8 +608,6 @@ test('compact landscape keeps period headers visible while the weekly grid scrol
 	const headerY = (await period.boundingBox())!.y;
 	await expectNoOuterOverflow(page);
 
-	await swipePane(page, scroll);
-	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 	await scroll.hover();
 	await page.mouse.wheel(0, 10000);
 	await expect
@@ -616,6 +626,10 @@ test('compact landscape keeps period headers visible while the weekly grid scrol
 	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 	await page.keyboard.press('PageUp');
 	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
+
+	await swipePane(page, scroll);
+	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+	expect((await period.boundingBox())!.y).toBeCloseTo(headerY, 0);
 	await expectNoOuterOverflow(page);
 });
 
