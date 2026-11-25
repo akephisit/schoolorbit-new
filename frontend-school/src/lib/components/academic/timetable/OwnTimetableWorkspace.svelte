@@ -22,42 +22,39 @@
 	}
 </script>
 
-{#snippet blockCard(block: TimetableBlock)}
+{#snippet blockEntry(block: TimetableBlock)}
 	{@const display = buildStaffOwnTimetableBlockDisplay(block, currentStaffId)}
 	{@const title =
 		block.blockKind === 'structural'
 			? (block.title ?? 'กิจกรรม')
 			: (block.offeringName ?? block.title ?? 'กิจกรรม')}
-	<article
-		class="flex min-w-0 flex-1 flex-col gap-0.5 rounded border border-primary/30 bg-primary/5 px-1.5 py-1"
-		data-timetable-block={block.id}
-	>
+	<div class="min-w-0 px-1 py-1.5 md:px-2" data-timetable-block={block.id}>
 		{#if block.blockKind === 'course' && block.offeringCode}
 			<p class="font-semibold wrap-break-word">{block.offeringCode}</p>
 		{/if}
 		<p
-			class="text-[0.8125rem] leading-snug font-medium wrap-break-word whitespace-pre-line"
+			class="font-medium wrap-break-word whitespace-pre-line md:text-[0.8125rem]"
 			data-timetable-title
 		>
 			{title}
 		</p>
 		{#if display.classLabel || display.roomLabel}
-			<div class="mt-auto flex flex-wrap gap-x-2 gap-y-0.5 pt-0.5 text-muted-foreground">
+			<div class="mt-0.5 space-y-0.5 text-muted-foreground">
 				{#if display.classLabel}
 					<p class="flex min-w-0 items-start gap-1">
-						<School class="mt-0.5 size-3 shrink-0" />
+						<School class="mt-0.5 hidden size-3 shrink-0 md:block" aria-hidden="true" />
 						<span class="min-w-0 wrap-break-word" data-timetable-class>{display.classLabel}</span>
 					</p>
 				{/if}
 				{#if display.roomLabel}
 					<p class="flex min-w-0 items-start gap-1">
-						<MapPin class="mt-0.5 size-3 shrink-0" />
+						<MapPin class="mt-0.5 hidden size-3 shrink-0 md:block" aria-hidden="true" />
 						<span class="min-w-0 wrap-break-word" data-timetable-room>{display.roomLabel}</span>
 					</p>
 				{/if}
 			</div>
 		{/if}
-	</article>
+	</div>
 {/snippet}
 
 <div class="min-h-0 min-w-0 flex-1" data-testid="own-timetable-week">
@@ -70,7 +67,7 @@
 		data-testid="own-timetable-week-scroll"
 	>
 		<table
-			class="w-full table-fixed border-separate border-spacing-0 bg-card text-left text-xs leading-snug"
+			class="w-full table-fixed border-separate border-spacing-0 bg-card text-left text-xs leading-snug [--day-width:3.125rem] [--period-width:4.5rem] md:[--day-width:4rem] md:[--period-width:7rem]"
 			style:--period-count={periods.length}
 		>
 			<caption class="sr-only">ตารางสอนรายสัปดาห์</caption>
@@ -78,17 +75,17 @@
 				<tr>
 					<th
 						scope="col"
-						class="day-column sticky top-0 left-0 z-30 border-r border-b bg-muted px-1 py-1.5 text-center"
+						class="day-column sticky top-0 left-0 z-30 border-r border-b bg-muted px-0.5 py-1.5 text-center md:px-1"
 					>
 						วัน / คาบ
 					</th>
 					{#each periods as period, index (period.id)}
 						<th
 							scope="col"
-							class="sticky top-0 z-20 border-r border-b bg-muted px-1 py-1.5 text-center wrap-break-word last:border-r-0"
+							class="sticky top-0 z-20 border-r border-b bg-muted px-0.5 py-1.5 text-center wrap-break-word last:border-r-0 md:px-1"
 						>
 							<p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
-							<p class="font-normal text-muted-foreground tabular-nums">
+							<p class="text-[0.6875rem] font-normal text-muted-foreground tabular-nums md:text-xs">
 								{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
 							</p>
 						</th>
@@ -100,16 +97,21 @@
 					<tr>
 						<th
 							scope="row"
-							class="sticky left-0 z-10 border-r border-b bg-muted px-1 py-2 text-center"
+							class="sticky left-0 z-10 border-r border-b bg-muted px-0.5 py-2 text-center wrap-break-word md:px-1"
 						>
 							{day.label}
 						</th>
 						{#each periods as period (period.id)}
 							{@const entries = cellBlocks(day.value, period.id)}
-							<td class="h-px border-r border-b p-0.5 last:border-r-0">
+							<td
+								class={[
+									'border-r border-b last:border-r-0',
+									entries.length > 0 && 'bg-primary/5 align-top'
+								]}
+							>
 								{#if entries.length}
-									<div class="flex h-full flex-col gap-0.5">
-										{#each entries as block (block.id)}{@render blockCard(block)}{/each}
+									<div class="divide-y">
+										{#each entries as block (block.id)}{@render blockEntry(block)}{/each}
 									</div>
 								{:else}
 									<div class="text-center text-muted-foreground">
@@ -128,8 +130,6 @@
 
 <style>
 	table {
-		--day-width: 4rem;
-		--period-width: 7rem;
 		min-width: calc(var(--day-width) + var(--period-count) * var(--period-width));
 	}
 
