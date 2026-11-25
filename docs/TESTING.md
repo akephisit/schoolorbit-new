@@ -1448,9 +1448,11 @@ node --test tests/static/staff-own-timetable-display.test.mjs tests/static/timet
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-own-timetable-grid.spec.ts tests/e2e/staff-own-timetable-pdf.spec.ts --project=chromium --workers=1
 ```
 
-The grid fixture checks that one compact weekly table is visible at 390/614/1029/1533px in both
-themes. It verifies configured day and period headers, empty days, stacked lessons, full multiline
-titles, actual class labels without group aliases, and current-instructor-only synchronized targets.
+The grid fixture checks one compact weekly table at 320/390/614/1029/1533px in both themes, with at
+least three complete periods at 320px and four at 390px before scrolling. It verifies flat, stacked
+lesson entries, separate class and room lines on desktop, configured day and period headers, empty
+days, full multiline titles, actual class labels without group aliases, and current-instructor-only
+synchronized targets.
 It exercises sticky headers, native wheel/touch and keyboard scrolling, main/document geometry at
 scroll boundaries, and a single timetable read. Screenshots are saved with the Playwright test
 results. The pure helper fixtures preserve student/parent shared-label hiding and existing PDF

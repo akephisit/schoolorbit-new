@@ -175,7 +175,7 @@ test('shows an explicit empty state when the teacher has no lessons', async ({ p
 	await expect(page.getByText('ยังไม่มีคาบสอนของคุณในภาคเรียนนี้')).toBeVisible();
 });
 
-test('shows complete multiline shared cards without codes teachers or shared labels', async ({
+test('shows complete multiline shared entries without codes teachers or shared labels', async ({
 	page
 }) => {
 	const structuralTitle = 'ประชุมครู\nประจำเดือน';
@@ -216,21 +216,16 @@ test('shows complete multiline shared cards without codes teachers or shared lab
 		}))
 	).toEqual({ whiteSpace: 'pre-line', lineClamp: 'none' });
 
-	const structuralCard = structuralTitleElement.locator('..');
-	const structuralCell = structuralCard.locator('../..');
-	const [cardBox, cellBox] = await Promise.all([
-		structuralCard.boundingBox(),
+	const structuralEntry = structuralTitleElement.locator('..');
+	const structuralCell = week.getByRole('cell').filter({
+		has: page.getByText(structuralTitle, { exact: true })
+	});
+	const [entryBox, cellBox] = await Promise.all([
+		structuralEntry.boundingBox(),
 		structuralCell.boundingBox()
 	]);
-	expect(cardBox).not.toBeNull();
-	expect(cellBox).not.toBeNull();
-	const edgeGaps = [
-		cardBox!.x - cellBox!.x,
-		cellBox!.x + cellBox!.width - cardBox!.x - cardBox!.width,
-		cardBox!.y - cellBox!.y,
-		cellBox!.y + cellBox!.height - cardBox!.y - cardBox!.height
-	];
-	expect(Math.max(...edgeGaps) - Math.min(...edgeGaps)).toBeLessThanOrEqual(2);
+	expect(entryBox!.y).toBeCloseTo(cellBox!.y, 0);
+	await expect(structuralEntry).toHaveCSS('border-width', '0px');
 
 	await expect(page.getByText('CLUB', { exact: true })).toHaveCount(0);
 	await expect(page.getByText('กิจกรรมรวม', { exact: true })).toHaveCount(0);
@@ -270,7 +265,13 @@ function workspaceEntries() {
 			startTime: entries[2].startTime,
 			endTime: entries[2].endTime
 		},
-		{ ...entries[0], id: 'collision', offeringCode: 'คาบร่วม', offeringName: 'คาบที่จัดพร้อมกัน' },
+		{
+			...entries[0],
+			id: 'collision',
+			offeringCode: 'คาบร่วม',
+			offeringName: 'คาบที่จัดพร้อมกัน',
+			groups: entries[0].groups.map((group) => ({ ...group, roomName: 'ห้อง 1' }))
+		},
 		{
 			...entries[6],
 			id: 'independent-activity',
@@ -351,7 +352,13 @@ async function expectNoOuterOverflow(page: Page) {
 	expect(geometry.docFullWidth).toBeLessThanOrEqual(geometry.docWidth + 1);
 	expect(geometry.top).toBe(0);
 }
-for (const width of [390, 614, 1029, 1533]) {
+for (const [width, minimumVisiblePeriods] of [
+	[320, 3],
+	[390, 4],
+	[614, 7],
+	[1029, 2],
+	[1533, 9]
+] as const) {
 	for (const theme of ['light', 'dark'] as const) {
 		test(`shows one compact weekly grid at ${width}px in ${theme}`, async ({ page }, testInfo) => {
 			await page.setViewportSize({ width, height: 888 });
@@ -387,8 +394,19 @@ for (const width of [390, 614, 1029, 1533]) {
 				'เสาร์',
 				'อาทิตย์'
 			]);
+			if (width <= 614) {
+				const thursday = weekly.getByRole('rowheader', { name: 'พฤหัสบดี', exact: true });
+				const lineCount = await thursday.evaluate((header) => {
+					const text = document.createRange();
+					text.selectNodeContents(header);
+					return text.getClientRects().length;
+				});
+				expect(lineCount).toBe(1);
+			}
 			await expect(weekly.getByRole('columnheader')).toHaveCount(10);
-			await expect(weekly.getByRole('columnheader', { name: /คาบ 9.*16:00–17:00/ })).toBeVisible();
+			const lastPeriod = weekly.getByRole('columnheader', { name: /คาบ 9.*16:00–17:00/ });
+			await expect(lastPeriod).toBeVisible();
+			await expectFullText(lastPeriod.getByText('16:00–17:00', { exact: true }));
 			await expect(page.getByRole('radiogroup', { name: 'มุมมองตารางสอน' })).toHaveCount(0);
 			await expect(page.getByRole('radiogroup', { name: 'วันในตารางสอน' })).toHaveCount(0);
 			await expect(page.getByTestId('own-timetable-details')).toHaveCount(0);
@@ -409,6 +427,10 @@ for (const width of [390, 614, 1029, 1533]) {
 			const stacked = monday.getByRole('cell').first().locator('[data-timetable-block]');
 			await expect(stacked).toHaveCount(2);
 			await expect(stacked.locator('[data-timetable-class]')).toHaveText(['ม.4/1', 'ม.4/1']);
+			await expect(stacked.locator('[data-timetable-room]')).toHaveText([
+				'ห้องคณิตศาสตร์',
+				'ห้อง 1'
+			]);
 			for (const label of await stacked
 				.locator('[data-timetable-class], [data-timetable-room]')
 				.all())
@@ -420,30 +442,44 @@ for (const width of [390, 614, 1029, 1533]) {
 				stacked.nth(1).boundingBox()
 			]);
 			expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height);
+			if (width >= 1029) {
+				const shortLabels = monday.locator('[data-timetable-block="collision"]');
+				const [classLabel, roomLabel] = await Promise.all([
+					shortLabels.locator('[data-timetable-class]').boundingBox(),
+					shortLabels.locator('[data-timetable-room]').boundingBox()
+				]);
+				expect(roomLabel!.y).toBeGreaterThanOrEqual(classLabel!.y + classLabel!.height);
+			}
 
 			const empty = weekly.getByRole('row', { name: /^พุธ/ });
 			await expect(empty.getByRole('cell', { name: 'ไม่มีคาบสอน' })).toHaveCount(9);
 			await expect(empty.getByText('–', { exact: true }).first()).toBeVisible();
 			expect((await empty.boundingBox())!.height).toBeLessThanOrEqual(40);
 
-			const tones = await weekly.locator('[data-timetable-block]').evaluateAll((cards) =>
-				cards.map((card) => ({
-					background: getComputedStyle(card).backgroundColor,
-					border: getComputedStyle(card).borderTopColor
-				}))
-			);
-			expect(new Set(tones.map((tone) => JSON.stringify(tone))).size).toBe(1);
+			const allEntriesAreFlat = await weekly
+				.locator('[data-timetable-block]')
+				.evaluateAll((entries) =>
+					entries.every((entry) => {
+						const style = getComputedStyle(entry);
+						return style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.borderRadius === '0px';
+					})
+				);
+			expect(allEntriesAreFlat).toBe(true);
 			await expectNoOuterOverflow(page);
 
 			const firstDay = weekly.getByRole('rowheader').first();
 			const startDayX = (await firstDay.boundingBox())!.x;
-			const secondPeriod = (await weekly
-				.getByRole('columnheader', { name: /คาบ 2/ })
-				.boundingBox())!;
-			const scrollBox = (await scroll.boundingBox())!;
-			expect(secondPeriod.x + secondPeriod.width).toBeLessThanOrEqual(
-				scrollBox.x + scrollBox.width
-			);
+			const visiblePeriods = await scroll.evaluate((pane) => {
+				const left = pane.getBoundingClientRect().left + pane.clientLeft;
+				const right = left + pane.clientWidth;
+				return Array.from(pane.querySelectorAll('thead th'))
+					.slice(1)
+					.filter((header) => {
+						const box = header.getBoundingClientRect();
+						return box.left >= left - 0.5 && box.right <= right + 0.5;
+					}).length;
+			});
+			expect(visiblePeriods).toBeGreaterThanOrEqual(minimumVisiblePeriods);
 			const overflowX = await scroll.evaluate((node) => node.scrollWidth - node.clientWidth);
 			await page.getByRole('button', { name: 'ดาวน์โหลด PDF' }).focus();
 			await page.keyboard.press('Tab');
@@ -456,8 +492,6 @@ for (const width of [390, 614, 1029, 1533]) {
 
 			if (width < 1533) {
 				expect(overflowX).toBeGreaterThan(0);
-				await swipePane(page, scroll, true);
-				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
 				await scroll.hover();
 				await page.mouse.wheel(10000, 0);
 				await expect
@@ -477,6 +511,11 @@ for (const width of [390, 614, 1029, 1533]) {
 				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
 				await page.keyboard.press('ArrowLeft');
 				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBe(0);
+
+				await swipePane(page, scroll, true);
+				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+				expect((await firstDay.boundingBox())!.x).toBeCloseTo(startDayX, 0);
+				await expectNoOuterOverflow(page);
 			} else {
 				expect(overflowX).toBe(0);
 			}
@@ -518,9 +557,9 @@ test('synchronized activity labels show only current teacher classes and rooms',
 	]);
 	await page.goto('/staff/timetable');
 	const weekly = page.getByTestId('own-timetable-week');
-	const assignedCard = weekly.locator('[data-timetable-block="shared-groups"]');
-	await expect(assignedCard.locator('[data-timetable-class]')).toHaveText('ม.4/1');
-	await expect(assignedCard.locator('[data-timetable-room]')).toHaveText('ห้องคณิตศาสตร์');
+	const assignedEntry = weekly.locator('[data-timetable-block="shared-groups"]');
+	await expect(assignedEntry.locator('[data-timetable-class]')).toHaveText('ม.4/1');
+	await expect(assignedEntry.locator('[data-timetable-room]')).toHaveText('ห้องคณิตศาสตร์');
 	await expect(weekly.getByText(longGroup, { exact: true })).toHaveCount(0);
 	await expect(weekly.getByText('ม.6/9', { exact: true })).toHaveCount(0);
 	await expect(weekly.getByText('ห้องของครูอื่น', { exact: true })).toHaveCount(0);
@@ -569,8 +608,6 @@ test('compact landscape keeps period headers visible while the weekly grid scrol
 	const headerY = (await period.boundingBox())!.y;
 	await expectNoOuterOverflow(page);
 
-	await swipePane(page, scroll);
-	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 	await scroll.hover();
 	await page.mouse.wheel(0, 10000);
 	await expect
@@ -589,6 +626,10 @@ test('compact landscape keeps period headers visible while the weekly grid scrol
 	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 	await page.keyboard.press('PageUp');
 	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
+
+	await swipePane(page, scroll);
+	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+	expect((await period.boundingBox())!.y).toBeCloseTo(headerY, 0);
 	await expectNoOuterOverflow(page);
 });
 
