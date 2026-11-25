@@ -532,6 +532,22 @@ test('synchronized activity labels show only current teacher classes and rooms',
 	await expect(weekly.getByText('กิจกรรมจองช่วงเวลา', { exact: true })).toBeVisible();
 });
 
+test('weekly grid shows keyboard focus in forced colors', async ({ page }) => {
+	await page.emulateMedia({ forcedColors: 'active' });
+	await page.setViewportSize({ width: 390, height: 888 });
+	await mockStaffTimetableApis(page, workspaceEntries());
+	await page.goto('/staff/timetable');
+
+	const scroll = page.getByRole('region', { name: 'ตารางสอนรายสัปดาห์ เลื่อนเพื่อดูทุกคาบ' });
+	await expect(scroll).toBeVisible();
+	await page.getByRole('button', { name: 'ดาวน์โหลด PDF' }).focus();
+	await page.keyboard.press('Tab');
+	await expect(scroll).toBeFocused();
+	await expect(scroll).toHaveCSS('outline-style', 'solid');
+	await expect(scroll).toHaveCSS('outline-width', '2px');
+	await expect(scroll).not.toHaveCSS('outline-color', 'rgba(0, 0, 0, 0)');
+});
+
 test('compact landscape keeps period headers visible while the weekly grid scrolls vertically', async ({
 	page
 }) => {

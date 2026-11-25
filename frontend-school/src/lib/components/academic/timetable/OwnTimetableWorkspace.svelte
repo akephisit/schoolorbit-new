@@ -63,7 +63,7 @@
 <div class="min-h-0 min-w-0 flex-1" data-testid="own-timetable-week">
 	<!-- svelte-ignore a11y_no_noninteractive_tabindex (Native scroll regions need keyboard focus for arrow and page navigation.) -->
 	<div
-		class="relative max-h-full w-full overflow-auto rounded-lg border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+		class="relative max-h-full w-full overflow-auto rounded-lg border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
 		tabindex="0"
 		role="region"
 		aria-label="ตารางสอนรายสัปดาห์ เลื่อนเพื่อดูทุกคาบ"
