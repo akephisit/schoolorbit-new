@@ -368,16 +368,11 @@ test('the oldest-first queue does not skip the next waiting request after a deci
 	await expect(queue.getByRole('heading', { level: 2 }).first()).toHaveText('คำร้อง 26');
 });
 
-test('a successful own submission updates the hidden overlay count and patches markers without rereading', async ({
-	page
-}) => {
-	const api = await mockCalendar(page, {
-		permissions: ['calendar.read.school', 'calendar.request.own']
-	});
-	const overlay = await mockOverlay(page, { records: [] });
+async function mockOwnSubmission(page: Page, held?: Promise<void>) {
 	await page.route(
 		(url) => url.pathname === '/api/calendar/requests',
-		(route) => {
+		async (route) => {
+			if (route.request().method() !== 'POST') return route.fallback();
 			const payload = route.request().postDataJSON();
 			const request: CalendarEventRequest = {
 				...payload,
@@ -390,6 +385,7 @@ test('a successful own submission updates the hidden overlay count and patches m
 				eventId: null,
 				createdAt: '2026-10-01T02:00:00Z'
 			};
+			await held;
 			return route.fulfill({
 				status: 201,
 				contentType: 'application/json',
@@ -397,6 +393,22 @@ test('a successful own submission updates the hidden overlay count and patches m
 			});
 		}
 	);
+}
+
+async function openOwnRequest(page: Page) {
+	await page.getByRole('button', { name: 'เพิ่มรายการปฏิทิน', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'คำร้องขอเพิ่มกิจกรรม', exact: true }).click();
+	return page.getByRole('dialog');
+}
+
+test('a successful own submission updates the hidden overlay count and patches markers without rereading', async ({
+	page
+}) => {
+	const api = await mockCalendar(page, {
+		permissions: ['calendar.read.school', 'calendar.request.own']
+	});
+	const overlay = await mockOverlay(page, { records: [] });
+	await mockOwnSubmission(page);
 	await page.goto(calendarPath());
 	await expect(badge(page)).toHaveText('0');
 	await toggle(page).click();
@@ -409,9 +421,7 @@ test('a successful own submission updates the hidden overlay count and patches m
 	await expect(page.getByText('วันนี้ไม่มีคำร้องรออนุมัติ', { exact: true })).toBeVisible();
 	await page.keyboard.press('Escape');
 	await toggle(page).click();
-	await page.getByRole('button', { name: 'เพิ่มรายการปฏิทิน', exact: true }).click();
-	await page.getByRole('menuitem', { name: 'คำร้องขอเพิ่มกิจกรรม', exact: true }).click();
-	const dialog = page.getByRole('dialog');
+	const dialog = await openOwnRequest(page);
 	await dialog.getByLabel('ชื่อกิจกรรม *', { exact: true }).fill('คำร้องของฉันใหม่');
 	await dialog.getByLabel('รายละเอียดกิจกรรม *', { exact: true }).fill('รายละเอียดทดสอบ');
 	await dialog.getByRole('checkbox', { name: 'ทั้งวัน', exact: true }).check();
@@ -435,6 +445,38 @@ test('a successful own submission updates the hidden overlay count and patches m
 	expect(overlay.reads).toHaveLength(1);
 	expect(api.count(eventsPath)).toBe(1);
 	expect(api.writes).toHaveLength(0);
+});
+
+test('a submitted request updates the count after its dialog closes without closing a new draft', async ({
+	page
+}) => {
+	await mockCalendar(page, { permissions: ['calendar.read.school', 'calendar.request.own'] });
+	const overlay = await mockOverlay(page, { records: [] });
+	const { promise: held, resolve: release } = Promise.withResolvers<void>();
+	await mockOwnSubmission(page, held);
+	await page.goto(calendarPath());
+	await expect(badge(page)).toHaveText('0');
+	const dialog = await openOwnRequest(page);
+	await dialog.getByLabel('ชื่อกิจกรรม *', { exact: true }).fill('คำร้องก่อนปิดหน้าต่าง');
+	await dialog.getByLabel('รายละเอียดกิจกรรม *', { exact: true }).fill('รายละเอียดทดสอบ');
+	await dialog.getByRole('checkbox', { name: 'ทั้งวัน', exact: true }).check();
+	const submitted = page.waitForRequest(
+		(request) =>
+			new URL(request.url()).pathname === '/api/calendar/requests' && request.method() === 'POST'
+	);
+	await dialog.getByRole('button', { name: 'ส่งคำร้อง', exact: true }).click();
+	await submitted;
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(badge(page)).toHaveText('0');
+	const newDraft = await openOwnRequest(page);
+	const newTitle = newDraft.getByLabel('ชื่อกิจกรรม *', { exact: true });
+	await expect(newTitle).toBeDisabled();
+	release();
+	await expect(badge(page)).toHaveText('1');
+	await expect(newTitle).toBeEnabled();
+	await expect(newTitle).toHaveValue('');
+	expect(overlay.reads).toHaveLength(1);
 });
 
 async function mockInlineDecisions(

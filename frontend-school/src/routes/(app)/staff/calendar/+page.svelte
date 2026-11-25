@@ -124,7 +124,8 @@
 	let visibility = $state<VisibilityFilter>('');
 	let eventDialogOpen = $state(false);
 	let requestDialogOpen = $state(false);
-	let requesting = $state(false);
+	let requestSubmission = $state<symbol | null>(null);
+	const requesting = $derived(requestSubmission !== null);
 	let requestSession = $state(0);
 	let requestError = $state('');
 	let showPendingRequests = $state(false),
@@ -141,9 +142,7 @@
 		pendingError = $state('');
 	const pendingRequest = new LatestRequest();
 	let pendingOwner = '';
-	let previousPendingIdentity = '';
 	let previousPendingSource: typeof data.pending | null = null;
-	let waitingForPendingSource = false;
 	let pendingToggle = $state<HTMLButtonElement | null>(null);
 	let optionsYearId = $state('');
 	let targetYears = $state<AcademicYearOption[]>([]);
@@ -406,7 +405,7 @@
 			tagsLoaded = false;
 			eventDialogOpen = false;
 			requestDialogOpen = false;
-			requesting = false;
+			requestSubmission = null;
 			showPendingRequests = false;
 			filterOpen = false;
 			searchOpen = false;
@@ -429,9 +428,7 @@
 		const sourceMonth = data.pendingMonth;
 		untrack(() => {
 			const changed = pendingOwner !== owner;
-			const newSource = previousPendingSource !== source;
-			const identityChanged = previousPendingIdentity && previousPendingIdentity !== identity;
-			previousPendingIdentity = identity;
+			const matchingSource = previousPendingSource !== source && sourceMonth === month;
 			previousPendingSource = source;
 			if (changed) {
 				pendingOwner = owner;
@@ -443,18 +440,8 @@
 				pendingHasMore = false;
 				pendingError = '';
 			}
-			if (!owner) {
-				waitingForPendingSource = false;
-				return;
-			}
-			if (!changed && !(newSource && (waitingForPendingSource || sourceMonth === month))) return;
-			if ((identityChanged || waitingForPendingSource) && !newSource) {
-				// The app layout invalidates the identity-scoped loader when permissions change.
-				waitingForPendingSource = true;
-				return;
-			}
-			waitingForPendingSource = false;
-			if (!newSource || sourceMonth !== month) {
+			if (!owner || !changed) return;
+			if (!matchingSource) {
 				void loadPendingRequests();
 				return;
 			}
@@ -1058,18 +1045,19 @@
 	async function submitRequest(payload: CreateCalendarRequest) {
 		if (!canRequestCalendar || requesting || !requestDialogOpen) return;
 		const identity = identityOwner,
-			session = requestSession;
-		requesting = true;
+			session = requestSession,
+			submission = Symbol();
+		requestSubmission = submission;
 		requestError = '';
-		const current = () =>
+		const currentOwner = () =>
 			!disposed &&
+			requestSubmission === submission &&
 			identity === identityOwner &&
-			canRequestCalendar &&
-			session === requestSession &&
-			requestDialogOpen;
+			canRequestCalendar;
+		const currentDraft = () => currentOwner() && session === requestSession && requestDialogOpen;
 		try {
 			const request = await createCalendarRequest(payload);
-			if (!current()) return;
+			if (!currentOwner()) return;
 			if (overlapsPendingRange(request)) {
 				const refreshPending = pendingLoading || !pendingLoaded || pendingHasMore;
 				if (pendingLoaded && !pendingHasMore) {
@@ -1083,12 +1071,15 @@
 				}
 				if (refreshPending) void loadPendingRequests();
 			}
-			requestDialogOpen = false;
-			toast.success('ส่งคำร้องแล้ว รอผู้ดูแลอนุมัติ');
+			if (currentDraft()) {
+				requestDialogOpen = false;
+				toast.success('ส่งคำร้องแล้ว รอผู้ดูแลอนุมัติ');
+			}
 		} catch (error: unknown) {
-			if (current()) requestError = error instanceof Error ? error.message : 'ส่งคำร้องไม่สำเร็จ';
+			if (currentDraft())
+				requestError = error instanceof Error ? error.message : 'ส่งคำร้องไม่สำเร็จ';
 		} finally {
-			if (!disposed && identity === identityOwner && session === requestSession) requesting = false;
+			if (currentOwner()) requestSubmission = null;
 		}
 	}
 	function openCategoryDialog() {
@@ -1225,7 +1216,7 @@
 								bind:ref={pendingToggle}
 								variant="outline"
 								size="sm"
-								class="h-11 pe-12 has-[>svg]:pe-12 sm:h-8"
+								class="pe-12 has-[>svg]:pe-12"
 								aria-label="แสดงคำร้องรออนุมัติ"
 								aria-pressed={showPendingRequests}
 								aria-describedby="calendar-pending-status"
@@ -1242,6 +1233,7 @@
 							</Button>
 							<div
 								class="pointer-events-none absolute inset-y-0 end-1 grid w-10 place-items-center"
+								aria-busy={pendingLoading}
 							>
 								{#if pendingError}
 									<Button
@@ -1260,18 +1252,26 @@
 										data-testid="calendar-pending-count"
 										aria-hidden="true">{pendingCount}</Badge
 									>
+								{:else if pendingLoading}
+									<Skeleton
+										class="h-4 w-5 rounded-full motion-reduce:animate-none"
+										aria-hidden="true"
+									/>
 								{/if}
 							</div>
-							<span id="calendar-pending-status" role="status" class="sr-only">
-								{#if pendingLoading}
-									กำลังโหลดจำนวนคำร้องรออนุมัติ
-								{:else if pendingError}
-									โหลดจำนวนคำร้องรออนุมัติไม่สำเร็จ
-								{:else if pendingLoaded}
+							<span id="calendar-pending-status" class="sr-only">
+								{#if pendingLoaded && !pendingError}
 									{pendingHasMore
 										? 'มีคำร้องรออนุมัติมากกว่า 500 รายการในช่วงวันที่บนปฏิทิน'
 										: `มีคำร้องรออนุมัติ ${pendingCount} รายการในช่วงวันที่บนปฏิทิน`}
 								{/if}
+								<span role="status">
+									{#if pendingError}
+										โหลดจำนวนคำร้องรออนุมัติไม่สำเร็จ
+									{:else if pendingLoading && !pendingLoaded}
+										กำลังโหลดจำนวนคำร้องรออนุมัติ
+									{/if}
+								</span>
 							</span>
 						</div>
 					{/if}
