@@ -6,6 +6,7 @@ import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import { calendarGridRange } from '#lib/utils/calendar.js';
 import { calendarRouteFilters } from '#lib/utils/calendar-route-filters.js';
 import {
+	getPendingCalendarRequestCount,
 	listCalendarEvents,
 	listCalendarCategories,
 	listCalendarTags,
@@ -60,6 +61,15 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 				)
 			: null
 	}));
+	const pendingCount = access.then(async ({ pendingIdentity }) => ({
+		identity: pendingIdentity,
+		result: pendingIdentity
+			? await captureRouteLoad(
+					getPendingCalendarRequestCount({ requestFetch: fetch }),
+					'โหลดจำนวนคำร้องรออนุมัติไม่สำเร็จ'
+				)
+			: null
+	}));
 	return {
 		title: _meta.menu.title,
 		eventKey: context.key,
@@ -67,6 +77,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		categories,
 		tags,
 		pendingMonth: context.month,
-		pending
+		pending,
+		pendingCount
 	};
 };

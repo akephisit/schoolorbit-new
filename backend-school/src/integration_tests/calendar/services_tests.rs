@@ -774,6 +774,13 @@ async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_reques
         user_id: fixture.staff_user_id,
         permissions: vec![codes::CALENDAR_READ_SCHOOL.into()],
     };
+    assert_eq!(
+        requests::get_pending_count(&pool, &manager)
+            .await
+            .unwrap()
+            .count,
+        0
+    );
     let from = NaiveDate::from_ymd_opt(2027, 6, 1).unwrap();
     let to = from + Duration::days(41);
     let payload = |title: &str, start_date, end_date| CreateCalendarRequest {
@@ -808,6 +815,10 @@ async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_reques
     )
     .await
     .unwrap();
+    let past_date = from - Duration::days(3650);
+    requests::create_request(&pool, &own, payload("Earlier month", past_date, past_date))
+        .await
+        .unwrap();
     let rejected = requests::create_request(&pool, &own, payload("Rejected", from, from))
         .await
         .unwrap();
@@ -901,6 +912,19 @@ async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_reques
         requests::list_pending_calendar(&pool, &reader, query.clone()).await,
         Err(AppError::Forbidden(_))
     ));
+    for (actor, count) in [(&own, 4), (&other, 1), (&manager, 5)] {
+        assert_eq!(
+            requests::get_pending_count(&pool, actor)
+                .await
+                .unwrap()
+                .count,
+            count
+        );
+    }
+    assert!(matches!(
+        requests::get_pending_count(&pool, &reader).await,
+        Err(AppError::Forbidden(_))
+    ));
     sqlx::query("INSERT INTO calendar_event_requests(requested_by,title,description,start_date,end_date,all_day)
         SELECT $1,'Bulk '||sequence,'Synthetic detail',$2,$2,true FROM generate_series(1,501) AS sequence")
         .bind(fixture.staff_user_id).bind(from).execute(&pool).await.unwrap();
@@ -909,6 +933,13 @@ async fn pending_calendar_is_scoped_date_overlapping_and_excludes_decided_reques
         .unwrap();
     assert!(bounded.has_more);
     assert_eq!(bounded.records.len(), 500);
+    assert_eq!(
+        requests::get_pending_count(&pool, &manager)
+            .await
+            .unwrap()
+            .count,
+        506
+    );
 }
 
 fn payload_event_for_pending_test(date: NaiveDate, year: Uuid) -> UpsertCalendarEventRequest {
@@ -923,6 +954,74 @@ fn payload_event_for_pending_test(date: NaiveDate, year: Uuid) -> UpsertCalendar
             homeroom_id: None,
         }],
     )
+}
+
+#[tokio::test]
+async fn pending_calendar_count_http_uses_authenticated_staff_scope() {
+    use crate::integration_tests::auth::session_http_tests::protected_router::{
+        request, ProtectedFixture,
+    };
+    use crate::test_permission_codes as codes;
+    use axum::body::to_bytes;
+    use axum::http::{Method, StatusCode};
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    let pool = migrated_pool("calendar_pending_count_http").await;
+    let fixture =
+        ProtectedFixture::with_prepared_tenant_pool("calendar_pending_count_http", pool.clone())
+            .await;
+    let requester = insert_user(&pool, "staff", "Calendar requester").await;
+    let manager = insert_user(&pool, "staff", "Calendar manager").await;
+    let reader = insert_user(&pool, "staff", "Calendar reader").await;
+    let student = insert_user(&pool, "student", "Calendar student").await;
+    sqlx::query(
+        "INSERT INTO calendar_event_requests
+            (requested_by, title, description, start_date, end_date, all_day)
+         VALUES ($1, 'Requester activity', 'Synthetic detail', '2027-04-01', '2027-04-01', true),
+                ($2, 'Manager activity', 'Synthetic detail', '2027-09-01', '2027-09-01', true)",
+    )
+    .bind(requester)
+    .bind(manager)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = crate::app::build_app(fixture.application_state());
+    let path = "/api/calendar/requests/pending-count";
+    let origin = Some("https://tenant-a.schoolorbit.test");
+    let unauthenticated = app
+        .clone()
+        .oneshot(request(Method::GET, path, origin, None, None))
+        .await
+        .unwrap();
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+
+    let read = codes::CALENDAR_READ_SCHOOL;
+    let own = codes::CALENDAR_REQUEST_OWN;
+    let manage = codes::CALENDAR_MANAGE_SCHOOL;
+    for (user, permissions, count, token_byte) in [
+        (requester, &[read, own][..], Some(1), 41),
+        (manager, &[read, manage][..], Some(2), 42),
+        (reader, &[read][..], None, 43),
+        (student, &[read, own][..], None, 44),
+    ] {
+        grant_calendar_role(&pool, user, permissions).await;
+        let (_, token) = fixture.insert_session(&pool, user, token_byte, false).await;
+        let response = app
+            .clone()
+            .oneshot(request(Method::GET, path, origin, Some(&token), None))
+            .await
+            .unwrap();
+        if let Some(count) = count {
+            assert_eq!(response.status(), StatusCode::OK);
+            let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+            let payload: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(payload, json!({"success": true, "data": {"count": count}}));
+        } else {
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+    }
 }
 
 #[tokio::test]

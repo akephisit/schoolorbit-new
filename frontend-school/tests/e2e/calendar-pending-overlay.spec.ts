@@ -4,12 +4,14 @@ import {
 	calendarPath,
 	eventsPath,
 	makeApprovedCalendarEvent,
+	pendingCountPath,
 	pendingPath
 } from './fixtures/calendar-route-data';
 import { id } from './fixtures/staff-home-route-data';
 import { publicYears } from './fixtures/public-calendar-server';
 import type {
 	PendingCalendarRequest,
+	PendingCalendarRequestCount,
 	CalendarEventRequest,
 	CreateCalendarEventRequest
 } from '../../src/lib/api/calendar';
@@ -91,11 +93,44 @@ async function mockOverlay(
 	);
 	return { reads, release };
 }
+
+async function mockPendingCount(
+	page: Page,
+	options: { count?: number; holdAt?: number; failFirst?: boolean } = {}
+) {
+	const reads: URL[] = [];
+	let count = options.count ?? 2;
+	const { promise: held, resolve: release } = Promise.withResolvers<void>();
+	await page.route(
+		(url) => url.pathname === pendingCountPath,
+		async (route) => {
+			reads.push(new URL(route.request().url()));
+			const ordinal = reads.length;
+			const data: PendingCalendarRequestCount = { count };
+			if (ordinal === options.holdAt) await held;
+			if (ordinal === 1 && options.failFirst) {
+				return route.fulfill({
+					status: 503,
+					json: { success: false, error: 'จำนวนคำร้องไม่พร้อม ลองใหม่' }
+				});
+			}
+			return route.fulfill({ json: { success: true, data } });
+		}
+	);
+	return {
+		reads,
+		release,
+		setCount(value: number) {
+			count = value;
+		}
+	};
+}
+
 const toggle = (page: Page) =>
 	page.getByRole('button', { name: 'แสดงคำร้องรออนุมัติ', exact: true });
 const badge = (page: Page) => page.getByTestId('calendar-pending-count');
 const retryCount = (page: Page) =>
-	page.getByRole('button', { name: 'ลองโหลดคำร้องรออนุมัติอีกครั้ง', exact: true });
+	page.getByRole('button', { name: 'ลองโหลดจำนวนคำร้องรออนุมัติอีกครั้ง', exact: true });
 
 for (const width of [1280, 375]) {
 	test(`pending dates remain distinct from confirmed activities, with an optional overlay at ${width}px`, async ({
@@ -104,15 +139,15 @@ for (const width of [1280, 375]) {
 		await page.setViewportSize({ width, height: 900 });
 		const api = await mockCalendar(page);
 		const overlay = await mockOverlay(page);
+		const count = await mockPendingCount(page);
 		await page.goto(calendarPath());
 		await expect(
 			page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
 		).toBeVisible();
 		await expect(badge(page)).toHaveText('2');
-		await expect(toggle(page)).toHaveAccessibleDescription(
-			'มีคำร้องรออนุมัติ 2 รายการในช่วงวันที่บนปฏิทิน'
-		);
+		await expect(toggle(page)).toHaveAccessibleDescription('มีคำร้องรออนุมัติ 2 รายการรวมทุกเดือน');
 		expect(overlay.reads).toHaveLength(1);
+		expect(count.reads.map((url) => url.search)).toEqual(['']);
 		await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
 		await expect(toggle(page)).toContainText('ปิด');
 		await toggle(page).click();
@@ -180,6 +215,7 @@ test('switching months supersedes a delayed pending read and browser history res
 }) => {
 	await mockCalendar(page);
 	const overlay = await mockOverlay(page, { holdFirst: true });
+	const count = await mockPendingCount(page, { count: 33 });
 	await page.goto(calendarPath());
 	await toggle(page).click();
 	await expect.poll(() => overlay.reads.length).toBe(1);
@@ -187,7 +223,7 @@ test('switching months supersedes a delayed pending read and browser history res
 	await expect(
 		page.getByRole('button', { name: '10 พ.ย. 2569, 0 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
 	).toBeVisible();
-	await expect(badge(page)).toHaveText('1');
+	await expect(badge(page)).toHaveText('33');
 	const octoberFinished = page.waitForResponse((response) => {
 		const url = new URL(response.url());
 		return url.pathname === pendingPath && url.searchParams.get('from') === '2026-09-27';
@@ -195,13 +231,14 @@ test('switching months supersedes a delayed pending read and browser history res
 	overlay.release();
 	await (await octoberFinished).finished();
 	await expect(page.getByText('รออนุมัติ: คำร้องเวลาเช้า', { exact: true })).toHaveCount(0);
-	await expect(badge(page)).toHaveText('1');
+	await expect(badge(page)).toHaveText('33');
 	await page.goBack();
 	await expect(
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
 	).toBeVisible();
-	await expect(badge(page)).toHaveText('2');
+	await expect(badge(page)).toHaveText('33');
 	expect(overlay.reads).toHaveLength(3);
+	expect(count.reads).toHaveLength(1);
 });
 
 test('toggling while the count loads leaves the grid in place and completes the single read', async ({
@@ -209,11 +246,13 @@ test('toggling while the count loads leaves the grid in place and completes the 
 }) => {
 	await mockCalendar(page);
 	const overlay = await mockOverlay(page, { holdFirst: true });
+	const count = await mockPendingCount(page, { holdAt: 1 });
 	await page.goto(calendarPath());
 	const day = page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true });
 	await expect(day).toBeVisible();
 	await expect(toggle(page)).toHaveAccessibleDescription('กำลังโหลดจำนวนคำร้องรออนุมัติ');
-	expect(overlay.reads).toHaveLength(1);
+	await expect.poll(() => overlay.reads.length).toBe(1);
+	await expect.poll(() => count.reads.length).toBe(1);
 	const before = await day.boundingBox();
 	const toggleBefore = await toggle(page).boundingBox();
 	await toggle(page).press('Space');
@@ -222,6 +261,7 @@ test('toggling while the count loads leaves the grid in place and completes the 
 	expect(await toggle(page).boundingBox()).toEqual(toggleBefore);
 	await toggle(page).press('Space');
 	overlay.release();
+	count.release();
 	await expect(badge(page)).toHaveText('2');
 	await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
 	await expect(day).toBeVisible();
@@ -232,13 +272,15 @@ test('toggling while the count loads leaves the grid in place and completes the 
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
 	).toBeVisible();
 	expect(overlay.reads).toHaveLength(1);
+	expect(count.reads).toHaveLength(1);
 });
 
-test('the pending count loads while the regular calendar read is still pending', async ({
+test('the pending count loads while regular events and request markers are still pending', async ({
 	page
 }) => {
 	const api = await mockCalendar(page, { hold: 'events' });
-	const overlay = await mockOverlay(page);
+	const overlay = await mockOverlay(page, { holdFirst: true });
+	const count = await mockPendingCount(page);
 	await page.goto(calendarPath());
 	await expect(badge(page)).toHaveText('2');
 	await expect(page.getByRole('status', { name: 'กำลังโหลดกิจกรรม', exact: true })).toBeVisible();
@@ -247,7 +289,16 @@ test('the pending count loads while the regular calendar read is still pending',
 	await expect(
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
 	).toBeVisible();
+	await toggle(page).click();
+	await expect(
+		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
+	).toBeVisible();
+	overlay.release();
+	await expect(
+		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
+	).toBeVisible();
 	expect(overlay.reads).toHaveLength(1);
+	expect(count.reads).toHaveLength(1);
 });
 
 test('pending failures and overflow stay local while confirmed events remain usable', async ({
@@ -255,14 +306,16 @@ test('pending failures and overflow stay local while confirmed events remain usa
 }) => {
 	const api = await mockCalendar(page);
 	const overlay = await mockOverlay(page, { failFirst: true, hasMore: true });
+	const count = await mockPendingCount(page, { count: 586 });
 	await page.goto(calendarPath());
-	await expect(retryCount(page)).toBeVisible();
+	await expect(badge(page)).toHaveText('586');
 	await toggle(page).click();
 	await page
 		.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
 		.click({ position: { x: 5, y: 5 } });
 	const region = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 	await expect(region).toContainText('คำร้องไม่พร้อม ลองใหม่');
+	await expect(retryCount(page)).toHaveCount(0);
 	await expect(
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
 	).toBeEnabled();
@@ -271,16 +324,18 @@ test('pending failures and overflow stay local while confirmed events remain usa
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
 	).toBeVisible();
 	await expect(region).toContainText('แสดงบนปฏิทินเพียง 500 รายการแรก');
-	await expect(badge(page)).toHaveText('500+');
+	await expect(badge(page)).toHaveText('586');
 	await expect.poll(() => overlay.reads.length).toBe(2);
 	await expect.poll(() => api.count(eventsPath)).toBe(1);
+	expect(count.reads).toHaveLength(1);
 });
 
 test('the count has an independent toolbar retry while pending markers are hidden', async ({
 	page
 }) => {
 	const api = await mockCalendar(page);
-	const overlay = await mockOverlay(page, { failFirst: true, records: [] });
+	const overlay = await mockOverlay(page, { records: [] });
+	const count = await mockPendingCount(page, { count: 0, failFirst: true });
 	await page.goto(calendarPath());
 	const day = page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true });
 	await expect(day).toBeVisible();
@@ -291,13 +346,15 @@ test('the count has an independent toolbar retry while pending markers are hidde
 	await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
 	await expect(badge(page)).toHaveText('0');
 	expect(await day.boundingBox()).toEqual(before);
-	expect(overlay.reads).toHaveLength(2);
+	expect(overlay.reads).toHaveLength(1);
+	expect(count.reads).toHaveLength(2);
 	expect(api.count(eventsPath)).toBe(1);
 });
 
 test('read access alone never exposes the pending overlay', async ({ page }) => {
 	await mockCalendar(page, { permissions: ['calendar.read.school'] });
 	const overlay = await mockOverlay(page);
+	const count = await mockPendingCount(page);
 	await page.goto(calendarPath());
 	await expect(
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
@@ -305,6 +362,7 @@ test('read access alone never exposes the pending overlay', async ({ page }) => 
 	await expect(toggle(page)).toHaveCount(0);
 	await expect(badge(page)).toHaveCount(0);
 	expect(overlay.reads).toHaveLength(0);
+	expect(count.reads).toHaveLength(0);
 });
 
 test('the oldest-first queue does not skip the next waiting request after a decision removes a row', async ({
@@ -368,7 +426,7 @@ test('the oldest-first queue does not skip the next waiting request after a deci
 	await expect(queue.getByRole('heading', { level: 2 }).first()).toHaveText('คำร้อง 26');
 });
 
-async function mockOwnSubmission(page: Page, held?: Promise<void>) {
+async function mockOwnSubmission(page: Page, onSaved: () => void, held?: Promise<void>) {
 	await page.route(
 		(url) => url.pathname === '/api/calendar/requests',
 		async (route) => {
@@ -386,6 +444,7 @@ async function mockOwnSubmission(page: Page, held?: Promise<void>) {
 				createdAt: '2026-10-01T02:00:00Z'
 			};
 			await held;
+			onSaved();
 			return route.fulfill({
 				status: 201,
 				contentType: 'application/json',
@@ -401,16 +460,17 @@ async function openOwnRequest(page: Page) {
 	return page.getByRole('dialog');
 }
 
-test('a successful own submission updates the hidden overlay count and patches markers without rereading', async ({
+test('an own submission refreshes the hidden total and supersedes an older count', async ({
 	page
 }) => {
 	const api = await mockCalendar(page, {
 		permissions: ['calendar.read.school', 'calendar.request.own']
 	});
 	const overlay = await mockOverlay(page, { records: [] });
-	await mockOwnSubmission(page);
+	const count = await mockPendingCount(page, { count: 0, holdAt: 1 });
+	await mockOwnSubmission(page, () => count.setCount(1));
 	await page.goto(calendarPath());
-	await expect(badge(page)).toHaveText('0');
+	await expect.poll(() => count.reads.length).toBe(1);
 	await toggle(page).click();
 	await page
 		.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
@@ -429,6 +489,11 @@ test('a successful own submission updates the hidden overlay count and patches m
 	await expect(dialog).toHaveCount(0);
 	await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
 	await expect(badge(page)).toHaveText('1');
+	const oldResponse = page.waitForResponse(
+		(response) => new URL(response.url()).pathname === pendingCountPath
+	);
+	count.release();
+	await (await oldResponse).finished();
 	await expect(
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
 	).toBeVisible();
@@ -442,20 +507,23 @@ test('a successful own submission updates the hidden overlay count and patches m
 	await expect(
 		page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
 	).toContainText('คำร้องของฉันใหม่');
+	await expect(badge(page)).toHaveText('1');
+	expect(count.reads).toHaveLength(2);
 	expect(overlay.reads).toHaveLength(1);
 	expect(api.count(eventsPath)).toBe(1);
 	expect(api.writes).toHaveLength(0);
 });
 
-test('a submitted request updates the count after its dialog closes without closing a new draft', async ({
+test('a submission from a different month refreshes the count without closing a new draft', async ({
 	page
 }) => {
 	await mockCalendar(page, { permissions: ['calendar.read.school', 'calendar.request.own'] });
 	const overlay = await mockOverlay(page, { records: [] });
+	const count = await mockPendingCount(page, { count: 15, holdAt: 2 });
 	const { promise: held, resolve: release } = Promise.withResolvers<void>();
-	await mockOwnSubmission(page, held);
+	await mockOwnSubmission(page, () => count.setCount(16), held);
 	await page.goto(calendarPath());
-	await expect(badge(page)).toHaveText('0');
+	await expect(badge(page)).toHaveText('15');
 	const dialog = await openOwnRequest(page);
 	await dialog.getByLabel('ชื่อกิจกรรม *', { exact: true }).fill('คำร้องก่อนปิดหน้าต่าง');
 	await dialog.getByLabel('รายละเอียดกิจกรรม *', { exact: true }).fill('รายละเอียดทดสอบ');
@@ -465,23 +533,36 @@ test('a submitted request updates the count after its dialog closes without clos
 			new URL(request.url()).pathname === '/api/calendar/requests' && request.method() === 'POST'
 	);
 	await dialog.getByRole('button', { name: 'ส่งคำร้อง', exact: true }).click();
-	await submitted;
+	expect((await submitted).postDataJSON().startDate).toBe('2026-10-01');
 	await page.keyboard.press('Escape');
 	await expect(dialog).toHaveCount(0);
-	await expect(badge(page)).toHaveText('0');
+	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
+	await expect(page.getByRole('heading', { name: 'พฤศจิกายน 2569', exact: true })).toBeVisible();
+	await expect.poll(() => overlay.reads.length).toBe(2);
+	await expect(badge(page)).toHaveText('15');
 	const newDraft = await openOwnRequest(page);
 	const newTitle = newDraft.getByLabel('ชื่อกิจกรรม *', { exact: true });
 	await expect(newTitle).toBeDisabled();
 	release();
-	await expect(badge(page)).toHaveText('1');
 	await expect(newTitle).toBeEnabled();
 	await expect(newTitle).toHaveValue('');
-	expect(overlay.reads).toHaveLength(1);
+	await expect.poll(() => count.reads.length).toBe(2);
+	await expect(badge(page)).toHaveText('15');
+	await page.keyboard.press('Escape');
+	await expect(toggle(page)).toHaveAccessibleDescription('มีคำร้องรออนุมัติ 15 รายการรวมทุกเดือน');
+	count.release();
+	await expect(badge(page)).toHaveText('16');
+	expect(overlay.reads).toHaveLength(2);
 });
 
 async function mockInlineDecisions(
 	page: Page,
-	options: { failDetail?: boolean; failDecision?: boolean; holdDetail?: boolean } = {}
+	options: {
+		failDetail?: boolean;
+		failDecision?: boolean;
+		holdDetail?: boolean;
+		onSaved?: () => void;
+	} = {}
 ) {
 	const writes: { path: string; payload: CreateCalendarEventRequest | { reason: string } }[] = [];
 	const details: string[] = [];
@@ -527,6 +608,7 @@ async function mockInlineDecisions(
 					contentType: 'application/json',
 					body: JSON.stringify({ success: false, error: 'บันทึกไม่สำเร็จ ลองอีกครั้ง' })
 				});
+			options.onSaved?.();
 			return route.fulfill({
 				contentType: 'application/json',
 				body: JSON.stringify({
@@ -550,7 +632,11 @@ for (const width of [1280, 375]) {
 		await page.setViewportSize({ width, height: 900 });
 		const api = await mockCalendar(page);
 		const overlay = await mockOverlay(page);
-		const decisions = await mockInlineDecisions(page, { failDecision: true });
+		const count = await mockPendingCount(page, { count: 20 });
+		const decisions = await mockInlineDecisions(page, {
+			failDecision: true,
+			onSaved: () => count.setCount(19)
+		});
 		await page.goto(calendarPath());
 		await toggle(page).click();
 		await page.getByRole('button', { name: /^ดูรายละเอียด คำร้องเวลาเช้า,/ }).click();
@@ -581,7 +667,7 @@ for (const width of [1280, 375]) {
 		await page.screenshot({ path: testInfo.outputPath(`inline-approval-${width}-dark.png`) });
 		await dialog.getByRole('button', { name: 'อนุมัติและเพิ่มลงปฏิทิน', exact: true }).click();
 		await expect(dialog).toHaveCount(0);
-		await expect(badge(page)).toHaveText('1');
+		await expect(badge(page)).toHaveText('19');
 		await expect(region.getByRole('heading', { name: 'คำร้องเวลาเช้า', exact: true })).toHaveCount(
 			0
 		);
@@ -597,6 +683,7 @@ for (const width of [1280, 375]) {
 		expect(decisions.writes[1].path).toBe(`/api/calendar/requests/${pending[0].id}/approve`);
 		expect(api.count(eventsPath)).toBe(1);
 		expect(overlay.reads).toHaveLength(1);
+		expect(count.reads).toHaveLength(2);
 		expect(api.writes).toHaveLength(0);
 	});
 	test(`reject a calendar request in place with a required reason at ${width}px`, async ({
@@ -605,7 +692,11 @@ for (const width of [1280, 375]) {
 		await page.setViewportSize({ width, height: 900 });
 		const api = await mockCalendar(page);
 		const overlay = await mockOverlay(page);
-		const decisions = await mockInlineDecisions(page, { failDecision: true });
+		const count = await mockPendingCount(page, { count: 20 });
+		const decisions = await mockInlineDecisions(page, {
+			failDecision: true,
+			onSaved: () => count.setCount(19)
+		});
 		await page.goto(calendarPath());
 		await toggle(page).click();
 		await page
@@ -626,7 +717,7 @@ for (const width of [1280, 375]) {
 		await expect(dialog.getByRole('textbox')).toHaveValue('วันที่ซ้ำกับกิจกรรมอื่น');
 		await dialog.getByRole('button', { name: 'บันทึกผลไม่อนุมัติ', exact: true }).click();
 		await expect(dialog).toHaveCount(0);
-		await expect(badge(page)).toHaveText('1');
+		await expect(badge(page)).toHaveText('19');
 		await expect(region.getByRole('heading', { name: 'คำร้องเวลาเช้า', exact: true })).toHaveCount(
 			0
 		);
@@ -636,21 +727,33 @@ for (const width of [1280, 375]) {
 		expect(decisions.details).toHaveLength(0);
 		expect(decisions.writes[1].payload).toEqual({ reason: 'วันที่ซ้ำกับกิจกรรมอื่น' });
 		expect(overlay.reads).toHaveLength(1);
+		expect(count.reads).toHaveLength(2);
 		expect(api.count(eventsPath)).toBe(1);
 		expect(api.count('/api/calendar/target-options')).toBe(0);
 		expect(api.writes).toHaveLength(0);
 	});
-	test(`compact calendar filters open next to the pending toggle without the removed notices at ${width}px`, async ({
+	test(`the exact all-month count fits beside the calendar filters with no requests this month at ${width}px`, async ({
 		page
 	}, testInfo) => {
 		await page.setViewportSize({ width, height: 900 });
 		const api = await mockCalendar(page);
 		await mockOverlay(page, { records: [] });
+		const count = await mockPendingCount(page, { count: 12345 });
 		await page.route('**/api/public/academic-context/options', (route) =>
 			route.fulfill({ json: { success: true, data: publicYears } })
 		);
 		await page.goto(calendarPath());
+		await expect(badge(page)).toHaveText('12345');
+		await expect(badge(page)).toBeVisible();
+		await expect(toggle(page)).toHaveAttribute(
+			'title',
+			'มีคำร้องรออนุมัติ 12345 รายการรวมทุกเดือน'
+		);
 		await toggle(page).click();
+		await expect(
+			page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
+		).toBeVisible();
+		await expect(badge(page)).toHaveText('12345');
 		await expect(page.getByText(/แถบเส้นประคือคำร้อง/)).toHaveCount(0);
 		await expect(
 			page.getByText('ไม่มีคำร้องรออนุมัติในช่วงวันที่นี้', { exact: true })
@@ -659,6 +762,10 @@ for (const width of [1280, 375]) {
 		await expect(page.getByPlaceholder('ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก')).toHaveCount(0);
 		const a = await toggle(page).boundingBox(),
 			b = await filter.boundingBox();
+		const countBox = (await badge(page).boundingBox())!;
+		expect(countBox.x + countBox.width).toBeLessThanOrEqual(a!.x + a!.width);
+		expect(countBox.y).toBeGreaterThanOrEqual(a!.y);
+		expect(countBox.y + countBox.height).toBeLessThanOrEqual(a!.y + a!.height);
 		if (width === 1280) {
 			expect(a!.y).toBe(b!.y);
 			expect(b!.x).toBeGreaterThan(a!.x);
@@ -687,6 +794,14 @@ for (const width of [1280, 375]) {
 		await expect(searchDialog).toHaveCount(0);
 		await expect(page).not.toHaveURL(/q=/);
 		await expect(page.getByRole('button', { name: /^ดูรายละเอียด / }).first()).toBeVisible();
+		await filter.click();
+		await form.getByRole('combobox', { name: 'ทุกสถานะ', exact: true }).click();
+		await page.getByRole('option', { name: 'สาธารณะ', exact: true }).click();
+		await form.getByRole('button', { name: /^กรอง(?: \d+)?$/ }).click();
+		await expect(page).toHaveURL(/visibility=public/);
+		await expect.poll(() => api.count(eventsPath)).toBe(2);
+		await expect(badge(page)).toHaveText('12345');
+		expect(count.reads).toHaveLength(1);
 		await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
 		expect(api.count('/api/calendar/categories')).toBe(1);
 		expect(api.count('/api/calendar/tags')).toBe(1);

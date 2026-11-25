@@ -212,6 +212,7 @@ export type CalendarRequestQuery = NonNullable<
 export type CalendarTargetOptions = Schemas['CalendarTargetOptions'];
 export type PendingCalendarRequest = Schemas['PendingCalendarRequest'];
 export type PendingCalendarPage = Schemas['PendingCalendarPage'];
+export type PendingCalendarRequestCount = Schemas['PendingCalendarRequestCount'];
 export type PendingCalendarQuery = NonNullable<
 	operations['listPendingCalendarRequests']['parameters']['query']
 >;
@@ -226,6 +227,18 @@ export async function listPendingCalendarRequests(
 			query
 		}),
 		'โหลดคำร้องรออนุมัติไม่สำเร็จ'
+	);
+}
+
+export async function getPendingCalendarRequestCount(
+	options: ApiRequestOptions = {}
+): Promise<PendingCalendarRequestCount> {
+	return requireApiData(
+		await apiClient.get<PendingCalendarRequestCount>(
+			'/api/calendar/requests/pending-count',
+			options
+		),
+		'โหลดจำนวนคำร้องรออนุมัติไม่สำเร็จ'
 	);
 }
 

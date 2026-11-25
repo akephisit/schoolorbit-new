@@ -15,6 +15,7 @@ use school_calendar::requests::{
 #[cfg(feature = "api-docs")]
 use school_calendar::requests::{
     CalendarEventRequest, CalendarRequestApproval, CalendarRequestPage, PendingCalendarPage,
+    PendingCalendarRequestCount,
 };
 #[cfg(feature = "api-docs")]
 use school_calendar::target_options::CalendarTargetOptions;
@@ -45,6 +46,22 @@ pub async fn list_pending_calendar(
     let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
     Ok(Json(ApiResponse::ok(
         requests::list_pending_calendar(&context.tenant.pool, &context.actor, query).await?,
+    )))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(get,path="/api/calendar/requests/pending-count",operation_id="getPendingCalendarRequestCount",tag="calendar",responses(
+    (status=200,description="Total pending requests across all dates; managers see the school, requesters see their own",body=ApiResponse<PendingCalendarRequestCount>),
+    (status=401,description="Authentication required",body=ApiErrorResponse),
+    (status=403,description="Staff calendar request access required",body=ApiErrorResponse)
+)))]
+pub async fn get_pending_count(
+    State(state): State<CalendarHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<impl IntoResponse, AppError> {
+    require_staff(&session)?;
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    Ok(Json(ApiResponse::ok(
+        requests::get_pending_count(&context.tenant.pool, &context.actor).await?,
     )))
 }
 

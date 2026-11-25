@@ -14012,6 +14012,33 @@
         ],
         "type": "object"
       },
+      "ApiResponse_PendingCalendarRequestCount": {
+        "properties": {
+          "data": {
+            "properties": {
+              "count": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "count"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_PersonnelOverview": {
         "properties": {
           "data": {
@@ -53245,6 +53272,18 @@
           "allDay",
           "startTime",
           "endTime"
+        ],
+        "type": "object"
+      },
+      "PendingCalendarRequestCount": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
         ],
         "type": "object"
       },
@@ -103934,6 +103973,46 @@
               }
             },
             "description": "Invalid or excessive date range"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff calendar request access required"
+          }
+        },
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/api/calendar/requests/pending-count": {
+      "get": {
+        "operationId": "getPendingCalendarRequestCount",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PendingCalendarRequestCount"
+                }
+              }
+            },
+            "description": "Total pending requests across all dates; managers see the school, requesters see their own"
           },
           "401": {
             "content": {

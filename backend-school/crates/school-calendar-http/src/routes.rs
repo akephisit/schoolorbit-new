@@ -29,6 +29,10 @@ pub fn management_routes() -> Router<CalendarHttpState> {
             get(handlers::requests::list_pending_calendar),
         )
         .route(
+            "/requests/pending-count",
+            get(handlers::requests::get_pending_count),
+        )
+        .route(
             "/requests/{id}",
             get(handlers::requests::get_request_for_review),
         )

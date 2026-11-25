@@ -786,6 +786,7 @@ use utoipa::OpenApi;
         school_question_bank_http::handlers::get_question_file,
         school_calendar_http::handlers::requests::list_requests,
         school_calendar_http::handlers::requests::list_pending_calendar,
+        school_calendar_http::handlers::requests::get_pending_count,
         school_calendar_http::handlers::requests::get_request_for_review,
         school_calendar_http::handlers::requests::create_request,
         school_calendar_http::handlers::requests::approve_request,
@@ -5472,6 +5473,27 @@ mod tests {
                 .get("hasMore")
                 .is_some()
         );
+    }
+
+    #[test]
+    fn pending_calendar_count_documents_an_unfiltered_integer_total() {
+        let document = school_api_value().unwrap();
+        let operation = &document["paths"]["/api/calendar/requests/pending-count"]["get"];
+        assert_eq!(operation["operationId"], "getPendingCalendarRequestCount");
+        assert!(operation
+            .get("parameters")
+            .is_none_or(|parameters| parameters.as_array().is_some_and(Vec::is_empty)));
+        assert!(operation["responses"]["401"].is_object());
+        assert!(operation["responses"]["403"].is_object());
+        assert_eq!(
+            operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/ApiResponse_PendingCalendarRequestCount"
+        );
+        let data = &document["components"]["schemas"]["ApiResponse_PendingCalendarRequestCount"]
+            ["properties"]["data"];
+        assert_eq!(required(data), vec!["count"]);
+        assert_eq!(data["properties"]["count"]["type"], "integer");
+        assert_eq!(data["properties"]["count"]["format"], "int64");
     }
 
     #[test]

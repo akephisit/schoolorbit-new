@@ -4937,6 +4937,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/calendar/requests/pending-count': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['getPendingCalendarRequestCount'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/calendar/tags': {
 		parameters: {
 			query?: never;
@@ -12446,6 +12462,14 @@ export interface components {
 			data: {
 				hasMore: boolean;
 				records: components['schemas']['PendingCalendarRequest'][];
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_PendingCalendarRequestCount: {
+			data: {
+				/** Format: int64 */
+				count: number;
 			};
 			message?: string;
 			success: boolean;
@@ -23160,6 +23184,10 @@ export interface components {
 			startDate: string;
 			startTime: string | null;
 			title: string;
+		};
+		PendingCalendarRequestCount: {
+			/** Format: int64 */
+			count: number;
 		};
 		Permission: {
 			action: string;
@@ -51874,6 +51902,44 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff calendar request access required */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	getPendingCalendarRequestCount: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Total pending requests across all dates; managers see the school, requesters see their own */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_PendingCalendarRequestCount'];
 				};
 			};
 			/** @description Authentication required */
