@@ -353,9 +353,7 @@ async function expectNoOuterOverflow(page: Page) {
 }
 for (const width of [390, 614, 1029, 1533]) {
 	for (const theme of ['light', 'dark'] as const) {
-		test(`reads complete daily and weekly schedules with contained scrolling at ${width}px in ${theme}`, async ({
-			page
-		}) => {
+		test(`shows one compact weekly grid at ${width}px in ${theme}`, async ({ page }, testInfo) => {
 			await page.setViewportSize({ width, height: 888 });
 			await page.addInitScript(
 				(mode) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: mode })),
@@ -375,95 +373,59 @@ for (const width of [390, 614, 1029, 1533]) {
 			await expect
 				.poll(() => page.locator('html').evaluate((node) => node.classList.contains('dark')))
 				.toBe(theme === 'dark');
-			const daily = page.getByTestId('own-timetable-day'),
-				weekly = page.getByTestId('own-timetable-week');
-			const buttons = page
-				.getByRole('radiogroup', { name: 'มุมมองตารางสอน' })
-				.filter({ visible: true });
-			await expect(width < 768 ? daily : weekly).toBeVisible();
-			await expect(width < 768 ? weekly : daily).toBeHidden();
-			await buttons.getByRole('radio', { name: 'รายวัน', exact: true }).click();
-			await expect(daily.getByText(longSubject, { exact: true })).toBeVisible();
-			await expect(daily.getByText(longGroup, { exact: true })).toHaveCount(0);
-			await expect(
-				daily.locator('[data-timetable-class]').filter({ hasText: 'ม.4/1' })
-			).toHaveCount(2);
-			await expect(daily.locator('ol > li').first().locator('[data-timetable-block]')).toHaveCount(
-				2
-			);
-			const rowHeights = await daily
-				.locator('ol > li')
-				.evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().height));
-			expect(Math.max(...rowHeights) - Math.min(...rowHeights)).toBeLessThanOrEqual(1);
-			await expectFullText(daily.getByText(longSubject, { exact: true }));
-			await expectFullText(daily.getByText(longStructural, { exact: true }));
-			await expect(daily.getByText('ไม่มีคาบสอน', { exact: true })).toBeVisible();
-			const dailyScroll = page.getByTestId('own-timetable-day-scroll');
-			await swipePane(page, dailyScroll);
-			await expect.poll(() => dailyScroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
-			await dailyScroll.hover();
-			await page.mouse.wheel(0, 10000);
-			await expect
-				.poll(() =>
-					dailyScroll.evaluate(
-						(node) => node.scrollTop + node.clientHeight >= node.scrollHeight - 1
-					)
-				)
-				.toBe(true);
-			await page.mouse.wheel(0, 1000);
-			await swipePane(page, dailyScroll);
-			await expectNoOuterOverflow(page);
-			await page.mouse.wheel(0, -10000);
-			await expect.poll(() => dailyScroll.evaluate((node) => node.scrollTop)).toBe(0);
-			await page.mouse.wheel(0, -1000);
-			await expectNoOuterOverflow(page);
-			await page.screenshot({
-				path: `/workspace/artifacts/staff-timetable-refinement/timetable-day-${width}-${theme}.png`,
-				fullPage: true,
-				animations: 'disabled'
-			});
-			const days = daily.getByRole('radiogroup', { name: 'วันในตารางสอน' });
-			await days.getByRole('radio', { name: 'วันอังคาร', exact: true }).tap();
-			await expect(daily.getByRole('heading', { name: 'วันอังคาร', exact: true })).toBeVisible();
-			await expect(daily.getByText('พักกลางวัน\nรับประทานอาหาร', { exact: true })).toBeVisible();
-			await expect(daily.getByText('กิจกรรมพัฒนาผู้เรียน', { exact: true })).toBeVisible();
-			await days.getByRole('radio', { name: 'วันอังคาร', exact: true }).tap();
-			await expect(days.getByRole('radio', { name: 'วันอังคาร', exact: true })).toHaveAttribute(
-				'data-state',
-				'on'
-			);
-			await days.getByRole('radio', { name: 'วันเสาร์', exact: true }).focus();
-			await page.keyboard.press('Enter');
-			await expect(daily.getByText('วิชาวันเสาร์', { exact: true })).toBeVisible();
-			await days.getByRole('radio', { name: 'วันอาทิตย์', exact: true }).click();
-			await expect(daily.getByText('วิชาวันอาทิตย์', { exact: true })).toBeVisible();
-			await buttons.getByRole('radio', { name: 'รายสัปดาห์', exact: true }).click();
-			await expect(weekly).toBeVisible();
-			const scroll = page.getByTestId('own-timetable-week-scroll');
 
-			await expectNoOuterOverflow(page);
-			await expect(buttons.getByRole('radio', { name: 'รายสัปดาห์', exact: true })).toBeFocused();
-			await page.keyboard.press('Enter');
-			await expect(buttons.getByRole('radio', { name: 'รายสัปดาห์', exact: true })).toHaveAttribute(
-				'aria-checked',
-				'true'
-			);
-			await page.keyboard.press('Tab');
-			await expect(scroll).toBeFocused();
-			const size = await scroll.evaluate((node) => ({
-				width: node.clientWidth,
-				fullWidth: node.scrollWidth,
-				height: node.clientHeight,
-				fullHeight: node.scrollHeight
-			}));
-			for (const text of [longSubject, longStructural])
-				await expectFullText(weekly.getByText(text, { exact: true }));
-			await expect(weekly.locator('button, [role=button]')).toHaveCount(0);
+			const weekly = page.getByRole('table', { name: 'ตารางสอนรายสัปดาห์' });
+			const scroll = page.getByRole('region', { name: 'ตารางสอนรายสัปดาห์ เลื่อนเพื่อดูทุกคาบ' });
+			await expect(weekly).toHaveCount(1);
+			await expect(weekly).toBeVisible();
+			await expect(weekly.getByRole('rowheader')).toHaveText([
+				'จันทร์',
+				'อังคาร',
+				'พุธ',
+				'พฤหัสบดี',
+				'ศุกร์',
+				'เสาร์',
+				'อาทิตย์'
+			]);
+			await expect(weekly.getByRole('columnheader')).toHaveCount(10);
+			await expect(weekly.getByRole('columnheader', { name: /คาบ 9.*16:00–17:00/ })).toBeVisible();
+			await expect(page.getByRole('radiogroup', { name: 'มุมมองตารางสอน' })).toHaveCount(0);
+			await expect(page.getByRole('radiogroup', { name: 'วันในตารางสอน' })).toHaveCount(0);
 			await expect(page.getByTestId('own-timetable-details')).toHaveCount(0);
-			await expect(weekly.getByText(longGroup, { exact: true })).toHaveCount(0);
+			await expect(weekly.locator('button, [role=button]')).toHaveCount(0);
+
+			const monday = weekly.getByRole('row', { name: /^จันทร์/ });
+			const tuesday = weekly.getByRole('row', { name: /^อังคาร/ });
+			await expect(tuesday.getByText('พักกลางวัน\nรับประทานอาหาร', { exact: true })).toBeVisible();
+			await expect(tuesday.getByText('กิจกรรมพัฒนาผู้เรียน', { exact: true })).toBeVisible();
 			await expect(
-				weekly.locator('tbody > tr').first().locator('td').first().locator('[data-timetable-block]')
-			).toHaveCount(2);
+				weekly.getByRole('row', { name: /^เสาร์/ }).getByText('วิชาวันเสาร์')
+			).toBeVisible();
+			await expect(
+				weekly.getByRole('row', { name: /^อาทิตย์/ }).getByText('วิชาวันอาทิตย์')
+			).toBeVisible();
+			await expect(weekly.getByText(longGroup, { exact: true })).toHaveCount(0);
+
+			const stacked = monday.getByRole('cell').first().locator('[data-timetable-block]');
+			await expect(stacked).toHaveCount(2);
+			await expect(stacked.locator('[data-timetable-class]')).toHaveText(['ม.4/1', 'ม.4/1']);
+			for (const label of await stacked
+				.locator('[data-timetable-class], [data-timetable-room]')
+				.all())
+				await expectFullText(label);
+			for (const content of [longSubject, longStructural])
+				await expectFullText(monday.getByText(content, { exact: true }));
+			const [first, second] = await Promise.all([
+				stacked.nth(0).boundingBox(),
+				stacked.nth(1).boundingBox()
+			]);
+			expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height);
+
+			const empty = weekly.getByRole('row', { name: /^พุธ/ });
+			await expect(empty.getByRole('cell', { name: 'ไม่มีคาบสอน' })).toHaveCount(9);
+			await expect(empty.getByText('–', { exact: true }).first()).toBeVisible();
+			expect((await empty.boundingBox())!.height).toBeLessThanOrEqual(40);
+
 			const tones = await weekly.locator('[data-timetable-block]').evaluateAll((cards) =>
 				cards.map((card) => ({
 					background: getComputedStyle(card).backgroundColor,
@@ -471,46 +433,54 @@ for (const width of [390, 614, 1029, 1533]) {
 				}))
 			);
 			expect(new Set(tones.map((tone) => JSON.stringify(tone))).size).toBe(1);
-			await scroll.evaluate((node) => node.scrollTo({ top: 0, left: 0, behavior: 'instant' }));
-			await expect.poll(() => scroll.evaluate((node) => node.scrollLeft + node.scrollTop)).toBe(0);
-			await swipePane(page, scroll, size.fullWidth > size.width);
-			await expect
-				.poll(() => scroll.evaluate((node) => node.scrollLeft > 0 || node.scrollTop > 0))
-				.toBe(true);
-			await scroll.hover();
-			await page.mouse.wheel(10000, 10000);
-			await expect
-				.poll(() =>
-					scroll.evaluate((node) => node.scrollLeft + node.clientWidth >= node.scrollWidth - 1)
-				)
-				.toBe(true);
-			await expect
-				.poll(() =>
-					scroll.evaluate((node) => node.scrollTop + node.clientHeight >= node.scrollHeight - 1)
-				)
-				.toBe(true);
-			await page.mouse.wheel(1000, 1000);
 			await expectNoOuterOverflow(page);
-			await page.mouse.wheel(-10000, -10000);
-			await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBe(0);
-			await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
-			await page.mouse.wheel(-1000, -1000);
-			await expectNoOuterOverflow(page);
-			if (size.fullWidth > size.width) {
-				await scroll.focus();
+
+			const firstDay = weekly.getByRole('rowheader').first();
+			const startDayX = (await firstDay.boundingBox())!.x;
+			const secondPeriod = (await weekly
+				.getByRole('columnheader', { name: /คาบ 2/ })
+				.boundingBox())!;
+			const scrollBox = (await scroll.boundingBox())!;
+			expect(secondPeriod.x + secondPeriod.width).toBeLessThanOrEqual(
+				scrollBox.x + scrollBox.width
+			);
+			const overflowX = await scroll.evaluate((node) => node.scrollWidth - node.clientWidth);
+			await page.getByRole('button', { name: 'ดาวน์โหลด PDF' }).focus();
+			await page.keyboard.press('Tab');
+			await expect(scroll).toBeFocused();
+			await page.screenshot({
+				path: testInfo.outputPath(`timetable-week-${width}-${theme}.png`),
+				fullPage: true,
+				animations: 'disabled'
+			});
+
+			if (width < 1533) {
+				expect(overflowX).toBeGreaterThan(0);
+				await swipePane(page, scroll, true);
+				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+				await scroll.hover();
+				await page.mouse.wheel(10000, 0);
+				await expect
+					.poll(() =>
+						scroll.evaluate((node) => node.scrollWidth - node.clientWidth - node.scrollLeft)
+					)
+					.toBeLessThanOrEqual(1);
+				await page.mouse.wheel(1000, 0);
+				await expectNoOuterOverflow(page);
+				expect((await firstDay.boundingBox())!.x).toBeCloseTo(startDayX, 0);
+
+				await page.mouse.wheel(-10000, 0);
+				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBe(0);
+				await page.mouse.wheel(-1000, 0);
+				await expectNoOuterOverflow(page);
 				await page.keyboard.press('ArrowRight');
 				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
 				await page.keyboard.press('ArrowLeft');
 				await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBe(0);
+			} else {
+				expect(overflowX).toBe(0);
 			}
 
-			await page.screenshot({
-				path: `/workspace/artifacts/staff-timetable-refinement/timetable-week-${width}-${theme}.png`,
-				fullPage: true,
-				animations: 'disabled'
-			});
-			await buttons.getByRole('radio', { name: 'รายวัน', exact: true }).click();
-			await expect(daily.getByRole('heading', { name: 'วันอาทิตย์', exact: true })).toBeVisible();
 			expect(reads()).toBe(1);
 		});
 	}
@@ -562,7 +532,23 @@ test('synchronized activity labels show only current teacher classes and rooms',
 	await expect(weekly.getByText('กิจกรรมจองช่วงเวลา', { exact: true })).toBeVisible();
 });
 
-test('compact landscape keeps both timetable views inside the available main height', async ({
+test('weekly grid shows keyboard focus in forced colors', async ({ page }) => {
+	await page.emulateMedia({ forcedColors: 'active' });
+	await page.setViewportSize({ width: 390, height: 888 });
+	await mockStaffTimetableApis(page, workspaceEntries());
+	await page.goto('/staff/timetable');
+
+	const scroll = page.getByRole('region', { name: 'ตารางสอนรายสัปดาห์ เลื่อนเพื่อดูทุกคาบ' });
+	await expect(scroll).toBeVisible();
+	await page.getByRole('button', { name: 'ดาวน์โหลด PDF' }).focus();
+	await page.keyboard.press('Tab');
+	await expect(scroll).toBeFocused();
+	await expect(scroll).toHaveCSS('outline-style', 'solid');
+	await expect(scroll).toHaveCSS('outline-width', '2px');
+	await expect(scroll).not.toHaveCSS('outline-color', 'rgba(0, 0, 0, 0)');
+});
+
+test('compact landscape keeps period headers visible while the weekly grid scrolls vertically', async ({
 	page
 }) => {
 	await page.setViewportSize({ width: 614, height: 400 });
@@ -576,18 +562,33 @@ test('compact landscape keeps both timetable views inside the available main hei
 		'SUN'
 	]);
 	await page.goto('/staff/timetable');
-	const daily = page.getByTestId('own-timetable-day-scroll');
-	await expect(daily).toBeVisible();
-	expect((await daily.boundingBox())!.height).toBeGreaterThan(40);
+	const scroll = page.getByTestId('own-timetable-week-scroll');
+	const period = scroll.getByRole('columnheader', { name: /คาบ 1/ });
+	await expect(scroll).toBeVisible();
+	expect((await scroll.boundingBox())!.height).toBeGreaterThan(40);
+	const headerY = (await period.boundingBox())!.y;
 	await expectNoOuterOverflow(page);
-	await page
-		.getByRole('radiogroup', { name: 'มุมมองตารางสอน' })
-		.filter({ visible: true })
-		.getByRole('radio', { name: 'รายสัปดาห์', exact: true })
-		.click();
-	const weekly = page.getByTestId('own-timetable-week-scroll');
-	await expect(weekly).toBeVisible();
-	expect((await weekly.boundingBox())!.height).toBeGreaterThan(40);
+
+	await swipePane(page, scroll);
+	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+	await scroll.hover();
+	await page.mouse.wheel(0, 10000);
+	await expect
+		.poll(() => scroll.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop))
+		.toBeLessThanOrEqual(1);
+	expect((await period.boundingBox())!.y).toBeCloseTo(headerY, 0);
+	await page.mouse.wheel(0, 1000);
+	await expectNoOuterOverflow(page);
+
+	await page.mouse.wheel(0, -10000);
+	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
+	await page.mouse.wheel(0, -1000);
+	await expectNoOuterOverflow(page);
+	await scroll.focus();
+	await page.keyboard.press('PageDown');
+	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
+	await page.keyboard.press('PageUp');
+	await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBe(0);
 	await expectNoOuterOverflow(page);
 });
 
