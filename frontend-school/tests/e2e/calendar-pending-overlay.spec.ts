@@ -544,9 +544,9 @@ test('a submission from a different month refreshes the count without closing a 
 	const newTitle = newDraft.getByLabel('ชื่อกิจกรรม *', { exact: true });
 	await expect(newTitle).toBeDisabled();
 	release();
+	await expect.poll(() => count.reads.length).toBe(2);
 	await expect(newTitle).toBeEnabled();
 	await expect(newTitle).toHaveValue('');
-	await expect.poll(() => count.reads.length).toBe(2);
 	await expect(badge(page)).toHaveText('15');
 	await page.keyboard.press('Escape');
 	await expect(toggle(page)).toHaveAccessibleDescription('มีคำร้องรออนุมัติ 15 รายการรวมทุกเดือน');
