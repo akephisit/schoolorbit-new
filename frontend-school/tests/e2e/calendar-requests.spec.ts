@@ -5,7 +5,8 @@ import {
 	nextYear,
 	year,
 	categoryId,
-	makeApprovedCalendarEvent
+	makeApprovedCalendarEvent,
+	pendingCountPath
 } from './fixtures/calendar-route-data';
 import type { CalendarEventRequest } from '../../src/lib/api/calendar';
 import { id } from './fixtures/staff-home-route-data';
@@ -47,6 +48,8 @@ async function requests(page: Page, failFirst = false) {
 	await page.route('**/api/calendar/requests**', async (route) => {
 		const req = route.request(),
 			path = new URL(req.url()).pathname;
+		if (path === pendingCountPath)
+			return reply(route, { count: record.status === 'pending' ? 1 : 0 });
 		if (req.method() === 'GET') return reply(route, { records: [record], hasMore: false });
 		const payload = req.postDataJSON();
 		writes.push({ path, payload });

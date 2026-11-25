@@ -44,7 +44,9 @@
 		type CreateCalendarRequest,
 		type PendingCalendarPage,
 		type PendingCalendarRequest,
+		type PendingCalendarRequestCount,
 		type CalendarEventRequest,
+		getPendingCalendarRequestCount,
 		listPendingCalendarRequests,
 		createCalendarRequest,
 		listCalendarTargetOptions,
@@ -143,6 +145,12 @@
 	const pendingRequest = new LatestRequest();
 	let pendingOwner = '';
 	let previousPendingSource: typeof data.pending | null = null;
+	let pendingCount = $state<number | null>(null),
+		pendingCountLoading = $state(false),
+		pendingCountError = $state(false);
+	const pendingCountRequest = new LatestRequest();
+	let pendingCountOwner = '';
+	let previousPendingCountSource: typeof data.pendingCount | null = null;
 	let pendingToggle = $state<HTMLButtonElement | null>(null);
 	let optionsYearId = $state('');
 	let targetYears = $state<AcademicYearOption[]>([]);
@@ -210,8 +218,11 @@
 		void $can;
 		return appIdentityKey();
 	});
-	const pendingKey = $derived(canViewPendingRequests ? `${pendingIdentity}|${selectedMonth}` : '');
-	const pendingCount = $derived(pendingHasMore ? '500+' : `${pendingRequests.length}`);
+	const pendingCountKey = $derived(canViewPendingRequests ? pendingIdentity : '');
+	const pendingKey = $derived(pendingCountKey ? `${pendingCountKey}|${selectedMonth}` : '');
+	const pendingCountLabel = $derived(
+		pendingCount === null ? '' : `มีคำร้องรออนุมัติ ${pendingCount} รายการรวมทุกเดือน`
+	);
 	const pendingDisplayEvents = $derived(
 		showPendingRequests && canViewPendingRequests
 			? pendingRequests.map((request) => ({
@@ -309,9 +320,29 @@
 		);
 		if (pendingReadIsCurrent(owner, ticket.revision)) applyPendingRequests(result);
 	}
-	function retryPendingFromToolbar() {
+	function pendingCountReadIsCurrent(owner: string, revision: number) {
+		return !disposed && owner === pendingCountKey && pendingCountRequest.isCurrent(revision);
+	}
+	function applyPendingCount(result: RouteLoadResult<PendingCalendarRequestCount>) {
+		pendingCountLoading = false;
+		if (result.ok) pendingCount = result.data.count;
+		else pendingCountError = true;
+	}
+	async function loadPendingCount() {
+		const owner = pendingCountKey;
+		if (!owner) return;
+		const ticket = pendingCountRequest.begin();
+		pendingCountLoading = true;
+		pendingCountError = false;
+		const result = await captureRouteLoad(
+			getPendingCalendarRequestCount({ signal: ticket.signal }),
+			'โหลดจำนวนคำร้องรออนุมัติไม่สำเร็จ'
+		);
+		if (pendingCountReadIsCurrent(owner, ticket.revision)) applyPendingCount(result);
+	}
+	function retryPendingCountFromToolbar() {
 		pendingToggle?.focus();
-		void loadPendingRequests();
+		void loadPendingCount();
 	}
 	function togglePendingRequests() {
 		showPendingRequests = !showPendingRequests;
@@ -418,6 +449,31 @@
 			deleteDialogOpen = false;
 			saving = false;
 			deleting = false;
+		});
+	});
+	$effect.pre(() => {
+		const owner = pendingCountKey;
+		const source = data.pendingCount;
+		untrack(() => {
+			const newSource = previousPendingCountSource !== source;
+			previousPendingCountSource = source;
+			if (pendingCountOwner === owner) return;
+			pendingCountOwner = owner;
+			pendingCountRequest.abort();
+			pendingCount = null;
+			pendingCountLoading = !!owner;
+			pendingCountError = false;
+			if (!owner) return;
+			if (!newSource) {
+				void loadPendingCount();
+				return;
+			}
+			const ticket = pendingCountRequest.begin();
+			void source.then(({ identity, result }) => {
+				if (!pendingCountReadIsCurrent(owner, ticket.revision)) return;
+				if (identity === owner && result) applyPendingCount(result);
+				else void loadPendingCount();
+			});
 		});
 	});
 	$effect.pre(() => {
@@ -571,6 +627,7 @@
 		tagsRequest.abort();
 		optionsRequest.abort();
 		pendingRequest.abort();
+		pendingCountRequest.abort();
 	});
 
 	$effect(() => {
@@ -633,6 +690,7 @@
 	) {
 		if (disposed || identity !== identityOwner || !canViewPendingRequests || !canManageCalendar)
 			return;
+		void loadPendingCount();
 		if (overlapsPendingRange(request)) {
 			pendingRequests = pendingRequests.filter((item) => item.id !== request.id);
 			if (pendingLoading || !pendingLoaded || pendingHasMore) void loadPendingRequests();
@@ -1058,6 +1116,7 @@
 		try {
 			const request = await createCalendarRequest(payload);
 			if (!currentOwner()) return;
+			void loadPendingCount();
 			if (overlapsPendingRange(request)) {
 				const refreshPending = pendingLoading || !pendingLoaded || pendingHasMore;
 				if (pendingLoaded && !pendingHasMore) {
@@ -1216,10 +1275,11 @@
 								bind:ref={pendingToggle}
 								variant="outline"
 								size="sm"
-								class="pe-12 has-[>svg]:pe-12"
+								class="pe-14 has-[>svg]:pe-14"
 								aria-label="แสดงคำร้องรออนุมัติ"
 								aria-pressed={showPendingRequests}
 								aria-describedby="calendar-pending-status"
+								title={!pendingCountError && pendingCountLabel ? pendingCountLabel : undefined}
 								onclick={togglePendingRequests}
 							>
 								<ClipboardList class="size-4" />
@@ -1232,27 +1292,27 @@
 								>
 							</Button>
 							<div
-								class="pointer-events-none absolute inset-y-0 end-1 grid w-10 place-items-center"
-								aria-busy={pendingLoading}
+								class="pointer-events-none absolute inset-y-0 end-1 grid w-12 place-items-center"
+								aria-busy={pendingCountLoading}
 							>
-								{#if pendingError}
+								{#if pendingCountError}
 									<Button
 										variant="ghost"
 										size="icon-sm"
 										class="pointer-events-auto"
-										aria-label="ลองโหลดคำร้องรออนุมัติอีกครั้ง"
-										title="โหลดคำร้องไม่สำเร็จ ลองอีกครั้ง"
-										onclick={retryPendingFromToolbar}
+										aria-label="ลองโหลดจำนวนคำร้องรออนุมัติอีกครั้ง"
+										title="โหลดจำนวนคำร้องไม่สำเร็จ ลองอีกครั้ง"
+										onclick={retryPendingCountFromToolbar}
 										><RefreshCw class="size-4 text-destructive" /></Button
 									>
-								{:else if pendingLoaded}
+								{:else if pendingCount !== null}
 									<Badge
 										variant={showPendingRequests ? 'default' : 'secondary'}
-										class="min-w-5 px-1 tabular-nums"
+										class="max-w-full min-w-5 px-1 text-center break-all whitespace-normal tabular-nums"
 										data-testid="calendar-pending-count"
 										aria-hidden="true">{pendingCount}</Badge
 									>
-								{:else if pendingLoading}
+								{:else if pendingCountLoading}
 									<Skeleton
 										class="h-4 w-5 rounded-full motion-reduce:animate-none"
 										aria-hidden="true"
@@ -1260,15 +1320,13 @@
 								{/if}
 							</div>
 							<span id="calendar-pending-status" class="sr-only">
-								{#if pendingLoaded && !pendingError}
-									{pendingHasMore
-										? 'มีคำร้องรออนุมัติมากกว่า 500 รายการในช่วงวันที่บนปฏิทิน'
-										: `มีคำร้องรออนุมัติ ${pendingCount} รายการในช่วงวันที่บนปฏิทิน`}
+								{#if !pendingCountError}
+									{pendingCountLabel}
 								{/if}
 								<span role="status">
-									{#if pendingError}
+									{#if pendingCountError}
 										โหลดจำนวนคำร้องรออนุมัติไม่สำเร็จ
-									{:else if pendingLoading && !pendingLoaded}
+									{:else if pendingCountLoading && pendingCount === null}
 										กำลังโหลดจำนวนคำร้องรออนุมัติ
 									{/if}
 								</span>
@@ -1534,7 +1592,7 @@
 								</div>
 								{#if pendingError}<PageState
 										variant="error"
-										title="โหลดคำร้องรออนุมัติไม่สำเร็จ"
+										title="โหลดคำร้องบนปฏิทินไม่สำเร็จ"
 										description={pendingError}
 										actionLabel="ลองอีกครั้ง"
 										onaction={loadPendingRequests}

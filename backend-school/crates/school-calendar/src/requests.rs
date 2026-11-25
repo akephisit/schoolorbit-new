@@ -115,6 +115,13 @@ pub struct PendingCalendarPage {
     pub has_more: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct PendingCalendarRequestCount {
+    pub count: i64,
+}
+
 #[derive(Debug, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -233,6 +240,27 @@ pub async fn list_pending_calendar(
     let has_more = records.len() > 500;
     records.truncate(500);
     Ok(PendingCalendarPage { records, has_more })
+}
+
+pub async fn get_pending_count(
+    pool: &PgPool,
+    actor: &ActorContext,
+) -> Result<PendingCalendarRequestCount, AppError> {
+    require_request_access(actor, false)?;
+    let mut connection =
+        school_tenancy::TenantPool::observed_checkout_pool(pool, "calendar.get_pending_count")
+            .await?;
+    let count = school_database::DbSession::new(&mut *connection)
+        .scalar::<i64>(
+            "calendar.src.requests.get_pending_count",
+            "SELECT count(*) FROM calendar_event_requests
+             WHERE status='pending' AND ($1::boolean OR requested_by=$2)",
+        )
+        .bind(actor.has_permission(codes::CALENDAR_MANAGE_SCHOOL))
+        .bind(actor.user_id)
+        .fetch_one()
+        .await?;
+    Ok(PendingCalendarRequestCount { count })
 }
 
 async fn get_request(pool: &PgPool, id: Uuid) -> Result<CalendarEventRequest, AppError> {
