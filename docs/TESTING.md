@@ -1448,14 +1448,14 @@ node --test tests/static/staff-own-timetable-display.test.mjs tests/static/timet
 E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-own-timetable-grid.spec.ts tests/e2e/staff-own-timetable-pdf.spec.ts --project=chromium --workers=1
 ```
 
-The grid fixture covers 390/614/1029/1533px in light/dark themes: equal content-safe daily
-period rows, full multiline titles, consistent card tones, actual class labels without group
-aliases, current-instructor-only synchronized targets, no weekly detail controls, and contained
-scrolling with native wheel/touch and keyboard navigation. It checks main/document geometry
-at scroll boundaries and keeps view/day choices without additional reads. The pure helper
-fixtures preserve student/parent shared-label hiding and existing PDF shared-period rules;
-PDF class names use the real projection when no external class directory is supplied.
-Screenshots use `/workspace/artifacts/staff-timetable-refinement/`.
+The grid fixture checks that one compact weekly table is visible at 390/614/1029/1533px in both
+themes. It verifies configured day and period headers, empty days, stacked lessons, full multiline
+titles, actual class labels without group aliases, and current-instructor-only synchronized targets.
+It exercises sticky headers, native wheel/touch and keyboard scrolling, main/document geometry at
+scroll boundaries, and a single timetable read. Screenshots are saved with the Playwright test
+results. The pure helper fixtures preserve student/parent shared-label hiding and existing PDF
+shared-period rules. PDF class names use the real projection when no external class directory is
+supplied.
 
 Subject catalog and facility workspace fixtures exercise compact filters and bounded results, create/detail forms, scoped capabilities, error and pending draft retention, and late-response ownership on mobile/desktop in both themes. Subject version fixtures also check decimal-string payloads and publication revisions; the two subject-version cases in `academic-core-cutover.spec.ts` cover published-history preservation and conflict draft retention with the current overview, Sheet, grade selector and DatePicker.
 

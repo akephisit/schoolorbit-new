@@ -27,6 +27,7 @@ function fulfillJson(route: Route, data: unknown) {
 }
 
 test('downloads the loaded staff timetable from the PageShell action', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 888 });
 	const logoFileId = '80000000-0000-4000-8000-000000000001';
 	const logoPng = readFileSync(new URL('../../static/notification-badge.png', import.meta.url));
 	let brandingRequestCount = 0;
@@ -199,17 +200,9 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 	]);
 
 	await expect(downloadButton).toBeEnabled();
-	await expect(page.getByTestId('own-timetable-week').getByText('ค21101')).toBeVisible();
-	await page
-		.getByRole('radiogroup', { name: 'มุมมองตารางสอน' })
-		.filter({ visible: true })
-		.getByRole('radio', { name: 'รายวัน', exact: true })
-		.click();
-	await page
-		.getByRole('radiogroup', { name: 'วันในตารางสอน' })
-		.getByRole('radio', { name: 'วันเสาร์', exact: true })
-		.click();
-	await expect(page.getByTestId('own-timetable-day').getByText('ค21101')).toBeVisible();
+	const week = page.getByRole('table', { name: 'ตารางสอนรายสัปดาห์' });
+	await expect(week.getByRole('rowheader')).toHaveText(['จันทร์', 'เสาร์']);
+	await expect(week.getByRole('row', { name: /เสาร์/ }).getByText('ค21101')).toBeVisible();
 
 	const downloadPromise = page.waitForEvent('download');
 	await downloadButton.click();
