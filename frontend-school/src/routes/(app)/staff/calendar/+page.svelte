@@ -6,7 +6,8 @@
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
 	import { LatestRequest } from '#lib/async/latest-request.js';
-	import { captureRouteLoad } from '#lib/navigation/route-load.js';
+	import { appIdentityKey } from '#lib/auth/settled-user.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { calendarRouteFilters } from '#lib/utils/calendar-route-filters.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
@@ -41,6 +42,7 @@
 		type CalendarAudienceType,
 		type CalendarTargetOptions,
 		type CreateCalendarRequest,
+		type PendingCalendarPage,
 		type PendingCalendarRequest,
 		type CalendarEventRequest,
 		listPendingCalendarRequests,
@@ -83,6 +85,7 @@
 		Code2,
 		Copy,
 		FolderPlus,
+		RefreshCw,
 		Settings,
 		Search,
 		SlidersHorizontal,
@@ -121,7 +124,8 @@
 	let visibility = $state<VisibilityFilter>('');
 	let eventDialogOpen = $state(false);
 	let requestDialogOpen = $state(false);
-	let requesting = $state(false);
+	let requestSubmission = $state<symbol | null>(null);
+	const requesting = $derived(requestSubmission !== null);
 	let requestSession = $state(0);
 	let requestError = $state('');
 	let showPendingRequests = $state(false),
@@ -138,6 +142,8 @@
 		pendingError = $state('');
 	const pendingRequest = new LatestRequest();
 	let pendingOwner = '';
+	let previousPendingSource: typeof data.pending | null = null;
+	let pendingToggle = $state<HTMLButtonElement | null>(null);
 	let optionsYearId = $state('');
 	let targetYears = $state<AcademicYearOption[]>([]);
 	let eventDialogSession = $state(0);
@@ -195,8 +201,17 @@
 	);
 	const canManageCalendar = $derived($can.has(PERMISSIONS.CALENDAR_MANAGE_SCHOOL));
 	const canViewPendingRequests = $derived(
-		canReadCalendar && (canRequestCalendar || canManageCalendar)
+		$authStore.user?.user_type === 'staff' &&
+			canReadCalendar &&
+			(canRequestCalendar || canManageCalendar)
 	);
+	const pendingIdentity = $derived.by(() => {
+		void $authStore;
+		void $can;
+		return appIdentityKey();
+	});
+	const pendingKey = $derived(canViewPendingRequests ? `${pendingIdentity}|${selectedMonth}` : '');
+	const pendingCount = $derived(pendingHasMore ? '500+' : `${pendingRequests.length}`);
 	const pendingDisplayEvents = $derived(
 		showPendingRequests && canViewPendingRequests
 			? pendingRequests.map((request) => ({
@@ -271,8 +286,20 @@
 			ticket.revision
 		);
 	}
+	function pendingReadIsCurrent(owner: string, revision: number) {
+		return !disposed && owner === pendingKey && pendingRequest.isCurrent(revision);
+	}
+	function applyPendingRequests(result: RouteLoadResult<PendingCalendarPage>) {
+		pendingLoading = false;
+		if (result.ok) {
+			pendingRequests = result.data.records;
+			pendingHasMore = result.data.hasMore;
+			pendingLoaded = true;
+		} else pendingError = result.error;
+	}
 	async function loadPendingRequests() {
-		if (!showPendingRequests || !canViewPendingRequests) return;
+		const owner = pendingKey;
+		if (!owner) return;
 		const ticket = pendingRequest.begin();
 		pendingLoading = true;
 		pendingError = '';
@@ -280,18 +307,19 @@
 			listPendingCalendarRequests(calendarGridRange(selectedMonth), { signal: ticket.signal }),
 			'โหลดคำร้องรออนุมัติไม่สำเร็จ'
 		);
-		if (
-			!pendingRequest.isCurrent(ticket.revision) ||
-			!showPendingRequests ||
-			!canViewPendingRequests
-		)
-			return;
-		pendingLoading = false;
-		if (result.ok) {
-			pendingRequests = result.data.records;
-			pendingHasMore = result.data.hasMore;
-			pendingLoaded = true;
-		} else pendingError = result.error;
+		if (pendingReadIsCurrent(owner, ticket.revision)) applyPendingRequests(result);
+	}
+	function retryPendingFromToolbar() {
+		pendingToggle?.focus();
+		void loadPendingRequests();
+	}
+	function togglePendingRequests() {
+		showPendingRequests = !showPendingRequests;
+		if (!showPendingRequests && detailKind === 'request') detailOpen = false;
+	}
+	function overlapsPendingRange(request: CalendarEventRequest) {
+		const { from, to } = calendarGridRange(selectedMonth);
+		return request.startDate <= to && request.endDate >= from;
 	}
 	function applyCategories(result: Awaited<typeof data.categories>, revision: number) {
 		if (!categoriesRequest.isCurrent(revision)) return;
@@ -377,7 +405,7 @@
 			tagsLoaded = false;
 			eventDialogOpen = false;
 			requestDialogOpen = false;
-			requesting = false;
+			requestSubmission = null;
 			showPendingRequests = false;
 			filterOpen = false;
 			searchOpen = false;
@@ -393,21 +421,38 @@
 		});
 	});
 	$effect.pre(() => {
-		const enabled = showPendingRequests && canViewPendingRequests;
+		const owner = pendingKey;
+		const identity = pendingIdentity;
 		const month = selectedMonth;
-		const identity = `${authStore.sessionEpoch}|${$authStore.user?.id ?? ''}|${canManageCalendar}|${canRequestCalendar}`;
-		const owner = enabled ? `${identity}|${month}` : '';
+		const source = data.pending;
+		const sourceMonth = data.pendingMonth;
 		untrack(() => {
-			if (pendingOwner === owner) return;
-			pendingOwner = owner;
-			if (detailKind === 'request') detailOpen = false;
-			pendingRequest.abort();
-			pendingRequests = [];
-			pendingLoading = false;
-			pendingLoaded = false;
-			pendingHasMore = false;
+			const changed = pendingOwner !== owner;
+			const matchingSource = previousPendingSource !== source && sourceMonth === month;
+			previousPendingSource = source;
+			if (changed) {
+				pendingOwner = owner;
+				if (detailKind === 'request') detailOpen = false;
+				pendingRequest.abort();
+				pendingRequests = [];
+				pendingLoading = !!owner;
+				pendingLoaded = false;
+				pendingHasMore = false;
+				pendingError = '';
+			}
+			if (!owner || !changed) return;
+			if (!matchingSource) {
+				void loadPendingRequests();
+				return;
+			}
+			const ticket = pendingRequest.begin();
+			pendingLoading = true;
 			pendingError = '';
-			if (enabled) void loadPendingRequests();
+			void source.then(({ identity: sourceIdentity, result }) => {
+				if (!pendingReadIsCurrent(owner, ticket.revision)) return;
+				if (sourceIdentity === identity && result) applyPendingRequests(result);
+				else void loadPendingRequests();
+			});
 		});
 	});
 	$effect.pre(() => {
@@ -586,17 +631,18 @@
 		event: CalendarEvent | undefined,
 		identity: string
 	) {
-		if (disposed || identity !== identityOwner || !canReadCalendar || !canManageCalendar) return;
-		pendingRequest.abort();
-		pendingLoading = false;
-		pendingRequests = pendingRequests.filter((item) => item.id !== request.id);
+		if (disposed || identity !== identityOwner || !canViewPendingRequests || !canManageCalendar)
+			return;
+		if (overlapsPendingRange(request)) {
+			pendingRequests = pendingRequests.filter((item) => item.id !== request.id);
+			if (pendingLoading || !pendingLoaded || pendingHasMore) void loadPendingRequests();
+		}
 		if (event) {
 			eventsRequest.abort();
 			loading = false;
 			patchSavedEvent(event);
 			if (!eventsLoaded) void loadCalendar();
 		}
-		if (showPendingRequests && (!pendingLoaded || pendingHasMore)) void loadPendingRequests();
 	}
 	function sortCalendarEvents(items: CalendarEvent[]) {
 		return [...items].sort(
@@ -999,40 +1045,41 @@
 	async function submitRequest(payload: CreateCalendarRequest) {
 		if (!canRequestCalendar || requesting || !requestDialogOpen) return;
 		const identity = identityOwner,
-			session = requestSession;
-		requesting = true;
+			session = requestSession,
+			submission = Symbol();
+		requestSubmission = submission;
 		requestError = '';
-		const current = () =>
+		const currentOwner = () =>
 			!disposed &&
+			requestSubmission === submission &&
 			identity === identityOwner &&
-			canRequestCalendar &&
-			session === requestSession &&
-			requestDialogOpen;
+			canRequestCalendar;
+		const currentDraft = () => currentOwner() && session === requestSession && requestDialogOpen;
 		try {
 			const request = await createCalendarRequest(payload);
-			if (!current()) return;
-			if (showPendingRequests) {
+			if (!currentOwner()) return;
+			if (overlapsPendingRange(request)) {
+				const refreshPending = pendingLoading || !pendingLoaded || pendingHasMore;
 				if (pendingLoaded && !pendingHasMore) {
-					const range = calendarGridRange(selectedMonth);
-					if (request.startDate <= range.to && request.endDate >= range.from) {
-						pendingRequest.abort();
-						pendingLoading = false;
-						const { id, title, startDate, endDate, allDay, startTime, endTime } = request;
-						pendingRequests = [
-							...pendingRequests.filter((item) => item.id !== id),
-							{ id, title, startDate, endDate, allDay, startTime, endTime }
-						];
-						pendingHasMore = pendingRequests.length > 500;
-						pendingRequests = pendingRequests.slice(0, 500);
-					}
-				} else void loadPendingRequests();
+					const { id, title, startDate, endDate, allDay, startTime, endTime } = request;
+					const updated = [
+						...pendingRequests.filter((item) => item.id !== id),
+						{ id, title, startDate, endDate, allDay, startTime, endTime }
+					];
+					pendingHasMore = updated.length > 500;
+					pendingRequests = updated.slice(0, 500);
+				}
+				if (refreshPending) void loadPendingRequests();
 			}
-			requestDialogOpen = false;
-			toast.success('ส่งคำร้องแล้ว รอผู้ดูแลอนุมัติ');
+			if (currentDraft()) {
+				requestDialogOpen = false;
+				toast.success('ส่งคำร้องแล้ว รอผู้ดูแลอนุมัติ');
+			}
 		} catch (error: unknown) {
-			if (current()) requestError = error instanceof Error ? error.message : 'ส่งคำร้องไม่สำเร็จ';
+			if (currentDraft())
+				requestError = error instanceof Error ? error.message : 'ส่งคำร้องไม่สำเร็จ';
 		} finally {
-			if (!disposed && identity === identityOwner && session === requestSession) requesting = false;
+			if (currentOwner()) requestSubmission = null;
 		}
 	}
 	function openCategoryDialog() {
@@ -1164,14 +1211,69 @@
 
 				<div class="flex flex-wrap items-center gap-2">
 					{#if canViewPendingRequests}
-						<Button
-							variant={showPendingRequests ? 'secondary' : 'outline'}
-							size="sm"
-							aria-pressed={showPendingRequests}
-							onclick={() => (showPendingRequests = !showPendingRequests)}
-						>
-							<ClipboardList class="size-4" />แสดงคำร้องรออนุมัติ
-						</Button>
+						<div class="relative">
+							<Button
+								bind:ref={pendingToggle}
+								variant="outline"
+								size="sm"
+								class="pe-12 has-[>svg]:pe-12"
+								aria-label="แสดงคำร้องรออนุมัติ"
+								aria-pressed={showPendingRequests}
+								aria-describedby="calendar-pending-status"
+								onclick={togglePendingRequests}
+							>
+								<ClipboardList class="size-4" />
+								<span>คำร้องรออนุมัติ</span>
+								<span
+									class="w-8 shrink-0 border-s border-current/20 ps-1.5 text-xs"
+									class:font-semibold={showPendingRequests}
+									class:text-muted-foreground={!showPendingRequests}
+									aria-hidden="true">{showPendingRequests ? 'เปิด' : 'ปิด'}</span
+								>
+							</Button>
+							<div
+								class="pointer-events-none absolute inset-y-0 end-1 grid w-10 place-items-center"
+								aria-busy={pendingLoading}
+							>
+								{#if pendingError}
+									<Button
+										variant="ghost"
+										size="icon-sm"
+										class="pointer-events-auto"
+										aria-label="ลองโหลดคำร้องรออนุมัติอีกครั้ง"
+										title="โหลดคำร้องไม่สำเร็จ ลองอีกครั้ง"
+										onclick={retryPendingFromToolbar}
+										><RefreshCw class="size-4 text-destructive" /></Button
+									>
+								{:else if pendingLoaded}
+									<Badge
+										variant={showPendingRequests ? 'default' : 'secondary'}
+										class="min-w-5 px-1 tabular-nums"
+										data-testid="calendar-pending-count"
+										aria-hidden="true">{pendingCount}</Badge
+									>
+								{:else if pendingLoading}
+									<Skeleton
+										class="h-4 w-5 rounded-full motion-reduce:animate-none"
+										aria-hidden="true"
+									/>
+								{/if}
+							</div>
+							<span id="calendar-pending-status" class="sr-only">
+								{#if pendingLoaded && !pendingError}
+									{pendingHasMore
+										? 'มีคำร้องรออนุมัติมากกว่า 500 รายการในช่วงวันที่บนปฏิทิน'
+										: `มีคำร้องรออนุมัติ ${pendingCount} รายการในช่วงวันที่บนปฏิทิน`}
+								{/if}
+								<span role="status">
+									{#if pendingError}
+										โหลดจำนวนคำร้องรออนุมัติไม่สำเร็จ
+									{:else if pendingLoading && !pendingLoaded}
+										กำลังโหลดจำนวนคำร้องรออนุมัติ
+									{/if}
+								</span>
+							</span>
+						</div>
 					{/if}
 					<Button
 						variant="outline"
@@ -1335,25 +1437,6 @@
 					<PageSkeleton variant="detail" />
 				</div>{:else if eventsLoaded || calendarRendered}
 				<div class="flex h-full min-h-fit min-w-0 flex-col gap-3">
-					{#if showPendingRequests && canViewPendingRequests && (!detailOpen || detailKind === 'event')}
-						{#if pendingLoading && !pendingLoaded}<p
-								role="status"
-								class="text-sm text-muted-foreground"
-							>
-								กำลังโหลดคำร้องรออนุมัติ...
-							</p>{/if}
-						{#if pendingError}<PageState
-								variant="error"
-								title="โหลดคำร้องรออนุมัติไม่สำเร็จ"
-								description={pendingError}
-								actionLabel="ลองอีกครั้ง"
-								onaction={loadPendingRequests}
-							/>{/if}
-						{#if pendingHasMore}<p role="status" class="text-sm text-muted-foreground">
-								มีคำร้องมากกว่า 500 รายการ แสดงบนปฏิทินเพียง 500 รายการแรก
-								กรุณาเปิดคิวคำร้องเพื่อดูทั้งหมด
-							</p>{/if}
-					{/if}
 					<div
 						role="presentation"
 						class="min-h-[26rem] flex-1 sm:min-h-[28rem]"
@@ -1449,12 +1532,6 @@
 										{canManageCalendar ? 'เปิดคิวอนุมัติ' : 'คำร้องของฉัน'}
 									</Button>
 								</div>
-								{#if pendingLoading && !pendingLoaded}<p
-										role="status"
-										class="text-sm text-muted-foreground"
-									>
-										กำลังโหลดคำร้องรออนุมัติ...
-									</p>{/if}
 								{#if pendingError}<PageState
 										variant="error"
 										title="โหลดคำร้องรออนุมัติไม่สำเร็จ"

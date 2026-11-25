@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockCalendar, calendarPath, eventsPath } from './fixtures/calendar-route-data';
+import { mockCalendar, calendarPath, eventsPath, year } from './fixtures/calendar-route-data';
 
 test.use({ serviceWorkers: 'block' });
 test.beforeEach(async ({ page }) => {
@@ -82,14 +82,18 @@ for (const width of [1280, 375]) {
 						''
 					);
 				} else {
+					await expect(form.getByRole('button', { name: 'เลือกวันที่', exact: true })).toHaveText([
+						'12 ต.ค. 2569',
+						'12 ต.ค. 2569'
+					]);
 					await expect
-						.poll(() =>
-							api.reads
-								.filter((url) => url.pathname === '/api/calendar/target-options')
-								.at(-1)
-								?.searchParams.get('date')
-						)
-						.toBe('2026-10-12');
+						.poll(() => {
+							const query = api.reads.findLast(
+								(url) => url.pathname === '/api/calendar/target-options'
+							)?.searchParams;
+							return { academicYearId: query?.get('academicYearId'), date: query?.get('date') };
+						})
+						.toEqual({ academicYearId: year, date: null });
 				}
 			}
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
