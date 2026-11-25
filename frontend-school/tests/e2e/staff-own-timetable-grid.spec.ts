@@ -265,7 +265,13 @@ function workspaceEntries() {
 			startTime: entries[2].startTime,
 			endTime: entries[2].endTime
 		},
-		{ ...entries[0], id: 'collision', offeringCode: 'คาบร่วม', offeringName: 'คาบที่จัดพร้อมกัน' },
+		{
+			...entries[0],
+			id: 'collision',
+			offeringCode: 'คาบร่วม',
+			offeringName: 'คาบที่จัดพร้อมกัน',
+			groups: entries[0].groups.map((group) => ({ ...group, roomName: 'ห้อง 1' }))
+		},
 		{
 			...entries[6],
 			id: 'independent-activity',
@@ -412,6 +418,10 @@ for (const [width, minimumVisiblePeriods] of [
 			const stacked = monday.getByRole('cell').first().locator('[data-timetable-block]');
 			await expect(stacked).toHaveCount(2);
 			await expect(stacked.locator('[data-timetable-class]')).toHaveText(['ม.4/1', 'ม.4/1']);
+			await expect(stacked.locator('[data-timetable-room]')).toHaveText([
+				'ห้องคณิตศาสตร์',
+				'ห้อง 1'
+			]);
 			for (const label of await stacked
 				.locator('[data-timetable-class], [data-timetable-room]')
 				.all())
@@ -424,10 +434,10 @@ for (const [width, minimumVisiblePeriods] of [
 			]);
 			expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height);
 			if (width >= 1029) {
-				const firstEntry = stacked.first();
+				const shortLabels = monday.locator('[data-timetable-block="collision"]');
 				const [classLabel, roomLabel] = await Promise.all([
-					firstEntry.locator('[data-timetable-class]').boundingBox(),
-					firstEntry.locator('[data-timetable-room]').boundingBox()
+					shortLabels.locator('[data-timetable-class]').boundingBox(),
+					shortLabels.locator('[data-timetable-room]').boundingBox()
 				]);
 				expect(roomLabel!.y).toBeGreaterThanOrEqual(classLabel!.y + classLabel!.height);
 			}
