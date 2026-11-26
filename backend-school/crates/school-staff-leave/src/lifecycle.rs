@@ -6,10 +6,35 @@ use chrono::{NaiveDate, Utc};
 use school_authorization::ActorContext;
 use school_database::DbSession;
 use school_errors::AppError;
+use school_staff::career::StaffPersonnelType;
 use school_workflow::process::{ProcessSourcePort, StartProcessInput};
 use school_workflow::{process, process_models::*};
 use sqlx::{types::Json, PgPool, Postgres, Transaction};
 use uuid::Uuid;
+
+async fn draft_amount(
+    tx: &mut Transaction<'_, Postgres>,
+    owner: Uuid,
+    period: &StoredLeavePeriod,
+    kind: LeaveKind,
+    require_enabled_policy: bool,
+) -> Result<(Option<StaffPersonnelType>, LeaveUnit, i64), AppError> {
+    if kind == LeaveKind::OfficialTravel {
+        let days = official_travel_days(period)?;
+        let personnel_type = category(tx, owner, period.start_date).await?;
+        return Ok((personnel_type, LeaveUnit::Day, days));
+    }
+    let (personnel_type, policy) = resolve_policy(tx, owner, period.type_id, period.start_date).await?;
+    if require_enabled_policy && !policy.enabled {
+        return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
+    }
+    Ok((
+        Some(personnel_type),
+        policy.unit,
+        amount(period, &policy, kind)?,
+    ))
+}
+
 pub async fn create(
     pool: &PgPool,
     actor: &ActorContext,
@@ -51,11 +76,8 @@ pub async fn create(
     if typ.archived {
         return Err(invalid("ประเภทคำขอถูกจัดเก็บแล้ว"));
     }
-    let (cat, p) = resolve_policy(&mut tx, actor.user_id, typ.id, period.start_date).await?;
-    if !p.enabled {
-        return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
-    }
-    let quantity = amount(&period, &p, typ.kind)?;
+    let (personnel_type, unit, quantity) =
+        draft_amount(&mut tx, actor.user_id, &period, typ.kind, true).await?;
     let companions = super::companions::resolve_on_connection(
         &mut tx,
         actor.user_id,
@@ -80,14 +102,14 @@ pub async fn create(
         status: LeaveStatus::Draft,
         revision: 1,
         policy_version_id: None,
-        personnel_type: Some(cat),
+        personnel_type,
         start_date: period.start_date,
         end_date: period.end_date,
         start_time: period.start_time,
         end_time: period.end_time,
         day_portion: period.day_portion,
         amount: quantity,
-        unit: p.unit,
+        unit,
         reason: period.reason,
         created_at: Utc::now(),
     };
@@ -140,15 +162,9 @@ pub async fn update(
     if period.type_id != r.document.type_id {
         return Err(invalid("ไม่สามารถเปลี่ยนประเภทของร่าง กรุณาสร้างใหม่"));
     }
-    let (cat, p) = resolve_policy(
-        &mut tx,
-        actor.user_id,
-        r.document.type_id,
-        period.start_date,
-    )
-    .await?;
     super::files::validate_evidence(&mut tx, actor.user_id, id, &period.evidence_file_ids).await?;
-    let n = amount(&period, &p, r.document.kind)?;
+    let (personnel_type, unit, quantity) =
+        draft_amount(&mut tx, actor.user_id, &period, r.document.kind, false).await?;
     let companions = super::companions::resolve_on_connection(
         &mut tx,
         actor.user_id,
@@ -171,9 +187,9 @@ pub async fn update(
     r.document.end_time = period.end_time;
     r.document.day_portion = period.day_portion;
     r.document.reason = period.reason;
-    r.document.amount = n;
-    r.document.unit = p.unit;
-    r.document.personnel_type = Some(cat);
+    r.document.amount = quantity;
+    r.document.unit = unit;
+    r.document.personnel_type = personnel_type;
     r.evidence_file_ids = period.evidence_file_ids;
     r.document.revision += 1;
     coverage::reconcile_updated_plan(&mut tx, &r).await?;
@@ -300,6 +316,43 @@ impl ProcessSourcePort for LeaveSource {
         Ok(())
     }
 }
+fn travel_route_unavailable() -> AppError {
+    invalid("ยังไม่มีเส้นทางอนุมัติการเดินทางไปราชการสำหรับวันที่และประเภทบุคลากรนี้ กรุณาติดต่อผู้ดูแลระบบให้ตั้งค่าในประเภทคำขอและเกณฑ์โรงเรียน")
+}
+
+fn travel_route_error(error: AppError) -> AppError {
+    match error {
+        AppError::ValidationError(_) => travel_route_unavailable(),
+        other => other,
+    }
+}
+
+fn validate_route_participants(
+    request: &LeaveRequestSummary,
+    steps: &[ProcessRuntimeStep],
+) -> Result<(), AppError> {
+    if steps
+        .iter()
+        .flat_map(|s| &s.recipients)
+        .any(|a| a.user_id == request.owner_id)
+    {
+        return Err(invalid(
+            "ผู้ขอไม่สามารถเป็นผู้ตรวจหรืออนุมัติคำขอของตนเอง กรุณาปรับเส้นทาง",
+        ));
+    }
+    if steps.iter().flat_map(|s| &s.recipients).any(|recipient| {
+        request
+            .companions
+            .iter()
+            .any(|person| person.id == recipient.user_id)
+    }) {
+        return Err(invalid(
+            "ผู้ร่วมเดินทางไม่สามารถตรวจหรืออนุมัติคำขอเดินทางของตนเอง กรุณาให้ผู้ดูแลปรับเส้นทาง",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) async fn start(
     tx: &mut Transaction<'_, Postgres>,
     actor: &ActorContext,
@@ -356,29 +409,10 @@ pub(super) async fn start(
                 "เส้นทางยกเลิกไม่พร้อมใช้งาน กรุณาให้ผู้ดูแลปรับเกณฑ์ปัจจุบัน: {message}"
             ))
         }
+        error if r.document.kind == LeaveKind::OfficialTravel => travel_route_error(error),
         other => other,
     })?;
-    if i.steps.iter().any(|s| {
-        s.recipients
-            .iter()
-            .any(|a| a.user_id == r.document.owner_id)
-    }) {
-        return Err(invalid(
-            "ผู้ขอไม่สามารถเป็นผู้ตรวจหรืออนุมัติคำขอของตนเอง กรุณาปรับเส้นทาง",
-        ));
-    }
-    if i.steps.iter().any(|step| {
-        step.recipients.iter().any(|recipient| {
-            r.document
-                .companions
-                .iter()
-                .any(|person| person.id == recipient.user_id)
-        })
-    }) {
-        return Err(invalid(
-            "ผู้ร่วมเดินทางไม่สามารถตรวจหรืออนุมัติคำขอเดินทางของตนเอง กรุณาให้ผู้ดูแลปรับเส้นทาง",
-        ));
-    }
+    validate_route_participants(&r.document, &i.steps)?;
     r.instance_id = Some(i.id);
     Ok(())
 }
@@ -423,16 +457,20 @@ pub async fn submit(
     if typ.archived {
         return Err(invalid("ประเภทคำขอถูกจัดเก็บแล้ว"));
     }
-    let (cat, p) = resolve_policy(
-        &mut tx,
-        r.document.owner_id,
-        r.document.type_id,
-        r.document.start_date,
-    )
-    .await?;
-    if !p.enabled {
-        return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
-    }
+    let travel = typ.kind == LeaveKind::OfficialTravel;
+    let (cat, p) = if travel {
+        preview_policy(&mut tx, r.document.owner_id, typ.id, r.document.start_date)
+            .await?
+            .filter(|(_, policy)| policy.enabled)
+            .ok_or_else(travel_route_unavailable)?
+    } else {
+        let resolved =
+            resolve_policy(&mut tx, r.document.owner_id, typ.id, r.document.start_date).await?;
+        if !resolved.1.enabled {
+            return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
+        }
+        resolved
+    };
     require_current_record(&r.document)?;
     let quantity = amount(&period_from(&r), &p, typ.kind)?;
     if (p.evidence_required || p.evidence_from_amount.is_some_and(|n| quantity >= n))
@@ -456,13 +494,19 @@ pub async fn submit(
         &period.companion_user_ids,
     )
     .await?;
-    let year = if typ.kind == LeaveKind::OfficialTravel {
+    let year = if travel {
         None
     } else {
         let year = quota_year(r.document.start_date, p.quota_year_start_month)?;
         check_quota(&mut tx, &r, &p, quantity, year).await?;
         Some(year)
     };
+    if travel && input.emergency_reason.is_some() {
+        let steps = process::resolve_template_steps_in_transaction(&mut tx, p.template_id)
+            .await
+            .map_err(travel_route_error)?;
+        validate_route_participants(&r.document, &steps)?;
+    }
     let plan = coverage::prepare_submission(&mut tx, &r, input.emergency_reason.as_deref()).await?;
     r.document.status = LeaveStatus::Submitted;
     r.document.revision += 1;
