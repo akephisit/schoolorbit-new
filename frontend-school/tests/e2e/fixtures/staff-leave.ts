@@ -383,7 +383,11 @@ export async function mockLeave(
 							: policy
 					);
 				}
-				if (path.endsWith('/policies')) return reply(route, options.policyHistory ?? [policy]);
+				if (path.endsWith('/policies')) {
+					if (options.travel && path.includes(travelTypeId))
+						return reply(route, policy.typeId === travelTypeId ? [policy] : []);
+					return reply(route, options.policyHistory ?? [policy]);
+				}
 				if (path === `${base}/requests`) {
 					if (options.empty) return reply(route, { items: [], hasMore: false });
 					const kind = url.searchParams.get('kind');
@@ -466,12 +470,20 @@ export async function mockLeave(
 			if (path.endsWith('/policies')) {
 				const input = http.postDataJSON() as SaveLeavePolicyRequest;
 				const type = types.find((type) => path.includes(type.id))!;
+				if (
+					type.kind === 'official_travel' &&
+					(input.unit !== 'day' ||
+						input.countingMode !== 'calendar_days' ||
+						input.annualLimit != null)
+				)
+					return reply(route, 'ขอไปราชการนับวันตามปฏิทินและไม่หักสิทธิ์ลาประจำปี', 422);
 				type.revision++;
 				policy = {
 					...policy,
 					...input,
+					typeId: type.id,
 					id: id(722),
-					version: policy.version + 1,
+					version: policy.typeId === type.id ? policy.version + 1 : 1,
 					typeRevision: type.revision
 				};
 				return reply(route, policy);

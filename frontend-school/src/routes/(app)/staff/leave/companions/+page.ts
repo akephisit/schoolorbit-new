@@ -3,12 +3,12 @@ import { get } from 'svelte/store';
 import { can } from '#lib/stores/permissions.js';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
 import { listLeaveCompanionInvitations } from '#lib/api/staff-leave.js';
-import { captureLeaveRead } from '#lib/staff-leave/route-data.js';
+import { captureLeaveRead, leaveCompanionPermissions } from '#lib/staff-leave/route-data.js';
 import { companionMaxOffset } from '#lib/staff-leave/filters.js';
 
 export const _meta = {
 	academicContext: 'none' as const,
-	access: { user_type: 'staff', permission: PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED }
+	access: { user_type: 'staff', permission: PERMISSIONS.STAFF_LEAVE_UPDATE_ASSIGNED }
 };
 
 export const load: PageLoad = ({ fetch, url, depends }) => {
@@ -22,7 +22,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		title: 'คำเชิญร่วมเดินทาง',
 		offset,
 		invitations: captureLeaveRead(
-			() => get(can).has(PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED),
+			() => get(can).hasAll(...leaveCompanionPermissions),
 			() => listLeaveCompanionInvitations({ requestFetch: fetch, query: { offset } }),
 			[]
 		)

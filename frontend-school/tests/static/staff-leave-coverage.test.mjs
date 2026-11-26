@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
 	coverageCounts,
 	coverageByOriginalTeacher,
+	coverageCandidateBatch,
 	coverageReturnCaption,
 	coverageSelectionMatches,
 	coverageSelections,
@@ -23,6 +24,14 @@ const lessons = [
 	{ lessonKey: 'math-class', assignment },
 	{ lessonKey: 'second-day', assignment: null }
 ];
+test('candidate batches retain all lessons for small groups and advance past assigned lessons for large groups', () => {
+	const keys = Array.from({ length: 501 }, (_, index) => `lesson-${index + 1}`);
+	const first = keys.slice(0, 500);
+	assert.deepEqual(coverageCandidateBatch(first, new Set(['lesson-1'])), first);
+	assert.deepEqual(coverageCandidateBatch(keys, new Set()), first);
+	assert.deepEqual(coverageCandidateBatch(keys, new Set(first)), ['lesson-501']);
+	assert.deepEqual(coverageCandidateBatch(keys, new Set(keys)), []);
+});
 test('coverage groups by teacher identity before date while keeping every original lesson key', () => {
 	const days = [
 		{

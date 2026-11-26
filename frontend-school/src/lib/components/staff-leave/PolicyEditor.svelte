@@ -55,6 +55,7 @@
 		onsaved: (policy: LeavePolicyVersion) => void;
 	} = $props();
 	const initial = untrack(() => leavePolicyDraft(type.kind, initialPolicy, preset));
+	const officialTravel = $derived(type.kind === 'official_travel');
 	let effectiveFrom = $state<string | undefined>(initial.effectiveFrom),
 		sourceReference = $state(initial.sourceReference),
 		personnelTypes = $state<StaffPersonnelType[]>(initial.personnelTypes);
@@ -308,7 +309,7 @@
 	data-testid="leave-policy-editor"
 >
 	{#if preset}<p class="rounded-lg border bg-muted/20 p-3 text-sm">
-			แบบร่างจากเกณฑ์ {preset.name} · ตรวจวันที่มีผล วันทำงานตามกรณี และผู้พิจารณาก่อนบันทึก
+			แบบร่างจากเกณฑ์ {preset.name} · ตรวจวันที่มีผล{officialTravel ? '' : ' วันทำงานตามกรณี'} และผู้พิจารณาก่อนบันทึก
 		</p>{/if}
 	{#if initialPolicy?.unit === 'half_day'}<div
 			class="space-y-1 rounded-lg border bg-primary/5 p-3 text-sm"
@@ -320,7 +321,7 @@
 				ระบบไม่ปัดค่าให้
 			</p>
 		</div>{/if}
-	{#if fixedQuotaMonth !== undefined}<p class="text-xs text-muted-foreground">
+	{#if !officialTravel && fixedQuotaMonth !== undefined}<p class="text-xs text-muted-foreground">
 			ใช้รอบปีเริ่มเดิมของประเภทคำขอนี้ โดยไม่เริ่มสิทธิ์ใหม่
 		</p>{/if}
 	{#if quotaMonthConflict}<PageState
@@ -388,16 +389,21 @@
 					<Label>หน่วย</Label>
 					<p class="text-sm">{unit === 'day' ? 'วันเต็ม' : 'นาที'}</p>
 				</div>
-				<Choice
-					id="policy-counting"
-					label="วิธีนับวัน *"
-					bind:value={countingMode}
-					options={[
-						{ value: 'calendar_days', label: 'วันปฏิทิน' },
-						{ value: 'working_days', label: 'วันทำงานที่โรงเรียนกำหนด' }
-					]}
-					disabled={pending || unit === 'minute'}
-				/>
+				{#if officialTravel}
+					<div class="space-y-2">
+						<p class="text-sm font-medium">วิธีนับวัน</p>
+						<p class="text-sm">วันปฏิทิน</p>
+					</div>
+				{:else}<Choice
+						id="policy-counting"
+						label="วิธีนับวัน *"
+						bind:value={countingMode}
+						options={[
+							{ value: 'calendar_days', label: 'วันปฏิทิน' },
+							{ value: 'working_days', label: 'วันทำงานที่โรงเรียนกำหนด' }
+						]}
+						disabled={pending || unit === 'minute'}
+					/>{/if}
 			</div>
 			{#if countingMode === 'working_days'}<fieldset>
 					<legend class="mb-2 text-sm font-medium">วันทำงาน *</legend>
@@ -480,50 +486,50 @@
 							>
 						</div>{/if}
 				</div>
-				<div class="space-y-2">
-					<Label for="policy-annual">สิทธิที่โรงเรียนกำหนดต่อรอบปี ({amountLabel})</Label><Input
-						id="policy-annual"
-						type="number"
-						min={amountStep}
-						step={amountStep}
-						value={annualLimit}
-						oninput={(event) => {
-							annualLimit = event.currentTarget.value;
-							acknowledgeLimit('annualLimit', annualLimit);
-						}}
-						aria-invalid={unresolvedLimits.annualLimit}
-						aria-describedby={unresolvedLimits.annualLimit ? 'policy-annual-unsafe' : undefined}
-						disabled={pending}
-						placeholder={unresolvedLimits.annualLimit ? 'ต้องระบุใหม่' : 'ไม่กำหนด'}
-					/>
-					{#if unresolvedLimits.annualLimit}<div
-							id="policy-annual-unsafe"
-							class="space-y-2 text-sm"
-							data-testid="policy-annual-unsafe"
-						>
-							<p class="text-destructive">{unsafeLimitMessage}</p>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								disabled={pending}
-								onclick={() => removeUnresolvedLimit('annualLimit')}>นำเงื่อนไขนี้ออก</Button
+				{#if !officialTravel}<div class="space-y-2">
+						<Label for="policy-annual">สิทธิที่โรงเรียนกำหนดต่อรอบปี ({amountLabel})</Label><Input
+							id="policy-annual"
+							type="number"
+							min={amountStep}
+							step={amountStep}
+							value={annualLimit}
+							oninput={(event) => {
+								annualLimit = event.currentTarget.value;
+								acknowledgeLimit('annualLimit', annualLimit);
+							}}
+							aria-invalid={unresolvedLimits.annualLimit}
+							aria-describedby={unresolvedLimits.annualLimit ? 'policy-annual-unsafe' : undefined}
+							disabled={pending}
+							placeholder={unresolvedLimits.annualLimit ? 'ต้องระบุใหม่' : 'ไม่กำหนด'}
+						/>
+						{#if unresolvedLimits.annualLimit}<div
+								id="policy-annual-unsafe"
+								class="space-y-2 text-sm"
+								data-testid="policy-annual-unsafe"
 							>
-						</div>{/if}
-				</div>
-				<Choice
-					id="policy-year-month"
-					label="เดือนเริ่มรอบปี *"
-					value={quotaMonth === undefined ? '' : String(quotaMonth)}
-					onchange={(value) => (quotaMonth = Number(value))}
-					options={Array.from({ length: 12 }, (_, index) => ({
-						value: String(index + 1),
-						label: new Intl.DateTimeFormat('th-TH', { month: 'long' }).format(
-							new Date(2026, index, 1)
-						)
-					}))}
-					disabled={pending || fixedQuotaMonth !== undefined}
-				/>
+								<p class="text-destructive">{unsafeLimitMessage}</p>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									disabled={pending}
+									onclick={() => removeUnresolvedLimit('annualLimit')}>นำเงื่อนไขนี้ออก</Button
+								>
+							</div>{/if}
+					</div>
+					<Choice
+						id="policy-year-month"
+						label="เดือนเริ่มรอบปี *"
+						value={quotaMonth === undefined ? '' : String(quotaMonth)}
+						onchange={(value) => (quotaMonth = Number(value))}
+						options={Array.from({ length: 12 }, (_, index) => ({
+							value: String(index + 1),
+							label: new Intl.DateTimeFormat('th-TH', { month: 'long' }).format(
+								new Date(2026, index, 1)
+							)
+						}))}
+						disabled={pending || fixedQuotaMonth !== undefined}
+					/>{/if}
 			</div>
 		</Tabs.Content>
 		<Tabs.Content value="evidence" class="space-y-3 pt-3">

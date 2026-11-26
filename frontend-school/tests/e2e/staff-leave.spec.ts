@@ -103,13 +103,39 @@ test('travel request keeps day boundaries and two companions on a narrow screen'
 	await expect(page).toHaveURL(/\/staff\/official-travel$/);
 });
 
-test('companion confirmation uses redacted assigned data and retries the same revision', async ({
+for (const permission of [
+	PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED,
+	PERMISSIONS.STAFF_LEAVE_UPDATE_ASSIGNED
+]) {
+	test(`companion invitations require both assigned permissions with only ${permission}`, async ({
+		page
+	}) => {
+		const api = await mockLeave(page, { permissions: [permission] });
+		await page.goto('/staff/leave');
+		await expect(page.getByTestId('leave-requests')).toContainText('ลาป่วย');
+		await expect(page.getByRole('link', { name: 'คำเชิญร่วมเดินทาง', exact: true })).toHaveCount(0);
+		await expect(
+			page.getByRole('link', { name: 'คาบสอนที่มอบหมายให้ฉัน', exact: true })
+		).toHaveCount(permission === PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED ? 1 : 0);
+
+		await page.goto('/staff/leave/companions');
+		if (permission === PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED) await expect(page).toHaveURL(/\/403/);
+		else await expect(page.getByText('ไม่มีสิทธิ์เปิดคำเชิญร่วมเดินทาง')).toBeVisible();
+		expect(api.count('/api/staff-leave/companion-invitations')).toBe(0);
+		expect(api.writes).toHaveLength(0);
+	});
+}
+
+test('companion confirmation uses redacted assigned data and retries independently by revision', async ({
 	page
 }) => {
 	await mockLeave(page, {
 		permissions: [PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED, PERMISSIONS.STAFF_LEAVE_UPDATE_ASSIGNED]
 	});
 	let confirmed = false;
+	let secondConfirmed = false;
+	let releaseFirst = () => {};
+	const firstPending = new Promise<void>((resolve) => (releaseFirst = resolve));
 	const writes: { requestId: string; expectedRevision: number }[] = [];
 	await page.route('**/api/staff-leave/companion-invitations?*', (route) =>
 		route.fulfill({
@@ -125,19 +151,36 @@ test('companion confirmation uses redacted assigned data and retries the same re
 						startDate: '2026-10-19',
 						endDate: '2026-10-20',
 						confirmed
+					},
+					{
+						requestId: secondLeaveId,
+						revision: 6,
+						kind: 'exit',
+						ownerName: 'ครูผู้ขอออกนอกโรงเรียน',
+						startDate: '2026-10-21',
+						endDate: '2026-10-21',
+						startTime: '09:00:00',
+						endTime: '11:00:00',
+						confirmed: secondConfirmed
 					}
 				]
 			}
 		})
 	);
-	await page.route(`**/api/staff-leave/requests/${leaveId}/confirm-companion`, (route) => {
+	await page.route(`**/api/staff-leave/requests/${leaveId}/confirm-companion`, async (route) => {
 		writes.push(route.request().postDataJSON());
-		if (writes.length === 1)
+		if (writes.length === 1) {
+			await firstPending;
 			return route.fulfill({
 				status: 503,
 				json: { success: false, error: 'บริการยืนยันไม่พร้อม' }
 			});
+		}
 		confirmed = true;
+		return route.fulfill({ json: { success: true, data: {} } });
+	});
+	await page.route(`**/api/staff-leave/requests/${secondLeaveId}/confirm-companion`, (route) => {
+		secondConfirmed = true;
 		return route.fulfill({ json: { success: true, data: {} } });
 	});
 	const detailReads: string[] = [];
@@ -149,15 +192,86 @@ test('companion confirmation uses redacted assigned data and retries the same re
 			detailReads.push(request.url());
 	});
 	await page.goto('/staff/leave/companions');
-	await expect(page.getByText('ศูนย์ประชุมจังหวัด', { exact: false })).toBeVisible();
-	const confirm = page.getByRole('button', { name: 'ยืนยันร่วมเดินทาง', exact: true });
+	const first = page.getByRole('listitem').filter({ hasText: 'ศูนย์ประชุมจังหวัด' });
+	const second = page.getByRole('listitem').filter({ hasText: 'ครูผู้ขอออกนอกโรงเรียน' });
+	const confirm = first.getByRole('button', { name: 'ยืนยันร่วมเดินทาง', exact: true });
 	await confirm.click();
-	await expect(page.getByRole('alert')).toContainText('บริการยืนยันไม่พร้อม');
+	await expect(first.getByRole('button', { name: 'กำลังดำเนินการ...' })).toBeDisabled();
+	await second.getByRole('button', { name: 'ยืนยันร่วมเดินทาง', exact: true }).click();
+	await expect(second.getByText('ยืนยันแล้ว', { exact: true })).toBeVisible();
+	releaseFirst();
+	await expect(first.getByRole('alert')).toContainText('บริการยืนยันไม่พร้อม');
 	await confirm.click();
-	await expect(page.getByText('ยืนยันแล้ว', { exact: true })).toBeVisible();
+	await expect(first.getByText('ยืนยันแล้ว', { exact: true })).toBeVisible();
 	expect(writes[0]).toEqual(writes[1]);
 	expect(writes[0].expectedRevision).toBe(4);
 	expect(detailReads).toEqual([]);
+});
+
+test('manager saves a calendar-day official travel preset without annual leave settings', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-18T03:00:00Z'));
+	const api = await mockLeave(page, { travel: true });
+	const personnelTypes = ['civil_servant', 'government_employee', 'permanent_employee'];
+	await page.route('**/api/staff-leave/policy-presets', (route) =>
+		route.fulfill({
+			json: {
+				success: true,
+				data: [
+					{
+						id: 'official_travel',
+						kind: 'official_travel',
+						name: 'เดินทางไปราชการในประเทศ (สพฐ.)',
+						sourceUrl: 'https://example.invalid/travel.pdf',
+						sourceReference: 'คำสั่ง สพฐ. ที่ 1365/2560 ข้อ 3–5',
+						personnelTypes,
+						unit: 'day',
+						countingMode: 'calendar_days',
+						quotaYearStartMonth: null,
+						guidance: ['เลือกผู้อนุมัติตามต้นสังกัดและตรวจหลักฐานประกอบภารกิจ']
+					}
+				]
+			}
+		})
+	);
+	await page.goto('/staff/leave/settings');
+	await page.getByRole('button', { name: 'ดูเกณฑ์ เดินทางไปราชการในประเทศ', exact: true }).click();
+	await page.getByRole('button', { name: 'เลือกเกณฑ์อ้างอิง', exact: true }).click();
+	await page.locator('#leave-preset').click();
+	await page.getByRole('option', { name: 'เดินทางไปราชการในประเทศ (สพฐ.)', exact: true }).click();
+	await page.getByRole('button', { name: 'ใช้เกณฑ์นี้กับแบบร่าง', exact: true }).click();
+	expect(api.writes).toHaveLength(0);
+	await chooseDate(page, 'policy-effective');
+	await page.getByRole('tab', { name: 'จำนวน / การนับ', exact: true }).click();
+	await expect(page.getByText('วันปฏิทิน', { exact: true })).toBeVisible();
+	for (const field of ['policy-counting', 'policy-weekday-0', 'policy-annual', 'policy-year-month'])
+		await expect(page.locator(`#${field}`)).toHaveCount(0);
+	await page.locator('#policy-max').fill('4');
+	await page.getByRole('tab', { name: 'หลักฐาน', exact: true }).click();
+	await page.getByRole('checkbox', { name: 'ต้องแนบหลักฐานทุกคำขอ' }).check();
+	await page.getByRole('tab', { name: 'ผู้พิจารณา', exact: true }).click();
+	await page.locator('#policy-step-title-0').fill('อนุมัติเดินทาง');
+	await page.locator('#policy-step-recipient-0').click();
+	await page.getByRole('option', { name: 'ครูหัวหน้าฝ่าย ทดสอบ', exact: true }).click();
+	await page.getByRole('button', { name: 'เพิ่มผู้พิจารณา', exact: true }).click();
+	await page.getByRole('button', { name: 'บันทึกเกณฑ์ฉบับใหม่', exact: true }).click();
+	await expect(page.getByTestId('leave-policies')).toContainText('คำสั่ง สพฐ. ที่ 1365/2560');
+	expect(api.writes).toHaveLength(1);
+	expect(api.writes[0].path).toBe(`/api/staff-leave/types/${travelTypeId}/policies`);
+	expect(api.writes[0].payload).toMatchObject({
+		effectiveFrom: '2026-10-19',
+		unit: 'day',
+		countingMode: 'calendar_days',
+		workingWeekdays: [],
+		excludedDates: [],
+		personnelTypes,
+		quotaYearStartMonth: 1,
+		annualLimit: null,
+		maxPerRequest: 4,
+		evidenceRequired: true,
+		steps: [expect.objectContaining({ title: 'อนุมัติเดินทาง', kind: 'approve' })]
+	});
 });
 
 test('manager explicitly previews a reference preset before opening a fresh version', async ({

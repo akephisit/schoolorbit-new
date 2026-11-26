@@ -1179,7 +1179,7 @@
 			"context": "none",
 			"status": "complete",
 			"backendOwner": "school-staff-leave",
-			"notes": "Route owns a bounded list of redacted invitations for the current actor; confirmation uses assigned update permission and refreshes the invitation region."
+			"notes": "Route owns bounded redacted invitations for the current actor. The list and per-invitation confirmation require both assigned permissions."
 		},
 		{
 			"route": "staff/leave/new",

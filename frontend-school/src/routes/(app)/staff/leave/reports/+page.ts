@@ -19,10 +19,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 	const from = validReportDate(url.searchParams.get('from')) ?? `${today.slice(0, 4)}-01-01`;
 	const to = validReportDate(url.searchParams.get('to')) ?? today;
 	const rawKind = url.searchParams.get('kind');
-	const kind =
-		rawKind === 'leave' || rawKind === 'exit' || rawKind === 'official_travel'
-			? rawKind
-			: undefined;
+	const kind = rawKind === 'leave' || rawKind === 'exit' ? rawKind : undefined;
 	const query = { from, to, kind };
 	return {
 		title: 'สรุปการใช้สิทธิ์',

@@ -87,7 +87,7 @@
 						bind:value={search}
 						{disabled}
 						class="min-w-40 flex-1"
-						maxlength={200}
+						maxlength={100}
 						type="search"
 						onkeydown={(event) => {
 							if (event.key === 'Enter' && !event.isComposing) {

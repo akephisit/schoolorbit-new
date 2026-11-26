@@ -7067,6 +7067,38 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/staff-leave/companion-invitations': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaffLeaveCompanionInvitations'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/companion-options': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaffLeaveCompanionOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/staff-leave/coverage/assigned': {
 		parameters: {
 			query?: never;
@@ -7123,6 +7155,22 @@ export interface paths {
 			cookie?: never;
 		};
 		get: operations['getStaffLeaveOptions'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/policy-presets': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listStaffLeavePolicyPresets'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -7189,6 +7237,22 @@ export interface paths {
 		get?: never;
 		put?: never;
 		post: operations['cancelStaffLeaveRequest'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/api/staff-leave/requests/{id}/confirm-companion': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post: operations['confirmStaffLeaveCompanion'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -12205,6 +12269,7 @@ export interface components {
 				canCancel: boolean;
 				canEdit: boolean;
 				canSubmit: boolean;
+				companionConfirmations: components['schemas']['LeaveCompanionStatus'][];
 				contentHash: string;
 				coverage: components['schemas']['LeaveCoveragePlan'];
 				evidenceFileIds: string[];
@@ -15371,6 +15436,44 @@ export interface components {
 			message?: string;
 			success: boolean;
 		};
+		ApiResponse_Vec_LeaveCompanionInvitation: {
+			data: {
+				confirmed: boolean;
+				destination?: string | null;
+				/** Format: date */
+				endDate: string;
+				endTime?: string | null;
+				kind: components['schemas']['LeaveKind'];
+				ownerName: string;
+				/** Format: uuid */
+				requestId: string;
+				/** Format: int64 */
+				revision: number;
+				/** Format: date */
+				startDate: string;
+				startTime?: string | null;
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_LeavePolicyPreset: {
+			data: {
+				countingMode: components['schemas']['LeaveCountingMode'];
+				guidance: string[];
+				id: components['schemas']['LeavePolicyPresetId'];
+				kind: components['schemas']['LeaveKind'];
+				name: string;
+				personnelTypes: components['schemas']['StaffPersonnelType'][];
+				/** Format: int32 */
+				quotaYearStartMonth?: number | null;
+				/** @description Reference to copy into a draft. For local school exit the school supplies its own reference. */
+				sourceReference?: string | null;
+				sourceUrl: string;
+				unit: components['schemas']['LeavePolicyUnit'];
+			}[];
+			message?: string;
+			success: boolean;
+		};
 		ApiResponse_Vec_LeavePolicyVersion: {
 			data: {
 				/** Format: int64 */
@@ -15406,6 +15509,15 @@ export interface components {
 				/** Format: int64 */
 				version: number;
 				workingWeekdays: number[];
+			}[];
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_Vec_LeaveRoutingUser: {
+			data: {
+				displayName: string;
+				/** Format: uuid */
+				id: string;
 			}[];
 			message?: string;
 			success: boolean;
@@ -22400,6 +22512,27 @@ export interface components {
 			requestId: string;
 			signature?: components['schemas']['LeaveSignatureConsent'] | null;
 		};
+		LeaveCompanionInvitation: {
+			confirmed: boolean;
+			destination?: string | null;
+			/** Format: date */
+			endDate: string;
+			endTime?: string | null;
+			kind: components['schemas']['LeaveKind'];
+			ownerName: string;
+			/** Format: uuid */
+			requestId: string;
+			/** Format: int64 */
+			revision: number;
+			/** Format: date */
+			startDate: string;
+			startTime?: string | null;
+		};
+		LeaveCompanionStatus: {
+			confirmed: boolean;
+			/** Format: uuid */
+			userId: string;
+		};
 		/** @enum {string} */
 		LeaveCountingMode: 'calendar_days' | 'working_days';
 		LeaveCoverageAssignment: {
@@ -22478,6 +22611,7 @@ export interface components {
 		};
 		LeaveCoverageLesson: components['schemas']['DatedTeachingLesson'] & {
 			assignment?: components['schemas']['LeaveCoverageAssignment'] | null;
+			originalTeacherName?: string | null;
 		};
 		/** @enum {string} */
 		LeaveCoverageMode: 'substitution' | 'reciprocal';
@@ -22577,7 +22711,7 @@ export interface components {
 			signature?: components['schemas']['LeaveSignatureConsent'] | null;
 		};
 		/** @enum {string} */
-		LeaveKind: 'leave' | 'exit';
+		LeaveKind: 'leave' | 'exit' | 'official_travel';
 		LeaveMutationRequest: {
 			/** Format: int64 */
 			expectedRevision: number;
@@ -22589,12 +22723,21 @@ export interface components {
 			academicTermId?: string | null;
 			/** Format: uuid */
 			academicYearId?: string | null;
+			/**
+			 * @description Up to 100 distinct active staff members, excluding the requester. For exit and official travel only.
+			 *     Official travel permits up to 3,000 occupied dates summed across all participants including the requester.
+			 */
+			companionUserIds?: string[];
+			destination?: string | null;
 			/** Format: date */
 			endDate: string;
 			endTime?: string | null;
 			evidenceFileIds?: string[];
 			reason: string;
-			/** Format: date */
+			/**
+			 * Format: date
+			 * @description The period may span at most 367 calendar dates, including both endpoints.
+			 */
 			startDate: string;
 			startTime?: string | null;
 			/** Format: uuid */
@@ -22604,6 +22747,22 @@ export interface components {
 			personnelType?: components['schemas']['StaffPersonnelType'] | null;
 			types: components['schemas']['LeaveType'][];
 		};
+		LeavePolicyPreset: {
+			countingMode: components['schemas']['LeaveCountingMode'];
+			guidance: string[];
+			id: components['schemas']['LeavePolicyPresetId'];
+			kind: components['schemas']['LeaveKind'];
+			name: string;
+			personnelTypes: components['schemas']['StaffPersonnelType'][];
+			/** Format: int32 */
+			quotaYearStartMonth?: number | null;
+			/** @description Reference to copy into a draft. For local school exit the school supplies its own reference. */
+			sourceReference?: string | null;
+			sourceUrl: string;
+			unit: components['schemas']['LeavePolicyUnit'];
+		};
+		/** @enum {string} */
+		LeavePolicyPresetId: 'sick_leave' | 'personal_leave' | 'school_exit' | 'official_travel';
 		/** @enum {string} */
 		LeavePolicyUnit: 'day' | 'minute';
 		LeavePolicyVersion: {
@@ -22649,6 +22808,7 @@ export interface components {
 			canCancel: boolean;
 			canEdit: boolean;
 			canSubmit: boolean;
+			companionConfirmations: components['schemas']['LeaveCompanionStatus'][];
 			contentHash: string;
 			coverage: components['schemas']['LeaveCoveragePlan'];
 			evidenceFileIds: string[];
@@ -22670,9 +22830,13 @@ export interface components {
 			academicYearId?: string | null;
 			/** Format: int64 */
 			amount: number;
+			/** Format: int64 */
+			companionRevision?: number | null;
+			companions?: components['schemas']['LeaveRoutingUser'][];
 			/** Format: date-time */
 			createdAt: string;
 			dayPortion: components['schemas']['LeaveDayPortion'];
+			destination?: string | null;
 			/** Format: date */
 			endDate: string;
 			endTime?: string | null;
@@ -59953,6 +60117,123 @@ export interface operations {
 			};
 		};
 	};
+	listStaffLeaveCompanionInvitations: {
+		parameters: {
+			query?: {
+				offset?: number;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request completed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LeaveCompanionInvitation'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request conflicts with the current resource state */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStaffLeaveCompanionOptions: {
+		parameters: {
+			query?: {
+				offset?: number;
+				search?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request completed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LeaveRoutingUser'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request conflicts with the current resource state */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
 	listAssignedStaffLeaveCoverage: {
 		parameters: {
 			query?: {
@@ -60202,6 +60483,62 @@ export interface operations {
 			};
 			/** @description Resource not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request conflicts with the current resource state */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listStaffLeavePolicyPresets: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request completed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_Vec_LeavePolicyPreset'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};
@@ -60626,6 +60963,69 @@ export interface operations {
 			};
 			/** @description Resource not found */
 			404: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Request conflicts with the current resource state */
+			409: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	confirmStaffLeaveCompanion: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				/** @description Staff leave request ID */
+				id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['LeaveMutationRequest'];
+			};
+		};
+		responses: {
+			/** @description Request completed */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_EmptyData'];
+				};
+			};
+			/** @description Invalid input */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Permission denied */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

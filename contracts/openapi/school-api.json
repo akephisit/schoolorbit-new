@@ -12995,6 +12995,12 @@
               "canSubmit": {
                 "type": "boolean"
               },
+              "companionConfirmations": {
+                "items": {
+                  "$ref": "#/components/schemas/LeaveCompanionStatus"
+                },
+                "type": "array"
+              },
               "contentHash": {
                 "type": "string"
               },
@@ -13048,6 +13054,7 @@
               }
             },
             "required": [
+              "companionConfirmations",
               "coverage",
               "request",
               "processPurpose",
@@ -24774,6 +24781,159 @@
         ],
         "type": "object"
       },
+      "ApiResponse_Vec_LeaveCompanionInvitation": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "confirmed": {
+                  "type": "boolean"
+                },
+                "destination": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "endDate": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "endTime": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/LeaveKind"
+                },
+                "ownerName": {
+                  "type": "string"
+                },
+                "requestId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "revision": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "startDate": {
+                  "format": "date",
+                  "type": "string"
+                },
+                "startTime": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "requestId",
+                "revision",
+                "kind",
+                "ownerName",
+                "startDate",
+                "endDate",
+                "confirmed"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_LeavePolicyPreset": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "countingMode": {
+                  "$ref": "#/components/schemas/LeaveCountingMode"
+                },
+                "guidance": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "$ref": "#/components/schemas/LeavePolicyPresetId"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/LeaveKind"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "personnelTypes": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffPersonnelType"
+                  },
+                  "type": "array"
+                },
+                "quotaYearStartMonth": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "sourceReference": {
+                  "description": "Reference to copy into a draft. For local school exit the school supplies its own reference.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sourceUrl": {
+                  "type": "string"
+                },
+                "unit": {
+                  "$ref": "#/components/schemas/LeavePolicyUnit"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "kind",
+                "sourceUrl",
+                "personnelTypes",
+                "unit",
+                "countingMode",
+                "guidance"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_Vec_LeavePolicyVersion": {
         "properties": {
           "data": {
@@ -24901,6 +25061,40 @@
                 "steps",
                 "templateId",
                 "createdAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
+      "ApiResponse_Vec_LeaveRoutingUser": {
+        "properties": {
+          "data": {
+            "items": {
+              "properties": {
+                "displayName": {
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "displayName"
               ],
               "type": "object"
             },
@@ -50385,6 +50579,79 @@
         ],
         "type": "object"
       },
+      "LeaveCompanionInvitation": {
+        "properties": {
+          "confirmed": {
+            "type": "boolean"
+          },
+          "destination": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "endTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LeaveKind"
+          },
+          "ownerName": {
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "requestId",
+          "revision",
+          "kind",
+          "ownerName",
+          "startDate",
+          "endDate",
+          "confirmed"
+        ],
+        "type": "object"
+      },
+      "LeaveCompanionStatus": {
+        "properties": {
+          "confirmed": {
+            "type": "boolean"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "userId",
+          "confirmed"
+        ],
+        "type": "object"
+      },
       "LeaveCountingMode": {
         "enum": [
           "calendar_days",
@@ -50706,6 +50973,12 @@
                   {
                     "type": "null"
                   }
+                ]
+              },
+              "originalTeacherName": {
+                "type": [
+                  "string",
+                  "null"
                 ]
               }
             },
@@ -51066,7 +51339,8 @@
       "LeaveKind": {
         "enum": [
           "leave",
-          "exit"
+          "exit",
+          "official_travel"
         ],
         "type": "string"
       },
@@ -51105,6 +51379,21 @@
               "null"
             ]
           },
+          "companionUserIds": {
+            "description": "Up to 100 distinct active staff members, excluding the requester. For exit and official travel only.\nOfficial travel permits up to 3,000 occupied dates summed across all participants including the requester.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "destination": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "endDate": {
             "format": "date",
             "type": "string"
@@ -51126,6 +51415,7 @@
             "type": "string"
           },
           "startDate": {
+            "description": "The period may span at most 367 calendar dates, including both endpoints.",
             "format": "date",
             "type": "string"
           },
@@ -51171,6 +51461,75 @@
           "types"
         ],
         "type": "object"
+      },
+      "LeavePolicyPreset": {
+        "properties": {
+          "countingMode": {
+            "$ref": "#/components/schemas/LeaveCountingMode"
+          },
+          "guidance": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "$ref": "#/components/schemas/LeavePolicyPresetId"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LeaveKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "personnelTypes": {
+            "items": {
+              "$ref": "#/components/schemas/StaffPersonnelType"
+            },
+            "type": "array"
+          },
+          "quotaYearStartMonth": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "sourceReference": {
+            "description": "Reference to copy into a draft. For local school exit the school supplies its own reference.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "unit": {
+            "$ref": "#/components/schemas/LeavePolicyUnit"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "sourceUrl",
+          "personnelTypes",
+          "unit",
+          "countingMode",
+          "guidance"
+        ],
+        "type": "object"
+      },
+      "LeavePolicyPresetId": {
+        "enum": [
+          "sick_leave",
+          "personal_leave",
+          "school_exit",
+          "official_travel"
+        ],
+        "type": "string"
       },
       "LeavePolicyUnit": {
         "enum": [
@@ -51333,6 +51692,12 @@
           "canSubmit": {
             "type": "boolean"
           },
+          "companionConfirmations": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveCompanionStatus"
+            },
+            "type": "array"
+          },
           "contentHash": {
             "type": "string"
           },
@@ -51386,6 +51751,7 @@
           }
         },
         "required": [
+          "companionConfirmations",
           "coverage",
           "request",
           "processPurpose",
@@ -51438,12 +51804,31 @@
             "format": "int64",
             "type": "integer"
           },
+          "companionRevision": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "companions": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveRoutingUser"
+            },
+            "type": "array"
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
           },
           "dayPortion": {
             "$ref": "#/components/schemas/LeaveDayPortion"
+          },
+          "destination": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "endDate": {
             "format": "date",
@@ -114524,6 +114909,156 @@
         ]
       }
     },
+    "/api/staff-leave/companion-invitations": {
+      "get": {
+        "operationId": "listStaffLeaveCompanionInvitations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LeaveCompanionInvitation"
+                }
+              }
+            },
+            "description": "Request completed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflicts with the current resource state"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/companion-options": {
+      "get": {
+        "operationId": "listStaffLeaveCompanionOptions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LeaveRoutingUser"
+                }
+              }
+            },
+            "description": "Request completed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflicts with the current resource state"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
     "/api/staff-leave/coverage/assigned": {
       "get": {
         "operationId": "listAssignedStaffLeaveCoverage",
@@ -114817,6 +115352,66 @@
               }
             },
             "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflicts with the current resource state"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/policy-presets": {
+      "get": {
+        "operationId": "listStaffLeavePolicyPresets",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Vec_LeavePolicyPreset"
+                }
+              }
+            },
+            "description": "Request completed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
           },
           "409": {
             "content": {
@@ -115365,6 +115960,88 @@
               }
             },
             "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Request conflicts with the current resource state"
+          }
+        },
+        "tags": [
+          "staff-leave"
+        ]
+      }
+    },
+    "/api/staff-leave/requests/{id}/confirm-companion": {
+      "post": {
+        "operationId": "confirmStaffLeaveCompanion",
+        "parameters": [
+          {
+            "description": "Staff leave request ID",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmptyData"
+                }
+              }
+            },
+            "description": "Request completed"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid input"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Permission denied"
           },
           "409": {
             "content": {

@@ -6,6 +6,7 @@
 	import { listLeaveRequests } from '#lib/api/staff-leave.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { LeaveRegion } from '#lib/staff-leave/region.svelte.js';
+	import { leaveCompanionPermissions } from '#lib/staff-leave/route-data.js';
 	import {
 		leaveHome,
 		leavePeriodCaption,
@@ -74,7 +75,10 @@
 		{#if $can.has(PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED)}<Button
 				variant="outline"
 				href="/staff/leave/assigned">คาบสอนที่มอบหมายให้ฉัน</Button
-			><Button variant="outline" href="/staff/leave/companions">คำเชิญร่วมเดินทาง</Button>{/if}
+			>{/if}
+		{#if $can.hasAll(...leaveCompanionPermissions)}
+			<Button variant="outline" href="/staff/leave/companions">คำเชิญร่วมเดินทาง</Button>
+		{/if}
 		{#if $can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN)}<Button
 				href={`${home}/new?returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`}
 				><Plus class="size-4" />สร้างคำขอ{leaveKindLabels[kind]}</Button

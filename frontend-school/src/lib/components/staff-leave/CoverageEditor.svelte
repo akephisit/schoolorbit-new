@@ -17,6 +17,8 @@
 	import {
 		coverageSelections,
 		coverageByOriginalTeacher,
+		coverageCandidateBatch,
+		coverageCandidateLessonLimit,
 		coverageLessonLabels,
 		coverageCounts,
 		coverageSelectionMatches,
@@ -73,7 +75,7 @@
 	let choiceLabels = $state<Record<string, { teacherName: string; offeringName: string }>>({});
 	let teacher = $state<LeaveCoverageCandidate | null>(null),
 		mode = $state<LeaveCoverageSelection['mode']>('substitution'),
-		taughtOfferingId = $state(''),
+		taughtContent = $state('original'),
 		taughtActivity = $state('');
 	let returnDate = $state<string | undefined>(),
 		returnLessons = $state<DatedTeachingLesson[]>([]),
@@ -91,6 +93,12 @@
 	const busy = $derived(pending || refreshing);
 	const allowed = $derived(!readonly && (detail.canEdit || plan.canManage));
 	const counts = $derived(coverageCounts(lessons, assignments));
+	const assignedLessonKeys = $derived(
+		new Set(assignments.map((assignment) => assignment.lessonKey))
+	);
+	const selectedReturnLesson = $derived(
+		returnLessons.find((lesson) => lesson.lessonKey === returnLessonKey)
+	);
 	const selectedOriginalTeacher = $derived(
 		teacherGroups.find(
 			(group) =>
@@ -124,23 +132,29 @@
 	});
 	function clearPicker() {
 		candidateRequest.abort();
-		returnRequest.abort();
+		resetReturnLookup();
 		candidates = null;
 		teacher = null;
 		candidateError = '';
+		candidateLoading = false;
+	}
+	function resetReturnLookup() {
+		returnRequest.abort();
 		returnLessons = [];
 		returnLessonKey = '';
 		returnError = '';
-		candidateLoading = false;
 		returnLoading = false;
 	}
 	function toggle(lesson: LeaveCoverageLesson, checked: boolean) {
 		const key = lesson.lessonKey;
-		selected = checked
-			? selectedOriginalTeacher?.teacherId === lesson.teacherId
-				? [...new Set([...selected, key])]
-				: [key]
-			: selected.filter((value) => value !== key);
+		if (checked) {
+			if (selectedOriginalTeacher?.teacherId !== lesson.teacherId) selected = [key];
+			else if (selected.length < coverageCandidateLessonLimit && !selected.includes(key))
+				selected = [...selected, key];
+			else return;
+		} else {
+			selected = selected.filter((value) => value !== key);
+		}
 		clearPicker();
 	}
 	function toggleTeacherLessons(keys: string[]) {
@@ -149,15 +163,21 @@
 	}
 	async function findCandidates(event?: SubmitEvent) {
 		event?.preventDefault();
-		if (!allowed || !selected.length || !sourceDigest || stale || busy) return;
+		if (
+			!allowed ||
+			!selected.length ||
+			selected.length > coverageCandidateLessonLimit ||
+			!sourceDigest ||
+			stale ||
+			busy
+		)
+			return;
 		const ticket = candidateRequest.begin();
 		candidateLoading = true;
 		candidateError = '';
 		candidates = null;
 		teacher = null;
-		returnRequest.abort();
-		returnLessons = [];
-		returnLessonKey = '';
+		resetReturnLookup();
 		try {
 			const result = await getLeaveCoverageCandidates(
 				detail.request.id,
@@ -186,30 +206,26 @@
 		if (!allowed || busy || disposed) return;
 		teacher = candidate;
 		mode = 'substitution';
-		taughtOfferingId = '';
+		taughtContent = 'original';
 		taughtActivity = '';
 		returnDate = undefined;
-		returnLessons = [];
-		returnLessonKey = '';
-		returnRequest.abort();
-		returnError = '';
+		resetReturnLookup();
 	}
 	async function findReturnLessons() {
 		if (
 			!allowed ||
 			busy ||
 			!teacher ||
+			mode !== 'reciprocal' ||
 			!sourceDigest ||
 			selected.length !== 1 ||
 			!returnDate ||
 			stale
 		)
 			return;
+		resetReturnLookup();
 		const ticket = returnRequest.begin();
 		returnLoading = true;
-		returnError = '';
-		returnLessons = [];
-		returnLessonKey = '';
 		try {
 			const result = await getLeaveCoverageReturnLessons(
 				detail.request.id,
@@ -233,20 +249,35 @@
 	function apply() {
 		if (!teacher || !allowed || stale || busy) return;
 		const selectedTeacher = teacher;
-		if (!taughtOfferingId && !taughtActivity.trim()) {
-			candidateError = 'เลือกวิชาที่สอนจริง หรือระบุกิจกรรม';
-			return;
-		}
-		if (mode === 'reciprocal' && (!returnLessonKey || selected.length !== 1)) {
+		const back = mode === 'reciprocal' ? selectedReturnLesson : undefined;
+		if (mode === 'reciprocal' && (!back || selected.length !== 1)) {
 			candidateError = 'เลือกคาบสอนคืนสำหรับนักเรียนกลุ่มเดียวกัน/ห้องเดียวกัน';
 			return;
 		}
+		const useActivity = mode === 'substitution' && taughtContent === 'activity';
+		const activity = taughtActivity.trim();
+		if (useActivity && !activity) {
+			candidateError = 'ระบุกิจกรรมที่สอนจริง';
+			return;
+		}
+		const taughtOfferingId = back
+			? (back.offeringId ?? null)
+			: taughtContent === 'original' || useActivity
+				? null
+				: taughtContent;
+		const actualActivity =
+			back && !taughtOfferingId
+				? (back.offeringName ?? 'กิจกรรมตามตาราง')
+				: useActivity
+					? activity
+					: null;
 		for (const key of selected)
 			choiceLabels[key] = {
 				teacherName: teacher.displayName,
 				offeringName:
+					back?.offeringName ??
 					teacher.taughtOfferings.find((value) => value.id === taughtOfferingId)?.name ??
-					taughtActivity.trim()
+					'วิชาที่เลือก'
 			};
 		assignments = [
 			...assignments.filter((value) => !selected.includes(value.lessonKey)),
@@ -254,17 +285,15 @@
 				lessonKey,
 				replacementTeacherId: selectedTeacher.teacherId,
 				mode,
-				taughtOfferingId: taughtOfferingId || null,
-				taughtActivity: taughtActivity.trim() || null,
-				returnLessonKey: mode === 'reciprocal' ? returnLessonKey : null
+				taughtOfferingId,
+				taughtActivity: actualActivity,
+				returnLessonKey: back?.lessonKey ?? null
 			}))
 		];
 		dirty = true;
 		ondirty?.(true);
-		teacher = null;
-		candidates = null;
 		selected = [];
-		candidateError = '';
+		clearPicker();
 	}
 	async function save() {
 		if (!allowed || stale || !sourceDigest || busy) return;
@@ -302,9 +331,8 @@
 		refreshing = true;
 		refreshError = '';
 		candidateRequest.abort();
-		returnRequest.abort();
 		candidateLoading = false;
-		returnLoading = false;
+		resetReturnLookup();
 		try {
 			const result = await refreshLeaveCoverage(detail.request.id, {
 				requestId: refreshIntent.for(basis),
@@ -398,20 +426,31 @@
 				{@const groupKeys = group.days.flatMap((day) =>
 					day.lessons.map((lesson) => lesson.lessonKey)
 				)}
-				{@const selectedAll = groupKeys.every((key) => selected.includes(key))}
+				{@const batchKeys = coverageCandidateBatch(groupKeys, assignedLessonKeys)}
+				{@const oversized = groupKeys.length > coverageCandidateLessonLimit}
+				{@const selectedAll = batchKeys.every((key) => selected.includes(key))}
 				<section class="space-y-3" aria-label={`คาบของ ${group.name}`}>
 					<div class="flex flex-wrap items-center justify-between gap-2">
 						<h3 class="min-w-0 break-words font-semibold">{group.name}</h3>
-						{#if allowed}
+						{#if allowed && batchKeys.length}
 							<Button
 								variant="outline"
 								size="sm"
-								disabled={busy || stale}
-								onclick={() => toggleTeacherLessons(groupKeys)}
-								>{selectedAll ? 'ล้างการเลือก' : 'เลือกทุกคาบ'}</Button
+								disabled={busy || stale || !sourceDigest}
+								onclick={() => toggleTeacherLessons(batchKeys)}
+								>{selectedAll
+									? 'ล้างการเลือก'
+									: oversized
+										? `เลือก ${batchKeys.length} คาบที่ยังไม่ได้จัด`
+										: 'เลือกทุกคาบ'}</Button
 							>
 						{/if}
 					</div>
+					{#if allowed && oversized}
+						<p class="text-sm text-muted-foreground">
+							ค้นหาครูได้ครั้งละไม่เกิน {coverageCandidateLessonLimit} คาบ
+						</p>
+					{/if}
 					{#each group.days as day (day.date)}
 						{@const dayCounts = coverageCounts(day.lessons, assignments)}
 						<section
@@ -430,13 +469,19 @@
 								{#each day.lessons as lesson (lesson.lessonKey)}
 									{@const assignment = displayAssignment(lesson.lessonKey)}
 									{@const labels = coverageLessonLabels(lesson)}
+									{@const checked = selected.includes(lesson.lessonKey)}
 									<li class="space-y-3 p-4" data-testid="leave-coverage-lesson">
 										<div class="flex items-start gap-3">
 											{#if allowed}<Checkbox
 													id={`coverage-${lesson.lessonKey}`}
 													aria-label={`เลือก ${day.date} ${lesson.periodName}`}
-													checked={selected.includes(lesson.lessonKey)}
-													disabled={busy || stale || !sourceDigest}
+													{checked}
+													disabled={busy ||
+														stale ||
+														!sourceDigest ||
+														(!checked &&
+															group.teacherId === selectedOriginalTeacher?.teacherId &&
+															selected.length >= coverageCandidateLessonLimit)}
 													onCheckedChange={(value) => toggle(lesson, value)}
 												/>{/if}
 											<div class="min-w-0 flex-1">
@@ -460,10 +505,13 @@
 														: (choiceLabels[lesson.lessonKey]?.teacherName ?? 'ครูที่เลือกใหม่')}
 												</p>
 												<p>
-													{assignment.mode === 'reciprocal' ? 'แลกคาบสอน' : 'สอนแทน'} · {assignment.taughtActivity ||
-														(lesson.assignment?.taughtOfferingId === assignment.taughtOfferingId
-															? lesson.assignment?.taughtOfferingName
-															: (choiceLabels[lesson.lessonKey]?.offeringName ?? 'วิชาที่เลือก'))}
+													{assignment.mode === 'reciprocal' ? 'แลกคาบสอน' : 'สอนแทน'} · {assignment.taughtActivity ??
+														(assignment.taughtOfferingId
+															? ((lesson.assignment?.taughtOfferingId ===
+																assignment.taughtOfferingId
+																	? lesson.assignment.taughtOfferingName
+																	: choiceLabels[lesson.lessonKey]?.offeringName) ?? 'วิชาที่เลือก')
+															: (lesson.offeringName ?? 'กิจกรรมตามตาราง'))}
 												</p>
 												<p class="text-muted-foreground">
 													{lesson.assignment && coverageSelectionMatches(lesson, assignment)
@@ -500,7 +548,7 @@
 			{/each}
 		</div>
 		{#if allowed}<aside
-				class="min-w-0 space-y-4 rounded-xl border bg-card p-4 xl:sticky xl:top-4"
+				class="min-w-0 space-y-4 rounded-xl border bg-card p-4 xl:sticky xl:top-4 xl:max-h-[calc(100dvh-10rem)] xl:overflow-y-auto"
 				aria-label="ค้นหาครูและกำหนดคาบสอน"
 			>
 				<h3 class="font-semibold">เลือกครูสำหรับ {selected.length} คาบ</h3>
@@ -615,11 +663,10 @@
 							value={mode}
 							onchange={(value) => {
 								mode = value === 'reciprocal' ? 'reciprocal' : 'substitution';
-								taughtOfferingId = '';
+								taughtContent = 'original';
 								taughtActivity = '';
-								returnRequest.abort();
-								returnLessons = [];
-								returnLessonKey = '';
+								candidateError = '';
+								resetReturnLookup();
 							}}
 							options={[
 								{ value: 'substitution', label: 'สอนแทน' },
@@ -630,33 +677,31 @@
 							<Choice
 								id="coverage-taught-offering"
 								disabled={busy}
-								label="วิชาที่สอนจริง"
-								bind:value={taughtOfferingId}
-								onchange={() => {
-									if (taughtOfferingId) taughtActivity = '';
-								}}
+								label="เนื้อหาที่สอนจริง"
+								bind:value={taughtContent}
+								onchange={() => (candidateError = '')}
 								options={[
-									{ value: '', label: 'ระบุกิจกรรมแทนวิชา' },
+									{ value: 'original', label: 'สอนตามคาบเดิม' },
 									...teacher.taughtOfferings.map((value) => ({
 										value: value.id,
 										label: value.name
-									}))
+									})),
+									{ value: 'activity', label: 'ระบุกิจกรรมแทนวิชา' }
 								]}
 							/>
-							<div class="space-y-2">
-								<Label for="coverage-activity">กิจกรรมที่สอนจริง / กิจกรรมเสริม (แทนวิชา)</Label
-								><Textarea
-									id="coverage-activity"
-									disabled={busy}
-									bind:value={taughtActivity}
-									maxlength={200}
-									oninput={(event) => {
-										if (event.currentTarget.value.trim()) taughtOfferingId = '';
-									}}
-									rows={2}
-									placeholder="เช่น ทบทวนภาษาอังกฤษ หรือกิจกรรมอ่านหนังสือ"
-								/>
-							</div>
+							{#if taughtContent === 'activity'}
+								<div class="space-y-2">
+									<Label for="coverage-activity">กิจกรรมที่สอนจริง</Label>
+									<Textarea
+										id="coverage-activity"
+										disabled={busy}
+										bind:value={taughtActivity}
+										maxlength={200}
+										rows={2}
+										placeholder="เช่น ทบทวนภาษาอังกฤษ หรือกิจกรรมอ่านหนังสือ"
+									/>
+								</div>
+							{/if}
 						{/if}
 						{#if mode === 'reciprocal'}<div class="space-y-3 rounded-lg border p-3">
 								<p class="text-sm">
@@ -667,11 +712,7 @@
 										id="coverage-return-date"
 										disabled={busy}
 										bind:value={returnDate}
-										onValueChange={() => {
-											returnRequest.abort();
-											returnLessons = [];
-											returnLessonKey = '';
-										}}
+										onValueChange={resetReturnLookup}
 									/>
 								</div>
 								<LoadingButton
@@ -687,15 +728,6 @@
 										disabled={busy}
 										label="คาบสอนคืน"
 										bind:value={returnLessonKey}
-										onchange={() => {
-											const back = returnLessons.find(
-												(value) => value.lessonKey === returnLessonKey
-											);
-											taughtOfferingId = back?.offeringId ?? '';
-											taughtActivity = back?.offeringId
-												? ''
-												: (back?.offeringName ?? 'กิจกรรมตามตาราง');
-										}}
 										options={returnLessons.map((value) => ({
 											value: value.lessonKey,
 											label: `${value.periodName} ${value.startTime.slice(0, 5)}–${value.endTime.slice(0, 5)} · ${value.offeringName ?? 'กิจกรรม'} · ${value.homeroomNames.join(', ')}${value.roomName ? ' · ' + value.roomName : ''}`
@@ -706,11 +738,10 @@
 										ค้นหาวันที่ที่มีคาบคืนสำหรับนักเรียนกลุ่มเดียวกัน
 									</p>{/if}
 							</div>{/if}
-						{#if mode === 'reciprocal' && returnLessonKey}<p
+						{#if mode === 'reciprocal' && selectedReturnLesson}<p
 								class="rounded-lg bg-primary/5 p-3 text-sm"
 							>
-								วิชาที่สอนจริง: {returnLessons.find((value) => value.lessonKey === returnLessonKey)
-									?.offeringName ?? 'กิจกรรมตามตาราง'} · อ้างอิงจากคาบที่แลก
+								วิชาที่สอนจริง: {selectedReturnLesson.offeringName ?? 'กิจกรรมตามตาราง'} · อ้างอิงจากคาบที่แลก
 							</p>{/if}
 						<Button disabled={busy || stale} onclick={apply}
 							>ใช้กับ {selected.length} คาบที่เลือก</Button

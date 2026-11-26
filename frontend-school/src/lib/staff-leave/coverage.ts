@@ -8,6 +8,18 @@ import type {
 	DatedTeachingLesson
 } from '#lib/api/staff-leave.js';
 
+export const coverageCandidateLessonLimit = 500;
+
+export function coverageCandidateBatch(
+	lessonKeys: string[],
+	assignedLessonKeys: ReadonlySet<string>
+): string[] {
+	if (lessonKeys.length <= coverageCandidateLessonLimit) return lessonKeys;
+	return lessonKeys
+		.filter((key) => !assignedLessonKeys.has(key))
+		.slice(0, coverageCandidateLessonLimit);
+}
+
 export function coverageByOriginalTeacher(
 	plan: Pick<LeaveCoveragePlan, 'days'>,
 	request: Pick<LeaveRequestSummary, 'ownerId' | 'ownerName' | 'companions'>

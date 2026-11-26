@@ -133,13 +133,16 @@ export function leavePolicyDraft(
 	initial?: LeavePolicyVersion,
 	preset?: LeavePolicyPreset
 ) {
-	const unit: LeavePolicyUnit = preset?.unit ?? (kind === 'exit' ? 'minute' : 'day');
+	const officialTravel = kind === 'official_travel';
+	const unit: LeavePolicyUnit = kind === 'exit' ? 'minute' : 'day';
 	const maxPerRequest = initial
 		? displayedPolicyLimit(initial.maxPerRequest, initial.unit)
 		: kind === 'exit' && !preset
 			? '120'
 			: '';
-	const annualLimit = displayedPolicyLimit(initial?.annualLimit, initial?.unit ?? unit);
+	const annualLimit = officialTravel
+		? ''
+		: displayedPolicyLimit(initial?.annualLimit, initial?.unit ?? unit);
 	const evidenceFromAmount = displayedPolicyLimit(
 		initial?.evidenceFromAmount,
 		initial?.unit ?? unit
@@ -152,11 +155,14 @@ export function leavePolicyDraft(
 		] as StaffPersonnelType[],
 		enabled: initial?.enabled ?? true,
 		unit,
-		countingMode: initial?.countingMode ?? preset?.countingMode ?? ('calendar_days' as const),
-		weekdays: [...(initial?.workingWeekdays ?? [])],
-		excludedDates: [...(initial?.excludedDates ?? [])],
+		countingMode: officialTravel
+			? ('calendar_days' as const)
+			: (initial?.countingMode ?? preset?.countingMode ?? ('calendar_days' as const)),
+		weekdays: officialTravel ? [] : [...(initial?.workingWeekdays ?? [])],
+		excludedDates: officialTravel ? [] : [...(initial?.excludedDates ?? [])],
 		quotaMonth:
-			initial?.quotaYearStartMonth ?? (preset ? (preset.quotaYearStartMonth ?? undefined) : 1),
+			initial?.quotaYearStartMonth ??
+			(preset && !officialTravel ? (preset.quotaYearStartMonth ?? undefined) : 1),
 		maxPerRequest: maxPerRequest ?? '',
 		annualLimit: annualLimit ?? '',
 		evidenceRequired: initial?.evidenceRequired ?? false,

@@ -13,6 +13,11 @@ import { PERMISSIONS, PERMISSION_MODULES } from '#lib/permissions/registry.js';
 import { leaveListFilters } from './filters.js';
 import { leaveKindLabels, leavePageTitles } from './presentation.js';
 
+export const leaveCompanionPermissions = [
+	PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED,
+	PERMISSIONS.STAFF_LEAVE_UPDATE_ASSIGNED
+] as const;
+
 export interface LeaveOwnedRead<T> {
 	identity: string;
 	value: T;
