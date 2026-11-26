@@ -88,36 +88,37 @@ async function defaultGenerateSchoolTypes(repositoryRoot, document) {
     const outputPath = path.join(temporaryDirectory, "school-api.ts");
     await writeFile(inputPath, renderOpenApi(document));
 
+    const frontendDirectory = path.join(repositoryRoot, "frontend-school");
     const toolsRequire = createRequire(
-      path.join(repositoryRoot, "frontend-school/tools/api-contracts/package.json"),
+      path.join(frontendDirectory, "tools/api-contracts/package.json"),
+    );
+    const frontendRequire = createRequire(
+      path.join(frontendDirectory, "package.json"),
     );
     const executable = path.join(
       path.dirname(toolsRequire.resolve("openapi-typescript/package.json")),
       "bin/cli.js",
     );
-    const prettierExecutable = path.join(
-      repositoryRoot,
-      "frontend-school/node_modules/.bin",
-      process.platform === "win32" ? "prettier.cmd" : "prettier",
-    );
+    const prettierExecutable = frontendRequire.resolve("prettier/bin/prettier.cjs");
     await execFileAsync(
       process.execPath,
       [executable, inputPath, "--output", outputPath, "--alphabetize"],
       {
-        cwd: path.join(repositoryRoot, "frontend-school"),
+        cwd: frontendDirectory,
         maxBuffer: 16 * 1024 * 1024,
       },
     );
     await execFileAsync(
-      prettierExecutable,
+      process.execPath,
       [
+        prettierExecutable,
         outputPath,
         "--write",
         "--config",
-        path.join(repositoryRoot, "frontend-school/.prettierrc"),
+        path.join(frontendDirectory, ".prettierrc"),
       ],
       {
-        cwd: path.join(repositoryRoot, "frontend-school"),
+        cwd: frontendDirectory,
         maxBuffer: 16 * 1024 * 1024,
       },
     );
