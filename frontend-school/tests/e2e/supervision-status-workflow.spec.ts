@@ -477,6 +477,71 @@ test('the last required submission publishes the rubric and the teacher complete
 	expect(api.payloads.at(-1)).toEqual({ comment: 'รับทราบผลแล้ว' });
 });
 
+test('acknowledgment keeps each draft across dismissals and allows retry after a failed save', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		permissions: teacherPermissions,
+		canManage: false,
+		observationStatus: 'published',
+		additionalObservations: [{ id: id(34) }]
+	});
+	let release = () => {};
+	const held = new Promise<void>((resolve) => (release = resolve));
+	const refusal = 'ยังบันทึกการรับทราบผลไม่ได้';
+	await page.route(
+		`**${observationPath}/acknowledge`,
+		async (route) => {
+			await held;
+			await route.fulfill({
+				status: 409,
+				headers: { 'X-CSRF-Token': 'synthetic-csrf' },
+				json: { success: false, error: refusal }
+			});
+		},
+		{ times: 1 }
+	);
+	await page.goto(`${path('').replace('/supervision/?', '/supervision?')}&academicTermId=${id(8)}`);
+	const acknowledgments = page.getByRole('button', { name: 'รับทราบผล', exact: true });
+	const dialog = page.getByRole('dialog');
+	const comment = dialog.getByLabel('ความคิดเห็นเพิ่มเติม (ถ้ามี)', { exact: true });
+	const cancel = dialog.getByRole('button', { name: 'ยกเลิก', exact: true });
+	const submit = dialog.getByRole('button', { name: 'ยืนยันรับทราบ', exact: true });
+
+	await expect(acknowledgments).toHaveCount(2);
+	await acknowledgments.first().click();
+	await comment.fill('ความคิดเห็นของรายการแรก');
+	await cancel.click();
+	await expect(dialog).toHaveCount(0);
+	await acknowledgments.nth(1).click();
+	await expect(comment).toHaveValue('');
+	await comment.fill('ความคิดเห็นของรายการที่สอง');
+	await cancel.click();
+	await acknowledgments.first().click();
+	await expect(comment).toHaveValue('ความคิดเห็นของรายการแรก');
+
+	await submit.click();
+	try {
+		await expect(
+			dialog.getByRole('button', { name: 'กำลังบันทึก...', exact: true })
+		).toBeDisabled();
+		await expect(cancel).toBeDisabled();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveAttribute('data-state', 'open');
+	} finally {
+		release();
+	}
+	await expect(dialog.getByRole('alert')).toHaveText(refusal);
+	await expect(comment).toHaveValue('ความคิดเห็นของรายการแรก');
+	await submit.click();
+	await expect(dialog).toHaveCount(0);
+	expect(api.payloads.at(-1)).toEqual({ comment: 'ความคิดเห็นของรายการแรก' });
+
+	await expect(acknowledgments).toHaveCount(1);
+	await acknowledgments.click();
+	await expect(comment).toHaveValue('ความคิดเห็นของรายการที่สอง');
+});
+
 for (const referenceState of ['pending', 'failed'] as const) {
 	test(`a ${referenceState} cycle reference keeps resubmission conservative without claiming booking is closed`, async ({
 		page

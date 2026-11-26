@@ -901,7 +901,9 @@
 					{#if canResubmitSaved || canEditLesson || canReviewPendingRequest || canEditEvaluators || canCancelObservation}
 						<div class="flex flex-wrap items-center gap-2 lg:justify-end">
 							{#if canCancelObservation}
-								<Button variant="ghost" onclick={() => (cancelDialogOpen = true)}>ยกเลิก</Button>
+								<Button variant="destructive" onclick={() => (cancelDialogOpen = true)}>
+									ยกเลิก
+								</Button>
 							{/if}
 							{#if canEditLesson}
 								<Button
@@ -1068,12 +1070,12 @@
 							<h2 class="text-base font-semibold">ผลการประเมิน</h2>
 						</Card.Header>
 						<Card.Content class="space-y-4 px-4 sm:px-6">
-							{#if observationResultsReleased(observation.status)}
+							{#if observationResultsReleased(observation.status) || (observation.canReview && observation.averageRating != null)}
 								<dl class="grid grid-cols-2 gap-4 rounded-lg border bg-muted/20 p-4">
 									<div class="space-y-1">
 										<dt class="text-xs text-muted-foreground">คะแนนเฉลี่ยทั้งหมด</dt>
 										<dd class="text-lg font-semibold tabular-nums">
-											{review
+											{canViewReviewDetails && review
 												? reviewAverageScoreLabel(review.averageRating)
 												: observationAverageScoreLabel(observation)}
 										</dd>

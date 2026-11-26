@@ -284,8 +284,8 @@
 	let selectedCycleId = $state('');
 	let evaluationObservationId = $state('');
 	let responseDrafts = $state<{ [itemId: string]: ResponseDraft }>({});
-	let acknowledgeComment = $state('');
-	let acknowledgeFormError = $state<{ id: string; message: string } | null>(null);
+	let acknowledgeDialogId = $state('');
+	let acknowledgeDrafts = $state<Record<string, { comment: string; error: string }>>({});
 	let overviewCycleId = $state('');
 	let progress = $state<SupervisionCycleProgress | null>(null);
 	let teacherStatusRows = $state<SupervisionTeacherStatusRow[]>([]);
@@ -488,8 +488,8 @@
 				bookingCalendarDate = '';
 				calendarReviewId = '';
 				bookingOpen = false;
-				acknowledgeComment = '';
-				acknowledgeFormError = null;
+				acknowledgeDialogId = '';
+				acknowledgeDrafts = {};
 				savingEvaluation = null;
 				clearEvaluationDraft();
 				progress = null;
@@ -1237,26 +1237,34 @@
 		}
 	}
 
+	function setAcknowledgeDialogOpen(id: string, open: boolean) {
+		if (open) {
+			acknowledgeDrafts[id] ??= { comment: '', error: '' };
+			acknowledgeDialogId = id;
+		} else if (acknowledgeDialogId === id && savingAction !== `acknowledge-result:${id}`) {
+			acknowledgeDialogId = '';
+		}
+	}
+
 	async function acknowledgeResult(id: string) {
-		if (mutationBusy) return;
-		acknowledgeFormError = null;
+		const draft = acknowledgeDrafts[id];
+		if (!draft || mutationBusy || acknowledgeDialogId !== id) return;
+		draft.error = '';
 		savingAction = `acknowledge-result:${id}`;
 		const ownsMutation = captureMutationOwner();
 		try {
 			const response = await acknowledgeSupervisionObservation(id, {
-				comment: acknowledgeComment || null
+				comment: draft.comment || null
 			});
 			if (!ownsMutation()) return;
 			const observation = requireMutationData(response, 'รับทราบผลไม่สำเร็จ');
 			replaceObservation(observation);
 			toast.success('รับทราบผลนิเทศแล้ว');
-			acknowledgeComment = '';
+			acknowledgeDialogId = '';
+			delete acknowledgeDrafts[id];
 		} catch (error) {
 			if (!ownsMutation()) return;
-			acknowledgeFormError = {
-				id,
-				message: error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ'
-			};
+			draft.error = error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ';
 		} finally {
 			if (ownsMutation()) savingAction = null;
 		}
@@ -2015,13 +2023,12 @@
 														: 'รายละเอียด'}
 												</Button>
 												{#if observation.status === 'published'}
+													{@const draft = acknowledgeDrafts[observation.id]}
+													{@const acknowledgeSaving =
+														savingAction === `acknowledge-result:${observation.id}`}
 													<Dialog.Root
-														onOpenChange={(open) => {
-															if (open) {
-																acknowledgeComment = '';
-																acknowledgeFormError = null;
-															}
-														}}
+														open={acknowledgeDialogId === observation.id}
+														onOpenChange={(open) => setAcknowledgeDialogOpen(observation.id, open)}
 													>
 														<Dialog.Trigger>
 															{#snippet child({ props })}
@@ -2031,58 +2038,66 @@
 																</Button>
 															{/snippet}
 														</Dialog.Trigger>
-														<Dialog.Content class={dialogClass}>
-															<Dialog.Header class={dialogHeaderClass}>
-																<Dialog.Title>รับทราบผลนิเทศ</Dialog.Title>
-																<Dialog.Description>
-																	{observationSubjectLabel(observation)} · {formatDate(
-																		observation.observedAt
-																	)}
-																</Dialog.Description>
-															</Dialog.Header>
-															<form
-																class="flex min-h-0 flex-1 flex-col"
-																onsubmit={(event) => {
-																	event.preventDefault();
-																	void acknowledgeResult(observation.id);
-																}}
+														{#if draft}
+															<Dialog.Content
+																class={dialogClass}
+																showCloseButton={!acknowledgeSaving}
+																escapeKeydownBehavior={acknowledgeSaving ? 'ignore' : 'close'}
+																interactOutsideBehavior={acknowledgeSaving ? 'ignore' : 'close'}
 															>
-																<div class={dialogBodyClass}>
-																	<Label for={`supervision-acknowledge-${observation.id}`}
-																		>ความคิดเห็นเพิ่มเติม (ถ้ามี)</Label
-																	>
-																	<Textarea
-																		id={`supervision-acknowledge-${observation.id}`}
-																		bind:value={acknowledgeComment}
-																		rows={3}
-																		placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
-																	/>
-																	{#if acknowledgeFormError?.id === observation.id}
-																		<p role="alert" class="text-sm text-destructive">
-																			{acknowledgeFormError.message}
-																		</p>
-																	{/if}
-																</div>
-																<Dialog.Footer class={dialogFooterClass}>
-																	<Dialog.Close>
-																		{#snippet child({ props })}<Button
-																				type="button"
-																				variant="outline"
-																				{...props}>ยกเลิก</Button
-																			>{/snippet}
-																	</Dialog.Close>
-																	<LoadingButton
-																		type="submit"
-																		loading={savingAction ===
-																			`acknowledge-result:${observation.id}`}
-																		loadingLabel="กำลังบันทึก..."
-																		disabled={mutationBusy}
-																	>
-																		ยืนยันรับทราบ
-																	</LoadingButton>
-																</Dialog.Footer>
-															</form>
-														</Dialog.Content>
+																<Dialog.Header class={dialogHeaderClass}>
+																	<Dialog.Title>รับทราบผลนิเทศ</Dialog.Title>
+																	<Dialog.Description>
+																		{observationSubjectLabel(observation)} · {formatDate(
+																			observation.observedAt
+																		)}
+																	</Dialog.Description>
+																</Dialog.Header>
+																<form
+																	class="flex min-h-0 flex-1 flex-col"
+																	onsubmit={(event) => {
+																		event.preventDefault();
+																		void acknowledgeResult(observation.id);
+																	}}
+																>
+																	<div class={dialogBodyClass}>
+																		<Label for={`supervision-acknowledge-${observation.id}`}
+																			>ความคิดเห็นเพิ่มเติม (ถ้ามี)</Label
+																		>
+																		<Textarea
+																			id={`supervision-acknowledge-${observation.id}`}
+																			bind:value={draft.comment}
+																			readonly={acknowledgeSaving}
+																			rows={3}
+																			placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
+																		/>
+																		{#if draft.error}
+																			<p role="alert" class="text-sm text-destructive">
+																				{draft.error}
+																			</p>
+																		{/if}
+																	</div>
+																	<Dialog.Footer class={dialogFooterClass}>
+																		<Dialog.Close>
+																			{#snippet child({ props })}<Button
+																					type="button"
+																					variant="outline"
+																					{...props}
+																					disabled={acknowledgeSaving}>ยกเลิก</Button
+																				>{/snippet}
+																		</Dialog.Close>
+																		<LoadingButton
+																			type="submit"
+																			loading={acknowledgeSaving}
+																			loadingLabel="กำลังบันทึก..."
+																			disabled={mutationBusy}
+																		>
+																			ยืนยันรับทราบ
+																		</LoadingButton>
+																	</Dialog.Footer>
+																</form>
+															</Dialog.Content>
+														{/if}
 													</Dialog.Root>
 												{:else}
 													<span class="text-sm text-muted-foreground">-</span>
@@ -2437,10 +2452,7 @@
 							)}{/if}
 						{#if !routeData || cyclesLoaded}
 							<div data-testid="supervision-cycles-ready">
-								<Table.Root
-									class="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4 sm:[&_td:first-child]:pl-6 sm:[&_td:last-child]:pr-6 sm:[&_th:first-child]:pl-6 sm:[&_th:last-child]:pr-6"
-									aria-label="รายการรอบนิเทศ"
-								>
+								<Table.Root aria-label="รายการรอบนิเทศ">
 									<Table.Header>
 										<Table.Row>
 											<Table.Head>รอบนิเทศ</Table.Head>
@@ -2572,10 +2584,7 @@
 							)}{/if}
 						{#if !routeData || templatesLoaded}
 							<div data-testid="supervision-templates-ready">
-								<Table.Root
-									class="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4 sm:[&_td:first-child]:pl-6 sm:[&_td:last-child]:pr-6 sm:[&_th:first-child]:pl-6 sm:[&_th:last-child]:pr-6"
-									aria-label="รายการแบบประเมิน"
-								>
+								<Table.Root aria-label="รายการแบบประเมิน">
 									<Table.Header>
 										<Table.Row>
 											<Table.Head>ชื่อแบบประเมิน</Table.Head>
@@ -3226,7 +3235,6 @@
 								<Input
 									id="supervision-template-minimum"
 									type="number"
-									min="0"
 									bind:value={templateForm.ratingMin}
 								/>
 							</div>
@@ -3235,7 +3243,6 @@
 								<Input
 									id="supervision-template-maximum"
 									type="number"
-									min="1"
 									bind:value={templateForm.ratingMax}
 								/>
 							</div>
