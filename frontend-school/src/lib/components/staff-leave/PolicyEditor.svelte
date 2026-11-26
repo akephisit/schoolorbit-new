@@ -4,6 +4,7 @@
 		getLeaveRoutingOptions,
 		saveLeavePolicy,
 		type LeaveType,
+		type LeavePolicyPreset,
 		type LeavePolicyVersion,
 		type LeaveRoutingOptions,
 		type ProcessTemplateStep,
@@ -39,6 +40,7 @@
 	let {
 		type,
 		initialPolicy,
+		preset,
 		fixedQuotaMonth,
 		quotaMonthConflict = false,
 		oncancel,
@@ -46,12 +48,13 @@
 	}: {
 		type: LeaveType;
 		initialPolicy?: LeavePolicyVersion;
+		preset?: LeavePolicyPreset;
 		fixedQuotaMonth?: number;
 		quotaMonthConflict?: boolean;
 		oncancel: () => void;
 		onsaved: (policy: LeavePolicyVersion) => void;
 	} = $props();
-	const initial = untrack(() => leavePolicyDraft(type.kind, initialPolicy));
+	const initial = untrack(() => leavePolicyDraft(type.kind, initialPolicy, preset));
 	let effectiveFrom = $state<string | undefined>(initial.effectiveFrom),
 		sourceReference = $state(initial.sourceReference),
 		personnelTypes = $state<StaffPersonnelType[]>(initial.personnelTypes);
@@ -80,7 +83,7 @@
 		weekdays = $state<number[]>(initial.weekdays),
 		excludedDates = $state<string[]>(initial.excludedDates),
 		dateToExclude = $state<string | undefined>();
-	let quotaMonth = $state(untrack(() => fixedQuotaMonth ?? initial.quotaMonth)),
+	let quotaMonth = $state<number | undefined>(untrack(() => fixedQuotaMonth ?? initial.quotaMonth)),
 		maxPerRequest = $state(initial.maxPerRequest),
 		annualLimit = $state(initial.annualLimit),
 		evidenceRequired = $state(initial.evidenceRequired),
@@ -218,6 +221,10 @@
 			void revealError('เลือกวันทำงานอย่างน้อยหนึ่งวัน', 'limits', '#policy-weekday-0');
 			return;
 		}
+		if (quotaMonth === undefined) {
+			void revealError('เลือกเดือนเริ่มรอบปี', 'limits', '#policy-year-month');
+			return;
+		}
 		if (!steps.length || steps.some((step) => !step.title.trim() || !step.recipients?.length)) {
 			const index = Math.max(
 				0,
@@ -300,6 +307,9 @@
 	class="space-y-4"
 	data-testid="leave-policy-editor"
 >
+	{#if preset}<p class="rounded-lg border bg-muted/20 p-3 text-sm">
+			แบบร่างจากเกณฑ์ {preset.name} · ตรวจวันที่มีผล วันทำงานตามกรณี และผู้พิจารณาก่อนบันทึก
+		</p>{/if}
 	{#if initialPolicy?.unit === 'half_day'}<div
 			class="space-y-1 rounded-lg border bg-primary/5 p-3 text-sm"
 			data-testid="leave-policy-day-successor"
@@ -504,7 +514,7 @@
 				<Choice
 					id="policy-year-month"
 					label="เดือนเริ่มรอบปี *"
-					value={String(quotaMonth)}
+					value={quotaMonth === undefined ? '' : String(quotaMonth)}
 					onchange={(value) => (quotaMonth = Number(value))}
 					options={Array.from({ length: 12 }, (_, index) => ({
 						value: String(index + 1),

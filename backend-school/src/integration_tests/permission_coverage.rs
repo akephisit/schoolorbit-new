@@ -1543,6 +1543,7 @@ async fn permission_coverage_staff_leave_coverage_uses_real_session_tenant_and_c
     let reader = coverage_actor(&f, &[codes::STAFF_LEAVE_READ_ASSIGNED], 81).await;
     let manager = coverage_actor(&f, &[codes::STAFF_LEAVE_MANAGE_SCHOOL], 82).await;
     let denied = coverage_actor(&f, &[], 83).await;
+    let participant = coverage_actor(&f, &[codes::WILDCARD], 84).await;
     let app = coverage_router(&f);
     let (status, body) = coverage_request(
         &app,
@@ -1604,30 +1605,96 @@ async fn permission_coverage_staff_leave_coverage_uses_real_session_tenant_and_c
         app.clone().oneshot(missing_csrf).await.unwrap().status(),
         StatusCode::FORBIDDEN
     );
-    let crossed = Request::builder()
-        .uri("/api/staff-leave/coverage/assigned")
-        .header(header::ORIGIN, "https://tenant-b.schoolorbit.test")
-        .header(
-            header::COOKIE,
-            format!(
-                "{}={}",
-                school_auth::config::SESSION_COOKIE_NAME,
-                reader.token.encode().expose_for_cookie()
-            ),
-        )
-        .body(Body::empty())
-        .unwrap();
-    assert_eq!(
-        app.clone().oneshot(crossed).await.unwrap().status(),
-        StatusCode::UNAUTHORIZED
+    let presets = "/api/staff-leave/policy-presets";
+    let options = "/api/staff-leave/companion-options";
+    let invitations = "/api/staff-leave/companion-invitations";
+    let confirm = format!(
+        "/api/staff-leave/requests/{}/confirm-companion",
+        Uuid::now_v7()
     );
-    let anonymous = Request::builder()
-        .uri("/api/staff-leave/coverage/assigned")
+    let mutation = json!({"requestId": Uuid::now_v7(), "expectedRevision": 1});
+    let (status, body) =
+        coverage_request(&app, &f, &manager, Method::GET, presets, json!({})).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == "official_travel"));
+    for (actor, path, expected) in [
+        (&reader, presets, StatusCode::FORBIDDEN),
+        (&reader, options, StatusCode::FORBIDDEN),
+        (&participant, options, StatusCode::OK),
+        (&reader, invitations, StatusCode::FORBIDDEN),
+        (&participant, invitations, StatusCode::OK),
+    ] {
+        let (status, body) = coverage_request(&app, &f, actor, Method::GET, path, json!({})).await;
+        assert_eq!(status, expected, "{path}: {body}");
+    }
+    let (status, body) =
+        coverage_request(&app, &f, &reader, Method::POST, &confirm, mutation.clone()).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    let denied_without_update = body;
+
+    let cookie = format!(
+        "{}={}",
+        school_auth::config::SESSION_COOKIE_NAME,
+        participant.token.encode().expose_for_cookie()
+    );
+    let missing_csrf = Request::builder()
+        .method(Method::POST)
+        .uri(confirm.as_str())
         .header(header::ORIGIN, "https://tenant-a.schoolorbit.test")
-        .body(Body::empty())
+        .header(header::COOKIE, cookie.as_str())
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(mutation.to_string()))
         .unwrap();
-    assert_eq!(
-        app.oneshot(anonymous).await.unwrap().status(),
-        StatusCode::UNAUTHORIZED
-    );
+    let response = app.clone().oneshot(missing_csrf).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 4096).await.unwrap()).unwrap();
+    assert_eq!(body["error"], "csrf_rejected");
+
+    let (status, body) = coverage_request(
+        &app,
+        &f,
+        &participant,
+        Method::POST,
+        &confirm,
+        mutation.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_ne!(body["error"], "csrf_rejected");
+    assert_ne!(body["error"], denied_without_update["error"]);
+
+    for (method, path) in [
+        (Method::GET, "/api/staff-leave/coverage/assigned"),
+        (Method::GET, presets),
+        (Method::GET, options),
+        (Method::GET, invitations),
+        (Method::POST, confirm.as_str()),
+    ] {
+        for (origin, session_cookie) in [
+            ("https://tenant-a.schoolorbit.test", None),
+            ("https://tenant-b.schoolorbit.test", Some(cookie.as_str())),
+        ] {
+            let mut builder = Request::builder()
+                .method(method.clone())
+                .uri(path)
+                .header(header::ORIGIN, origin)
+                .header(header::CONTENT_TYPE, "application/json");
+            if let Some(cookie) = session_cookie {
+                builder = builder
+                    .header(header::COOKIE, cookie)
+                    .header("x-csrf-token", f.csrf(participant.session));
+            }
+            let request = builder.body(Body::from(mutation.to_string())).unwrap();
+            assert_eq!(
+                app.clone().oneshot(request).await.unwrap().status(),
+                StatusCode::UNAUTHORIZED,
+                "{method} {path} ({origin})"
+            );
+        }
+    }
 }

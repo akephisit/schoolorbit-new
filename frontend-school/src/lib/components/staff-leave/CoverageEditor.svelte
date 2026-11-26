@@ -6,6 +6,7 @@
 		saveLeaveCoverage,
 		refreshLeaveCoverage,
 		type LeaveRequestDetail,
+		type LeaveCoverageLesson,
 		type LeaveCoverageSelection,
 		type LeaveCoverageCandidate,
 		type LeaveCoverageCandidates,
@@ -15,6 +16,7 @@
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
 	import {
 		coverageSelections,
+		coverageByOriginalTeacher,
 		coverageLessonLabels,
 		coverageCounts,
 		coverageSelectionMatches,
@@ -47,6 +49,7 @@
 	} = $props();
 	const plan = $derived(detail.coverage);
 	const lessons = $derived(plan.days.flatMap((day) => day.lessons));
+	const teacherGroups = $derived(coverageByOriginalTeacher(plan, detail.request));
 	let assignments = $state<LeaveCoverageSelection[]>(
 		untrack(() => coverageSelections(detail.coverage))
 	);
@@ -88,6 +91,12 @@
 	const busy = $derived(pending || refreshing);
 	const allowed = $derived(!readonly && (detail.canEdit || plan.canManage));
 	const counts = $derived(coverageCounts(lessons, assignments));
+	const selectedOriginalTeacher = $derived(
+		teacherGroups.find(
+			(group) =>
+				group.teacherId === lessons.find((lesson) => lesson.lessonKey === selected[0])?.teacherId
+		)
+	);
 	const canFinalize = $derived(
 		allowed && plan.canManage && plan.timetableState === 'ready' && counts.selected === counts.total
 	);
@@ -125,10 +134,17 @@
 		candidateLoading = false;
 		returnLoading = false;
 	}
-	function toggle(key: string, checked: boolean) {
+	function toggle(lesson: LeaveCoverageLesson, checked: boolean) {
+		const key = lesson.lessonKey;
 		selected = checked
-			? [...new Set([...selected, key])]
+			? selectedOriginalTeacher?.teacherId === lesson.teacherId
+				? [...new Set([...selected, key])]
+				: [key]
 			: selected.filter((value) => value !== key);
+		clearPicker();
+	}
+	function toggleTeacherLessons(keys: string[]) {
+		selected = keys.every((key) => selected.includes(key)) ? [] : keys;
 		clearPicker();
 	}
 	async function findCandidates(event?: SubmitEvent) {
@@ -373,106 +389,124 @@
 		/>{/if}
 	<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]">
 		<div class="min-w-0 space-y-4">
-			{#if allowed && lessons.length}<div class="flex flex-wrap items-center justify-between gap-2">
-					<p class="text-sm">เลือก {selected.length} คาบ · ครูที่ค้นหาต้องว่างทุกคาบที่เลือก</p>
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={busy || stale}
-						onclick={() => {
-							selected =
-								selected.length === lessons.length ? [] : lessons.map((lesson) => lesson.lessonKey);
-							clearPicker();
-						}}>{selected.length === lessons.length ? 'ล้างการเลือก' : 'เลือกทุกคาบ'}</Button
-					>
-				</div>{/if}
-			{#each plan.days as day (day.date)}
-				{@const dayCounts = coverageCounts(day.lessons, assignments)}
-				<section
-					class="overflow-hidden rounded-xl border bg-card"
-					aria-label={`คาบสอน ${leaveDate(day.date)}`}
-				>
-					<div
-						class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-4 py-3"
-					>
-						<h3 class="font-semibold">{leaveDate(day.date)}</h3>
-						<p class="text-xs text-muted-foreground">
-							เลือกครู {dayCounts.selected}/{dayCounts.total} · ตอบรับ {dayCounts.confirmed}/{dayCounts.total}
-						</p>
+			{#if allowed && lessons.length}
+				<p class="text-sm text-muted-foreground">
+					เลือกคาบของครูเจ้าของคาบทีละคน ครูสอนแทนต้องว่างทุกคาบที่เลือก
+				</p>
+			{/if}
+			{#each teacherGroups as group (group.teacherId)}
+				{@const groupKeys = group.days.flatMap((day) =>
+					day.lessons.map((lesson) => lesson.lessonKey)
+				)}
+				{@const selectedAll = groupKeys.every((key) => selected.includes(key))}
+				<section class="space-y-3" aria-label={`คาบของ ${group.name}`}>
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<h3 class="min-w-0 break-words font-semibold">{group.name}</h3>
+						{#if allowed}
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={busy || stale}
+								onclick={() => toggleTeacherLessons(groupKeys)}
+								>{selectedAll ? 'ล้างการเลือก' : 'เลือกทุกคาบ'}</Button
+							>
+						{/if}
 					</div>
-					<ul class="divide-y">
-						{#each day.lessons as lesson (lesson.lessonKey)}
-							{@const assignment = displayAssignment(lesson.lessonKey)}
-							{@const labels = coverageLessonLabels(lesson)}
-							<li class="space-y-3 p-4" data-testid="leave-coverage-lesson">
-								<div class="flex items-start gap-3">
-									{#if allowed}<Checkbox
-											id={`coverage-${lesson.lessonKey}`}
-											aria-label={`เลือก ${day.date} ${lesson.periodName}`}
-											checked={selected.includes(lesson.lessonKey)}
-											disabled={busy || stale || !sourceDigest}
-											onCheckedChange={(value) => toggle(lesson.lessonKey, value)}
-										/>{/if}
-									<div class="min-w-0 flex-1">
-										<p class="font-medium">
-											{lesson.periodName} · {lesson.startTime.slice(0, 5)}–{lesson.endTime.slice(
-												0,
-												5
-											)}
-										</p>
-										<p class="break-words">{labels.title}</p>
-										{#if labels.details}<p class="text-sm text-muted-foreground">
-												{labels.details}
+					{#each group.days as day (day.date)}
+						{@const dayCounts = coverageCounts(day.lessons, assignments)}
+						<section
+							class="overflow-hidden rounded-xl border bg-card"
+							aria-label={`คาบสอน ${leaveDate(day.date)}`}
+						>
+							<div
+								class="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-4 py-3"
+							>
+								<h4 class="font-semibold">{leaveDate(day.date)}</h4>
+								<p class="text-xs text-muted-foreground">
+									เลือกครู {dayCounts.selected}/{dayCounts.total} · ตอบรับ {dayCounts.confirmed}/{dayCounts.total}
+								</p>
+							</div>
+							<ul class="divide-y">
+								{#each day.lessons as lesson (lesson.lessonKey)}
+									{@const assignment = displayAssignment(lesson.lessonKey)}
+									{@const labels = coverageLessonLabels(lesson)}
+									<li class="space-y-3 p-4" data-testid="leave-coverage-lesson">
+										<div class="flex items-start gap-3">
+											{#if allowed}<Checkbox
+													id={`coverage-${lesson.lessonKey}`}
+													aria-label={`เลือก ${day.date} ${lesson.periodName}`}
+													checked={selected.includes(lesson.lessonKey)}
+													disabled={busy || stale || !sourceDigest}
+													onCheckedChange={(value) => toggle(lesson, value)}
+												/>{/if}
+											<div class="min-w-0 flex-1">
+												<p class="font-medium">
+													{lesson.periodName} · {lesson.startTime.slice(
+														0,
+														5
+													)}–{lesson.endTime.slice(0, 5)}
+												</p>
+												<p class="break-words">{labels.title}</p>
+												{#if labels.details}<p class="text-sm text-muted-foreground">
+														{labels.details}
+													</p>{/if}
+											</div>
+										</div>
+										{#if assignment}<div class="space-y-1 rounded-lg bg-muted/30 p-3 text-sm">
+												<p class="font-medium">
+													{lesson.assignment?.replacementTeacherId ===
+													assignment.replacementTeacherId
+														? lesson.assignment.replacementTeacherName
+														: (choiceLabels[lesson.lessonKey]?.teacherName ?? 'ครูที่เลือกใหม่')}
+												</p>
+												<p>
+													{assignment.mode === 'reciprocal' ? 'แลกคาบสอน' : 'สอนแทน'} · {assignment.taughtActivity ||
+														(lesson.assignment?.taughtOfferingId === assignment.taughtOfferingId
+															? lesson.assignment?.taughtOfferingName
+															: (choiceLabels[lesson.lessonKey]?.offeringName ?? 'วิชาที่เลือก'))}
+												</p>
+												<p class="text-muted-foreground">
+													{lesson.assignment && coverageSelectionMatches(lesson, assignment)
+														? coverageConsentLabels[lesson.assignment.consent]
+														: 'รอบันทึกและตอบรับ'}
+												</p>
+												{#if lesson.assignment?.returnDate && assignment.returnLessonKey === lesson.assignment.returnLessonKey}<p
+													>
+														สอน{coverageReturnCaption(
+															lesson,
+															lesson.assignment,
+															leaveDate(lesson.assignment.returnDate)
+														)}
+													</p>{/if}
+												{#if allowed}<Button
+														variant="ghost"
+														size="sm"
+														disabled={busy || stale}
+														onclick={() => {
+															assignments = assignments.filter(
+																(value) => value.lessonKey !== lesson.lessonKey
+															);
+															dirty = true;
+															ondirty?.(true);
+														}}>นำครูออกจากคาบนี้</Button
+													>{/if}
+											</div>{:else}<p class="text-sm text-muted-foreground">
+												ยังไม่ได้เลือกครู
 											</p>{/if}
-									</div>
-								</div>
-								{#if assignment}<div class="space-y-1 rounded-lg bg-muted/30 p-3 text-sm">
-										<p class="font-medium">
-											{lesson.assignment?.replacementTeacherId === assignment.replacementTeacherId
-												? lesson.assignment.replacementTeacherName
-												: (choiceLabels[lesson.lessonKey]?.teacherName ?? 'ครูที่เลือกใหม่')}
-										</p>
-										<p>
-											{assignment.mode === 'reciprocal' ? 'แลกคาบสอน' : 'สอนแทน'} · {assignment.taughtActivity ||
-												(lesson.assignment?.taughtOfferingId === assignment.taughtOfferingId
-													? lesson.assignment?.taughtOfferingName
-													: (choiceLabels[lesson.lessonKey]?.offeringName ?? 'วิชาที่เลือก'))}
-										</p>
-										<p class="text-muted-foreground">
-											{lesson.assignment && coverageSelectionMatches(lesson, assignment)
-												? coverageConsentLabels[lesson.assignment.consent]
-												: 'รอบันทึกและตอบรับ'}
-										</p>
-										{#if lesson.assignment?.returnDate && assignment.returnLessonKey === lesson.assignment.returnLessonKey}<p
-											>
-												สอน{coverageReturnCaption(
-													lesson,
-													lesson.assignment,
-													leaveDate(lesson.assignment.returnDate)
-												)}
-											</p>{/if}
-										{#if allowed}<Button
-												variant="ghost"
-												size="sm"
-												disabled={busy || stale}
-												onclick={() => {
-													assignments = assignments.filter(
-														(value) => value.lessonKey !== lesson.lessonKey
-													);
-													dirty = true;
-													ondirty?.(true);
-												}}>นำครูออกจากคาบนี้</Button
-											>{/if}
-									</div>{:else}<p class="text-sm text-muted-foreground">ยังไม่ได้เลือกครู</p>{/if}
-							</li>{/each}
-					</ul>
-				</section>{/each}
+									</li>{/each}
+							</ul>
+						</section>{/each}
+				</section>
+			{/each}
 		</div>
 		{#if allowed}<aside
 				class="min-w-0 space-y-4 rounded-xl border bg-card p-4 xl:sticky xl:top-4"
 				aria-label="ค้นหาครูและกำหนดคาบสอน"
 			>
 				<h3 class="font-semibold">เลือกครูสำหรับ {selected.length} คาบ</h3>
+				{#if selectedOriginalTeacher}<p class="break-words text-sm text-muted-foreground">
+						เจ้าของคาบ {selectedOriginalTeacher.name}
+					</p>{/if}
 				<form onsubmit={findCandidates} class="space-y-3">
 					<div class="space-y-2">
 						<Label for="coverage-teacher-search">ชื่อครู</Label><Input
@@ -626,7 +660,7 @@
 						{/if}
 						{#if mode === 'reciprocal'}<div class="space-y-3 rounded-lg border p-3">
 								<p class="text-sm">
-									เลือกคาบคืนของนักเรียนกลุ่มเดียวกัน/ห้องเดียวกัน ระบบตรวจความว่างของครูทั้งสองฝ่าย
+									{selectedOriginalTeacher?.name ?? 'ครูเจ้าของคาบ'} จะสอนคืน เลือกคาบของนักเรียนกลุ่มเดียวกันหรือห้องเดียวกัน
 								</p>
 								<div class="space-y-2">
 									<Label for="coverage-return-date">วันที่สอนคืน</Label><DatePicker

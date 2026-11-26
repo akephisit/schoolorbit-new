@@ -7,7 +7,7 @@ import {
 	englishOfferingId
 } from './fixtures/staff-leave-coverage';
 import { leaveId } from './fixtures/staff-leave';
-import { actor, firstStaff, id } from './fixtures/staff-home-route-data';
+import { actor, firstStaff, secondStaff, id } from './fixtures/staff-home-route-data';
 
 const editPath = `/staff/leave/requests/${leaveId}/edit?step=coverage&returnTo=${encodeURIComponent('/staff/leave?status=draft&offset=20')}`;
 test.use({ serviceWorkers: 'block' });
@@ -22,6 +22,40 @@ async function batchTeacher(page: Page) {
 	await page.locator('#coverage-activity').fill('กิจกรรมภาษาอังกฤษเสริม');
 	await page.getByRole('button', { name: 'ใช้กับ 3 คาบที่เลือก', exact: true }).click();
 }
+
+test('changing original teacher scopes candidate search and the reciprocal return lesson', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-18T03:00:00Z'));
+	const plan = coveragePlan();
+	plan.days[0].lessons[1].teacherId = secondStaff;
+	plan.days[0].lessons[1].originalTeacherName = 'ครูร่วมเดินทาง';
+	const api = await mockTeachingCoverage(page, { plan });
+	await page.goto(editPath);
+	const owner = page.getByRole('region', { name: /^คาบของ ครูเจ้าของ/ });
+	const companion = page.getByRole('region', { name: 'คาบของ ครูร่วมเดินทาง' });
+	await expect(owner.getByTestId('leave-coverage-lesson')).toHaveCount(2);
+	await expect(companion.getByTestId('leave-coverage-lesson')).toHaveCount(1);
+	await owner.getByRole('button', { name: 'เลือกทุกคาบ', exact: true }).click();
+	await companion.getByRole('button', { name: 'เลือกทุกคาบ', exact: true }).click();
+	await expect(owner.getByRole('checkbox', { checked: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
+	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
+	await choose(page, 'coverage-mode', 'แลกคาบสอน');
+	await expect(page.getByText(/ครูร่วมเดินทาง จะสอนคืน/)).toBeVisible();
+	await page.locator('#coverage-return-date').click();
+	await page
+		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^22$/ })
+		.click();
+	await page.getByRole('button', { name: 'ค้นหาคาบสอนคืน', exact: true }).click();
+	expect(api.calls.find((call) => call.path.endsWith('/candidates'))?.body.lessonKeys).toEqual([
+		'lesson-2'
+	]);
+	expect(api.calls.find((call) => call.path.endsWith('/return-lessons'))?.body.lessonKey).toBe(
+		'lesson-2'
+	);
+});
 
 test('multi-day batch keeps cross-department candidates, actual teaching activity, draft retry and complete-plan submit', async ({
 	page
@@ -332,10 +366,15 @@ for (const theme of ['light', 'dark'] as const)
 					taughtLearningGroupId: id(871)
 				};
 		plan.state = 'awaiting_confirmation';
+		plan.days[0].lessons[0].teacherId = secondStaff;
+		plan.days[0].lessons[0].originalTeacherName = 'ครูร่วมเดินทาง';
 		await mockTeachingCoverage(page, { plan, status: 'submitted', assigned: true });
 		await page.goto('/staff/leave/assigned');
 		await expect(page.getByTestId('leave-assigned-task')).toContainText('ภาษาอังกฤษ');
 		await expect(page.getByTestId('leave-assigned-task')).not.toContainText('เข้ารับการตรวจรักษา');
+		await expect(page.getByTestId('leave-assigned-task')).toContainText(
+			'ครูร่วมเดินทาง จะสอนคณิตศาสตร์ คืน'
+		);
 		await expect(page.getByTestId('leave-assigned-task')).toContainText('ผู้ขอจะสอนคณิตศาสตร์ คืน');
 		await expect(page.getByTestId('leave-assigned-task')).not.toContainText('· ·');
 		await expect(page.getByTestId('leave-assigned-task')).toContainText(
@@ -458,13 +497,11 @@ test('editing saved exit date time and valid academic context consumes reconcile
 	await expect(
 		page.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง', exact: true })
 	).toHaveCount(0);
-	for (const field of ['leave-start-date', 'leave-end-date']) {
-		await page.locator(`#${field}`).click();
-		await page
-			.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
-			.filter({ hasText: /^21$/ })
-			.click();
-	}
+	await page.locator('#leave-start-date').click();
+	await page
+		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^21$/ })
+		.click();
 	await page.locator('#leave-start-time').fill('11:00');
 	await page.locator('#leave-end-time').fill('12:00');
 	await choose(page, 'leave-academic-term', '2');

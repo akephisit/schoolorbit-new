@@ -18,12 +18,11 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 	const today = schoolToday();
 	const from = validReportDate(url.searchParams.get('from')) ?? `${today.slice(0, 4)}-01-01`;
 	const to = validReportDate(url.searchParams.get('to')) ?? today;
+	const rawKind = url.searchParams.get('kind');
 	const kind =
-		url.searchParams.get('kind') === 'exit'
-			? ('exit' as const)
-			: url.searchParams.get('kind') === 'leave'
-				? ('leave' as const)
-				: undefined;
+		rawKind === 'leave' || rawKind === 'exit' || rawKind === 'official_travel'
+			? rawKind
+			: undefined;
 	const query = { from, to, kind };
 	return {
 		title: 'สรุปการใช้สิทธิ์',

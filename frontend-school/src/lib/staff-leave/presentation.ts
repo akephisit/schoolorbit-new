@@ -1,5 +1,6 @@
 import type {
 	LeaveKind,
+	LeaveRequestSummary,
 	LeaveStatus,
 	LeaveUnit,
 	LeaveUsageItem,
@@ -9,7 +10,12 @@ import type { BadgeVariant } from '#lib/components/ui/badge/index.js';
 
 export const leaveKindLabels: Record<LeaveKind, string> = {
 	leave: 'การลา',
-	exit: 'ออกนอกโรงเรียน'
+	exit: 'ออกนอกโรงเรียน',
+	official_travel: 'เดินทางไปราชการ'
+};
+export const leavePageTitles: Record<LeaveKind, string> = {
+	...leaveKindLabels,
+	exit: 'ขออนุญาตออกนอกโรงเรียน'
 };
 export const leaveUnitLabels: Record<LeaveUnit, string> = {
 	day: 'วัน',
@@ -83,7 +89,23 @@ export function leaveStatusVariant(status: LeaveStatus): BadgeVariant {
 	return 'secondary';
 }
 export function leaveHome(kind: LeaveKind): string {
-	return kind === 'exit' ? '/staff/exit-permissions' : '/staff/leave';
+	if (kind === 'exit') return '/staff/exit-permissions';
+	if (kind === 'official_travel') return '/staff/official-travel';
+	return '/staff/leave';
+}
+export function leavePeriodCaption(
+	period: Pick<LeaveRequestSummary, 'startDate' | 'endDate' | 'startTime' | 'endTime'>
+): string {
+	const { startDate, endDate, startTime, endTime } = period;
+	const start = leaveDate(startDate);
+	const startClock = startTime?.slice(0, 5);
+	const endClock = endTime?.slice(0, 5);
+	if (startDate === endDate)
+		return startClock && endClock ? `${start} · ${startClock}–${endClock}` : start;
+	const end = leaveDate(endDate);
+	return startClock && endClock
+		? `${start} ${startClock} ถึง ${end} ${endClock}`
+		: `${start} ถึง ${end}`;
 }
 export function leaveDate(value: string): string {
 	return new Intl.DateTimeFormat('th-TH', { dateStyle: 'medium', timeZone: 'Asia/Bangkok' }).format(

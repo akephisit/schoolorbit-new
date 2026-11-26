@@ -125,7 +125,8 @@ export async function mockTeachingCoverage(
 	if (options.assigned) {
 		detail.request.ownerId = firstStaff;
 		for (const day of detail.coverage.days)
-			for (const lesson of day.lessons) lesson.teacherId = firstStaff;
+			for (const lesson of day.lessons)
+				if (!lesson.originalTeacherName) lesson.teacherId = firstStaff;
 	}
 	if (options.manager) {
 		detail.request.ownerId = id(11);

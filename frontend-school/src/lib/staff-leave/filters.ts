@@ -10,6 +10,8 @@ const statuses: LeaveStatus[] = [
 	'cancellation_pending'
 ];
 export const leavePageSize = 20;
+export const companionPageSize = 50;
+export const companionMaxOffset = 10_000;
 
 export function leaveListFilters(url: URL, kind: LeaveKind): LeaveListQuery {
 	const rawStatus = url.searchParams.get('status');
@@ -32,7 +34,7 @@ export function safeLeaveReturn(value: string | null, fallback: string): string 
 		const url = new URL(value, 'https://leave.invalid');
 		if (
 			url.origin !== 'https://leave.invalid' ||
-			!['/staff/leave', '/staff/exit-permissions'].includes(url.pathname)
+			!['/staff/leave', '/staff/exit-permissions', '/staff/official-travel'].includes(url.pathname)
 		)
 			return fallback;
 		return `${url.pathname}${url.search}`;

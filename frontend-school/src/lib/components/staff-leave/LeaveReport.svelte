@@ -94,7 +94,8 @@
 				options={[
 					{ value: 'all', label: 'ทั้งหมด' },
 					{ value: 'leave', label: 'การลา' },
-					{ value: 'exit', label: 'ออกนอกโรงเรียน' }
+					{ value: 'exit', label: 'ออกนอกโรงเรียน' },
+					{ value: 'official_travel', label: 'เดินทางไปราชการ' }
 				]}
 			/><Button type="submit">แสดงรายงาน</Button>
 		</div>

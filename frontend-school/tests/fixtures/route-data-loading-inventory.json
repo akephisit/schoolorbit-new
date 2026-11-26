@@ -1172,6 +1172,16 @@
 			"notes": "Assigned-read-only route owns bounded redacted teaching tasks; exact update-assigned consent, plan revision/idempotency and identity-keyed disposal. No request detail/evidence reads."
 		},
 		{
+			"route": "staff/leave/companions",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff-leave",
+			"notes": "Route owns a bounded list of redacted invitations for the current actor; confirmation uses assigned update permission and refreshes the invitation region."
+		},
+		{
 			"route": "staff/leave/new",
 			"wave": "personnel",
 			"dataOwner": "route",
@@ -1219,7 +1229,7 @@
 			"context": "none",
 			"status": "complete",
 			"backendOwner": "school-staff leave + school-workflow",
-			"notes": "Manage-only route-owned types; selected policy and routing directories are lazy workflows; immutable policy creation patches affected type revision."
+			"notes": "Manage-only route-owned types; policy versions, opt-in reference presets and routing directories are lazy workflows; policy creation patches affected type revision."
 		},
 		{
 			"route": "staff/manage",
@@ -1290,6 +1300,26 @@
 			"status": "complete",
 			"backendOwner": "backend-school authorization/menu",
 			"notes": "Three independent route-owned catalogs render and retry by region. Recommended preview is opened-session lazy; typed item/group/workspace edits patch affected lists, deletes reconcile moved resources only, reorder snapshots and owner/draft/disposal guards preserve current state. Layout-owned user menu refreshes only after successful mutations."
+		},
+		{
+			"route": "staff/official-travel",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff-leave",
+			"notes": "Route owns the official travel request list with URL status and pagination. Companion invitations have a separate assigned route."
+		},
+		{
+			"route": "staff/official-travel/new",
+			"wave": "personnel",
+			"dataOwner": "route",
+			"preload": "hover",
+			"context": "none",
+			"status": "complete",
+			"backendOwner": "school-staff-leave",
+			"notes": "Exact create permission guards the shared request options and coverage context; the companion directory loads on explicit interaction."
 		},
 		{
 			"route": "staff/organization",

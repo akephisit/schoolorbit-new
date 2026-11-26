@@ -61,11 +61,12 @@
 
 <section class="space-y-4 rounded-xl border bg-card p-4" data-testid="leave-assigned-task">
 	<div>
-		<h2 class="font-semibold">คาบสอนของ {task.ownerName}</h2>
+		<h2 class="break-words font-semibold">คาบสอนจากคำขอของ {task.ownerName}</h2>
 		<p class="text-sm text-muted-foreground">แสดงเฉพาะคาบที่มอบหมายให้คุณ</p>
 	</div>
 	<ul class="divide-y">
 		{#each task.assignments as lesson (lesson.lessonKey)}
+			{@const originalTeacher = lesson.originalTeacherName?.trim()}
 			{#if lesson.assignment}<li class="space-y-2 py-3">
 					<div class="flex items-start gap-3">
 						{#if allowed}<Checkbox
@@ -90,6 +91,9 @@
 									', '
 								)}{lesson.roomName ? ` · ${lesson.roomName}` : ''}
 							</p>
+							{#if originalTeacher}<p class="break-words text-sm text-muted-foreground">
+									เจ้าของคาบ {originalTeacher}
+								</p>{/if}
 						</div>
 						<Badge variant="outline">{coverageConsentLabels[lesson.assignment.consent]}</Badge>
 					</div>
@@ -105,7 +109,7 @@
 							{lesson.assignment.taughtActivity}
 						</p>{/if}
 					{#if lesson.assignment.returnDate}<p class="text-sm text-muted-foreground">
-							ผู้ขอจะสอน{coverageReturnCaption(
+							{originalTeacher ? `${originalTeacher} ` : 'ผู้ขอ'}จะสอน{coverageReturnCaption(
 								lesson,
 								lesson.assignment,
 								leaveDate(lesson.assignment.returnDate)

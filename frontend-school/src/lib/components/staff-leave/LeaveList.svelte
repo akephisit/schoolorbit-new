@@ -8,7 +8,8 @@
 	import { LeaveRegion } from '#lib/staff-leave/region.svelte.js';
 	import {
 		leaveHome,
-		leaveDate,
+		leavePeriodCaption,
+		leavePageTitles,
 		leaveKindLabels,
 		leaveAmount,
 		leaveStatusLabels,
@@ -49,7 +50,7 @@
 
 <PageShell
 	contentClass="space-y-4"
-	title={kind === 'exit' ? 'ขออนุญาตออกนอกโรงเรียน' : 'การลา'}
+	title={leavePageTitles[kind]}
 	description="คำขอของคุณและรายการที่ได้รับสิทธิ์ให้พิจารณา"
 >
 	{#snippet actions()}
@@ -73,7 +74,7 @@
 		{#if $can.has(PERMISSIONS.STAFF_LEAVE_READ_ASSIGNED)}<Button
 				variant="outline"
 				href="/staff/leave/assigned">คาบสอนที่มอบหมายให้ฉัน</Button
-			>{/if}
+			><Button variant="outline" href="/staff/leave/companions">คำเชิญร่วมเดินทาง</Button>{/if}
 		{#if $can.has(PERMISSIONS.STAFF_LEAVE_CREATE_OWN)}<Button
 				href={`${home}/new?returnTo=${encodeURIComponent(`${page.url.pathname}${page.url.search}`)}`}
 				><Plus class="size-4" />สร้างคำขอ{leaveKindLabels[kind]}</Button
@@ -118,18 +119,14 @@
 						>{#each region.value.items as request (request.id)}<Table.Row>
 								<Table.Cell
 									><p class="font-medium">{request.typeName}</p>
-									<p class="text-sm text-muted-foreground">{request.ownerName}</p></Table.Cell
-								>
-								<Table.Cell
-									><p>
-										{leaveDate(request.startDate)}{request.endDate !== request.startDate
-											? ` – ${leaveDate(request.endDate)}`
-											: ''}
-									</p>
-									{#if request.startTime}<p class="text-sm text-muted-foreground">
-											{request.startTime.slice(0, 5)} – {request.endTime?.slice(0, 5)}
-										</p>{/if}</Table.Cell
-								>
+									<p class="text-sm text-muted-foreground">{request.ownerName}</p>
+									{#if request.destination}<p
+											class="max-w-64 break-words text-sm text-muted-foreground"
+										>
+											{request.destination}
+										</p>{/if}
+								</Table.Cell>
+								<Table.Cell>{leavePeriodCaption(request)}</Table.Cell>
 								<Table.Cell>{leaveAmount(request.amount, request.unit)}</Table.Cell>
 								<Table.Cell
 									><Badge
@@ -157,6 +154,9 @@
 							<div class="min-w-0">
 								<p class="break-words font-medium">{request.typeName}</p>
 								<p class="break-words text-sm text-muted-foreground">{request.ownerName}</p>
+								{#if request.destination}<p class="break-words text-sm text-muted-foreground">
+										{request.destination}
+									</p>{/if}
 							</div>
 							<Badge
 								variant={leaveStatusVariant(request.status)}
@@ -165,14 +165,7 @@
 						</div>
 						<div class="flex items-end justify-between gap-3">
 							<div class="text-sm">
-								<p>
-									{leaveDate(request.startDate)}{request.endDate !== request.startDate
-										? ` – ${leaveDate(request.endDate)}`
-										: ''}
-								</p>
-								{#if request.startTime}<p class="text-muted-foreground">
-										{request.startTime.slice(0, 5)} – {request.endTime?.slice(0, 5)}
-									</p>{/if}
+								<p>{leavePeriodCaption(request)}</p>
 								<p class="mt-1 font-medium">{leaveAmount(request.amount, request.unit)}</p>
 							</div>
 							<Button

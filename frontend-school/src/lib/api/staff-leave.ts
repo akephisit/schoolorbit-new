@@ -9,6 +9,9 @@ export type LeaveUsageItem = Schemas['LeaveUsageItem'];
 export type LeaveStatus = Schemas['LeaveStatus'];
 export type LeaveType = Schemas['LeaveType'];
 export type LeavePolicyVersion = Schemas['LeavePolicyVersion'];
+export type LeavePolicyPreset = Schemas['LeavePolicyPreset'];
+export type LeaveRoutingUser = Schemas['LeaveRoutingUser'];
+export type LeaveCompanionInvitation = Schemas['LeaveCompanionInvitation'];
 export type LeaveRequestSummary = Schemas['LeaveRequestSummary'];
 export type LeaveRequestDetail = Schemas['LeaveRequestDetail'];
 export type LeaveRequestPage = Schemas['LeaveRequestPage'];
@@ -32,6 +35,47 @@ export type LeaveListQuery = NonNullable<
 export type LeaveUsageQuery = NonNullable<operations['getStaffLeaveUsage']['parameters']['query']>;
 
 const base = '/api/staff-leave';
+
+export async function listLeavePolicyPresets(
+	options: ApiRequestOptions = {}
+): Promise<LeavePolicyPreset[]> {
+	return requireApiData(
+		await apiClient.get<LeavePolicyPreset[]>(`${base}/policy-presets`, options),
+		'โหลดเกณฑ์อ้างอิงไม่สำเร็จ'
+	);
+}
+
+export async function listLeaveCompanionOptions(
+	options: Omit<ApiRequestOptions, 'query'> & {
+		query?: NonNullable<operations['listStaffLeaveCompanionOptions']['parameters']['query']>;
+	} = {}
+): Promise<LeaveRoutingUser[]> {
+	return requireApiData(
+		await apiClient.get<LeaveRoutingUser[]>(`${base}/companion-options`, options),
+		'ค้นหาผู้ร่วมเดินทางไม่สำเร็จ'
+	);
+}
+
+export async function listLeaveCompanionInvitations(
+	options: Omit<ApiRequestOptions, 'query'> & {
+		query?: NonNullable<operations['listStaffLeaveCompanionInvitations']['parameters']['query']>;
+	} = {}
+): Promise<LeaveCompanionInvitation[]> {
+	return requireApiData(
+		await apiClient.get<LeaveCompanionInvitation[]>(`${base}/companion-invitations`, options),
+		'โหลดคำเชิญร่วมเดินทางไม่สำเร็จ'
+	);
+}
+
+export async function confirmLeaveCompanion(
+	id: string,
+	input: LeaveMutationRequest
+): Promise<void> {
+	requireApiData(
+		await apiClient.post<Schemas['EmptyData']>(`${base}/requests/${id}/confirm-companion`, input),
+		'ยืนยันร่วมเดินทางไม่สำเร็จ'
+	);
+}
 
 export async function listLeaveTypes(
 	options: Omit<ApiRequestOptions, 'query'> & {

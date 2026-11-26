@@ -13,7 +13,12 @@
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
 	import { LeaveRegion } from '#lib/staff-leave/region.svelte.js';
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
-	import { leaveHome, leaveDate, leaveAmount } from '#lib/staff-leave/presentation.js';
+	import {
+		leaveHome,
+		leaveKindLabels,
+		leavePeriodCaption,
+		leaveAmount
+	} from '#lib/staff-leave/presentation.js';
 	import { safeLeaveReturn } from '#lib/staff-leave/filters.js';
 	import { can } from '#lib/stores/permissions.js';
 	import { PERMISSIONS } from '#lib/permissions/registry.js';
@@ -115,12 +120,7 @@
 </script>
 
 <PageShell
-	title={id
-		? 'จัดเตรียมคำขอ'
-		: effectiveKind === 'exit'
-			? 'สร้างคำขอออกนอกโรงเรียน'
-			: 'สร้างคำขอการลา'}
-	description="รายละเอียดคำขอ · จัดคาบสอน · ตรวจสอบและส่ง"
+	title={id ? 'จัดเตรียมคำขอ' : `สร้างคำขอ${leaveKindLabels[effectiveKind]}`}
 	{backHref}
 	backLabel="กลับรายการคำขอ"
 	contentClass="space-y-5"
@@ -132,11 +132,12 @@
 			>{/if}{/snippet}
 	<nav
 		aria-label="ขั้นตอนเตรียมคำขอ"
-		class="grid grid-cols-3 gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3"
+		class="grid grid-cols-3 gap-1 rounded-xl border border-primary/20 bg-primary/5 p-2 sm:gap-2 sm:p-3"
 	>
 		{#each [{ id: 'details', label: 'รายละเอียด' }, { id: 'coverage', label: 'จัดคาบสอน' }, { id: 'review', label: 'ตรวจสอบและส่ง' }] as item, index (item.id)}
 			<Button
 				variant={step === item.id ? 'default' : 'ghost'}
+				class="h-auto min-h-10 px-1 whitespace-normal"
 				disabled={(item.id !== 'details' && !detail) ||
 					(item.id === 'review' && (coverageDirty || detailsDirty))}
 				aria-current={step === item.id ? 'step' : undefined}
@@ -209,13 +210,27 @@
 						<dd>{leaveAmount(detail.request.amount, detail.request.unit)}</dd>
 					</div>
 					<div>
-						<dt class="text-sm text-muted-foreground">ช่วงวันที่</dt>
-						<dd>{leaveDate(detail.request.startDate)} – {leaveDate(detail.request.endDate)}</dd>
+						<dt class="text-sm text-muted-foreground">ช่วงที่ขอ</dt>
+						<dd>{leavePeriodCaption(detail.request)}</dd>
 					</div>
 					<div>
 						<dt class="text-sm text-muted-foreground">หลักฐาน</dt>
 						<dd>{detail.evidenceFileIds.length} รายการ</dd>
 					</div>
+					{#if detail.request.destination}
+						<div>
+							<dt class="text-sm text-muted-foreground">สถานที่ไปราชการ</dt>
+							<dd class="break-words">{detail.request.destination}</dd>
+						</div>
+					{/if}
+					{#if detail.request.companions?.length}
+						<div class="sm:col-span-2">
+							<dt class="text-sm text-muted-foreground">ผู้ร่วมเดินทาง</dt>
+							<dd class="break-words">
+								{detail.request.companions.map((user) => user.displayName).join(' · ')}
+							</dd>
+						</div>
+					{/if}
 					<div class="sm:col-span-2">
 						<dt class="text-sm text-muted-foreground">เหตุผล</dt>
 						<dd class="whitespace-pre-wrap break-words">{detail.request.reason}</dd>
@@ -255,7 +270,7 @@
 						actionLabel="ตรวจสอบข้อมูลล่าสุด"
 						onaction={refreshed}
 					/>{/if}
-				<div class="flex justify-between gap-2">
+				<div class="flex flex-wrap justify-between gap-2">
 					<Button variant="outline" disabled={pending} onclick={() => selectStep('coverage')}
 						>กลับจัดคาบสอน</Button
 					><LoadingButton
