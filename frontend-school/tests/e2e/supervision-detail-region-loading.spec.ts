@@ -174,17 +174,16 @@ test('a reopened evaluator no longer displays the historical submission time', a
 	}));
 	await mock(page, { observationStatus: 'planned', observation: { evaluators } });
 	await page.goto(detailPath());
-	const evaluatorCard = page.locator('[data-slot="card"]').filter({
-		has: page.locator('[data-slot="card-title"]').filter({ hasText: /^ผู้ประเมิน$/ })
+	const evaluatorRows = page.getByTestId('supervision-detail').getByRole('listitem');
+	const draft = evaluatorRows.filter({
+		has: page.getByText('ผู้ประเมินที่ต้องส่งใหม่', { exact: true })
 	});
-	const draft = evaluatorCard
-		.getByText('ผู้ประเมินที่ต้องส่งใหม่', { exact: true })
-		.locator('../..');
-	const submitted = evaluatorCard
-		.getByText('ผู้ประเมินที่ส่งครบ', { exact: true })
-		.locator('../..');
+	const submitted = evaluatorRows.filter({
+		has: page.getByText('ผู้ประเมินที่ส่งครบ', { exact: true })
+	});
 	await expect(draft).toContainText('ยังไม่ส่ง');
 	await expect(draft).not.toContainText('1 ต.ค. 2569');
+	await expect(draft.locator('time')).toHaveCount(0);
 	await expect(submitted).toContainText('ส่งผลแล้ว');
 	await expect(submitted.locator('time')).toHaveAttribute('datetime', evaluators[1].submittedAt);
 });

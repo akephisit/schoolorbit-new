@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
 	import SupervisionCycleDates from '#lib/components/supervision/SupervisionCycleDates.svelte';
 	import SupervisionRequestReview from '#lib/components/supervision/SupervisionRequestReview.svelte';
@@ -1217,21 +1217,23 @@
 			!selectedEvaluationTemplate
 		)
 			return;
-		if (!evaluationObservationId) return;
+		const observationId = evaluationObservationId;
+		if (!observationId) return;
 		evaluationFormError = '';
 		const firstMissing = missingRequiredEvaluationItems[0];
 		if (firstMissing) {
+			const ownsFocus = captureMutationOwner();
 			evaluationValidationAttempted = true;
-			document
-				.getElementById(`evaluation-field-${firstMissing.localId}`)
-				?.scrollIntoView({ block: 'nearest' });
-			document
-				.getElementById(`evaluation-answer-${firstMissing.localId}`)
-				?.focus({ preventScroll: true });
+			await tick();
+			if (!ownsFocus() || !evaluationDialogOpen || evaluationObservationId !== observationId)
+				return;
+			const answer = document.getElementById(`evaluation-answer-${firstMissing.localId}`);
+			const target = answer ?? document.getElementById(`evaluation-field-${firstMissing.localId}`);
+			target?.scrollIntoView({ block: 'nearest' });
+			answer?.focus({ preventScroll: true });
 			return;
 		}
 
-		const observationId = evaluationObservationId;
 		const submission = { observationId };
 		savingEvaluation = submission;
 		const ownsMutation = captureMutationOwner();

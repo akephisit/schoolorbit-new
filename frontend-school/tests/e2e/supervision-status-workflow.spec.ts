@@ -76,7 +76,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
 			await expect(dialog).toHaveCount(0);
 			await expect(page.getByTestId('supervision-workflow')).toContainText('ผู้รับผิดชอบตรวจคำขอ');
 			await expect(page.getByTestId('supervision-current-return-reason')).toHaveCount(0);
-			await expect(page.getByText('คาบ 2', { exact: true })).toBeVisible();
+			await expect(
+				page
+					.getByTestId('supervision-saved-periods')
+					.getByText('คาบ 2 · วิชาปัจจุบัน 2', { exact: true })
+			).toBeVisible();
 			expect(api.writes).toEqual([`PATCH ${observationPath}/request`]);
 			expect(api.payloads).toEqual([
 				expect.objectContaining({
@@ -136,6 +140,7 @@ for (const status of ['draft', 'open', 'closed', 'archived'] as const) {
 	test(`booking availability follows manual ${status} state regardless of today`, async ({
 		page
 	}) => {
+		await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
 		await mock(page, {
 			permissions: teacherPermissions,
 			bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
@@ -145,9 +150,10 @@ for (const status of ['draft', 'open', 'closed', 'archived'] as const) {
 		await page.goto(path('').replace('/supervision/?', '/supervision?'));
 		await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 		if (status === 'open') {
-			await expect(
-				page.getByText('เปิดรับคำขอจนกว่าผู้ดูแลจะเปลี่ยนสถานะรอบนิเทศ', { exact: true })
-			).toBeVisible();
+			await expect(page.getByRole('combobox', { name: 'เลือกรอบนิเทศ', exact: true })).toHaveText(
+				'รอบแรก'
+			);
+			await expect(page.getByTestId('supervision-lesson-picker')).toBeVisible();
 			await expect(page.getByRole('button', { name: 'สัปดาห์ก่อน', exact: true })).toBeEnabled();
 			await expect(page.getByRole('button', { name: 'สัปดาห์ถัดไป', exact: true })).toBeEnabled();
 		} else {
