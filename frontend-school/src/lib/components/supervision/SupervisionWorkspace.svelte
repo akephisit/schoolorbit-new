@@ -128,6 +128,12 @@
 		observationEndDate: string;
 	};
 
+	const dialogClass = 'flex max-h-[92dvh] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0';
+	const dialogHeaderClass = 'shrink-0 border-b px-4 py-4 pr-12 text-left sm:px-6 sm:pr-14';
+	const dialogBodyClass =
+		'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6';
+	const dialogFooterClass = 'shrink-0 border-t flex-row flex-wrap justify-end px-4 py-3 sm:px-6';
+
 	const cycleStatusCreateOptions: {
 		value: SupervisionCycleStatus;
 		label: string;
@@ -265,6 +271,7 @@
 	let bookingOpen = $state(false);
 	let evaluationTemplateLoading = $state(false);
 	let evaluationTemplateError = $state('');
+	let evaluationFormError = $state('');
 	let progressError = $state('');
 	let saving = $state(false);
 	let savingAction = $state<string | null>(null);
@@ -278,6 +285,7 @@
 	let evaluationObservationId = $state('');
 	let responseDrafts = $state<{ [itemId: string]: ResponseDraft }>({});
 	let acknowledgeComment = $state('');
+	let acknowledgeFormError = $state<{ id: string; message: string } | null>(null);
 	let overviewCycleId = $state('');
 	let progress = $state<SupervisionCycleProgress | null>(null);
 	let teacherStatusRows = $state<SupervisionTeacherStatusRow[]>([]);
@@ -286,6 +294,7 @@
 	let createCycleDialogOpen = $state(false);
 	let cycleFormError = $state('');
 	let createTemplateDialogOpen = $state(false);
+	let templateFormError = $state('');
 	let previewTemplateDialogOpen = $state(false);
 	let previewTemplateId = $state('');
 	let editingTemplateId = $state('');
@@ -479,6 +488,8 @@
 				bookingCalendarDate = '';
 				calendarReviewId = '';
 				bookingOpen = false;
+				acknowledgeComment = '';
+				acknowledgeFormError = null;
 				savingEvaluation = null;
 				clearEvaluationDraft();
 				progress = null;
@@ -1073,6 +1084,7 @@
 		if (!canSubmitAssignedEvaluation(observation)) return;
 		evaluationObservationId = observation.id;
 		responseDrafts = {};
+		evaluationFormError = '';
 		evaluationDialogOpen = true;
 		void loadEvaluationTemplate();
 	}
@@ -1108,6 +1120,7 @@
 		evaluationTemplateRequest.abort();
 		evaluationTemplateLoading = false;
 		evaluationTemplateError = '';
+		evaluationFormError = '';
 		evaluationDialogOpen = false;
 		evaluationObservationId = '';
 		responseDrafts = {};
@@ -1190,13 +1203,11 @@
 			!selectedEvaluationTemplate
 		)
 			return;
-		if (!evaluationObservationId) {
-			toast.error('เลือกรายการประเมินก่อน');
-			return;
-		}
+		if (!evaluationObservationId) return;
+		evaluationFormError = '';
 		const missing = missingRequiredEvaluationLabels();
 		if (missing.length > 0) {
-			toast.error(`กรอกหัวข้อบังคับให้ครบ (${missing.length} ข้อ)`);
+			evaluationFormError = `กรอกหัวข้อบังคับให้ครบ (${missing.length} ข้อ)`;
 			return;
 		}
 
@@ -1217,13 +1228,18 @@
 			if (refreshPending) void retryObservations();
 		} catch (error) {
 			if (!isCurrentSubmission()) return;
-			toast.error(error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ');
+			const message = error instanceof Error ? error.message : 'บันทึกผลประเมินไม่สำเร็จ';
+			if (evaluationDialogOpen && evaluationObservationId === observationId)
+				evaluationFormError = message;
+			else toast.error(message);
 		} finally {
 			if (isCurrentSubmission()) savingEvaluation = null;
 		}
 	}
 
 	async function acknowledgeResult(id: string) {
+		if (mutationBusy) return;
+		acknowledgeFormError = null;
 		savingAction = `acknowledge-result:${id}`;
 		const ownsMutation = captureMutationOwner();
 		try {
@@ -1237,7 +1253,10 @@
 			acknowledgeComment = '';
 		} catch (error) {
 			if (!ownsMutation()) return;
-			toast.error(error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ');
+			acknowledgeFormError = {
+				id,
+				message: error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ'
+			};
 		} finally {
 			if (ownsMutation()) savingAction = null;
 		}
@@ -1348,6 +1367,7 @@
 
 	function resetTemplateForm() {
 		editingTemplateId = '';
+		templateFormError = '';
 		templateForm = createDefaultTemplateForm();
 	}
 
@@ -1549,34 +1569,42 @@
 
 	function validateTemplateForm(): boolean {
 		if (!templateForm.title.trim()) {
-			toast.error('กรอกชื่อแบบประเมิน');
+			templateFormError = 'กรอกชื่อแบบประเมิน';
 			return false;
 		}
 		if (Number(templateForm.ratingMin) >= Number(templateForm.ratingMax)) {
-			toast.error('คะแนนต่ำสุดต้องน้อยกว่าคะแนนสูงสุด');
+			templateFormError = 'คะแนนต่ำสุดต้องน้อยกว่าคะแนนสูงสุด';
 			return false;
 		}
 		if (templateForm.sections.length === 0) {
-			toast.error('เพิ่มหมวดแบบประเมินอย่างน้อย 1 หมวด');
+			templateFormError = 'เพิ่มหมวดแบบประเมินอย่างน้อย 1 หมวด';
 			return false;
 		}
 		if (templateForm.sections.every((section) => section.items.length === 0)) {
-			toast.error('เพิ่มหัวข้อประเมินอย่างน้อย 1 ข้อ');
+			templateFormError = 'เพิ่มหัวข้อประเมินอย่างน้อย 1 ข้อ';
 			return false;
 		}
 		if (templateForm.sections.some((section) => !section.title.trim())) {
-			toast.error('กรอกชื่อหมวดให้ครบ');
+			templateFormError = 'กรอกชื่อหมวดให้ครบ';
 			return false;
 		}
 		if (templateForm.sections.some((section) => section.items.some((item) => !item.label.trim()))) {
-			toast.error('กรอกหัวข้อประเมินให้ครบ');
+			templateFormError = 'กรอกหัวข้อประเมินให้ครบ';
 			return false;
 		}
 		return true;
 	}
 
 	async function createTemplate() {
-		if (!canManageSchool) return;
+		if (
+			!canManageSchool ||
+			savingTemplate ||
+			!templateDetailLoaded ||
+			templateDetailLoading ||
+			templateDetailError
+		)
+			return;
+		templateFormError = '';
 		if (!validateTemplateForm()) return;
 
 		savingTemplate = true;
@@ -1615,7 +1643,10 @@
 			}
 		} catch (error) {
 			if (!ownsMutation()) return;
-			toast.error(error instanceof Error ? error.message : 'บันทึกแบบประเมินไม่สำเร็จ');
+			const message = error instanceof Error ? error.message : 'บันทึกแบบประเมินไม่สำเร็จ';
+			if (createTemplateDialogOpen && workflowRevision === templateWorkflowRevision)
+				templateFormError = message;
+			else toast.error(message);
 		} finally {
 			if (ownsMutation()) savingTemplate = false;
 		}
@@ -1711,10 +1742,16 @@
 	{/if}
 {/snippet}
 
-{#snippet observationFacts(observation: SupervisionObservation)}
+{#snippet observationFacts(observation: SupervisionObservation, showTeacher = false)}
 	<dl
 		class="grid gap-x-4 gap-y-3 border-y py-3 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
 	>
+		{#if showTeacher}
+			<div class="min-w-0 space-y-0.5">
+				<dt class="text-xs text-muted-foreground">นิเทศใคร</dt>
+				<dd class="wrap-anywhere font-medium">{observation.observedDisplayName ?? '—'}</dd>
+			</div>
+		{/if}
 		{#each observationDetailGrid(observation) as detail (detail.label)}
 			<div class="min-w-0 space-y-0.5">
 				<dt class="text-xs text-muted-foreground">{detail.label}</dt>
@@ -1760,7 +1797,7 @@
 				data-sveltekit-preload-data={item.key !== 'overview' ? false : 'tap'}
 				variant="ghost"
 				aria-current={section === item.key ? 'page' : undefined}
-				class="min-h-11 min-w-0 justify-start whitespace-normal px-3 text-start text-muted-foreground aria-[current=page]:bg-primary/10 aria-[current=page]:font-semibold aria-[current=page]:text-primary"
+				class="h-auto min-w-0 justify-start whitespace-normal px-3 py-2 text-start text-muted-foreground aria-[current=page]:bg-primary/10 aria-[current=page]:font-semibold aria-[current=page]:text-primary"
 			>
 				<Icon class="size-4" aria-hidden="true" />
 				{item.label}
@@ -1768,7 +1805,7 @@
 		{/each}
 	</nav>
 
-	{#if section === 'mine'}
+	{#if section === 'mine' && shouldLoadObservations()}
 		<dl
 			class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4"
 			aria-label="สถานะการนิเทศของฉัน"
@@ -1978,7 +2015,14 @@
 														: 'รายละเอียด'}
 												</Button>
 												{#if observation.status === 'published'}
-													<Dialog.Root>
+													<Dialog.Root
+														onOpenChange={(open) => {
+															if (open) {
+																acknowledgeComment = '';
+																acknowledgeFormError = null;
+															}
+														}}
+													>
 														<Dialog.Trigger>
 															{#snippet child({ props })}
 																<Button size="sm" {...props}>
@@ -1987,39 +2031,57 @@
 																</Button>
 															{/snippet}
 														</Dialog.Trigger>
-														<Dialog.Content>
-															<Dialog.Header>
+														<Dialog.Content class={dialogClass}>
+															<Dialog.Header class={dialogHeaderClass}>
 																<Dialog.Title>รับทราบผลนิเทศ</Dialog.Title>
 																<Dialog.Description>
-																	เพิ่มความคิดเห็นได้ถ้าต้องการ แล้วกดยืนยันรับทราบผลนิเทศ
+																	{observationSubjectLabel(observation)} · {formatDate(
+																		observation.observedAt
+																	)}
 																</Dialog.Description>
 															</Dialog.Header>
-															<div class="space-y-2">
-																<Label for={`supervision-acknowledge-${observation.id}`}
-																	>ความคิดเห็นเพิ่มเติม (ถ้ามี)</Label
-																>
-																<Textarea
-																	id={`supervision-acknowledge-${observation.id}`}
-																	bind:value={acknowledgeComment}
-																	rows={3}
-																	placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
-																/>
-															</div>
-															<Dialog.Footer>
-																<Dialog.Close>
-																	{#snippet child({ props })}<Button variant="outline" {...props}
-																			>ยกเลิก</Button
-																		>{/snippet}
-																</Dialog.Close>
-																<LoadingButton
-																	onclick={() => acknowledgeResult(observation.id)}
-																	loading={savingAction === `acknowledge-result:${observation.id}`}
-																	loadingLabel="กำลังบันทึก..."
-																	disabled={mutationBusy}
-																>
-																	ยืนยันรับทราบ
-																</LoadingButton>
-															</Dialog.Footer>
+															<form
+																class="flex min-h-0 flex-1 flex-col"
+																onsubmit={(event) => {
+																	event.preventDefault();
+																	void acknowledgeResult(observation.id);
+																}}
+															>
+																<div class={dialogBodyClass}>
+																	<Label for={`supervision-acknowledge-${observation.id}`}
+																		>ความคิดเห็นเพิ่มเติม (ถ้ามี)</Label
+																	>
+																	<Textarea
+																		id={`supervision-acknowledge-${observation.id}`}
+																		bind:value={acknowledgeComment}
+																		rows={3}
+																		placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
+																	/>
+																	{#if acknowledgeFormError?.id === observation.id}
+																		<p role="alert" class="text-sm text-destructive">
+																			{acknowledgeFormError.message}
+																		</p>
+																	{/if}
+																</div>
+																<Dialog.Footer class={dialogFooterClass}>
+																	<Dialog.Close>
+																		{#snippet child({ props })}<Button
+																				type="button"
+																				variant="outline"
+																				{...props}>ยกเลิก</Button
+																			>{/snippet}
+																	</Dialog.Close>
+																	<LoadingButton
+																		type="submit"
+																		loading={savingAction ===
+																			`acknowledge-result:${observation.id}`}
+																		loadingLabel="กำลังบันทึก..."
+																		disabled={mutationBusy}
+																	>
+																		ยืนยันรับทราบ
+																	</LoadingButton>
+																</Dialog.Footer>
+															</form>
 														</Dialog.Content>
 													</Dialog.Root>
 												{:else}
@@ -2122,20 +2184,22 @@
 				}}
 			>
 				{#if calendarReviewObservation}
-					<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
-						<Dialog.Header>
+					<Dialog.Content class={cn(dialogClass, 'sm:max-w-2xl')}>
+						<Dialog.Header class={dialogHeaderClass}>
 							<Dialog.Title>ตรวจคำขอจองนิเทศ</Dialog.Title>
 							<Dialog.Description>
 								{calendarReviewObservation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}
 							</Dialog.Description>
 						</Dialog.Header>
-						<SupervisionRequestReview
-							observation={calendarReviewObservation}
-							review={requestReview}
-							showSaveEvaluators
-							showSchedule
-							onclose={() => (calendarReviewId = '')}
-						/>
+						<div class={dialogBodyClass}>
+							<SupervisionRequestReview
+								observation={calendarReviewObservation}
+								review={requestReview}
+								showSaveEvaluators
+								showSchedule
+								onclose={() => (calendarReviewId = '')}
+							/>
+						</div>
 					</Dialog.Content>
 				{/if}
 			</Dialog.Root>
@@ -2750,141 +2814,185 @@
 </PageShell>
 
 <Dialog.Root bind:open={evaluationDialogOpen} onOpenChange={setEvaluationDialogOpen}>
-	<Dialog.Content class="flex max-h-[92dvh] flex-col sm:max-w-5xl">
-		<Dialog.Header>
+	<Dialog.Content class={cn(dialogClass, 'sm:max-w-5xl')}>
+		<Dialog.Header class={dialogHeaderClass}>
 			<Dialog.Title>ทำแบบประเมินนิเทศ</Dialog.Title>
 			<Dialog.Description>
-				{#if selectedEvaluation && selectedEvaluationTemplate}
-					{selectedEvaluationTemplate.title} · {selectedEvaluation.observedDisplayName ??
-						'ครูผู้ถูกนิเทศ'}
-				{:else}
-					เลือกรายการที่ได้รับมอบหมายเพื่อทำแบบประเมิน
-				{/if}
+				{selectedEvaluation?.observedDisplayName ?? 'ครูผู้ถูกนิเทศ'}
+				{#if selectedEvaluationTemplate}
+					· {selectedEvaluationTemplate.title}{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 
-		{@render managementFeedback(
-			!!selectedEvaluationTemplate,
-			evaluationTemplateLoading,
-			evaluationTemplateError,
-			() => void loadEvaluationTemplate()
-		)}
-		{#if selectedEvaluation && selectedEvaluationTemplate && !evaluationTemplateLoading}
-			<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-				<div
-					class="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm sm:grid-cols-2 lg:grid-cols-4"
-				>
-					<div>
-						<p class="text-xs text-muted-foreground">คะแนนรวม</p>
-						<p class="font-semibold">
-							{selectedEvaluationDraftSummary.totalScore} / {selectedEvaluationDraftSummary.maxScore}
-						</p>
-					</div>
-					<div>
-						<p class="text-xs text-muted-foreground">ร้อยละ</p>
-						<p class="font-semibold">
-							{selectedEvaluationDraftSummary.percentage === null
-								? '-'
-								: selectedEvaluationDraftSummary.percentage.toFixed(2)}
-						</p>
-					</div>
-					<div>
-						<p class="text-xs text-muted-foreground">ระดับคุณภาพ</p>
-						<p class="font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</p>
-					</div>
-					<div>
-						<p class="text-xs text-muted-foreground">ตอบแล้ว</p>
-						<p class="font-semibold">
-							{selectedEvaluationDraftSummary.answeredRatingCount} /
-							{selectedEvaluationDraftSummary.ratingItemCount}
-						</p>
-					</div>
-				</div>
-
-				<div class="grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-					<div>
-						<p class="text-xs text-muted-foreground">นิเทศใคร</p>
-						<p class="font-medium">{selectedEvaluation.observedDisplayName ?? '-'}</p>
-					</div>
-					{#each observationDetailGrid(selectedEvaluation) as detail (detail.label)}
+		<form
+			class="flex min-h-0 flex-1 flex-col"
+			onsubmit={(event) => {
+				event.preventDefault();
+				void saveEvaluation();
+			}}
+		>
+			<div class={dialogBodyClass} aria-busy={evaluationTemplateLoading}>
+				{@render managementFeedback(
+					!!selectedEvaluationTemplate,
+					evaluationTemplateLoading,
+					evaluationTemplateError,
+					() => void loadEvaluationTemplate()
+				)}
+				{#if selectedEvaluation && selectedEvaluationTemplate && !evaluationTemplateLoading && !evaluationTemplateError}
+					<dl
+						class="grid grid-cols-2 gap-3 rounded-lg border border-primary/15 bg-primary/5 p-4 text-sm md:grid-cols-4"
+					>
 						<div>
-							<p class="text-xs text-muted-foreground">{detail.label}</p>
-							<p class="font-medium">{detail.value}</p>
+							<dt class="text-xs text-muted-foreground">คะแนนรวม</dt>
+							<dd class="text-lg font-semibold tabular-nums">
+								{selectedEvaluationDraftSummary.totalScore} / {selectedEvaluationDraftSummary.maxScore}
+							</dd>
 						</div>
-					{/each}
-				</div>
+						<div>
+							<dt class="text-xs text-muted-foreground">ร้อยละ</dt>
+							<dd class="text-lg font-semibold tabular-nums">
+								{selectedEvaluationDraftSummary.percentage === null
+									? '—'
+									: selectedEvaluationDraftSummary.percentage.toFixed(2)}
+							</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-muted-foreground">ระดับคุณภาพ</dt>
+							<dd class="text-lg font-semibold">{selectedEvaluationDraftSummary.qualityLabel}</dd>
+						</div>
+						<div>
+							<dt class="text-xs text-muted-foreground">ข้อคะแนนที่ตอบแล้ว</dt>
+							<dd class="text-lg font-semibold tabular-nums">
+								{selectedEvaluationDraftSummary.answeredRatingCount} /
+								{selectedEvaluationDraftSummary.ratingItemCount}
+							</dd>
+						</div>
+					</dl>
 
-				{#each selectedEvaluationRubricSections as section (section.localId)}
-					{@const progress = sectionRubricProgress(
-						section,
-						responseDrafts,
-						selectedEvaluationTemplate.ratingMax
-					)}
-					<div class="space-y-3 rounded-md border bg-background p-3">
-						<div class="flex flex-wrap items-start justify-between gap-2">
-							<div>
-								<h4 class="text-sm font-semibold">{section.title}</h4>
-								{#if section.description}
-									<p class="text-xs text-muted-foreground">{section.description}</p>
-								{/if}
-							</div>
-							<div class="flex flex-wrap gap-2">
-								<Badge variant="secondary">
-									บังคับ {progress.answeredRequiredCount}/{progress.requiredCount}
-								</Badge>
-								<Badge variant="outline">
-									คะแนน {progress.totalScore}/{progress.maxScore}
-								</Badge>
-								<Badge variant="outline">
-									{progress.percentage === null ? '-' : progress.percentage.toFixed(2)}% ·
-									{progress.qualityLabel}
-								</Badge>
-							</div>
-						</div>
-						{#each section.items as item (item.localId)}
-							<div class="space-y-2 rounded-md border p-3">
-								<div class="space-y-1">
-									<Label>{item.label}</Label>
-									{#if item.description}
-										<p class="text-xs text-muted-foreground">{item.description}</p>
+					{@render observationFacts(selectedEvaluation, true)}
+
+					{#each selectedEvaluationRubricSections as section (section.localId)}
+						{@const progress = sectionRubricProgress(
+							section,
+							responseDrafts,
+							selectedEvaluationTemplate.ratingMax
+						)}
+						<section
+							class="rounded-lg border bg-card"
+							aria-labelledby={`evaluation-section-${section.localId}`}
+						>
+							<div
+								class="flex flex-wrap items-start justify-between gap-3 rounded-t-lg border-b bg-muted/25 p-4"
+							>
+								<div>
+									<h3 id={`evaluation-section-${section.localId}`} class="text-base font-semibold">
+										{section.title}
+									</h3>
+									{#if section.description}
+										<p class="text-xs text-muted-foreground">{section.description}</p>
 									{/if}
 								</div>
-								{#if item.itemType === 'rating'}
-									<div class="flex flex-wrap gap-2">
-										{#each ratingScale(selectedEvaluationTemplate.ratingMin, selectedEvaluationTemplate.ratingMax) as score (score)}
-											<Button
-												type="button"
-												size="sm"
-												variant={responseDrafts[item.localId]?.ratingScore === String(score)
-													? 'default'
-													: 'outline'}
-												onclick={() => updateDraft(item.localId, { ratingScore: String(score) })}
-											>
-												{score}
-											</Button>
-										{/each}
-									</div>
-								{:else}
-									<Textarea
-										rows={3}
-										value={responseDrafts[item.localId]?.textResponse ?? ''}
-										oninput={(event) =>
-											updateDraft(item.localId, {
-												textResponse: (event.currentTarget as HTMLTextAreaElement).value
-											})}
-									/>
-								{/if}
+								<div class="flex flex-wrap gap-2">
+									<Badge variant="secondary">
+										บังคับ {progress.answeredRequiredCount}/{progress.requiredCount}
+									</Badge>
+									<Badge variant="outline">
+										คะแนน {progress.totalScore}/{progress.maxScore}
+									</Badge>
+									<Badge variant="outline">
+										{progress.percentage === null ? '-' : progress.percentage.toFixed(2)}% ·
+										{progress.qualityLabel}
+									</Badge>
+								</div>
 							</div>
-						{/each}
-					</div>
-				{/each}
+							<div class="divide-y px-4">
+								{#each section.items as item (item.localId)}
+									<div class="space-y-3 py-4">
+										<div class="space-y-1">
+											{#if item.itemType === 'rating'}
+												<p id={`evaluation-label-${item.localId}`} class="text-sm font-medium">
+													{item.label}
+												</p>
+											{:else}
+												<Label for={`evaluation-answer-${item.localId}`}>{item.label}</Label>
+											{/if}
+											{#if item.required}<p
+													id={`evaluation-required-${item.localId}`}
+													class="text-xs text-muted-foreground"
+												>
+													บังคับตอบ
+												</p>{/if}
+											{#if item.description}
+												<p
+													id={`evaluation-description-${item.localId}`}
+													class="text-xs text-muted-foreground"
+												>
+													{item.description}
+												</p>
+											{/if}
+										</div>
+										{#if item.itemType === 'rating'}
+											<div
+												role="group"
+												aria-labelledby={`evaluation-label-${item.localId}`}
+												aria-describedby={cn(
+													item.required && `evaluation-required-${item.localId}`,
+													item.description && `evaluation-description-${item.localId}`
+												) || undefined}
+												class="flex flex-wrap gap-2"
+											>
+												{#each ratingScale(selectedEvaluationTemplate.ratingMin, selectedEvaluationTemplate.ratingMax) as score (score)}
+													<Button
+														type="button"
+														size="sm"
+														aria-pressed={responseDrafts[item.localId]?.ratingScore ===
+															String(score)}
+														variant={responseDrafts[item.localId]?.ratingScore === String(score)
+															? 'default'
+															: 'outline'}
+														onclick={() =>
+															updateDraft(item.localId, { ratingScore: String(score) })}
+													>
+														{score}
+													</Button>
+												{/each}
+											</div>
+										{:else}
+											<Textarea
+												id={`evaluation-answer-${item.localId}`}
+												aria-required={item.required}
+												aria-describedby={item.description
+													? `evaluation-description-${item.localId}`
+													: undefined}
+												rows={3}
+												value={responseDrafts[item.localId]?.textResponse ?? ''}
+												oninput={(event) =>
+													updateDraft(item.localId, {
+														textResponse: (event.currentTarget as HTMLTextAreaElement).value
+													})}
+											/>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						</section>
+					{/each}
+					<p class="text-sm text-muted-foreground">
+						เมื่อผู้ประเมินที่จำเป็นส่งผลครบ ระบบจะแจ้งให้ครูรับทราบผล
+					</p>
+				{:else if !evaluationTemplateLoading && !evaluationTemplateError}
+					<PageState
+						title="ยังไม่ได้เลือกรายการประเมิน"
+						description="เลือกงานนิเทศที่ได้รับมอบหมายก่อนเริ่มทำแบบประเมิน"
+					/>
+				{/if}
 			</div>
-
-			<p class="text-sm text-muted-foreground">
-				เมื่อผู้ประเมินที่จำเป็นส่งผลครบ ระบบจะแจ้งให้ครูรับทราบผล
-			</p>
-			<Dialog.Footer>
+			{#if evaluationFormError}<p role="alert" class="px-4 pb-2 text-sm text-destructive sm:px-6">
+					{evaluationFormError}
+				</p>{/if}
+			<Dialog.Footer class={dialogFooterClass}>
 				<Button
+					type="button"
 					variant="outline"
 					onclick={clearEvaluationDraft}
 					disabled={savingEvaluation !== null}
@@ -2892,20 +3000,18 @@
 					ปิด
 				</Button>
 				<LoadingButton
-					onclick={saveEvaluation}
+					type="submit"
 					loading={savingEvaluation !== null}
 					loadingLabel="กำลังส่ง..."
-					disabled={savingEvaluation !== null}
+					disabled={!selectedEvaluation ||
+						!selectedEvaluationTemplate ||
+						evaluationTemplateLoading ||
+						!!evaluationTemplateError}
 				>
 					ส่งผลประเมิน
 				</LoadingButton>
 			</Dialog.Footer>
-		{:else}
-			<PageState
-				title="ยังไม่ได้เลือกรายการประเมิน"
-				description="เลือกงานนิเทศที่ได้รับมอบหมายก่อนเริ่มทำแบบประเมิน"
-			/>
-		{/if}
+		</form>
 	</Dialog.Content>
 </Dialog.Root>
 
@@ -2916,7 +3022,7 @@
 	}}
 >
 	<Dialog.Content
-		class="max-w-3xl"
+		class={cn(dialogClass, 'sm:max-w-2xl')}
 		onEscapeKeydown={(event) => {
 			if (savingAction === 'create-cycle') event.preventDefault();
 		}}
@@ -2924,112 +3030,117 @@
 			if (savingAction === 'create-cycle') event.preventDefault();
 		}}
 	>
-		<Dialog.Header>
+		<Dialog.Header class={dialogHeaderClass}>
 			<Dialog.Title>สร้างรอบนิเทศ</Dialog.Title>
-			<Dialog.Description>รอบนิเทศจะผูกกับปีและภาคเรียนที่เลือกบนแถบด้านบน</Dialog.Description>
+			<Dialog.Description>
+				{academicYearId ? academicYearLabel(academicYearId) : 'ยังไม่ได้เลือกปีการศึกษา'} · {academicTermLabel(
+					academicTermId
+				)}
+			</Dialog.Description>
 		</Dialog.Header>
 		<form
+			class="flex min-h-0 flex-1 flex-col"
 			onsubmit={(event) => {
 				event.preventDefault();
 				void createCycle();
 			}}
 		>
-			<fieldset
-				disabled={savingAction === 'create-cycle'}
-				class="grid min-w-0 gap-4 py-2 lg:grid-cols-2"
-			>
-				<div class="rounded-lg border bg-muted/30 p-3 lg:col-span-2">
-					<p class="text-xs font-medium text-muted-foreground">บริบทของรอบนิเทศ</p>
-					<p class="mt-1 font-medium">
-						{academicYearId ? academicYearLabel(academicYearId) : 'ยังไม่ได้เลือกปีการศึกษา'} ·
-						{academicTermLabel(academicTermId)}
-					</p>
-				</div>
-				<div class="space-y-2 lg:col-span-2">
-					<Label for="supervision-cycle-title">ชื่อรอบนิเทศ</Label>
-					<Input
-						id="supervision-cycle-title"
-						bind:value={cycleForm.title}
-						placeholder="เช่น นิเทศการสอน ภาคเรียนที่ 1"
-					/>
-				</div>
-				<div class="space-y-2 lg:col-span-2">
-					<Label for="supervision-cycle-template">แบบประเมิน</Label>
-					{#if routeData}{@render managementFeedback(
-							templatesLoaded,
-							templatesLoading,
-							templatesError,
-							retryManagementTemplates
-						)}{/if}
-					{#if !routeData || templatesLoaded}
-						<Select.Root type="single" bind:value={cycleForm.templateId}>
-							<Select.Trigger id="supervision-cycle-template" class="w-full">
-								{templateChoices.find((template) => template.id === cycleForm.templateId)?.title ??
-									'เลือกแบบประเมิน'}
+			<div class={dialogBodyClass}>
+				<fieldset
+					disabled={savingAction === 'create-cycle'}
+					class="grid min-w-0 gap-4 sm:grid-cols-2"
+				>
+					<div class="space-y-2 sm:col-span-2">
+						<Label for="supervision-cycle-title">ชื่อรอบนิเทศ</Label>
+						<Input
+							id="supervision-cycle-title"
+							bind:value={cycleForm.title}
+							placeholder="เช่น นิเทศการสอน ภาคเรียนที่ 1"
+						/>
+					</div>
+					<div class="space-y-2 sm:col-span-2">
+						<Label for="supervision-cycle-template">แบบประเมิน</Label>
+						{#if routeData}{@render managementFeedback(
+								templatesLoaded,
+								templatesLoading,
+								templatesError,
+								retryManagementTemplates
+							)}{/if}
+						{#if templatesLoaded && templateChoices.length === 0}
+							<p class="text-sm text-muted-foreground">
+								สร้างแบบประเมินก่อนจึงจะเลือกมาใช้ในรอบนิเทศได้
+							</p>
+						{:else if !routeData || templatesLoaded}
+							<Select.Root type="single" bind:value={cycleForm.templateId}>
+								<Select.Trigger id="supervision-cycle-template" class="w-full">
+									{templateChoices.find((template) => template.id === cycleForm.templateId)
+										?.title ?? 'เลือกแบบประเมิน'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each templateChoices as template (template.id)}
+										<Select.Item value={template.id}>{template.title}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{/if}
+					</div>
+					<div class="space-y-2">
+						<Label for="supervision-cycle-start">วันเริ่มนิเทศ</Label><DatePicker
+							id="supervision-cycle-start"
+							ariaLabel="วันเริ่มนิเทศ"
+							value={cycleForm.observationStartDate || undefined}
+							onValueChange={(value) => (cycleForm.observationStartDate = value ?? '')}
+							required
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="supervision-cycle-end">วันสุดท้ายที่นิเทศ</Label><DatePicker
+							id="supervision-cycle-end"
+							ariaLabel="วันสุดท้ายที่นิเทศ"
+							value={cycleForm.observationEndDate || undefined}
+							onValueChange={(value) => (cycleForm.observationEndDate = value ?? '')}
+							minValue={cycleForm.observationStartDate || undefined}
+							required
+						/>
+					</div>
+					<div class="space-y-2 sm:col-span-2">
+						<Label for="supervision-cycle-status">สถานะรอบ</Label>
+						<Select.Root type="single" bind:value={cycleForm.status}>
+							<Select.Trigger id="supervision-cycle-status" class="w-full">
+								{cycleStatusCreateOptions.find((option) => option.value === cycleForm.status)
+									?.label ?? 'เลือกสถานะรอบ'}
 							</Select.Trigger>
 							<Select.Content>
-								{#each templateChoices as template (template.id)}
-									<Select.Item value={template.id}>{template.title}</Select.Item>
+								{#each cycleStatusCreateOptions as option (option.value)}
+									<Select.Item value={option.value}>
+										<span class="flex flex-col items-start">
+											<span>{option.label}</span>
+											<span class="text-xs text-muted-foreground">{option.description}</span>
+										</span>
+									</Select.Item>
 								{/each}
 							</Select.Content>
 						</Select.Root>
-					{/if}
-				</div>
-				<div class="space-y-2">
-					<Label for="supervision-cycle-start">วันเริ่มนิเทศ</Label><DatePicker
-						id="supervision-cycle-start"
-						ariaLabel="วันเริ่มนิเทศ"
-						value={cycleForm.observationStartDate || undefined}
-						onValueChange={(value) => (cycleForm.observationStartDate = value ?? '')}
-						required
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="supervision-cycle-end">วันสุดท้ายที่นิเทศ</Label><DatePicker
-						id="supervision-cycle-end"
-						ariaLabel="วันสุดท้ายที่นิเทศ"
-						value={cycleForm.observationEndDate || undefined}
-						onValueChange={(value) => (cycleForm.observationEndDate = value ?? '')}
-						minValue={cycleForm.observationStartDate || undefined}
-						required
-					/>
-				</div>
-				<div class="space-y-2 lg:col-span-2">
-					<Label for="supervision-cycle-status">สถานะรอบ</Label>
-					<Select.Root type="single" bind:value={cycleForm.status}>
-						<Select.Trigger id="supervision-cycle-status" class="w-full">
+						<p class="text-xs text-muted-foreground">
 							{cycleStatusCreateOptions.find((option) => option.value === cycleForm.status)
-								?.label ?? 'เลือกสถานะรอบ'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each cycleStatusCreateOptions as option (option.value)}
-								<Select.Item value={option.value}>
-									<span class="flex flex-col items-start">
-										<span>{option.label}</span>
-										<span class="text-xs text-muted-foreground">{option.description}</span>
-									</span>
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					<p class="text-xs text-muted-foreground">
-						ครูที่มีสิทธิ์ส่งคำขอได้เมื่อรอบมีสถานะเปิดรับคำขอ ผู้ดูแลเปลี่ยนสถานะได้ด้วยตนเอง
-					</p>
-				</div>
-				<div class="space-y-2 lg:col-span-2">
-					<Label for="supervision-cycle-description">รายละเอียด</Label>
-					<Textarea
-						id="supervision-cycle-description"
-						bind:value={cycleForm.description}
-						rows={2}
-						placeholder="รายละเอียดเพิ่มเติม"
-					/>
-				</div>
-			</fieldset>
-			{#if cycleFormError}<p role="alert" class="my-3 text-sm text-destructive">
+								?.description}
+						</p>
+					</div>
+					<div class="space-y-2 sm:col-span-2">
+						<Label for="supervision-cycle-description">รายละเอียด (ถ้ามี)</Label>
+						<Textarea
+							id="supervision-cycle-description"
+							bind:value={cycleForm.description}
+							rows={2}
+							placeholder="รายละเอียดเพิ่มเติม"
+						/>
+					</div>
+				</fieldset>
+			</div>
+			{#if cycleFormError}<p role="alert" class="px-4 pb-2 text-sm text-destructive sm:px-6">
 					{cycleFormError}
 				</p>{/if}
-			<Dialog.Footer>
+			<Dialog.Footer class={dialogFooterClass}>
 				<Button
 					type="button"
 					variant="outline"
@@ -3038,7 +3149,11 @@
 				>
 				<LoadingButton
 					type="submit"
-					disabled={routeData && (!templatesLoaded || templatesLoading || !!templatesError)}
+					disabled={routeData &&
+						(!templatesLoaded ||
+							templatesLoading ||
+							!!templatesError ||
+							templateChoices.length === 0)}
 					loading={savingAction === 'create-cycle'}
 					loadingLabel="กำลังสร้าง..."
 				>
@@ -3050,290 +3165,326 @@
 </Dialog.Root>
 
 <Dialog.Root open={createTemplateDialogOpen} onOpenChange={setTemplateEditorDialogOpen}>
-	<Dialog.Content
-		class="flex max-h-[92vh] w-[calc(100vw-1rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)]"
-	>
-		<Dialog.Header class="border-b px-4 py-4 pr-12 text-left sm:px-6">
+	<Dialog.Content class={cn(dialogClass, 'sm:max-w-5xl')}>
+		<Dialog.Header class={dialogHeaderClass}>
 			<Dialog.Title
 				>{editingTemplateId ? 'แก้ไขแบบประเมินนิเทศ' : 'สร้างแบบประเมินนิเทศ'}</Dialog.Title
 			>
 			<Dialog.Description>
-				กำหนดหมวดและหัวข้อประเมินหลายข้อ รองรับแบบฟอร์มนิเทศการสอนจริงของโรงเรียน
+				กำหนดช่วงคะแนนและเพิ่มหัวข้อที่ผู้นิเทศต้องตอบในแต่ละหมวด
 			</Dialog.Description>
 		</Dialog.Header>
-		<div
-			class="relative min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-4 py-4 sm:px-6"
-			aria-busy={templateDetailLoading}
+		<form
+			class="flex min-h-0 flex-1 flex-col"
+			onsubmit={(event) => {
+				event.preventDefault();
+				void createTemplate();
+			}}
 		>
-			{#if routeData}{@render managementFeedback(
-					templateDetailLoaded,
-					templateDetailLoading,
-					templateDetailError,
-					() => {
-						void loadManagementTemplateDetail('edit', editingTemplateId);
-					}
-				)}{/if}
-			{#if !routeData || templateDetailLoaded}
-				<div class="grid min-w-0 gap-4 md:grid-cols-3">
-					<div class="min-w-0 space-y-2 md:col-span-3">
-						<Label>ชื่อแบบประเมิน</Label>
-						<Input bind:value={templateForm.title} placeholder="ชื่อแบบประเมิน" />
-					</div>
-					<div class="min-w-0 space-y-2">
-						<Label>สถานะ</Label>
-						<Select.Root type="single" bind:value={templateForm.status}>
-							<Select.Trigger class="w-full">
-								{templateForm.status === 'active'
-									? 'ใช้งาน'
-									: templateForm.status === 'archived'
-										? 'เก็บถาวร'
-										: 'ร่าง'}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="draft">ร่าง</Select.Item>
-								<Select.Item value="active">ใช้งาน</Select.Item>
-								<Select.Item value="archived">เก็บถาวร</Select.Item>
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="min-w-0 space-y-2">
-						<Label>คะแนนต่ำสุด</Label>
-						<Input type="number" min="0" bind:value={templateForm.ratingMin} />
-					</div>
-					<div class="min-w-0 space-y-2">
-						<Label>คะแนนสูงสุด</Label>
-						<Input type="number" min="1" bind:value={templateForm.ratingMax} />
-					</div>
-					<div class="min-w-0 space-y-2 md:col-span-3">
-						<Label>รายละเอียด</Label>
-						<Textarea bind:value={templateForm.description} rows={2} placeholder="รายละเอียด" />
-					</div>
-				</div>
+			<div class={dialogBodyClass} aria-busy={templateDetailLoading}>
+				{#if routeData}{@render managementFeedback(
+						templateDetailLoaded,
+						templateDetailLoading,
+						templateDetailError,
+						() => {
+							void loadManagementTemplateDetail('edit', editingTemplateId);
+						}
+					)}{/if}
+				{#if !routeData || templateDetailLoaded}
+					<section class="space-y-3" aria-labelledby="supervision-template-settings">
+						<h2 id="supervision-template-settings" class="text-base font-semibold">
+							ข้อมูลแบบประเมิน
+						</h2>
+						<div class="grid min-w-0 gap-4 rounded-lg border bg-card p-4 md:grid-cols-3">
+							<div class="min-w-0 space-y-2 md:col-span-3">
+								<Label for="supervision-template-title">ชื่อแบบประเมิน</Label>
+								<Input
+									id="supervision-template-title"
+									bind:value={templateForm.title}
+									placeholder="ชื่อแบบประเมิน"
+								/>
+							</div>
+							<div class="min-w-0 space-y-2">
+								<Label for="supervision-template-status">สถานะ</Label>
+								<Select.Root type="single" bind:value={templateForm.status}>
+									<Select.Trigger id="supervision-template-status" class="w-full">
+										{templateForm.status === 'active'
+											? 'ใช้งาน'
+											: templateForm.status === 'archived'
+												? 'เก็บถาวร'
+												: 'ร่าง'}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="draft">ร่าง</Select.Item>
+										<Select.Item value="active">ใช้งาน</Select.Item>
+										<Select.Item value="archived">เก็บถาวร</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
+							<div class="min-w-0 space-y-2">
+								<Label for="supervision-template-minimum">คะแนนต่ำสุด</Label>
+								<Input
+									id="supervision-template-minimum"
+									type="number"
+									min="0"
+									bind:value={templateForm.ratingMin}
+								/>
+							</div>
+							<div class="min-w-0 space-y-2">
+								<Label for="supervision-template-maximum">คะแนนสูงสุด</Label>
+								<Input
+									id="supervision-template-maximum"
+									type="number"
+									min="1"
+									bind:value={templateForm.ratingMax}
+								/>
+							</div>
+							<div class="min-w-0 space-y-2 md:col-span-3">
+								<Label for="supervision-template-description">รายละเอียด (ถ้ามี)</Label>
+								<Textarea
+									id="supervision-template-description"
+									bind:value={templateForm.description}
+									rows={2}
+								/>
+							</div>
+						</div>
+					</section>
 
-				<div
-					class="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-3"
-				>
-					<div>
-						<p class="text-sm font-medium">โครงสร้างแบบประเมิน</p>
-						<p class="text-xs text-muted-foreground">
-							{templateForm.sections.length} หมวด · {templateForm.sections.reduce(
-								(sum, section) => sum + section.items.length,
-								0
-							)}
-							ข้อ
-						</p>
+					<div class="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+						<div>
+							<h2 class="text-base font-semibold">โครงสร้างแบบประเมิน</h2>
+							<p class="text-xs text-muted-foreground">
+								{templateForm.sections.length} หมวด · {templateForm.sections.reduce(
+									(sum, section) => sum + section.items.length,
+									0
+								)}
+								ข้อ
+							</p>
+						</div>
+						<div class="flex flex-wrap gap-2">
+							<Button type="button" variant="outline" size="sm" onclick={loadPaperTemplatePreset}>
+								โหลดแบบฟอร์มนิเทศมาตรฐาน
+							</Button>
+							<Button type="button" variant="outline" size="sm" onclick={addTemplateSection}>
+								<Plus class="mr-2 h-4 w-4" />
+								เพิ่มหมวด
+							</Button>
+						</div>
 					</div>
-					<div class="flex flex-wrap gap-2">
-						<Button type="button" variant="outline" size="sm" onclick={loadPaperTemplatePreset}>
-							โหลดแบบฟอร์มนิเทศมาตรฐาน
-						</Button>
-						<Button type="button" size="sm" onclick={addTemplateSection}>
-							<Plus class="mr-2 h-4 w-4" />
-							เพิ่มหมวด
-						</Button>
-					</div>
-				</div>
 
-				<div class="space-y-3">
-					{#each templateForm.sections as section, sectionIndex (section.localId)}
-						<div class="min-w-0 rounded-md border">
-							<div class="space-y-3 border-b bg-muted/10 p-3">
-								<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-									<div class="min-w-0 flex-1 space-y-2">
-										<Label>ชื่อหมวด</Label>
+					<div class="space-y-3">
+						{#each templateForm.sections as section, sectionIndex (section.localId)}
+							<div class="min-w-0 rounded-lg border bg-card">
+								<div class="space-y-3 rounded-t-lg border-b bg-muted/25 p-4">
+									<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+										<div class="min-w-0 flex-1 space-y-2">
+											<Label for={`supervision-section-title-${section.localId}`}>ชื่อหมวด</Label>
+											<Input
+												id={`supervision-section-title-${section.localId}`}
+												value={section.title}
+												oninput={(event) =>
+													updateTemplateSection(section.localId, {
+														title: (event.currentTarget as HTMLInputElement).value
+													})}
+											/>
+										</div>
+										<div class="flex shrink-0 gap-1">
+											<Button
+												type="button"
+												variant="outline"
+												size="icon"
+												disabled={sectionIndex === 0}
+												onclick={() => moveTemplateSection(section.localId, -1)}
+												aria-label="ย้ายหมวดขึ้น"
+											>
+												<ArrowUp class="h-4 w-4" />
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												size="icon"
+												disabled={sectionIndex === templateForm.sections.length - 1}
+												onclick={() => moveTemplateSection(section.localId, 1)}
+												aria-label="ย้ายหมวดลง"
+											>
+												<ArrowDown class="h-4 w-4" />
+											</Button>
+											<Button
+												type="button"
+												variant="outline"
+												size="icon"
+												onclick={() => removeTemplateSection(section.localId)}
+												aria-label="ลบหมวด"
+											>
+												<Trash2 class="h-4 w-4" />
+											</Button>
+										</div>
+									</div>
+									<div class="space-y-2">
+										<Label for={`supervision-section-description-${section.localId}`}
+											>คำอธิบายหมวด (ถ้ามี)</Label
+										>
 										<Input
-											value={section.title}
+											id={`supervision-section-description-${section.localId}`}
+											value={section.description}
 											oninput={(event) =>
 												updateTemplateSection(section.localId, {
-													title: (event.currentTarget as HTMLInputElement).value
+													description: (event.currentTarget as HTMLInputElement).value
 												})}
 										/>
 									</div>
-									<div class="flex shrink-0 gap-1">
+								</div>
+
+								<div class="divide-y px-4">
+									{#if section.items.length === 0}
+										<PageState
+											title="หมวดนี้ยังไม่มีหัวข้อ"
+											description="เพิ่มหัวข้อแบบคะแนนหรือข้อเสนอแนะ"
+										/>
+									{:else}
+										{#each section.items as item, itemIndex (item.localId)}
+											<div class="min-w-0 py-4">
+												<div
+													class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+												>
+													<div class="flex min-w-0 flex-wrap items-center gap-3">
+														<Badge variant="secondary">
+															{item.itemType === 'rating' ? 'คะแนน' : 'ข้อความ'}
+														</Badge>
+														<div class="flex items-center gap-2">
+															<Checkbox
+																id={`supervision-item-required-${item.localId}`}
+																checked={item.required}
+																onCheckedChange={(checked) =>
+																	updateTemplateItem(section.localId, item.localId, {
+																		required: !!checked
+																	})}
+															/>
+															<Label
+																for={`supervision-item-required-${item.localId}`}
+																class="text-xs text-muted-foreground">บังคับตอบ</Label
+															>
+														</div>
+													</div>
+													<div class="flex shrink-0 gap-1">
+														<Button
+															type="button"
+															variant="outline"
+															size="icon"
+															disabled={itemIndex === 0}
+															onclick={() => moveTemplateItem(section.localId, item.localId, -1)}
+															aria-label="ย้ายหัวข้อขึ้น"
+														>
+															<ArrowUp class="h-4 w-4" />
+														</Button>
+														<Button
+															type="button"
+															variant="outline"
+															size="icon"
+															disabled={itemIndex === section.items.length - 1}
+															onclick={() => moveTemplateItem(section.localId, item.localId, 1)}
+															aria-label="ย้ายหัวข้อลง"
+														>
+															<ArrowDown class="h-4 w-4" />
+														</Button>
+														<Button
+															type="button"
+															variant="outline"
+															size="icon"
+															onclick={() => removeTemplateItem(section.localId, item.localId)}
+															aria-label="ลบหัวข้อ"
+														>
+															<Trash2 class="h-4 w-4" />
+														</Button>
+													</div>
+												</div>
+												<div class="mt-3 grid min-w-0 gap-3 lg:grid-cols-2">
+													<div class="min-w-0 space-y-2">
+														<Label for={`supervision-item-title-${item.localId}`}
+															>หัวข้อประเมิน</Label
+														>
+														<Input
+															id={`supervision-item-title-${item.localId}`}
+															value={item.label}
+															oninput={(event) =>
+																updateTemplateItem(section.localId, item.localId, {
+																	label: (event.currentTarget as HTMLInputElement).value
+																})}
+														/>
+													</div>
+													<div class="min-w-0 space-y-2">
+														<Label for={`supervision-item-description-${item.localId}`}
+															>คำอธิบาย (ถ้ามี)</Label
+														>
+														<Input
+															id={`supervision-item-description-${item.localId}`}
+															value={item.description}
+															oninput={(event) =>
+																updateTemplateItem(section.localId, item.localId, {
+																	description: (event.currentTarget as HTMLInputElement).value
+																})}
+														/>
+													</div>
+												</div>
+											</div>
+										{/each}
+									{/if}
+
+									<div class="flex flex-wrap gap-2 py-3">
 										<Button
 											type="button"
 											variant="outline"
-											size="icon"
-											disabled={sectionIndex === 0}
-											onclick={() => moveTemplateSection(section.localId, -1)}
-											aria-label="ย้ายหมวดขึ้น"
+											size="sm"
+											onclick={() => addTemplateItem(section.localId, 'rating')}
 										>
-											<ArrowUp class="h-4 w-4" />
+											<Plus class="mr-2 h-4 w-4" />
+											เพิ่มข้อคะแนน
 										</Button>
 										<Button
 											type="button"
 											variant="outline"
-											size="icon"
-											disabled={sectionIndex === templateForm.sections.length - 1}
-											onclick={() => moveTemplateSection(section.localId, 1)}
-											aria-label="ย้ายหมวดลง"
+											size="sm"
+											onclick={() => addTemplateItem(section.localId, 'text')}
 										>
-											<ArrowDown class="h-4 w-4" />
-										</Button>
-										<Button
-											type="button"
-											variant="outline"
-											size="icon"
-											onclick={() => removeTemplateSection(section.localId)}
-											aria-label="ลบหมวด"
-										>
-											<Trash2 class="h-4 w-4" />
+											<Plus class="mr-2 h-4 w-4" />
+											เพิ่มข้อเสนอแนะ
 										</Button>
 									</div>
 								</div>
-								<div class="space-y-2">
-									<Label>คำอธิบายหมวด</Label>
-									<Input
-										value={section.description}
-										placeholder="เว้นว่างได้"
-										oninput={(event) =>
-											updateTemplateSection(section.localId, {
-												description: (event.currentTarget as HTMLInputElement).value
-											})}
-									/>
-								</div>
 							</div>
-
-							<div class="space-y-2 p-3">
-								{#if section.items.length === 0}
-									<PageState
-										title="หมวดนี้ยังไม่มีหัวข้อ"
-										description="เพิ่มหัวข้อแบบคะแนนหรือข้อเสนอแนะ"
-									/>
-								{:else}
-									{#each section.items as item, itemIndex (item.localId)}
-										<div class="min-w-0 rounded-md border p-3">
-											<div
-												class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
-											>
-												<div class="flex min-w-0 flex-wrap items-center gap-3">
-													<Badge variant="secondary">
-														{item.itemType === 'rating' ? 'คะแนน' : 'ข้อความ'}
-													</Badge>
-													<div class="flex items-center gap-2">
-														<Checkbox
-															checked={item.required}
-															onCheckedChange={(checked) =>
-																updateTemplateItem(section.localId, item.localId, {
-																	required: !!checked
-																})}
-															aria-label="บังคับตอบ"
-														/>
-														<span class="text-xs text-muted-foreground">บังคับตอบ</span>
-													</div>
-												</div>
-												<div class="flex shrink-0 gap-1">
-													<Button
-														type="button"
-														variant="outline"
-														size="icon"
-														disabled={itemIndex === 0}
-														onclick={() => moveTemplateItem(section.localId, item.localId, -1)}
-														aria-label="ย้ายหัวข้อขึ้น"
-													>
-														<ArrowUp class="h-4 w-4" />
-													</Button>
-													<Button
-														type="button"
-														variant="outline"
-														size="icon"
-														disabled={itemIndex === section.items.length - 1}
-														onclick={() => moveTemplateItem(section.localId, item.localId, 1)}
-														aria-label="ย้ายหัวข้อลง"
-													>
-														<ArrowDown class="h-4 w-4" />
-													</Button>
-													<Button
-														type="button"
-														variant="outline"
-														size="icon"
-														onclick={() => removeTemplateItem(section.localId, item.localId)}
-														aria-label="ลบหัวข้อ"
-													>
-														<Trash2 class="h-4 w-4" />
-													</Button>
-												</div>
-											</div>
-											<div class="mt-3 grid min-w-0 gap-3 lg:grid-cols-2">
-												<div class="min-w-0 space-y-2">
-													<Label>หัวข้อประเมิน</Label>
-													<Input
-														value={item.label}
-														oninput={(event) =>
-															updateTemplateItem(section.localId, item.localId, {
-																label: (event.currentTarget as HTMLInputElement).value
-															})}
-													/>
-												</div>
-												<div class="min-w-0 space-y-2">
-													<Label>คำอธิบาย</Label>
-													<Input
-														value={item.description}
-														placeholder="เว้นว่างได้"
-														oninput={(event) =>
-															updateTemplateItem(section.localId, item.localId, {
-																description: (event.currentTarget as HTMLInputElement).value
-															})}
-													/>
-												</div>
-											</div>
-										</div>
-									{/each}
-								{/if}
-
-								<div class="flex flex-wrap gap-2">
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										onclick={() => addTemplateItem(section.localId, 'rating')}
-									>
-										<Plus class="mr-2 h-4 w-4" />
-										เพิ่มข้อคะแนน
-									</Button>
-									<Button
-										type="button"
-										variant="outline"
-										size="sm"
-										onclick={() => addTemplateItem(section.localId, 'text')}
-									>
-										<Plus class="mr-2 h-4 w-4" />
-										เพิ่มข้อเสนอแนะ
-									</Button>
-								</div>
-							</div>
-						</div>
-					{/each}
-				</div>
-			{/if}
-		</div>
-		<Dialog.Footer class="border-t px-4 py-4 sm:px-6">
-			<Button variant="outline" onclick={() => (createTemplateDialogOpen = false)}>ยกเลิก</Button>
-			<LoadingButton
-				onclick={createTemplate}
-				disabled={routeData &&
-					(!templateDetailLoaded || templateDetailLoading || !!templateDetailError)}
-				loading={savingTemplate}
-				loadingLabel={editingTemplateId ? 'กำลังบันทึก...' : 'กำลังสร้าง...'}
-			>
-				{editingTemplateId ? 'บันทึกแบบประเมิน' : 'สร้างแบบประเมิน'}
-			</LoadingButton>
-		</Dialog.Footer>
+						{/each}
+					</div>
+				{/if}
+			</div>
+			{#if templateFormError}<p role="alert" class="px-4 pb-2 text-sm text-destructive sm:px-6">
+					{templateFormError}
+				</p>{/if}
+			<Dialog.Footer class={dialogFooterClass}>
+				<Button type="button" variant="outline" onclick={() => setTemplateEditorDialogOpen(false)}
+					>ยกเลิก</Button
+				>
+				<LoadingButton
+					type="submit"
+					disabled={routeData &&
+						(!templateDetailLoaded || templateDetailLoading || !!templateDetailError)}
+					loading={savingTemplate}
+					loadingLabel={editingTemplateId ? 'กำลังบันทึก...' : 'กำลังสร้าง...'}
+				>
+					{editingTemplateId ? 'บันทึกแบบประเมิน' : 'สร้างแบบประเมิน'}
+				</LoadingButton>
+			</Dialog.Footer>
+		</form>
 	</Dialog.Content>
 </Dialog.Root>
 
 <Dialog.Root bind:open={previewTemplateDialogOpen} onOpenChange={setTemplatePreviewDialogOpen}>
-	<Dialog.Content
-		class="flex max-h-[92vh] w-[calc(100vw-1rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:w-[calc(100vw-2rem)]"
-	>
-		<Dialog.Header class="border-b px-4 py-4 pr-12 text-left sm:px-6">
+	<Dialog.Content class={cn(dialogClass, 'sm:max-w-5xl')}>
+		<Dialog.Header class={dialogHeaderClass}>
 			<Dialog.Title>ตัวอย่างแบบประเมินนิเทศ</Dialog.Title>
-			<Dialog.Description>
-				ตรวจรูปแบบการแสดงผลของแบบประเมินแบบอ่านอย่างเดียว ก่อนนำไปใช้กับรอบนิเทศ
-			</Dialog.Description>
+			<Dialog.Description>ดูหัวข้อและช่วงคะแนนก่อนนำแบบประเมินไปใช้ในรอบนิเทศ</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-muted/30 px-3 py-4 sm:px-6">
+		<div class={cn(dialogBodyClass, 'bg-muted/25')} aria-busy={templateDetailLoading}>
 			{#if routeData}{@render managementFeedback(
 					templateDetailLoaded,
 					templateDetailLoading,
@@ -3344,22 +3495,17 @@
 				)}{/if}
 			{#if previewTemplate}
 				<div
-					class="mx-auto max-w-4xl rounded-md border bg-background p-4 shadow-sm sm:p-6"
+					class="mx-auto max-w-4xl rounded-lg border bg-card p-4 sm:p-6"
 					data-template-preview-mode="readonly"
 				>
-					<div class="space-y-3 text-center">
-						<div
-							class="mx-auto flex h-10 w-10 items-center justify-center rounded-md border bg-muted/40"
-						>
-							<FileSignature class="h-5 w-5" />
-						</div>
+					<div class="space-y-3">
 						<div>
 							<h2 class="text-xl font-semibold">{previewTemplate.title}</h2>
 							{#if previewTemplate.description}
 								<p class="mt-1 text-sm text-muted-foreground">{previewTemplate.description}</p>
 							{/if}
 						</div>
-						<div class="flex flex-wrap justify-center gap-2">
+						<div class="flex flex-wrap gap-2">
 							<Badge variant="secondary">{templateStatusLabel(previewTemplate.status)}</Badge>
 							<Badge variant="outline">{previewTemplate.sections.length} หมวด</Badge>
 							<Badge variant="outline">{templateItemCount(previewTemplate)} ข้อ</Badge>
@@ -3369,8 +3515,8 @@
 						</div>
 					</div>
 
-					<div class="mt-6 rounded-md border">
-						<Table.Root class="table-fixed">
+					<div class="mt-5 rounded-lg border">
+						<Table.Root class="min-w-lg" aria-label="หัวข้อและช่วงคะแนนในแบบประเมิน">
 							<Table.Header>
 								<Table.Row>
 									<Table.Head class="w-[42%] whitespace-normal">หัวข้อการประเมิน</Table.Head>
@@ -3466,12 +3612,12 @@
 						</div>
 					</div>
 				</div>
-			{:else}
+			{:else if !templateDetailLoading && !templateDetailError}
 				<PageState title="ไม่พบแบบประเมิน" description="เลือกแบบประเมินจากรายการอีกครั้ง" />
 			{/if}
 		</div>
 
-		<Dialog.Footer class="border-t px-4 py-4 sm:px-6">
+		<Dialog.Footer class={dialogFooterClass}>
 			<Button variant="outline" onclick={() => setTemplatePreviewDialogOpen(false)}>ปิด</Button>
 			{#if previewTemplate && canManageSchool}
 				<Button

@@ -103,7 +103,7 @@
 				>{/snippet}</Dialog.Trigger
 		>{/if}
 	<Dialog.Content
-		class="sm:max-w-lg"
+		class="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-4 sm:max-w-lg sm:p-6"
 		onEscapeKeydown={(event) => {
 			if (saving) event.preventDefault();
 		}}
@@ -111,14 +111,10 @@
 			if (saving) event.preventDefault();
 		}}
 	>
-		<Dialog.Header
-			><Dialog.Title>กำหนดช่วงวันที่นิเทศ</Dialog.Title><Dialog.Description
-				>รอบ {cycle.title} · {cycleDateRangeLabel(
-					cycle.observationStartDate,
-					cycle.observationEndDate
-				)}</Dialog.Description
-			></Dialog.Header
-		>
+		<Dialog.Header class="pe-8 text-start">
+			<Dialog.Title>กำหนดช่วงวันที่นิเทศ</Dialog.Title>
+			<Dialog.Description class="wrap-anywhere">{cycle.title}</Dialog.Description>
+		</Dialog.Header>
 		<form
 			class="space-y-4"
 			onsubmit={(event) => {
@@ -126,9 +122,12 @@
 				void save();
 			}}
 		>
-			<p class="text-sm text-muted-foreground">
-				จองได้ตั้งแต่วันเริ่มต้นถึงวันสุดท้าย รวมทั้งสองวัน ผู้ดูแลยังเปิดและปิดรับคำขอด้วยตนเอง
-			</p>
+			<div class="space-y-1 rounded-lg border bg-muted/20 p-3 text-sm">
+				<p class="text-xs text-muted-foreground">ช่วงวันที่ปัจจุบัน</p>
+				<p class="font-medium">
+					{cycleDateRangeLabel(cycle.observationStartDate, cycle.observationEndDate)}
+				</p>
+			</div>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="space-y-2">
 					<Label for={`cycle-start-${cycle.id}`}>วันเริ่มนิเทศ</Label><DatePicker
@@ -152,8 +151,14 @@
 					/>
 				</div>
 			</div>
-			{#if error}<p role="alert" class="text-sm text-destructive">{error}</p>{/if}
-			<Dialog.Footer
+			<p class="text-sm text-muted-foreground">จองได้ตั้งแต่วันแรกถึงวันสุดท้ายเมื่อเปิดรับคำขอ</p>
+			{#if error}<p
+					role="alert"
+					class="rounded-lg border border-destructive/25 bg-destructive/5 p-3 text-sm text-destructive"
+				>
+					{error}
+				</p>{/if}
+			<Dialog.Footer class="border-t pt-4"
 				><Button type="button" variant="outline" disabled={saving} onclick={() => setOpen(false)}
 					>ยกเลิก</Button
 				><LoadingButton type="submit" loading={saving} loadingLabel="กำลังบันทึก..."

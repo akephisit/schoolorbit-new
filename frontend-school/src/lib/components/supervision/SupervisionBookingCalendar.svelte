@@ -96,8 +96,8 @@
 	}
 </script>
 
-<section class="min-w-0 space-y-3" aria-labelledby={`${descriptionId}-title`}>
-	<div class="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+<section class="min-w-0 space-y-4" aria-labelledby={`${descriptionId}-title`}>
+	<div class="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
 		<div class="min-w-0">
 			<h2 id={`${descriptionId}-title`} class="text-lg font-semibold text-balance sm:text-xl">
 				{academicLabel ? `ปฏิทินนิเทศการสอน ${academicLabel}` : 'ปฏิทินนิเทศการสอน'}
@@ -153,7 +153,7 @@
 		</div>
 	{/if}
 
-	<div class="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
+	<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)]">
 		<div class="h-[33rem] min-w-0 sm:h-[40rem]">
 			<CalendarMonthGrid
 				monthDate={monthStart}
@@ -169,9 +169,12 @@
 		</div>
 
 		<Card.Root class="min-w-0 gap-3 p-4" role="region" aria-labelledby={`${descriptionId}-day`}>
-			<h3 id={`${descriptionId}-day`} class="font-semibold" aria-live="polite">
-				{savedScheduleDateLabel(activeDate)}
-			</h3>
+			<div class="space-y-1">
+				<p class="text-xs font-medium text-muted-foreground">กำหนดการประจำวันที่เลือก</p>
+				<h3 id={`${descriptionId}-day`} class="font-semibold" aria-live="polite">
+					{savedScheduleDateLabel(activeDate)}
+				</h3>
+			</div>
 			{#if bookingsForDay.length}
 				<ul class="divide-y border-t">
 					{#each bookingsForDay as { observation, periods } (observation.id)}
@@ -202,15 +205,19 @@
 									<div class="flex flex-wrap gap-1">
 										<Badge variant="secondary">{supervisionStatusLabel(observation.status)}</Badge>
 										{#if hasSubmittedEvaluation?.(observation)}
-											<Badge variant="outline">ส่งผลแล้ว</Badge>
+											<Badge variant="outline" class="border-success/30 bg-success/10 text-success"
+												>ส่งผลแล้ว</Badge
+											>
 										{/if}
 									</div>
 								{/if}
 							</div>
 							<div class="text-sm">
-								<p class="font-medium text-primary">
+								<p class="font-medium">
 									{schedule.periodTitle}{#if schedule.timeLabel}
-										<span class="text-foreground tabular-nums">{` · ${schedule.timeLabel}`}</span>
+										<span class="tabular-nums text-muted-foreground"
+											>{` · ${schedule.timeLabel}`}</span
+										>
 									{/if}
 								</p>
 								{#if !schedule.timeLabel}

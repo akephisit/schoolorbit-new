@@ -36,17 +36,19 @@
 	const workflow = $derived(observationWorkflow(observation));
 </script>
 
-<Card.Root class="min-w-0 gap-3 p-4">
+<Card.Root class="min-w-0 gap-4 p-4 sm:p-5">
 	<div class="flex flex-wrap items-start justify-between gap-2">
-		<h3 class="min-w-0 font-semibold break-words">
+		<h3 class="min-w-0 font-semibold wrap-anywhere">
 			{observation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}
 		</h3>
-		<Badge variant="secondary">{supervisionStatusLabel(observation.status)}</Badge>
+		<Badge variant="outline" class="border-warning/30 bg-warning/10 text-warning">
+			{supervisionStatusLabel(observation.status)}
+		</Badge>
 	</div>
 
-	<div class="grid gap-2 rounded-lg border border-primary/15 bg-primary/5 p-3 sm:grid-cols-2">
+	<div class="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2 sm:p-4">
 		<div class="min-w-0">
-			<p class="text-xl font-semibold break-words text-primary">{schedule.periodTitle}</p>
+			<p class="text-lg font-semibold wrap-anywhere">{schedule.periodTitle}</p>
 			{#if schedule.timeLabel || schedule.periods.length === 0}
 				<p class="mt-1 text-sm">
 					{schedule.dates.map(savedScheduleDateLabel).join(' · ') || 'ไม่ระบุวันนิเทศ'}
@@ -70,7 +72,7 @@
 				</ul>
 			{/if}
 		</div>
-		<div class="min-w-0 text-sm break-words sm:text-right">
+		<div class="min-w-0 text-sm wrap-anywhere sm:text-end">
 			<p class="font-medium">
 				{lesson.homeroom}{lesson.room === '—' ? '' : ` · ${lesson.room}`}
 			</p>

@@ -13,22 +13,22 @@
 	}
 </script>
 
-<div class="space-y-2" data-testid="supervision-saved-periods">
+<ol class="divide-y rounded-lg border bg-muted/15" data-testid="supervision-saved-periods">
 	{#each periods as period (period.id)}
-		<div class="rounded-lg border p-3 text-sm">
-			<p class="font-medium">
+		<li class="space-y-1 p-3 text-sm wrap-anywhere sm:px-4">
+			<p class="font-semibold">
 				{savedPeriodLabel(period) ?? 'ไม่ระบุคาบ'} · {period.lessonSnapshot.subjectName ??
 					period.manualLesson?.subjectName ??
 					'ไม่ระบุวิชา'}
 			</p>
-			<p>
+			<p class="text-muted-foreground">
 				{period.lessonSnapshot.classroomLabel ??
 					period.manualLesson?.classroomLabel ??
 					'ไม่ระบุชั้น/ห้อง'} · {period.lessonSnapshot.roomLabel ??
 					period.manualLesson?.roomLabel ??
 					'ไม่ระบุห้องเรียน'}
 			</p>
-			<p class="mt-1 text-xs text-muted-foreground">
+			<p class="text-xs tabular-nums text-muted-foreground">
 				{dateLabel(period.observedAt)}{#if period.endsAt}
 					– {new Date(period.endsAt).toLocaleTimeString('th-TH', {
 						timeZone: 'Asia/Bangkok',
@@ -39,6 +39,6 @@
 			{#if period.manualLesson?.reason}<p class="mt-2 whitespace-pre-wrap text-muted-foreground">
 					หมายเหตุเดิม: {period.manualLesson.reason}
 				</p>{/if}
-		</div>
+		</li>
 	{/each}
-</div>
+</ol>

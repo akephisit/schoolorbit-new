@@ -4,6 +4,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { cn } from '#lib/utils.js';
 	let {
 		result,
 		loading,
@@ -28,7 +29,7 @@
 	}
 </script>
 
-<div class="mt-4 space-y-3" data-testid="supervision-request-availability" aria-busy={loading}>
+<div class="min-w-0 space-y-3" data-testid="supervision-request-availability" aria-busy={loading}>
 	{#if !result && loading}<PageSkeleton rows={2} columns={2} />{/if}
 	{#if error && showError}<PageState
 			variant="error"
@@ -42,19 +43,29 @@
 			{/snippet}
 		</PageState>{/if}
 	{#if result}
-		<div class="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
-			<div class="flex flex-wrap items-center gap-2">
-				<p class="font-medium">{error ? 'ผลการตรวจครั้งล่าสุด' : 'รายการที่ทับช่วงคาบนี้'}</p>
-				<Badge variant={result.overlap.blocked ? 'destructive' : 'outline'}
+		<div class="space-y-3 rounded-lg border bg-muted/20 p-3 text-sm sm:p-4">
+			<div class="flex flex-wrap items-start justify-between gap-2">
+				<p class="font-semibold">{error ? 'ผลการตรวจครั้งล่าสุด' : 'รายการที่ทับช่วงคาบนี้'}</p>
+				<Badge
+					variant="outline"
+					class={cn(
+						'max-w-full whitespace-normal',
+						result.overlap.blocked
+							? 'border-destructive/30 bg-destructive/5 text-destructive'
+							: 'border-success/30 bg-success/10 text-success'
+					)}
 					>{result.overlap.blocked
 						? 'มีนัดทับกัน อนุมัติไม่ได้'
 						: 'ไม่พบรายการที่กีดกันการอนุมัติ'}</Badge
 				>
 			</div>
-			<p>
+			<p class="text-muted-foreground">
 				รออนุมัติ {result.overlap.pendingCount} รายการ · ยืนยันแล้ว {result.overlap.confirmedCount} รายการ
 			</p>
-			{#if !result.withinCycleDates}<p role="alert" class="text-destructive">
+			{#if !result.withinCycleDates}<p
+					role="alert"
+					class="rounded-md border border-destructive/20 bg-destructive/5 p-2.5 text-destructive"
+				>
 					คาบเดิมอยู่นอกช่วงวันที่นิเทศหรือรอบยังไม่กำหนดวันที่
 					ปรับช่วงวันที่ของรอบหรือส่งกลับคำขอก่อนอนุมัติ
 				</p>{/if}

@@ -62,10 +62,11 @@
 	}
 </script>
 
-<div class="space-y-3" data-testid="supervision-request-review">
+<div class="min-w-0 space-y-4" data-testid="supervision-request-review">
 	{#if schedule}
-		<div class="space-y-1 rounded-lg border border-primary/15 bg-primary/5 p-3 text-sm">
-			<p class="font-semibold text-primary">{schedule.periodTitle}</p>
+		<div class="space-y-1 rounded-lg border bg-muted/25 p-3 text-sm wrap-anywhere sm:p-4">
+			<p class="text-xs font-medium text-muted-foreground">ช่วงคาบที่ขอนิเทศ</p>
+			<p class="font-semibold">{schedule.periodTitle}</p>
 			<p>{schedule.dates.map(savedScheduleDateLabel).join(' · ') || 'ไม่ระบุวันนิเทศ'}</p>
 			{#if schedule.timeLabel}
 				<p class="tabular-nums">{schedule.timeLabel}</p>
@@ -85,7 +86,7 @@
 	{/if}
 	{#if canReview}
 		{#if draft?.needsRecheck}
-			<p class="text-sm text-muted-foreground">
+			<p class="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
 				ช่วงคาบหรือรอบนิเทศเปลี่ยนแล้ว เปิด “เพิ่ม/เลือกผู้ประเมิน” เพื่อตรวจความพร้อมอีกครั้ง
 			</p>
 		{/if}
@@ -100,17 +101,20 @@
 			/>
 		{/if}
 	{/if}
-	<div class="grid gap-4 border-t pt-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-		<div class="min-w-0 space-y-2">
+	<div class="grid min-w-0 gap-4 border-t pt-4 sm:grid-cols-2">
+		<div class="min-w-0 space-y-2.5">
 			<Label for={`${fieldId}-evaluators`}>ผู้ประเมิน</Label>
-			<div class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2">
+			<div class="flex min-h-10 flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2">
 				{#if selected.length === 0}
 					<span class="text-sm text-muted-foreground">ยังไม่ได้เลือกผู้ประเมิน</span>
 				{:else}
 					{#each selected as evaluator (evaluator.id)}
 						<Badge
-							variant={evaluator.blocked ? 'outline' : 'secondary'}
-							class="max-w-full gap-1 pr-1 whitespace-normal"
+							variant="outline"
+							class={cn(
+								'max-w-full gap-1 bg-background pr-1 whitespace-normal',
+								evaluator.blocked && 'border-warning/35 text-warning'
+							)}
 						>
 							<span class="min-w-0 break-words"
 								>{evaluator.name}{evaluator.blocked ? ' · ไม่ว่าง' : ''}</span
@@ -119,7 +123,7 @@
 								<Button
 									size="icon-sm"
 									variant="ghost"
-									class="size-6"
+									class="size-7 shrink-0"
 									aria-label={`ลบผู้ประเมิน ${evaluator.name}`}
 									{disabled}
 									onclick={() => review.removeEvaluator(id, evaluator.id)}
@@ -233,20 +237,24 @@
 				</p>
 			{/if}
 		</div>
-		<div class="min-w-0 space-y-2">
+		<div class="min-w-0 space-y-2.5">
 			<Label for={`${fieldId}-comment`}>ส่งกลับคำขอ</Label>
 			<Textarea
 				id={`${fieldId}-comment`}
+				aria-describedby={`${fieldId}-comment-help`}
 				value={draft?.comment ?? ''}
 				{disabled}
 				rows={3}
 				placeholder="ระบุเหตุผลส่งกลับ"
 				oninput={(event) => review.setComment(id, event.currentTarget.value)}
 			/>
+			<p id={`${fieldId}-comment-help`} class="text-xs text-muted-foreground">
+				ระบุสิ่งที่ครูควรแก้ไขเมื่อต้องส่งคำขอคืน
+			</p>
 		</div>
 	</div>
 
-	<div class="flex flex-wrap items-center justify-end gap-2">
+	<div class="flex flex-wrap items-center gap-2 border-t pt-4 sm:justify-end">
 		{#if onclose}<Button variant="outline" onclick={onclose}>ปิด</Button>{/if}
 		{#if detailHref}
 			<Button size="sm" variant="outline" href={detailHref} data-sveltekit-preload-data="tap">
