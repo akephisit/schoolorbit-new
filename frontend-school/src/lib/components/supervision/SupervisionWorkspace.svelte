@@ -272,6 +272,7 @@
 	let evaluationTemplateLoading = $state(false);
 	let evaluationTemplateError = $state('');
 	let evaluationFormError = $state('');
+	let evaluationValidationAttempted = $state(false);
 	let progressError = $state('');
 	let saving = $state(false);
 	let savingAction = $state<string | null>(null);
@@ -873,11 +874,18 @@
 			.join(', ');
 	}
 
-	function observationDetailGrid(observation: SupervisionObservation): ObservationDetailItem[] {
+	function observationLessonFacts(observation: SupervisionObservation): ObservationDetailItem[] {
 		return [
 			{ label: 'วันที่/เวลา', value: formatDate(observation.observedAt) },
 			{ label: 'วิชา', value: observationSubjectLabel(observation) },
-			{ label: 'คาบ', value: observationPeriodLabel(observation) },
+			{ label: 'คาบ', value: observationPeriodLabel(observation) }
+		];
+	}
+
+	function observationAdditionalFacts(
+		observation: SupervisionObservation
+	): ObservationDetailItem[] {
+		return [
 			{ label: 'ห้อง/ชั้นเรียน', value: observationClassroomLabel(observation) },
 			{ label: 'ห้องเรียน', value: observationRoomLabel(observation) },
 			{ label: 'รอบนิเทศ', value: requestCycleLabel(observation) },
@@ -886,6 +894,10 @@
 			{ label: 'ส่งคำขอ', value: formatDate(observation.requestedAt) },
 			{ label: 'อนุมัติ', value: formatDate(observation.approvedAt) }
 		];
+	}
+
+	function observationDetailGrid(observation: SupervisionObservation): ObservationDetailItem[] {
+		return [...observationLessonFacts(observation), ...observationAdditionalFacts(observation)];
 	}
 
 	function sectionRoute(target: SupervisionWorkspaceSection): string {
@@ -1085,6 +1097,7 @@
 		evaluationObservationId = observation.id;
 		responseDrafts = {};
 		evaluationFormError = '';
+		evaluationValidationAttempted = false;
 		evaluationDialogOpen = true;
 		void loadEvaluationTemplate();
 	}
@@ -1121,6 +1134,7 @@
 		evaluationTemplateLoading = false;
 		evaluationTemplateError = '';
 		evaluationFormError = '';
+		evaluationValidationAttempted = false;
 		evaluationDialogOpen = false;
 		evaluationObservationId = '';
 		responseDrafts = {};
@@ -1174,8 +1188,8 @@
 		return { responses };
 	}
 
-	function missingRequiredEvaluationLabels(): string[] {
-		const missing: string[] = [];
+	const missingRequiredEvaluationItems = $derived.by(() => {
+		const missing: RubricFormSection['items'] = [];
 		for (const section of selectedEvaluationRubricSections) {
 			for (const item of section.items) {
 				if (!item.required) continue;
@@ -1184,11 +1198,11 @@
 					item.itemType === 'rating'
 						? Boolean(draft.ratingScore)
 						: Boolean(draft.textResponse.trim());
-				if (!answered) missing.push(item.label);
+				if (!answered) missing.push(item);
 			}
 		}
 		return missing;
-	}
+	});
 
 	async function saveEvaluation() {
 		if (
@@ -1205,9 +1219,15 @@
 			return;
 		if (!evaluationObservationId) return;
 		evaluationFormError = '';
-		const missing = missingRequiredEvaluationLabels();
-		if (missing.length > 0) {
-			evaluationFormError = `กรอกหัวข้อบังคับให้ครบ (${missing.length} ข้อ)`;
+		const firstMissing = missingRequiredEvaluationItems[0];
+		if (firstMissing) {
+			evaluationValidationAttempted = true;
+			document
+				.getElementById(`evaluation-field-${firstMissing.localId}`)
+				?.scrollIntoView({ block: 'nearest' });
+			document
+				.getElementById(`evaluation-answer-${firstMissing.localId}`)
+				?.focus({ preventScroll: true });
 			return;
 		}
 
@@ -1750,17 +1770,17 @@
 	{/if}
 {/snippet}
 
-{#snippet observationFacts(observation: SupervisionObservation, showTeacher = false)}
+{#snippet observationFacts(observation: SupervisionObservation, secondaryOnly = false)}
 	<dl
 		class="grid gap-x-4 gap-y-3 border-y py-3 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
 	>
-		{#if showTeacher}
+		{#if secondaryOnly}
 			<div class="min-w-0 space-y-0.5">
 				<dt class="text-xs text-muted-foreground">นิเทศใคร</dt>
 				<dd class="wrap-anywhere font-medium">{observation.observedDisplayName ?? '—'}</dd>
 			</div>
 		{/if}
-		{#each observationDetailGrid(observation) as detail (detail.label)}
+		{#each secondaryOnly ? observationAdditionalFacts(observation) : observationDetailGrid(observation) as detail (detail.label)}
 			<div class="min-w-0 space-y-0.5">
 				<dt class="text-xs text-muted-foreground">{detail.label}</dt>
 				<dd class="wrap-anywhere font-medium">{detail.value}</dd>
@@ -2878,7 +2898,21 @@
 						</div>
 					</dl>
 
-					{@render observationFacts(selectedEvaluation, true)}
+					<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+						{#each observationLessonFacts(selectedEvaluation) as detail (detail.label)}
+							<div class="min-w-0">
+								<dt class="text-xs text-muted-foreground">{detail.label}</dt>
+								<dd class="wrap-anywhere font-medium">{detail.value}</dd>
+							</div>
+						{/each}
+					</dl>
+					<details class="rounded-lg border px-3">
+						<summary
+							class="cursor-pointer rounded-sm py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
+							>รายละเอียดคาบนิเทศ</summary
+						>
+						{@render observationFacts(selectedEvaluation, true)}
+					</details>
 
 					{#each selectedEvaluationRubricSections as section (section.localId)}
 						{@const progress = sectionRubricProgress(
@@ -2916,7 +2950,7 @@
 							</div>
 							<div class="divide-y px-4">
 								{#each section.items as item (item.localId)}
-									<div class="space-y-3 py-4">
+									<div id={`evaluation-field-${item.localId}`} class="space-y-3 py-4">
 										<div class="space-y-1">
 											{#if item.itemType === 'rating'}
 												<p id={`evaluation-label-${item.localId}`} class="text-sm font-medium">
@@ -2950,8 +2984,9 @@
 												) || undefined}
 												class="flex flex-wrap gap-2"
 											>
-												{#each ratingScale(selectedEvaluationTemplate.ratingMin, selectedEvaluationTemplate.ratingMax) as score (score)}
+												{#each ratingScale(selectedEvaluationTemplate.ratingMin, selectedEvaluationTemplate.ratingMax) as score, scoreIndex (score)}
 													<Button
+														id={scoreIndex === 0 ? `evaluation-answer-${item.localId}` : undefined}
 														type="button"
 														size="sm"
 														aria-pressed={responseDrafts[item.localId]?.ratingScore ===
@@ -2996,8 +3031,12 @@
 					/>
 				{/if}
 			</div>
-			{#if evaluationFormError}<p role="alert" class="px-4 pb-2 text-sm text-destructive sm:px-6">
-					{evaluationFormError}
+			{#if evaluationFormError || (evaluationValidationAttempted && missingRequiredEvaluationItems.length > 0)}<p
+					role="alert"
+					class="px-4 pb-2 text-sm text-destructive sm:px-6"
+				>
+					{evaluationFormError ||
+						`กรอกหัวข้อบังคับให้ครบ (${missingRequiredEvaluationItems.length} ข้อ)`}
 				</p>{/if}
 			<Dialog.Footer class={dialogFooterClass}>
 				<Button
