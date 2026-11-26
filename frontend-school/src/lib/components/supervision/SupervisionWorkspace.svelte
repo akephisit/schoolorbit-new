@@ -24,14 +24,18 @@
 		SUPERVISION_SCHOOL_REPORT_PERMISSIONS
 	} from '#lib/supervision/supervision-access.js';
 	import {
-		BarChart3,
 		ArrowDown,
 		ArrowUp,
+		BarChart3,
+		CalendarDays,
+		ClipboardCheck,
+		ClipboardList,
 		Eye,
 		FileSignature,
+		Inbox,
 		Plus,
-		Settings2,
-		Trash2
+		Trash2,
+		UserRound
 	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
@@ -178,7 +182,7 @@
 	const sectionConfigByKey: Record<SupervisionWorkspaceSection, SectionConfig> = {
 		mine: {
 			title: 'นิเทศการสอน',
-			description: 'จองคาบนิเทศ ดูรายการของฉัน และรับทราบผลนิเทศ'
+			description: 'จองคาบเรียนจากตารางสอน ติดตามคำขอ และรับทราบผลนิเทศ'
 		},
 		evaluate: {
 			title: 'รายการที่ต้องประเมิน',
@@ -886,13 +890,18 @@
 	const sectionLinks = $derived(
 		(
 			[
-				{ key: 'mine', label: 'ของฉัน', visible: true },
-				{ key: 'evaluate', label: 'ประเมิน', visible: canEvaluate },
-				{ key: 'requests', label: 'คำขอจอง', visible: canManageRequests },
-				{ key: 'overview', label: 'ภาพรวม', visible: canReport },
-				{ key: 'cycles', label: 'รอบนิเทศ', visible: canManageSchool },
-				{ key: 'templates', label: 'แบบประเมิน', visible: canManageSchool }
-			] satisfies { key: SupervisionWorkspaceSection; label: string; visible: boolean }[]
+				{ key: 'mine', label: 'ของฉัน', icon: UserRound, visible: true },
+				{ key: 'evaluate', label: 'ประเมิน', icon: ClipboardCheck, visible: canEvaluate },
+				{ key: 'requests', label: 'คำขอจอง', icon: Inbox, visible: canManageRequests },
+				{ key: 'overview', label: 'ภาพรวม', icon: BarChart3, visible: canReport },
+				{ key: 'cycles', label: 'รอบนิเทศ', icon: CalendarDays, visible: canManageSchool },
+				{ key: 'templates', label: 'แบบประเมิน', icon: ClipboardList, visible: canManageSchool }
+			] satisfies {
+				key: SupervisionWorkspaceSection;
+				label: string;
+				icon: typeof UserRound;
+				visible: boolean;
+			}[]
 		).filter((item) => item.visible)
 	);
 
@@ -1702,90 +1711,80 @@
 	{/if}
 {/snippet}
 
+{#snippet observationFacts(observation: SupervisionObservation)}
+	<dl
+		class="grid gap-x-4 gap-y-3 border-y py-3 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+	>
+		{#each observationDetailGrid(observation) as detail (detail.label)}
+			<div class="min-w-0 space-y-0.5">
+				<dt class="text-xs text-muted-foreground">{detail.label}</dt>
+				<dd class="wrap-anywhere font-medium">{detail.value}</dd>
+			</div>
+		{/each}
+	</dl>
+{/snippet}
+
 <PageShell
 	title={sectionConfig.title}
 	description={sectionConfig.description}
-	contentClass="flex flex-col gap-4 [&>*]:mt-0"
+	contentClass="flex flex-col gap-5 [&>*]:mt-0"
 >
 	{#snippet actions()}
 		{#if section === 'mine' && canRequest && !bookingOpen}
-			<Button size="sm" onclick={() => (bookingOpen = true)}
-				><Plus class="size-4" />จองคาบนิเทศ</Button
-			>
+			<Button onclick={() => (bookingOpen = true)}>
+				<Plus class="size-4" aria-hidden="true" />จองคาบนิเทศ
+			</Button>
 		{/if}
 		{#if canManageSchool && section === 'cycles'}
-			<Button size="sm" onclick={openCreateCycleDialog}>
-				<Plus class="mr-2 h-4 w-4" />
+			<Button onclick={openCreateCycleDialog}>
+				<Plus class="size-4" aria-hidden="true" />
 				สร้างรอบนิเทศ
 			</Button>
 		{/if}
 		{#if canManageSchool && section === 'templates'}
-			<Button size="sm" variant="outline" onclick={openCreateTemplateDialog}>
-				<Settings2 class="mr-2 h-4 w-4" />
+			<Button onclick={openCreateTemplateDialog}>
+				<Plus class="size-4" aria-hidden="true" />
 				สร้างแบบประเมิน
 			</Button>
 		{/if}
 	{/snippet}
 
-	<nav aria-label="เมนูนิเทศการสอน" class="flex gap-1 overflow-x-auto border-b pb-2">
+	<nav
+		aria-label="เมนูนิเทศการสอน"
+		class="grid grid-cols-2 gap-1 rounded-xl border border-primary/15 bg-linear-to-br from-primary/6 via-card to-card p-1.5 sm:flex sm:flex-wrap"
+	>
 		{#each sectionLinks as item (item.key)}
+			{@const Icon = item.icon}
 			<Button
 				href={sectionRoute(item.key)}
 				data-sveltekit-preload-data={item.key !== 'overview' ? false : 'tap'}
-				variant={section === item.key ? 'secondary' : 'ghost'}
+				variant="ghost"
 				aria-current={section === item.key ? 'page' : undefined}
-				class="shrink-0"
-				size="sm"
+				class="min-h-11 min-w-0 justify-start whitespace-normal px-3 text-start text-muted-foreground aria-[current=page]:bg-primary/10 aria-[current=page]:font-semibold aria-[current=page]:text-primary"
 			>
+				<Icon class="size-4" aria-hidden="true" />
 				{item.label}
 			</Button>
 		{/each}
 	</nav>
 
 	{#if section === 'mine'}
-		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="supervision-personal-status">
+		<dl
+			class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4"
+			aria-label="สถานะการนิเทศของฉัน"
+			data-testid="supervision-personal-status"
+		>
 			{#each [{ label: 'รออนุมัติคำขอ', statuses: ['requested'] }, { label: 'ต้องแก้ไขและส่งใหม่', statuses: ['returned'] }, { label: 'รอฉันรับทราบ', statuses: ['published'] }, { label: 'เสร็จสิ้น', statuses: ['completed', 'acknowledged'] }] as metric (metric.label)}
-				<div class="rounded-xl border bg-background p-4">
-					<p class="text-2xl font-semibold">
+				<div class="flex flex-col-reverse justify-end gap-1 bg-card px-3 py-3 sm:px-4">
+					<dt class="text-sm text-muted-foreground">{metric.label}</dt>
+					<dd class="text-2xl font-semibold tabular-nums">
 						{observationsLoaded && observationsReadable
 							? myObservations.filter((item) => metric.statuses.includes(item.status)).length
 							: '—'}
-					</p>
-					<p class="mt-1 text-xs text-muted-foreground">{metric.label}</p>
+					</dd>
 				</div>
 			{/each}
-		</div>
-	{:else}
-		<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">
-					{!cyclesLoaded || (section === 'evaluate' && !canReadObservations) ? '—' : cycles.length}
-				</p>
-				<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">
-					{shouldLoadObservations() && observationsLoaded && observationsReadable
-						? requestedObservations.length
-						: '—'}
-				</p>
-				<p class="text-xs text-muted-foreground">คำขอรออนุมัติ</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">
-					{shouldLoadObservations() && observationsLoaded && observationsReadable
-						? activeAssignedObservations.length
-						: '—'}
-				</p>
-				<p class="text-xs text-muted-foreground">รอประเมิน</p>
-			</div>
-			<div class="rounded-md border bg-background px-3 py-2 text-center">
-				<p class="text-lg font-semibold">
-					{templatesLoaded && canReadObservations ? templateSummaries.length : '—'}
-				</p>
-				<p class="text-xs text-muted-foreground">แบบประเมิน</p>
-			</div>
-		</div>
+		</dl>
 	{/if}
 
 	{#if ['mine', 'requests', 'evaluate'].includes(section)}
@@ -1809,53 +1808,53 @@
 		</div>
 	{/if}
 	{#if section === 'mine'}
-		<div class="space-y-4">
+		<div class="space-y-5">
 			{#if bookingOpen && canRequest}
-				<Card.Root class="overflow-hidden border-primary/20">
-					<Card.Header class="flex flex-row items-start justify-between gap-3 bg-muted/20">
-						<div>
-							<Card.Title>จองคาบนิเทศของฉัน</Card.Title><Card.Description
-								>หนึ่งคำขอสำหรับหนึ่งคาบหรือหลายคาบต่อเนื่องของห้องเดียวกัน</Card.Description
+				<Card.Root class="gap-0 overflow-hidden border-primary/20 py-0">
+					<Card.Header
+						class="flex flex-wrap items-start justify-between gap-3 border-b bg-primary/5 px-4 py-4 sm:px-6"
+					>
+						<div class="space-y-1">
+							<h2 class="text-lg font-semibold">จองคาบนิเทศของฉัน</h2>
+							<Card.Description
+								>เลือกหนึ่งคาบหรือหลายคาบต่อเนื่องของห้องเดียวกันในคำขอเดียว</Card.Description
 							>
 						</div>
 						<Button variant="ghost" size="sm" onclick={() => (bookingOpen = false)}
 							>ปิดหน้าจอง</Button
 						>
 					</Card.Header>
-					<Card.Content class="space-y-4 px-2 pt-4 sm:px-6">
+					<Card.Content class="space-y-4 px-4 py-4 sm:px-6">
 						{#if cyclesLoaded && currentBookingCycle && academicYearId && academicTermId}
-							<div class="flex flex-wrap items-center gap-3 rounded-lg bg-muted/40 p-3">
-								<Label for="booking-cycle">รอบนิเทศ</Label><Select.Root
-									type="single"
-									value={currentBookingCycle.id}
-									onValueChange={(value) => (selectedCycleId = value)}
-									><Select.Trigger
-										id="booking-cycle"
-										class="w-full sm:w-72"
-										aria-label="เลือกรอบนิเทศ">{currentBookingCycle.title}</Select.Trigger
-									><Select.Content
-										>{#each activeBookingCycles as cycle (cycle.id)}<Select.Item value={cycle.id}
-												>{cycle.title}</Select.Item
-											>{/each}</Select.Content
-									></Select.Root
-								>
-								<p class="text-xs text-muted-foreground">
-									เปิดรับคำขอจนกว่าผู้ดูแลจะเปลี่ยนสถานะรอบนิเทศ
-								</p>
-							</div>
 							<div
-								class="rounded-lg border border-primary/20 bg-primary/5 p-4"
-								data-testid="supervision-cycle-dates"
+								class="grid gap-4 rounded-lg border bg-muted/25 p-4 md:grid-cols-2 md:items-start"
 							>
-								<p class="font-medium">
-									ช่วงวันที่นิเทศ · {cycleDateRangeLabel(
-										currentBookingCycle.observationStartDate,
-										currentBookingCycle.observationEndDate
-									)}
-								</p>
-								<p class="mt-1 text-sm text-muted-foreground">
-									รวมวันเริ่มต้นและวันสุดท้าย สถานะรับคำขอยังคงเปลี่ยนโดยผู้ดูแล
-								</p>
+								<div class="min-w-0 space-y-2">
+									<Label for="booking-cycle">รอบนิเทศ</Label><Select.Root
+										type="single"
+										value={currentBookingCycle.id}
+										onValueChange={(value) => (selectedCycleId = value)}
+										><Select.Trigger id="booking-cycle" class="w-full" aria-label="เลือกรอบนิเทศ"
+											>{currentBookingCycle.title}</Select.Trigger
+										><Select.Content
+											>{#each activeBookingCycles as cycle (cycle.id)}<Select.Item value={cycle.id}
+													>{cycle.title}</Select.Item
+												>{/each}</Select.Content
+										></Select.Root
+									>
+								</div>
+								<div class="min-w-0 space-y-1" data-testid="supervision-cycle-dates">
+									<p class="text-sm font-medium">ช่วงวันที่นิเทศ</p>
+									<p class="text-sm tabular-nums">
+										{cycleDateRangeLabel(
+											currentBookingCycle.observationStartDate,
+											currentBookingCycle.observationEndDate
+										)}
+									</p>
+									<p class="text-xs text-muted-foreground">
+										เลือกคาบได้ตั้งแต่วันเริ่มต้นถึงวันสุดท้ายของช่วงนี้
+									</p>
+								</div>
 							</div>
 							{#if cycleDateRangeError(currentBookingCycle.observationStartDate, currentBookingCycle.observationEndDate)}
 								<PageState
@@ -1890,158 +1889,162 @@
 				</Card.Root>
 			{/if}
 
-			<Card.Root>
-				<Card.Header>
-					<Card.Title>รายการของฉัน</Card.Title>
-				</Card.Header>
-				<Card.Content>
-					<div
-						class="relative"
-						data-testid="supervision-observations"
-						aria-busy={observationsLoading}
-					>
-						{@render managementFeedback(
-							observationsLoaded,
-							observationsLoading,
-							observationsError,
-							retryObservations
-						)}
-						{#if observationsLoaded && !observationsReadable}<PageState
-								variant="permission"
-								title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
-								description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
-							/>{/if}
-						{#if observationsLoaded && observationsReadable}
-							{#if myObservations.length === 0}
-								<PageState
-									title="ยังไม่มีรายการนิเทศของฉัน"
-									description="เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่"
-								/>
-							{:else}
-								<div class="space-y-3" data-supervision-own-list="cards">
-									{#each myObservations as observation (observation.id)}
-										<div class="rounded-md border bg-background p-4">
-											<div
-												class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
-											>
-												<div class="min-w-0 space-y-1">
-													<div class="flex flex-wrap items-center gap-2">
-														<h3 class="font-semibold">{observationSubjectLabel(observation)}</h3>
-														<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-														<p class="text-xs text-muted-foreground">
-															{observationWorkflow(observation).stageLabel} · ถัดไป: {observationWorkflow(
-																observation
-															).nextOwner}
-														</p>
-													</div>
-													<p class="text-sm text-muted-foreground">
-														{observationPeriodLabel(observation)} · {observationClassroomLabel(
+			<section class="min-w-0 space-y-3" aria-labelledby="supervision-own-title">
+				<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+					<h2 id="supervision-own-title" class="text-lg font-semibold">รายการของฉัน</h2>
+					{#if observationsLoaded && observationsReadable}
+						<p class="text-sm text-muted-foreground tabular-nums">{myObservations.length} รายการ</p>
+					{/if}
+				</div>
+				<div
+					class="relative"
+					data-testid="supervision-observations"
+					aria-busy={observationsLoading}
+				>
+					{@render managementFeedback(
+						observationsLoaded,
+						observationsLoading,
+						observationsError,
+						retryObservations
+					)}
+					{#if observationsLoaded && !observationsReadable}<PageState
+							variant="permission"
+							title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
+							description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
+						/>{/if}
+					{#if observationsLoaded && observationsReadable}
+						{#if myObservations.length === 0}
+							<PageState
+								title="ยังไม่มีรายการนิเทศของฉัน"
+								description="เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่"
+							/>
+						{:else}
+							<div class="space-y-3" data-supervision-own-list="cards">
+								{#each myObservations as observation (observation.id)}
+									<div class="space-y-3 rounded-xl border bg-card p-4 sm:p-5">
+										<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+											<div class="min-w-0 space-y-1">
+												<div class="flex flex-wrap items-center gap-2">
+													<h3 class="font-semibold">{observationSubjectLabel(observation)}</h3>
+													<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
+													<p class="text-xs text-muted-foreground">
+														{observationWorkflow(observation).stageLabel} · ถัดไป: {observationWorkflow(
 															observation
-														)}
+														).nextOwner}
 													</p>
 												</div>
-												<div class="shrink-0 text-sm text-muted-foreground">
-													{formatDate(observation.observedAt)}
+												<p class="text-sm text-muted-foreground">
+													{observationPeriodLabel(observation)} · {observationClassroomLabel(
+														observation
+													)}
+												</p>
+											</div>
+											<div class="shrink-0 text-sm text-muted-foreground">
+												{formatDate(observation.observedAt)}
+											</div>
+										</div>
+
+										{@render observationFacts(observation)}
+
+										<div class="flex flex-wrap items-center justify-between gap-3">
+											<div class="min-w-0">
+												<p class="text-xs text-muted-foreground">ผู้นิเทศ</p>
+												<div class="mt-1 flex flex-wrap gap-2">
+													{#if observation.evaluators.length === 0}
+														<Badge variant="outline">ยังไม่มอบหมาย</Badge>
+													{:else}
+														{#each observation.evaluators as evaluator (evaluator.id)}
+															<Badge variant="secondary">
+																{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+															</Badge>
+														{/each}
+													{/if}
 												</div>
 											</div>
-
-											<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
-												{#each observationDetailGrid(observation) as detail (detail.label)}
-													<div>
-														<p class="text-xs text-muted-foreground">{detail.label}</p>
-														<p class="font-medium">{detail.value}</p>
-													</div>
-												{/each}
-											</div>
-
-											<div
-												class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-											>
-												<div class="min-w-0">
-													<p class="text-xs text-muted-foreground">ผู้นิเทศ</p>
-													<div class="mt-1 flex flex-wrap gap-2">
-														{#if observation.evaluators.length === 0}
-															<Badge variant="outline">ยังไม่มอบหมาย</Badge>
-														{:else}
-															{#each observation.evaluators as evaluator (evaluator.id)}
-																<Badge variant="secondary">
-																	{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
-																</Badge>
-															{/each}
-														{/if}
-													</div>
-												</div>
-												<div class="flex shrink-0 flex-wrap gap-2">
-													<Button
-														size="sm"
-														variant="outline"
-														href={observationDetailHref(observation)}
-														data-sveltekit-preload-data="tap"
-													>
-														<Eye class="h-4 w-4" />
-														{observation.status === 'returned' &&
-														canRequest &&
-														!observation.evaluators.some(
-															(evaluator) => evaluator.status === 'submitted'
-														)
-															? observationWorkflow(observation).nextAction
-															: 'รายละเอียด'}
-													</Button>
-													{#if observation.status === 'published'}
-														<Dialog.Root>
-															<Dialog.Trigger>
-																{#snippet child({ props })}
-																	<Button size="sm" {...props}>
-																		<FileSignature class="mr-2 h-4 w-4" />
-																		รับทราบผล
-																	</Button>
-																{/snippet}
-															</Dialog.Trigger>
-															<Dialog.Content>
-																<Dialog.Header>
-																	<Dialog.Title>รับทราบผลนิเทศ</Dialog.Title>
-																	<Dialog.Description>
-																		เพิ่มความคิดเห็นได้ถ้าต้องการ แล้วกดยืนยันรับทราบผลนิเทศ
-																	</Dialog.Description>
-																</Dialog.Header>
+											<div class="flex shrink-0 flex-wrap gap-2">
+												<Button
+													size="sm"
+													variant="outline"
+													href={observationDetailHref(observation)}
+													data-sveltekit-preload-data="tap"
+												>
+													<Eye class="h-4 w-4" />
+													{observation.status === 'returned' &&
+													canRequest &&
+													!observation.evaluators.some(
+														(evaluator) => evaluator.status === 'submitted'
+													)
+														? observationWorkflow(observation).nextAction
+														: 'รายละเอียด'}
+												</Button>
+												{#if observation.status === 'published'}
+													<Dialog.Root>
+														<Dialog.Trigger>
+															{#snippet child({ props })}
+																<Button size="sm" {...props}>
+																	<FileSignature class="mr-2 h-4 w-4" />
+																	รับทราบผล
+																</Button>
+															{/snippet}
+														</Dialog.Trigger>
+														<Dialog.Content>
+															<Dialog.Header>
+																<Dialog.Title>รับทราบผลนิเทศ</Dialog.Title>
+																<Dialog.Description>
+																	เพิ่มความคิดเห็นได้ถ้าต้องการ แล้วกดยืนยันรับทราบผลนิเทศ
+																</Dialog.Description>
+															</Dialog.Header>
+															<div class="space-y-2">
+																<Label for={`supervision-acknowledge-${observation.id}`}
+																	>ความคิดเห็นเพิ่มเติม (ถ้ามี)</Label
+																>
 																<Textarea
+																	id={`supervision-acknowledge-${observation.id}`}
 																	bind:value={acknowledgeComment}
 																	rows={3}
 																	placeholder="ความคิดเห็นเพิ่มเติม (ถ้ามี)"
 																/>
-																<Dialog.Footer>
-																	<LoadingButton
-																		onclick={() => acknowledgeResult(observation.id)}
-																		loading={savingAction ===
-																			`acknowledge-result:${observation.id}`}
-																		loadingLabel="กำลังบันทึก..."
-																		disabled={mutationBusy}
-																	>
-																		ยืนยันรับทราบ
-																	</LoadingButton>
-																</Dialog.Footer>
-															</Dialog.Content>
-														</Dialog.Root>
-													{:else}
-														<span class="text-sm text-muted-foreground">-</span>
-													{/if}
-												</div>
+															</div>
+															<Dialog.Footer>
+																<Dialog.Close>
+																	{#snippet child({ props })}<Button variant="outline" {...props}
+																			>ยกเลิก</Button
+																		>{/snippet}
+																</Dialog.Close>
+																<LoadingButton
+																	onclick={() => acknowledgeResult(observation.id)}
+																	loading={savingAction === `acknowledge-result:${observation.id}`}
+																	loadingLabel="กำลังบันทึก..."
+																	disabled={mutationBusy}
+																>
+																	ยืนยันรับทราบ
+																</LoadingButton>
+															</Dialog.Footer>
+														</Dialog.Content>
+													</Dialog.Root>
+												{:else}
+													<span class="text-sm text-muted-foreground">-</span>
+												{/if}
 											</div>
 										</div>
-									{/each}
-								</div>
-							{/if}
+									</div>
+								{/each}
+							</div>
 						{/if}
-					</div></Card.Content
-				>
-			</Card.Root>
+					{/if}
+				</div>
+			</section>
 		</div>
 	{:else if section === 'requests'}
 		<div data-testid="supervision-observations" aria-busy={observationsLoading} class="space-y-3">
 			<Tabs.Root bind:value={queueView} onValueChange={() => (calendarReviewId = '')}>
-				<Tabs.List class="self-start" aria-label="มุมมองคำขอจองนิเทศ">
-					<Tabs.Trigger value="list">คำขอจอง</Tabs.Trigger>
-					<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
+				<Tabs.List class="h-auto w-full self-start sm:w-fit" aria-label="มุมมองคำขอจองนิเทศ">
+					<Tabs.Trigger value="list" class="min-h-10 px-3"
+						><Inbox aria-hidden="true" />คำขอจอง</Tabs.Trigger
+					>
+					<Tabs.Trigger value="calendar" class="min-h-10 px-3"
+						><CalendarDays aria-hidden="true" />ปฏิทิน</Tabs.Trigger
+					>
 				</Tabs.List>
 				{@render managementFeedback(
 					observationsLoaded,
@@ -2058,7 +2061,12 @@
 				{/if}
 				<Tabs.Content value="list" class="space-y-3">
 					{#if queueView === 'list' && observationsLoaded && observationsReadable}
-						<h2 class="text-lg font-semibold">คำขอจองที่รออนุมัติ</h2>
+						<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+							<h2 class="text-lg font-semibold">คำขอจองที่รออนุมัติ</h2>
+							<p class="text-sm text-muted-foreground tabular-nums">
+								{requestedObservations.length} รายการ
+							</p>
+						</div>
 						{#if requestedObservations.length === 0}
 							<PageState
 								title="ไม่มีคำขอจองที่รออนุมัติ"
@@ -2148,12 +2156,21 @@
 				/>
 			{:else if observationsLoaded}
 				<Tabs.Root bind:value={queueView}>
-					<Tabs.List class="self-start" aria-label="มุมมองรายการประเมิน">
-						<Tabs.Trigger value="list">รายการ</Tabs.Trigger>
-						<Tabs.Trigger value="calendar">ปฏิทิน</Tabs.Trigger>
+					<Tabs.List class="h-auto w-full self-start sm:w-fit" aria-label="มุมมองรายการประเมิน">
+						<Tabs.Trigger value="list" class="min-h-10 px-3"
+							><ClipboardCheck aria-hidden="true" />รายการ</Tabs.Trigger
+						>
+						<Tabs.Trigger value="calendar" class="min-h-10 px-3"
+							><CalendarDays aria-hidden="true" />ปฏิทิน</Tabs.Trigger
+						>
 					</Tabs.List>
 					<Tabs.Content value="list" class="space-y-4">
-						<h2 class="text-lg font-semibold">รายการที่ได้รับมอบหมายให้ประเมิน</h2>
+						<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+							<h2 class="text-lg font-semibold">รายการที่ได้รับมอบหมายให้ประเมิน</h2>
+							<p class="text-sm text-muted-foreground tabular-nums">
+								{activeAssignedObservations.length} รายการ
+							</p>
+						</div>
 						{#if activeAssignedObservations.length === 0}
 							<PageState
 								title="ยังไม่มีรายการที่ต้องประเมิน"
@@ -2164,8 +2181,8 @@
 								{#each activeAssignedObservations as observation (observation.id)}
 									<div
 										class={cn(
-											'rounded-md border bg-background p-4 transition',
-											evaluationObservationId === observation.id && 'border-primary bg-primary/5'
+											'space-y-3 rounded-xl border bg-card p-4 sm:p-5',
+											evaluationObservationId === observation.id && 'border-primary/40'
 										)}
 									>
 										<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2192,22 +2209,9 @@
 											</div>
 										</div>
 
-										<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
-											<div>
-												<p class="text-xs text-muted-foreground">นิเทศใคร</p>
-												<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-											</div>
-											{#each observationDetailGrid(observation) as detail (detail.label)}
-												<div>
-													<p class="text-xs text-muted-foreground">{detail.label}</p>
-													<p class="font-medium">{detail.value}</p>
-												</div>
-											{/each}
-										</div>
+										{@render observationFacts(observation)}
 
-										<div
-											class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-										>
+										<div class="flex flex-wrap items-center justify-between gap-3">
 											<div class="min-w-0">
 												<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
 												<div class="mt-1 flex flex-wrap gap-2">
@@ -2217,7 +2221,7 @@
 														{#each observation.evaluators as evaluator (evaluator.id)}
 															<Badge
 																variant={evaluator.evaluatorUserId === currentUserId
-																	? 'default'
+																	? 'outline'
 																	: 'secondary'}
 															>
 																{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
@@ -2239,9 +2243,7 @@
 												<Button
 													type="button"
 													size="sm"
-													variant={evaluationObservationId === observation.id
-														? 'default'
-														: 'outline'}
+													variant="default"
 													onclick={() => prepareEvaluationDraft(observation)}
 												>
 													เปิดแบบประเมิน
@@ -2254,18 +2256,18 @@
 						{/if}
 
 						{#if submittedAssignedObservations.length > 0}
-							<div class="space-y-3 border-t pt-4">
-								<div>
-									<h3 class="text-sm font-semibold">ผลประเมินที่ส่งแล้ว</h3>
-									<p class="text-xs text-muted-foreground">
-										รายการที่ส่งผลประเมินแล้วจะเก็บไว้ตรวจสอบย้อนหลัง ไม่แสดงปนกับคิวที่ต้องทำ
+							<div class="space-y-3 pt-3">
+								<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+									<h2 class="text-lg font-semibold">ผลประเมินที่ส่งแล้ว</h2>
+									<p class="text-sm text-muted-foreground tabular-nums">
+										{submittedAssignedObservations.length} รายการ
 									</p>
 								</div>
 
 								<div class="space-y-3" data-supervision-submitted-assigned-list="cards">
 									{#each submittedAssignedObservations as observation (observation.id)}
 										{@const submittedEvaluator = currentUserEvaluator(observation)}
-										<div class="rounded-md border bg-muted/20 p-4">
+										<div class="space-y-3 rounded-xl border bg-card p-4 sm:p-5">
 											<div
 												class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
 											>
@@ -2288,22 +2290,9 @@
 												</div>
 											</div>
 
-											<div class="mt-4 grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
-												<div>
-													<p class="text-xs text-muted-foreground">นิเทศใคร</p>
-													<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-												</div>
-												{#each observationDetailGrid(observation) as detail (detail.label)}
-													<div>
-														<p class="text-xs text-muted-foreground">{detail.label}</p>
-														<p class="font-medium">{detail.value}</p>
-													</div>
-												{/each}
-											</div>
+											{@render observationFacts(observation)}
 
-											<div
-												class="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"
-											>
+											<div class="flex flex-wrap items-center justify-between gap-3">
 												<div class="min-w-0">
 													<p class="text-xs text-muted-foreground">ผู้นิเทศร่วม</p>
 													<div class="mt-1 flex flex-wrap gap-2">
@@ -2363,21 +2352,14 @@
 		</div>
 	{:else if section === 'cycles'}
 		<div class="space-y-4">
-			<Card.Root>
-				<Card.Header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-					<div>
-						<Card.Title>รอบนิเทศ</Card.Title>
-						<Card.Description>รอบนิเทศเชื่อมกับปีการศึกษาและภาคเรียนของระบบวิชาการ</Card.Description
-						>
-					</div>
-					{#if canManageSchool}
-						<Button onclick={openCreateCycleDialog}>
-							<Plus class="mr-2 h-4 w-4" />
-							สร้างรอบนิเทศ
-						</Button>
-					{/if}
+			<Card.Root class="gap-0 py-0">
+				<Card.Header
+					class="flex flex-wrap items-baseline justify-between gap-2 border-b bg-muted/25 px-4 py-3 sm:px-6"
+				>
+					<h2 class="text-base font-semibold">รายการรอบนิเทศ</h2>
+					<p class="text-sm text-muted-foreground">{calendarAcademicLabel}</p>
 				</Card.Header>
-				<Card.Content>
+				<Card.Content class="px-0">
 					<div
 						class="relative space-y-3"
 						aria-busy={cyclesLoading}
@@ -2391,14 +2373,16 @@
 							)}{/if}
 						{#if !routeData || cyclesLoaded}
 							<div data-testid="supervision-cycles-ready">
-								<Table.Root>
+								<Table.Root
+									class="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4 sm:[&_td:first-child]:pl-6 sm:[&_td:last-child]:pr-6 sm:[&_th:first-child]:pl-6 sm:[&_th:last-child]:pr-6"
+									aria-label="รายการรอบนิเทศ"
+								>
 									<Table.Header>
 										<Table.Row>
 											<Table.Head>รอบนิเทศ</Table.Head>
-											<Table.Head>ภาคเรียน</Table.Head>
-
+											<Table.Head>ปีการศึกษา / ภาคเรียน</Table.Head>
 											<Table.Head>สถานะ</Table.Head>
-											<Table.Head class="text-right">คำสั่ง</Table.Head>
+											<Table.Head class="text-right">จัดการรอบ</Table.Head>
 										</Table.Row>
 									</Table.Header>
 									<Table.Body>
@@ -2411,7 +2395,7 @@
 										{:else}
 											{#each cycles as cycle (cycle.id)}
 												<Table.Row>
-													<Table.Cell class="whitespace-normal"
+													<Table.Cell class="min-w-40 whitespace-normal"
 														><p class="font-medium">{cycle.title}</p>
 														<p class="mt-1 text-xs text-muted-foreground">
 															{cycleDateRangeLabel(
@@ -2485,8 +2469,6 @@
 																	loadingLabel="กำลังเก็บ..."
 																	disabled={mutationBusy}>เก็บถาวร</LoadingButton
 																>
-															{:else}
-																<span class="text-sm text-muted-foreground">-</span>
 															{/if}
 														</div>
 													</Table.Cell>
@@ -2503,20 +2485,16 @@
 		</div>
 	{:else if section === 'templates'}
 		<div class="space-y-4">
-			<Card.Root>
-				<Card.Header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-					<div>
-						<Card.Title>แบบประเมิน</Card.Title>
-						<Card.Description>แบบประเมินสำหรับใช้ในรอบนิเทศ</Card.Description>
-					</div>
-					{#if canManageSchool}
-						<Button onclick={openCreateTemplateDialog}>
-							<Plus class="mr-2 h-4 w-4" />
-							สร้างแบบประเมิน
-						</Button>
+			<Card.Root class="gap-0 py-0">
+				<Card.Header
+					class="flex flex-wrap items-baseline justify-between gap-2 border-b bg-muted/25 px-4 py-3 sm:px-6"
+				>
+					<h2 class="text-base font-semibold">รายการแบบประเมิน</h2>
+					{#if templatesLoaded}
+						<p class="text-sm text-muted-foreground tabular-nums">{templateChoices.length} แบบ</p>
 					{/if}
 				</Card.Header>
-				<Card.Content>
+				<Card.Content class="px-0">
 					<div
 						class="relative space-y-3"
 						aria-busy={templatesLoading}
@@ -2530,15 +2508,18 @@
 							)}{/if}
 						{#if !routeData || templatesLoaded}
 							<div data-testid="supervision-templates-ready">
-								<Table.Root>
+								<Table.Root
+									class="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4 sm:[&_td:first-child]:pl-6 sm:[&_td:last-child]:pr-6 sm:[&_th:first-child]:pl-6 sm:[&_th:last-child]:pr-6"
+									aria-label="รายการแบบประเมิน"
+								>
 									<Table.Header>
 										<Table.Row>
 											<Table.Head>ชื่อแบบประเมิน</Table.Head>
-											<Table.Head>หมวด</Table.Head>
-											<Table.Head>ข้อ</Table.Head>
-											<Table.Head>ช่วงคะแนน</Table.Head>
+											<Table.Head class="text-center">หมวด</Table.Head>
+											<Table.Head class="text-center">ข้อ</Table.Head>
+											<Table.Head class="text-center">ช่วงคะแนน</Table.Head>
 											<Table.Head>สถานะ</Table.Head>
-											<Table.Head class="text-right">คำสั่ง</Table.Head>
+											<Table.Head class="text-right">จัดการแบบประเมิน</Table.Head>
 										</Table.Row>
 									</Table.Header>
 									<Table.Body>
@@ -2551,18 +2532,22 @@
 										{:else}
 											{#each templateChoices as template (template.id)}
 												<Table.Row>
-													<Table.Cell class="font-medium">{template.title}</Table.Cell>
-													<Table.Cell
+													<Table.Cell class="min-w-40 whitespace-normal font-medium"
+														>{template.title}</Table.Cell
+													>
+													<Table.Cell class="text-center tabular-nums"
 														>{'sections' in template
 															? template.sections.length
 															: template.sectionCount}</Table.Cell
 													>
-													<Table.Cell
+													<Table.Cell class="text-center tabular-nums"
 														>{'sections' in template
 															? templateItemCount(template)
 															: template.itemCount}</Table.Cell
 													>
-													<Table.Cell>{template.ratingMin} - {template.ratingMax}</Table.Cell>
+													<Table.Cell class="text-center tabular-nums"
+														>{template.ratingMin}–{template.ratingMax}</Table.Cell
+													>
 													<Table.Cell>
 														<Badge variant="secondary">{templateStatusLabel(template.status)}</Badge
 														>
@@ -2602,18 +2587,9 @@
 	{:else if section === 'overview'}
 		<div class="space-y-4">
 			<Card.Root>
-				<Card.Header>
-					<Card.Title class="flex items-center gap-2">
-						<BarChart3 class="h-5 w-5" />
-						สถานะครูในรอบนิเทศ
-					</Card.Title>
-					<Card.Description>
-						ดูว่าครูแต่ละคนจองคาบแล้วหรือยัง อยู่ขั้นตอนไหน ใครเป็นผู้นิเทศ และคะแนนล่าสุดเท่าไร
-					</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-4">
+				<Card.Content class="space-y-5 px-4 sm:px-6">
 					<div
-						class="relative space-y-3"
+						class="relative space-y-3 rounded-lg border bg-muted/25 p-4"
 						aria-busy={cyclesLoading}
 						data-testid="supervision-cycle-selector"
 					>
@@ -2624,23 +2600,33 @@
 								retryManagementCycles
 							)}{/if}
 						{#if !routeData || cyclesLoaded}
-							<div class="flex flex-col gap-2 md:flex-row">
-								<Select.Root
-									type="single"
-									value={overviewCycleId}
-									onValueChange={selectOverviewCycle}
-								>
-									<Select.Trigger aria-label="รอบนิเทศ" class="w-full md:w-[360px]">
-										{cycles.find((cycle) => cycle.id === overviewCycleId)?.title ?? 'เลือกรอบนิเทศ'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each cycles as cycle (cycle.id)}
-											<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
+							<div class="flex flex-wrap items-end gap-3">
+								<div class="min-w-0 grow space-y-2 sm:max-w-sm">
+									<Label for="supervision-overview-cycle">รอบนิเทศ</Label>
+									<Select.Root
+										type="single"
+										value={overviewCycleId}
+										onValueChange={selectOverviewCycle}
+									>
+										<Select.Trigger
+											id="supervision-overview-cycle"
+											aria-label="รอบนิเทศ"
+											class="w-full"
+										>
+											{cycles.find((cycle) => cycle.id === overviewCycleId)?.title ??
+												'เลือกรอบนิเทศ'}
+										</Select.Trigger>
+										<Select.Content>
+											{#each cycles as cycle (cycle.id)}
+												<Select.Item value={cycle.id}>{cycleLabel(cycle)}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								</div>
 								<LoadingButton
 									onclick={loadTeacherStatusOverview}
+									variant="outline"
+									disabled={!overviewCycleId}
 									loading={loadingTeacherStatus}
 									loadingLabel="กำลังโหลด..."
 								>
@@ -2655,7 +2641,7 @@
 							aria-busy={loadingProgress}
 							data-testid="supervision-progress"
 						>
-							<h3 class="text-sm font-semibold">ความคืบหน้ารอบนิเทศ</h3>
+							<h2 class="text-base font-semibold">ความคืบหน้ารอบนิเทศ</h2>
 							{@render managementFeedback(
 								!!progress,
 								loadingProgress,
@@ -2663,32 +2649,22 @@
 								() => void loadProgress()
 							)}
 							{#if progress}
-								<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-									<div class="rounded-md border px-3 py-2">
-										<p class="text-xl font-semibold">{progress.totalObservations}</p>
-										<p class="text-xs text-muted-foreground">ทั้งหมด</p>
-									</div>
-									<div class="rounded-md border px-3 py-2">
-										<p class="text-xl font-semibold">{progress.completedCount}</p>
-										<p class="text-xs text-muted-foreground">เสร็จสิ้น</p>
-									</div>
-									<div class="rounded-md border px-3 py-2">
-										<p class="text-xl font-semibold">
-											{progress.publishedCount}
-										</p>
-										<p class="text-xs text-muted-foreground">รอครูรับทราบ</p>
-									</div>
-									<div class="rounded-md border px-3 py-2">
-										<p class="text-xl font-semibold">{progress.averageRating?.toFixed(2) ?? '-'}</p>
-										<p class="text-xs text-muted-foreground">คะแนนเฉลี่ย</p>
-									</div>
-								</div>
+								<dl
+									class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border lg:grid-cols-4"
+								>
+									{#each [{ label: 'รายการทั้งหมด', value: progress.totalObservations }, { label: 'เสร็จสิ้น', value: progress.completedCount }, { label: 'รอครูรับทราบ', value: progress.publishedCount }, { label: 'คะแนนเฉลี่ย', value: progress.averageRating?.toFixed(2) ?? '—' }] as metric (metric.label)}
+										<div class="flex flex-col-reverse justify-end gap-1 bg-card px-3 py-3 sm:px-4">
+											<dt class="text-sm text-muted-foreground">{metric.label}</dt>
+											<dd class="text-2xl font-semibold tabular-nums">{metric.value}</dd>
+										</div>
+									{/each}
+								</dl>
 								<div class="space-y-2">
 									<div class="flex items-center justify-between text-sm">
 										<span>ความคืบหน้ารวม</span>
 										<span>{progressPercent}%</span>
 									</div>
-									<Progress value={progressPercent} />
+									<Progress value={progressPercent} aria-label="ความคืบหน้ารวม" />
 								</div>
 							{/if}
 						</section>
@@ -2698,6 +2674,7 @@
 						aria-busy={loadingTeacherStatus}
 						data-testid="supervision-teacher-status"
 					>
+						<h2 class="text-base font-semibold">สถานะครูในรอบนิเทศ</h2>
 						{#if routeData}{@render managementFeedback(
 								teacherStatusLoaded,
 								loadingTeacherStatus,
@@ -2705,8 +2682,8 @@
 								loadTeacherStatusOverview
 							)}{/if}
 						{#if !routeData || teacherStatusLoaded}
-							<div data-testid="supervision-teacher-status-ready">
-								<Table.Root>
+							<div class="rounded-lg border" data-testid="supervision-teacher-status-ready">
+								<Table.Root aria-label="สถานะครูในรอบนิเทศ">
 									<Table.Header>
 										<Table.Row>
 											<Table.Head>ครู</Table.Head>
@@ -2722,7 +2699,9 @@
 										{#if teacherStatusRows.length === 0}
 											<Table.Row>
 												<Table.Cell colspan={7} class="h-24 text-center text-muted-foreground">
-													เลือกและโหลดรอบนิเทศเพื่อดูสถานะครู
+													{overviewCycleId
+														? 'ไม่มีข้อมูลสถานะครูในรอบนี้'
+														: 'เลือกรอบนิเทศเพื่อดูสถานะครู'}
 												</Table.Cell>
 											</Table.Row>
 										{:else}
