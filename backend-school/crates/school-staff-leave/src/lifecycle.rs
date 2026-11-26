@@ -24,7 +24,8 @@ async fn draft_amount(
         let personnel_type = category(tx, owner, period.start_date).await?;
         return Ok((personnel_type, LeaveUnit::Day, days));
     }
-    let (personnel_type, policy) = resolve_policy(tx, owner, period.type_id, period.start_date).await?;
+    let (personnel_type, policy) =
+        resolve_policy(tx, owner, period.type_id, period.start_date).await?;
     if require_enabled_policy && !policy.enabled {
         return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
     }

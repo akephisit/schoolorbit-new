@@ -2224,9 +2224,11 @@ async fn official_travel_default_drafts_wait_until_submission_for_approval_setti
         expected_revision: draft.request.revision,
         period: route,
     };
-    assert!(service::update(&pool, &other, draft.request.id, edit.clone())
-        .await
-        .is_err());
+    assert!(
+        service::update(&pool, &other, draft.request.id, edit.clone())
+            .await
+            .is_err()
+    );
     let draft = service::update(&pool, &owner, draft.request.id, edit)
         .await
         .unwrap();
@@ -2291,7 +2293,12 @@ async fn official_travel_default_drafts_wait_until_submission_for_approval_setti
             .unwrap();
     assert_eq!(plans, 0);
 
-    let mut limited = policy(unresolved.type_revision, manager.user_id, LeaveUnit::Day, None);
+    let mut limited = policy(
+        unresolved.type_revision,
+        manager.user_id,
+        LeaveUnit::Day,
+        None,
+    );
     limited.max_per_request = Some(1);
     let limited = service::save_policy(&pool, &manager, travel.id, limited)
         .await
@@ -2315,7 +2322,12 @@ async fn official_travel_default_drafts_wait_until_submission_for_approval_setti
         &pool,
         &manager,
         travel.id,
-        policy(required.type_revision, manager.user_id, LeaveUnit::Day, None),
+        policy(
+            required.type_revision,
+            manager.user_id,
+            LeaveUnit::Day,
+            None,
+        ),
     )
     .await
     .unwrap();
