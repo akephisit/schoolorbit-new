@@ -295,10 +295,14 @@
 											><span class="mt-1 block"
 												>ต่อคำขอ {policy.maxPerRequest == null
 													? 'ไม่กำหนด'
-													: leaveAmount(policy.maxPerRequest, policy.unit)} · ต่อรอบปี {policy.annualLimit ==
-												null
-													? 'ไม่กำหนด'
-													: leaveAmount(policy.annualLimit, policy.unit)} · {policy.steps.length} ขั้นตอน</span
+													: leaveAmount(
+															policy.maxPerRequest,
+															policy.unit
+														)}{#if selected?.kind !== 'official_travel'}
+													· ต่อรอบปี {policy.annualLimit == null
+														? 'ไม่กำหนด'
+														: leaveAmount(policy.annualLimit, policy.unit)}{/if} · {policy.steps
+													.length} ขั้นตอน</span
 											>{#if !policy.enabled}<Badge variant="outline" class="mt-2"
 													>งดรับคำขอสำหรับกลุ่มนี้</Badge
 												>{/if}</Button

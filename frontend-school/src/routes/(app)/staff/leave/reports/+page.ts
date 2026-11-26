@@ -2,7 +2,7 @@ import type { PageLoad } from './$types';
 import { get } from 'svelte/store';
 import { can } from '#lib/stores/permissions.js';
 import { PERMISSIONS } from '#lib/permissions/registry.js';
-import { getLeaveUsage } from '#lib/api/staff-leave.js';
+import { getLeaveUsage, type LeaveUsageQuery } from '#lib/api/staff-leave.js';
 import { captureLeaveRead } from '#lib/staff-leave/route-data.js';
 import { schoolToday } from '#lib/staff-leave/presentation.js';
 import { validReportDate } from '#lib/staff-leave/report.js';
@@ -20,7 +20,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 	const to = validReportDate(url.searchParams.get('to')) ?? today;
 	const rawKind = url.searchParams.get('kind');
 	const kind = rawKind === 'leave' || rawKind === 'exit' ? rawKind : undefined;
-	const query = { from, to, kind };
+	const query: LeaveUsageQuery = { from, to, kind };
 	return {
 		title: 'สรุปการใช้สิทธิ์',
 		query,
