@@ -227,6 +227,8 @@ pub(super) fn period_from(r: &Record) -> StoredLeavePeriod {
         day_portion: r.document.day_portion,
         reason: r.document.reason.clone(),
         evidence_file_ids: r.evidence_file_ids.clone(),
+        destination: r.document.destination.clone(),
+        companion_user_ids: r.document.companions.iter().map(|user| user.id).collect(),
     }
 }
 #[cfg(test)]
@@ -251,6 +253,9 @@ mod tests {
                 id: Uuid::new_v4(),
                 type_id: Uuid::new_v4(),
                 type_name: "test".into(),
+                destination: None,
+                companions: vec![],
+                companion_revision: None,
                 kind: LeaveKind::Leave,
                 owner_id: id,
                 owner_name: "test".into(),

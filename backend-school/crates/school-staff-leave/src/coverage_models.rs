@@ -31,7 +31,12 @@ dto!(LeaveCoverageOptions {pub default_academic_year_id:Option<Uuid>,pub default
 dto!(PreviewLeaveCoverageRequest {pub period:super::models::LeavePeriodInput});
 dto!(LeaveCoverageLabel {pub id:Uuid,pub name:String});
 dto!(LeaveCoverageAssignment {pub id:Uuid,pub replacement_teacher_id:Uuid,pub replacement_teacher_name:String,pub mode:LeaveCoverageMode,pub taught_offering_id:Option<Uuid>,pub taught_offering_name:Option<String>,pub taught_learning_group_id:Option<Uuid>,pub taught_activity:Option<String>,pub return_lesson_key:Option<String>,pub return_date:Option<NaiveDate>,pub consent:LeaveCoverageConsent,pub confirmed_at:Option<DateTime<Utc>>,#[serde(default,skip_serializing_if="Option::is_none")] pub confirmation_id:Option<Uuid>,#[serde(default,skip_serializing_if="Option::is_none")] pub confirmation_plan_revision:Option<i64>,pub return_lesson:Option<DatedTeachingLesson>});
-dto!(LeaveCoverageLesson {#[serde(flatten)] pub lesson:DatedTeachingLesson,pub assignment:Option<LeaveCoverageAssignment>});
+dto!(LeaveCoverageLesson {
+    #[serde(flatten)] pub lesson: DatedTeachingLesson,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_teacher_name: Option<String>,
+    pub assignment: Option<LeaveCoverageAssignment>,
+});
 dto!(LeaveCoverageDay {pub date:NaiveDate,pub lessons:Vec<LeaveCoverageLesson>});
 dto!(LeaveCoveragePlan {pub revision:i64,pub plan_hash:String,pub state:LeaveCoverageState,pub source_digest:Option<String>,pub academic_year_id:Option<Uuid>,pub academic_term_id:Option<Uuid>,pub timetable_state:LeaveCoverageTimetableState,pub days:Vec<LeaveCoverageDay>,pub can_manage:bool,pub blocking_reason:Option<String>,pub emergency_reason:Option<String>});
 macro_rules! stored_dto {($name:ident {$($fields:tt)*})=>{#[derive(Clone,Debug,Serialize,Deserialize)] #[serde(rename_all="camelCase",deny_unknown_fields)] pub(crate) struct $name {$($fields)*}};}

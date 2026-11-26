@@ -11,6 +11,8 @@ use sqlx::{types::Json, PgConnection, PgPool, Postgres, Transaction};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
+const MAX_LESSONS_PER_PLAN: usize = 3000;
+
 fn end_of_day() -> Result<NaiveTime, AppError> {
     NaiveTime::from_hms_nano_opt(23, 59, 59, 999_999_999).ok_or_else(|| invalid("เวลาไม่ถูกต้อง"))
 }
@@ -134,29 +136,77 @@ pub async fn options(
         contexts,
     })
 }
-pub(super) async fn interval(
-    _connection: &mut PgConnection,
+fn absence_windows(
     period: &StoredLeavePeriod,
-    _verify_setting: bool,
-) -> Result<(NaiveTime, NaiveTime), AppError> {
-    if let (Some(start), Some(end)) = (period.start_time, period.end_time) {
-        if start >= end {
-            return Err(invalid("เวลาเริ่มต้องก่อนเวลาสิ้นสุด"));
+) -> Result<Vec<duties::AvailabilityWindow>, AppError> {
+    let days = (period.end_date - period.start_date).num_days();
+    if !(0..=366).contains(&days) {
+        return Err(invalid("ช่วงวันที่ต้องไม่เกิน 367 วัน"));
+    }
+    let end_of_day = end_of_day()?;
+    let (start, end) = match (period.start_time, period.end_time, period.day_portion) {
+        (Some(start), Some(end), _) => (start, end),
+        (None, None, LeaveDayPortion::FullDay) => (NaiveTime::MIN, end_of_day),
+        (None, None, portion) => {
+            let boundary = period.half_day_boundary.ok_or_else(|| {
+                invalid("คำขอเดิมไม่มีขอบเขตเวลาที่บันทึกไว้ จึงไม่สามารถสร้างหน้าที่สอนใหม่จากช่วงครึ่งวันเดิมได้")
+            })?;
+            match portion {
+                LeaveDayPortion::Morning => (NaiveTime::MIN, boundary),
+                _ => (boundary, end_of_day),
+            }
         }
-        return Ok((start, end));
-    }
-    if period.day_portion == LeaveDayPortion::FullDay {
-        return Ok((NaiveTime::MIN, end_of_day()?));
-    }
-    let boundary = period.half_day_boundary.ok_or_else(|| {
-        invalid("คำขอเดิมไม่มีขอบเขตเวลาที่บันทึกไว้ จึงไม่สามารถสร้างหน้าที่สอนใหม่จากช่วงครึ่งวันเดิมได้")
-    })?;
-    Ok(if period.day_portion == LeaveDayPortion::Morning {
-        (NaiveTime::MIN, boundary)
-    } else {
-        (boundary, end_of_day()?)
-    })
+        _ => return Err(invalid("กรุณาระบุเวลาเริ่มและเวลาสิ้นสุด")),
+    };
+    let last_occupied_day = days - i64::from(days > 0 && end == NaiveTime::MIN);
+    (0..=last_occupied_day)
+        .map(|offset| {
+            let start_time = if offset == 0 { start } else { NaiveTime::MIN };
+            let end_time = if offset == days { end } else { end_of_day };
+            if start_time >= end_time {
+                return Err(invalid("เวลาเริ่มต้องก่อนเวลาสิ้นสุด"));
+            }
+            Ok(duties::AvailabilityWindow {
+                date: period.start_date + chrono::Duration::days(offset),
+                start_time,
+                end_time,
+            })
+        })
+        .collect()
 }
+
+fn participant_ids(owner: Uuid, period: &StoredLeavePeriod) -> Vec<Uuid> {
+    std::iter::once(owner)
+        .chain(period.companion_user_ids.iter().copied())
+        .collect()
+}
+fn journey_lesson_limit(kind: LeaveKind, period: &StoredLeavePeriod) -> Option<usize> {
+    (kind == LeaveKind::OfficialTravel || !period.companion_user_ids.is_empty())
+        .then_some(MAX_LESSONS_PER_PLAN)
+}
+
+pub(super) async fn require_supported_journey_coverage(
+    connection: &mut PgConnection,
+    owner: Uuid,
+    kind: LeaveKind,
+    period: &StoredLeavePeriod,
+) -> Result<(), AppError> {
+    let Some(limit) = journey_lesson_limit(kind, period) else {
+        return Ok(());
+    };
+    let (year, term) = explicit_context(period)?;
+    let windows = absence_windows(period)?;
+    duties::require_projected_lesson_limit_on_connection(
+        connection,
+        year,
+        term,
+        &participant_ids(owner, period),
+        &windows,
+        limit,
+    )
+    .await
+}
+
 fn empty_plan(period: &StoredLeavePeriod, state: LeaveCoverageState) -> StoredLeaveCoveragePlan {
     StoredLeaveCoveragePlan {
         revision: 0,
@@ -173,24 +223,29 @@ fn empty_plan(period: &StoredLeavePeriod, state: LeaveCoverageState) -> StoredLe
         emergency_reason: None,
     }
 }
-pub(super) async fn preview_on_connection(
+async fn preview_on_connection(
     connection: &mut PgConnection,
     owner: Uuid,
+    owner_name: &str,
+    kind: LeaveKind,
+    companions: &[LeaveRoutingUser],
     period: &StoredLeavePeriod,
 ) -> Result<StoredLeaveCoveragePlan, AppError> {
     let (year, term) = explicit_context(period)?;
-    let (start, end) = interval(connection, period, true).await?;
-    let snapshot = duties::snapshot_on_connection(
+    let windows = absence_windows(period)?;
+    let snapshot = duties::snapshot_for_teachers_on_connection(
         connection,
         year,
         term,
-        owner,
-        period.start_date,
-        period.end_date,
-        start,
-        end,
+        &participant_ids(owner, period),
+        &windows,
+        journey_lesson_limit(kind, period),
     )
     .await?;
+    let names = companions
+        .iter()
+        .map(|person| (person.id, &person.display_name))
+        .collect::<BTreeMap<_, _>>();
     let mut plan = empty_plan(period, LeaveCoverageState::Incomplete);
     plan.source_digest = Some(snapshot.source_digest);
     plan.timetable_state = if snapshot.timetable_state == "ready" {
@@ -198,14 +253,21 @@ pub(super) async fn preview_on_connection(
     } else {
         LeaveCoverageTimetableState::Missing
     };
-    let mut days = BTreeMap::<NaiveDate, Vec<LeaveCoverageLesson>>::new();
-    for n in 0..=(period.end_date - period.start_date).num_days() {
-        days.insert(period.start_date + chrono::Duration::days(n), vec![]);
-    }
+    let mut days = windows
+        .iter()
+        .map(|window| (window.date, Vec::new()))
+        .collect::<BTreeMap<_, _>>();
     for lesson in snapshot.lessons {
         days.entry(lesson.date)
             .or_default()
             .push(LeaveCoverageLesson {
+                original_teacher_name: if companions.is_empty() {
+                    None
+                } else if lesson.teacher_id == owner {
+                    Some(owner_name.to_owned())
+                } else {
+                    names.get(&lesson.teacher_id).map(|name| (*name).clone())
+                },
                 lesson,
                 assignment: None,
             });
@@ -216,6 +278,21 @@ pub(super) async fn preview_on_connection(
         .collect();
     Ok(plan)
 }
+async fn request_preview(
+    connection: &mut PgConnection,
+    r: &Record,
+) -> Result<StoredLeaveCoveragePlan, AppError> {
+    preview_on_connection(
+        connection,
+        r.document.owner_id,
+        &r.document.owner_name,
+        r.document.kind,
+        &r.document.companions,
+        &period_from(r),
+    )
+    .await
+}
+
 pub async fn preview(
     pool: &PgPool,
     actor: &ActorContext,
@@ -227,7 +304,7 @@ pub async fn preview(
     let mut tx =
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.coverage.preview").await?;
     duties::lock_context(&mut tx, year, term).await?;
-    staff_name(&mut tx, actor.user_id).await?;
+    let owner_name = staff_name(&mut tx, actor.user_id).await?;
     let typ: Json<LeaveType> = DbSession::new(&mut *tx)
         .scalar(
             "staff.leave.coverage.preview_type",
@@ -238,7 +315,22 @@ pub async fn preview(
         .await?
         .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
     require_current_shape(&period, typ.kind)?;
-    let result = preview_on_connection(&mut tx, actor.user_id, &period).await?;
+    let companions = super::companions::resolve_on_connection(
+        &mut tx,
+        actor.user_id,
+        typ.kind,
+        &period.companion_user_ids,
+    )
+    .await?;
+    let result = preview_on_connection(
+        &mut tx,
+        actor.user_id,
+        &owner_name,
+        typ.kind,
+        &companions,
+        &period,
+    )
+    .await?;
     tx.commit().await?;
     Ok(result.into())
 }
@@ -280,9 +372,7 @@ async fn detail_stored_on_connection(
             r.document.status,
             LeaveStatus::Draft | LeaveStatus::Returned
         ) {
-            return match preview_on_connection(connection, r.document.owner_id, &period_from(r))
-                .await
-            {
+            return match request_preview(connection, r).await {
                 Ok(plan) => Ok(plan),
                 Err(AppError::ValidationError(message)) => {
                     let mut plan = empty_plan(&period_from(r), LeaveCoverageState::Incomplete);
@@ -375,7 +465,7 @@ async fn current_plan(
     digest: &str,
 ) -> Result<(Record, StoredLeaveCoveragePlan), AppError> {
     let r = editable_plan(tx, actor, id, revision).await?;
-    let plan = preview_on_connection(&mut **tx, r.document.owner_id, &period_from(&r)).await?;
+    let plan = request_preview(&mut **tx, &r).await?;
     if plan.source_digest.as_deref() != Some(digest) {
         return Err(stale());
     }
@@ -383,7 +473,8 @@ async fn current_plan(
 }
 async fn candidate_metadata(
     connection: &mut PgConnection,
-    owner: Uuid,
+    participants: &[Uuid],
+    original_teachers: &BTreeSet<Uuid>,
     year: Uuid,
     term: Uuid,
     from: NaiveDate,
@@ -399,15 +490,25 @@ async fn candidate_metadata(
 > {
     let staff =
         school_staff::services::coverage_candidates_on_connection(connection, search).await?;
-    let mut ids = staff.iter().map(|s| s.0).collect::<Vec<_>>();
-    ids.push(owner);
+    let ids = staff
+        .iter()
+        .map(|s| s.0)
+        .chain(original_teachers.iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let groups =
         school_staff::services::subject_groups_for_users_on_connection(connection, &ids).await?;
-    let owner_groups = groups
+    let mut original_groups = BTreeMap::<Uuid, BTreeSet<Uuid>>::new();
+    for group in groups
         .iter()
-        .filter(|g| g.user_id == owner)
-        .map(|g| g.subject_group_id)
-        .collect::<BTreeSet<_>>();
+        .filter(|g| original_teachers.contains(&g.user_id))
+    {
+        original_groups
+            .entry(group.user_id)
+            .or_default()
+            .insert(group.subject_group_id);
+    }
     let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         connection, year, term,
     )
@@ -459,7 +560,7 @@ async fn candidate_metadata(
     let mut all_groups = BTreeMap::new();
     let mut all_grades = BTreeMap::new();
     for (teacher_id, display_name) in staff {
-        if teacher_id == owner {
+        if participants.contains(&teacher_id) {
             continue;
         }
         let subject_groups = groups
@@ -519,7 +620,14 @@ async fn candidate_metadata(
         candidates.push(LeaveCoverageCandidate {
             teacher_id,
             display_name,
-            is_same_subject_group: subject_groups.iter().any(|g| owner_groups.contains(&g.id)),
+            is_same_subject_group: !original_teachers.is_empty()
+                && original_teachers.iter().all(|teacher| {
+                    original_groups.get(teacher).is_some_and(|teacher_groups| {
+                        subject_groups
+                            .iter()
+                            .any(|g| teacher_groups.contains(&g.id))
+                    })
+                }),
             subject_groups,
             grade_levels,
             taught_offerings: taught
@@ -580,10 +688,12 @@ pub async fn candidates(
     if selected.len() != input.lesson_keys.iter().collect::<BTreeSet<_>>().len() {
         return Err(stale());
     }
-    let (year, term) = explicit_context(&period_from(&r))?;
+    let period = period_from(&r);
+    let (year, term) = explicit_context(&period)?;
     let (people, subject_groups, grade_levels) = candidate_metadata(
         &mut tx,
-        r.document.owner_id,
+        &participant_ids(r.document.owner_id, &period),
+        &selected.iter().map(|l| l.teacher_id).collect(),
         year,
         term,
         r.document.start_date,
@@ -721,7 +831,7 @@ async fn return_options(
     let period = period_from(r);
     let (year, term) = explicit_context(&period)?;
     if lesson.learning_group_id.is_none()
-        || date >= period.start_date && date <= period.end_date
+        || participant_ids(r.document.owner_id, &period).contains(&teacher)
         || (date - lesson.date).num_days().abs() > 366
     {
         return Ok(vec![]);
@@ -741,9 +851,29 @@ async fn return_options(
         .chain(snapshot.lessons.iter().map(|l| l.allocation_id))
         .collect::<Vec<_>>();
     let joint = duties::joint_allocation_ids_on_connection(connection, &ids).await?;
+    let absence = absence_windows(&period)?
+        .into_iter()
+        .find(|window| window.date == date);
+    let sources = std::iter::once(lesson)
+        .chain(snapshot.lessons.iter())
+        .collect::<Vec<_>>();
+    let resource_conflicts =
+        duties::conflicting_resources_on_connection(connection, r.document.id, &sources).await?;
+    if resource_conflicts.contains(&lesson.lesson_key) {
+        return Ok(vec![]);
+    }
     let mut result = vec![];
     for back in snapshot.lessons {
-        if back.lesson_key == lesson.lesson_key
+        if resource_conflicts.contains(&back.lesson_key)
+            || absence.as_ref().is_some_and(|window| {
+                duties::intervals_overlap(
+                    window.start_time,
+                    window.end_time,
+                    back.start_time,
+                    back.end_time,
+                )
+            })
+            || back.lesson_key == lesson.lesson_key
             || (joint.contains(&lesson.allocation_id) || joint.contains(&back.allocation_id))
                 && back.offering_id != lesson.offering_id
         {
@@ -768,7 +898,7 @@ async fn return_options(
         if teacher_free_with_absences(
             connection,
             term,
-            r.document.owner_id,
+            lesson.teacher_id,
             date,
             back.start_time,
             back.end_time,
@@ -1006,7 +1136,7 @@ pub async fn save(
     input: SaveLeaveCoverageRequest,
 ) -> Result<LeaveRequestDetail, AppError> {
     coverage_access(actor)?;
-    if input.assignments.len() > 3000 {
+    if input.assignments.len() > MAX_LESSONS_PER_PLAN {
         return Err(invalid("แผนสอนมีจำนวนคาบเกินขนาด"));
     }
     let mut tx =
@@ -1037,10 +1167,12 @@ pub async fn save(
     let previous = stored_plan(&mut tx, id).await?;
     plan.revision = previous.as_ref().map_or(1, |p| p.revision + 1);
     plan.emergency_reason = previous.and_then(|p| p.emergency_reason);
-    let (year, term) = explicit_context(&period_from(&r))?;
+    let period = period_from(&r);
+    let (year, term) = explicit_context(&period)?;
     let (people, _, _) = candidate_metadata(
         &mut tx,
-        r.document.owner_id,
+        &participant_ids(r.document.owner_id, &period),
+        &BTreeSet::new(),
         year,
         term,
         r.document.start_date,
@@ -1212,6 +1344,18 @@ pub async fn save(
         }
     }
     validate_audiences(&mut tx, &r, &plan).await?;
+    let inputs = duty_inputs(&r, &plan)?;
+    duties::validate_duty_schedule(&inputs)?;
+    let sources = inputs
+        .iter()
+        .filter_map(|d| d.lesson.as_ref())
+        .collect::<Vec<_>>();
+    if !duties::conflicting_resources_on_connection(&mut tx, id, &sources)
+        .await?
+        .is_empty()
+    {
+        return Err(invalid("คาบสอน กลุ่มเรียน หรือห้องเรียนมีหน้าที่สอนลงวันที่ซ้อนกัน"));
+    }
     plan.state = if complete(&plan) {
         LeaveCoverageState::AwaitingConfirmation
     } else {
@@ -1252,32 +1396,31 @@ pub async fn save(
     tx.commit().await?;
     super::queries::detail(pool, actor, id).await
 }
-pub(super) async fn reserve(
-    tx: &mut Transaction<'_, Postgres>,
+fn duty_inputs(
     r: &Record,
     plan: &StoredLeaveCoveragePlan,
-) -> Result<(), AppError> {
-    validate_audiences(&mut **tx, r, plan).await?;
+) -> Result<Vec<duties::DatedDutyInput>, AppError> {
     let period = period_from(r);
-    let (year, term) = explicit_context(&period)?;
-    let (start, end) = interval(&mut **tx, &period, false).await?;
+    let windows = absence_windows(&period)?;
     let mut inputs = vec![];
-    for n in 0..=(period.end_date - period.start_date).num_days() {
-        inputs.push(duties::DatedDutyInput {
-            id: Uuid::now_v7(),
-            teacher_id: r.document.owner_id,
-            original_teacher_id: r.document.owner_id,
-            date: period.start_date + chrono::Duration::days(n),
-            start_time: start,
-            end_time: end,
-            lesson: None,
-            kind: "absence".into(),
-            pair_id: None,
-            pair_leg: None,
-            taught_offering_id: None,
-            taught_learning_group_id: None,
-            taught_activity: None,
-        });
+    for teacher in participant_ids(r.document.owner_id, &period) {
+        for window in &windows {
+            inputs.push(duties::DatedDutyInput {
+                id: Uuid::now_v7(),
+                teacher_id: teacher,
+                original_teacher_id: teacher,
+                date: window.date,
+                start_time: window.start_time,
+                end_time: window.end_time,
+                lesson: None,
+                kind: "absence".into(),
+                pair_id: None,
+                pair_leg: None,
+                taught_offering_id: None,
+                taught_learning_group_id: None,
+                taught_activity: None,
+            });
+        }
     }
     for l in plan.days.iter().flat_map(|d| &d.lessons) {
         if let Some(a) = &l.assignment {
@@ -1289,7 +1432,7 @@ pub(super) async fn reserve(
             inputs.push(duties::DatedDutyInput {
                 id: Uuid::now_v7(),
                 teacher_id: a.replacement_teacher_id,
-                original_teacher_id: r.document.owner_id,
+                original_teacher_id: l.lesson.teacher_id,
                 date: l.lesson.date,
                 start_time: l.lesson.start_time,
                 end_time: l.lesson.end_time,
@@ -1309,8 +1452,8 @@ pub(super) async fn reserve(
             if let Some(back) = &a.return_lesson {
                 inputs.push(duties::DatedDutyInput {
                     id: Uuid::now_v7(),
-                    teacher_id: r.document.owner_id,
-                    original_teacher_id: a.replacement_teacher_id,
+                    teacher_id: l.lesson.teacher_id,
+                    original_teacher_id: back.teacher_id,
                     date: back.date,
                     start_time: back.start_time,
                     end_time: back.end_time,
@@ -1329,12 +1472,30 @@ pub(super) async fn reserve(
             }
         }
     }
-    let lock_keys = inputs
+    Ok(inputs)
+}
+
+pub(super) async fn reserve(
+    tx: &mut Transaction<'_, Postgres>,
+    r: &Record,
+    plan: &StoredLeaveCoveragePlan,
+) -> Result<(), AppError> {
+    validate_audiences(&mut **tx, r, plan).await?;
+    let period = period_from(r);
+    let (year, term) = explicit_context(&period)?;
+    let inputs = duty_inputs(r, plan)?;
+    let mut lock_keys = inputs
         .iter()
         .map(|d| (d.teacher_id, d.date))
         .collect::<Vec<_>>();
+    lock_keys.extend(duties::request_teacher_dates_on_connection(&mut **tx, r.document.id).await?);
     duties::lock_teacher_dates(&mut **tx, &lock_keys).await?;
-    let teachers = inputs.iter().map(|d| d.teacher_id).collect::<Vec<_>>();
+    let teachers = inputs
+        .iter()
+        .map(|d| d.teacher_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
     let from = inputs
         .iter()
         .map(|d| d.date)
@@ -1369,7 +1530,7 @@ pub(super) async fn prepare_submission(
     r: &Record,
     emergency_reason: Option<&str>,
 ) -> Result<StoredLeaveCoveragePlan, AppError> {
-    let fresh = preview_on_connection(&mut **tx, r.document.owner_id, &period_from(r)).await?;
+    let fresh = request_preview(&mut **tx, r).await?;
     if fresh.timetable_state != LeaveCoverageTimetableState::Ready {
         return Err(invalid("ยังไม่มีตารางเรียนในภาคเรียนนี้ กรุณาจัดตารางก่อนยื่นคำขอ"));
     }
@@ -1553,7 +1714,10 @@ async fn invalid_assignment_keys(
     r: &Record,
     plan: &StoredLeaveCoveragePlan,
 ) -> Result<BTreeSet<String>, AppError> {
-    let (year, term) = explicit_context(&period_from(r))?;
+    let period = period_from(r);
+    let participants = participant_ids(r.document.owner_id, &period);
+    let windows = absence_windows(&period)?;
+    let (year, term) = explicit_context(&period)?;
     let source = school_academic_delivery::services::current::complete_workspace_on_connection(
         connection, year, term,
     )
@@ -1615,7 +1779,9 @@ async fn invalid_assignment_keys(
             continue;
         };
         let valid = (|| {
-            if !active.contains(&a.replacement_teacher_id) {
+            if !active.contains(&a.replacement_teacher_id)
+                || participants.contains(&a.replacement_teacher_id)
+            {
                 return false;
             }
             if joint.contains(&lesson.lesson.allocation_id)
@@ -1629,6 +1795,15 @@ async fn invalid_assignment_keys(
                     || back.teacher_id != a.replacement_teacher_id
                     || a.return_date != Some(back.date)
                     || a.return_lesson_key.as_deref() != Some(&back.lesson_key)
+                    || windows.iter().any(|window| {
+                        window.date == back.date
+                            && duties::intervals_overlap(
+                                window.start_time,
+                                window.end_time,
+                                back.start_time,
+                                back.end_time,
+                            )
+                    })
                 {
                     return false;
                 }
@@ -1717,44 +1892,15 @@ pub(super) async fn revalidate(
     validate_audiences(&mut **tx, r, plan).await?;
     let period = period_from(r);
     let (year, term) = explicit_context(&period)?;
-    let (start, end) = interval(&mut **tx, &period, false).await?;
-    let fresh = duties::snapshot_on_connection(
-        &mut **tx,
-        year,
-        term,
-        r.document.owner_id,
-        period.start_date,
-        period.end_date,
-        start,
-        end,
-    )
-    .await?;
-    if plan.source_digest.as_deref() != Some(&fresh.source_digest) {
+    let fresh = request_preview(&mut **tx, r).await?;
+    if plan.source_digest != fresh.source_digest {
         return Err(stale());
     }
-    let mut keys = plan
-        .days
+    let inputs = duty_inputs(r, plan)?;
+    let mut keys = inputs
         .iter()
-        .flat_map(|d| &d.lessons)
-        .flat_map(|l| {
-            l.assignment
-                .as_ref()
-                .map(|a| {
-                    let mut keys = vec![(a.replacement_teacher_id, l.lesson.date)];
-                    if let Some(back) = &a.return_lesson {
-                        keys.push((r.document.owner_id, back.date))
-                    }
-                    keys
-                })
-                .unwrap_or_default()
-        })
+        .map(|d| (d.teacher_id, d.date))
         .collect::<Vec<_>>();
-    for n in 0..=(period.end_date - period.start_date).num_days() {
-        keys.push((
-            r.document.owner_id,
-            period.start_date + chrono::Duration::days(n),
-        ));
-    }
     keys.extend(duties::request_teacher_dates_on_connection(&mut **tx, r.document.id).await?);
     duties::lock_teacher_dates(&mut **tx, &keys).await?;
     for l in plan.days.iter().flat_map(|d| &d.lessons) {
@@ -1788,7 +1934,7 @@ pub(super) async fn revalidate(
                     || !teacher_free_with_absences(
                         &mut **tx,
                         term,
-                        r.document.owner_id,
+                        l.lesson.teacher_id,
                         back.date,
                         back.start_time,
                         back.end_time,
@@ -1867,12 +2013,70 @@ mod tests {
             .unwrap()
             .contains("academicYearId"));
     }
+
+    #[test]
+    fn travel_uses_actual_clock_boundaries_on_first_and_last_dates() {
+        let mut period: StoredLeavePeriod = serde_json::from_value(serde_json::json!({
+            "typeId": Uuid::nil(),
+            "startDate": "2026-11-17",
+            "endDate": "2026-11-19",
+            "startTime": "16:00:00",
+            "endTime": "08:30:00",
+            "reason": "test",
+            "dayPortion": "full_day"
+        }))
+        .unwrap();
+        let windows = absence_windows(&period).unwrap();
+        let end = end_of_day().unwrap();
+        assert_eq!(windows.len(), 3);
+        assert_eq!(
+            (windows[0].start_time, windows[0].end_time),
+            (period.start_time.unwrap(), end)
+        );
+        assert_eq!(
+            (windows[1].start_time, windows[1].end_time),
+            (NaiveTime::MIN, end)
+        );
+        assert_eq!(
+            (windows[2].start_time, windows[2].end_time),
+            (NaiveTime::MIN, period.end_time.unwrap())
+        );
+
+        let teacher = Uuid::new_v4();
+        let absence = LeaveAbsenceInterval {
+            teacher_id: teacher,
+            start_date: period.start_date,
+            end_date: period.end_date,
+            start_time: period.start_time,
+            end_time: period.end_time,
+            day_portion: LeaveDayPortion::FullDay,
+            half_day_boundary: None,
+        };
+        let before = duties::AvailabilityWindow {
+            date: period.start_date,
+            start_time: NaiveTime::MIN,
+            end_time: period.start_time.unwrap(),
+        };
+        let after = duties::AvailabilityWindow {
+            date: period.end_date,
+            start_time: period.end_time.unwrap(),
+            end_time: end,
+        };
+        assert!(!absence_overlaps(&absence, teacher, &before));
+        assert!(!absence_overlaps(&absence, teacher, &after));
+        assert!(windows
+            .iter()
+            .all(|window| absence_overlaps(&absence, teacher, window)));
+
+        period.end_time = Some(NaiveTime::MIN);
+        assert_eq!(absence_windows(&period).unwrap().len(), 2);
+    }
 }
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LeaveAbsenceInterval {
-    owner_id: Uuid,
+    teacher_id: Uuid,
     start_date: NaiveDate,
     end_date: NaiveDate,
     start_time: Option<NaiveTime>,
@@ -1887,7 +2091,33 @@ async fn absence_rows(
     to: NaiveDate,
     request: Uuid,
 ) -> Result<Vec<LeaveAbsenceInterval>, AppError> {
-    let rows=DbSession::new(connection).scalar::<Json<LeaveAbsenceInterval>>("staff.leave.coverage.absences","SELECT jsonb_build_object('ownerId',owner_id,'startDate',document->'startDate','endDate',document->'endDate','startTime',document->'startTime','endTime',document->'endTime','dayPortion',document->'dayPortion','halfDayBoundary',document->'halfDayBoundary') FROM staff_leave_requests WHERE owner_id=ANY($1) AND id<>$2 AND status IN ('submitted','approved','cancellation_pending') AND (document->>'startDate')::date<=$4 AND (document->>'endDate')::date>=$3 ORDER BY owner_id,id LIMIT 100001").bind(teachers).bind(request).bind(from).bind(to).fetch_all().await?;
+    let rows = DbSession::new(connection)
+        .scalar::<Json<LeaveAbsenceInterval>>(
+            "staff.leave.coverage.absences",
+            r#"SELECT jsonb_build_object(
+                  'teacherId', person.teacher_id,
+                  'startDate', r.document->'startDate',
+                  'endDate', r.document->'endDate',
+                  'startTime', r.document->'startTime',
+                  'endTime', r.document->'endTime',
+                  'dayPortion', r.document->'dayPortion',
+                  'halfDayBoundary', r.document->'halfDayBoundary'
+               )
+               FROM unnest($1::uuid[]) person(teacher_id)
+               JOIN staff_leave_requests r ON r.owner_id=person.teacher_id
+                    OR (r.document ? 'companions' AND r.document->'companions' @>
+                        jsonb_build_array(jsonb_build_object('id', person.teacher_id)))
+               WHERE r.id<>$2 AND r.status IN ('submitted','approved','cancellation_pending')
+                 AND (r.document->>'startDate')::date<=$4
+                 AND (r.document->>'endDate')::date>=$3
+               ORDER BY person.teacher_id,r.id LIMIT 100001"#,
+        )
+        .bind(teachers)
+        .bind(request)
+        .bind(from)
+        .bind(to)
+        .fetch_all()
+        .await?;
     if rows.len() > 100000 {
         return Err(invalid("คำขอลาเกินขนาดที่ตรวจได้"));
     }
@@ -1898,11 +2128,12 @@ fn absence_overlaps(
     teacher: Uuid,
     w: &duties::AvailabilityWindow,
 ) -> bool {
-    if a.owner_id != teacher || w.date < a.start_date || w.date > a.end_date {
+    if a.teacher_id != teacher || w.date < a.start_date || w.date > a.end_date {
         return false;
     }
     if let (Some(start), Some(end)) = (a.start_time, a.end_time) {
-        return duties::intervals_overlap(start, end, w.start_time, w.end_time);
+        return (w.date != a.start_date || start < w.end_time)
+            && (w.date != a.end_date || w.start_time < end);
     }
     match (a.day_portion, a.half_day_boundary) {
         (LeaveDayPortion::Morning, Some(end)) => w.start_time < end,
@@ -1971,16 +2202,15 @@ async fn reconcile_plan_on_connection(
     r: &Record,
     previous: Option<&StoredLeaveCoveragePlan>,
 ) -> Result<StoredLeaveCoveragePlan, AppError> {
-    let mut fresh =
-        match preview_on_connection(connection, r.document.owner_id, &period_from(r)).await {
-            Ok(p) => p,
-            Err(AppError::ValidationError(message)) => {
-                let mut p = empty_plan(&period_from(r), LeaveCoverageState::Incomplete);
-                p.blocking_reason = Some(message);
-                p
-            }
-            Err(error) => return Err(error),
-        };
+    let mut fresh = match request_preview(connection, r).await {
+        Ok(p) => p,
+        Err(AppError::ValidationError(message)) => {
+            let mut p = empty_plan(&period_from(r), LeaveCoverageState::Incomplete);
+            p.blocking_reason = Some(message);
+            p
+        }
+        Err(error) => return Err(error),
+    };
     fresh.revision = previous.map_or(1, |p| p.revision + 1);
     fresh.emergency_reason = previous.and_then(|p| p.emergency_reason.clone());
     if let Some(previous) = previous {

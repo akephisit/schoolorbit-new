@@ -3,8 +3,10 @@ pub mod models;
 pub mod policy;
 pub mod service;
 
+mod companions;
 mod configuration;
 mod lifecycle;
+pub mod policy_presets;
 mod queries;
 mod repository;
 
