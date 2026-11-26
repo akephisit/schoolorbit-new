@@ -29,7 +29,27 @@ pub async fn list_types_on_connection(
 ) -> Result<Vec<LeaveType>, AppError> {
     require_type_list_access(actor, &q)?;
     let kind = q.kind.map(LeaveKind::as_str);
-    Ok(DbSession::new(connection).scalar::<Json<LeaveType>>("staff.leave.configuration.list_types_on_connection", "SELECT document FROM staff_leave_types WHERE ($1::text IS NULL OR kind=$1) AND ($2 OR document->>'archived'='false') ORDER BY code,id LIMIT 200").bind(kind).bind(q.include_archived.unwrap_or(false)).fetch_all().await?.into_iter().map(|r|r.0).collect())
+    let rows = DbSession::new(connection)
+        .scalar::<Json<LeaveType>>(
+            "staff.leave.configuration.list_types_on_connection",
+            r#"
+            SELECT document
+            FROM (
+                SELECT document, code, id,
+                    row_number() OVER (PARTITION BY kind ORDER BY code, id) AS kind_position
+                FROM staff_leave_types
+                WHERE ($1::text IS NULL OR kind = $1)
+                    AND ($2 OR document->>'archived' = 'false')
+            ) AS ranked
+            WHERE kind_position <= 200
+            ORDER BY code, id
+            "#,
+        )
+        .bind(kind)
+        .bind(q.include_archived.unwrap_or(false))
+        .fetch_all()
+        .await?;
+    Ok(rows.into_iter().map(|row| row.0).collect())
 }
 
 fn require_type_list_access(actor: &ActorContext, q: &LeaveListQuery) -> Result<(), AppError> {

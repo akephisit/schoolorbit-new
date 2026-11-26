@@ -93,10 +93,14 @@ pub async fn detail(
         school_tenancy::TenantPool::begin_observed(pool, "staff.leave.queries.detail").await?;
     let r = load(&mut tx, id).await?;
     require_read(&mut tx, actor, &r).await?;
-    let policy = if matches!(
+    let editable_state = matches!(
         r.document.status,
         LeaveStatus::Draft | LeaveStatus::Returned
-    ) {
+    );
+    let travel = r.document.kind == LeaveKind::OfficialTravel;
+    let policy = if editable_state && travel {
+        None
+    } else if editable_state {
         preview_policy(
             &mut tx,
             r.document.owner_id,
@@ -116,11 +120,7 @@ pub async fn detail(
     let i = instance(&mut tx, current_instance).await?;
     let own =
         r.document.owner_id == actor.user_id && actor.has_permission(codes::STAFF_LEAVE_CREATE_OWN);
-    let can_edit = own
-        && matches!(
-            r.document.status,
-            LeaveStatus::Draft | LeaveStatus::Returned
-        );
+    let can_edit = own && editable_state;
     let can_act = actor.user_id != r.document.owner_id
         && actor.has_permission(codes::STAFF_LEAVE_UPDATE_ASSIGNED)
         && i.as_ref().is_some_and(|i| {
@@ -160,9 +160,14 @@ pub async fn detail(
     let history=DbSession::new(&mut *tx).scalar::<Json<LeaveHistoryEntry>>("staff.leave.queries.detail", "SELECT entry FROM staff_leave_history WHERE request_id=$1 ORDER BY (entry->>'revision')::bigint,id").bind(id).fetch_all().await?.into_iter().map(|e|e.0).collect();
     let submission_blocking_reason = if can_edit {
         require_current_record(&r.document)
-            .and_then(|()| match &policy {
-                Some(p) => require_current_policy(r.document.kind, p),
-                None => Err(invalid("ไม่พบเกณฑ์ที่ใช้กับวันที่และประเภทบุคลากรนี้")),
+            .and_then(|()| {
+                if travel {
+                    return Ok(());
+                }
+                match &policy {
+                    Some(p) => require_current_policy(r.document.kind, p),
+                    None => Err(invalid("ไม่พบเกณฑ์ที่ใช้กับวันที่และประเภทบุคลากรนี้")),
+                }
             })
             .err()
             .map(|e| match e {
@@ -183,7 +188,7 @@ pub async fn detail(
         can_edit,
         can_submit: can_edit
             && submission_blocking_reason.is_none()
-            && policy.as_ref().is_some_and(|p| p.enabled),
+            && (travel || policy.as_ref().is_some_and(|p| p.enabled)),
         submission_blocking_reason,
         can_act,
         can_cancel: own

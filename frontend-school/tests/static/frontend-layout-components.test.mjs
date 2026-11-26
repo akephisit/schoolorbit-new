@@ -212,6 +212,10 @@ test('every protected app page renders the shared page shell', async () => {
 			'AssignedCoverage',
 			await readPageShellDelegate('src/lib/components/staff-leave/AssignedCoverage.svelte')
 		],
+		[
+			'CompanionInvitations',
+			await readPageShellDelegate('src/lib/components/staff-leave/CompanionInvitations.svelte')
+		],
 		['LeaveList', await readPageShellDelegate('src/lib/components/staff-leave/LeaveList.svelte')],
 		[
 			'LeaveDetail',

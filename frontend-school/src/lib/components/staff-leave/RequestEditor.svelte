@@ -60,6 +60,7 @@
 	let savedBasis = untrack(() => JSON.stringify(leaveDraft(detail)));
 	const contextRegion = new LeaveRegion<LeaveCoverageOptions | null>();
 	let contextInitialized = false;
+	const requiresPolicy = $derived(kind !== 'official_travel');
 	const expectedUnit = $derived(kind === 'exit' ? 'minute' : 'day');
 	const historicalPartial = $derived(
 		detail?.request.kind === 'leave' &&
@@ -97,6 +98,9 @@
 	let policy = $state<LeavePolicyVersion | null>(null),
 		policyError = $state(''),
 		policyLoading = $state(false);
+	const policyAllowsSave = $derived(
+		!requiresPolicy || (policy?.unit === expectedUnit && !policyLoading)
+	);
 	let errors = $state<Partial<Record<keyof LeaveDraft, string>>>({}),
 		error = $state(''),
 		pending = $state(false);
@@ -138,11 +142,19 @@
 			? [{ value: detail.request.typeId, label: detail.request.typeName }]
 			: [])
 	]);
+	$effect.pre(() => {
+		const defaultType = !requiresPolicy && types.length === 1 ? types[0] : undefined;
+		if (!defaultType) return;
+		untrack(() => {
+			if (!detail && !draft.typeId) draft.typeId = defaultType.id;
+		});
+	});
+	const saveDisabled = $derived(!policyAllowsSave || !typeChoices.length || stale || conflict);
 	async function resolvePolicy() {
 		policy = null;
 		policyError = '';
 		policyRequest.abort();
-		if (!draft.typeId || !draft.startDate) {
+		if (!requiresPolicy || !draft.typeId || !draft.startDate) {
 			policyLoading = false;
 			return;
 		}
@@ -158,9 +170,7 @@
 					policyError =
 						kind === 'leave'
 							? 'ประเภทนี้ยังไม่มีเกณฑ์ลาเต็มวันที่ใช้ได้ ติดต่อผู้ดูแลให้สร้างเกณฑ์ฉบับใหม่ของประเภทเดิมก่อนบันทึก'
-							: kind === 'exit'
-								? 'ประเภทนี้ยังไม่มีเกณฑ์ออกนอกโรงเรียนแบบนาทีที่ใช้ได้'
-								: 'ประเภทนี้ยังไม่มีเกณฑ์เดินทางไปราชการแบบวันที่ใช้ได้';
+							: 'ประเภทนี้ยังไม่มีเกณฑ์ออกนอกโรงเรียนแบบนาทีที่ใช้ได้';
 			}
 		} catch (cause) {
 			if (policyRequest.isCurrent(ticket.revision) && !disposed)
@@ -188,8 +198,8 @@
 		if (stale || conflict) return;
 		errors = leaveDraftErrors(draft, kind);
 		error = '';
-		if (Object.keys(errors).length || !policy || policy.unit !== expectedUnit) {
-			if (!policy) error = 'เลือกประเภทและวันที่ที่มีนโยบายใช้ได้ก่อนบันทึก';
+		if (Object.keys(errors).length || !policyAllowsSave) {
+			if (!policyAllowsSave) error = 'เลือกประเภทและวันที่ที่มีนโยบายใช้ได้ก่อนบันทึก';
 			return;
 		}
 		if (!contextOptions) {
@@ -278,10 +288,13 @@
 	{#if optionsLoading && !options}<PageSkeleton variant="form" />{:else}
 		{#if !types.length && !detail}<PageState
 				title="ยังไม่มีประเภทคำขอที่เปิดใช้งาน"
-				description="ติดต่อผู้ดูแลให้ตั้งค่าประเภทและนโยบายของโรงเรียน"
+				description={requiresPolicy
+					? 'ติดต่อผู้ดูแลให้ตั้งค่าประเภทและนโยบายของโรงเรียน'
+					: 'ติดต่อผู้ดูแลให้เปิดประเภทคำขอเดินทางไปราชการ'}
 			/>{:else}
 			{#if options?.personnelType}<p class="text-sm text-muted-foreground">
-					{PERSONNEL_TYPE_LABELS[options.personnelType]} · ตรวจเกณฑ์ตามวันที่เริ่มคำขอ
+					{PERSONNEL_TYPE_LABELS[options.personnelType]}{#if requiresPolicy}
+						· ตรวจเกณฑ์ตามวันที่เริ่มคำขอ{/if}
 				</p>{/if}
 			<section class="space-y-3 rounded-lg border p-3" aria-busy={contextRegion.loading}>
 				<h2 class="font-medium">ปีและภาคเรียนของคาบสอน</h2>
@@ -405,55 +418,55 @@
 					bind:chosen={draft.companions}
 					disabled={pending}
 				/>{/if}
-			<section aria-busy={policyLoading} data-testid="leave-effective-policy">
-				{#if policyLoading}<p role="status" class="text-sm text-muted-foreground">
-						กำลังตรวจสอบนโยบายตามวันที่เริ่ม...
-					</p>{:else if policyError}<PageState
-						variant="error"
-						title="ไม่มีนโยบายที่ใช้ได้กับคำขอนี้"
-						description={policyError}
-						actionLabel="ตรวจสอบอีกครั้ง"
-						onaction={resolvePolicy}
-					/>{:else if policy}
-					<div class="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs">
-						<div class="flex flex-wrap items-center justify-between gap-1">
-							<p class="text-sm font-medium">นโยบายฉบับ {policy.version}</p>
-							<span class="text-muted-foreground"
-								>{leaveUnitLabels[policy.unit]} · {policy.countingMode === 'working_days'
-									? 'นับวันทำงานที่กำหนด'
-									: 'นับวันปฏิทิน'}</span
-							>
-						</div>
-						<dl class="flex flex-wrap gap-x-4 gap-y-1">
-							{#if policy.maxPerRequest != null}<div class="flex gap-1">
-									<dt class="text-muted-foreground">ต่อคำขอ</dt>
-									<dd>{leaveAmount(policy.maxPerRequest, policy.unit)}</dd>
-								</div>{/if}
-							{#if policy.annualLimit != null}<div class="flex gap-1">
-									<dt class="text-muted-foreground">ต่อรอบปี</dt>
-									<dd>{leaveAmount(policy.annualLimit, policy.unit)}</dd>
-								</div>{/if}
-							<div class="flex gap-1">
-								<dt class="text-muted-foreground">หลักฐาน</dt>
-								<dd>
-									{policy.evidenceRequired
-										? 'ต้องแนบก่อนส่ง'
-										: policy.evidenceFromAmount != null
-											? `แนบเมื่อขอตั้งแต่ ${leaveAmount(policy.evidenceFromAmount, policy.unit)}`
-											: 'แนบได้ตามจำเป็น'}
-								</dd>
+			{#if requiresPolicy}<section aria-busy={policyLoading} data-testid="leave-effective-policy">
+					{#if policyLoading}<p role="status" class="text-sm text-muted-foreground">
+							กำลังตรวจสอบนโยบายตามวันที่เริ่ม...
+						</p>{:else if policyError}<PageState
+							variant="error"
+							title="ไม่มีนโยบายที่ใช้ได้กับคำขอนี้"
+							description={policyError}
+							actionLabel="ตรวจสอบอีกครั้ง"
+							onaction={resolvePolicy}
+						/>{:else if policy}
+						<div class="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs">
+							<div class="flex flex-wrap items-center justify-between gap-1">
+								<p class="text-sm font-medium">นโยบายฉบับ {policy.version}</p>
+								<span class="text-muted-foreground"
+									>{leaveUnitLabels[policy.unit]} · {policy.countingMode === 'working_days'
+										? 'นับวันทำงานที่กำหนด'
+										: 'นับวันปฏิทิน'}</span
+								>
 							</div>
-							{#if policy.minimumNoticeDays != null}<div class="flex gap-1">
-									<dt class="text-muted-foreground">ยื่นล่วงหน้า</dt>
-									<dd>{policy.minimumNoticeDays} วัน</dd>
-								</div>{/if}
-						</dl>
-						<p class="break-words border-t pt-2 text-muted-foreground">
-							{policy.sourceReference} · มีผล {leaveDate(policy.effectiveFrom)}
-						</p>
-					</div>
-				{/if}
-			</section>
+							<dl class="flex flex-wrap gap-x-4 gap-y-1">
+								{#if policy.maxPerRequest != null}<div class="flex gap-1">
+										<dt class="text-muted-foreground">ต่อคำขอ</dt>
+										<dd>{leaveAmount(policy.maxPerRequest, policy.unit)}</dd>
+									</div>{/if}
+								{#if policy.annualLimit != null}<div class="flex gap-1">
+										<dt class="text-muted-foreground">ต่อรอบปี</dt>
+										<dd>{leaveAmount(policy.annualLimit, policy.unit)}</dd>
+									</div>{/if}
+								<div class="flex gap-1">
+									<dt class="text-muted-foreground">หลักฐาน</dt>
+									<dd>
+										{policy.evidenceRequired
+											? 'ต้องแนบก่อนส่ง'
+											: policy.evidenceFromAmount != null
+												? `แนบเมื่อขอตั้งแต่ ${leaveAmount(policy.evidenceFromAmount, policy.unit)}`
+												: 'แนบได้ตามจำเป็น'}
+									</dd>
+								</div>
+								{#if policy.minimumNoticeDays != null}<div class="flex gap-1">
+										<dt class="text-muted-foreground">ยื่นล่วงหน้า</dt>
+										<dd>{policy.minimumNoticeDays} วัน</dd>
+									</div>{/if}
+							</dl>
+							<p class="break-words border-t pt-2 text-muted-foreground">
+								{policy.sourceReference} · มีผล {leaveDate(policy.effectiveFrom)}
+							</p>
+						</div>
+					{/if}
+				</section>{/if}
 			<div class="space-y-2">
 				<Label for="leave-reason">เหตุผล *</Label><Textarea
 					id="leave-reason"
@@ -508,18 +521,14 @@
 		/>{/if}
 	<div class="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t bg-background pt-3">
 		<Button type="button" variant="outline" disabled={pending} onclick={oncancel}>ยกเลิก</Button
-		><LoadingButton
-			type="submit"
-			loading={pending}
-			disabled={!policy || policyLoading || !typeChoices.length || stale || conflict}
+		><LoadingButton type="submit" loading={pending} disabled={saveDisabled}
 			>บันทึกฉบับร่าง</LoadingButton
 		><LoadingButton
 			type="submit"
 			name="workflowAction"
 			value="next"
 			loading={pending}
-			disabled={!policy || policyLoading || !typeChoices.length || stale || conflict}
-			>บันทึกและจัดคาบสอนต่อ</LoadingButton
+			disabled={saveDisabled}>บันทึกและจัดคาบสอนต่อ</LoadingButton
 		>
 	</div>
 </form>
