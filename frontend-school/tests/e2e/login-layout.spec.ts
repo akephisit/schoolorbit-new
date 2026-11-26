@@ -129,7 +129,7 @@ for (const mode of ['standalone', 'ios'] as const) {
 		await page.goto(`${baseUrl}/`);
 		await expect(page).toHaveURL(`${baseUrl}/login`);
 		await expect(page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true })).toBeVisible();
-		await expect(page.getByRole('checkbox', { name: 'จดจำฉันไว้', exact: true })).toBeVisible();
+		await expect(page.locator('form').getByRole('checkbox')).toHaveCount(0);
 		await expect(page.getByText('ใช้เฉพาะอุปกรณ์ส่วนตัว', { exact: true })).toHaveCount(0);
 		expect(authReads).toEqual(['/api/auth/me', '/api/auth/restore']);
 	});
@@ -201,11 +201,14 @@ test('a short viewport can scroll to every form control and return to the top', 
 }) => {
 	await page.setViewportSize({ width: 375, height: 320 });
 	await page.goto(`${baseUrl}/login`);
-	await expect(page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true })).toBeVisible();
 	await page.getByLabel('ชื่อผู้ใช้งาน (Username)').fill('fixture-teacher');
 	await page.getByLabel('รหัสผ่าน').fill('fixture-only-password');
-	await page.getByLabel('จดจำฉันไว้').click();
-	await expect(page.getByLabel('จดจำฉันไว้')).toBeChecked();
+	const contactAdmin = page.getByRole('button', { name: 'ติดต่อผู้ดูแลระบบ', exact: true });
+	await contactAdmin.scrollIntoViewIfNeeded();
+	await expect(contactAdmin).toBeInViewport();
+	const submit = page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true });
+	await submit.scrollIntoViewIfNeeded();
+	await expect(submit).toBeInViewport();
 	await page.getByRole('link', { name: 'กลับหน้าหลัก' }).scrollIntoViewIfNeeded();
 	const top = await page.getByRole('link', { name: 'กลับหน้าหลัก' }).boundingBox();
 	expect(top?.y).toBeGreaterThanOrEqual(0);
@@ -254,7 +257,15 @@ test('pending and rejected login preserve the entered fields and re-enable submi
 	await page.goto(`${baseUrl}/login`);
 	await page.getByLabel('ชื่อผู้ใช้งาน (Username)').fill('fixture-teacher');
 	await page.getByLabel('รหัสผ่าน').fill('fixture-only-password');
-	await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
+	await expect(page.locator('form').getByRole('checkbox')).toHaveCount(0);
+	const [loginRequest] = await Promise.all([
+		page.waitForRequest(
+			(request) =>
+				request.method() === 'POST' && new URL(request.url()).pathname === '/api/auth/login'
+		),
+		page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click()
+	]);
+	expect(loginRequest.postDataJSON()).toMatchObject({ rememberMe: true });
 	await expect(page.getByRole('button', { name: 'กำลังเข้าสู่ระบบ...' })).toBeDisabled();
 	await page.screenshot({ path: '/tmp/schoolorbit-login-submit-pending.png', fullPage: true });
 	releaseLogin?.();

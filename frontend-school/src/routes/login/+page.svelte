@@ -5,7 +5,6 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { AuthCheckingState } from '#lib/components/app-state/index.js';
 	import { ArrowLeft } from '@lucide/svelte';
 	import { authAPI } from '#lib/api/auth.js';
@@ -19,7 +18,6 @@
 
 	let username = $state('');
 	let password = $state('');
-	let rememberMe = $state(false);
 	let isLoading = $state(false);
 	let isCheckingAuth = $state(true);
 	let redirectUrl = $state<string | null>(null);
@@ -84,15 +82,10 @@
 		}
 
 		try {
-			// Note: authAPI.login needs to be updated to accept username instead of nationalId
-			// Assuming we will update valid `login` in $lib/api/auth as a next step.
-			// But here we construct the object that matches what backend expects if we use the same old function name
-			// OR we update the type definition in the next step.
-			// Let's assume authAPI.login will change signature.
 			const user = await authAPI.login({
-				username, // Changed from nationalId
+				username,
 				password,
-				rememberMe
+				rememberMe: true
 			});
 
 			// Clear redirectUrl from sessionStorage
@@ -188,18 +181,7 @@
 						/>
 					</div>
 
-					<!-- Remember & Forgot -->
-					<div class="flex flex-wrap items-center justify-between gap-3 text-sm">
-						<div class="flex items-center gap-2 cursor-pointer">
-							<Checkbox
-								id="remember-me"
-								checked={rememberMe}
-								onCheckedChange={(checked) => (rememberMe = checked ?? false)}
-							/>
-							<Label for="remember-me" class="cursor-pointer font-normal text-muted-foreground"
-								>จดจำฉันไว้</Label
-							>
-						</div>
+					<div class="flex justify-end">
 						<Button type="button" variant="link" class="p-0 h-auto text-sm"
 							>ติดต่อผู้ดูแลระบบ</Button
 						>
