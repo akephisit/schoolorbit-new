@@ -20,6 +20,7 @@
 		leaveHome,
 		leaveAmount,
 		leaveDate,
+		leavePeriodCaption,
 		leaveDateTime,
 		leaveStatusLabels,
 		leaveStatusVariant
@@ -55,6 +56,13 @@
 	let downloadPending = $state<string | null>(null),
 		disposed = false;
 	const detail = $derived(region.value);
+	const confirmedCompanions = $derived(
+		new Set(
+			detail?.companionConfirmations
+				?.filter((status) => status.confirmed)
+				.map((status) => status.userId)
+		)
+	);
 	const hasReciprocal = $derived(
 		detail?.coverage.days.some((day) =>
 			day.lessons.some((lesson) => lesson.assignment?.mode === 'reciprocal')
@@ -281,18 +289,12 @@
 								<div>
 									<dt class="text-sm text-muted-foreground">ช่วงวันที่</dt>
 									<dd>
-										{leaveDate(detail.request.startDate)}{detail.request.endDate !==
-										detail.request.startDate
-											? ` – ${leaveDate(detail.request.endDate)}`
-											: ''}{detail.request.dayPortion === 'morning'
+										{leavePeriodCaption(detail.request)}{detail.request.dayPortion === 'morning'
 											? ' · ช่วงเช้า'
 											: detail.request.dayPortion === 'afternoon'
 												? ' · ช่วงบ่าย'
 												: ''}
 									</dd>
-									{#if detail.request.startTime}<dd>
-											{detail.request.startTime.slice(0, 5)} – {detail.request.endTime?.slice(0, 5)}
-										</dd>{/if}
 								</div>
 								<div>
 									<dt class="text-sm text-muted-foreground">จำนวนที่ขอ</dt>
@@ -300,6 +302,37 @@
 										{leaveAmount(detail.request.amount, detail.request.unit)}
 									</dd>
 								</div>
+								{#if detail.request.destination}
+									<div class="sm:col-span-2">
+										<dt class="text-sm text-muted-foreground">สถานที่ไปราชการ</dt>
+										<dd class="break-words">{detail.request.destination}</dd>
+									</div>
+								{/if}
+								{#if detail.request.companions?.length}
+									<div class="sm:col-span-2">
+										<dt class="text-sm text-muted-foreground">ผู้ร่วมเดินทาง</dt>
+										<dd>
+											<ul class="mt-1 divide-y rounded-md border border-primary/20">
+												{#each detail.request.companions as person (person.id)}
+													<li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+														<span class="min-w-0 break-words">{person.displayName}</span>
+														{#if confirmedCompanions.has(person.id)}
+															<Badge
+																variant="outline"
+																class="border-success/25 bg-success/10 text-success"
+																>ยืนยันแล้ว</Badge
+															>
+														{:else if detail.request.status === 'submitted'}
+															<Badge variant="secondary">รอยืนยัน</Badge>
+														{:else if detail.request.status === 'draft' || detail.request.status === 'returned'}
+															<span class="text-sm text-muted-foreground">รอส่งคำเชิญ</span>
+														{/if}
+													</li>
+												{/each}
+											</ul>
+										</dd>
+									</div>
+								{/if}
 								<div class="sm:col-span-2">
 									<dt class="text-sm text-muted-foreground">เหตุผล</dt>
 									<dd class="break-words whitespace-pre-wrap">{detail.request.reason}</dd>

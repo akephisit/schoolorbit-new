@@ -2,6 +2,7 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { saveLeaveType, type LeaveType, type LeaveKind } from '#lib/api/staff-leave.js';
 	import { LeaveMutationIntent } from '#lib/staff-leave/mutation-intent.js';
+	import { leaveKindLabels } from '#lib/staff-leave/presentation.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -60,13 +61,14 @@
 			aria-label="กลุ่มคำขอ"
 			value={kind}
 			onValueChange={(value) => {
-				if (value === 'leave' || value === 'exit') kind = value;
+				if (value === 'leave' || value === 'exit' || value === 'official_travel') kind = value;
 			}}
 			disabled={pending || !!type}
-			><ToggleGroup.Item value="leave">การลา</ToggleGroup.Item><ToggleGroup.Item value="exit"
-				>ออกนอกโรงเรียน</ToggleGroup.Item
-			></ToggleGroup.Root
 		>
+			{#each Object.entries(leaveKindLabels) as [value, label] (value)}
+				<ToggleGroup.Item {value}>{label}</ToggleGroup.Item>
+			{/each}
+		</ToggleGroup.Root>
 		{#if type}<p class="text-xs text-muted-foreground">กลุ่มคำขอเปลี่ยนไม่ได้หลังบันทึก</p>{/if}
 	</div>
 	{#if error}<PageState

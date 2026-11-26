@@ -890,22 +890,29 @@ Workflow core retains document-validation/signing-label contracts and transactio
 operations; its Budget/Staff Leave consumers do not depend on that concrete renderer. Include
 both Workflow owners when selecting their transport, PDF, permission or correspondence fixtures.
 
-`school-staff-leave` owns the Leave integration target and validation-before-checkout tests. Use
-`./scripts/test_backend_school.sh --package school-staff-leave -- --test-threads=4` from the repository
-root for its policy/version, quota/replay/rollback, evidence, approval and cancellation cases. Staff's
-public identity/career provider fixtures run with
+`school-staff-leave` owns the Staff Leave package and integration fixtures. From the repository
+root, run `./scripts/test_backend_school.sh --package school-staff-leave -- --test-threads=4` for
+validation before checkout, policy versions, quota, replay, rollback, evidence, approval and
+cancellation. The package also checks manager-only access to reference presets and their scoped
+opt-in defaults, and domestic official travel across fiscal years without leave-quota charges.
+Companion cases cover active staff eligibility, recipient-only confirmation against the
+submitted revision, replay, resubmission and the approval gate. Staff's public identity
+and career provider fixtures run with
 `./scripts/test_backend_school.sh --package school-staff staff_identity -- --test-threads=1`; they
 cover active-Staff eligibility, explicit-date winner ordering, nullable facts, same-connection
 visibility and rollback. Its invalid-code unit preserves the original typed validation error.
 
-Dated teaching coverage keeps pure Leave policy/consent/replay cases in the Leave package.
 Run `./scripts/test_backend_school.sh --integration staff_leave_coverage -- --test-threads=2`
-for the application-level reciprocal/own-subject, concurrent reservation, source guards,
-legacy migration/signature/file preservation, Daily Teaching and Attendance fixtures. Run
-`./scripts/test_backend_school.sh permission_coverage_staff_leave_coverage_uses_real_session_tenant_and_csrf_boundary -- --test-threads=1`
+for application-level reciprocal and own-subject coverage, concurrent reservations, source guards,
+Daily Teaching and Attendance. The official travel case reserves the requester and companions,
+including a companion without lessons, and verifies that the original instructor teaches the
+return leg of an exchange. The legacy preservation fixture compares requests, revisions, content
+hashes, approval signatures and linked file records before migration and after replay through the
+current migrations, including [migration 170](../backend-school/migrations/170_staff_leave_official_travel.sql).
+To isolate preservation, add the filter `coverage_migration_preserves_legacy_documents_revisions_and_hashes_without_backfill`.
+Run `./scripts/test_backend_school.sh permission_coverage_staff_leave_coverage_uses_real_session_tenant_and_csrf_boundary -- --test-threads=1`
 for the real cookie, CSRF, permission and tenant boundary. Use the shared local Cargo resource
-profile documented above. Browser fixtures supplement these database cases; they do not prove
-reservation, consent, roster or historical preservation behavior.
+profile documented above.
 
 Run `./scripts/test_backend_school.sh --integration staff_leave_lifecycle_obligations -- --test-threads=1`
 for term/year closure checks against reserved teaching and owed reciprocal returns, including
@@ -2617,21 +2624,33 @@ fit at 5pt. Disposable correspondence cases cover old create/action/revision rep
 legacy base-annotation carryforward, subsequent signing, and rejection of missing/unknown new
 versions or edited unversioned text. Omitted legacy fields must keep old payload hashes intact.
 
-Staff leave and planned school exit use
-`./scripts/test_backend_school.sh --package school-staff-leave -- --nocapture` for the policy,
-preflight and complete isolated lifecycle/authorization/ledger integration target. Signature consent
-and revision binding use
-`./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`.
-Policies count school-configured calendar or working dates. Active Leave requests use whole days;
-Exit requests require an explicit same-day minute interval. Historical half-day amounts retain their
-original evidence. Daily usage reports expose exact integer strings with amountScale 2, and minute
-reports use scale 1; quota comparison uses the same basis. Quota-year crossing requires separate
-requests. No statutory entitlement is seeded by these fixtures.
+Use the Staff Leave package and dated coverage recipes in [Backend School](#backend-school)
+for leave, planned school exit and domestic official travel. Signature consent and revision
+binding use `./scripts/test_backend_school.sh --package school-workflow signature_requires -- --nocapture`.
+Active Leave requests use whole days within a single configured quota year and count calendar or
+school working dates according to their policy. Historical half-day amounts retain their original
+evidence. School exit requires an explicit same-day minute interval. Official travel counts calendar
+dates, allows paired boundary times and may cross the fiscal-year boundary. Daily leave usage reports
+expose exact integer strings with `amountScale` 2, and minute reports use scale 1. Quota comparison
+uses the same basis. A reference preset fills a draft that a manager reviews and explicitly
+publishes as a new version. The catalog seeds no statutory entitlement.
 
 Run `./scripts/test_backend_school.sh --package school-staff-leave full_day_ -- --test-threads=1`
-for migration161 preservation, unchanged captured-boundary consent, explicit partial-to-full revision,
+for migration 161 preservation, unchanged captured-boundary consent, explicit partial-to-full revision,
 signed action replay, exact mixed-unit quota races and large caps without integer/float loss. The
-application coverage target also rejects retired fields/settings and wrong-kind or missing Exit times.
+application coverage target also rejects retired fields and settings and invalid or missing school
+exit times. Run the [API contract](#api-contract) export, generation, check and tests for changes to
+any Staff Leave endpoint or DTO.
+
+From `frontend-school`, run the intercepted Staff Leave browser workflows against a ready local
+preview. The fixtures cover manager opt-in and explicit policy save, domestic official travel with
+multiple companions, recipient-only confirmation and revision-preserving retry, and per-person
+teaching selection and exchange. The disposable backend fixtures establish reservation, consent,
+roster and migration preservation behavior.
+
+```bash
+E2E_BASE_URL=http://127.0.0.1:4173 npx playwright test tests/e2e/staff-leave.spec.ts tests/e2e/staff-leave-coverage.spec.ts --project=chromium --workers=1
+```
 
 Directed routing uses synthetic staff and document fixtures in
 `frontend-school/tests/e2e/correspondence-directed.spec.ts`. After building the School frontend

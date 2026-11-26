@@ -4,10 +4,11 @@ import {
 	coveragePlan,
 	teachingLesson,
 	coverageYear,
-	englishOfferingId
+	englishOfferingId,
+	mathOfferingId
 } from './fixtures/staff-leave-coverage';
 import { leaveId } from './fixtures/staff-leave';
-import { actor, firstStaff, id } from './fixtures/staff-home-route-data';
+import { actor, firstStaff, secondStaff, id } from './fixtures/staff-home-route-data';
 
 const editPath = `/staff/leave/requests/${leaveId}/edit?step=coverage&returnTo=${encodeURIComponent('/staff/leave?status=draft&offset=20')}`;
 test.use({ serviceWorkers: 'block' });
@@ -15,13 +16,216 @@ async function choose(page: Page, field: string, label: string) {
 	await page.locator(`#${field}`).click();
 	await page.getByRole('option', { name: label, exact: true }).click();
 }
+async function enterTeachingActivity(page: Page, activity: string) {
+	await choose(page, 'coverage-taught-offering', 'ระบุกิจกรรมแทนวิชา');
+	await page.locator('#coverage-activity').fill(activity);
+}
+async function chooseReturnDate(page: Page, day: string) {
+	await page.locator('#coverage-return-date').click();
+	await page
+		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: new RegExp(`^${day}$`) })
+		.click();
+}
 async function batchTeacher(page: Page) {
 	await page.getByRole('button', { name: 'เลือกทุกคาบ', exact: true }).click();
 	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
 	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
-	await page.locator('#coverage-activity').fill('กิจกรรมภาษาอังกฤษเสริม');
+	await enterTeachingActivity(page, 'กิจกรรมภาษาอังกฤษเสริม');
 	await page.getByRole('button', { name: 'ใช้กับ 3 คาบที่เลือก', exact: true }).click();
 }
+
+test('cross-department substitution keeps the jointly taught lesson and can teach its own offering in another lesson', async ({
+	page
+}) => {
+	const plan = coveragePlan();
+	const joint = plan.days[0].lessons[0];
+	const api = await mockTeachingCoverage(page, { plan, jointAllocationIds: [joint.allocationId] });
+	await page.goto(editPath);
+	const search = page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true });
+	const substitute = page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ });
+	const apply = page.getByRole('button', { name: 'ใช้กับ 1 คาบที่เลือก', exact: true });
+	const content = page.locator('#coverage-taught-offering');
+	await page.getByRole('checkbox', { name: 'เลือก 2026-10-19 คาบ 1', exact: true }).check();
+	await search.click();
+	await substitute.click();
+	await expect(content).toHaveText('สอนตามคาบเดิม');
+	await enterTeachingActivity(page, 'ทบทวนภาษาอังกฤษ');
+	await choose(page, 'coverage-taught-offering', 'สอนตามคาบเดิม');
+	await apply.click();
+	const jointLesson = page.getByTestId('leave-coverage-lesson').filter({ hasText: 'คาบ 1 ·' });
+	await expect(jointLesson).toContainText('สอนแทน · คณิตศาสตร์');
+
+	await page.getByRole('checkbox', { name: 'เลือก 2026-10-19 คาบ 2', exact: true }).check();
+	await search.click();
+	await substitute.click();
+	await choose(page, 'coverage-taught-offering', 'ภาษาอังกฤษ ม.2');
+	await apply.click();
+	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
+	await expect(page.getByText('มีแผนที่ยังไม่บันทึก', { exact: true })).toHaveCount(0);
+	const save = api.calls.find((call) => call.path.endsWith('/coverage'));
+	expect(save?.body.assignments).toEqual([
+		{
+			lessonKey: 'lesson-1',
+			replacementTeacherId: firstStaff,
+			mode: 'substitution',
+			taughtOfferingId: null,
+			taughtActivity: null,
+			returnLessonKey: null
+		},
+		{
+			lessonKey: 'lesson-2',
+			replacementTeacherId: firstStaff,
+			mode: 'substitution',
+			taughtOfferingId: englishOfferingId,
+			taughtActivity: null,
+			returnLessonKey: null
+		}
+	]);
+	expect(api.detail().coverage.days[0].lessons[0].assignment?.taughtOfferingId).toBe(
+		mathOfferingId
+	);
+	await expect(jointLesson).toContainText('สอนแทน · คณิตศาสตร์');
+});
+
+test('large original-teacher groups search at most 500 lessons and advance to the remaining batch', async ({
+	page
+}) => {
+	const plan = coveragePlan();
+	plan.days = Array.from({ length: 84 }, (_, dayIndex) => {
+		const date = new Date(Date.UTC(2026, 7, dayIndex + 1)).toISOString().slice(0, 10);
+		return {
+			date,
+			lessons: Array.from({ length: dayIndex === 83 ? 3 : 6 }, (_, periodIndex) => ({
+				...teachingLesson(dayIndex * 6 + periodIndex + 1, date),
+				startTime: `${String(periodIndex + 7).padStart(2, '0')}:00:00`,
+				endTime: `${String(periodIndex + 7).padStart(2, '0')}:50:00`,
+				assignment: null
+			}))
+		};
+	});
+	const api = await mockTeachingCoverage(page, { plan });
+	api.detail().request.startDate = plan.days[0].date;
+	api.detail().request.endDate = plan.days[83].date;
+	await page.goto(editPath);
+	await expect(page.getByText('ค้นหาครูได้ครั้งละไม่เกิน 500 คาบ', { exact: true })).toBeVisible();
+	const bulkSelect = page.getByRole('button', {
+		name: 'เลือก 500 คาบที่ยังไม่ได้จัด',
+		exact: true
+	});
+	await bulkSelect.click();
+	const finalPeriod = page.getByRole('checkbox', { name: /เลือก .* คาบ 501$/ });
+	await expect(finalPeriod).toBeDisabled();
+	await page.getByRole('button', { name: 'ล้างการเลือก', exact: true }).click();
+	await expect(finalPeriod).toBeEnabled();
+	await bulkSelect.click();
+	const search = page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true });
+	await search.click();
+	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
+	const firstSearch = api.calls.find((call) => call.path.endsWith('/candidates'));
+	expect(firstSearch?.body.lessonKeys).toEqual(
+		Array.from({ length: 500 }, (_, index) => `lesson-${index + 1}`)
+	);
+	await page.getByRole('button', { name: 'ใช้กับ 500 คาบที่เลือก', exact: true }).click();
+	await page.getByRole('button', { name: 'เลือก 1 คาบที่ยังไม่ได้จัด', exact: true }).click();
+	await search.click();
+	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
+	const searches = api.calls.filter((call) => call.path.endsWith('/candidates'));
+	expect(searches).toHaveLength(2);
+	expect(searches[1].body.lessonKeys).toEqual(['lesson-501']);
+});
+
+test('changing a reciprocal date during lookup allows a new search and discards the stale result', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-18T03:00:00Z'));
+	const api = await mockTeachingCoverage(page);
+	let releaseLookup = () => {};
+	const heldLookup = new Promise<void>((resolve) => (releaseLookup = resolve));
+	let finishLookup = () => {};
+	const returnedOldResult = new Promise<void>((resolve) => (finishLookup = resolve));
+	await page.route('**/coverage/return-lessons', async (route) => {
+		if (route.request().postDataJSON().date !== '2026-10-21') return route.fallback();
+		await heldLookup;
+		try {
+			await route.fulfill({
+				json: {
+					success: true,
+					data: {
+						lessons: [{ ...api.returnLesson, lessonKey: 'stale-return', periodName: 'คาบเก่า' }]
+					}
+				}
+			});
+		} finally {
+			finishLookup();
+		}
+	});
+	try {
+		await page.goto(editPath);
+		await page.getByRole('checkbox', { name: 'เลือก 2026-10-19 คาบ 1', exact: true }).check();
+		await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
+		await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
+		await choose(page, 'coverage-mode', 'แลกคาบสอน');
+		await chooseReturnDate(page, '21');
+		const findReturn = page.getByRole('button', { name: 'ค้นหาคาบสอนคืน', exact: true });
+		await Promise.all([page.waitForRequest('**/coverage/return-lessons'), findReturn.click()]);
+		await expect(
+			page.getByRole('button', { name: 'กำลังดำเนินการ...', exact: true })
+		).toBeDisabled();
+		await chooseReturnDate(page, '22');
+		await expect(findReturn).toBeEnabled();
+		await findReturn.click();
+		const choices = page.locator('#coverage-return-lesson');
+		await expect(choices).toBeVisible();
+		releaseLookup();
+		await returnedOldResult;
+		await choices.click();
+		await expect(page.getByRole('option', { name: /คาบเก่า/ })).toHaveCount(0);
+		await page.getByRole('option', { name: /คาบ 9.*ภาษาอังกฤษ/ }).click();
+		await page.getByRole('button', { name: 'ใช้กับ 1 คาบที่เลือก', exact: true }).click();
+		await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
+		await expect(page.getByText('มีแผนที่ยังไม่บันทึก', { exact: true })).toHaveCount(0);
+		expect(api.calls.find((call) => call.path.endsWith('/coverage'))?.body.assignments).toEqual([
+			expect.objectContaining({ mode: 'reciprocal', returnLessonKey: 'return-english' })
+		]);
+	} finally {
+		releaseLookup();
+	}
+});
+
+test('changing original teacher scopes candidate search and the reciprocal return lesson', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-18T03:00:00Z'));
+	const plan = coveragePlan();
+	plan.days[0].lessons[1].teacherId = secondStaff;
+	plan.days[0].lessons[1].originalTeacherName = 'ครูร่วมเดินทาง';
+	const api = await mockTeachingCoverage(page, { plan });
+	await page.goto(editPath);
+	const owner = page.getByRole('region', { name: /^คาบของ ครูเจ้าของ/ });
+	const companion = page.getByRole('region', { name: 'คาบของ ครูร่วมเดินทาง' });
+	await expect(owner.getByTestId('leave-coverage-lesson')).toHaveCount(2);
+	await expect(companion.getByTestId('leave-coverage-lesson')).toHaveCount(1);
+	await owner.getByRole('button', { name: 'เลือกทุกคาบ', exact: true }).click();
+	await companion.getByRole('button', { name: 'เลือกทุกคาบ', exact: true }).click();
+	await expect(owner.getByRole('checkbox', { checked: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
+	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
+	await choose(page, 'coverage-mode', 'แลกคาบสอน');
+	await expect(page.getByText(/ครูร่วมเดินทาง จะสอนคืน/)).toBeVisible();
+	await page.locator('#coverage-return-date').click();
+	await page
+		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^22$/ })
+		.click();
+	await page.getByRole('button', { name: 'ค้นหาคาบสอนคืน', exact: true }).click();
+	expect(api.calls.find((call) => call.path.endsWith('/candidates'))?.body.lessonKeys).toEqual([
+		'lesson-2'
+	]);
+	expect(api.calls.find((call) => call.path.endsWith('/return-lessons'))?.body.lessonKey).toBe(
+		'lesson-2'
+	);
+});
 
 test('multi-day batch keeps cross-department candidates, actual teaching activity, draft retry and complete-plan submit', async ({
 	page
@@ -225,6 +429,8 @@ for (const theme of ['light', 'dark'] as const)
 			const teacher = page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ });
 			await teacher.focus();
 			await page.keyboard.press('Enter');
+			await expect(page.locator('#coverage-taught-offering')).toHaveText('สอนตามคาบเดิม');
+			await choose(page, 'coverage-taught-offering', 'ระบุกิจกรรมแทนวิชา');
 			await expect(page.locator('#coverage-activity')).toBeVisible();
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true
@@ -332,10 +538,15 @@ for (const theme of ['light', 'dark'] as const)
 					taughtLearningGroupId: id(871)
 				};
 		plan.state = 'awaiting_confirmation';
+		plan.days[0].lessons[0].teacherId = secondStaff;
+		plan.days[0].lessons[0].originalTeacherName = 'ครูร่วมเดินทาง';
 		await mockTeachingCoverage(page, { plan, status: 'submitted', assigned: true });
 		await page.goto('/staff/leave/assigned');
 		await expect(page.getByTestId('leave-assigned-task')).toContainText('ภาษาอังกฤษ');
 		await expect(page.getByTestId('leave-assigned-task')).not.toContainText('เข้ารับการตรวจรักษา');
+		await expect(page.getByTestId('leave-assigned-task')).toContainText(
+			'ครูร่วมเดินทาง จะสอนคณิตศาสตร์ คืน'
+		);
 		await expect(page.getByTestId('leave-assigned-task')).toContainText('ผู้ขอจะสอนคณิตศาสตร์ คืน');
 		await expect(page.getByTestId('leave-assigned-task')).not.toContainText('· ·');
 		await expect(page.getByTestId('leave-assigned-task')).toContainText(
@@ -425,7 +636,7 @@ test('editing saved exit date time and valid academic context consumes reconcile
 	await page.getByRole('button', { name: 'เลือกทุกคาบ', exact: true }).click();
 	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
 	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
-	await page.locator('#coverage-activity').fill('กิจกรรมก่อนเปลี่ยนช่วงเวลา');
+	await enterTeachingActivity(page, 'กิจกรรมก่อนเปลี่ยนช่วงเวลา');
 	await page.getByRole('button', { name: 'ใช้กับ 2 คาบที่เลือก', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
 	await expect(page.getByTestId('leave-coverage-editor')).toContainText('เลือกครู 2/2');
@@ -458,13 +669,11 @@ test('editing saved exit date time and valid academic context consumes reconcile
 	await expect(
 		page.getByRole('button', { name: 'ใช้ข้อมูลล่าสุดและเก็บฉบับร่าง', exact: true })
 	).toHaveCount(0);
-	for (const field of ['leave-start-date', 'leave-end-date']) {
-		await page.locator(`#${field}`).click();
-		await page
-			.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
-			.filter({ hasText: /^21$/ })
-			.click();
-	}
+	await page.locator('#leave-start-date').click();
+	await page
+		.locator('[role="application"]:visible [data-calendar-day]:not([data-outside-month])')
+		.filter({ hasText: /^21$/ })
+		.click();
 	await page.locator('#leave-start-time').fill('11:00');
 	await page.locator('#leave-end-time').fill('12:00');
 	await choose(page, 'leave-academic-term', '2');
@@ -493,7 +702,7 @@ test('editing saved exit date time and valid academic context consumes reconcile
 	await page.getByRole('checkbox', { name: 'เลือก 2026-10-21 คาบ 4', exact: true }).check();
 	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
 	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
-	await page.locator('#coverage-activity').fill('กิจกรรมหลังเปลี่ยนช่วงเวลา');
+	await enterTeachingActivity(page, 'กิจกรรมหลังเปลี่ยนช่วงเวลา');
 	await page.getByRole('button', { name: 'ใช้กับ 1 คาบที่เลือก', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
 	expect(
@@ -617,7 +826,7 @@ test('explicit coverage refresh replaces stale same-key choices, preserves detai
 	await page.getByRole('checkbox', { name: 'เลือก 2026-10-19 คาบ 1', exact: true }).check();
 	await page.getByRole('button', { name: 'ค้นหาครูที่ว่างทุกคาบ', exact: true }).click();
 	await page.getByRole('button', { name: /ครูภาษาอังกฤษ ข้ามกลุ่มสาระ/ }).click();
-	await page.locator('#coverage-activity').fill('กิจกรรมหลังปรับตาราง');
+	await enterTeachingActivity(page, 'กิจกรรมหลังปรับตาราง');
 	await page.getByRole('button', { name: 'ใช้กับ 1 คาบที่เลือก', exact: true }).click();
 	await page.getByRole('button', { name: 'บันทึกแผนคาบสอน', exact: true }).click();
 	expect(

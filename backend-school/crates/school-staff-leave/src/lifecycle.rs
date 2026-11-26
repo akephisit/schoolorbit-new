@@ -56,7 +56,18 @@ pub async fn create(
         return Err(invalid("เกณฑ์โรงเรียนปิดการยื่นคำขอสำหรับประเภทบุคลากรและวันที่นี้"));
     }
     let quantity = amount(&period, &p, typ.kind)?;
+    let companions = super::companions::resolve_on_connection(
+        &mut tx,
+        actor.user_id,
+        typ.kind,
+        &period.companion_user_ids,
+    )
+    .await?;
+    coverage::require_supported_journey_coverage(&mut tx, actor.user_id, typ.kind, &period).await?;
     let s = LeaveRequestSummary {
+        destination: period.destination,
+        companions,
+        companion_revision: None,
         academic_year_id: period.academic_year_id,
         academic_term_id: period.academic_term_id,
         half_day_boundary: period.half_day_boundary,
@@ -138,6 +149,18 @@ pub async fn update(
     .await?;
     super::files::validate_evidence(&mut tx, actor.user_id, id, &period.evidence_file_ids).await?;
     let n = amount(&period, &p, r.document.kind)?;
+    let companions = super::companions::resolve_on_connection(
+        &mut tx,
+        actor.user_id,
+        r.document.kind,
+        &period.companion_user_ids,
+    )
+    .await?;
+    coverage::require_supported_journey_coverage(&mut tx, actor.user_id, r.document.kind, &period)
+        .await?;
+    r.document.companions = companions;
+    r.document.destination = period.destination;
+    r.document.companion_revision = None;
     r.document.academic_year_id = period.academic_year_id;
     r.document.academic_term_id = period.academic_term_id;
     // Retain originally captured context for exact old assignment evidence.
@@ -241,6 +264,7 @@ impl ProcessSourcePort for LeaveSource {
             && matches!(r.action, ProcessAction::Review | ProcessAction::Approve)
         {
             let record = load(tx, self.request_id).await?;
+            super::companions::require_ready(&mut **tx, &record.document).await?;
             if !coverage::approval_ready(&mut **tx, &record).await? {
                 return Err(invalid("รอผู้สอนยืนยันแผนครบก่อนพิจารณาอนุมัติ"));
             }
@@ -343,6 +367,18 @@ pub(super) async fn start(
             "ผู้ขอไม่สามารถเป็นผู้ตรวจหรืออนุมัติคำขอของตนเอง กรุณาปรับเส้นทาง",
         ));
     }
+    if i.steps.iter().any(|step| {
+        step.recipients.iter().any(|recipient| {
+            r.document
+                .companions
+                .iter()
+                .any(|person| person.id == recipient.user_id)
+        })
+    }) {
+        return Err(invalid(
+            "ผู้ร่วมเดินทางไม่สามารถตรวจหรืออนุมัติคำขอเดินทางของตนเอง กรุณาให้ผู้ดูแลปรับเส้นทาง",
+        ));
+    }
     r.instance_id = Some(i.id);
     Ok(())
 }
@@ -412,47 +448,26 @@ pub async fn submit(
     {
         return Err(invalid("วันที่ขอไม่ครบระยะเวลาแจ้งล่วงหน้าตามเกณฑ์โรงเรียน"));
     }
-    let year = quota_year(r.document.start_date, p.quota_year_start_month)?;
-    DbSession::new(&mut *tx)
-        .query(
-            "staff.leave.lifecycle.submit",
-            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
-        )
-        .bind(format!("staff_leave_owner:{}", r.document.owner_id))
-        .execute()
-        .await?;
-    check_overlaps(&mut tx, &r, &p).await?;
-    DbSession::new(&mut *tx)
-        .query(
-            "staff.leave.lifecycle.submit",
-            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
-        )
-        .bind(format!(
-            "staff_leave:{}:{}:{}",
-            r.document.owner_id, r.document.type_id, year
-        ))
-        .execute()
-        .await?;
-    let (used,compatible):(String,bool)=DbSession::new(&mut *tx).query_as("staff.leave.lifecycle.submit_quota", "SELECT coalesce(sum(amount::numeric * CASE document->>'unit' WHEN 'day' THEN 2 ELSE 1 END),0)::text,coalesce(bool_and(CASE WHEN $5 THEN document->>'unit' IN ('day','half_day') ELSE document->>'unit'='minute' END),true) FROM staff_leave_requests WHERE owner_id=$1 AND type_id=$2 AND quota_year_start=$3 AND status IN ('submitted','approved','cancellation_pending') AND id<>$4").bind(r.document.owner_id).bind(r.document.type_id).bind(year).bind(id).bind(p.unit==LeaveUnit::Day).fetch_one().await?;
-    if !compatible {
-        return Err(invalid(
-            "หน่วยในบัญชีสิทธิ์เดิมไม่เข้ากัน กรุณาให้ผู้ดูแลตรวจสอบโดยไม่แปลงวันเป็นนาที",
-        ));
-    }
-    let used = used
-        .parse::<i128>()
-        .map_err(|_| invalid("ยอดสิทธิ์เกินขอบเขตที่รองรับ"))?;
-    let total = used
-        .checked_add(i128::from(quantity) * quota_scale(p.unit))
-        .ok_or_else(|| invalid("ยอดสิทธิ์เกินขอบเขตที่รองรับ"))?;
-    if p.annual_limit
-        .is_some_and(|cap| total > i128::from(cap) * quota_scale(p.unit))
-    {
-        return Err(invalid("ยอดอนุมัติและคำขอที่รอพิจารณารวมกันเกินสิทธิ์ตามเกณฑ์โรงเรียน"));
-    }
+    let period = period_from(&r);
+    super::companions::resolve_on_connection(
+        &mut tx,
+        r.document.owner_id,
+        typ.kind,
+        &period.companion_user_ids,
+    )
+    .await?;
+    let year = if typ.kind == LeaveKind::OfficialTravel {
+        None
+    } else {
+        let year = quota_year(r.document.start_date, p.quota_year_start_month)?;
+        check_quota(&mut tx, &r, &p, quantity, year).await?;
+        Some(year)
+    };
     let plan = coverage::prepare_submission(&mut tx, &r, input.emergency_reason.as_deref()).await?;
     r.document.status = LeaveStatus::Submitted;
     r.document.revision += 1;
+    r.document.companion_revision =
+        (!r.document.companions.is_empty()).then_some(r.document.revision);
     r.document.personnel_type = Some(cat);
     r.document.policy_version_id = Some(p.id);
     r.document.amount = quantity;
@@ -759,67 +774,40 @@ pub async fn cancel(
     tx.commit().await?;
     detail(pool, actor, id).await
 }
-fn periods_overlap(
-    a: &StoredLeavePeriod,
-    ap: &LeavePolicyVersion,
-    b: &LeaveRequestSummary,
-    bp: &LeavePolicyVersion,
-) -> bool {
-    use chrono::Datelike;
-    let from = a.start_date.max(b.start_date);
-    let to = a.end_date.min(b.end_date);
-    if to < from {
-        return false;
-    }
-    let counted = |d: NaiveDate, p: &LeavePolicyVersion| {
-        p.counting_mode == LeaveCountingMode::CalendarDays
-            || (p
-                .working_weekdays
-                .contains(&d.weekday().number_from_monday())
-                && !p.excluded_dates.contains(&d))
-    };
-    for n in 0..=(to - from).num_days() {
-        let d = from + chrono::Duration::days(n);
-        if !counted(d, ap) || !counted(d, bp) {
-            continue;
-        }
-        if ap.unit == LeaveUnit::Minute && bp.unit == LeaveUnit::Minute {
-            if let (Some(ast), Some(aet), Some(bst), Some(bet)) =
-                (a.start_time, a.end_time, b.start_time, b.end_time)
-            {
-                if ast < bet && bst < aet {
-                    return true;
-                }
-                continue;
-            }
-        }
-        // Half-day sessions are explicit. Minute/half-day overlap is conservative,
-        // because this policy has no school-specific morning/afternoon time boundary.
-        if ap.unit != LeaveUnit::Minute
-            && bp.unit != LeaveUnit::Minute
-            && a.day_portion != LeaveDayPortion::FullDay
-            && b.day_portion != LeaveDayPortion::FullDay
-            && a.day_portion != b.day_portion
-        {
-            continue;
-        }
-        return true;
-    }
-    false
-}
-async fn check_overlaps(
+async fn check_quota(
     tx: &mut Transaction<'_, Postgres>,
     r: &Record,
     p: &LeavePolicyVersion,
+    quantity: i64,
+    year: NaiveDate,
 ) -> Result<(), AppError> {
-    let rows:Vec<(Json<LeaveRequestSummary>,Json<LeavePolicyVersion>)>=DbSession::new(&mut **tx).query_as("staff.leave.lifecycle.check_overlaps", "SELECT r.document,p.document FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id WHERE r.owner_id=$1 AND r.id<>$2 AND r.status IN ('submitted','approved','cancellation_pending') AND (r.document->>'startDate')::date<=$3 AND (r.document->>'endDate')::date>=$4").bind(r.document.owner_id).bind(r.document.id).bind(r.document.end_date).bind(r.document.start_date).fetch_all().await?;
-    if rows
-        .iter()
-        .any(|(other, policy)| periods_overlap(&period_from(r), p, other, policy))
-    {
+    DbSession::new(&mut **tx)
+        .query(
+            "staff.leave.lifecycle.submit",
+            "SELECT pg_advisory_xact_lock(hashtextextended($1,0))",
+        )
+        .bind(format!(
+            "staff_leave:{}:{}:{}",
+            r.document.owner_id, r.document.type_id, year
+        ))
+        .execute()
+        .await?;
+    let (used,compatible):(String,bool)=DbSession::new(&mut **tx).query_as("staff.leave.lifecycle.submit_quota", "SELECT coalesce(sum(amount::numeric * CASE document->>'unit' WHEN 'day' THEN 2 ELSE 1 END),0)::text,coalesce(bool_and(CASE WHEN $5 THEN document->>'unit' IN ('day','half_day') ELSE document->>'unit'='minute' END),true) FROM staff_leave_requests WHERE owner_id=$1 AND type_id=$2 AND quota_year_start=$3 AND status IN ('submitted','approved','cancellation_pending') AND id<>$4").bind(r.document.owner_id).bind(r.document.type_id).bind(year).bind(r.document.id).bind(p.unit==LeaveUnit::Day).fetch_one().await?;
+    if !compatible {
         return Err(invalid(
-            "ช่วงเวลาซ้อนกับคำขอที่รอพิจารณาหรืออนุมัติแล้ว กรุณาตรวจคำขอเดิม",
+            "หน่วยในบัญชีสิทธิ์เดิมไม่เข้ากัน กรุณาให้ผู้ดูแลตรวจสอบโดยไม่แปลงวันเป็นนาที",
         ));
+    }
+    let used = used
+        .parse::<i128>()
+        .map_err(|_| invalid("ยอดสิทธิ์เกินขอบเขตที่รองรับ"))?;
+    let total = used
+        .checked_add(i128::from(quantity) * quota_scale(p.unit))
+        .ok_or_else(|| invalid("ยอดสิทธิ์เกินขอบเขตที่รองรับ"))?;
+    if p.annual_limit
+        .is_some_and(|cap| total > i128::from(cap) * quota_scale(p.unit))
+    {
+        return Err(invalid("ยอดอนุมัติและคำขอที่รอพิจารณารวมกันเกินสิทธิ์ตามเกณฑ์โรงเรียน"));
     }
     Ok(())
 }

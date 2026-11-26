@@ -100,6 +100,8 @@ pub(crate) async fn typ(
 
 pub(crate) fn period(t: Uuid, day: u32) -> LeavePeriodInput {
     LeavePeriodInput {
+        destination: None,
+        companion_user_ids: vec![],
         academic_year_id: Some(Uuid::from_u128(0x16000000000000000000000000000001)),
         academic_term_id: Some(Uuid::from_u128(0x16000000000000000000000000000003)),
         type_id: t,

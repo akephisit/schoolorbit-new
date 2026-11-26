@@ -8,7 +8,8 @@ use school_auth_context::context::actor_tenant_context_from_session;
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::{ApiResponse, EmptyData, HttpError};
-use school_staff_leave::{models::*, service};
+use school_staff_leave::policy_presets::LeavePolicyPreset;
+use school_staff_leave::{models::*, policy_presets, service};
 use uuid::Uuid;
 #[derive(Clone)]
 pub struct LeaveHttpState {
@@ -210,8 +211,66 @@ pub async fn usage(
     let result = service::usage(&context.tenant.pool, &context.actor, query).await?;
     Ok(Json(ApiResponse::ok(result)))
 }
+#[cfg_attr(feature="api-docs", utoipa::path(get, path="/api/staff-leave/policy-presets", operation_id="listStaffLeavePolicyPresets", tag="staff-leave",  responses((status=200, description="Request completed", body=ApiResponse<Vec<LeavePolicyPreset>>), (status=400, description="Invalid input", body=ApiErrorResponse), (status=401, description="Authentication required", body=ApiErrorResponse), (status=403, description="Permission denied", body=ApiErrorResponse), (status=409, description="Request conflicts with the current resource state", body=ApiErrorResponse))))]
+pub async fn list_policy_presets(
+    State(state): State<LeaveHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+) -> Result<Json<ApiResponse<Vec<LeavePolicyPreset>>>, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let result = policy_presets::list_policy_presets(&context.actor)?;
+    Ok(Json(ApiResponse::ok(result)))
+}
+#[cfg_attr(feature="api-docs", utoipa::path(get, path="/api/staff-leave/companion-options", operation_id="listStaffLeaveCompanionOptions", tag="staff-leave", params(LeaveCompanionOptionsQuery), responses((status=200, description="Request completed", body=ApiResponse<Vec<LeaveRoutingUser>>), (status=400, description="Invalid input", body=ApiErrorResponse), (status=401, description="Authentication required", body=ApiErrorResponse), (status=403, description="Permission denied", body=ApiErrorResponse), (status=409, description="Request conflicts with the current resource state", body=ApiErrorResponse))))]
+pub async fn companion_options(
+    State(state): State<LeaveHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<LeaveCompanionOptionsQuery>,
+) -> Result<Json<ApiResponse<Vec<LeaveRoutingUser>>>, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let result = service::companion_options(&context.tenant.pool, &context.actor, query).await?;
+    Ok(Json(ApiResponse::ok(result)))
+}
+#[cfg_attr(feature="api-docs", utoipa::path(get, path="/api/staff-leave/companion-invitations", operation_id="listStaffLeaveCompanionInvitations", tag="staff-leave", params(LeaveCompanionInvitationsQuery), responses((status=200, description="Request completed", body=ApiResponse<Vec<LeaveCompanionInvitation>>), (status=400, description="Invalid input", body=ApiErrorResponse), (status=401, description="Authentication required", body=ApiErrorResponse), (status=403, description="Permission denied", body=ApiErrorResponse), (status=409, description="Request conflicts with the current resource state", body=ApiErrorResponse))))]
+pub async fn companion_invitations(
+    State(state): State<LeaveHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Query(query): Query<LeaveCompanionInvitationsQuery>,
+) -> Result<Json<ApiResponse<Vec<LeaveCompanionInvitation>>>, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    let result =
+        service::companion_invitations(&context.tenant.pool, &context.actor, query).await?;
+    Ok(Json(ApiResponse::ok(result)))
+}
+#[cfg_attr(feature="api-docs", utoipa::path(post, path="/api/staff-leave/requests/{id}/confirm-companion", operation_id="confirmStaffLeaveCompanion", tag="staff-leave", params(("id"=Uuid,Path,description="Staff leave request ID")), request_body=LeaveMutationRequest, responses((status=200, description="Request completed", body=ApiResponse<EmptyData>), (status=400, description="Invalid input", body=ApiErrorResponse), (status=401, description="Authentication required", body=ApiErrorResponse), (status=403, description="Permission denied", body=ApiErrorResponse), (status=409, description="Request conflicts with the current resource state", body=ApiErrorResponse))))]
+pub async fn confirm_companion(
+    State(state): State<LeaveHttpState>,
+    Extension(session): Extension<AuthenticatedSession>,
+    Path(id): Path<Uuid>,
+    Json(input): Json<LeaveMutationRequest>,
+) -> Result<Json<ApiResponse<EmptyData>>, HttpError> {
+    let context = actor_tenant_context_from_session(&state.auth_runtime, &session).await?;
+    service::confirm_companion(&context.tenant.pool, &context.actor, id, input).await?;
+    state.notify(&context.tenant.subdomain);
+    Ok(Json(ApiResponse::empty()))
+}
 pub fn routes() -> Router<LeaveHttpState> {
     Router::new()
+        .route(
+            "/staff-leave/policy-presets",
+            axum::routing::get(list_policy_presets),
+        )
+        .route(
+            "/staff-leave/companion-options",
+            axum::routing::get(companion_options),
+        )
+        .route(
+            "/staff-leave/companion-invitations",
+            axum::routing::get(companion_invitations),
+        )
+        .route(
+            "/staff-leave/requests/{id}/confirm-companion",
+            axum::routing::post(confirm_companion),
+        )
         .route(
             "/staff-leave/types",
             axum::routing::get(list_types).post(create_type),

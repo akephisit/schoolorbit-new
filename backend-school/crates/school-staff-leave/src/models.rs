@@ -15,7 +15,20 @@ macro_rules! leave_enum {
         pub enum $name { $($variant),+ }
     };
 }
-leave_enum!(LeaveKind { Leave, Exit });
+leave_enum!(LeaveKind {
+    Leave,
+    Exit,
+    OfficialTravel
+});
+impl LeaveKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Leave => "leave",
+            Self::Exit => "exit",
+            Self::OfficialTravel => "official_travel",
+        }
+    }
+}
 // Original units retained for immutable policy/request evidence.
 leave_enum!(LeaveUnit {
     Day,
@@ -136,6 +149,7 @@ pub struct LeavePeriodInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub academic_term_id: Option<Uuid>,
     pub type_id: Uuid,
+    /// The period may span at most 367 calendar dates, including both endpoints.
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub start_time: Option<NaiveTime>,
@@ -143,9 +157,15 @@ pub struct LeavePeriodInput {
     pub reason: String,
     #[serde(default)]
     pub evidence_file_ids: Vec<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
+    /// Up to 100 distinct active staff members, excluding the requester. For exit and official travel only.
+    /// Official travel permits up to 3,000 occupied dates summed across all participants including the requester.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "api-docs", schema(max_items = 100))]
+    pub companion_user_ids: Vec<Uuid>,
 }
-// This codec is intentionally unchanged: original submission hashes include
-// its legacy field order and null/omitted boundary representation.
+// Append optional travel fields only. Existing submission hashes depend on field order and omission.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct StoredLeavePeriod {
@@ -164,6 +184,10 @@ pub(crate) struct StoredLeavePeriod {
     pub reason: String,
     #[serde(default)]
     pub evidence_file_ids: Vec<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub companion_user_ids: Vec<Uuid>,
 }
 impl From<LeavePeriodInput> for StoredLeavePeriod {
     fn from(period: LeavePeriodInput) -> Self {
@@ -179,6 +203,8 @@ impl From<LeavePeriodInput> for StoredLeavePeriod {
             day_portion: LeaveDayPortion::FullDay,
             reason: period.reason,
             evidence_file_ids: period.evidence_file_ids,
+            destination: period.destination,
+            companion_user_ids: period.companion_user_ids,
         }
     }
 }
@@ -261,6 +287,12 @@ pub struct LeaveRequestSummary {
     pub unit: LeaveUnit,
     pub reason: String,
     pub created_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub companions: Vec<LeaveRoutingUser>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub companion_revision: Option<i64>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
@@ -280,6 +312,7 @@ pub struct LeaveHistoryEntry {
 #[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct LeaveRequestDetail {
+    pub companion_confirmations: Vec<LeaveCompanionStatus>,
     pub submission_blocking_reason: Option<String>,
     pub coverage: super::coverage_models::LeaveCoveragePlan,
     pub request: LeaveRequestSummary,
@@ -400,4 +433,45 @@ pub struct LeaveFileSnapshot {
     pub file_id: Uuid,
     pub version_id: Uuid,
     pub checksum: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LeaveCompanionStatus {
+    pub user_id: Uuid,
+    pub confirmed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct LeaveCompanionInvitation {
+    pub request_id: Uuid,
+    pub revision: i64,
+    pub kind: LeaveKind,
+    pub owner_name: String,
+    pub destination: Option<String>,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub start_time: Option<NaiveTime>,
+    pub end_time: Option<NaiveTime>,
+    pub confirmed: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
+pub struct LeaveCompanionOptionsQuery {
+    pub search: Option<String>,
+    pub offset: Option<i64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(utoipa::IntoParams))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in=Query))]
+pub struct LeaveCompanionInvitationsQuery {
+    pub offset: Option<i64>,
 }

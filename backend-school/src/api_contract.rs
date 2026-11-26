@@ -152,6 +152,7 @@ use school_staff_http::http::handlers::organization_members::{
 use school_staff_http::http::handlers::staff::StaffListData;
 use school_staff_leave::coverage_models::*;
 use school_staff_leave::models::*;
+use school_staff_leave::policy_presets::{LeavePolicyPreset, LeavePolicyPresetId};
 use school_students::models::{
     CreateParentRequest, CreateStudentRequest, CreateStudentResponse, ParentDto, StudentDbRow,
     StudentListItem, StudentListResponse, StudentProfile, StudentRegisterInfo,
@@ -176,6 +177,10 @@ use utoipa::OpenApi;
         school_staff_http::file_transfer::accept,
         school_staff_http::file_transfer::close,
         school_staff_http::file_transfer::signal,
+        school_staff_http::leave::list_policy_presets,
+        school_staff_http::leave::companion_options,
+        school_staff_http::leave::companion_invitations,
+        school_staff_http::leave::confirm_companion,
         school_staff_http::leave::list_types,
         school_staff_http::leave::create_type,
         school_staff_http::leave::update_type,
@@ -945,6 +950,10 @@ struct SchoolApiDoc;
     LeaveCoverageTimetableState,
     DatedTeachingLesson,
 
+    LeavePolicyPreset,
+    LeavePolicyPresetId,
+    LeaveCompanionStatus,
+    LeaveCompanionInvitation,
     LeaveRoutingUser,
     LeaveRoutingOrganization,
     LeaveRoutingPosition,
@@ -2613,6 +2622,26 @@ mod tests {
         let document = school_api_value().expect("staff leave contract serializes");
         for (path, method, operation) in [
             (
+                "/api/staff-leave/policy-presets",
+                "get",
+                "listStaffLeavePolicyPresets",
+            ),
+            (
+                "/api/staff-leave/companion-options",
+                "get",
+                "listStaffLeaveCompanionOptions",
+            ),
+            (
+                "/api/staff-leave/companion-invitations",
+                "get",
+                "listStaffLeaveCompanionInvitations",
+            ),
+            (
+                "/api/staff-leave/requests/{id}/confirm-companion",
+                "post",
+                "confirmStaffLeaveCompanion",
+            ),
+            (
                 "/api/staff-leave/requests",
                 "post",
                 "createStaffLeaveRequest",
@@ -2649,6 +2678,20 @@ mod tests {
             }
         }
         let schemas = &document["components"]["schemas"];
+        let invitation = &schemas["LeaveCompanionInvitation"]["properties"];
+        for private in [
+            "reason",
+            "evidenceFileIds",
+            "history",
+            "policy",
+            "companions",
+        ] {
+            assert!(invitation.get(private).is_none());
+        }
+        assert_eq!(
+            schemas["LeavePeriodInput"]["properties"]["companionUserIds"]["maxItems"],
+            100
+        );
         assert!(schemas["SaveLeaveTypeRequest"]["properties"]
             .get("code")
             .is_some());

@@ -314,6 +314,326 @@ async fn confirm_and_approve_academic(
     .unwrap()
 }
 #[tokio::test]
+async fn coverage_official_travel_reserves_all_participants_and_exchange_returns_to_original_instructor(
+) {
+    use chrono::{Duration, NaiveTime};
+    use school_staff_leave::{coverage, coverage_models::*};
+    use school_test_db::cutover_test_support::apply_migrations_through;
+
+    let f = academic_coverage_fixture("coverage_travel_group", false, 0).await;
+    apply_migrations_through(&f.pool, 170).await.unwrap();
+    let second_companion = coverage_actor(&f.pool, "Companion with no lessons", false).await;
+    let backup = coverage_actor(&f.pool, "Joint class substitute", false).await;
+    let mut tx = f.pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO user_roles(user_id,role_id) SELECT unnest($1::uuid[]),id FROM roles WHERE code='TEACHER' ON CONFLICT DO NOTHING")
+        .bind([f.co_teacher.user_id, second_companion.user_id].as_slice())
+        .execute(&mut *tx).await.unwrap();
+    sqlx::query(
+        "UPDATE learning_group_teachers SET teacher_id=$1 WHERE learning_group_id=$2 AND teacher_id=$3",
+    )
+    .bind(f.co_teacher.user_id)
+    .bind(f.math_group)
+    .bind(f.owner.user_id)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_timetable_block_group_instructors SET instructor_id=$1 WHERE block_group_id=$2 AND instructor_id=$3")
+        .bind(f.co_teacher.user_id)
+        .bind(f.allocation)
+        .bind(f.owner.user_id)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    let shared: Uuid = sqlx::query_scalar(
+        "SELECT id FROM academic_timetable_block_groups WHERE learning_group_id=$1",
+    )
+    .bind(f.other_group)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    for (order, teacher) in [(2, f.owner.user_id), (3, f.co_teacher.user_id)] {
+        sqlx::query("INSERT INTO learning_group_teachers(id,learning_group_id,academic_term_id,academic_year_id,teacher_id,role) VALUES(uuidv7(),$1,$2,$3,$4,'secondary')")
+            .bind(f.other_group).bind(f.term).bind(f.year).bind(teacher).execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO academic_timetable_block_group_instructors(id,block_group_id,instructor_id,role,display_order) VALUES(uuidv7(),$1,$2,'secondary',$3)")
+            .bind(shared).bind(teacher).bind(order).execute(&mut *tx).await.unwrap();
+    }
+    // Make the outbound exchange lesson already started on today's school date.
+    sqlx::query("UPDATE bell_schedule_periods SET start_time='00:00',end_time='00:01' WHERE id=(SELECT b.bell_schedule_period_id FROM academic_timetable_blocks b JOIN academic_timetable_block_groups g ON g.block_id=b.id WHERE g.id=$1)")
+        .bind(f.allocation).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+
+    let travel = service::save_type(
+        &f.pool,
+        &f.admin,
+        None,
+        SaveLeaveTypeRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: None,
+            code: Some("travel_group_coverage".into()),
+            name: "เดินทางไปราชการ".into(),
+            kind: LeaveKind::OfficialTravel,
+            archived: false,
+        },
+    )
+    .await
+    .unwrap();
+    service::save_policy(
+        &f.pool,
+        &f.admin,
+        travel.id,
+        policy(travel.revision, f.admin.user_id, LeaveUnit::Day, None),
+    )
+    .await
+    .unwrap();
+    let last_day = f.from + Duration::days(2);
+    let last_end = NaiveTime::from_hms_opt(7, 30, 0).unwrap();
+    let mut p = period(travel.id, 17);
+    p.academic_year_id = Some(f.year);
+    p.academic_term_id = Some(f.term);
+    p.start_date = f.from;
+    p.end_date = last_day;
+    p.start_time = Some(NaiveTime::MIN);
+    p.end_time = Some(last_end);
+    p.destination = Some("สถานที่ทดสอบ".into());
+    p.companion_user_ids = vec![f.co_teacher.user_id, second_companion.user_id];
+    let draft = service::create(
+        &f.pool,
+        &f.owner,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: p,
+        },
+    )
+    .await
+    .unwrap();
+    let lessons = &draft.coverage.days[0].lessons;
+    let keys = lessons
+        .iter()
+        .map(|l| &l.lesson.lesson_key)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(lessons.len(), 3);
+    assert_eq!(keys.len(), 3);
+    assert_eq!(
+        lessons
+            .iter()
+            .filter(|l| l.lesson.allocation_id == shared)
+            .count(),
+        2
+    );
+    assert!(lessons.iter().all(|l| l.original_teacher_name.is_some()));
+    let outbound = lessons
+        .iter()
+        .find(|l| l.lesson.allocation_id == f.allocation)
+        .unwrap();
+    assert_eq!(outbound.lesson.teacher_id, f.co_teacher.user_id);
+    let read_selection = (
+        draft.request.revision,
+        draft.coverage.source_digest.clone().unwrap(),
+        outbound.lesson.lesson_key.clone(),
+    );
+    let candidates = coverage::candidates(
+        &f.pool,
+        &f.owner,
+        draft.request.id,
+        LeaveCoverageCandidatesRequest {
+            expected_revision: read_selection.0,
+            source_digest: read_selection.1.clone(),
+            lesson_keys: vec![read_selection.2.clone()],
+            search: None,
+            subject_group_id: None,
+            grade_level_id: None,
+            same_subject_group_only: false,
+            same_student_group_only: false,
+            same_grade_only: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(candidates
+        .candidates
+        .iter()
+        .any(|c| c.teacher_id == f.teacher.user_id));
+    assert!(candidates
+        .candidates
+        .iter()
+        .all(|c| c.teacher_id != second_companion.user_id));
+
+    let return_lessons = coverage::return_lessons(
+        &f.pool,
+        &f.owner,
+        draft.request.id,
+        LeaveCoverageReturnLessonsRequest {
+            expected_revision: read_selection.0,
+            source_digest: read_selection.1.clone(),
+            lesson_key: read_selection.2,
+            replacement_teacher_id: f.teacher.user_id,
+            date: f.back,
+        },
+    )
+    .await
+    .unwrap();
+    let back = return_lessons
+        .lessons
+        .iter()
+        .find(|l| l.allocation_id == f.return_allocation)
+        .unwrap();
+    let plan = coverage::save(
+        &f.pool,
+        &f.owner,
+        draft.request.id,
+        SaveLeaveCoverageRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: read_selection.0,
+            source_digest: read_selection.1,
+            assignments: lessons
+                .iter()
+                .map(|l| {
+                    let exchange = l.lesson.allocation_id == f.allocation;
+                    LeaveCoverageSelection {
+                        lesson_key: l.lesson.lesson_key.clone(),
+                        replacement_teacher_id: if exchange {
+                            f.teacher.user_id
+                        } else {
+                            backup.user_id
+                        },
+                        mode: if exchange {
+                            LeaveCoverageMode::Reciprocal
+                        } else {
+                            LeaveCoverageMode::Substitution
+                        },
+                        taught_offering_id: None,
+                        taught_activity: None,
+                        return_lesson_key: exchange.then(|| back.lesson_key.clone()),
+                    }
+                })
+                .collect(),
+        },
+    )
+    .await
+    .unwrap();
+    let sent = submit(&f.pool, &f.owner, &plan).await;
+    let request_id = sent.request.id;
+    let absences: Vec<(Uuid, NaiveDate, NaiveTime, NaiveTime)> = sqlx::query_as(
+        "SELECT teacher_id,occurrence_date,start_time,end_time FROM academic_teaching_coverage_duties WHERE request_id=$1 AND kind='absence' AND state='reserved'",
+    )
+    .bind(request_id)
+    .fetch_all(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(absences.len(), 9);
+    for teacher in [&f.owner, &f.co_teacher, &second_companion] {
+        assert!(absences.iter().any(|(id, date, start, end)| {
+            *id == teacher.user_id
+                && *date == last_day
+                && *start == NaiveTime::MIN
+                && *end == last_end
+        }));
+    }
+    let pair: Vec<(Uuid, Uuid, Uuid)> = sqlx::query_as(
+        "SELECT teacher_id,original_teacher_id,pair_id FROM academic_teaching_coverage_duties WHERE request_id=$1 AND kind='reciprocal' ORDER BY pair_leg",
+    )
+    .bind(request_id)
+    .fetch_all(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(pair.len(), 2);
+    assert_eq!(
+        pair[0],
+        (f.teacher.user_id, f.co_teacher.user_id, pair[1].2)
+    );
+    assert_eq!(
+        pair[1],
+        (f.co_teacher.user_id, f.teacher.user_id, pair[0].2)
+    );
+
+    for companion in [&f.co_teacher, &second_companion] {
+        service::confirm_companion(
+            &f.pool,
+            companion,
+            request_id,
+            LeaveMutationRequest {
+                request_id: Uuid::now_v7(),
+                expected_revision: sent.request.revision,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    for teacher in [&f.teacher, &backup] {
+        let task = coverage::assigned(&f.pool, teacher, LeaveCoverageTaskQuery::default())
+            .await
+            .unwrap()
+            .items
+            .remove(0);
+        coverage::confirm(
+            &f.pool,
+            teacher,
+            request_id,
+            ConfirmLeaveCoverageRequest {
+                request_id: Uuid::now_v7(),
+                expected_revision: task.plan_revision,
+                assignment_ids: task
+                    .assignments
+                    .iter()
+                    .map(|l| l.assignment.as_ref().unwrap().id)
+                    .collect(),
+                decision: LeaveCoverageConsent::Confirmed,
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let ready = service::detail(&f.pool, &f.admin, request_id)
+        .await
+        .unwrap();
+    let approved = service::act(
+        &f.pool,
+        &f.admin,
+        request_id,
+        action(&ready, ProcessAction::Approve),
+    )
+    .await
+    .unwrap();
+    let cancellation = service::cancel(
+        &f.pool,
+        &f.owner,
+        request_id,
+        CancelLeaveRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: approved.request.revision,
+            reason: "Cancel upcoming travel dates".into(),
+        },
+    )
+    .await
+    .unwrap();
+    service::act(
+        &f.pool,
+        &f.admin,
+        request_id,
+        action(&cancellation, ProcessAction::Approve),
+    )
+    .await
+    .unwrap();
+    let active_return: Uuid = sqlx::query_scalar(
+        "SELECT teacher_id FROM academic_teaching_coverage_duties WHERE request_id=$1 AND pair_leg=2 AND state='approved'",
+    )
+    .bind(request_id)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(active_return, f.co_teacher.user_id);
+    let future_absences: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM academic_teaching_coverage_duties WHERE request_id=$1 AND kind='absence' AND occurrence_date>$2 AND state<>'released'",
+    )
+    .bind(request_id)
+    .bind(f.from)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(future_absences, 0);
+}
+
+#[tokio::test]
 async fn coverage_cross_offering_reciprocal_preserves_actual_subject_on_both_dates() {
     use school_academic_timetable::services::{attendance, daily_teaching};
     use school_staff_leave::coverage_models::LeaveCoverageMode;

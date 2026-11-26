@@ -1,6 +1,8 @@
 import type {
 	LeavePeriodInput,
+	LeavePolicyPreset,
 	LeaveRequestDetail,
+	LeaveRoutingUser,
 	LeavePolicyVersion,
 	LeaveUnit,
 	LeavePolicyUnit,
@@ -17,6 +19,8 @@ export interface LeaveDraft {
 	endDate?: string;
 	startTime: string;
 	endTime: string;
+	destination: string;
+	companions: LeaveRoutingUser[];
 	reason: string;
 	evidenceFileIds: string[];
 }
@@ -30,13 +34,15 @@ export function leaveDraft(detail?: LeaveRequestDetail): LeaveDraft {
 		endDate: source?.endDate,
 		startTime: source?.startTime?.slice(0, 5) ?? '',
 		endTime: source?.endTime?.slice(0, 5) ?? '',
+		destination: source?.destination ?? '',
+		companions: (source?.companions ?? []).map((user) => ({ ...user })),
 		reason: source?.reason ?? '',
 		evidenceFileIds: [...(detail?.evidenceFileIds ?? [])]
 	};
 }
 export function leaveDraftErrors(
 	draft: LeaveDraft,
-	policy: LeavePolicyVersion | null
+	kind: LeaveKind
 ): Partial<Record<keyof LeaveDraft, string>> {
 	const errors: Partial<Record<keyof LeaveDraft, string>> = {};
 	if (!draft.typeId) errors.typeId = 'เลือกประเภทคำขอ';
@@ -45,26 +51,51 @@ export function leaveDraftErrors(
 	if (draft.startDate && draft.endDate && draft.endDate < draft.startDate)
 		errors.endDate = 'วันที่สิ้นสุดต้องไม่น้อยกว่าวันที่เริ่ม';
 	if (!draft.reason.trim()) errors.reason = 'ระบุเหตุผล';
-	if (policy?.unit === 'minute') {
+	if (kind === 'exit') {
 		if (!draft.startTime) errors.startTime = 'ระบุเวลาเริ่ม';
 		if (!draft.endTime || draft.endTime <= draft.startTime)
 			errors.endTime = 'เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม';
-		if (draft.endDate !== draft.startDate) errors.endDate = 'คำขอแบบนาทีต้องอยู่ในวันเดียวกัน';
+		if (draft.endDate !== draft.startDate)
+			errors.endDate = 'เวลาออกและเวลากลับต้องอยู่ในวันเดียวกัน';
+	}
+	if (kind === 'official_travel') {
+		const destination = draft.destination.trim();
+		if (!destination) errors.destination = 'ระบุสถานที่ไปราชการ';
+		else if ([...destination].length > 500) errors.destination = 'ระบุสถานที่ไม่เกิน 500 ตัวอักษร';
+		if (draft.endTime && !draft.startTime) errors.startTime = 'ระบุเวลาออกเดินทางด้วย';
+		if (draft.startTime && !draft.endTime) errors.endTime = 'ระบุเวลาสิ้นสุดการเดินทางด้วย';
+		if (
+			draft.startDate === draft.endDate &&
+			draft.startTime &&
+			draft.endTime &&
+			draft.endTime <= draft.startTime
+		)
+			errors.endTime = 'เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม';
+		if (
+			draft.startDate &&
+			draft.endDate &&
+			Date.parse(draft.endDate) - Date.parse(draft.startDate) > 366 * 86_400_000
+		)
+			errors.endDate = 'ช่วงเดินทางต้องไม่เกิน 367 วัน';
 	}
 
 	return errors;
 }
-export function leavePeriodInput(draft: LeaveDraft, unit: LeavePolicyUnit): LeavePeriodInput {
+export function leavePeriodInput(draft: LeaveDraft, kind: LeaveKind): LeavePeriodInput {
 	return {
 		typeId: draft.typeId,
 		academicYearId: draft.academicYearId || null,
 		academicTermId: draft.academicTermId || null,
 		startDate: draft.startDate ?? '',
 		endDate: draft.endDate ?? '',
-		startTime: unit === 'minute' ? `${draft.startTime}:00` : null,
-		endTime: unit === 'minute' ? `${draft.endTime}:00` : null,
+		startTime: kind !== 'leave' && draft.startTime ? `${draft.startTime}:00` : null,
+		endTime: kind !== 'leave' && draft.endTime ? `${draft.endTime}:00` : null,
 		reason: draft.reason.trim(),
-		evidenceFileIds: draft.evidenceFileIds
+		evidenceFileIds: draft.evidenceFileIds,
+		...(kind === 'official_travel' ? { destination: draft.destination.trim() } : {}),
+		...(kind !== 'leave' && draft.companions.length
+			? { companionUserIds: draft.companions.map((user) => user.id) }
+			: {})
 	};
 }
 /** Unsafe wire numbers have already lost their original integer; never divide or copy them. */
@@ -97,28 +128,41 @@ export function newLeavePolicyStep(): ProcessTemplateStep {
 		dueAfterDays: null
 	};
 }
-export function leavePolicyDraft(kind: LeaveKind, initial?: LeavePolicyVersion) {
+export function leavePolicyDraft(
+	kind: LeaveKind,
+	initial?: LeavePolicyVersion,
+	preset?: LeavePolicyPreset
+) {
+	const officialTravel = kind === 'official_travel';
 	const unit: LeavePolicyUnit = kind === 'exit' ? 'minute' : 'day';
 	const maxPerRequest = initial
 		? displayedPolicyLimit(initial.maxPerRequest, initial.unit)
-		: kind === 'exit'
+		: kind === 'exit' && !preset
 			? '120'
 			: '';
-	const annualLimit = displayedPolicyLimit(initial?.annualLimit, initial?.unit ?? unit);
+	const annualLimit = officialTravel
+		? ''
+		: displayedPolicyLimit(initial?.annualLimit, initial?.unit ?? unit);
 	const evidenceFromAmount = displayedPolicyLimit(
 		initial?.evidenceFromAmount,
 		initial?.unit ?? unit
 	);
 	return {
 		effectiveFrom: undefined as string | undefined,
-		sourceReference: initial?.sourceReference ?? '',
-		personnelTypes: [...(initial?.personnelTypes ?? [])] as StaffPersonnelType[],
+		sourceReference: initial?.sourceReference ?? preset?.sourceReference ?? '',
+		personnelTypes: [
+			...(initial?.personnelTypes ?? preset?.personnelTypes ?? [])
+		] as StaffPersonnelType[],
 		enabled: initial?.enabled ?? true,
 		unit,
-		countingMode: initial?.countingMode ?? ('calendar_days' as const),
-		weekdays: [...(initial?.workingWeekdays ?? [])],
-		excludedDates: [...(initial?.excludedDates ?? [])],
-		quotaMonth: initial?.quotaYearStartMonth ?? 1,
+		countingMode: officialTravel
+			? ('calendar_days' as const)
+			: (initial?.countingMode ?? preset?.countingMode ?? ('calendar_days' as const)),
+		weekdays: officialTravel ? [] : [...(initial?.workingWeekdays ?? [])],
+		excludedDates: officialTravel ? [] : [...(initial?.excludedDates ?? [])],
+		quotaMonth:
+			initial?.quotaYearStartMonth ??
+			(preset && !officialTravel ? (preset.quotaYearStartMonth ?? undefined) : 1),
 		maxPerRequest: maxPerRequest ?? '',
 		annualLimit: annualLimit ?? '',
 		evidenceRequired: initial?.evidenceRequired ?? false,

@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import { mockStaffHome, actor, firstStaff, id } from './staff-home-route-data';
+import { mockStaffHome, actor, firstStaff, secondStaff, id } from './staff-home-route-data';
 import type {
 	LeaveRequestDetail,
 	LeavePolicyVersion,
@@ -16,7 +16,12 @@ export const leaveId = id(700),
 	secondLeaveId = id(701),
 	leaveTypeId = id(710),
 	exitTypeId = id(711),
+	travelTypeId = id(712),
 	leavePolicyId = id(720);
+export const travelCompanions = [
+	{ id: firstStaff, displayName: 'ครูร่วมทางคนแรก' },
+	{ id: secondStaff, displayName: 'ครูร่วมทางคนที่สอง' }
+];
 export const leaveDetailPath = `/staff/leave/requests/${leaveId}`;
 const base = '/api/staff-leave';
 const now = '2026-10-18T03:00:00Z';
@@ -46,6 +51,7 @@ export async function mockLeave(
 		requireSignature?: boolean;
 		failMutation?: number;
 		coverage?: LeaveCoveragePlan;
+		travel?: boolean;
 	} = {}
 ) {
 	await mockStaffHome(page, { permissions: options.permissions ?? leavePermissions });
@@ -60,6 +66,15 @@ export async function mockLeave(
 			revision: 1
 		}
 	];
+	if (options.travel)
+		types.push({
+			id: travelTypeId,
+			code: 'travel',
+			name: 'เดินทางไปราชการในประเทศ',
+			kind: 'official_travel',
+			archived: false,
+			revision: 1
+		});
 	let policy: LeavePolicyVersion = {
 		id: leavePolicyId,
 		typeId: leaveTypeId,
@@ -140,6 +155,10 @@ export async function mockLeave(
 		const canEdit = ['draft', 'returned'].includes(request.status) && options.role !== 'reviewer';
 		const active = ['submitted', 'cancellation_pending'].includes(request.status);
 		return {
+			companionConfirmations: (request.companions ?? []).map((person) => ({
+				userId: person.id,
+				confirmed: false
+			})),
 			coverage: options.coverage ?? {
 				revision: 0,
 				planHash: 'plan-zero',
@@ -233,6 +252,13 @@ export async function mockLeave(
 			...period,
 			typeName: type.name,
 			kind: type.kind,
+			...(period.companionUserIds
+				? {
+						companions: travelCompanions.filter((person) =>
+							period.companionUserIds?.includes(person.id)
+						)
+					}
+				: {}),
 			unit: type.kind === 'exit' ? 'minute' : 'day',
 			dayPortion: 'full_day',
 			amount: type.kind === 'exit' ? 90 : 1,
@@ -315,6 +341,13 @@ export async function mockLeave(
 						defaultAcademicTermId: id(800)
 					});
 				if (path === `${base}/types`) return reply(route, [...types]);
+				if (path === `${base}/companion-options`)
+					return reply(
+						route,
+						travelCompanions.filter((person) =>
+							person.displayName.includes(url.searchParams.get('search') ?? '')
+						)
+					);
 				if (path === `${base}/options`)
 					return reply(route, {
 						types: types.filter((type) => !type.archived),
@@ -350,10 +383,16 @@ export async function mockLeave(
 							: policy
 					);
 				}
-				if (path.endsWith('/policies')) return reply(route, options.policyHistory ?? [policy]);
+				if (path.endsWith('/policies')) {
+					if (options.travel && path.includes(travelTypeId))
+						return reply(route, policy.typeId === travelTypeId ? [policy] : []);
+					return reply(route, options.policyHistory ?? [policy]);
+				}
 				if (path === `${base}/requests`) {
 					if (options.empty) return reply(route, { items: [], hasMore: false });
 					const kind = url.searchParams.get('kind');
+					if (kind === 'official_travel' && request.kind !== kind)
+						return reply(route, { items: [], hasMore: false });
 					const status = url.searchParams.get('status');
 					const snapshot = {
 						...request,
@@ -431,12 +470,20 @@ export async function mockLeave(
 			if (path.endsWith('/policies')) {
 				const input = http.postDataJSON() as SaveLeavePolicyRequest;
 				const type = types.find((type) => path.includes(type.id))!;
+				if (
+					type.kind === 'official_travel' &&
+					(input.unit !== 'day' ||
+						input.countingMode !== 'calendar_days' ||
+						input.annualLimit != null)
+				)
+					return reply(route, 'ขอไปราชการนับวันตามปฏิทินและไม่หักสิทธิ์ลาประจำปี', 422);
 				type.revision++;
 				policy = {
 					...policy,
 					...input,
+					typeId: type.id,
 					id: id(722),
-					version: policy.version + 1,
+					version: policy.typeId === type.id ? policy.version + 1 : 1,
 					typeRevision: type.revision
 				};
 				return reply(route, policy);

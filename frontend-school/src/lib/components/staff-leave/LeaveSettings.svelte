@@ -6,6 +6,7 @@
 		saveLeaveType,
 		deleteLeaveType,
 		type LeaveType,
+		type LeavePolicyPreset,
 		type LeavePolicyVersion
 	} from '#lib/api/staff-leave.js';
 	import type { RouteLoadResult } from '#lib/navigation/route-load.js';
@@ -33,6 +34,7 @@
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import LeaveTypeForm from './LeaveTypeForm.svelte';
 	import PolicyEditor from './PolicyEditor.svelte';
+	import PolicyPresetPicker from './PolicyPresetPicker.svelte';
 	let { source }: { source: Promise<RouteLoadResult<LeaveType[]>> } = $props();
 	const region = new LeaveRegion<LeaveType[]>(),
 		request = new LatestRequest(),
@@ -42,6 +44,8 @@
 		selected = $state<LeaveType | null>(null),
 		policies = $state<LeavePolicyVersion[]>([]);
 	let policySeed = $state<LeavePolicyVersion | undefined>();
+	let policyPreset = $state<LeavePolicyPreset | undefined>();
+	let presetOpen = $state(false);
 	const policyMonths = $derived([...new Set(policies.map((policy) => policy.quotaYearStartMonth))]);
 	let expandedPolicies = $state<string[]>([]);
 	let policiesLoading = $state(false),
@@ -240,13 +244,20 @@
 			>
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<h2 class="text-lg font-semibold">เกณฑ์: {selected.name}</h2>
-					{#if allowed && !selected.archived}<Button
-							disabled={policiesLoading || !!policiesError}
-							onclick={() => {
-								policySeed = undefined;
-								policyOpen = true;
-							}}>เพิ่มเกณฑ์ฉบับใหม่</Button
-						>{/if}
+					{#if allowed && !selected.archived}<div class="flex flex-wrap gap-2">
+							<Button
+								variant="outline"
+								disabled={policiesLoading || !!policiesError}
+								onclick={() => (presetOpen = true)}>เลือกเกณฑ์อ้างอิง</Button
+							><Button
+								disabled={policiesLoading || !!policiesError}
+								onclick={() => {
+									policySeed = undefined;
+									policyPreset = undefined;
+									policyOpen = true;
+								}}>เพิ่มเกณฑ์ฉบับใหม่</Button
+							>
+						</div>{/if}
 				</div>
 				{#if policiesError}<PageState
 						variant="error"
@@ -284,10 +295,14 @@
 											><span class="mt-1 block"
 												>ต่อคำขอ {policy.maxPerRequest == null
 													? 'ไม่กำหนด'
-													: leaveAmount(policy.maxPerRequest, policy.unit)} · ต่อรอบปี {policy.annualLimit ==
-												null
-													? 'ไม่กำหนด'
-													: leaveAmount(policy.annualLimit, policy.unit)} · {policy.steps.length} ขั้นตอน</span
+													: leaveAmount(
+															policy.maxPerRequest,
+															policy.unit
+														)}{#if selected?.kind !== 'official_travel'}
+													· ต่อรอบปี {policy.annualLimit == null
+														? 'ไม่กำหนด'
+														: leaveAmount(policy.annualLimit, policy.unit)}{/if} · {policy.steps
+													.length} ขั้นตอน</span
 											>{#if !policy.enabled}<Badge variant="outline" class="mt-2"
 													>งดรับคำขอสำหรับกลุ่มนี้</Badge
 												>{/if}</Button
@@ -320,6 +335,7 @@
 													onclick={() => {
 														if (policiesLoading || policiesError) return;
 														policySeed = policy;
+														policyPreset = undefined;
 														policyOpen = true;
 													}}>สร้างฉบับใหม่จากฉบับนี้</Button
 												>{/if}</Card.Content
@@ -342,17 +358,40 @@
 	><Dialog.Content
 		><Dialog.Header
 			><Dialog.Title>{editing ? 'แก้ไขประเภทคำขอ' : 'เพิ่มประเภทคำขอ'}</Dialog.Title
-			><Dialog.Description>แยกกลุ่มการลาและการออกนอกโรงเรียน</Dialog.Description></Dialog.Header
+			><Dialog.Description>เลือกกลุ่มคำขอก่อนบันทึกประเภท</Dialog.Description></Dialog.Header
 		>{#if formOpen && allowed}<LeaveTypeForm
 				type={editing}
 				oncancel={() => (formOpen = false)}
 				onsaved={(type) => {
 					patch(type);
 					formOpen = false;
+					if (!editing) void select(type);
 				}}
 			/>{/if}</Dialog.Content
 	></Dialog.Root
 >
+<Dialog.Root bind:open={presetOpen}>
+	<Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+		<Dialog.Header>
+			<Dialog.Title>เกณฑ์อ้างอิงสำหรับ {selected?.name}</Dialog.Title>
+			<Dialog.Description
+				>ตรวจแหล่งอ้างอิงและกลุ่มบุคลากรก่อนนำไปกรอกในแบบร่างฉบับใหม่</Dialog.Description
+			>
+		</Dialog.Header>
+		{#if presetOpen && selected && allowed}
+			<PolicyPresetPicker
+				kind={selected.kind}
+				oncancel={() => (presetOpen = false)}
+				onapply={(preset) => {
+					policySeed = undefined;
+					policyPreset = preset;
+					presetOpen = false;
+					policyOpen = true;
+				}}
+			/>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
 <Dialog.Root bind:open={policyOpen}
 	><Dialog.Content class="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
 		><Dialog.Header
@@ -362,6 +401,7 @@
 		>{#if policyOpen && selected && allowed}<PolicyEditor
 				type={selected}
 				initialPolicy={policySeed}
+				preset={policyPreset}
 				fixedQuotaMonth={policyMonths.length === 1 ? policyMonths[0] : undefined}
 				quotaMonthConflict={policyMonths.length > 1}
 				oncancel={() => (policyOpen = false)}

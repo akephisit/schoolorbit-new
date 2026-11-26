@@ -4,8 +4,56 @@ import type {
 	LeaveCoveragePlan,
 	LeaveCoverageSelection,
 	LeaveCoverageOptions,
+	LeaveRequestSummary,
 	DatedTeachingLesson
 } from '#lib/api/staff-leave.js';
+
+export const coverageCandidateLessonLimit = 500;
+
+export function coverageCandidateBatch(
+	lessonKeys: string[],
+	assignedLessonKeys: ReadonlySet<string>
+): string[] {
+	if (lessonKeys.length <= coverageCandidateLessonLimit) return lessonKeys;
+	return lessonKeys
+		.filter((key) => !assignedLessonKeys.has(key))
+		.slice(0, coverageCandidateLessonLimit);
+}
+
+export function coverageByOriginalTeacher(
+	plan: Pick<LeaveCoveragePlan, 'days'>,
+	request: Pick<LeaveRequestSummary, 'ownerId' | 'ownerName' | 'companions'>
+) {
+	const names = new Map((request.companions ?? []).map((user) => [user.id, user.displayName]));
+	names.set(request.ownerId, request.ownerName);
+	const groups = new Map<
+		string,
+		{ teacherId: string; name: string; days: LeaveCoveragePlan['days'] }
+	>();
+	for (const { date, lessons } of plan.days) {
+		for (const lesson of lessons) {
+			const teacherId = lesson.teacherId;
+			let group = groups.get(teacherId);
+			if (!group) {
+				group = {
+					teacherId,
+					name: lesson.originalTeacherName?.trim() || names.get(teacherId) || 'ครูเจ้าของคาบ',
+					days: []
+				};
+				groups.set(teacherId, group);
+			}
+			let day = group.days.at(-1);
+			if (day?.date !== date) {
+				day = { date, lessons: [] };
+				group.days.push(day);
+			}
+			day.lessons.push(lesson);
+		}
+	}
+	const owner = groups.get(request.ownerId);
+	groups.delete(request.ownerId);
+	return [...(owner ? [owner] : []), ...groups.values()];
+}
 
 export function coverageSelectionMatches(
 	lesson: LeaveCoverageLesson,

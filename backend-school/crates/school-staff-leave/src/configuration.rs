@@ -28,13 +28,7 @@ pub async fn list_types_on_connection(
     q: LeaveListQuery,
 ) -> Result<Vec<LeaveType>, AppError> {
     require_type_list_access(actor, &q)?;
-    let kind = q.kind.map(|k| {
-        if k == LeaveKind::Leave {
-            "leave"
-        } else {
-            "exit"
-        }
-    });
+    let kind = q.kind.map(LeaveKind::as_str);
     Ok(DbSession::new(connection).scalar::<Json<LeaveType>>("staff.leave.configuration.list_types_on_connection", "SELECT document FROM staff_leave_types WHERE ($1::text IS NULL OR kind=$1) AND ($2 OR document->>'archived'='false') ORDER BY code,id LIMIT 200").bind(kind).bind(q.include_archived.unwrap_or(false)).fetch_all().await?.into_iter().map(|r|r.0).collect())
 }
 
@@ -133,7 +127,7 @@ pub async fn save_type(
         archived: input.archived,
         revision,
     };
-    DbSession::new(&mut *tx).query("staff.leave.configuration.save_type", "INSERT INTO staff_leave_types(id,code,kind,revision,document) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,document=excluded.document").bind(rid).bind(&item.code).bind(if item.kind==LeaveKind::Leave{"leave"}else{"exit"}).bind(revision).bind(Json(&item)).execute().await.map_err(|error|{
+    DbSession::new(&mut *tx).query("staff.leave.configuration.save_type", "INSERT INTO staff_leave_types(id,code,kind,revision,document) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,document=excluded.document").bind(rid).bind(&item.code).bind(item.kind.as_str()).bind(revision).bind(Json(&item)).execute().await.map_err(|error|{
         if error.as_database_error().is_some_and(|database|database.constraint()==Some("staff_leave_types_code_key")){
             AppError::Conflict("รหัสประเภทคำขอนี้มีอยู่แล้ว กรุณาใช้รหัสอื่น".into())
         }else{error.into()}
@@ -279,6 +273,11 @@ pub async fn save_policy(
         .ok_or_else(|| invalid("ไม่พบประเภทคำขอ"))?;
     if old.revision != input.expected_revision {
         return Err(stale());
+    }
+    if old.kind == LeaveKind::OfficialTravel
+        && (input.annual_limit.is_some() || input.counting_mode != LeaveCountingMode::CalendarDays)
+    {
+        return Err(invalid("ขอไปราชการนับวันตามปฏิทินและไม่หักสิทธิ์ลาประจำปี"));
     }
     if input.unit != active_unit(old.kind) {
         return Err(invalid(

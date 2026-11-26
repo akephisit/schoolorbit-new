@@ -2144,3 +2144,341 @@ async fn coverage_refresh_recovers_missing_to_ready_zero_without_dirty_selection
 mod codes {
     include!("leave/permission_codes_generated.rs");
 }
+
+#[tokio::test]
+async fn official_travel_confirms_only_the_current_submission_and_never_debits_leave() {
+    let (pool, owner, manager, companion) = fixture("official_travel_consent").await;
+    sqlx::query("INSERT INTO user_roles(user_id,role_id) SELECT unnest($1::uuid[]),id FROM roles WHERE code='TEACHER' ON CONFLICT DO NOTHING")
+        .bind([owner.user_id, manager.user_id].as_slice()).execute(&pool).await.unwrap();
+    let role = Uuid::now_v7();
+    sqlx::query("INSERT INTO roles(id,code,name,user_type) VALUES($1,'COMPANION_TEST','Custom companion','staff')")
+        .bind(role).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
+        .bind(role).bind(codes::STAFF_LEAVE_READ_ASSIGNED).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)")
+        .bind(companion.user_id)
+        .bind(role)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET title='นาง', first_name='กมล',last_name='ทดสอบ',title_en='Ms.',first_name_en='Unique',last_name_en='Traveler' WHERE id=$1")
+        .bind(companion.user_id).execute(&pool).await.unwrap();
+    let travel = service::save_type(
+        &pool,
+        &manager,
+        None,
+        SaveLeaveTypeRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: None,
+            code: None,
+            name: "ไปราชการ".into(),
+            kind: LeaveKind::OfficialTravel,
+            archived: false,
+        },
+    )
+    .await
+    .unwrap();
+    let cfg = policy(travel.revision, manager.user_id, LeaveUnit::Day, None);
+    let mut capped = cfg.clone();
+    capped.annual_limit = Some(10);
+    assert!(service::save_policy(&pool, &manager, travel.id, capped)
+        .await
+        .is_err());
+    service::save_policy(&pool, &manager, travel.id, cfg)
+        .await
+        .unwrap();
+    let mut route = period(travel.id, 3);
+    route.destination = Some("สำนักงานเขตพื้นที่การศึกษา".into());
+    route.end_date = date(5);
+    route.start_time = chrono::NaiveTime::from_hms_opt(15, 0, 0);
+    route.end_time = chrono::NaiveTime::from_hms_opt(10, 0, 0);
+    for ids in [
+        vec![owner.user_id],
+        vec![companion.user_id; 2],
+        vec![Uuid::now_v7()],
+        (0..101).map(|_| Uuid::now_v7()).collect(),
+    ] {
+        route.companion_user_ids = ids;
+        assert!(service::create(
+            &pool,
+            &owner,
+            CreateLeaveRequest {
+                request_id: Uuid::now_v7(),
+                period: route.clone(),
+            }
+        )
+        .await
+        .is_err());
+    }
+    route.companion_user_ids = vec![companion.user_id];
+    let search = || LeaveCompanionOptionsQuery {
+        search: Some("Unique Traveler".into()),
+        offset: None,
+    };
+    assert!(service::companion_options(&pool, &owner, search())
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(service::create(
+        &pool,
+        &owner,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: route.clone()
+        }
+    )
+    .await
+    .is_err());
+    sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
+        .bind(role).bind(codes::STAFF_LEAVE_UPDATE_ASSIGNED).execute(&pool).await.unwrap();
+    let options = service::companion_options(&pool, &owner, search())
+        .await
+        .unwrap();
+    assert_eq!(options.len(), 1);
+    assert_eq!(options[0].id, companion.user_id);
+    assert!(options[0].display_name.contains("กมล"));
+    route.companion_user_ids = vec![manager.user_id];
+    let draft = service::create(
+        &pool,
+        &owner,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: route.clone(),
+        },
+    )
+    .await
+    .unwrap();
+    let id = draft.request.id;
+    let mutation = |revision| LeaveMutationRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: revision,
+    };
+    assert!(
+        service::submit(&pool, &owner, id, mutation(draft.request.revision))
+            .await
+            .is_err()
+    );
+    route.companion_user_ids = vec![companion.user_id];
+    let draft = service::update(
+        &pool,
+        &owner,
+        id,
+        UpdateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: draft.request.revision,
+            period: route.clone(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(draft.request.amount, 3);
+    assert_eq!(draft.request.companions[0].id, companion.user_id);
+    let sent = submit(&pool, &owner, &draft).await;
+    let (exit, _) = typ(&pool, &manager, "traveller_exit", LeaveUnit::Minute, None).await;
+    let mut adjoining = period(exit.id, 3);
+    adjoining.start_time = chrono::NaiveTime::from_hms_opt(14, 0, 0);
+    adjoining.end_time = chrono::NaiveTime::from_hms_opt(15, 0, 0);
+    let outside = service::create(
+        &pool,
+        &companion,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: adjoining.clone(),
+        },
+    )
+    .await
+    .unwrap();
+    let outside = submit(&pool, &companion, &outside).await;
+    assert_eq!(outside.request.status, LeaveStatus::Submitted);
+    adjoining.start_time = chrono::NaiveTime::from_hms_opt(15, 0, 0);
+    adjoining.end_time = chrono::NaiveTime::from_hms_opt(16, 0, 0);
+    let conflict = service::create(
+        &pool,
+        &companion,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: adjoining,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(service::submit(
+        &pool,
+        &companion,
+        conflict.request.id,
+        mutation(conflict.request.revision)
+    )
+    .await
+    .is_err());
+    assert!(service::detail(&pool, &companion, id).await.is_err());
+    assert!(
+        service::companion_invitations(&pool, &owner, Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let list = service::companion_invitations(&pool, &companion, Default::default())
+        .await
+        .unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].destination, route.destination);
+    assert!(!list[0].confirmed);
+    assert!(
+        service::confirm_companion(&pool, &owner, id, mutation(sent.request.revision))
+            .await
+            .is_err()
+    );
+    assert!(
+        service::act(&pool, &manager, id, action(&sent, ProcessAction::Approve))
+            .await
+            .is_err()
+    );
+    let first = mutation(sent.request.revision);
+    service::confirm_companion(&pool, &companion, id, first.clone())
+        .await
+        .unwrap();
+    service::confirm_companion(&pool, &companion, id, first.clone())
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM role_permissions WHERE role_id=$1 AND permission_id=(SELECT id FROM permissions WHERE code=$2)")
+        .bind(role).bind(codes::STAFF_LEAVE_UPDATE_ASSIGNED).execute(&pool).await.unwrap();
+    assert!(
+        service::companion_invitations(&pool, &companion, Default::default())
+            .await
+            .is_err()
+    );
+    assert!(
+        service::confirm_companion(&pool, &companion, id, first.clone())
+            .await
+            .is_err()
+    );
+    assert!(
+        service::act(&pool, &manager, id, action(&sent, ProcessAction::Approve))
+            .await
+            .is_err()
+    );
+    let returned = service::act(
+        &pool,
+        &manager,
+        id,
+        action(&sent, ProcessAction::ReturnForRevision),
+    )
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO role_permissions(role_id,permission_id) SELECT $1,id FROM permissions WHERE code=$2")
+        .bind(role).bind(codes::STAFF_LEAVE_UPDATE_ASSIGNED).execute(&pool).await.unwrap();
+    route.end_date = date(6);
+    let revised = service::update(
+        &pool,
+        &owner,
+        id,
+        UpdateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: returned.request.revision,
+            period: route,
+        },
+    )
+    .await
+    .unwrap();
+    let sent = submit(&pool, &owner, &revised).await;
+    service::confirm_companion(&pool, &companion, id, first)
+        .await
+        .unwrap();
+    assert!(
+        service::act(&pool, &manager, id, action(&sent, ProcessAction::Approve))
+            .await
+            .is_err()
+    );
+    service::confirm_companion(&pool, &companion, id, mutation(sent.request.revision))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE users SET status='inactive' WHERE id=$1")
+        .bind(companion.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        service::act(&pool, &manager, id, action(&sent, ProcessAction::Approve))
+            .await
+            .is_err()
+    );
+    sqlx::query("UPDATE users SET status='active' WHERE id=$1")
+        .bind(companion.user_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let approved = service::act(&pool, &manager, id, action(&sent, ProcessAction::Approve))
+        .await
+        .unwrap();
+    assert_eq!(approved.request.status, LeaveStatus::Approved);
+    assert!(
+        service::companion_invitations(&pool, &companion, Default::default())
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let usage = service::usage(
+        &pool,
+        &owner,
+        LeaveUsageQuery {
+            from: date(1),
+            to: date(30),
+            kind: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(usage.items.is_empty());
+    let approvals: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM staff_leave_companion_confirmations WHERE request_id=$1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(approvals, 2);
+}
+
+#[tokio::test]
+async fn working_day_quota_excludes_weekend_while_full_absence_still_blocks_it() {
+    let (pool, owner, manager, _) = fixture("leave_weekend_presence").await;
+    let (working, original) = typ(&pool, &manager, "weekdays", LeaveUnit::Day, None).await;
+    let mut policy_input = policy(
+        original.type_revision,
+        manager.user_id,
+        LeaveUnit::Day,
+        None,
+    );
+    policy_input.counting_mode = LeaveCountingMode::WorkingDays;
+    policy_input.working_weekdays = vec![1, 2, 3, 4, 5];
+    service::save_policy(&pool, &manager, working.id, policy_input)
+        .await
+        .unwrap();
+    let mut span = period(working.id, 6);
+    span.end_date = date(9);
+    let friday_to_monday = service::create(
+        &pool,
+        &owner,
+        CreateLeaveRequest {
+            request_id: Uuid::now_v7(),
+            period: span,
+        },
+    )
+    .await
+    .unwrap();
+    let sent = submit(&pool, &owner, &friday_to_monday).await;
+    assert_eq!(sent.request.amount, 2);
+    let (other, _) = typ(&pool, &manager, "weekend", LeaveUnit::Day, None).await;
+    let saturday = create(&pool, &owner, other.id, 7).await;
+    assert!(service::submit(
+        &pool,
+        &owner,
+        saturday.request.id,
+        LeaveMutationRequest {
+            request_id: Uuid::now_v7(),
+            expected_revision: saturday.request.revision
+        }
+    )
+    .await
+    .is_err());
+}

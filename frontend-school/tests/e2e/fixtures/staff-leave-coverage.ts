@@ -80,6 +80,7 @@ export async function mockTeachingCoverage(
 		requireCoverageRefresh?: boolean;
 		failRefresh?: boolean;
 		holdRefresh?: boolean;
+		jointAllocationIds?: readonly string[];
 	} = {}
 ) {
 	const plan = options.plan ?? coveragePlan();
@@ -125,7 +126,8 @@ export async function mockTeachingCoverage(
 	if (options.assigned) {
 		detail.request.ownerId = firstStaff;
 		for (const day of detail.coverage.days)
-			for (const lesson of day.lessons) lesson.teacherId = firstStaff;
+			for (const lesson of day.lessons)
+				if (!lesson.originalTeacherName) lesson.teacherId = firstStaff;
 	}
 	if (options.manager) {
 		detail.request.ownerId = id(11);
@@ -274,6 +276,8 @@ export async function mockTeachingCoverage(
 					return reply(route, 'ยังใช้แผนตารางฉบับเก่า', 409);
 			}
 			if (path.endsWith('/coverage/candidates')) {
+				if ((body.lessonKeys as string[]).length > 500)
+					return reply(route, 'เลือกคาบเกินจำนวนที่ค้นหาได้', 400);
 				let candidates = teachers.filter(
 					(teacher) =>
 						(!body.sameSubjectGroupOnly || teacher.isSameSubjectGroup) &&
@@ -334,12 +338,28 @@ export async function mockTeachingCoverage(
 					return reply(route, 'บันทึกแผนยังไม่พร้อม', 503);
 				}
 				const assignments = body.assignments as LeaveCoverageSelection[];
+				const jointLessons = detail.coverage.days
+					.flatMap((day) => day.lessons)
+					.filter((lesson) => options.jointAllocationIds?.includes(lesson.allocationId));
+				if (
+					jointLessons.some((lesson) =>
+						assignments.some(
+							(selected) =>
+								selected.lessonKey === lesson.lessonKey &&
+								((selected.taughtOfferingId && selected.taughtOfferingId !== lesson.offeringId) ||
+									selected.taughtActivity)
+						)
+					)
+				)
+					return reply(route, 'คาบที่มีครูสอนร่วมต้องคงวิชาเดิม', 400);
 				for (const day of detail.coverage.days)
 					for (const lesson of day.lessons) {
 						const selected = assignments.find((value) => value.lessonKey === lesson.lessonKey);
 						const teacher = teachers.find(
 							(value) => value.teacherId === selected?.replacementTeacherId
 						);
+						const keepOriginal = !selected?.taughtOfferingId && !selected?.taughtActivity;
+						const taughtOfferingId = keepOriginal ? lesson.offeringId : selected.taughtOfferingId;
 						lesson.assignment =
 							selected && teacher
 								? {
@@ -347,19 +367,23 @@ export async function mockTeachingCoverage(
 										replacementTeacherId: teacher.teacherId,
 										replacementTeacherName: teacher.displayName,
 										mode: selected.mode,
-										taughtOfferingId: selected.taughtOfferingId,
+										taughtOfferingId,
 										taughtOfferingName:
-											teacher.taughtOfferings.find(
-												(value) => value.id === selected.taughtOfferingId
-											)?.name ?? null,
-										taughtActivity: selected.taughtActivity,
+											taughtOfferingId && taughtOfferingId === lesson.offeringId
+												? lesson.offeringName
+												: (teacher.taughtOfferings.find((value) => value.id === taughtOfferingId)
+														?.name ?? null),
+										taughtActivity:
+											keepOriginal && !taughtOfferingId
+												? (lesson.offeringName ?? 'กิจกรรมตามตาราง')
+												: selected.taughtActivity,
 										returnLessonKey: selected.returnLessonKey,
 										returnDate: selected.returnLessonKey ? '2026-10-22' : null,
 										returnLesson: selected.returnLessonKey ? returnLesson : null,
 										consent: 'pending',
 										confirmedAt: null,
 										taughtLearningGroupId:
-											selected.taughtOfferingId === englishOfferingId ? id(871) : id(870)
+											taughtOfferingId === englishOfferingId ? id(871) : id(870)
 									}
 								: null;
 					}

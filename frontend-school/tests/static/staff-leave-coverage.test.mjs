@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	coverageCounts,
+	coverageByOriginalTeacher,
+	coverageCandidateBatch,
 	coverageReturnCaption,
 	coverageSelectionMatches,
 	coverageSelections,
@@ -22,6 +24,39 @@ const lessons = [
 	{ lessonKey: 'math-class', assignment },
 	{ lessonKey: 'second-day', assignment: null }
 ];
+test('candidate batches retain all lessons for small groups and advance past assigned lessons for large groups', () => {
+	const keys = Array.from({ length: 501 }, (_, index) => `lesson-${index + 1}`);
+	const first = keys.slice(0, 500);
+	assert.deepEqual(coverageCandidateBatch(first, new Set(['lesson-1'])), first);
+	assert.deepEqual(coverageCandidateBatch(keys, new Set()), first);
+	assert.deepEqual(coverageCandidateBatch(keys, new Set(first)), ['lesson-501']);
+	assert.deepEqual(coverageCandidateBatch(keys, new Set(keys)), []);
+});
+test('coverage groups by teacher identity before date while keeping every original lesson key', () => {
+	const days = [
+		{
+			date: '2026-10-19',
+			lessons: [
+				{ lessonKey: 'a-one', teacherId: 'a', originalTeacherName: 'ครูสาธิต' },
+				{ lessonKey: 'b-one', teacherId: 'b', originalTeacherName: 'ครูสาธิต' }
+			]
+		},
+		{ date: '2026-10-20', lessons: [{ lessonKey: 'b-two', teacherId: 'b' }] }
+	];
+	const groups = coverageByOriginalTeacher({ days }, { ownerId: 'b', ownerName: 'ครูสาธิต' });
+	assert.deepEqual(
+		groups.map((group) => group.teacherId),
+		['b', 'a']
+	);
+	assert.deepEqual(
+		groups[0].days.map((day) => day.lessons.map((lesson) => lesson.lessonKey)),
+		[['b-one'], ['b-two']]
+	);
+	assert.deepEqual(
+		groups[1].days.map((day) => day.lessons.map((lesson) => lesson.lessonKey)),
+		[['a-one']]
+	);
+});
 test('daily counts distinguish selected and confirmed and edited teaching facts invalidate displayed consent', () => {
 	const plan = { days: [{ lessons }] };
 	const selections = coverageSelections(plan);

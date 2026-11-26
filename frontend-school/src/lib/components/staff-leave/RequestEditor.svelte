@@ -34,6 +34,7 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import DatePicker from '#lib/components/ui/date-picker/DatePicker.svelte';
 	import Choice from './Choice.svelte';
+	import CompanionPicker from './CompanionPicker.svelte';
 	let {
 		kind,
 		detail,
@@ -157,7 +158,9 @@
 					policyError =
 						kind === 'leave'
 							? 'ประเภทนี้ยังไม่มีเกณฑ์ลาเต็มวันที่ใช้ได้ ติดต่อผู้ดูแลให้สร้างเกณฑ์ฉบับใหม่ของประเภทเดิมก่อนบันทึก'
-							: 'ประเภทนี้ยังไม่มีเกณฑ์ออกนอกโรงเรียนแบบนาทีที่ใช้ได้';
+							: kind === 'exit'
+								? 'ประเภทนี้ยังไม่มีเกณฑ์ออกนอกโรงเรียนแบบนาทีที่ใช้ได้'
+								: 'ประเภทนี้ยังไม่มีเกณฑ์เดินทางไปราชการแบบวันที่ใช้ได้';
 			}
 		} catch (cause) {
 			if (policyRequest.isCurrent(ticket.revision) && !disposed)
@@ -183,7 +186,7 @@
 		event.preventDefault();
 		if (pending) return;
 		if (stale || conflict) return;
-		errors = leaveDraftErrors(draft, policy);
+		errors = leaveDraftErrors(draft, kind);
 		error = '';
 		if (Object.keys(errors).length || !policy || policy.unit !== expectedUnit) {
 			if (!policy) error = 'เลือกประเภทและวันที่ที่มีนโยบายใช้ได้ก่อนบันทึก';
@@ -203,7 +206,7 @@
 					files = files.filter((value) => value !== file);
 				}
 			}
-			const period = leavePeriodInput(draft, expectedUnit);
+			const period = leavePeriodInput(draft, kind);
 			const basis = detail ? { expectedRevision, period } : { period };
 			const requestId = intent.for(basis);
 			const result = detail
@@ -215,13 +218,13 @@
 				: await createLeaveRequest({ requestId, period });
 			if (!disposed) {
 				expectedRevision = result.request.revision;
-				savedBasis = JSON.stringify(leaveDraft(result));
-			}
-			if (!disposed)
+				draft = leaveDraft(result);
+				savedBasis = JSON.stringify(draft);
 				onsaved(
 					result,
 					event.submitter instanceof HTMLButtonElement && event.submitter.value === 'next'
 				);
+			}
 		} catch (cause) {
 			if (!disposed) {
 				error = cause instanceof Error ? cause.message : 'บันทึกคำขอไม่สำเร็จ';
@@ -332,31 +335,50 @@
 					onchange={() => resolvePolicy()}
 				/>{#if errors.typeId}<p class="mt-1 text-sm text-destructive">{errors.typeId}</p>{/if}
 			</div>
-			<div class="grid grid-cols-2 gap-3">
+			<div class="grid gap-3 sm:grid-cols-2">
 				<div class="space-y-2">
-					<Label for="leave-start-date">วันที่เริ่ม *</Label><DatePicker
+					<Label for="leave-start-date"
+						>{kind === 'exit' ? 'วันที่ออกนอกโรงเรียน' : 'วันที่เริ่ม'} *</Label
+					><DatePicker
 						id="leave-start-date"
 						ariaLabel="วันที่เริ่ม"
 						bind:value={draft.startDate}
 						disabled={pending}
 						onValueChange={(value) => {
-							if (!draft.endDate) draft.endDate = value;
+							if (kind === 'exit' || !draft.endDate) draft.endDate = value;
 							void resolvePolicy();
 						}}
 					/>{#if errors.startDate}<p class="text-sm text-destructive">{errors.startDate}</p>{/if}
 				</div>
-				<div class="space-y-2">
-					<Label for="leave-end-date">วันที่สิ้นสุด *</Label><DatePicker
-						id="leave-end-date"
-						ariaLabel="วันที่สิ้นสุด"
-						bind:value={draft.endDate}
-						disabled={pending}
-					/>{#if errors.endDate}<p class="text-sm text-destructive">{errors.endDate}</p>{/if}
-				</div>
+				{#if kind !== 'exit'}<div class="space-y-2">
+						<Label for="leave-end-date">วันที่สิ้นสุด *</Label><DatePicker
+							id="leave-end-date"
+							ariaLabel="วันที่สิ้นสุด"
+							bind:value={draft.endDate}
+							disabled={pending}
+						/>{#if errors.endDate}<p class="text-sm text-destructive">{errors.endDate}</p>{/if}
+					</div>{/if}
 			</div>
-			{#if kind === 'exit'}<div class="grid grid-cols-2 gap-3">
+			{#if kind === 'official_travel'}
+				<div class="space-y-2">
+					<Label for="leave-destination">สถานที่ไปราชการ *</Label>
+					<Input
+						id="leave-destination"
+						bind:value={draft.destination}
+						maxlength={500}
+						disabled={pending}
+						aria-invalid={!!errors.destination}
+						aria-describedby={errors.destination ? 'leave-destination-error' : undefined}
+					/>
+					{#if errors.destination}<p id="leave-destination-error" class="text-sm text-destructive">
+							{errors.destination}
+						</p>{/if}
+				</div>
+			{/if}
+			{#if kind !== 'leave'}<div class="grid gap-3 sm:grid-cols-2">
 					<div class="space-y-2">
-						<Label for="leave-start-time">เวลาเริ่ม *</Label><Input
+						<Label for="leave-start-time">{kind === 'exit' ? 'เวลาออก *' : 'เวลาออกเดินทาง'}</Label
+						><Input
 							id="leave-start-time"
 							type="time"
 							bind:value={draft.startTime}
@@ -364,14 +386,25 @@
 						/>{#if errors.startTime}<p class="text-sm text-destructive">{errors.startTime}</p>{/if}
 					</div>
 					<div class="space-y-2">
-						<Label for="leave-end-time">เวลาสิ้นสุด *</Label><Input
+						<Label for="leave-end-time"
+							>{kind === 'exit' ? 'เวลากลับ *' : 'เวลาสิ้นสุดการเดินทาง'}</Label
+						><Input
 							id="leave-end-time"
 							type="time"
 							bind:value={draft.endTime}
 							disabled={pending}
 						/>{#if errors.endTime}<p class="text-sm text-destructive">{errors.endTime}</p>{/if}
 					</div>
+					{#if kind === 'official_travel'}
+						<p class="text-xs text-muted-foreground sm:col-span-2">
+							ระบุเวลาของวันเริ่มและวันสิ้นสุดทั้งคู่ หรือเว้นว่างเพื่อขอเต็มวัน
+						</p>
+					{/if}
 				</div>{/if}
+			{#if kind !== 'leave'}<CompanionPicker
+					bind:chosen={draft.companions}
+					disabled={pending}
+				/>{/if}
 			<section aria-busy={policyLoading} data-testid="leave-effective-policy">
 				{#if policyLoading}<p role="status" class="text-sm text-muted-foreground">
 						กำลังตรวจสอบนโยบายตามวันที่เริ่ม...

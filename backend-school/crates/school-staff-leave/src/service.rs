@@ -1,4 +1,5 @@
 //! Narrow public operations for the Staff leave capability.
+pub use super::companions::{companion_invitations, companion_options, confirm_companion};
 pub use super::configuration::{
     delete_type, effective_policy, list_types, policies, save_policy, save_type,
 };

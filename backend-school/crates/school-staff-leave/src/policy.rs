@@ -143,7 +143,7 @@ pub(crate) fn historical_amount(
 }
 pub(crate) fn active_unit(kind: LeaveKind) -> LeavePolicyUnit {
     match kind {
-        LeaveKind::Leave => LeavePolicyUnit::Day,
+        LeaveKind::Leave | LeaveKind::OfficialTravel => LeavePolicyUnit::Day,
         LeaveKind::Exit => LeavePolicyUnit::Minute,
     }
 }
@@ -152,7 +152,9 @@ pub(crate) fn require_current_policy(
     policy: &LeavePolicyVersion,
 ) -> Result<(), AppError> {
     if policy.unit == LeaveUnit::HalfDay {
-        return Err(invalid("โรงเรียนต้องกำหนดเกณฑ์หน่วยวันฉบับใหม่สำหรับวันที่และประเภทบุคลากรนี้ก่อนยื่นคำขอ ไม่สามารถแปลงเกณฑ์ครึ่งวันเดิมโดยอัตโนมัติ"));
+        return Err(invalid(
+            "โรงเรียนต้องกำหนดเกณฑ์หน่วยวันฉบับใหม่สำหรับวันที่และประเภทบุคลากรนี้ก่อนยื่นคำขอ ไม่สามารถแปลงเกณฑ์ครึ่งวันเดิมโดยอัตโนมัติ",
+        ));
     }
     if policy.unit != LeaveUnit::from(active_unit(kind)) {
         return Err(invalid(
@@ -161,14 +163,65 @@ pub(crate) fn require_current_policy(
     }
     Ok(())
 }
+pub(super) const MAX_COMPANIONS: usize = 100;
+
 pub(crate) fn require_current_shape(
     period: &StoredLeavePeriod,
     kind: LeaveKind,
 ) -> Result<(), AppError> {
     if period.day_portion != LeaveDayPortion::FullDay {
-        return Err(invalid("กรุณาบันทึกช่วงคำขอใหม่อย่างชัดเจน ระบบรับเฉพาะการลาเต็มวันหรือการออกนอกสถานศึกษาที่ระบุเวลา โดยเก็บฉบับเดิมเป็นหลักฐาน"));
+        return Err(invalid(
+            "กรุณาบันทึกช่วงคำขอใหม่อย่างชัดเจน ระบบรับเฉพาะการลาเต็มวันหรือการออกนอกสถานศึกษาที่ระบุเวลา โดยเก็บฉบับเดิมเป็นหลักฐาน",
+        ));
+    }
+    if period.companion_user_ids.len() > MAX_COMPANIONS {
+        return Err(invalid("เลือกผู้ร่วมเดินทางได้ไม่เกิน 100 คนต่อคำขอ"));
+    }
+    if kind == LeaveKind::OfficialTravel {
+        let days = (period.end_date - period.start_date).num_days();
+        if !(0..=366).contains(&days) {
+            return Err(invalid(
+                "ช่วงเวลาไปราชการต้องเรียงวันที่และไม่เกิน 367 วันรวมวันแรกและวันสุดท้าย",
+            ));
+        }
+        let occupied_days =
+            days + 1 - i64::from(days > 0 && period.end_time == Some(chrono::NaiveTime::MIN));
+        if occupied_days * (1 + period.companion_user_ids.len() as i64) > 3000 {
+            return Err(invalid(
+                "จำนวนผู้เดินทางรวมผู้ยื่นคูณจำนวนวันที่เดินทางต้องไม่เกิน 3,000 คน-วันต่อคำขอ",
+            ));
+        }
+    }
+    if kind != LeaveKind::OfficialTravel && period.destination.is_some()
+        || kind == LeaveKind::Leave && !period.companion_user_ids.is_empty()
+    {
+        return Err(invalid("ปลายทางหรือผู้ร่วมเดินทางไม่ตรงกับประเภทคำขอ"));
     }
     match kind {
+        LeaveKind::OfficialTravel => {
+            let destination = period.destination.as_deref().unwrap_or_default().trim();
+            let valid_times = match (period.start_time, period.end_time) {
+                (None, None) => true,
+                (Some(start), Some(end)) => {
+                    start.second() == 0
+                        && end.second() == 0
+                        && start.nanosecond() == 0
+                        && end.nanosecond() == 0
+                        && (period.start_date < period.end_date || start < end)
+                }
+                _ => false,
+            };
+            if destination.is_empty()
+                || period
+                    .destination
+                    .as_ref()
+                    .is_some_and(|text| text.chars().count() > 500)
+                || !valid_times
+            {
+                return Err(invalid("กรุณาระบุสถานที่ไปราชการและช่วงวันเวลาเดินทางที่ถูกต้อง"));
+            }
+            Ok(())
+        }
         LeaveKind::Leave if period.start_time.is_some() || period.end_time.is_some() => {
             Err(invalid("คำขอลารับเฉพาะเต็มวันโดยไม่ระบุเวลา"))
         }
@@ -195,7 +248,9 @@ pub(crate) fn require_current_shape(
 }
 pub(crate) fn require_current_record(request: &LeaveRequestSummary) -> Result<(), AppError> {
     if request.unit != LeaveUnit::from(active_unit(request.kind)) {
-        return Err(invalid("คำขอฉบับเดิมใช้หน่วยที่เลิกใช้แล้ว กรุณาบันทึกช่วงเต็มวันหรือเวลาออกนอกสถานศึกษาใหม่ภายใต้เกณฑ์ปัจจุบันก่อนส่งอีกครั้ง"));
+        return Err(invalid(
+            "คำขอฉบับเดิมใช้หน่วยที่เลิกใช้แล้ว กรุณาบันทึกช่วงเต็มวันหรือเวลาออกนอกสถานศึกษาใหม่ภายใต้เกณฑ์ปัจจุบันก่อนส่งอีกครั้ง",
+        ));
     }
     let period = StoredLeavePeriod {
         academic_year_id: request.academic_year_id,
@@ -209,6 +264,8 @@ pub(crate) fn require_current_record(request: &LeaveRequestSummary) -> Result<()
         day_portion: request.day_portion,
         reason: request.reason.clone(),
         evidence_file_ids: vec![],
+        destination: request.destination.clone(),
+        companion_user_ids: request.companions.iter().map(|user| user.id).collect(),
     };
     require_current_shape(&period, request.kind)
 }
@@ -219,6 +276,17 @@ pub(crate) fn amount(
 ) -> Result<i64, AppError> {
     require_current_policy(kind, policy)?;
     require_current_shape(period, kind)?;
+    if kind == LeaveKind::OfficialTravel {
+        let days = (period.end_date - period.start_date).num_days() + 1;
+        if period.reason.trim().is_empty()
+            || period.reason.chars().count() > 4000
+            || period.evidence_file_ids.len() > 20
+            || policy.max_per_request.is_some_and(|cap| days > cap)
+        {
+            return Err(invalid("กรุณาตรวจเหตุผล หลักฐาน และจำนวนวันตามเกณฑ์ไปราชการ"));
+        }
+        return Ok(days);
+    }
     historical_amount(period, policy)
 }
 pub(crate) fn quota_scale(unit: LeaveUnit) -> i128 {
@@ -270,8 +338,50 @@ mod tests {
             day_portion: LeaveDayPortion::FullDay,
             reason: "test".into(),
             evidence_file_ids: vec![],
+            destination: None,
+            companion_user_ids: vec![],
         }
     }
+    #[test]
+    fn official_travel_dates_require_a_destination_and_allow_cross_fiscal_year_times() {
+        let mut route = period();
+        let mut cfg = policy(LeaveUnit::Day);
+        cfg.counting_mode = LeaveCountingMode::CalendarDays;
+        route.start_date = NaiveDate::from_ymd_opt(2026, 9, 30).unwrap();
+        route.end_date = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
+        assert!(amount(&route, &cfg, LeaveKind::OfficialTravel).is_err());
+        route.destination = Some("ศูนย์ประชุม".into());
+        route.start_time = chrono::NaiveTime::from_hms_opt(16, 0, 0);
+        assert!(amount(&route, &cfg, LeaveKind::OfficialTravel).is_err());
+        route.end_time = chrono::NaiveTime::from_hms_opt(9, 0, 0);
+        assert_eq!(amount(&route, &cfg, LeaveKind::OfficialTravel).unwrap(), 2);
+        route.end_date = route.start_date;
+        assert!(amount(&route, &cfg, LeaveKind::OfficialTravel).is_err());
+        route.end_date += chrono::Duration::days(367);
+        assert!(amount(&route, &cfg, LeaveKind::OfficialTravel).is_err());
+        route.end_date -= chrono::Duration::days(1);
+        assert_eq!(
+            amount(&route, &cfg, LeaveKind::OfficialTravel).unwrap(),
+            367
+        );
+    }
+
+    #[test]
+    fn travel_limits_count_only_occupied_dates_for_every_participant() {
+        let mut route = period();
+        route.destination = Some("ศูนย์ประชุม".into());
+        route.companion_user_ids = (0..99).map(|_| uuid::Uuid::new_v4()).collect();
+        route.end_date = route.start_date + chrono::Duration::days(29);
+        assert!(require_current_shape(&route, LeaveKind::OfficialTravel).is_ok());
+        route.end_date += chrono::Duration::days(1);
+        assert!(require_current_shape(&route, LeaveKind::OfficialTravel).is_err());
+        route.start_time = chrono::NaiveTime::from_hms_opt(8, 0, 0);
+        route.end_time = Some(chrono::NaiveTime::MIN);
+        assert!(require_current_shape(&route, LeaveKind::OfficialTravel).is_ok());
+        route.companion_user_ids.push(uuid::Uuid::new_v4());
+        assert!(require_current_shape(&route, LeaveKind::OfficialTravel).is_err());
+    }
+
     #[test]
     fn leave_counts_configured_holidays_and_calendar_days() {
         let mut p = policy(LeaveUnit::Day);

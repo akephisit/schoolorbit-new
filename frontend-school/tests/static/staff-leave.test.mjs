@@ -17,6 +17,7 @@ import {
 } from '../../src/lib/staff-leave/filters.ts';
 import {
 	leaveAmount,
+	leavePeriodCaption,
 	leaveUsageAmount,
 	leaveHistoryLabel
 } from '../../src/lib/staff-leave/presentation.ts';
@@ -64,7 +65,7 @@ test('request payload omits client amounts and normalizes stale unit-dependent f
 		reason: ' เหตุผล ',
 		evidenceFileIds: ['file']
 	};
-	assert.deepEqual(leavePeriodInput(draft, 'minute'), {
+	assert.deepEqual(leavePeriodInput(draft, 'exit'), {
 		typeId: 'type',
 		academicYearId: null,
 		academicTermId: null,
@@ -75,18 +76,74 @@ test('request payload omits client amounts and normalizes stale unit-dependent f
 		reason: 'เหตุผล',
 		evidenceFileIds: ['file']
 	});
-	assert.equal('dayPortion' in leavePeriodInput(draft, 'day'), false);
-	assert.equal('halfDayBoundary' in leavePeriodInput(draft, 'minute'), false);
-	assert.equal(leavePeriodInput(draft, 'day').startTime, null);
-	assert.equal('amount' in leavePeriodInput(draft, 'minute'), false);
+	assert.equal('dayPortion' in leavePeriodInput(draft, 'leave'), false);
+	assert.equal('halfDayBoundary' in leavePeriodInput(draft, 'exit'), false);
+	assert.equal(leavePeriodInput(draft, 'leave').startTime, null);
+	assert.equal('amount' in leavePeriodInput(draft, 'exit'), false);
+	assert.equal(leaveDraftErrors({ ...draft, endDate: '2026-10-19' }, 'leave').endDate, undefined);
 	assert.equal(
-		leaveDraftErrors({ ...draft, endDate: '2026-10-19' }, { unit: 'day' }).endDate,
-		undefined
-	);
-	assert.equal(
-		leaveDraftErrors({ ...draft, endTime: '08:00' }, { unit: 'minute' }).endTime,
+		leaveDraftErrors({ ...draft, endTime: '08:00' }, 'exit').endTime,
 		'เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม'
 	);
+});
+test('travel pairs optional boundary times and carries only authorized travel fields in the draft payload', () => {
+	const draft = {
+		...leaveDraft(),
+		typeId: 'travel',
+		startDate: '2026-10-18',
+		endDate: '2026-10-20',
+		startTime: '17:00',
+		endTime: '08:00',
+		reason: 'ประชุมวิชาการ',
+		destination: ' ศูนย์ประชุม ',
+		companions: [
+			{ id: 'other-a', displayName: 'ครูเอ' },
+			{ id: 'other-b', displayName: 'ครูบี' }
+		]
+	};
+	assert.deepEqual(leaveDraftErrors(draft, 'official_travel'), {});
+	assert.match(leaveDraftErrors({ ...draft, endTime: '' }, 'official_travel').endTime, /ระบุเวลา/);
+	assert.match(
+		leaveDraftErrors({ ...draft, destination: ' ' }, 'official_travel').destination,
+		/ระบุสถานที่/
+	);
+	assert.match(
+		leaveDraftErrors({ ...draft, endDate: draft.startDate }, 'official_travel').endTime,
+		/อยู่หลัง/
+	);
+	const travel = leavePeriodInput(draft, 'official_travel');
+	assert.deepEqual(travel.companionUserIds, ['other-a', 'other-b']);
+	assert.equal(travel.destination, 'ศูนย์ประชุม');
+	assert.match(leavePeriodCaption(travel), /17:00 ถึง .* 08:00/);
+	assert.equal(
+		leavePeriodInput({ ...draft, startTime: '', endTime: '' }, 'official_travel').startTime,
+		null
+	);
+	assert.equal('destination' in leavePeriodInput(draft, 'exit'), false);
+	assert.equal('companionUserIds' in leavePeriodInput(draft, 'leave'), false);
+	assert.equal(
+		safeLeaveReturn('/staff/official-travel?status=draft', '/staff/leave'),
+		'/staff/official-travel?status=draft'
+	);
+});
+test('school exit reference starts a fresh policy without inventing school-specific limits or routing', () => {
+	const preset = {
+		id: 'school_exit',
+		kind: 'exit',
+		unit: 'minute',
+		countingMode: 'working_days',
+		personnelTypes: []
+	};
+	const draft = leavePolicyDraft('exit', undefined, preset);
+	assert.equal(draft.sourceReference, '');
+	assert.equal(draft.unit, 'minute');
+	assert.equal(draft.countingMode, 'working_days');
+	assert.equal(draft.effectiveFrom, undefined);
+	assert.equal(draft.quotaMonth, undefined);
+	assert.equal(draft.maxPerRequest, '');
+	assert.deepEqual(draft.weekdays, []);
+	assert.deepEqual(draft.personnelTypes, []);
+	assert.deepEqual(draft.steps[0].recipients, []);
 });
 test('list context restores status and paging and refuses external return paths', () => {
 	assert.deepEqual(

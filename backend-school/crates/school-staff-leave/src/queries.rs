@@ -136,6 +136,8 @@ pub async fn detail(
             LeaveStatus::Submitted | LeaveStatus::CancellationPending
         );
     let coverage = super::coverage::detail_on_connection(&mut tx, actor, &r).await?;
+    let companion_confirmations = super::companions::statuses(&mut tx, &r.document).await?;
+    let companions_ready = companion_confirmations.iter().all(|s| s.confirmed);
     let coverage_ready = coverage.state == super::coverage_models::LeaveCoverageState::Confirmed
         || coverage.state == super::coverage_models::LeaveCoverageState::LegacyUnverified;
     let available_actions = if can_act {
@@ -146,7 +148,9 @@ pub async fn detail(
             ProcessAction::Approve
         };
         let mut actions = vec![ProcessAction::Reject, ProcessAction::ReturnForRevision];
-        if coverage_ready || r.document.status == LeaveStatus::CancellationPending {
+        if (coverage_ready && companions_ready)
+            || r.document.status == LeaveStatus::CancellationPending
+        {
             actions.insert(0, action)
         }
         actions
@@ -169,6 +173,7 @@ pub async fn detail(
         None
     };
     let result = LeaveRequestDetail {
+        companion_confirmations,
         coverage,
         process_purpose: if r.document.status == LeaveStatus::CancellationPending {
             LeaveProcessPurpose::Cancellation
@@ -224,13 +229,7 @@ pub async fn list_on_connection(
     let limit = q.limit.unwrap_or(30);
     let offset = q.offset.unwrap_or(0);
     validate_leave_page(limit, offset)?;
-    let kind = q.kind.map(|v| {
-        if v == LeaveKind::Leave {
-            "leave"
-        } else {
-            "exit"
-        }
-    });
+    let kind = q.kind.map(LeaveKind::as_str);
     let status = serialized_leave_status(q.status)?;
     let mut items:Vec<_>=DbSession::new(connection).scalar::<Json<LeaveRequestSummary>>("staff.leave.queries.list_on_connection", "SELECT r.document FROM staff_leave_requests r WHERE ($1 OR ($2 AND r.owner_id=$3) OR ($4 AND EXISTS(SELECT 1 FROM process_participants p JOIN process_instances i ON i.id=p.instance_id WHERE p.user_id=$3 AND i.source_module='staff_leave' AND (i.source_id=r.id OR EXISTS(SELECT 1 FROM staff_leave_history h WHERE h.request_id=r.id AND h.entry->>'action'='cancellation_requested' AND i.source_id=h.id))))) AND ($5::text IS NULL OR r.document->>'kind'=$5) AND ($6::text IS NULL OR r.status=$6) ORDER BY r.created_at DESC,r.id DESC LIMIT $7 OFFSET $8").bind(actor.has_permission(codes::STAFF_LEAVE_READ_SCHOOL)).bind(actor.has_permission(codes::STAFF_LEAVE_READ_OWN)).bind(actor.user_id).bind(actor.has_permission(codes::STAFF_LEAVE_READ_ASSIGNED)).bind(kind).bind(status.as_ref().and_then(|s|s.as_str())).bind(limit+1).bind(offset).fetch_all().await?.into_iter().map(|r|r.0).collect();
     let has_more = items.len() > limit as usize;
@@ -266,13 +265,7 @@ pub async fn usage_on_connection(
     q: LeaveUsageQuery,
 ) -> Result<LeaveUsageReport, AppError> {
     validate_leave_usage_request(actor, &q)?;
-    let kind = q.kind.map(|v| {
-        if v == LeaveKind::Leave {
-            "leave"
-        } else {
-            "exit"
-        }
-    });
+    let kind = q.kind.map(LeaveKind::as_str);
     #[derive(sqlx::FromRow)]
     struct UsageRow {
         document: Json<LeaveUsageItem>,
@@ -286,7 +279,7 @@ pub async fn usage_on_connection(
           r.amount::numeric*CASE WHEN r.document->>'unit'='day' THEN 2 ELSE 1 END amount_scaled,
           p.document policy,p.version,p.id policy_id
         FROM staff_leave_requests r JOIN staff_leave_policies p ON p.id=r.policy_id
-        WHERE ($1 OR r.owner_id=$2) AND (r.document->>'startDate')::date BETWEEN $3 AND $4
+        WHERE r.quota_year_start IS NOT NULL AND ($1 OR r.owner_id=$2) AND (r.document->>'startDate')::date BETWEEN $3 AND $4
           AND ($5::text IS NULL OR r.document->>'kind'=$5) AND r.status IN ('submitted','approved','cancellation_pending')
       ), grouped AS (
         SELECT owner_id,type_id,quota_year_start,max(display_name) display_name,max(type_name) type_name,

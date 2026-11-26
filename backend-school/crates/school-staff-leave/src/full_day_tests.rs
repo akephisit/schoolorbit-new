@@ -143,6 +143,9 @@ async fn fixture(name: &str, portion: LeaveDayPortion) -> Legacy {
         .unwrap();
     let request = Uuid::now_v7();
     let summary = LeaveRequestSummary {
+        destination: None,
+        companions: vec![],
+        companion_revision: None,
         academic_year_id: Some(year),
         academic_term_id: Some(term),
         half_day_boundary: Some(NaiveTime::from_hms_opt(11, 30, 0).unwrap()),
@@ -480,6 +483,8 @@ async fn full_day_legacy_boundary_refresh_and_explicit_revision_keep_exact_recei
         }
         let before_policy = detail(&f).await;
         let period = LeavePeriodInput {
+            destination: None,
+            companion_user_ids: vec![],
             academic_year_id: Some(f.year),
             academic_term_id: Some(f.term),
             type_id: f.policy.type_id,
@@ -518,6 +523,8 @@ async fn full_day_legacy_boundary_refresh_and_explicit_revision_keep_exact_recei
                 request_id: Uuid::now_v7(),
                 expected_revision: current.request.revision,
                 period: LeavePeriodInput {
+                    destination: None,
+                    companion_user_ids: vec![],
                     academic_year_id: Some(f.year),
                     academic_term_id: Some(f.term),
                     type_id: f.policy.type_id,
@@ -691,6 +698,8 @@ async fn full_day_mixed_quota_and_reports_use_exact_scale_and_one_concurrent_win
                 CreateLeaveRequest {
                     request_id: Uuid::now_v7(),
                     period: LeavePeriodInput {
+                        destination: None,
+                        companion_user_ids: vec![],
                         academic_year_id: Some(f.year),
                         academic_term_id: Some(f.term),
                         type_id: p.type_id,
@@ -775,6 +784,8 @@ async fn full_day_mixed_quota_and_reports_use_exact_scale_and_one_concurrent_win
         CreateLeaveRequest {
             request_id: Uuid::now_v7(),
             period: LeavePeriodInput {
+                destination: None,
+                companion_user_ids: vec![],
                 academic_year_id: Some(f.year),
                 academic_term_id: Some(f.term),
                 type_id: p.type_id,
