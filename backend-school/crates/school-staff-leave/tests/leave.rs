@@ -2146,6 +2146,46 @@ mod codes {
 }
 
 #[tokio::test]
+async fn official_travel_default_remains_visible_at_the_leave_type_limit() {
+    let (pool, owner, _, _) = fixture("official_travel_default_type_limit").await;
+    sqlx::query(
+        r#"
+        WITH fixture_types AS (
+            SELECT uuidv7() AS id, 'aaa_leave_fixture_' || lpad(n::text, 3, '0') AS code
+            FROM generate_series(1, 201) AS items(n)
+        )
+        INSERT INTO staff_leave_types (id, code, kind, revision, document)
+        SELECT id, code, 'leave', 1, jsonb_build_object(
+            'id', id, 'code', code, 'kind', 'leave', 'name', code, 'archived', false, 'revision', 1
+        )
+        FROM fixture_types
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let options = service::options(&pool, &owner).await.unwrap();
+    let leave_codes: Vec<_> = options
+        .types
+        .iter()
+        .filter(|item| item.kind == LeaveKind::Leave)
+        .map(|item| item.code.as_str())
+        .collect();
+    assert_eq!(leave_codes.len(), 200);
+    assert_eq!(leave_codes[0], "aaa_leave_fixture_001");
+    assert_eq!(leave_codes[199], "aaa_leave_fixture_200");
+    let travel = options
+        .types
+        .iter()
+        .find(|item| item.kind == LeaveKind::OfficialTravel)
+        .unwrap();
+    assert_eq!(travel.name, "เดินทางไปราชการ");
+    assert_eq!(travel.code, format!("type_{}", travel.id.simple()));
+    assert!(!travel.archived);
+}
+
+#[tokio::test]
 async fn official_travel_default_drafts_wait_until_submission_for_approval_settings() {
     use school_errors::AppError;
     use school_staff_leave::coverage_models::SubmitLeaveRequest;
