@@ -2146,6 +2146,302 @@ mod codes {
 }
 
 #[tokio::test]
+async fn official_travel_default_remains_visible_at_the_leave_type_limit() {
+    let (pool, owner, _, _) = fixture("official_travel_default_type_limit").await;
+    sqlx::query(
+        r#"
+        WITH fixture_types AS (
+            SELECT uuidv7() AS id, 'aaa_leave_fixture_' || lpad(n::text, 3, '0') AS code
+            FROM generate_series(1, 201) AS items(n)
+        )
+        INSERT INTO staff_leave_types (id, code, kind, revision, document)
+        SELECT id, code, 'leave', 1, jsonb_build_object(
+            'id', id, 'code', code, 'kind', 'leave', 'name', code, 'archived', false, 'revision', 1
+        )
+        FROM fixture_types
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let options = service::options(&pool, &owner).await.unwrap();
+    let leave_codes: Vec<_> = options
+        .types
+        .iter()
+        .filter(|item| item.kind == LeaveKind::Leave)
+        .map(|item| item.code.as_str())
+        .collect();
+    assert_eq!(leave_codes.len(), 200);
+    assert_eq!(leave_codes[0], "aaa_leave_fixture_001");
+    assert_eq!(leave_codes[199], "aaa_leave_fixture_200");
+    let travel = options
+        .types
+        .iter()
+        .find(|item| item.kind == LeaveKind::OfficialTravel)
+        .unwrap();
+    assert_eq!(travel.name, "เดินทางไปราชการ");
+    assert_eq!(travel.code, format!("type_{}", travel.id.simple()));
+    assert!(!travel.archived);
+}
+
+#[tokio::test]
+async fn official_travel_default_drafts_wait_until_submission_for_approval_settings() {
+    use school_errors::AppError;
+    use school_staff_leave::coverage_models::SubmitLeaveRequest;
+
+    let (pool, owner, manager, other) = fixture("official_travel_default_draft").await;
+    let types: Vec<_> = service::options(&pool, &owner)
+        .await
+        .unwrap()
+        .types
+        .into_iter()
+        .filter(|item| item.kind == LeaveKind::OfficialTravel)
+        .collect();
+    assert_eq!(types.len(), 1);
+    let travel = &types[0];
+    assert_eq!(travel.name, "เดินทางไปราชการ");
+    assert!(!travel.archived);
+    assert!(service::policies(&pool, &manager, travel.id)
+        .await
+        .unwrap()
+        .is_empty());
+    let mut route = period(travel.id, 3);
+    let create = |period| CreateLeaveRequest {
+        request_id: Uuid::now_v7(),
+        period,
+    };
+    assert!(service::create(&pool, &owner, create(route.clone()))
+        .await
+        .is_err());
+    route.destination = Some("สำนักงานเขตพื้นที่การศึกษา".into());
+    let draft = service::create(&pool, &owner, create(route.clone()))
+        .await
+        .unwrap();
+    route.end_date = date(4);
+    let edit = UpdateLeaveRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: draft.request.revision,
+        period: route,
+    };
+    assert!(
+        service::update(&pool, &other, draft.request.id, edit.clone())
+            .await
+            .is_err()
+    );
+    let draft = service::update(&pool, &owner, draft.request.id, edit)
+        .await
+        .unwrap();
+    assert_eq!(draft.request.status, LeaveStatus::Draft);
+    assert_eq!(draft.request.amount, 2);
+    assert_eq!(draft.request.unit, LeaveUnit::Day);
+    assert_eq!(
+        draft.request.personnel_type,
+        Some(StaffPersonnelType::CivilServant)
+    );
+    assert!(draft.can_edit && draft.can_submit);
+    assert!(draft.policy.is_none() && draft.submission_blocking_reason.is_none());
+
+    let id = draft.request.id;
+    let send = SubmitLeaveRequest {
+        request_id: Uuid::now_v7(),
+        expected_revision: draft.request.revision,
+        emergency_reason: None,
+    };
+    let missing_route = |result| {
+        assert!(matches!(result, Err(AppError::ValidationError(message))
+            if message.contains("เส้นทางอนุมัติ") && message.contains("ผู้ดูแลระบบ")));
+    };
+    missing_route(service::submit(&pool, &owner, id, send.clone()).await);
+
+    let mut disabled = policy(travel.revision, manager.user_id, LeaveUnit::Day, None);
+    disabled.enabled = false;
+    let disabled = service::save_policy(&pool, &manager, travel.id, disabled)
+        .await
+        .unwrap();
+    missing_route(service::submit(&pool, &owner, id, send.clone()).await);
+
+    let unresolved = service::save_policy(
+        &pool,
+        &manager,
+        travel.id,
+        policy(disabled.type_revision, Uuid::now_v7(), LeaveUnit::Day, None),
+    )
+    .await
+    .unwrap();
+    for input in [
+        send.clone(),
+        SubmitLeaveRequest {
+            request_id: Uuid::now_v7(),
+            emergency_reason: Some("นัดหมายเร่งด่วน".into()),
+            ..send.clone()
+        },
+    ] {
+        missing_route(service::submit(&pool, &owner, id, input).await);
+    }
+    let preserved = service::detail(&pool, &owner, id).await.unwrap();
+    assert_eq!(preserved.request.status, LeaveStatus::Draft);
+    assert_eq!(preserved.request.revision, draft.request.revision);
+    assert_eq!(preserved.content_hash, draft.content_hash);
+    assert_eq!(preserved.history.len(), draft.history.len());
+    assert!(preserved.request.policy_version_id.is_none() && preserved.instance.is_none());
+    let plans: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM staff_leave_coverage_plans WHERE request_id=$1")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(plans, 0);
+
+    let mut limited = policy(
+        unresolved.type_revision,
+        manager.user_id,
+        LeaveUnit::Day,
+        None,
+    );
+    limited.max_per_request = Some(1);
+    let limited = service::save_policy(&pool, &manager, travel.id, limited)
+        .await
+        .unwrap();
+    assert!(matches!(
+        service::submit(&pool, &owner, id, send.clone()).await,
+        Err(AppError::ValidationError(message)) if message.contains("จำนวนวันตามเกณฑ์")
+    ));
+
+    let mut required = policy(limited.type_revision, manager.user_id, LeaveUnit::Day, None);
+    required.evidence_required = true;
+    let required = service::save_policy(&pool, &manager, travel.id, required)
+        .await
+        .unwrap();
+    assert!(matches!(
+        service::submit(&pool, &owner, id, send.clone()).await,
+        Err(AppError::ValidationError(message)) if message.contains("ต้องแนบหลักฐานก่อนส่ง")
+    ));
+
+    let ready = service::save_policy(
+        &pool,
+        &manager,
+        travel.id,
+        policy(
+            required.type_revision,
+            manager.user_id,
+            LeaveUnit::Day,
+            None,
+        ),
+    )
+    .await
+    .unwrap();
+    let sent = service::submit(&pool, &owner, id, send).await.unwrap();
+    assert_eq!(sent.request.status, LeaveStatus::Submitted);
+    assert_eq!(sent.request.policy_version_id, Some(ready.id));
+    assert_eq!(
+        sent.instance.unwrap().steps[0].recipients[0].user_id,
+        manager.user_id
+    );
+}
+
+#[tokio::test]
+async fn official_travel_default_migration_preserves_existing_school_configuration() {
+    use school_test_db::cutover_test_support::apply_migrations_through;
+
+    for (name, archived) in [
+        ("travel_active_school_type", false),
+        ("travel_archived_school_type", true),
+    ] {
+        let pool = school_test_db::create_named_test_pool_with_max_connections(name, 4).await;
+        apply_migrations_through(&pool, 170).await.unwrap();
+        let manager = ActorContext {
+            user_id: Uuid::now_v7(),
+            permissions: vec![codes::STAFF_LEAVE_MANAGE_SCHOOL.into()],
+        };
+        sqlx::query("INSERT INTO users(id,username,password_hash,first_name,last_name,user_type,status) VALUES($1,$2,'synthetic','Manager','Fixture','staff','active')")
+            .bind(manager.user_id).bind(manager.user_id.to_string()).execute(&pool).await.unwrap();
+        let old = service::save_type(
+            &pool,
+            &manager,
+            None,
+            SaveLeaveTypeRequest {
+                request_id: Uuid::now_v7(),
+                expected_revision: None,
+                code: Some("official_travel".into()),
+                name: "ประเภทเดินทางที่โรงเรียนกำหนด".into(),
+                kind: LeaveKind::OfficialTravel,
+                archived,
+            },
+        )
+        .await
+        .unwrap();
+        let configured = service::save_policy(
+            &pool,
+            &manager,
+            old.id,
+            policy(old.revision, manager.user_id, LeaveUnit::Day, None),
+        )
+        .await
+        .unwrap();
+        let get_types = || {
+            service::list_types(
+                &pool,
+                &manager,
+                LeaveListQuery {
+                    kind: Some(LeaveKind::OfficialTravel),
+                    include_archived: Some(true),
+                    ..Default::default()
+                },
+            )
+        };
+        let before = get_types().await.unwrap();
+        assert_eq!(before.len(), 1);
+        apply_migrations_through(&pool, 171).await.unwrap();
+        apply_migrations_through(&pool, 171).await.unwrap();
+        let after = get_types().await.unwrap();
+        let preserved = after.iter().find(|item| item.id == old.id).unwrap();
+        assert_eq!(
+            serde_json::to_value(preserved).unwrap(),
+            serde_json::to_value(&before[0]).unwrap()
+        );
+        let policies = service::policies(&pool, &manager, old.id).await.unwrap();
+        assert_eq!(policies.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&policies[0]).unwrap(),
+            serde_json::to_value(configured).unwrap()
+        );
+        let active = after.iter().find(|item| !item.archived).unwrap();
+        if archived {
+            assert_eq!(after.len(), 2);
+            assert_ne!(active.id, old.id);
+            assert_eq!(active.code, format!("type_{}", active.id.simple()));
+            assert!(service::policies(&pool, &manager, active.id)
+                .await
+                .unwrap()
+                .is_empty());
+            service::save_type(
+                &pool,
+                &manager,
+                Some(active.id),
+                SaveLeaveTypeRequest {
+                    request_id: Uuid::now_v7(),
+                    expected_revision: Some(active.revision),
+                    code: None,
+                    name: active.name.clone(),
+                    kind: active.kind,
+                    archived: true,
+                },
+            )
+            .await
+            .unwrap();
+            apply_migrations_through(&pool, 171).await.unwrap();
+            let archived_types = get_types().await.unwrap();
+            assert_eq!(archived_types.len(), after.len());
+            assert!(archived_types.iter().all(|item| item.archived));
+        } else {
+            assert_eq!(after.len(), 1);
+            assert_eq!(active.id, old.id);
+        }
+    }
+}
+
+#[tokio::test]
 async fn official_travel_confirms_only_the_current_submission_and_never_debits_leave() {
     let (pool, owner, manager, companion) = fixture("official_travel_consent").await;
     sqlx::query("INSERT INTO user_roles(user_id,role_id) SELECT unnest($1::uuid[]),id FROM roles WHERE code='TEACHER' ON CONFLICT DO NOTHING")

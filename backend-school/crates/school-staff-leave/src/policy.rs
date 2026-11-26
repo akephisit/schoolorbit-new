@@ -275,19 +275,27 @@ pub(crate) fn amount(
     kind: LeaveKind,
 ) -> Result<i64, AppError> {
     require_current_policy(kind, policy)?;
-    require_current_shape(period, kind)?;
     if kind == LeaveKind::OfficialTravel {
-        let days = (period.end_date - period.start_date).num_days() + 1;
-        if period.reason.trim().is_empty()
-            || period.reason.chars().count() > 4000
-            || period.evidence_file_ids.len() > 20
-            || policy.max_per_request.is_some_and(|cap| days > cap)
-        {
+        let days = official_travel_days(period)?;
+        if policy.max_per_request.is_some_and(|cap| days > cap) {
             return Err(invalid("กรุณาตรวจเหตุผล หลักฐาน และจำนวนวันตามเกณฑ์ไปราชการ"));
         }
         return Ok(days);
     }
+    require_current_shape(period, kind)?;
     historical_amount(period, policy)
+}
+pub(super) fn official_travel_days(period: &StoredLeavePeriod) -> Result<i64, AppError> {
+    require_current_shape(period, LeaveKind::OfficialTravel)?;
+    if period.reason.trim().is_empty()
+        || period.reason.chars().count() > 4000
+        || period.evidence_file_ids.len() > 20
+    {
+        return Err(invalid(
+            "กรุณาระบุเหตุผลไม่เกิน 4,000 ตัวอักษรและแนบหลักฐานได้ไม่เกิน 20 ไฟล์",
+        ));
+    }
+    Ok((period.end_date - period.start_date).num_days() + 1)
 }
 pub(crate) fn quota_scale(unit: LeaveUnit) -> i128 {
     if unit == LeaveUnit::Day {

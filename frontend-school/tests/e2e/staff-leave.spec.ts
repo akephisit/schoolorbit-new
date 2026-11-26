@@ -7,7 +7,9 @@ import {
 	leaveTypeId,
 	exitTypeId,
 	travelTypeId,
-	travelCompanions
+	secondTravelTypeId,
+	travelCompanions,
+	missingTravelApproval
 } from './fixtures/staff-leave';
 import { actor } from './fixtures/staff-home-route-data';
 import { navigate } from './fixtures/supervision-route-data';
@@ -60,14 +62,14 @@ test('travel request keeps day boundaries and two companions on a narrow screen'
 }) => {
 	await page.setViewportSize({ width: 390, height: 900 });
 	await page.clock.setFixedTime(new Date('2026-10-18T03:00:00Z'));
-	const api = await mockLeave(page, { travel: true });
+	const api = await mockLeave(page, { travel: true, additionalTravelType: true });
 	await page.goto('/staff/official-travel');
 	await page.getByRole('link', { name: 'สร้างคำขอเดินทางไปราชการ', exact: true }).click();
+	await expect(page.locator('#leave-type')).toHaveText('เลือก');
 	await page.locator('#leave-type').click();
-	await page.getByRole('option', { name: 'เดินทางไปราชการในประเทศ', exact: true }).click();
+	await page.getByRole('option', { name: 'เดินทางไปราชการนอกจังหวัด', exact: true }).click();
 	await chooseDate(page, 'leave-start-date', 19);
 	await chooseDate(page, 'leave-end-date', 20);
-	await expect(page.getByTestId('leave-effective-policy')).toContainText('นโยบายฉบับ');
 	await page.getByLabel('สถานที่ไปราชการ *', { exact: true }).fill('ศูนย์ประชุมจังหวัด');
 	await page.getByLabel('เหตุผล *', { exact: true }).fill('ร่วมประชุมวิชาการ');
 	await page.getByLabel('เวลาออกเดินทาง', { exact: true }).fill('17:00');
@@ -89,7 +91,7 @@ test('travel request keeps day boundaries and two companions on a narrow screen'
 	for (const person of travelCompanions) await expect(review).toContainText(person.displayName);
 	await expect(review).toContainText(/17:00 ถึง .* 08:00/);
 	expect(api.writes[0].payload.period).toMatchObject({
-		typeId: travelTypeId,
+		typeId: secondTravelTypeId,
 		startDate: '2026-10-19',
 		endDate: '2026-10-20',
 		startTime: '17:00:00',
@@ -101,6 +103,46 @@ test('travel request keeps day boundaries and two companions on a narrow screen'
 	await expect(page.getByTestId('leave-detail')).toContainText('รอยืนยัน');
 	await page.getByRole('link', { name: 'กลับรายการคำขอ', exact: true }).click();
 	await expect(page).toHaveURL(/\/staff\/official-travel$/);
+});
+
+test('official travel defaults to the only type and saves before checking approval when submitted', async ({
+	page
+}) => {
+	await page.clock.setFixedTime(new Date('2026-10-18T03:00:00Z'));
+	const api = await mockLeave(page, { travel: true, missingPolicy: true });
+	await page.goto('/staff/official-travel/new');
+	await expect(page.locator('#leave-type')).toHaveText('เดินทางไปราชการในประเทศ');
+	await chooseDate(page, 'leave-start-date');
+	await page.getByLabel('สถานที่ไปราชการ *', { exact: true }).fill('ศูนย์อบรมจังหวัด');
+	await page.getByLabel('เหตุผล *', { exact: true }).fill('เข้าร่วมอบรม');
+	await expect(page.getByTestId('leave-effective-policy')).toHaveCount(0);
+	await page.getByRole('button', { name: 'บันทึกและจัดคาบสอนต่อ', exact: true }).click();
+	await expect(page).toHaveURL(/step=coverage/);
+	await page.getByRole('button', { name: 'ตรวจสอบคำขอ', exact: true }).click();
+	const review = page.getByTestId('leave-review-step');
+	await expect(review).toContainText('ศูนย์อบรมจังหวัด');
+	const submit = page.getByRole('button', { name: 'ส่งคำขอพิจารณา', exact: true });
+	await expect(submit).toBeEnabled();
+	await expect(review.getByText(missingTravelApproval, { exact: true })).toHaveCount(0);
+	expect(api.writes).toHaveLength(1);
+	expect(api.writes[0].payload.period).toMatchObject({ typeId: travelTypeId });
+
+	await submit.click();
+	await expect(review.getByText(missingTravelApproval, { exact: true })).toBeVisible();
+	expect(api.writes[1].path).toBe(`/api/staff-leave/requests/${leaveId}/submit`);
+	expect(api.detail().request.status).toBe('draft');
+	expect(api.detail().request.revision).toBe(api.writes[1].payload.expectedRevision);
+
+	await page.reload();
+	await expect(review).toContainText('ศูนย์อบรมจังหวัด');
+	await page.getByRole('button', { name: '1. รายละเอียด', exact: true }).click();
+	await expect(page.locator('#leave-type')).toHaveText('เดินทางไปราชการในประเทศ');
+	const reason = page.getByLabel('เหตุผล *', { exact: true });
+	await expect(reason).toHaveValue('เข้าร่วมอบรม');
+	await reason.fill('เข้าร่วมอบรมครู');
+	await page.getByRole('button', { name: 'บันทึกฉบับร่าง', exact: true }).click();
+	await expect.poll(() => api.detail().request.reason).toBe('เข้าร่วมอบรมครู');
+	expect(api.count(`/api/staff-leave/types/${travelTypeId}/effective-policy`)).toBe(0);
 });
 
 for (const permission of [

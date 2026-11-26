@@ -17,6 +17,7 @@ export const leaveId = id(700),
 	leaveTypeId = id(710),
 	exitTypeId = id(711),
 	travelTypeId = id(712),
+	secondTravelTypeId = id(713),
 	leavePolicyId = id(720);
 export const travelCompanions = [
 	{ id: firstStaff, displayName: 'ครูร่วมทางคนแรก' },
@@ -25,6 +26,8 @@ export const travelCompanions = [
 export const leaveDetailPath = `/staff/leave/requests/${leaveId}`;
 const base = '/api/staff-leave';
 const now = '2026-10-18T03:00:00Z';
+export const missingTravelApproval =
+	'ยังไม่มีเส้นทางอนุมัติการเดินทางไปราชการสำหรับวันที่และประเภทบุคลากรนี้ กรุณาติดต่อผู้ดูแลระบบให้ตั้งค่าในประเภทคำขอและเกณฑ์โรงเรียน';
 export const leavePermissions = [
 	PERMISSIONS.STAFF_LEAVE_READ_OWN,
 	PERMISSIONS.STAFF_LEAVE_CREATE_OWN,
@@ -52,6 +55,7 @@ export async function mockLeave(
 		failMutation?: number;
 		coverage?: LeaveCoveragePlan;
 		travel?: boolean;
+		additionalTravelType?: boolean;
 	} = {}
 ) {
 	await mockStaffHome(page, { permissions: options.permissions ?? leavePermissions });
@@ -71,6 +75,15 @@ export async function mockLeave(
 			id: travelTypeId,
 			code: 'travel',
 			name: 'เดินทางไปราชการในประเทศ',
+			kind: 'official_travel',
+			archived: false,
+			revision: 1
+		});
+	if (options.additionalTravelType)
+		types.push({
+			id: secondTravelTypeId,
+			code: 'travel_outside_province',
+			name: 'เดินทางไปราชการนอกจังหวัด',
 			kind: 'official_travel',
 			archived: false,
 			revision: 1
@@ -133,7 +146,7 @@ export async function mockLeave(
 		academicYearId: id(1),
 		academicTermId: id(800)
 	};
-	let requestPolicy = structuredClone(policy);
+	let requestPolicy: LeavePolicyVersion | null = structuredClone(policy);
 	let purpose: LeaveRequestDetail['processPurpose'] =
 		options.status === 'cancellation_pending' ? 'cancellation' : 'request';
 	const history: LeaveRequestDetail['history'] = [
@@ -153,6 +166,7 @@ export async function mockLeave(
 		currentStep = 0;
 	const detail = (): LeaveRequestDetail => {
 		const canEdit = ['draft', 'returned'].includes(request.status) && options.role !== 'reviewer';
+		const historicalPartial = requestPolicy?.unit === 'half_day' || request.unit === 'half_day';
 		const active = ['submitted', 'cancellation_pending'].includes(request.status);
 		return {
 			companionConfirmations: (request.companions ?? []).map((person) => ({
@@ -173,15 +187,15 @@ export async function mockLeave(
 				blockingReason: null
 			},
 			request: { ...request },
-			policy: { ...requestPolicy },
+			policy: requestPolicy && { ...requestPolicy },
 			processPurpose: purpose,
 			history: structuredClone(history),
 			evidenceFileIds: [...evidenceFileIds],
 			contentHash: 'a'.repeat(64),
 			canEdit,
-			canSubmit: canEdit && requestPolicy.unit !== 'half_day' && request.unit !== 'half_day',
+			canSubmit: canEdit && !historicalPartial,
 			submissionBlockingReason:
-				canEdit && (requestPolicy.unit === 'half_day' || request.unit === 'half_day')
+				canEdit && historicalPartial
 					? 'ให้ผู้ดูแลสร้างนโยบายเต็มวันสำหรับประเภทเดิม แล้วบันทึกคำขอเป็นเต็มวันก่อนส่ง'
 					: null,
 			canCancel:
@@ -262,7 +276,7 @@ export async function mockLeave(
 			unit: type.kind === 'exit' ? 'minute' : 'day',
 			dayPortion: 'full_day',
 			amount: type.kind === 'exit' ? 90 : 1,
-			policyVersionId: policy.id,
+			policyVersionId: type.kind === 'official_travel' ? null : policy.id,
 			personnelType: 'contract_employee'
 		};
 		evidenceFileIds = period.evidenceFileIds ?? [];
@@ -276,7 +290,7 @@ export async function mockLeave(
 				annualLimit: null,
 				evidenceFromAmount: null
 			};
-		requestPolicy = structuredClone(policy);
+		requestPolicy = type.kind === 'official_travel' ? null : structuredClone(policy);
 	}
 	await page.route(
 		(url) => url.pathname.startsWith(base) || url.pathname.startsWith('/api/files'),
@@ -489,7 +503,21 @@ export async function mockLeave(
 				return reply(route, policy);
 			}
 			if (path === `${base}/requests` || method === 'PUT') updatePeriod(http.postDataJSON().period);
-			if (path.endsWith('/submit')) request.status = 'submitted';
+			if (path.endsWith('/submit')) {
+				if (request.kind === 'official_travel') {
+					if (options.missingPolicy) return reply(route, missingTravelApproval, 400);
+					requestPolicy = {
+						...policy,
+						typeId: request.typeId,
+						countingMode: 'calendar_days',
+						workingWeekdays: [],
+						excludedDates: [],
+						annualLimit: null
+					};
+					request.policyVersionId = requestPolicy.id;
+				}
+				request.status = 'submitted';
+			}
 			if (path.endsWith('/cancel')) {
 				purpose = request.status === 'approved' ? 'cancellation' : 'request';
 				request.status = request.status === 'approved' ? 'cancellation_pending' : 'cancelled';

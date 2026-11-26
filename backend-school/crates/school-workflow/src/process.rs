@@ -339,6 +339,34 @@ async fn resolved_steps(
     }
     Ok(result)
 }
+async fn active_template(
+    tx: &mut Transaction<'_, Postgres>,
+    template_id: Uuid,
+) -> Result<ProcessTemplate, AppError> {
+    let template: Json<ProcessTemplate> = DbSession::new(&mut **tx)
+        .scalar(
+            "workflow.src.process.active_template",
+            "SELECT definition FROM process_templates WHERE id=$1 FOR SHARE",
+        )
+        .bind(template_id)
+        .fetch_optional()
+        .await?
+        .ok_or_else(|| invalid("ไม่พบแม่แบบ"))?;
+    if !template.active {
+        return Err(invalid("แม่แบบถูกปิดใช้งาน"));
+    }
+    Ok(template.0)
+}
+
+/// Resolve a configured route when its owning source defers starting the process.
+pub async fn resolve_template_steps_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    template_id: Uuid,
+) -> Result<Vec<ProcessRuntimeStep>, AppError> {
+    let template = active_template(tx, template_id).await?;
+    resolved_steps(tx, &template, &[]).await
+}
+
 pub(crate) async fn start_core_in_transaction(
     tx: &mut Transaction<'_, Postgres>,
     actor: &ActorContext,
@@ -355,18 +383,7 @@ pub(crate) async fn start_core_in_transaction(
         return Err(invalid("ข้อมูลแหล่งงานไม่ถูกต้อง"));
     }
     let existing:Option<Json<ProcessInstance>>=DbSession::new(&mut **tx).scalar("workflow.src.process.start_core_in_transaction", "SELECT definition FROM process_instances WHERE source_module=$1 AND source_type=$2 AND source_id=$3 FOR UPDATE").bind(&input.source.module_code).bind(&input.source.resource_type).bind(input.source.resource_id).fetch_optional().await?;
-    let template: Json<ProcessTemplate> = DbSession::new(&mut **tx)
-        .scalar(
-            "workflow.src.process.start_core_in_transaction",
-            "SELECT definition FROM process_templates WHERE id=$1 FOR SHARE",
-        )
-        .bind(input.template_id)
-        .fetch_optional()
-        .await?
-        .ok_or_else(|| invalid("ไม่พบแม่แบบ"))?;
-    if !template.active {
-        return Err(invalid("แม่แบบถูกปิดใช้งาน"));
-    }
+    let template = active_template(tx, input.template_id).await?;
     let mut instance = if let Some(old) = existing {
         let mut old = old.0;
         if old.status != ProcessStatus::RevisionRequested {
