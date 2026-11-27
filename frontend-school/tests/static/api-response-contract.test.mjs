@@ -1082,7 +1082,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionWorkspace, /listSupervisionTemplates/);
 	assert.match(
 		supervisionWorkspace,
-		/<div class="min-w-0 space-y-2 md:col-span-3">\s*<Label>ชื่อแบบประเมิน<\/Label>/
+		/<div class="min-w-0 space-y-2 md:col-span-3">\s*<Label for="supervision-template-title">ชื่อแบบประเมิน<\/Label>\s*<Input\s+id="supervision-template-title"/
 	);
 	assert.doesNotMatch(supervisionWorkspace, /lg:grid-cols-\[120px_1fr_auto\]/);
 	assert.doesNotMatch(supervisionWorkspace, /md:grid-cols-\[1fr_220px\]/);
@@ -1098,10 +1098,13 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /SUPERVISION_READ_SCHOOL/);
 	assert.match(supervisionWorkspace, /SUPERVISION_MANAGE_ORGANIZATION_UNIT/);
 	assert.match(supervisionWorkspace, /SUPERVISION_MANAGE_ORGANIZATION_TREE/);
-	assert.match(supervisionRoute, /SUPERVISION_OBSERVATION_READ_PERMISSIONS/);
 	assert.match(
-		supervisionRoute,
-		/readable[\s\S]*listSupervisionObservations\([\s\S]*academicYearId[\s\S]*academicTermId[\s\S]*requestFetch: fetch/
+		supervisionMine,
+		/waitForSupervisionAccess\(SUPERVISION_OBSERVATION_READ_PERMISSIONS\)/
+	);
+	assert.match(
+		supervisionMine,
+		/observationAccess\.then\(async \(allowed\) => \{[\s\S]*?listSupervisionObservations\(\s*\{ academicYearId, academicTermId \},\s*\{ requestFetch: fetch \}/
 	);
 	assert.match(supervisionWorkspace, /async function retryObservations/);
 	assert.doesNotMatch(supervisionWorkspace, /onMount\(/);
