@@ -104,6 +104,9 @@ pub(crate) fn valid_endpoint(value: &str) -> bool {
         || host.ends_with(".push.services.mozilla.com")
         || host == "web.push.apple.com"
         || host.ends_with(".push.apple.com")
+        || host
+            .strip_suffix(".notify.windows.com")
+            .is_some_and(|subdomain| subdomain.split('.').all(|label| !label.is_empty()))
 }
 fn validate(request: &RegisterPushDeviceRequest, key_id: &str) -> Result<(), AppError> {
     if request.installation_id.is_nil()
@@ -312,6 +315,11 @@ mod tests {
             "https://user@fcm.googleapis.com/x",
             "https://fcm.googleapis.com:444/x",
             "https://fcm.googleapis.com/x#f",
+            "https://notify.windows.com/x",
+            "https://.notify.windows.com/x",
+            "https://othernotify.windows.com/x",
+            "https://wns2-bl2p.notify.windows.com.evil.test/x",
+            "https://wns2-bl2p.notify.windows.com:444/x",
         ] {
             assert!(!valid_endpoint(s), "{s}")
         }
@@ -322,6 +330,21 @@ mod tests {
         ] {
             assert!(valid_endpoint(s), "{s}")
         }
+    }
+    #[test]
+    fn registration_accepts_microsoft_wns_endpoint() {
+        let key_id = "synthetic-key";
+        let request = RegisterPushDeviceRequest {
+            expected_version: None,
+            installation_id: Uuid::new_v4(),
+            label: "Synthetic browser".into(),
+            endpoint: "https://wns2-bl2p.notify.windows.com/?token=synthetic".into(),
+            p256dh: URL_SAFE_NO_PAD.encode([4; 65]),
+            auth: URL_SAFE_NO_PAD.encode([7; 16]),
+            key_id: key_id.into(),
+        };
+
+        assert!(validate(&request, key_id).is_ok());
     }
     #[test]
     fn crypto_encodings_are_bounded_canonical_and_length_checked() {
