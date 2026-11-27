@@ -6,7 +6,7 @@
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
 	import SupervisionRequestReview from '#lib/components/supervision/SupervisionRequestReview.svelte';
 	import { createSupervisionRequestReview } from '#lib/supervision/request-review.svelte.js';
-	import { usePersonalSupervisionReturn } from '#lib/supervision/personal-return.js';
+	import { useSupervisionObservationWrites } from '#lib/supervision/observation-writes.js';
 	import {
 		schoolCivilDate,
 		cycleDateRangeError,
@@ -95,7 +95,7 @@
 
 	let { data }: { data: PageData } = $props();
 	const academicContext = getAcademicContextStore();
-	const personalReturn = usePersonalSupervisionReturn();
+	const observationWrites = useSupervisionObservationWrites();
 	const academicContextOptions = $derived($academicContext.options);
 
 	let loading = $state(true);
@@ -206,7 +206,7 @@
 		getObservation: (id) => (observation?.id === id ? observation : null),
 		hasManagePermission: () => canManageObservation,
 		captureOwner: captureMutationOwner,
-		beginObservationChange: personalReturn?.beginChange,
+		beginObservationChange: observationWrites?.beginChange,
 		isBusy: () => savingAction !== null,
 		getSavingAction: () => savingAction,
 		setSavingAction: (action) => (savingAction = action),
@@ -713,7 +713,7 @@
 		const workflowRevision = lessonWorkflowRevision;
 		const resubmitting = isReturnedOwnRequest;
 		savingAction = 'lesson';
-		const finishChange = personalReturn?.beginChange();
+		const finishChange = observationWrites?.beginChange();
 		try {
 			const response =
 				canManageObservation && !canEditOwnRequested
@@ -794,7 +794,7 @@
 		const submittedId = observation.id;
 		const workflowRevision = evaluatorWorkflowRevision;
 		savingAction = 'evaluators';
-		const finishChange = personalReturn?.beginChange();
+		const finishChange = observationWrites?.beginChange();
 		try {
 			const response = await replaceSupervisionObservationEvaluators(submittedId, {
 				evaluators: selectedEvaluatorIds.map((evaluatorUserId) => ({
@@ -824,7 +824,7 @@
 		const submittedId = observation.id;
 		savingAction = 'resubmit-saved';
 		resubmitError = '';
-		const finishChange = personalReturn?.beginChange();
+		const finishChange = observationWrites?.beginChange();
 		try {
 			const response = await resubmitSupervisionObservationRequest(submittedId);
 			if (!ownsMutation()) return;
@@ -844,7 +844,7 @@
 		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'cancel';
-		const finishChange = personalReturn?.beginChange();
+		const finishChange = observationWrites?.beginChange();
 		try {
 			const response =
 				canManageObservation && !canCancelOwnRequest

@@ -117,11 +117,11 @@ test('opening Mine from another supervision tab keeps the workspace visible whil
 	);
 });
 
-test('narrow Mine return keeps its list and counts through history and held reads, and revokes a denied refresh', async ({
+test('narrow Mine navigation remains steady while every activation waits for fresh authorized data', async ({
 	page
 }) => {
 	await page.setViewportSize({ width: 390, height: 900 });
-	await mock(page, {
+	const api = await mock(page, {
 		term: true,
 		menuGroups: supervisionMenu,
 		additionalObservations: [31, 32, 33].map((value) => ({
@@ -132,18 +132,36 @@ test('narrow Mine return keeps its list and counts through history and held read
 	const gate = deferred();
 	let hold = false;
 	let deny = false;
+	let reads = 0;
+	let updated = false;
 	await page.route(
 		(url) =>
 			[observationPath, '/api/supervision/cycles', '/api/supervision/templates/summaries'].includes(
 				url.pathname
 			),
 		async (route) => {
+			const observations = new URL(route.request().url()).pathname === observationPath;
+			if (observations) reads += 1;
 			if (hold) await gate.promise;
-			if (deny && new URL(route.request().url()).pathname === observationPath)
+			if (deny && observations)
 				return route.fulfill({
 					status: 403,
 					json: { success: false, error: 'ไม่มีสิทธิ์ดูรายการนิเทศ' }
 				});
+			if (updated && observations) {
+				const row = api.observation();
+				return route.fulfill({
+					json: {
+						success: true,
+						data: {
+							items: [
+								{ ...row, status: 'returned' },
+								...[31, 32, 33].map((value) => ({ ...row, id: id(value), status: 'completed' }))
+							]
+						}
+					}
+				});
+			}
 			await route.fallback();
 		}
 	);
@@ -153,41 +171,60 @@ test('narrow Mine return keeps its list and counts through history and held read
 	const metrics = page.getByTestId('supervision-personal-status');
 	const list = page.getByTestId('supervision-observations');
 	const heading = page.getByRole('heading', { name: 'รายการของฉัน', exact: true });
-	const pending = metrics
-		.locator('dt', { hasText: /^รออนุมัติคำขอ$/ })
-		.locator('xpath=following-sibling::dd');
+	const pending = page.getByTestId('supervision-personal-count-requested');
 
 	await page.goto(personalHref);
 	await expect(pending).toHaveText('1');
+	const originalNavigation = await navigation.elementHandle();
+	const originalNavigationBox = await navigation.boundingBox();
 	const initialHeadingY = (await heading.boundingBox())?.y;
+	const initialFiltersHeight = (await metrics.boundingBox())?.height;
 	await templates.click();
 	await expect(page.getByTestId('supervision-templates-ready')).toBeVisible();
+	await mine.hover();
+	await page.waitForTimeout(100);
+	expect(reads).toBe(1);
+	updated = true;
 	hold = true;
 	try {
 		await mine.click();
 		await expect(mine).toHaveAttribute('aria-current', 'page');
 		await expect(list).toHaveAttribute('aria-busy', 'true');
-		await expect(list.locator('[data-supervision-own-list]')).toBeVisible();
-		await expect(pending).toHaveText('1');
-		await expect(list.getByRole('status')).toHaveCount(0);
+		await expect(list.locator('[data-supervision-own-list]')).toHaveCount(0);
+		await expect(pending).toHaveText('');
+		const loading = list.getByRole('status', { name: 'กำลังโหลดรายการนิเทศ' });
+		await expect(loading).toBeVisible();
+		expect((await loading.boundingBox())?.height).toBeLessThan(125);
 		await expect(page.getByTestId('menu-navigation-pending')).toHaveCount(0);
 		await expect.poll(async () => (await heading.boundingBox())?.y).toBe(initialHeadingY);
-		const main = page.locator('main');
-		await main.hover();
-		await page.mouse.wheel(0, 220);
-		await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+		expect(await navigation.boundingBox()).toEqual(originalNavigationBox);
+		expect((await metrics.boundingBox())?.height).toBe(initialFiltersHeight);
+		expect(
+			await navigation.evaluate((element, original) => element === original, originalNavigation)
+		).toBe(true);
+		await expect.poll(() => reads).toBe(2);
 		await page.goBack();
 		await expect(templates).toHaveAttribute('aria-current', 'page');
 		await page.goForward();
 		await expect(mine).toHaveAttribute('aria-current', 'page');
+		await expect(page).toHaveURL(personalHref);
 		await expect(list).toHaveAttribute('aria-busy', 'true');
-		await expect(pending).toHaveText('1');
+		await expect(pending).toHaveText('');
+		await expect.poll(() => reads).toBe(3);
+		expect(
+			await navigation.evaluate((element, original) => element === original, originalNavigation)
+		).toBe(true);
 	} finally {
 		hold = false;
 		gate.release();
 	}
 	await expect(list).toHaveAttribute('aria-busy', 'false');
-	await expect(pending).toHaveText('1');
+	await expect(pending).toHaveText('0');
+	await expect(page.getByTestId('supervision-personal-count-returned')).toHaveText('1');
+	const main = page.locator('main');
+	await main.hover();
+	await page.mouse.wheel(0, 220);
+	await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 	await templates.click();
 	await expect(templates).toHaveAttribute('aria-current', 'page');
 	deny = true;
@@ -197,20 +234,80 @@ test('narrow Mine return keeps its list and counts through history and held read
 	await expect(list.locator('[data-supervision-own-list]')).toHaveCount(0);
 });
 
+test('Mine filters expose the correction and acknowledgment actions from the current list', async ({
+	page
+}) => {
+	const returnedId = id(82);
+	const api = await mock(page, {
+		term: true,
+		permissions: own,
+		observationStatus: 'published',
+		additionalObservations: [
+			{
+				id: id(81),
+				status: 'requested',
+				periods: [savedPeriod({ lessonSnapshot: { subjectName: 'วิชารออนุมัติ' } })]
+			},
+			{
+				id: returnedId,
+				status: 'returned',
+				periodsLocked: false,
+				evaluators: [],
+				periods: [savedPeriod({ lessonSnapshot: { subjectName: 'วิชาที่ส่งกลับ' } })],
+				actions: [
+					{
+						id: id(90),
+						observationId: returnedId,
+						actionKind: 'request_returned',
+						toStatus: 'returned',
+						comment: 'กรุณาตรวจห้องเรียน',
+						createdAt: '2026-09-26T09:00:00Z'
+					}
+				]
+			}
+		]
+	});
+	await page.goto(personalHref);
+	const filters = page.getByRole('radiogroup', { name: 'กรองรายการของฉันตามสถานะ' });
+	const correction = filters.getByRole('radio', { name: 'ต้องแก้ไข 1', exact: true });
+	const acknowledge = filters.getByRole('radio', { name: /^รอรับทราบผล/ });
+	const list = page.getByTestId('supervision-observations');
+	await correction.click();
+	await correction.press('Space');
+	await expect(correction).toHaveAttribute('aria-checked', 'true');
+	await expect(list.getByText('กรุณาตรวจห้องเรียน')).toBeVisible();
+	await expect(list.getByRole('link', { name: 'แก้ไขและส่งใหม่', exact: true })).toHaveAttribute(
+		'href',
+		`${minePath}/${returnedId}?academicYearId=${year}&academicTermId=${id(8)}`
+	);
+	await expect(list.getByRole('heading', { name: 'วิชารออนุมัติ' })).toHaveCount(0);
+	await acknowledge.click();
+	await list.getByRole('button', { name: 'รับทราบผล', exact: true }).click();
+	await page
+		.getByRole('dialog')
+		.getByRole('button', { name: 'ยืนยันรับทราบ', exact: true })
+		.click();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(acknowledge).toBeFocused();
+	await expect(page.getByTestId('supervision-personal-count-published')).toHaveText('0');
+	await expect(list.getByText('ไม่มีผลนิเทศที่รอรับทราบ')).toBeVisible();
+	await list.getByRole('button', { name: 'ดูทุกรายการ' }).click();
+	await expect(filters.getByRole('radio', { name: /^ทั้งหมด/ })).toBeFocused();
+	await expect(list.getByRole('heading', { name: 'วิชารออนุมัติ' })).toBeVisible();
+	expect(api.count(observationPath)).toBe(1);
+});
+
 for (const first of ['read', 'write'] as const) {
 	test(`Mine reconciles a read overlapping a request change when the ${first} finishes first`, async ({
 		page
 	}) => {
 		const api = await mock(page, { term: true, hold: 'patch' });
 		const navigation = page.getByRole('navigation', { name: 'เมนูนิเทศการสอน' });
-		const metrics = page.getByTestId('supervision-personal-status');
 		const list = page.getByTestId('supervision-observations');
 		const gate = deferred();
 		const returnPath = `${observationPath}/${id(30)}/return-request`;
 		await page.goto(personalHref);
-		await expect(
-			metrics.locator('dt', { hasText: /^รออนุมัติคำขอ$/ }).locator('xpath=following-sibling::dd')
-		).toHaveText('1');
+		await expect(page.getByTestId('supervision-personal-count-requested')).toHaveText('1');
 		await navigation.getByRole('link', { name: 'คำขอจอง', exact: true }).click();
 		const submitted = page.waitForRequest(
 			(request) => new URL(request.url()).pathname === returnPath
@@ -253,8 +350,8 @@ for (const first of ['read', 'write'] as const) {
 	});
 }
 
-for (const warm of [false, true]) {
-	test(`booking patches Mine immediately with a ${warm ? 'warm' : 'fresh'} list`, async ({
+for (const waiting of [false, true]) {
+	test(`booking patches Mine immediately with a ${waiting ? 'pending' : 'fresh'} list`, async ({
 		page
 	}) => {
 		const api = await mock(page, {
@@ -309,19 +406,16 @@ for (const warm of [false, true]) {
 		);
 		const navigation = page.getByRole('navigation', { name: 'เมนูนิเทศการสอน' });
 		const list = page.getByTestId('supervision-observations');
-		const requested = page
-			.getByTestId('supervision-personal-status')
-			.locator('dt', { hasText: /^รออนุมัติคำขอ$/ })
-			.locator('xpath=following-sibling::dd');
+		const requested = page.getByTestId('supervision-personal-count-requested');
 		await page.goto(personalHref);
 		await expect(requested).toHaveText('1');
 		try {
-			if (warm) {
+			if (waiting) {
 				await navigation.getByRole('link', { name: 'แบบประเมิน', exact: true }).click();
 				holdNext = true;
 				await navigation.getByRole('link', { name: 'ของฉัน', exact: true }).click();
 				await expect(list).toHaveAttribute('aria-busy', 'true');
-				await expect(requested).toHaveText('1');
+				await expect(requested).toHaveText('');
 			}
 			await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 			await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
@@ -329,8 +423,8 @@ for (const warm of [false, true]) {
 			await expect(
 				list.getByRole('heading', { name: 'คาบที่เพิ่งจอง', exact: true })
 			).toBeVisible();
-			await expect(requested).toHaveText('2');
-			if (warm) {
+			await expect(requested).toHaveText(waiting ? '' : '2');
+			if (waiting) {
 				await expect(list).toHaveAttribute('aria-busy', 'true');
 				await expect.poll(() => afterBookingReads).toBe(1);
 			}
@@ -338,14 +432,14 @@ for (const warm of [false, true]) {
 			oldRead.release();
 			newRead.release();
 		}
-		if (warm) {
+		if (waiting) {
 			await expect(
 				list.getByRole('heading', { name: 'รายการอื่นจากการอ่านล่าสุด', exact: true })
 			).toBeVisible();
 			await expect(requested).toHaveText('3');
 		}
 		await expect(list).toHaveAttribute('aria-busy', 'false');
-		expect(afterBookingReads).toBe(warm ? 1 : 0);
+		expect(afterBookingReads).toBe(waiting ? 1 : 0);
 	});
 }
 

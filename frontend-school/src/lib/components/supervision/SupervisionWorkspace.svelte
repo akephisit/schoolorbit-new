@@ -13,6 +13,7 @@
 	import { savedLessonLabels } from '#lib/supervision/supervision-presentation.js';
 	import {
 		supervisionStatusLabel as statusLabel,
+		currentReturnReason,
 		observationWorkflow
 	} from '#lib/supervision/supervision-presentation.js';
 	import { page } from '$app/state';
@@ -22,7 +23,7 @@
 		ObservationRegion,
 		SupervisionWorkspaceRouteData
 	} from '#lib/supervision/workspace-route-data.js';
-	import { usePersonalSupervisionReturn } from '#lib/supervision/personal-return.js';
+	import { useSupervisionObservationWrites } from '#lib/supervision/observation-writes.js';
 	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		resolveSupervisionRead,
@@ -31,16 +32,13 @@
 	import {
 		ArrowDown,
 		ArrowUp,
-		BarChart3,
 		CalendarDays,
 		ClipboardCheck,
-		ClipboardList,
 		Eye,
 		FileSignature,
 		Inbox,
 		Plus,
-		Trash2,
-		UserRound
+		Trash2
 	} from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
@@ -101,6 +99,7 @@
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as ToggleGroup from '#lib/components/ui/toggle-group/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 
 	export type SupervisionWorkspaceSection =
@@ -140,6 +139,28 @@
 	const dialogBodyClass =
 		'min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6';
 	const dialogFooterClass = 'shrink-0 border-t flex-row flex-wrap justify-end px-4 py-3 sm:px-6';
+	const personalFilters = [
+		{ key: 'all', label: 'ทั้งหมด', statuses: null, empty: '' },
+		{ key: 'returned', label: 'ต้องแก้ไข', statuses: ['returned'], empty: 'ไม่มีคำขอที่ต้องแก้ไข' },
+		{
+			key: 'published',
+			label: 'รอรับทราบผล',
+			statuses: ['published'],
+			empty: 'ไม่มีผลนิเทศที่รอรับทราบ'
+		},
+		{
+			key: 'requested',
+			label: 'รออนุมัติ',
+			statuses: ['requested'],
+			empty: 'ไม่มีคำขอที่รออนุมัติ'
+		},
+		{
+			key: 'completed',
+			label: 'เสร็จสิ้น',
+			statuses: ['completed', 'acknowledged'],
+			empty: 'ยังไม่มีรายการที่เสร็จสิ้น'
+		}
+	] as const;
 
 	const cycleStatusCreateOptions: {
 		value: SupervisionCycleStatus;
@@ -224,7 +245,7 @@
 		routeData
 	}: { section: SupervisionWorkspaceSection; routeData: SupervisionWorkspaceRouteData } = $props();
 	const academicContext = getAcademicContextStore();
-	const personalReturn = usePersonalSupervisionReturn();
+	const observationWrites = useSupervisionObservationWrites();
 	const academicYearId = $derived(
 		routeData ? routeData.academicYearId : $academicContext.selected.academicYearId
 	);
@@ -273,11 +294,11 @@
 	let observationsLoading = $state(false);
 	let observationsReadable = $state(true);
 	let observationsError = $state('');
-	let observationsFromSnapshot = $state(false);
 	let queueView = $state('list');
 	let bookingCalendarDate = $state('');
 	let calendarReviewId = $state('');
 	let bookingOpen = $state(false);
+	let personalFilter = $state<(typeof personalFilters)[number]['key']>('all');
 	let evaluationTemplateLoading = $state(false);
 	let evaluationTemplateError = $state('');
 	let evaluationFormError = $state('');
@@ -355,16 +376,6 @@
 		) || canManageRequests
 	);
 	const canReadSchoolReport = $derived($can.hasAny(...SUPERVISION_SCHOOL_REPORT_PERMISSIONS));
-	const personalScope = $derived(
-		section === 'mine' &&
-			$authStore.isAuthenticated &&
-			routeIdentity &&
-			academicYearId &&
-			academicTermId &&
-			$can.hasAny(PERMISSIONS.SUPERVISION_READ_OWN, ...SUPERVISION_SCHOOL_REPORT_PERMISSIONS)
-			? JSON.stringify([page.url.origin, routeIdentity, academicYearId, academicTermId])
-			: null
-	);
 	const canReport = $derived(canReadSchoolReport || canManageRequests);
 	const activeBookingCycles = $derived(cycles.filter(cycleAcceptsBookings));
 	const currentBookingCycle = $derived(
@@ -377,6 +388,20 @@
 	);
 	const myObservations = $derived(
 		observations.filter((observation) => observation.observedUserId === currentUserId)
+	);
+	const personalResults = $derived.by(() => {
+		const ordered = [...myObservations].sort(
+			(left, right) => Number(needsPersonalAction(right)) - Number(needsPersonalAction(left))
+		);
+		return personalFilters.map((filter) => ({
+			...filter,
+			items: filter.statuses
+				? ordered.filter(({ status }) => filter.statuses?.some((value) => value === status))
+				: ordered
+		}));
+	});
+	const personalResult = $derived(
+		personalResults.find(({ key }) => key === personalFilter) ?? personalResults[0]
 	);
 	const assignedObservations = $derived(
 		observations.filter((observation) =>
@@ -433,7 +458,7 @@
 				: undefined,
 		hasManagePermission: () => canManageRequests,
 		captureOwner: captureMutationOwner,
-		beginObservationChange: personalReturn?.beginChange,
+		beginObservationChange: observationWrites?.beginChange,
 		isBusy: () => mutationBusy,
 		getSavingAction: () => savingAction,
 		setSavingAction: (action) => (savingAction = action),
@@ -485,7 +510,6 @@
 	$effect.pre(() => {
 		const source = routeData;
 		const identity = routeIdentity;
-		const scope = personalScope;
 		const key = `${identity}:${section}:${academicYearId ?? ''}:${academicTermId ?? ''}`;
 		if (!source) return;
 		untrack(() => {
@@ -499,14 +523,13 @@
 				templates = [];
 				templateSummaries = [];
 				teacherStatusRows = [];
-				const previous = scope && source.observations ? personalReturn?.read(scope) : null;
-				observations = previous ?? [];
-				observationsLoaded = Array.isArray(previous);
-				observationsFromSnapshot = observationsLoaded;
+				observations = [];
+				observationsLoaded = false;
 				observationsReadable = true;
 				bookingCalendarDate = '';
 				calendarReviewId = '';
 				bookingOpen = false;
+				personalFilter = 'all';
 				acknowledgeDialogId = '';
 				acknowledgeDrafts = {};
 				savingEvaluation = null;
@@ -559,7 +582,6 @@
 			progressError = '';
 			const observationRead = observationRequest.begin();
 			const applyRead = captureObservationRead(
-				scope,
 				() =>
 					observationRequest.isCurrent(observationRead.revision) &&
 					key === currentManagementContext(),
@@ -888,6 +910,23 @@
 			.join(', ');
 	}
 
+	function canCorrectPersonalRequest(observation: SupervisionObservation): boolean {
+		return (
+			observation.status === 'returned' &&
+			canRequest &&
+			!observation.evaluators.some(({ status }) => status === 'submitted')
+		);
+	}
+
+	function needsPersonalAction(observation: SupervisionObservation): boolean {
+		return observation.status === 'published' || canCorrectPersonalRequest(observation);
+	}
+
+	function selectPersonalFilter(value: string) {
+		const filter = personalFilters.find(({ key }) => key === value);
+		if (filter) personalFilter = filter.key;
+	}
+
 	function observationLessonFacts(observation: SupervisionObservation): ObservationDetailItem[] {
 		return [
 			{ label: 'วันที่/เวลา', value: formatDate(observation.observedAt) },
@@ -901,6 +940,13 @@
 	): ObservationDetailItem[] {
 		return [
 			{ label: 'ห้อง/ชั้นเรียน', value: observationClassroomLabel(observation) },
+			...observationReferenceFacts(observation),
+			{ label: 'ผู้นิเทศ', value: observationEvaluatorNames(observation) }
+		];
+	}
+
+	function observationReferenceFacts(observation: SupervisionObservation): ObservationDetailItem[] {
+		return [
 			{ label: 'ห้องเรียน', value: observationRoomLabel(observation) },
 			{
 				label: 'รอบนิเทศ',
@@ -912,7 +958,6 @@
 				value: requestTemplateTitle(observation),
 				pending: templatesLoading && !templatesLoaded
 			},
-			{ label: 'ผู้นิเทศ', value: observationEvaluatorNames(observation) },
 			{ label: 'ส่งคำขอ', value: formatDate(observation.requestedAt) },
 			{ label: 'อนุมัติ', value: formatDate(observation.approvedAt) }
 		];
@@ -922,53 +967,16 @@
 		return [...observationLessonFacts(observation), ...observationAdditionalFacts(observation)];
 	}
 
-	function sectionRoute(target: SupervisionWorkspaceSection): string {
-		const path =
-			target === 'mine' ? '/staff/academic/supervision' : `/staff/academic/supervision/${target}`;
-		return academicContextualMenuPath(
-			path,
-			{ academicYearId, academicTermId },
-			academicContextOptions
-		);
-	}
-
-	const sectionLinks = $derived(
-		(
-			[
-				{ key: 'mine', label: 'ของฉัน', icon: UserRound, visible: true },
-				{ key: 'evaluate', label: 'ประเมิน', icon: ClipboardCheck, visible: canEvaluate },
-				{ key: 'requests', label: 'คำขอจอง', icon: Inbox, visible: canManageRequests },
-				{ key: 'overview', label: 'ภาพรวม', icon: BarChart3, visible: canReport },
-				{ key: 'cycles', label: 'รอบนิเทศ', icon: CalendarDays, visible: canManageSchool },
-				{ key: 'templates', label: 'แบบประเมิน', icon: ClipboardList, visible: canManageSchool }
-			] satisfies {
-				key: SupervisionWorkspaceSection;
-				label: string;
-				icon: typeof UserRound;
-				visible: boolean;
-			}[]
-		).filter((item) => item.visible)
-	);
-
 	function shouldLoadObservations() {
 		return routeData.observations !== null;
 	}
-	function captureObservationRead(
-		scope: string | null,
-		ownsRead: () => boolean,
-		startedAt?: number
-	) {
-		const revision = section === 'mine' ? personalReturn?.captureRead() : undefined;
+	function captureObservationRead(ownsRead: () => boolean, startedAt?: number) {
+		const isCurrent = section === 'mine' ? observationWrites?.guardRead(startedAt) : undefined;
 		return (result: RouteLoadResult<ObservationRegion>) => {
 			if (!ownsRead()) return;
 			const denied = result.ok && !result.data.readable;
-			if (
-				!denied &&
-				revision !== undefined &&
-				personalReturn &&
-				!personalReturn.isCurrentRead(revision, startedAt)
-			) {
-				void personalReturn.whenSettled().then(() => {
+			if (!denied && isCurrent && !isCurrent()) {
+				void observationWrites?.whenSettled().then(() => {
 					if (ownsRead()) void retryObservations();
 				});
 				return;
@@ -978,20 +986,14 @@
 				observationsError = result.error;
 				return;
 			}
-			const { items, readable } = result.data;
-			observationsFromSnapshot = false;
-			if (scope && scope === personalScope && revision !== undefined && personalReturn) {
-				if (readable) personalReturn.remember(scope, currentUserId, items, revision);
-				else personalReturn.clear();
-			}
-			applyObservations(items, readable);
+			applyObservations(result.data.items, result.data.readable);
 		};
 	}
 
 	function applyObservations(items: SupervisionObservation[], readable: boolean, freshRead = true) {
 		observations = items;
 		observationsReadable = readable;
-		observationsLoaded = true;
+		observationsLoaded ||= freshRead;
 		if (section === 'evaluate') {
 			if (!readable) {
 				managementRevision += 1;
@@ -1015,7 +1017,6 @@
 		const { revision, signal } = observationRequest.begin();
 		const owner = currentManagementContext();
 		const applyRead = captureObservationRead(
-			personalScope,
 			() => observationRequest.isCurrent(revision) && owner === currentManagementContext()
 		);
 		observationsLoading = true;
@@ -1116,7 +1117,7 @@
 		if (!canRequest || !currentBookingCycle || !academicTermId)
 			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
 		const ownsMutation = captureMutationOwner();
-		const finishChange = personalReturn?.beginChange();
+		const finishChange = observationWrites?.beginChange();
 		let incomplete: boolean;
 		try {
 			const response = await requestSupervisionObservation({
@@ -1127,9 +1128,8 @@
 			if (!ownsMutation() || !canRequest) return;
 			const booking = requireMutationData(response, 'ส่งคำขอไม่สำเร็จ');
 			if (!canReadObservations) return;
-			incomplete = !observationsLoaded || observationsFromSnapshot;
+			incomplete = !observationsLoaded;
 			replaceObservation(booking);
-			observationsFromSnapshot = incomplete;
 		} finally {
 			finishChange?.();
 		}
@@ -1295,7 +1295,7 @@
 		savingEvaluation = submission;
 		const ownsMutation = captureMutationOwner();
 		const isCurrentSubmission = () => savingEvaluation === submission && ownsMutation();
-		const finishChange = personalReturn?.beginChange();
+		const finishChange = observationWrites?.beginChange();
 		try {
 			const payload = evaluationPayload();
 			const response = await submitMySupervisionEvaluation(observationId, payload);
@@ -1320,7 +1320,6 @@
 
 	function setAcknowledgeDialogOpen(id: string, open: boolean) {
 		if (open) {
-			if (observationsFromSnapshot) return;
 			acknowledgeDrafts[id] ??= { comment: '', error: '' };
 			acknowledgeDialogId = id;
 		} else if (acknowledgeDialogId === id && savingAction !== `acknowledge-result:${id}`) {
@@ -1330,11 +1329,11 @@
 
 	async function acknowledgeResult(id: string) {
 		const draft = acknowledgeDrafts[id];
-		if (!draft || mutationBusy || observationsFromSnapshot || acknowledgeDialogId !== id) return;
+		if (!draft || mutationBusy || acknowledgeDialogId !== id) return;
 		draft.error = '';
 		savingAction = `acknowledge-result:${id}`;
 		const ownsMutation = captureMutationOwner();
-		const finishChange = personalReturn?.beginChange();
+		const finishChange = observationWrites?.beginChange();
 		try {
 			const response = await acknowledgeSupervisionObservation(id, {
 				comment: draft.comment || null
@@ -1345,6 +1344,9 @@
 			toast.success('รับทราบผลนิเทศแล้ว');
 			acknowledgeDialogId = '';
 			delete acknowledgeDrafts[id];
+			await tick();
+			if (ownsMutation())
+				document.getElementById(`supervision-personal-filter-${personalFilter}`)?.focus();
 		} catch (error) {
 			if (!ownsMutation()) return;
 			draft.error = error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ';
@@ -1835,7 +1837,7 @@
 {/snippet}
 
 {#snippet observationFeedback()}
-	{#if observationsLoading && !observationsLoaded}
+	{#if observationsLoading && !observationsLoaded && (section !== 'mine' || myObservations.length === 0)}
 		<div
 			role="status"
 			aria-label="กำลังโหลดรายการนิเทศ"
@@ -1904,17 +1906,11 @@
 	</div>
 {/snippet}
 
-{#snippet observationFacts(observation: SupervisionObservation, secondaryOnly = false)}
+{#snippet observationFactItems(items: ObservationDetailItem[])}
 	<dl
 		class="grid gap-x-4 gap-y-3 border-y py-3 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
 	>
-		{#if secondaryOnly}
-			<div class="min-w-0 space-y-0.5">
-				<dt class="text-xs text-muted-foreground">นิเทศใคร</dt>
-				<dd class="wrap-anywhere font-medium">{observation.observedDisplayName ?? '—'}</dd>
-			</div>
-		{/if}
-		{#each secondaryOnly ? observationAdditionalFacts(observation) : observationDetailGrid(observation) as detail (detail.label)}
+		{#each items as detail (detail.label)}
 			<div class="min-w-0 space-y-0.5">
 				<dt class="text-xs text-muted-foreground">{detail.label}</dt>
 				<dd class="wrap-anywhere font-medium">
@@ -1926,6 +1922,17 @@
 			</div>
 		{/each}
 	</dl>
+{/snippet}
+
+{#snippet observationFacts(observation: SupervisionObservation, secondaryOnly = false)}
+	{@render observationFactItems(
+		secondaryOnly
+			? [
+					{ label: 'นิเทศใคร', value: observation.observedDisplayName ?? '—' },
+					...observationAdditionalFacts(observation)
+				]
+			: observationDetailGrid(observation)
+	)}
 {/snippet}
 
 {#snippet headerActions()}
@@ -1959,44 +1966,6 @@
 		? headerActions
 		: undefined}
 >
-	<nav
-		aria-label="เมนูนิเทศการสอน"
-		class="grid grid-cols-2 gap-1 rounded-xl border bg-card p-1.5 sm:flex sm:flex-wrap"
-	>
-		{#each sectionLinks as item (item.key)}
-			{@const Icon = item.icon}
-			<Button
-				href={sectionRoute(item.key)}
-				data-sveltekit-preload-data={item.key !== 'overview' ? false : 'tap'}
-				variant="ghost"
-				aria-current={section === item.key ? 'page' : undefined}
-				class="h-auto min-w-0 justify-start border border-transparent px-3 py-2 text-start whitespace-normal text-muted-foreground aria-[current=page]:border-primary/20 aria-[current=page]:bg-primary/10 aria-[current=page]:font-semibold aria-[current=page]:text-primary"
-			>
-				<Icon class="size-4" aria-hidden="true" />
-				{item.label}
-			</Button>
-		{/each}
-	</nav>
-
-	{#if section === 'mine' && shouldLoadObservations() && observationsReadable}
-		{@render summaryMetrics(
-			[
-				{ label: 'รออนุมัติคำขอ', statuses: ['requested'] },
-				{ label: 'ต้องแก้ไขและส่งใหม่', statuses: ['returned'] },
-				{ label: 'รอฉันรับทราบ', statuses: ['published'] },
-				{ label: 'เสร็จสิ้น', statuses: ['completed', 'acknowledged'] }
-			].map(({ label, statuses }) => ({
-				label,
-				value: observationsLoaded
-					? myObservations.filter(({ status }) => statuses.includes(status)).length
-					: observationsError
-						? '—'
-						: null
-			})),
-			'สถานะการนิเทศของฉัน',
-			'supervision-personal-status'
-		)}
-	{/if}
 	{#if section === 'mine'}
 		<div class="space-y-5">
 			{#if bookingOpen && canRequest}
@@ -2101,13 +2070,38 @@
 			{/if}
 
 			<section class="min-w-0 space-y-3" aria-labelledby="supervision-own-title">
-				{@render sectionHeading(
-					'รายการของฉัน',
-					observationsLoaded && observationsReadable ? myObservations.length : null,
-					'supervision-own-title'
-				)}
+				<h2 id="supervision-own-title" class="text-lg font-semibold">รายการของฉัน</h2>
+				{#if shouldLoadObservations() && observationsReadable}
+					<ToggleGroup.Root
+						type="single"
+						aria-label="กรองรายการของฉันตามสถานะ"
+						bind:value={() => personalFilter, selectPersonalFilter}
+						disabled={!observationsLoaded}
+						data-testid="supervision-personal-status"
+						class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap"
+					>
+						{#each personalResults as result (result.key)}
+							<ToggleGroup.Item
+								id={`supervision-personal-filter-${result.key}`}
+								value={result.key}
+								class="h-auto min-w-0 justify-between gap-2 px-3 py-2 text-start whitespace-normal data-[state=on]:border-primary/25 data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+							>
+								<span>{result.label}</span>
+								<span
+									data-testid={`supervision-personal-count-${result.key}`}
+									class="inline-flex h-5 min-w-6 shrink-0 items-center justify-center rounded bg-muted px-1 text-xs font-semibold text-foreground tabular-nums"
+								>
+									{#if observationsLoaded}{result.items.length}{:else if observationsLoading}<span
+											aria-hidden="true"
+											class="h-2 w-3 rounded-sm bg-muted-foreground/20"
+										></span>{/if}
+								</span>
+							</ToggleGroup.Item>
+						{/each}
+					</ToggleGroup.Root>
+				{/if}
 				<div
-					class="relative"
+					class="relative space-y-3"
 					data-testid="supervision-observations"
 					aria-busy={observationsLoading}
 				>
@@ -2117,31 +2111,49 @@
 							title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
 							description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
 						/>{/if}
-					{#if observationsLoaded && observationsReadable}
+					{#if (observationsLoaded || myObservations.length > 0) && observationsReadable}
 						{#if myObservations.length === 0}
 							<PageState
 								title="ยังไม่มีรายการนิเทศของฉัน"
 								description="เมื่อส่งคำขอหรือได้รับผลนิเทศ รายการจะแสดงที่นี่"
 							/>
+						{:else if personalResult.items.length === 0}
+							<PageState
+								title={personalResult.empty}
+								actionLabel="ดูทุกรายการ"
+								onaction={() => {
+									personalFilter = 'all';
+									document.getElementById('supervision-personal-filter-all')?.focus();
+								}}
+							/>
 						{:else}
 							<div class="space-y-3" data-supervision-own-list="cards">
-								{#each myObservations as observation (observation.id)}
+								{#each personalResult.items as observation (observation.id)}
+									{@const workflow = observationWorkflow(observation)}
+									{@const canCorrect = canCorrectPersonalRequest(observation)}
+									{@const returnReason = currentReturnReason(observation)}
 									<div class="space-y-3 rounded-xl border bg-card p-4 sm:p-5">
 										<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
 											<div class="min-w-0 space-y-1">
 												<div class="flex flex-wrap items-center gap-2">
-													<h3 class="font-semibold">{observationSubjectLabel(observation)}</h3>
-													<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-													<p class="text-xs text-muted-foreground">
-														{observationWorkflow(observation).stageLabel} · ถัดไป: {observationWorkflow(
-															observation
-														).nextOwner}
-													</p>
+													<h3 class="text-base font-semibold wrap-anywhere">
+														{observationSubjectLabel(observation)}
+													</h3>
+													<Badge
+														variant="outline"
+														class={needsPersonalAction(observation)
+															? 'border-primary/25 bg-primary/10 text-primary'
+															: 'bg-muted/40'}>{statusLabel(observation.status)}</Badge
+													>
 												</div>
 												<p class="text-sm text-muted-foreground">
 													{observationPeriodLabel(observation)} · {observationClassroomLabel(
 														observation
 													)}
+												</p>
+												<p class="text-xs text-muted-foreground">
+													{workflow.stageLabel}{#if workflow.stage < 3 && workflow.stage >= 0 && !needsPersonalAction(observation)}
+														· ถัดไป {workflow.nextOwner}{/if}
 												</p>
 											</div>
 											<div class="shrink-0 text-sm text-muted-foreground">
@@ -2149,45 +2161,36 @@
 											</div>
 										</div>
 
-										<details class="rounded-lg border px-3">
-											<summary
-												class="cursor-pointer rounded-sm py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
-												>ข้อมูลรอบนิเทศและคาบเรียน</summary
+										{#if returnReason}
+											<div
+												class="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm"
 											>
-											{@render referenceErrors(true)}
-											{@render observationFacts(observation)}
-										</details>
+												<p class="font-medium">เหตุผลที่ส่งกลับ</p>
+												<p class="mt-1 line-clamp-3 text-muted-foreground wrap-anywhere">
+													{returnReason}
+												</p>
+											</div>
+										{/if}
 
 										<div class="flex flex-wrap items-center justify-between gap-3">
 											<div class="min-w-0">
 												<p class="text-xs text-muted-foreground">ผู้นิเทศ</p>
-												<div class="mt-1 flex flex-wrap gap-2">
-													{#if observation.evaluators.length === 0}
-														<Badge variant="outline">ยังไม่มอบหมาย</Badge>
-													{:else}
-														{#each observation.evaluators as evaluator (evaluator.id)}
-															<Badge variant="secondary">
-																{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
-															</Badge>
-														{/each}
-													{/if}
-												</div>
+												<p class="mt-0.5 text-sm wrap-anywhere">
+													{observationEvaluatorNames(observation)}
+												</p>
 											</div>
 											<div class="flex shrink-0 flex-wrap gap-2">
 												<Button
 													size="sm"
-													variant="outline"
+													variant={canCorrect ? 'default' : 'outline'}
 													href={observationDetailHref(observation)}
-													data-sveltekit-preload-data="tap"
+													data-sveltekit-preload-data={false}
+													data-sveltekit-preload-code="hover"
 												>
-													<Eye class="h-4 w-4" />
-													{observation.status === 'returned' &&
-													canRequest &&
-													!observation.evaluators.some(
-														(evaluator) => evaluator.status === 'submitted'
-													)
-														? observationWorkflow(observation).nextAction
-														: 'รายละเอียด'}
+													{#if canCorrect}{workflow.nextAction}{:else}<Eye
+															class="size-4"
+															aria-hidden="true"
+														/>รายละเอียด{/if}
 												</Button>
 												{#if observation.status === 'published'}
 													{@const draft = acknowledgeDrafts[observation.id]}
@@ -2199,7 +2202,7 @@
 													>
 														<Dialog.Trigger>
 															{#snippet child({ props })}
-																<Button size="sm" {...props} disabled={observationsFromSnapshot}>
+																<Button size="sm" {...props}>
 																	<FileSignature class="mr-2 h-4 w-4" />
 																	รับทราบผล
 																</Button>
@@ -2266,11 +2269,17 @@
 															</Dialog.Content>
 														{/if}
 													</Dialog.Root>
-												{:else}
-													<span class="text-sm text-muted-foreground">-</span>
 												{/if}
 											</div>
 										</div>
+										<details class="border-t pt-1">
+											<summary
+												class="cursor-pointer rounded-sm py-2 text-sm font-medium text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+												>รอบนิเทศและข้อมูลคำขอ</summary
+											>
+											{@render referenceErrors(true)}
+											{@render observationFactItems(observationReferenceFacts(observation))}
+										</details>
 									</div>
 								{/each}
 							</div>
@@ -2662,7 +2671,7 @@
 															<SupervisionCycleDelete
 																{cycle}
 																allowed={canManageSchool}
-																beginObservationChange={personalReturn?.beginChange}
+																beginObservationChange={observationWrites?.beginChange}
 																ondelete={(impact) => {
 																	cycles = cycles.filter((item) => item.id !== impact.cycleId);
 																	observations = observations.filter(

@@ -142,7 +142,7 @@ test('dependent academic pages provide local next actions without a global readi
 	);
 	assert.match(
 		supervisionWorkspace,
-		/<details[^>]*>[\s\S]*?\{@render referenceErrors\(true\)\}[\s\S]*?\{@render observationFacts\(observation\)\}/
+		/<details[^>]*>[\s\S]*?\{@render referenceErrors\(true\)\}[\s\S]*?\{@render observationFactItems\(observationReferenceFacts\(observation\)\)\}/
 	);
 	assert.match(supervisionWorkspace, /title="ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้"/);
 	assert.match(supervisionWorkspace, /เมื่อผู้ดูแลเปิดรับคำขอ คุณจะเลือกคาบจากตารางสอนได้ที่นี่/);
