@@ -3,7 +3,7 @@ use axum::{
         rejection::{JsonRejection, QueryRejection},
         Extension, Path, Query, State,
     },
-    http::StatusCode,
+    http::{header, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -15,7 +15,9 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::state::SupervisionHttpState;
 use school_auth::session_service::AuthenticatedSession;
-use school_auth_context::context::actor_tenant_context_from_session;
+use school_auth_context::context::{
+    actor_tenant_context_from_session, current_user_tenant_context_from_session,
+};
 #[cfg(feature = "api-docs")]
 use school_http::ApiErrorResponse;
 use school_http::ApiResponse;
@@ -26,15 +28,16 @@ use school_supervision::models::{
     CreateSupervisionCycleRequest, CreateSupervisionTemplateRequest, DeleteSupervisionCycleRequest,
     ReplaceObservationEvaluatorsRequest, RequestSupervisionObservationRequest,
     ResubmitSupervisionObservationRequest, ReturnObservationRequest, SaveEvaluationRequest,
-    SupervisionBookingOptionsQuery, SupervisionCycle, SupervisionCycleQuery,
-    SupervisionObservation, SupervisionObservationFilter, SupervisionObservationStatus,
-    SupervisionObservationTimetableQuery, SupervisionTeacherStatusRow, SupervisionTemplate,
-    SupervisionTemplateSummary, UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
+    SupervisionBookingOptionsQuery, SupervisionCalendarQuery, SupervisionCycle,
+    SupervisionCycleQuery, SupervisionObservation, SupervisionObservationFilter,
+    SupervisionObservationStatus, SupervisionObservationTimetableQuery,
+    SupervisionTeacherStatusRow, SupervisionTemplate, SupervisionTemplateSummary,
+    UpdateRequestedObservationRequest, UpdateSupervisionCycleRequest,
     UpdateSupervisionObservationRequest, UpdateSupervisionTemplateRequest,
 };
 #[cfg(feature = "api-docs")]
 use school_supervision::models::{
-    SupervisionBookingOptions, SupervisionCycleDeletionImpact,
+    SupervisionBookingOptions, SupervisionCalendarEntry, SupervisionCycleDeletionImpact,
     SupervisionEvaluatorAvailabilityResponse,
 };
 use school_supervision::services;
@@ -74,6 +77,32 @@ fn parse_booking_query<T>(query: Result<Query<T>, QueryRejection>) -> Result<T, 
     query
         .map(|Query(query)| query)
         .map_err(|_| AppError::BadRequest("ตัวกรองช่วงเวลานิเทศไม่ถูกต้อง".into()))
+}
+
+#[cfg_attr(feature = "api-docs", utoipa::path(
+    get, path = "/api/supervision/calendar", operation_id = "listSupervisionCalendar", tag = "supervision",
+    params(SupervisionCalendarQuery),
+    responses(
+        (status=200,description="Saved supervision periods in the selected academic context and Bangkok date range",body=ApiResponse<ItemsData<SupervisionCalendarEntry>>),
+        (status=400,description="Invalid query or date range",body=ApiErrorResponse),
+        (status=401,description="Authentication required",body=ApiErrorResponse),
+        (status=403,description="Staff session required",body=ApiErrorResponse)
+    )
+))]
+pub async fn list_calendar(
+    Extension(session): Extension<AuthenticatedSession>,
+    query: Result<Query<SupervisionCalendarQuery>, QueryRejection>,
+) -> Result<impl IntoResponse, AppError> {
+    if session.user_type != "staff" {
+        return Err(AppError::Forbidden("ปฏิทินนิเทศสำหรับบุคลากรเท่านั้น".into()));
+    }
+    let Query(query) = query.map_err(|_| AppError::BadRequest("ตัวกรองปฏิทินนิเทศไม่ถูกต้อง".into()))?;
+    let context = current_user_tenant_context_from_session(&session);
+    let items = services::list_calendar(&context.tenant.pool, query).await?;
+    Ok((
+        [(header::CACHE_CONTROL, "private, no-store")],
+        Json(ApiResponse::ok(ItemsData { items })),
+    ))
 }
 
 #[cfg_attr(feature = "api-docs", utoipa::path(

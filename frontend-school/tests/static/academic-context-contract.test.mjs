@@ -510,9 +510,10 @@ test('sidebar preloads and navigates to the same context-bearing destination', a
 	assert.match(sidebar, /academicContextualMenuPath/);
 	assert.match(sidebar, /getAcademicContextRequirement/);
 	assert.match(sidebar, /academicContext\.primeOptions\(\)/);
+	assert.match(sidebar, /\$academicContext\.selected\s*:\s*readAcademicContextFromUrl/);
 	assert.match(
 		sidebar,
-		/academicContextualMenuPath\([\s\S]*?\$academicContext\.selected[\s\S]*?\$academicContext\.options/
+		/academicContextualMenuPath\(\s*item\.path,\s*menuContext,\s*\$academicContext\.optionsBySource\[source\]/
 	);
 	assert.match(sidebar, /href=\{menuHref\(item\)\}/);
 	assert.match(sidebar, /preloadData\(resolve\(href/);
@@ -543,7 +544,15 @@ test('application route metadata uses only supported academic context requiremen
 	const resolveRequirement = createAcademicContextRouteResolver(routeModules);
 	assert.equal(resolveRequirement('/(app)/staff/academic/supervision'), 'term_optional');
 	assert.equal(resolveRequirement('/(app)/staff/academic/supervision/mine'), 'term_required');
-	for (const child of ['evaluate', 'requests', 'cycles', 'templates', 'overview', '[id]']) {
+	for (const child of [
+		'calendar',
+		'evaluate',
+		'requests',
+		'cycles',
+		'templates',
+		'overview',
+		'[id]'
+	]) {
 		assert.equal(
 			resolveRequirement(`/(app)/staff/academic/supervision/${child}`),
 			'term_optional',
@@ -691,6 +700,7 @@ test('existing staff academic consumers declare their exact context requirement'
 		['staff/academic/exam-schedules', 'term_required'],
 		['staff/academic/question-bank', 'none'],
 		['staff/academic/supervision', 'term_optional'],
+		['staff/academic/supervision/calendar', 'term_optional'],
 		['staff/academic/supervision/mine', 'term_required'],
 		['staff/academic/supervision/evaluate', 'term_optional'],
 		['staff/academic/supervision/requests', 'term_optional'],

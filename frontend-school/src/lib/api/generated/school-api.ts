@@ -8134,6 +8134,22 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/api/supervision/calendar': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get: operations['listSupervisionCalendar'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/api/supervision/cycles': {
 		parameters: {
 			query?: never;
@@ -11866,6 +11882,23 @@ export interface components {
 				schoolName: string;
 				/** Format: date-time */
 				updatedAt: string;
+			};
+			message?: string;
+			success: boolean;
+		};
+		ApiResponse_ItemsData_SupervisionCalendarEntry: {
+			data: {
+				items: {
+					/** Format: uuid */
+					cycleId: string;
+					cycleTitle: string;
+					evaluatorDisplayNames: string[];
+					/** Format: uuid */
+					id: string;
+					observedDisplayName: string | null;
+					periods: components['schemas']['SupervisionCalendarPeriod'][];
+					status: components['schemas']['SupervisionCalendarStatus'];
+				}[];
 			};
 			message?: string;
 			success: boolean;
@@ -22168,6 +22201,19 @@ export interface components {
 			/** Format: int64 */
 			rowVersion?: number | null;
 		};
+		ItemsData_SupervisionCalendarEntry: {
+			items: {
+				/** Format: uuid */
+				cycleId: string;
+				cycleTitle: string;
+				evaluatorDisplayNames: string[];
+				/** Format: uuid */
+				id: string;
+				observedDisplayName: string | null;
+				periods: components['schemas']['SupervisionCalendarPeriod'][];
+				status: components['schemas']['SupervisionCalendarStatus'];
+			}[];
+		};
 		ItemsData_SupervisionCycle: {
 			items: {
 				/** Format: uuid */
@@ -26054,6 +26100,46 @@ export interface components {
 			/** Format: date */
 			weekStartDate: string;
 		};
+		SupervisionCalendarEntry: {
+			/** Format: uuid */
+			cycleId: string;
+			cycleTitle: string;
+			evaluatorDisplayNames: string[];
+			/** Format: uuid */
+			id: string;
+			observedDisplayName: string | null;
+			periods: components['schemas']['SupervisionCalendarPeriod'][];
+			status: components['schemas']['SupervisionCalendarStatus'];
+		};
+		SupervisionCalendarPeriod: {
+			/** Format: date-time */
+			endsAt: string | null;
+			/** Format: uuid */
+			id: string;
+			/** Format: date-time */
+			observedAt: string;
+			periodLabel: string | null;
+			/** Format: int32 */
+			position: number;
+		};
+		SupervisionCalendarQuery: {
+			/** Format: uuid */
+			academicTermId?: string | null;
+			/** Format: uuid */
+			academicYearId: string;
+			/**
+			 * Format: date
+			 * @description First Bangkok calendar date, inclusive.
+			 */
+			fromDate: string;
+			/**
+			 * Format: date
+			 * @description Last Bangkok calendar date, inclusive. The range may contain up to 42 dates.
+			 */
+			toDate: string;
+		};
+		/** @enum {string} */
+		SupervisionCalendarStatus: 'requested' | 'confirmed';
 		SupervisionCycle: {
 			/** Format: uuid */
 			academicTermId?: string | null;
@@ -66180,6 +66266,60 @@ export interface operations {
 			};
 			/** @description Request validation failed */
 			422: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+		};
+	};
+	listSupervisionCalendar: {
+		parameters: {
+			query: {
+				academicTermId?: string;
+				academicYearId: string;
+				/** @description First Bangkok calendar date, inclusive. */
+				fromDate: string;
+				/** @description Last Bangkok calendar date, inclusive. The range may contain up to 42 dates. */
+				toDate: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Saved supervision periods in the selected academic context and Bangkok date range */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiResponse_ItemsData_SupervisionCalendarEntry'];
+				};
+			};
+			/** @description Invalid query or date range */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Authentication required */
+			401: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['ApiErrorResponse'];
+				};
+			};
+			/** @description Staff session required */
+			403: {
 				headers: {
 					[name: string]: unknown;
 				};

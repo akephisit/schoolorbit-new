@@ -751,6 +751,7 @@ use utoipa::OpenApi;
         school_academic_delivery_http::delivery::handlers::enroll_my_activity_registration,
         school_academic_delivery_http::delivery::handlers::unenroll_my_activity_registration,
         school_supervision_http::handlers::booking_options,
+        school_supervision_http::handlers::list_calendar,
         school_supervision_http::handlers::cycle_deletion_impact,
         school_supervision_http::handlers::delete_cycle,
         school_supervision_http::handlers::list_cycles,
@@ -2281,6 +2282,12 @@ fn build_schema_group_17() -> utoipa::openapi::OpenApi {
 
 #[derive(OpenApi)]
 #[openapi(components(schemas(
+        SupervisionCalendarQuery,
+        SupervisionCalendarEntry,
+        SupervisionCalendarStatus,
+        SupervisionCalendarPeriod,
+        ItemsData<SupervisionCalendarEntry>,
+        ApiResponse<ItemsData<SupervisionCalendarEntry>>,
         ItemsData<SupervisionObservation>,
         ItemsData<SupervisionEvaluatorAvailability>,
         ItemsData<SupervisionTimetableOption>,

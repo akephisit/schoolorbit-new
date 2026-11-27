@@ -1,4 +1,7 @@
-import type { SupervisionObservation, SupervisionObservationPeriod } from '#lib/api/supervision.js';
+import type {
+	SupervisionObservationPeriod,
+	SupervisionObservationStatus
+} from '#lib/api/supervision.js';
 import { schoolCivilDate } from '#lib/supervision/booking-range.js';
 
 const dateFormatter = new Intl.DateTimeFormat('th-TH', {
@@ -35,19 +38,33 @@ export function savedPeriodLabel(period: SupervisionObservationPeriod): string |
 	);
 }
 
-function orderedPeriods(periods: SupervisionObservationPeriod[]): SupervisionObservationPeriod[] {
+export type CalendarSchedulePeriod = Pick<
+	SupervisionObservationPeriod,
+	'id' | 'observedAt' | 'endsAt' | 'position'
+> & { periodLabel?: string | null };
+
+export type CalendarScheduleBooking = {
+	id: string;
+	cycleId: string;
+	observedDisplayName?: string | null;
+	status: SupervisionObservationStatus | 'confirmed';
+	evaluatorDisplayNames: string[];
+	periods: CalendarSchedulePeriod[];
+};
+
+function orderedPeriods<Period extends CalendarSchedulePeriod>(periods: Period[]): Period[] {
 	return [...periods].sort(
 		(a, b) => Date.parse(a.observedAt) - Date.parse(b.observedAt) || a.position - b.position
 	);
 }
 
-function knownEnd(period: SupervisionObservationPeriod): string | null {
+function knownEnd(period: CalendarSchedulePeriod): string | null {
 	return period.endsAt && Date.parse(period.endsAt) > Date.parse(period.observedAt)
 		? period.endsAt
 		: null;
 }
 
-function periodTimeLabel(period: SupervisionObservationPeriod): string {
+function periodTimeLabel(period: CalendarSchedulePeriod): string {
 	const start = savedScheduleTime(period.observedAt);
 	if (!start) return 'ไม่ระบุเวลาเริ่ม';
 	const end = knownEnd(period);
@@ -60,11 +77,17 @@ function periodTimeLabel(period: SupervisionObservationPeriod): string {
 }
 
 export function savedScheduleSummary(periods: SupervisionObservationPeriod[]) {
+	return calendarScheduleSummary(
+		periods.map((period) => ({ ...period, periodLabel: savedPeriodLabel(period) }))
+	);
+}
+
+export function calendarScheduleSummary(periods: CalendarSchedulePeriod[]) {
 	const ordered = orderedPeriods(periods);
 	const individualPeriods = ordered.map((period) => ({
 		id: period.id,
 		date: periodDate(period.observedAt),
-		label: savedPeriodLabel(period),
+		label: period.periodLabel?.trim() || null,
 		timeLabel: periodTimeLabel(period)
 	}));
 	const dates = [...new Set(individualPeriods.map((period) => period.date))].filter(
@@ -108,27 +131,24 @@ export function savedScheduleSummary(periods: SupervisionObservationPeriod[]) {
 	};
 }
 
-type SavedBooking = {
-	observation: SupervisionObservation;
-	periods: SupervisionObservationPeriod[];
-};
-
-export function savedBookingsByDate(observations: SupervisionObservation[]) {
-	const days = new Map<string, SavedBooking[]>();
-	for (const observation of observations) {
-		if (observation.status === 'returned' || observation.status === 'cancelled') continue;
-		const observationDates = new Map<string, SupervisionObservationPeriod[]>();
-		for (const period of orderedPeriods(observation.periods)) {
+export function calendarBookingsByDate<Booking extends CalendarScheduleBooking>(
+	bookings: Booking[]
+) {
+	type Period = Booking['periods'][number];
+	const days = new Map<string, { booking: Booking; periods: Period[] }[]>();
+	for (const booking of bookings) {
+		const bookingDates = new Map<string, Period[]>();
+		for (const period of orderedPeriods<Period>(booking.periods)) {
 			const date = periodDate(period.observedAt);
 			if (!date) continue;
-			const periods = observationDates.get(date) ?? [];
+			const periods = bookingDates.get(date) ?? [];
 			periods.push(period);
-			observationDates.set(date, periods);
+			bookingDates.set(date, periods);
 		}
-		for (const [date, periods] of observationDates) {
-			const bookings = days.get(date) ?? [];
-			bookings.push({ observation, periods });
-			days.set(date, bookings);
+		for (const [date, periods] of bookingDates) {
+			const dayBookings = days.get(date) ?? [];
+			dayBookings.push({ booking, periods });
+			days.set(date, dayBookings);
 		}
 	}
 	for (const bookings of days.values()) {

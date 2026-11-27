@@ -1,5 +1,6 @@
 mod availability;
 mod booking;
+mod calendar;
 mod cycle_deletion;
 mod cycles;
 mod evaluations;
@@ -14,6 +15,7 @@ mod templates;
 mod term_preparation;
 
 pub use booking::booking_options;
+pub use calendar::list_calendar;
 pub use cycle_deletion::{cycle_deletion_impact, delete_cycle};
 pub use cycles::{create_cycle, get_cycle, list_cycles, update_cycle};
 pub use evaluations::{replace_observation_evaluators, submit_my_evaluation};

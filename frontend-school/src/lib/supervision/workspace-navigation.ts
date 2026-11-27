@@ -1,5 +1,6 @@
 import {
 	BarChart3,
+	CalendarClock,
 	CalendarDays,
 	ClipboardCheck,
 	ClipboardList,
@@ -18,6 +19,13 @@ const workflows = [
 		label: 'ของฉัน',
 		description: 'จองคาบ ติดตามคำขอ และรับทราบผล',
 		icon: UserRound,
+		group: 'work'
+	},
+	{
+		section: 'calendar',
+		label: 'ปฏิทินนิเทศ',
+		description: 'ดูคาบนิเทศและสถานะนัดหมายของโรงเรียน',
+		icon: CalendarClock,
 		group: 'work'
 	},
 	{

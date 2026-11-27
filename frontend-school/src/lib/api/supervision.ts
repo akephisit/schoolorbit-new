@@ -36,6 +36,7 @@ export type SupervisionEvaluatorAvailabilityResponse =
 export type SupervisionBookingAvailability = Schemas['SupervisionBookingAvailability'];
 export type SupervisionAction = Schemas['SupervisionAction'];
 export type SupervisionObservation = Schemas['SupervisionObservation'];
+export type SupervisionCalendarEntry = Schemas['SupervisionCalendarEntry'];
 export type SupervisionReviewResponse = Schemas['SupervisionReviewResponse'];
 export type SupervisionReviewEvaluatorResult = Schemas['SupervisionReviewEvaluatorResult'];
 export type SupervisionReviewItemSummary = Schemas['SupervisionReviewItemSummary'];
@@ -81,6 +82,9 @@ export type AcknowledgeObservationRequest =
 export type ListSupervisionObservationsParams = NonNullable<
 	operations['listSupervisionObservations']['parameters']['query']
 >;
+export type ListSupervisionCalendarParams = NonNullable<
+	operations['listSupervisionCalendar']['parameters']['query']
+>;
 
 type ListSupervisionCyclesQuery = NonNullable<
 	operations['listSupervisionCycles']['parameters']['query']
@@ -91,6 +95,7 @@ type CycleId = operations['getSupervisionCycleProgress']['parameters']['path']['
 type SupervisionCycleItems = Schemas['ItemsData_SupervisionCycle'];
 type SupervisionTemplateItems = Schemas['ItemsData_SupervisionTemplate'];
 type SupervisionObservationItems = Schemas['ItemsData_SupervisionObservation'];
+type SupervisionCalendarItems = Schemas['ItemsData_SupervisionCalendarEntry'];
 type SupervisionTeacherStatusItems = Schemas['ItemsData_SupervisionTeacherStatusRow'];
 
 export type SupervisionBookingOptionsQuery = NonNullable<
@@ -249,6 +254,21 @@ export async function listSupervisionObservations(
 		{ ...options, query }
 	);
 	return requireApiData(response, 'ไม่สามารถโหลดรายการนิเทศได้').items;
+}
+
+export async function listSupervisionCalendar(
+	params: ListSupervisionCalendarParams,
+	options: ApiRequestOptions = {}
+): Promise<SupervisionCalendarEntry[]> {
+	const query = {
+		...params,
+		academicYearId: requiredAcademicYearId(params.academicYearId)
+	} satisfies ListSupervisionCalendarParams;
+	const response = await apiClient.get<SupervisionCalendarItems>('/api/supervision/calendar', {
+		...options,
+		query
+	});
+	return requireApiData(response, 'โหลดปฏิทินนิเทศไม่สำเร็จ').items;
 }
 
 export async function getSupervisionObservation(

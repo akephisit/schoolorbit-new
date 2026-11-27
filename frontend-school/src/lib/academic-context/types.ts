@@ -10,6 +10,12 @@ export type { AcademicContextOptionsResponse, AcademicTermOption, AcademicYearOp
 export type AcademicContextRequirement =
 	'none' | 'year_required' | 'term_required' | 'term_optional';
 
+export type AcademicContextOptionsSource = 'staff' | 'published';
+export type AcademicContextOptionsBySource = Record<
+	AcademicContextOptionsSource,
+	AcademicContextOptionsResponse | null
+>;
+
 export type SelectedAcademicContext = {
 	academicYearId: string | null;
 	academicTermId: string | null;
@@ -18,6 +24,7 @@ export type SelectedAcademicContext = {
 export type AcademicContextState = {
 	requirement: AcademicContextRequirement;
 	options: AcademicContextOptionsResponse | null;
+	optionsBySource: AcademicContextOptionsBySource;
 	selected: SelectedAcademicContext;
 	status: 'hidden' | 'loading' | 'ready' | 'unavailable' | 'error';
 };

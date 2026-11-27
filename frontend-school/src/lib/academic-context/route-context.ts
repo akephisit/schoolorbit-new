@@ -1,5 +1,6 @@
 import type {
 	AcademicContextOptionsResponse,
+	AcademicContextOptionsSource,
 	AcademicContextRequirement,
 	AcademicContextResolution,
 	AcademicContextState,
@@ -9,6 +10,7 @@ import type {
 type RouteMetaModule = {
 	_meta?: {
 		academicContext?: unknown;
+		academicContextOptions?: AcademicContextOptionsSource;
 	};
 };
 
@@ -78,10 +80,20 @@ function discoverRouteModules(): RouteModuleMap {
 }
 
 let defaultRouteResolver: AcademicContextRouteResolver | null = null;
+let routeModules: RouteModuleMap | null = null;
 
 export function getAcademicContextRequirement(routeId: string | null): AcademicContextRequirement {
-	defaultRouteResolver ??= createAcademicContextRouteResolver(discoverRouteModules());
+	routeModules ??= discoverRouteModules();
+	defaultRouteResolver ??= createAcademicContextRouteResolver(routeModules);
 	return defaultRouteResolver(routeId);
+}
+
+export function getAcademicContextOptionsSource(
+	routeId: string | null
+): AcademicContextOptionsSource {
+	if (!routeId || !isStaffRoute(routeId)) return 'staff';
+	routeModules ??= discoverRouteModules();
+	return routeModules[`/src/routes${routeId}/+page.ts`]?._meta?.academicContextOptions ?? 'staff';
 }
 
 export function readAcademicContextFromUrl(url: URL): SelectedAcademicContext {

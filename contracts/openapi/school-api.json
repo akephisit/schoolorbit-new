@@ -11523,6 +11523,78 @@
         ],
         "type": "object"
       },
+      "ApiResponse_ItemsData_SupervisionCalendarEntry": {
+        "properties": {
+          "data": {
+            "properties": {
+              "items": {
+                "items": {
+                  "properties": {
+                    "cycleId": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "cycleTitle": {
+                      "type": "string"
+                    },
+                    "evaluatorDisplayNames": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "id": {
+                      "format": "uuid",
+                      "type": "string"
+                    },
+                    "observedDisplayName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "periods": {
+                      "items": {
+                        "$ref": "#/components/schemas/SupervisionCalendarPeriod"
+                      },
+                      "type": "array"
+                    },
+                    "status": {
+                      "$ref": "#/components/schemas/SupervisionCalendarStatus"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "cycleId",
+                    "cycleTitle",
+                    "observedDisplayName",
+                    "status",
+                    "evaluatorDisplayNames",
+                    "periods"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "data"
+        ],
+        "type": "object"
+      },
       "ApiResponse_ItemsData_SupervisionCycle": {
         "properties": {
           "data": {
@@ -49352,6 +49424,63 @@
         ],
         "type": "object"
       },
+      "ItemsData_SupervisionCalendarEntry": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "cycleId": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "cycleTitle": {
+                  "type": "string"
+                },
+                "evaluatorDisplayNames": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "observedDisplayName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "periods": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupervisionCalendarPeriod"
+                  },
+                  "type": "array"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/SupervisionCalendarStatus"
+                }
+              },
+              "required": [
+                "id",
+                "cycleId",
+                "cycleTitle",
+                "observedDisplayName",
+                "status",
+                "evaluatorDisplayNames",
+                "periods"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "ItemsData_SupervisionCycle": {
         "properties": {
           "items": {
@@ -63549,6 +63678,128 @@
           "weekStartDate"
         ],
         "type": "object"
+      },
+      "SupervisionCalendarEntry": {
+        "properties": {
+          "cycleId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cycleTitle": {
+            "type": "string"
+          },
+          "evaluatorDisplayNames": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "observedDisplayName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/SupervisionCalendarPeriod"
+            },
+            "type": "array"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SupervisionCalendarStatus"
+          }
+        },
+        "required": [
+          "id",
+          "cycleId",
+          "cycleTitle",
+          "observedDisplayName",
+          "status",
+          "evaluatorDisplayNames",
+          "periods"
+        ],
+        "type": "object"
+      },
+      "SupervisionCalendarPeriod": {
+        "properties": {
+          "endsAt": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "position": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "observedAt",
+          "endsAt",
+          "periodLabel"
+        ],
+        "type": "object"
+      },
+      "SupervisionCalendarQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "academicTermId": {
+            "format": "uuid",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "academicYearId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "fromDate": {
+            "description": "First Bangkok calendar date, inclusive.",
+            "format": "date",
+            "type": "string"
+          },
+          "toDate": {
+            "description": "Last Bangkok calendar date, inclusive. The range may contain up to 42 dates.",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "academicYearId",
+          "fromDate",
+          "toDate"
+        ],
+        "type": "object"
+      },
+      "SupervisionCalendarStatus": {
+        "enum": [
+          "requested",
+          "confirmed"
+        ],
+        "type": "string"
       },
       "SupervisionCycle": {
         "properties": {
@@ -122802,6 +123053,96 @@
               }
             },
             "description": "Request validation failed"
+          }
+        },
+        "tags": [
+          "supervision"
+        ]
+      }
+    },
+    "/api/supervision/calendar": {
+      "get": {
+        "operationId": "listSupervisionCalendar",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "academicYearId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "academicTermId",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "First Bangkok calendar date, inclusive.",
+            "in": "query",
+            "name": "fromDate",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Last Bangkok calendar date, inclusive. The range may contain up to 42 dates.",
+            "in": "query",
+            "name": "toDate",
+            "required": true,
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ItemsData_SupervisionCalendarEntry"
+                }
+              }
+            },
+            "description": "Saved supervision periods in the selected academic context and Bangkok date range"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid query or date range"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Authentication required"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Staff session required"
           }
         },
         "tags": [

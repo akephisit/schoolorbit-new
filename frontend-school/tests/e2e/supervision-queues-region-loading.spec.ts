@@ -134,7 +134,8 @@ test('mobile hub lists only permitted workflows and preserves context through Mi
 
 	await page.goto(path(''));
 	await expect(page.getByRole('heading', { name: 'นิเทศการสอน', exact: true })).toBeVisible();
-	await expect(hub.getByRole('link')).toHaveCount(1);
+	await expect(hub.getByRole('link')).toHaveCount(2);
+	await expect(hub.getByRole('link', { name: 'ปฏิทินนิเทศ', exact: true })).toBeVisible();
 	await expect(mine).toHaveAttribute('href', personalHref);
 	await expect(mine).toHaveAttribute('data-sveltekit-preload-data', 'false');
 	await expect(menu).toHaveCount(0);
