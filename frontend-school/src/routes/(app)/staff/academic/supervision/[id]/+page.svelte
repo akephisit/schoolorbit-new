@@ -6,6 +6,7 @@
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
 	import SupervisionRequestReview from '#lib/components/supervision/SupervisionRequestReview.svelte';
 	import { createSupervisionRequestReview } from '#lib/supervision/request-review.svelte.js';
+	import { usePersonalSupervisionReturn } from '#lib/supervision/personal-return.js';
 	import {
 		schoolCivilDate,
 		cycleDateRangeError,
@@ -94,6 +95,7 @@
 
 	let { data }: { data: PageData } = $props();
 	const academicContext = getAcademicContextStore();
+	const personalReturn = usePersonalSupervisionReturn();
 	const academicContextOptions = $derived($academicContext.options);
 
 	let loading = $state(true);
@@ -204,6 +206,7 @@
 		getObservation: (id) => (observation?.id === id ? observation : null),
 		hasManagePermission: () => canManageObservation,
 		captureOwner: captureMutationOwner,
+		beginObservationChange: personalReturn?.beginChange,
 		isBusy: () => savingAction !== null,
 		getSavingAction: () => savingAction,
 		setSavingAction: (action) => (savingAction = action),
@@ -710,6 +713,7 @@
 		const workflowRevision = lessonWorkflowRevision;
 		const resubmitting = isReturnedOwnRequest;
 		savingAction = 'lesson';
+		const finishChange = personalReturn?.beginChange();
 		try {
 			const response =
 				canManageObservation && !canEditOwnRequested
@@ -722,6 +726,7 @@
 		} catch (saveError) {
 			if (ownsMutation()) throw saveError;
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}
@@ -789,6 +794,7 @@
 		const submittedId = observation.id;
 		const workflowRevision = evaluatorWorkflowRevision;
 		savingAction = 'evaluators';
+		const finishChange = personalReturn?.beginChange();
 		try {
 			const response = await replaceSupervisionObservationEvaluators(submittedId, {
 				evaluators: selectedEvaluatorIds.map((evaluatorUserId) => ({
@@ -807,6 +813,7 @@
 			if (!ownsMutation()) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขผู้ประเมินไม่สำเร็จ');
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}
@@ -817,6 +824,7 @@
 		const submittedId = observation.id;
 		savingAction = 'resubmit-saved';
 		resubmitError = '';
+		const finishChange = personalReturn?.beginChange();
 		try {
 			const response = await resubmitSupervisionObservationRequest(submittedId);
 			if (!ownsMutation()) return;
@@ -826,6 +834,7 @@
 			if (ownsMutation())
 				resubmitError = failure instanceof Error ? failure.message : 'ส่งคำขอเดิมใหม่ไม่สำเร็จ';
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}
@@ -835,6 +844,7 @@
 		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'cancel';
+		const finishChange = personalReturn?.beginChange();
 		try {
 			const response =
 				canManageObservation && !canCancelOwnRequest
@@ -852,6 +862,7 @@
 				cancelError instanceof Error ? cancelError.message : 'ยกเลิกรายการนิเทศไม่สำเร็จ'
 			);
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}

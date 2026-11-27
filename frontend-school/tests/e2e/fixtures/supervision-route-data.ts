@@ -12,6 +12,7 @@ import type {
 	UpdateRequestedObservationRequest
 } from '../../../src/lib/api/supervision';
 import type { AcademicTermOption } from '../../../src/lib/api/academic-context';
+import type { MenuGroup } from '../../../src/lib/api/menu';
 import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
 export const id = (n: number) => `44000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -78,6 +79,7 @@ export async function mock(
 	page: Page,
 	options: {
 		permissions?: string[];
+		menuGroups?: MenuGroup[];
 		cycleStatus?: SupervisionCycleStatus;
 		observationStartDate?: string | null;
 		observationEndDate?: string | null;
@@ -313,7 +315,7 @@ export async function mock(
 						status: 'open'
 					}))
 				});
-			if (resource === '/api/menu/user') return reply(route, { groups: [] });
+			if (resource === '/api/menu/user') return reply(route, { groups: options.menuGroups ?? [] });
 			const cycles = () =>
 				[firstCycle, secondCycle].map((value, index) => ({
 					id: value,

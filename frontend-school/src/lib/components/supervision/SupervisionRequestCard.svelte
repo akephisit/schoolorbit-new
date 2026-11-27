@@ -5,6 +5,7 @@
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import {
@@ -22,12 +23,18 @@
 		cycleLabel,
 		templateLabel,
 		requestedLabel,
+		cyclePending = false,
+		templatePending = false,
+		referenceFeedback,
 		children
 	}: {
 		observation: SupervisionObservation;
 		cycleLabel: string;
 		templateLabel: string;
 		requestedLabel: string;
+		cyclePending?: boolean;
+		templatePending?: boolean;
+		referenceFeedback?: Snippet;
 		children: Snippet;
 	} = $props();
 
@@ -90,17 +97,26 @@
 			{/snippet}
 		</Collapsible.Trigger>
 		<Collapsible.Content class="space-y-3 pt-3 pb-1">
+			{@render referenceFeedback?.()}
 			{#if schedule.periods.length}
 				<SupervisionSavedPeriods {observation} />
 			{/if}
 			<dl class="grid gap-2 text-sm sm:grid-cols-2">
 				<div>
 					<dt class="text-muted-foreground">รอบนิเทศ</dt>
-					<dd>{cycleLabel}</dd>
+					<dd>
+						{#if cyclePending}<div role="status" aria-label="กำลังโหลดรอบนิเทศ">
+								<Skeleton class="h-4 w-24" />
+							</div>{:else}{cycleLabel}{/if}
+					</dd>
 				</div>
 				<div>
 					<dt class="text-muted-foreground">แบบประเมิน</dt>
-					<dd>{templateLabel}</dd>
+					<dd>
+						{#if templatePending}<div role="status" aria-label="กำลังโหลดแบบประเมิน">
+								<Skeleton class="h-4 w-24" />
+							</div>{:else}{templateLabel}{/if}
+					</dd>
 				</div>
 				<div>
 					<dt class="text-muted-foreground">ส่งคำขอ</dt>

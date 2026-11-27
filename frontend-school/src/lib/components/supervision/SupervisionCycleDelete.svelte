@@ -21,10 +21,12 @@
 	let {
 		cycle,
 		allowed,
+		beginObservationChange,
 		ondelete
 	}: {
 		cycle: SupervisionCycle;
 		allowed: boolean;
+		beginObservationChange?: () => () => void;
 		ondelete: (impact: SupervisionCycleDeletionImpact) => void;
 	} = $props();
 	let open = $state(false);
@@ -111,6 +113,7 @@
 		const sourceContext = ownerKey();
 		saving = true;
 		error = '';
+		const finishChange = beginObservationChange?.();
 		try {
 			const response = await deleteSupervisionCycle(cycle.id, {
 				expectedRevision: impact.revision
@@ -127,6 +130,7 @@
 			if (sourceEpoch === epoch && sourceContext === ownerKey())
 				error = failure instanceof Error ? failure.message : 'ลบรอบนิเทศไม่สำเร็จ';
 		} finally {
+			finishChange?.();
 			if (sourceEpoch === epoch && sourceContext === ownerKey()) saving = false;
 		}
 	}

@@ -1,5 +1,8 @@
 import { revalidatePage } from './fixtures/page-revalidation';
 import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
+import { existsSync } from 'node:fs';
+import { readFile, readdir } from 'node:fs/promises';
+import type { MenuGroup } from '../../src/lib/api/menu.js';
 import {
 	id,
 	year,
@@ -21,6 +24,221 @@ test.beforeEach(async ({ page }) => {
 const assigned = ['supervision.read.assigned', 'supervision.evaluate.assigned'];
 const own = ['supervision.read.own', 'supervision.request.own'];
 const observationPath = '/api/supervision/observations';
+const minePath = '/staff/academic/supervision';
+const personalHref = `${minePath}?academicYearId=${year}&academicTermId=${id(8)}`;
+const supervisionMenu: MenuGroup[] = [
+	{
+		code: 'academic_supervision',
+		name: 'นิเทศการสอน',
+		icon: 'ClipboardCheck',
+		workspaceCode: 'academic',
+		workspaceName: 'วิชาการ',
+		workspaceIcon: 'School',
+		workspaceOrder: 1,
+		displayOrder: 1,
+		items: [
+			{
+				id: 'supervision',
+				code: 'supervision',
+				name: 'นิเทศการสอน',
+				path: minePath,
+				icon: 'ClipboardCheck',
+				displayOrder: 1
+			}
+		]
+	}
+];
+
+function deferred() {
+	let release = () => {};
+	const promise = new Promise<void>((resolve) => (release = resolve));
+	return { promise, release };
+}
+
+async function holdMineModule(page: Page) {
+	const directory = '.svelte-kit/generated/build/client-optimized/nodes';
+	const manifestFile = '.svelte-kit/output/client/.vite/manifest.json';
+	const files = existsSync(directory) && existsSync(manifestFile) ? await readdir(directory) : [];
+	const nodes = await Promise.all(
+		files.map(async (file) => ({
+			file,
+			source: await readFile(`${directory}/${file}`, 'utf8')
+		}))
+	);
+	const node = nodes.find(({ source }) => source.includes(`/routes/(app)${minePath}/+page.svelte`));
+	const manifest: Record<string, { file: string; name?: string; isEntry?: boolean }> = node
+		? JSON.parse(await readFile(manifestFile, 'utf8'))
+		: {};
+	const entry = Object.values(manifest).find(
+		(item) => item.isEntry && item.name === `nodes/${node?.file.replace(/\.js$/, '')}`
+	);
+	const modulePath = entry ? `/${entry.file}` : null;
+	const gate = deferred();
+	let requested = false;
+	await page.route(
+		(url) => {
+			const pathname = decodeURIComponent(url.pathname);
+			return pathname === modulePath || pathname.endsWith(`/routes/(app)${minePath}/+page.svelte`);
+		},
+		async (route) => {
+			requested = true;
+			await gate.promise;
+			await route.continue();
+		}
+	);
+	return { ...gate, requested: () => requested };
+}
+
+test('opening Mine from another supervision tab keeps the workspace visible while its module loads', async ({
+	page
+}) => {
+	await mock(page, { term: true, menuGroups: supervisionMenu });
+	const module = await holdMineModule(page);
+	try {
+		await page.goto(path('templates'));
+		await expect(
+			page.locator('aside').getByRole('link', { name: 'นิเทศการสอน', exact: true })
+		).toBeVisible();
+		const navigation = page.getByRole('navigation', { name: 'เมนูนิเทศการสอน' });
+		await navigation.getByRole('link', { name: 'ของฉัน', exact: true }).click();
+		await expect.poll(module.requested).toBe(true);
+		await expect(navigation.getByRole('link', { name: 'แบบประเมิน', exact: true })).toHaveAttribute(
+			'aria-current',
+			'page'
+		);
+		await expect(page.getByTestId('menu-navigation-pending')).toHaveCount(0);
+		await expect(page.getByTestId('supervision-templates-ready')).toBeVisible();
+	} finally {
+		module.release();
+	}
+	await expect(page.getByRole('link', { name: 'ของฉัน', exact: true })).toHaveAttribute(
+		'aria-current',
+		'page'
+	);
+});
+
+test('narrow Mine return keeps its list and counts through history and held reads, and revokes a denied refresh', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 390, height: 900 });
+	await mock(page, {
+		term: true,
+		menuGroups: supervisionMenu,
+		additionalObservations: [31, 32, 33].map((value) => ({
+			id: id(value),
+			status: 'completed' as const
+		}))
+	});
+	const gate = deferred();
+	let hold = false;
+	let deny = false;
+	await page.route(
+		(url) =>
+			[observationPath, '/api/supervision/cycles', '/api/supervision/templates/summaries'].includes(
+				url.pathname
+			),
+		async (route) => {
+			if (hold) await gate.promise;
+			if (deny && new URL(route.request().url()).pathname === observationPath)
+				return route.fulfill({
+					status: 403,
+					json: { success: false, error: 'ไม่มีสิทธิ์ดูรายการนิเทศ' }
+				});
+			await route.fallback();
+		}
+	);
+	const navigation = page.getByRole('navigation', { name: 'เมนูนิเทศการสอน' });
+	const mine = navigation.getByRole('link', { name: 'ของฉัน', exact: true });
+	const templates = navigation.getByRole('link', { name: 'แบบประเมิน', exact: true });
+	const metrics = page.getByTestId('supervision-personal-status');
+	const list = page.getByTestId('supervision-observations');
+	const heading = page.getByRole('heading', { name: 'รายการของฉัน', exact: true });
+	const pending = metrics
+		.locator('dt', { hasText: /^รออนุมัติคำขอ$/ })
+		.locator('xpath=following-sibling::dd');
+
+	await page.goto(personalHref);
+	await expect(pending).toHaveText('1');
+	const initialHeadingY = (await heading.boundingBox())?.y;
+	await templates.click();
+	await expect(page.getByTestId('supervision-templates-ready')).toBeVisible();
+	hold = true;
+	try {
+		await mine.click();
+		await expect(mine).toHaveAttribute('aria-current', 'page');
+		await expect(list).toHaveAttribute('aria-busy', 'true');
+		await expect(list.locator('[data-supervision-own-list]')).toBeVisible();
+		await expect(pending).toHaveText('1');
+		await expect(list.getByRole('status')).toHaveCount(0);
+		await expect(page.getByTestId('menu-navigation-pending')).toHaveCount(0);
+		await expect.poll(async () => (await heading.boundingBox())?.y).toBe(initialHeadingY);
+		const main = page.locator('main');
+		await main.hover();
+		await page.mouse.wheel(0, 220);
+		await expect.poll(() => main.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+		await page.goBack();
+		await expect(templates).toHaveAttribute('aria-current', 'page');
+		await page.goForward();
+		await expect(mine).toHaveAttribute('aria-current', 'page');
+		await expect(list).toHaveAttribute('aria-busy', 'true');
+		await expect(pending).toHaveText('1');
+	} finally {
+		hold = false;
+		gate.release();
+	}
+	await expect(list).toHaveAttribute('aria-busy', 'false');
+	await expect(pending).toHaveText('1');
+	await templates.click();
+	await expect(templates).toHaveAttribute('aria-current', 'page');
+	deny = true;
+	await mine.click();
+	await expect(list.getByText('ยังไม่มีสิทธิ์ดูรายการนิเทศ', { exact: true })).toBeVisible();
+	await expect(metrics).toHaveCount(0);
+	await expect(list.locator('[data-supervision-own-list]')).toHaveCount(0);
+});
+
+test('Mine does not replay its old counts while a request change is pending in another tab', async ({
+	page
+}) => {
+	const api = await mock(page, { term: true, hold: 'patch' });
+	const navigation = page.getByRole('navigation', { name: 'เมนูนิเทศการสอน' });
+	const metrics = page.getByTestId('supervision-personal-status');
+	const list = page.getByTestId('supervision-observations');
+	const gate = deferred();
+	const returnPath = `${observationPath}/${id(30)}/return-request`;
+	await page.goto(personalHref);
+	await expect(
+		metrics.locator('dt', { hasText: /^รออนุมัติคำขอ$/ }).locator('xpath=following-sibling::dd')
+	).toHaveText('1');
+	await navigation.getByRole('link', { name: 'คำขอจอง', exact: true }).click();
+	const submitted = page.waitForRequest(
+		(request) => new URL(request.url()).pathname === returnPath
+	);
+	await page.getByRole('button', { name: 'ส่งกลับคำขอ', exact: true }).click();
+	await submitted;
+	await page.route(
+		(url) => url.pathname === observationPath,
+		async (route) => {
+			await gate.promise;
+			await route.fallback();
+		},
+		{ times: 1 }
+	);
+	try {
+		await navigation.getByRole('link', { name: 'ของฉัน', exact: true }).click();
+		await expect(list.getByRole('status', { name: 'กำลังโหลดรายการนิเทศ' })).toBeVisible();
+		await expect(list.locator('[data-supervision-own-list]')).toHaveCount(0);
+		const returned = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === returnPath
+		);
+		api.release();
+		await returned;
+	} finally {
+		api.release();
+		gate.release();
+	}
+	await expect(list.getByText('ส่งกลับให้แก้ไข', { exact: true })).toBeVisible();
+});
 
 for (const hold of ['cycles', 'summaries'] as const) {
 	test(`requests list renders independently of delayed ${hold}`, async ({ page }) => {
@@ -29,11 +247,20 @@ for (const hold of ['cycles', 'summaries'] as const) {
 		await expect(
 			page.getByTestId('supervision-observations').getByText('ครู ในคิว', { exact: true }).first()
 		).toBeVisible();
-		await expect(page.getByTestId('supervision-references').getByRole('status')).toBeVisible();
+		const details = page.getByRole('button', { name: /ดูรายละเอียด .*คาบ/ }).first();
+		await details.click();
+		const loadingReference = page.getByRole('status', {
+			name: hold === 'cycles' ? 'กำลังโหลดรอบนิเทศ' : 'กำลังโหลดแบบประเมิน',
+			exact: true
+		});
+		await expect(loadingReference).toBeVisible();
 		expect(api.count(`/api/supervision/observations/${id(30)}/evaluator-availability`)).toBe(0);
 		expect(api.count(`/api/supervision/templates/${templateId}`)).toBe(0);
 		api.release();
-		await expect(page.getByTestId('supervision-references').getByRole('status')).toHaveCount(0);
+		await expect(loadingReference).toHaveCount(0);
+		await expect(
+			page.getByText(hold === 'cycles' ? /^รอบแรก/ : 'แบบประเมินทดสอบ').first()
+		).toBeVisible();
 	});
 }
 

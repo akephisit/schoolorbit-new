@@ -44,6 +44,7 @@ export function createSupervisionRequestReview({
 	getObservation,
 	hasManagePermission,
 	captureOwner,
+	beginObservationChange,
 	isBusy,
 	getSavingAction,
 	setSavingAction,
@@ -54,6 +55,7 @@ export function createSupervisionRequestReview({
 	getObservation: (id: string) => SupervisionObservation | null | undefined;
 	hasManagePermission: () => boolean;
 	captureOwner: () => () => boolean;
+	beginObservationChange?: () => () => void;
 	isBusy: () => boolean;
 	getSavingAction: () => string | null;
 	setSavingAction: (action: string | null) => void;
@@ -242,6 +244,7 @@ export function createSupervisionRequestReview({
 		const messages = actionMessages[action];
 		const actionKey = `${action}:${id}`;
 		setSavingAction(actionKey);
+		const finishChange = beginObservationChange?.();
 		try {
 			const evaluators = selectedEvaluators(observation).map(({ id, isRequired, roleLabel }) => ({
 				evaluatorUserId: id,
@@ -268,6 +271,7 @@ export function createSupervisionRequestReview({
 			if (action !== 'return-request') void loadAvailability(id);
 			toast.error(error instanceof Error ? error.message : messages.failure);
 		} finally {
+			finishChange?.();
 			if (ownsMutation() && getSavingAction() === actionKey) setSavingAction(null);
 		}
 	}

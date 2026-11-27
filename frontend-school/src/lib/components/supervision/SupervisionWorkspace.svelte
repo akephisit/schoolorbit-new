@@ -19,6 +19,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { SupervisionWorkspaceRouteData } from '#lib/supervision/workspace-route-data.js';
+	import { usePersonalSupervisionReturn } from '#lib/supervision/personal-return.js';
 	import {
 		resolveSupervisionRead,
 		SUPERVISION_SCHOOL_REPORT_PERMISSIONS
@@ -93,6 +94,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
@@ -118,6 +120,7 @@
 	type ObservationDetailItem = {
 		label: string;
 		value: string;
+		pending?: boolean;
 	};
 	type CycleFormState = {
 		title: string;
@@ -217,6 +220,7 @@
 		routeData
 	}: { section: SupervisionWorkspaceSection; routeData: SupervisionWorkspaceRouteData } = $props();
 	const academicContext = getAcademicContextStore();
+	const personalReturn = usePersonalSupervisionReturn();
 	const academicYearId = $derived(
 		routeData ? routeData.academicYearId : $academicContext.selected.academicYearId
 	);
@@ -265,6 +269,7 @@
 	let observationsLoading = $state(false);
 	let observationsReadable = $state(true);
 	let observationsError = $state('');
+	let observationsFromSnapshot = $state(false);
 	let queueView = $state('list');
 	let bookingCalendarDate = $state('');
 	let calendarReviewId = $state('');
@@ -323,12 +328,6 @@
 		return appIdentityKey();
 	});
 	const sectionConfig = $derived(sectionConfigByKey[section]);
-	const referenceFeedbackVisible = $derived(
-		Boolean(
-			(routeData.cycles && ((cyclesLoading && !cyclesLoaded) || cyclesError)) ||
-			(routeData.templates && ((templatesLoading && !templatesLoaded) || templatesError))
-		)
-	);
 	const mutationBusy = $derived(
 		saving || savingAction !== null || savingTemplate || savingEvaluation !== null
 	);
@@ -352,6 +351,16 @@
 		) || canManageRequests
 	);
 	const canReadSchoolReport = $derived($can.hasAny(...SUPERVISION_SCHOOL_REPORT_PERMISSIONS));
+	const personalScope = $derived(
+		section === 'mine' &&
+			$authStore.isAuthenticated &&
+			routeIdentity &&
+			academicYearId &&
+			academicTermId &&
+			$can.hasAny(PERMISSIONS.SUPERVISION_READ_OWN, ...SUPERVISION_SCHOOL_REPORT_PERMISSIONS)
+			? JSON.stringify([page.url.origin, routeIdentity, academicYearId, academicTermId])
+			: null
+	);
 	const canReport = $derived(canReadSchoolReport || canManageRequests);
 	const activeBookingCycles = $derived(cycles.filter(cycleAcceptsBookings));
 	const currentBookingCycle = $derived(
@@ -420,6 +429,7 @@
 				: undefined,
 		hasManagePermission: () => canManageRequests,
 		captureOwner: captureMutationOwner,
+		beginObservationChange: personalReturn?.beginChange,
 		isBusy: () => mutationBusy,
 		getSavingAction: () => savingAction,
 		setSavingAction: (action) => (savingAction = action),
@@ -471,6 +481,7 @@
 	$effect.pre(() => {
 		const source = routeData;
 		const identity = routeIdentity;
+		const scope = personalScope;
 		const key = `${identity}:${section}:${academicYearId ?? ''}:${academicTermId ?? ''}`;
 		if (!source) return;
 		untrack(() => {
@@ -484,8 +495,11 @@
 				templates = [];
 				templateSummaries = [];
 				teacherStatusRows = [];
-				observations = [];
-				observationsLoaded = false;
+				const previous = scope && source.observations ? personalReturn?.read(scope) : null;
+				observations = previous ?? [];
+				observationsLoaded = Array.isArray(previous);
+				observationsFromSnapshot = observationsLoaded;
+				observationsReadable = true;
 				bookingCalendarDate = '';
 				calendarReviewId = '';
 				bookingOpen = false;
@@ -540,6 +554,7 @@
 			teacherStatusError = '';
 			progressError = '';
 			const observationRead = observationRequest.begin();
+			const applyRead = captureObservationRead(scope);
 			if (source.observations)
 				void Promise.all([source.identity, source.observations]).then(([owner, result]) => {
 					if (
@@ -553,7 +568,7 @@
 						observationsError = result.error;
 						return;
 					}
-					applyObservations(result.data.items, result.data.readable);
+					applyRead(result.data.items, result.data.readable);
 				});
 			const cycleRead = managementCyclesRequest.begin();
 			const templateRead = managementTemplatesRequest.begin();
@@ -888,8 +903,16 @@
 		return [
 			{ label: 'ห้อง/ชั้นเรียน', value: observationClassroomLabel(observation) },
 			{ label: 'ห้องเรียน', value: observationRoomLabel(observation) },
-			{ label: 'รอบนิเทศ', value: requestCycleLabel(observation) },
-			{ label: 'แบบประเมิน', value: requestTemplateTitle(observation) },
+			{
+				label: 'รอบนิเทศ',
+				value: requestCycleLabel(observation),
+				pending: cyclesLoading && !cyclesLoaded
+			},
+			{
+				label: 'แบบประเมิน',
+				value: requestTemplateTitle(observation),
+				pending: templatesLoading && !templatesLoaded
+			},
 			{ label: 'ผู้นิเทศ', value: observationEvaluatorNames(observation) },
 			{ label: 'ส่งคำขอ', value: formatDate(observation.requestedAt) },
 			{ label: 'อนุมัติ', value: formatDate(observation.approvedAt) }
@@ -931,6 +954,18 @@
 	function shouldLoadObservations() {
 		return routeData.observations !== null;
 	}
+	function captureObservationRead(scope: string | null) {
+		const revision = personalReturn?.captureRead();
+		return (items: SupervisionObservation[], readable: boolean) => {
+			observationsFromSnapshot = false;
+			if (scope && scope === personalScope && revision !== undefined && personalReturn) {
+				if (readable) personalReturn.remember(scope, currentUserId, items, revision);
+				else personalReturn.clear();
+			}
+			applyObservations(items, readable);
+		};
+	}
+
 	function applyObservations(items: SupervisionObservation[], readable: boolean, freshRead = true) {
 		observations = items;
 		observationsReadable = readable;
@@ -957,6 +992,7 @@
 		if (!academicYearId || !canReadObservations) return;
 		const { revision, signal } = observationRequest.begin();
 		const owner = currentManagementContext();
+		const applyRead = captureObservationRead(personalScope);
 		observationsLoading = true;
 		observationsError = '';
 		try {
@@ -964,12 +1000,10 @@
 				{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
 				{ signal }
 			);
-			const items = await (section === 'requests' || section === 'evaluate'
-				? resolveSupervisionRead(read)
-				: read);
+			const items = await resolveSupervisionRead(read);
 
 			if (owner !== currentManagementContext() || !observationRequest.isCurrent(revision)) return;
-			applyObservations(items ?? [], items !== null);
+			applyRead(items ?? [], items !== null);
 		} catch (error) {
 			if (
 				!isAbortError(error) &&
@@ -1070,13 +1104,18 @@
 		if (!canRequest || !currentBookingCycle || !academicTermId)
 			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
 		const ownsMutation = captureMutationOwner();
-		const response = await requestSupervisionObservation({
-			cycleId: currentBookingCycle.id,
-			academicTermId,
-			...selection
-		});
-		if (!ownsMutation() || !canRequest) return;
-		replaceObservation(requireMutationData(response, 'ส่งคำขอไม่สำเร็จ'));
+		const finishChange = personalReturn?.beginChange();
+		try {
+			const response = await requestSupervisionObservation({
+				cycleId: currentBookingCycle.id,
+				academicTermId,
+				...selection
+			});
+			if (!ownsMutation() || !canRequest) return;
+			replaceObservation(requireMutationData(response, 'ส่งคำขอไม่สำเร็จ'));
+		} finally {
+			finishChange?.();
+		}
 	}
 
 	function requestCycleLabel(observation: SupervisionObservation): string {
@@ -1238,6 +1277,7 @@
 		savingEvaluation = submission;
 		const ownsMutation = captureMutationOwner();
 		const isCurrentSubmission = () => savingEvaluation === submission && ownsMutation();
+		const finishChange = personalReturn?.beginChange();
 		try {
 			const payload = evaluationPayload();
 			const response = await submitMySupervisionEvaluation(observationId, payload);
@@ -1255,12 +1295,14 @@
 				evaluationFormError = message;
 			else toast.error(message);
 		} finally {
+			finishChange?.();
 			if (isCurrentSubmission()) savingEvaluation = null;
 		}
 	}
 
 	function setAcknowledgeDialogOpen(id: string, open: boolean) {
 		if (open) {
+			if (observationsFromSnapshot) return;
 			acknowledgeDrafts[id] ??= { comment: '', error: '' };
 			acknowledgeDialogId = id;
 		} else if (acknowledgeDialogId === id && savingAction !== `acknowledge-result:${id}`) {
@@ -1270,10 +1312,11 @@
 
 	async function acknowledgeResult(id: string) {
 		const draft = acknowledgeDrafts[id];
-		if (!draft || mutationBusy || acknowledgeDialogId !== id) return;
+		if (!draft || mutationBusy || observationsFromSnapshot || acknowledgeDialogId !== id) return;
 		draft.error = '';
 		savingAction = `acknowledge-result:${id}`;
 		const ownsMutation = captureMutationOwner();
+		const finishChange = personalReturn?.beginChange();
 		try {
 			const response = await acknowledgeSupervisionObservation(id, {
 				comment: draft.comment || null
@@ -1288,6 +1331,7 @@
 			if (!ownsMutation()) return;
 			draft.error = error instanceof Error ? error.message : 'รับทราบผลไม่สำเร็จ';
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}
@@ -1772,6 +1816,76 @@
 	{/if}
 {/snippet}
 
+{#snippet observationFeedback()}
+	{#if observationsLoading && !observationsLoaded}
+		<div
+			role="status"
+			aria-label="กำลังโหลดรายการนิเทศ"
+			class="space-y-3 rounded-xl border bg-card p-4 sm:p-5"
+		>
+			<Skeleton class="h-5 w-40 max-w-full" />
+			<Skeleton class="h-4 w-64 max-w-full" />
+		</div>
+	{/if}
+	{@render managementFeedback(true, false, observationsError, retryObservations)}
+{/snippet}
+
+{#snippet referenceErrors(includeTemplates: boolean)}
+	{#if cyclesError || (includeTemplates && templatesError)}
+		<div class="space-y-3" data-testid="supervision-references">
+			{#if cyclesError}
+				<PageState
+					variant="error"
+					title="โหลดรอบนิเทศไม่สำเร็จ"
+					description={cyclesError}
+					actionLabel="ลองโหลดรอบนิเทศอีกครั้ง"
+					onaction={retryManagementCycles}
+				/>
+			{/if}
+			{#if includeTemplates && templatesError}
+				<PageState
+					variant="error"
+					title="โหลดข้อมูลแบบประเมินไม่สำเร็จ"
+					description={templatesError}
+					actionLabel="ลองโหลดแบบประเมินอีกครั้ง"
+					onaction={retryManagementTemplates}
+				/>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet summaryMetrics(
+	metrics: { label: string; value: number | string | null }[],
+	label: string,
+	testId?: string
+)}
+	<dl
+		class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4"
+		aria-label={label}
+		data-testid={testId}
+	>
+		{#each metrics as metric (metric.label)}
+			<div class="min-w-0 space-y-1 bg-card px-3 py-3 sm:px-4">
+				<dt class="text-sm text-muted-foreground">{metric.label}</dt>
+				<dd class="flex min-h-8 items-center text-2xl font-semibold tabular-nums">
+					{#if metric.value === null}<Skeleton class="h-5 w-9" />{:else}{metric.value}{/if}
+				</dd>
+			</div>
+		{/each}
+	</dl>
+{/snippet}
+
+{#snippet sectionHeading(title: string, count: number | null, id?: string, unit = 'รายการ')}
+	<div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+		<h2 {id} class="text-lg font-semibold">{title}</h2>
+		{#if count !== null}<p class="text-sm text-muted-foreground tabular-nums">
+				{count}
+				{unit}
+			</p>{/if}
+	</div>
+{/snippet}
+
 {#snippet observationFacts(observation: SupervisionObservation, secondaryOnly = false)}
 	<dl
 		class="grid gap-x-4 gap-y-3 border-y py-3 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
@@ -1785,40 +1899,51 @@
 		{#each secondaryOnly ? observationAdditionalFacts(observation) : observationDetailGrid(observation) as detail (detail.label)}
 			<div class="min-w-0 space-y-0.5">
 				<dt class="text-xs text-muted-foreground">{detail.label}</dt>
-				<dd class="wrap-anywhere font-medium">{detail.value}</dd>
+				<dd class="wrap-anywhere font-medium">
+					{#if detail.pending}
+						<Skeleton class="h-4 w-24 max-w-full" />
+						<span class="sr-only">กำลังโหลด{detail.label}</span>
+					{:else}{detail.value}{/if}
+				</dd>
 			</div>
 		{/each}
 	</dl>
+{/snippet}
+
+{#snippet headerActions()}
+	{#if section === 'mine' && canRequest}
+		<Button
+			id="supervision-booking-toggle"
+			variant={bookingOpen ? 'outline' : 'default'}
+			aria-expanded={bookingOpen}
+			aria-controls={bookingOpen ? 'supervision-booking-panel' : undefined}
+			onclick={() => (bookingOpen = !bookingOpen)}
+		>
+			{#if bookingOpen}ปิดหน้าจอง{:else}<Plus class="size-4" aria-hidden="true" />จองคาบนิเทศ{/if}
+		</Button>
+	{:else if section === 'cycles'}
+		<Button onclick={openCreateCycleDialog}>
+			<Plus class="size-4" aria-hidden="true" />สร้างรอบนิเทศ
+		</Button>
+	{:else if section === 'templates'}
+		<Button onclick={openCreateTemplateDialog}>
+			<Plus class="size-4" aria-hidden="true" />สร้างแบบประเมิน
+		</Button>
+	{/if}
 {/snippet}
 
 <PageShell
 	title={sectionConfig.title}
 	description={sectionConfig.description}
 	contentClass="flex flex-col gap-5 [&>*]:mt-0"
+	actions={(section === 'mine' && canRequest) ||
+	((section === 'cycles' || section === 'templates') && canManageSchool)
+		? headerActions
+		: undefined}
 >
-	{#snippet actions()}
-		{#if section === 'mine' && canRequest && !bookingOpen}
-			<Button onclick={() => (bookingOpen = true)}>
-				<Plus class="size-4" aria-hidden="true" />จองคาบนิเทศ
-			</Button>
-		{/if}
-		{#if canManageSchool && section === 'cycles'}
-			<Button onclick={openCreateCycleDialog}>
-				<Plus class="size-4" aria-hidden="true" />
-				สร้างรอบนิเทศ
-			</Button>
-		{/if}
-		{#if canManageSchool && section === 'templates'}
-			<Button onclick={openCreateTemplateDialog}>
-				<Plus class="size-4" aria-hidden="true" />
-				สร้างแบบประเมิน
-			</Button>
-		{/if}
-	{/snippet}
-
 	<nav
 		aria-label="เมนูนิเทศการสอน"
-		class="grid grid-cols-2 gap-1 rounded-xl border border-primary/15 bg-linear-to-br from-primary/6 via-card to-card p-1.5 sm:flex sm:flex-wrap"
+		class="grid grid-cols-2 gap-1 rounded-xl border bg-card p-1.5 sm:flex sm:flex-wrap"
 	>
 		{#each sectionLinks as item (item.key)}
 			{@const Icon = item.icon}
@@ -1827,7 +1952,7 @@
 				data-sveltekit-preload-data={item.key !== 'overview' ? false : 'tap'}
 				variant="ghost"
 				aria-current={section === item.key ? 'page' : undefined}
-				class="h-auto min-w-0 justify-start whitespace-normal px-3 py-2 text-start text-muted-foreground aria-[current=page]:bg-primary/10 aria-[current=page]:font-semibold aria-[current=page]:text-primary"
+				class="h-auto min-w-0 justify-start border border-transparent px-3 py-2 text-start whitespace-normal text-muted-foreground aria-[current=page]:border-primary/20 aria-[current=page]:bg-primary/10 aria-[current=page]:font-semibold aria-[current=page]:text-primary"
 			>
 				<Icon class="size-4" aria-hidden="true" />
 				{item.label}
@@ -1835,49 +1960,32 @@
 		{/each}
 	</nav>
 
-	{#if section === 'mine' && shouldLoadObservations()}
-		<dl
-			class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border sm:grid-cols-4"
-			aria-label="สถานะการนิเทศของฉัน"
-			data-testid="supervision-personal-status"
-		>
-			{#each [{ label: 'รออนุมัติคำขอ', statuses: ['requested'] }, { label: 'ต้องแก้ไขและส่งใหม่', statuses: ['returned'] }, { label: 'รอฉันรับทราบ', statuses: ['published'] }, { label: 'เสร็จสิ้น', statuses: ['completed', 'acknowledged'] }] as metric (metric.label)}
-				<div class="flex flex-col-reverse justify-end gap-1 bg-card px-3 py-3 sm:px-4">
-					<dt class="text-sm text-muted-foreground">{metric.label}</dt>
-					<dd class="text-2xl font-semibold tabular-nums">
-						{observationsLoaded && observationsReadable
-							? myObservations.filter((item) => metric.statuses.includes(item.status)).length
-							: '—'}
-					</dd>
-				</div>
-			{/each}
-		</dl>
-	{/if}
-
-	{#if ['mine', 'requests', 'evaluate'].includes(section)}
-		<div
-			class="relative space-y-2"
-			hidden={!referenceFeedbackVisible}
-			data-testid="supervision-references"
-		>
-			{#if routeData.cycles}{@render managementFeedback(
-					cyclesLoaded,
-					cyclesLoading,
-					cyclesError,
-					retryManagementCycles
-				)}{/if}
-			{#if routeData.templates}{@render managementFeedback(
-					templatesLoaded,
-					templatesLoading,
-					templatesError,
-					retryManagementTemplates
-				)}{/if}
-		</div>
+	{#if section === 'mine' && shouldLoadObservations() && observationsReadable}
+		{@render summaryMetrics(
+			[
+				{ label: 'รออนุมัติคำขอ', statuses: ['requested'] },
+				{ label: 'ต้องแก้ไขและส่งใหม่', statuses: ['returned'] },
+				{ label: 'รอฉันรับทราบ', statuses: ['published'] },
+				{ label: 'เสร็จสิ้น', statuses: ['completed', 'acknowledged'] }
+			].map(({ label, statuses }) => ({
+				label,
+				value: observationsLoaded
+					? myObservations.filter(({ status }) => statuses.includes(status)).length
+					: observationsError
+						? '—'
+						: null
+			})),
+			'สถานะการนิเทศของฉัน',
+			'supervision-personal-status'
+		)}
 	{/if}
 	{#if section === 'mine'}
 		<div class="space-y-5">
 			{#if bookingOpen && canRequest}
-				<Card.Root class="gap-0 overflow-hidden border-primary/20 py-0">
+				<Card.Root
+					id="supervision-booking-panel"
+					class="gap-0 overflow-hidden border-primary/20 py-0"
+				>
 					<Card.Header
 						class="flex flex-wrap items-start justify-between gap-3 border-b bg-primary/5 px-4 py-4 sm:px-6"
 					>
@@ -1887,11 +1995,19 @@
 								>เลือกหนึ่งคาบหรือหลายคาบต่อเนื่องของห้องเดียวกันในคำขอเดียว</Card.Description
 							>
 						</div>
-						<Button variant="ghost" size="sm" onclick={() => (bookingOpen = false)}
-							>ปิดหน้าจอง</Button
-						>
 					</Card.Header>
 					<Card.Content class="space-y-4 px-4 py-4 sm:px-6">
+						{#if cyclesLoading && !cyclesLoaded}
+							<div
+								role="status"
+								aria-label="กำลังโหลดรอบนิเทศ"
+								class="space-y-2 rounded-lg border bg-muted/25 p-4"
+							>
+								<Skeleton class="h-4 w-24" />
+								<Skeleton class="h-9 w-full max-w-sm" />
+							</div>
+						{/if}
+						{@render referenceErrors(false)}
 						{#if cyclesLoaded && currentBookingCycle && academicYearId && academicTermId}
 							<div
 								class="grid gap-4 rounded-lg border bg-muted/25 p-4 md:grid-cols-2 md:items-start"
@@ -1952,28 +2068,32 @@
 								title="ยังไม่มีรอบนิเทศที่เปิดให้จองในขณะนี้"
 								description="เมื่อผู้ดูแลเปิดรับคำขอ คุณจะเลือกคาบจากตารางสอนได้ที่นี่"
 							/>{/if}
+						<div class="flex justify-end border-t pt-3">
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={() => {
+									bookingOpen = false;
+									document.getElementById('supervision-booking-toggle')?.focus();
+								}}>ย่อส่วนจองคาบ</Button
+							>
+						</div>
 					</Card.Content>
 				</Card.Root>
 			{/if}
 
 			<section class="min-w-0 space-y-3" aria-labelledby="supervision-own-title">
-				<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-					<h2 id="supervision-own-title" class="text-lg font-semibold">รายการของฉัน</h2>
-					{#if observationsLoaded && observationsReadable}
-						<p class="text-sm text-muted-foreground tabular-nums">{myObservations.length} รายการ</p>
-					{/if}
-				</div>
+				{@render sectionHeading(
+					'รายการของฉัน',
+					observationsLoaded && observationsReadable ? myObservations.length : null,
+					'supervision-own-title'
+				)}
 				<div
 					class="relative"
 					data-testid="supervision-observations"
 					aria-busy={observationsLoading}
 				>
-					{@render managementFeedback(
-						observationsLoaded,
-						observationsLoading,
-						observationsError,
-						retryObservations
-					)}
+					{@render observationFeedback()}
 					{#if observationsLoaded && !observationsReadable}<PageState
 							variant="permission"
 							title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
@@ -2011,7 +2131,14 @@
 											</div>
 										</div>
 
-										{@render observationFacts(observation)}
+										<details class="rounded-lg border px-3">
+											<summary
+												class="cursor-pointer rounded-sm py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
+												>ข้อมูลรอบนิเทศและคาบเรียน</summary
+											>
+											{@render referenceErrors(true)}
+											{@render observationFacts(observation)}
+										</details>
 
 										<div class="flex flex-wrap items-center justify-between gap-3">
 											<div class="min-w-0">
@@ -2054,7 +2181,7 @@
 													>
 														<Dialog.Trigger>
 															{#snippet child({ props })}
-																<Button size="sm" {...props}>
+																<Button size="sm" {...props} disabled={observationsFromSnapshot}>
 																	<FileSignature class="mr-2 h-4 w-4" />
 																	รับทราบผล
 																</Button>
@@ -2145,12 +2272,7 @@
 						><CalendarDays aria-hidden="true" />ปฏิทิน</Tabs.Trigger
 					>
 				</Tabs.List>
-				{@render managementFeedback(
-					observationsLoaded,
-					observationsLoading,
-					observationsError,
-					retryObservations
-				)}
+				{@render observationFeedback()}
 				{#if observationsLoaded && !observationsReadable}
 					<PageState
 						variant="permission"
@@ -2159,13 +2281,13 @@
 					/>
 				{/if}
 				<Tabs.Content value="list" class="space-y-3">
+					{#if queueView === 'list' && observationsReadable}
+						{@render sectionHeading(
+							'คำขอจองที่รออนุมัติ',
+							observationsLoaded ? requestedObservations.length : null
+						)}
+					{/if}
 					{#if queueView === 'list' && observationsLoaded && observationsReadable}
-						<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-							<h2 class="text-lg font-semibold">คำขอจองที่รออนุมัติ</h2>
-							<p class="text-sm text-muted-foreground tabular-nums">
-								{requestedObservations.length} รายการ
-							</p>
-						</div>
 						{#if requestedObservations.length === 0}
 							<PageState
 								title="ไม่มีคำขอจองที่รออนุมัติ"
@@ -2178,8 +2300,11 @@
 										{observation}
 										cycleLabel={requestCycleLabel(observation)}
 										templateLabel={requestTemplateTitle(observation)}
+										cyclePending={cyclesLoading && !cyclesLoaded}
+										templatePending={templatesLoading && !templatesLoaded}
 										requestedLabel={formatDate(observation.requestedAt)}
 									>
+										{#snippet referenceFeedback()}{@render referenceErrors(true)}{/snippet}
 										<SupervisionRequestReview
 											{observation}
 											review={requestReview}
@@ -2193,6 +2318,7 @@
 				</Tabs.Content>
 				<Tabs.Content value="calendar">
 					{#if queueView === 'calendar' && observationsLoaded && observationsReadable}
+						{@render referenceErrors(false)}
 						<SupervisionBookingCalendar
 							{observations}
 							{cycles}
@@ -2243,19 +2369,14 @@
 		</div>
 	{:else if section === 'evaluate'}
 		<div data-testid="supervision-observations" aria-busy={observationsLoading} class="space-y-3">
-			{@render managementFeedback(
-				observationsLoaded,
-				observationsLoading,
-				observationsError,
-				retryObservations
-			)}
-			{#if observationsLoaded && (!observationsReadable || !canReadObservations || !canEvaluate)}
+			{#if !canReadObservations || !canEvaluate || (observationsLoaded && !observationsReadable)}
+				{@render observationFeedback()}
 				<PageState
 					variant="permission"
 					title="ยังไม่มีสิทธิ์ดูรายการนิเทศ"
 					description="ต้องมีสิทธิ์อ่านรายการตามขอบเขตที่ได้รับมอบหมาย"
 				/>
-			{:else if observationsLoaded}
+			{:else}
 				<Tabs.Root bind:value={queueView}>
 					<Tabs.List class="h-auto w-full self-start sm:w-fit" aria-label="มุมมองรายการประเมิน">
 						<Tabs.Trigger value="list" class="min-h-10 px-3"
@@ -2265,19 +2386,21 @@
 							><CalendarDays aria-hidden="true" />ปฏิทิน</Tabs.Trigger
 						>
 					</Tabs.List>
+					{@render observationFeedback()}
 					<Tabs.Content value="list" class="space-y-4">
-						<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-							<h2 class="text-lg font-semibold">รายการที่ได้รับมอบหมายให้ประเมิน</h2>
-							<p class="text-sm text-muted-foreground tabular-nums">
-								{activeAssignedObservations.length} รายการ
-							</p>
-						</div>
-						{#if activeAssignedObservations.length === 0}
+						{@render sectionHeading(
+							'รายการที่ได้รับมอบหมายให้ประเมิน',
+							observationsLoaded ? activeAssignedObservations.length : null
+						)}
+						{#if observationsLoaded && (activeAssignedObservations.length || submittedAssignedObservations.length)}
+							{@render referenceErrors(true)}
+						{/if}
+						{#if observationsLoaded && activeAssignedObservations.length === 0}
 							<PageState
 								title="ยังไม่มีรายการที่ต้องประเมิน"
 								description="รายการจะปรากฏเมื่อผู้ดูแลอนุมัติคำขอและมอบหมายให้ประเมิน หรือเมื่อมีงานที่ยังไม่ได้ส่งผล"
 							/>
-						{:else}
+						{:else if observationsLoaded}
 							<div class="space-y-3" data-supervision-assigned-list="cards">
 								{#each activeAssignedObservations as observation (observation.id)}
 									<div
@@ -2358,12 +2481,10 @@
 
 						{#if submittedAssignedObservations.length > 0}
 							<div class="space-y-3 pt-3">
-								<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-									<h2 class="text-lg font-semibold">ผลประเมินที่ส่งแล้ว</h2>
-									<p class="text-sm text-muted-foreground tabular-nums">
-										{submittedAssignedObservations.length} รายการ
-									</p>
-								</div>
+								{@render sectionHeading(
+									'ผลประเมินที่ส่งแล้ว',
+									submittedAssignedObservations.length
+								)}
 
 								<div class="space-y-3" data-supervision-submitted-assigned-list="cards">
 									{#each submittedAssignedObservations as observation (observation.id)}
@@ -2425,7 +2546,8 @@
 						{/if}
 					</Tabs.Content>
 					<Tabs.Content value="calendar">
-						{#if queueView === 'calendar'}
+						{#if queueView === 'calendar' && observationsLoaded}
+							{@render referenceErrors(false)}
 							<SupervisionBookingCalendar
 								observations={evaluationCalendarObservations}
 								{cycles}
@@ -2466,12 +2588,12 @@
 						aria-busy={cyclesLoading}
 						data-testid="supervision-cycles"
 					>
-						{#if routeData}{@render managementFeedback(
-								cyclesLoaded,
-								cyclesLoading,
-								cyclesError,
-								retryManagementCycles
-							)}{/if}
+						{@render managementFeedback(
+							cyclesLoaded,
+							cyclesLoading,
+							cyclesError,
+							retryManagementCycles
+						)}
 						{#if !routeData || cyclesLoaded}
 							<div data-testid="supervision-cycles-ready">
 								<Table.Root aria-label="รายการรอบนิเทศ">
@@ -2520,6 +2642,7 @@
 															<SupervisionCycleDelete
 																{cycle}
 																allowed={canManageSchool}
+																beginObservationChange={personalReturn?.beginChange}
 																ondelete={(impact) => {
 																	cycles = cycles.filter((item) => item.id !== impact.cycleId);
 																	observations = observations.filter(
@@ -2688,12 +2811,13 @@
 						aria-busy={cyclesLoading}
 						data-testid="supervision-cycle-selector"
 					>
-						{#if routeData}{@render managementFeedback(
-								cyclesLoaded,
-								cyclesLoading,
-								cyclesError,
-								retryManagementCycles
-							)}{/if}
+						{#if cyclesLoading && !cyclesLoaded}
+							<div role="status" aria-label="กำลังโหลดรอบนิเทศ" class="space-y-2">
+								<Skeleton class="h-4 w-24" />
+								<Skeleton class="h-9 w-full max-w-sm" />
+							</div>
+						{/if}
+						{@render managementFeedback(true, false, cyclesError, retryManagementCycles)}
 						{#if !routeData || cyclesLoaded}
 							<div class="flex flex-wrap items-end gap-3">
 								<div class="min-w-0 grow space-y-2 sm:max-w-sm">
@@ -2718,15 +2842,6 @@
 										</Select.Content>
 									</Select.Root>
 								</div>
-								<LoadingButton
-									onclick={loadTeacherStatusOverview}
-									variant="outline"
-									disabled={!overviewCycleId}
-									loading={loadingTeacherStatus}
-									loadingLabel="กำลังโหลด..."
-								>
-									โหลดสถานะครู
-								</LoadingButton>
 							</div>
 						{/if}
 					</div>
@@ -2737,29 +2852,33 @@
 							data-testid="supervision-progress"
 						>
 							<h2 class="text-base font-semibold">ความคืบหน้ารอบนิเทศ</h2>
-							{@render managementFeedback(
-								!!progress,
-								loadingProgress,
-								progressError,
-								() => void loadProgress()
-							)}
+							{@render managementFeedback(true, false, progressError, () => void loadProgress())}
+							{#if progress || loadingProgress}
+								{@render summaryMetrics(
+									[
+										{ label: 'รายการทั้งหมด', value: progress && progress.totalObservations },
+										{ label: 'เสร็จสิ้น', value: progress && progress.completedCount },
+										{ label: 'รอครูรับทราบ', value: progress && progress.publishedCount },
+										{
+											label: 'คะแนนเฉลี่ย',
+											value: progress ? (progress.averageRating?.toFixed(2) ?? '—') : null
+										}
+									],
+									'สรุปผลรอบนิเทศ'
+								)}
+							{/if}
 							{#if progress}
-								<dl
-									class="grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-border lg:grid-cols-4"
-								>
-									{#each [{ label: 'รายการทั้งหมด', value: progress.totalObservations }, { label: 'เสร็จสิ้น', value: progress.completedCount }, { label: 'รอครูรับทราบ', value: progress.publishedCount }, { label: 'คะแนนเฉลี่ย', value: progress.averageRating?.toFixed(2) ?? '—' }] as metric (metric.label)}
-										<div class="flex flex-col-reverse justify-end gap-1 bg-card px-3 py-3 sm:px-4">
-											<dt class="text-sm text-muted-foreground">{metric.label}</dt>
-											<dd class="text-2xl font-semibold tabular-nums">{metric.value}</dd>
-										</div>
-									{/each}
-								</dl>
 								<div class="space-y-2">
 									<div class="flex items-center justify-between text-sm">
 										<span>ความคืบหน้ารวม</span>
 										<span>{progressPercent}%</span>
 									</div>
 									<Progress value={progressPercent} aria-label="ความคืบหน้ารวม" />
+								</div>
+							{:else if loadingProgress}
+								<div role="status" aria-label="กำลังโหลดความคืบหน้ารอบนิเทศ" class="space-y-2">
+									<Skeleton class="h-5 w-36" />
+									<Skeleton class="h-2 w-full" />
 								</div>
 							{/if}
 						</section>

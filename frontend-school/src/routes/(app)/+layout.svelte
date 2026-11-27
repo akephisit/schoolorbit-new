@@ -44,12 +44,14 @@
 	});
 	const pendingMenu = $derived.by(() => {
 		const target = navigating.to;
+		const supervision = '/(app)/staff/academic/supervision';
 		if (
 			!target?.route.id?.startsWith('/(app)/') ||
 			navigating.willUnload ||
 			navigating.complete === shallowNavigation ||
 			target.url.origin !== page.url.origin ||
 			target.url.pathname === page.url.pathname ||
+			(target.route.id === supervision && page.route.id?.startsWith(`${supervision}/`)) ||
 			!appMenu.loaded ||
 			!userCanAccessRoute($authStore.user, $userPermissions, target.route.id)
 		) {
