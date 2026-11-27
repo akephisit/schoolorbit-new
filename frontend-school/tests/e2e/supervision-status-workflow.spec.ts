@@ -274,11 +274,16 @@ test('own returned row names the next teacher action and links to correction', a
 	await page.goto(path('').replace('/supervision/?', '/supervision?'));
 	const row = page.locator('[data-supervision-own-list="cards"]');
 	await expect(row).toContainText('ขั้น 1/4 คำขอ');
-	await expect(row).toContainText('ถัดไป: ครูผู้ขอรับนิเทศ');
-	await expect(row.getByRole('link', { name: 'แก้ไขและส่งใหม่', exact: true })).toHaveAttribute(
-		'href',
-		new RegExp(id(30))
-	);
+	await expect(row.getByText('ส่งกลับให้แก้ไข', { exact: true })).toBeVisible();
+	const correction = row.getByRole('link', { name: 'แก้ไขและส่งใหม่', exact: true });
+	const destination = `${detailPath}&academicTermId=${id(8)}`;
+	await expect(correction).toBeVisible();
+	await expect(correction).toHaveAttribute('href', destination);
+	await correction.click();
+	await expect(page).toHaveURL(destination);
+	const workflow = page.getByTestId('supervision-workflow');
+	await expect(workflow.getByText('ถัดไป', { exact: true })).toBeVisible();
+	await expect(workflow.getByText('ครูผู้ขอรับนิเทศ', { exact: true })).toBeVisible();
 });
 
 test('submitted evaluator evidence prevents returning or reassigning a legacy request', async ({
