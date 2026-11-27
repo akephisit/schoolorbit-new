@@ -111,6 +111,14 @@ for (const width of [375, 1440]) {
 		).toHaveCount(1);
 		const firstLink = await rect(links.first());
 		expect(firstLink.y + firstLink.height).toBeLessThan(844);
+		const previewBoxes = await Promise.all(Array.from({ length: 4 }, (_, i) => rect(links.nth(i))));
+		expect(new Set(previewBoxes.map((box) => Math.round(box.y))).size).toBe(width < 1280 ? 2 : 1);
+		if (width >= 1280) {
+			const overview = page.getByTestId('staff-overview');
+			await expect(overview).toContainText('18');
+			const overviewCard = await rect(overview.locator('[data-slot="card"]').first());
+			expect(overviewCard.y).toBeCloseTo(firstLink.y, 0);
+		}
 		const toggle = page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true });
 		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 		await toggle.click();

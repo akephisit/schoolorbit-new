@@ -248,7 +248,7 @@
 					onaction={appMenu.retry}
 				/>{/if}
 
-			<div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+			<div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 xl:min-h-11">
 				<h2 id="services-title" class="text-lg font-semibold">บริการของโรงเรียน</h2>
 				{#if appMenu.loaded && accessibleServiceCount > servicePreviewLimit}
 					<Button
@@ -293,7 +293,7 @@
 					data-testid="staff-service-workspaces"
 				>
 					{#if !showAllServices}
-						<ul class="grid items-start gap-3 min-[360px]:grid-cols-2">
+						<ul class="grid items-start gap-3 min-[360px]:grid-cols-2 xl:grid-cols-4">
 							{#each previewServices as item (item.id)}<li class="min-w-0">
 									{@render serviceLink(item)}
 								</li>{/each}
@@ -349,7 +349,12 @@
 					actionLabel="ลองอีกครั้ง"
 					onaction={() => void loadDashboard(academicYearId)}
 				/>{/if}
-			<h2 id="school-summary-title" class="text-lg font-semibold">ภาพรวมโรงเรียน</h2>
+			<h2
+				id="school-summary-title"
+				class="text-lg font-semibold xl:flex xl:min-h-11 xl:items-center"
+			>
+				ภาพรวมโรงเรียน
+			</h2>
 
 			{#if !academicYearId}
 				<PageState
@@ -387,16 +392,20 @@
 								</dd>
 							</div>
 							<div class="grid grid-cols-2 gap-4 border-t pt-4">
-								<div class="space-y-2">
-									<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+								<div class="flex flex-col gap-2">
+									<dt
+										class="flex flex-1 flex-col items-start gap-1.5 text-sm text-muted-foreground"
+									>
 										<Users class="size-4 shrink-0" aria-hidden="true" />บุคลากรทั้งหมด
 									</dt>
 									<dd class="text-xl font-semibold tabular-nums break-all">
 										{numberFormatter.format(stats.totalStaff)}
 									</dd>
 								</div>
-								<div class="space-y-2">
-									<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+								<div class="flex flex-col gap-2">
+									<dt
+										class="flex flex-1 flex-col items-start gap-1.5 text-sm text-muted-foreground"
+									>
 										<Building2 class="size-4 shrink-0" aria-hidden="true" />ห้องเรียนที่เปิด
 									</dt>
 									<dd class="text-xl font-semibold tabular-nums break-all">
