@@ -13,24 +13,18 @@
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
 	import { buildSidebarNavigation } from '#lib/components/layout/sidebar-navigation.js';
 	import { Button } from '#lib/components/ui/button/index.js';
-	import {
-		Card,
-		CardContent,
-		CardDescription,
-		CardHeader,
-		CardTitle
-	} from '#lib/components/ui/card/index.js';
+	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card/index.js';
 	import { authStore } from '#lib/stores/auth.js';
 	import { workStore } from '#lib/stores/work.js';
 	import { getIconComponent } from '#lib/utils/icon-mapper.js';
 	import {
 		ArrowRight,
 		Building2,
+		ChevronRight,
 		CircleAlert,
 		Clock3,
 		GraduationCap,
 		Inbox,
-		LayoutGrid,
 		Users
 	} from '@lucide/svelte';
 
@@ -46,6 +40,8 @@
 	const menuError = $derived(appMenu.error);
 	const statsRequest = new LatestRequest();
 	let statsYear = '';
+	let showAllServices = $state(false);
+	const servicePreviewLimit = 4;
 
 	const numberFormatter = new Intl.NumberFormat('th-TH');
 	const displayName = $derived($authStore.user?.displayName || 'ผู้ใช้งาน');
@@ -65,7 +61,7 @@
 			.filter((workspace) => workspace.sections.length > 0)
 	);
 	const accessibleServiceCount = $derived(
-		navigation.reduce(
+		serviceWorkspaces.reduce(
 			(total, workspace) =>
 				total +
 				workspace.sections.reduce(
@@ -75,6 +71,23 @@
 			0
 		)
 	);
+
+	const visibleServiceWorkspaces = $derived.by(() => {
+		if (showAllServices) return serviceWorkspaces;
+		let remaining = servicePreviewLimit;
+		return serviceWorkspaces
+			.map((workspace) => ({
+				...workspace,
+				sections: workspace.sections
+					.map((section) => {
+						const items = section.items.slice(0, remaining);
+						remaining -= items.length;
+						return { ...section, items };
+					})
+					.filter((section) => section.items.length > 0)
+			}))
+			.filter((workspace) => workspace.sections.length > 0);
+	});
 
 	$effect.pre(() => {
 		const source = data;
@@ -119,32 +132,27 @@
 	}
 </script>
 
-<PageShell title="หน้าหลักของฉัน" description="งานที่ต้องติดตามและบริการของโรงเรียนที่คุณใช้งานได้">
-	<Card
-		class="gap-0 overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card py-0"
-	>
-		<CardContent class="p-5 sm:p-6">
-			<div class="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
-				<div class="space-y-1">
-					<p class="text-sm font-medium text-primary">ยินดีต้อนรับกลับ</p>
-					<h2 class="text-2xl font-semibold tracking-tight">{displayName}</h2>
-					<p class="text-sm text-muted-foreground">{roleName}</p>
-				</div>
-				<Button href="/staff/work" class="gap-2 self-start sm:self-auto">
-					<Inbox class="h-4 w-4" />
-					เปิดงานของฉัน
-					<ArrowRight class="h-4 w-4" />
-				</Button>
+<PageShell title="หน้าหลักของฉัน">
+	<Card class="gap-0 border-primary/20 bg-primary/5 py-0 shadow-none">
+		<CardContent class="flex flex-wrap items-center justify-between gap-3 p-4">
+			<div class="min-w-0 space-y-1">
+				<h2 class="text-lg font-semibold break-words">สวัสดี {displayName}</h2>
+				<p class="text-sm text-muted-foreground">{roleName}</p>
 			</div>
+			<Button href="/staff/work" class="gap-2">
+				<Inbox class="size-4" aria-hidden="true" />
+				เปิดงานของฉัน
+				<ArrowRight class="size-4" aria-hidden="true" />
+			</Button>
 		</CardContent>
 	</Card>
-
 	<section
 		data-testid="staff-work-counts"
 		aria-busy={$workStore.loadingCounts}
 		aria-labelledby="personal-summary-title"
 		class="space-y-3"
 	>
+		<h2 id="personal-summary-title" class="text-lg font-semibold">สรุปงานของฉัน</h2>
 		{#if $workStore.countsError}<PageState
 				title="โหลดจำนวนงานไม่สำเร็จ"
 				description={$workStore.countsError}
@@ -157,220 +165,216 @@
 			>
 				กำลังโหลดจำนวนงาน...
 			</p>{/if}
-		<div>
-			<h2 id="personal-summary-title" class="text-lg font-semibold">สรุปของฉัน</h2>
-			<p class="text-sm text-muted-foreground">รายการที่ควรทราบก่อนเริ่มงานวันนี้</p>
-		</div>
-		<div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-			<Card class="gap-0 py-0">
-				<CardContent class="flex items-center justify-between gap-4 p-4">
-					<div>
-						<p class="text-sm text-muted-foreground">งานที่เปิดอยู่</p>
-						<p class="text-2xl font-semibold">
+		<Card class="gap-0 py-0 shadow-none">
+			<CardContent class="p-0">
+				<dl class="grid grid-cols-3 divide-x">
+					<div class="min-w-0 space-y-2 p-3 sm:p-4">
+						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+							<Inbox class="size-4 shrink-0 text-primary" aria-hidden="true" />งานที่เปิดอยู่
+						</dt>
+						<dd class="text-2xl font-semibold tabular-nums">
 							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.open) : '—'}
-						</p>
+						</dd>
 					</div>
-					<div class="rounded-lg bg-sky-500/10 p-3 text-sky-600">
-						<Inbox class="h-5 w-5" />
-					</div>
-				</CardContent>
-			</Card>
-			<Card class="gap-0 py-0">
-				<CardContent class="flex items-center justify-between gap-4 p-4">
-					<div>
-						<p class="text-sm text-muted-foreground">ใกล้ครบกำหนด</p>
-						<p class="text-2xl font-semibold">
+					<div class="min-w-0 space-y-2 p-3 sm:p-4">
+						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+							<Clock3 class="size-4 shrink-0 text-warning" aria-hidden="true" />ใกล้ครบกำหนด
+						</dt>
+						<dd class="text-2xl font-semibold text-warning tabular-nums">
 							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.dueSoon) : '—'}
-						</p>
+						</dd>
 					</div>
-					<div class="rounded-lg bg-amber-500/10 p-3 text-amber-600">
-						<Clock3 class="h-5 w-5" />
-					</div>
-				</CardContent>
-			</Card>
-			<Card class="gap-0 py-0">
-				<CardContent class="flex items-center justify-between gap-4 p-4">
-					<div>
-						<p class="text-sm text-muted-foreground">เกินกำหนด</p>
-						<p class="text-2xl font-semibold text-destructive">
+					<div class="min-w-0 space-y-2 p-3 sm:p-4">
+						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+							<CircleAlert class="size-4 shrink-0 text-destructive" aria-hidden="true" />เกินกำหนด
+						</dt>
+						<dd class="text-2xl font-semibold text-destructive tabular-nums">
 							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.overdue) : '—'}
-						</p>
+						</dd>
 					</div>
-					<div class="rounded-lg bg-destructive/10 p-3 text-destructive">
-						<CircleAlert class="h-5 w-5" />
-					</div>
-				</CardContent>
-			</Card>
-			<Card class="gap-0 py-0">
-				<CardContent class="flex items-center justify-between gap-4 p-4">
-					<div>
-						<p class="text-sm text-muted-foreground">บริการที่เข้าถึงได้</p>
-						<p class="text-2xl font-semibold">
-							{appMenu.loaded ? numberFormatter.format(accessibleServiceCount) : '—'}
-						</p>
-					</div>
-					<div class="rounded-lg bg-violet-500/10 p-3 text-violet-600">
-						<LayoutGrid class="h-5 w-5" />
-					</div>
-				</CardContent>
-			</Card>
-		</div>
+				</dl>
+			</CardContent>
+		</Card>
 	</section>
+	<div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_16rem]">
+		<section
+			data-testid="staff-services"
+			aria-busy={loadingMenu}
+			aria-labelledby="services-title"
+			class="min-w-0 space-y-3"
+		>
+			{#if menuError && appMenu.loaded}<PageState
+					title="อัปเดตบริการไม่สำเร็จ"
+					description={menuError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={appMenu.retry}
+				/>{/if}
 
-	<section
-		data-testid="staff-services"
-		aria-busy={loadingMenu}
-		aria-labelledby="services-title"
-		class="space-y-4"
-	>
-		{#if menuError && appMenu.loaded}<PageState
-				title="อัปเดตบริการไม่สำเร็จ"
-				description={menuError}
-				actionLabel="ลองอีกครั้ง"
-				onaction={appMenu.retry}
-			/>{/if}
-
-		<div>
-			<h2 id="services-title" class="text-lg font-semibold">บริการของโรงเรียน</h2>
-			<p class="text-sm text-muted-foreground">
-				เลือกกลุ่มบริหารและฝ่าย/งาน เหมือนไปติดต่อหน่วยงานภายในโรงเรียน
-			</p>
-		</div>
-
-		{#if loadingMenu && !appMenu.loaded}
-			<div role="status" aria-label="กำลังโหลดบริการ">
-				<PageSkeleton variant="cards" rows={4} />
+			<div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+				<h2 id="services-title" class="text-lg font-semibold">บริการของโรงเรียน</h2>
+				{#if appMenu.loaded}
+					<p class="text-sm text-muted-foreground">
+						{numberFormatter.format(accessibleServiceCount)} บริการ
+					</p>
+				{/if}
 			</div>
-		{:else if menuError && !appMenu.loaded}
-			<PageState
-				variant="error"
-				title="โหลดบริการไม่สำเร็จ"
-				description={menuError}
-				actionLabel="ลองอีกครั้ง"
-				onaction={appMenu.retry}
-			/>
-		{:else if serviceWorkspaces.length === 0}
-			<PageState
-				title="ยังไม่มีบริการที่ใช้งานได้"
-				description="เมนูจะปรากฏที่นี่เมื่อบัญชีได้รับสิทธิ์ในระบบที่เกี่ยวข้อง"
-			/>
-		{:else}
-			<div class="columns-1 gap-4 xl:columns-2" data-testid="staff-service-workspaces">
-				{#each serviceWorkspaces as workspace (workspace.code)}
-					{@const WorkspaceIcon = getIconComponent(workspace.icon)}
-					<Card class="mb-4 w-full break-inside-avoid" data-workspace={workspace.code}>
-						<CardHeader class="border-b">
-							<div class="flex items-center gap-3">
-								<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-									<WorkspaceIcon class="h-5 w-5 text-primary" />
+
+			{#if loadingMenu && !appMenu.loaded}
+				<div role="status" aria-label="กำลังโหลดบริการ">
+					<PageSkeleton variant="cards" rows={4} />
+				</div>
+			{:else if menuError && !appMenu.loaded}
+				<PageState
+					variant="error"
+					title="โหลดบริการไม่สำเร็จ"
+					description={menuError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={appMenu.retry}
+				/>
+			{:else if serviceWorkspaces.length === 0}
+				<PageState
+					title="ยังไม่มีบริการที่ใช้งานได้"
+					description="เมนูจะปรากฏที่นี่เมื่อบัญชีได้รับสิทธิ์ในระบบที่เกี่ยวข้อง"
+				/>
+			{:else}
+				{#if accessibleServiceCount > servicePreviewLimit}
+					<Button
+						variant="outline"
+						aria-expanded={showAllServices}
+						aria-controls="staff-service-catalogue"
+						onclick={() => (showAllServices = !showAllServices)}
+					>
+						{showAllServices ? 'แสดงบริการน้อยลง' : 'ดูบริการทั้งหมด'}
+					</Button>
+				{/if}
+				<div
+					id="staff-service-catalogue"
+					class={visibleServiceWorkspaces.length > 1
+						? 'columns-1 gap-4 xl:columns-2'
+						: 'columns-1 gap-4'}
+					data-testid="staff-service-workspaces"
+				>
+					{#each visibleServiceWorkspaces as workspace (workspace.code)}
+						{@const WorkspaceIcon = getIconComponent(workspace.icon)}
+						<Card
+							class="mb-4 w-full break-inside-avoid gap-0 py-0 shadow-none"
+							data-workspace={workspace.code}
+						>
+							<CardHeader class="border-b px-3 py-3 sm:px-4">
+								<div class="flex items-center gap-3">
+									<WorkspaceIcon class="size-5 shrink-0 text-primary" aria-hidden="true" />
+									<CardTitle class="text-base leading-snug">{workspace.name}</CardTitle>
 								</div>
-								<div>
-									<CardTitle>{workspace.name}</CardTitle>
-									<CardDescription>
-										{workspace.sections.reduce((total, section) => total + section.items.length, 0)}
-										บริการ
-									</CardDescription>
-								</div>
+							</CardHeader>
+							<CardContent class="space-y-4 p-3 sm:p-4">
+								{#each workspace.sections as section (section.id)}
+									{@const SectionIcon = getIconComponent(section.icon)}
+									<div class="space-y-2">
+										<div class="flex items-center gap-2">
+											<SectionIcon
+												class="size-4 shrink-0 text-muted-foreground"
+												aria-hidden="true"
+											/>
+											<h3 class="text-sm font-semibold">{section.name}</h3>
+										</div>
+										<ul class="grid items-start gap-2 min-[360px]:grid-cols-2">
+											{#each section.items as item (item.id)}
+												{@const ItemIcon = getIconComponent(item.icon)}
+												<li class="min-w-0">
+													<Button
+														variant="outline"
+														href={serviceHref(item.path)}
+														data-sveltekit-preload-data={menuPreloadPolicy(item)}
+														class="h-auto min-h-24 w-full flex-col items-start justify-start gap-2 rounded-xl px-3 py-3 text-start whitespace-normal shadow-none"
+													>
+														<span class="flex w-full items-center justify-between gap-2">
+															<span
+																class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground"
+																><ItemIcon class="size-4" aria-hidden="true" /></span
+															>
+															<ChevronRight
+																class="size-4 shrink-0 text-muted-foreground"
+																aria-hidden="true"
+															/>
+														</span>
+														<span class="break-words leading-snug">{item.name}</span>
+													</Button>
+												</li>
+											{/each}
+										</ul>
+									</div>
+								{/each}
+							</CardContent>
+						</Card>
+					{/each}
+				</div>
+			{/if}
+		</section>
+
+		<section
+			data-testid="staff-overview"
+			aria-busy={loadingStats}
+			aria-labelledby="school-summary-title"
+			class="space-y-3"
+		>
+			{#if statsError && stats}<PageState
+					title="อัปเดตภาพรวมไม่สำเร็จ"
+					description={statsError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={() => void loadDashboard(academicYearId)}
+				/>{/if}
+			<h2 id="school-summary-title" class="text-lg font-semibold">ภาพรวมโรงเรียน</h2>
+
+			{#if !academicYearId}
+				<PageState
+					variant="empty"
+					title="เลือกปีการศึกษาก่อน"
+					description="ใช้ตัวเลือกปีการศึกษาบนแถบด้านบน"
+				/>
+			{:else if loadingStats && !stats}
+				<div role="status" aria-label="กำลังโหลดภาพรวม">
+					<PageSkeleton variant="cards" rows={3} />
+				</div>
+			{:else if statsError && !stats}
+				<PageState
+					variant="error"
+					title="โหลดภาพรวมโรงเรียนไม่สำเร็จ"
+					description={statsError}
+					actionLabel="ลองอีกครั้ง"
+					onaction={() => loadDashboard(academicYearId)}
+				/>
+			{:else if stats}
+				<Card class="gap-0 py-0 shadow-none">
+					<CardContent class="px-4 py-1">
+						<dl class="divide-y">
+							<div class="flex items-center justify-between gap-3 py-3">
+								<dt class="flex items-center gap-2 text-sm text-muted-foreground">
+									<Users class="size-4 shrink-0" aria-hidden="true" />บุคลากรทั้งหมด
+								</dt>
+								<dd class="text-lg font-semibold tabular-nums">
+									{numberFormatter.format(stats.totalStaff)}
+								</dd>
 							</div>
-						</CardHeader>
-						<CardContent class="space-y-5 p-4">
-							{#each workspace.sections as section (section.id)}
-								{@const SectionIcon = getIconComponent(section.icon)}
-								<div class="space-y-2">
-									<div class="flex items-center gap-2">
-										<SectionIcon class="h-4 w-4 text-muted-foreground" />
-										<h3 class="text-sm font-semibold">{section.name}</h3>
-									</div>
-									<div class="grid gap-2 sm:grid-cols-2">
-										{#each section.items as item (item.id)}
-											{@const ItemIcon = getIconComponent(item.icon)}
-											<Button
-												variant="outline"
-												href={serviceHref(item.path)}
-												data-sveltekit-preload-data={menuPreloadPolicy(item)}
-												class="h-auto min-h-11 justify-start gap-2.5 whitespace-normal px-3 py-2.5 text-left"
-											>
-												<ItemIcon class="h-4 w-4 shrink-0 text-primary" />
-												<span>{item.name}</span>
-											</Button>
-										{/each}
-									</div>
-								</div>
-							{/each}
-						</CardContent>
-					</Card>
-				{/each}
-			</div>
-		{/if}
-	</section>
-
-	<section
-		data-testid="staff-overview"
-		aria-busy={loadingStats}
-		aria-labelledby="school-summary-title"
-		class="space-y-3"
-	>
-		{#if statsError && stats}<PageState
-				title="อัปเดตภาพรวมไม่สำเร็จ"
-				description={statsError}
-				actionLabel="ลองอีกครั้ง"
-				onaction={() => void loadDashboard(academicYearId)}
-			/>{/if}
-		<div class="flex items-center justify-between gap-3">
-			<div>
-				<h2 id="school-summary-title" class="text-lg font-semibold">ภาพรวมโรงเรียน</h2>
-				<p class="text-sm text-muted-foreground">ข้อมูลรวมสำหรับประกอบการทำงาน</p>
-			</div>
-		</div>
-
-		{#if !academicYearId}
-			<PageState
-				variant="empty"
-				title="เลือกปีการศึกษาก่อน"
-				description="ใช้ตัวเลือกปีการศึกษาบนแถบด้านบน"
-			/>
-		{:else if loadingStats && !stats}
-			<div role="status" aria-label="กำลังโหลดภาพรวม">
-				<PageSkeleton variant="cards" rows={3} />
-			</div>
-		{:else if statsError && !stats}
-			<PageState
-				variant="error"
-				title="โหลดภาพรวมโรงเรียนไม่สำเร็จ"
-				description={statsError}
-				actionLabel="ลองอีกครั้ง"
-				onaction={() => loadDashboard(academicYearId)}
-			/>
-		{:else if stats}
-			<div class="grid gap-3 md:grid-cols-3">
-				<Card class="gap-0 py-0">
-					<CardContent class="flex items-center justify-between gap-4 p-4">
-						<div>
-							<p class="text-sm text-muted-foreground">บุคลากรทั้งหมด</p>
-							<p class="text-2xl font-semibold">{numberFormatter.format(stats.totalStaff)}</p>
-						</div>
-						<Users class="h-5 w-5 text-sky-600" />
+							<div class="flex items-center justify-between gap-3 py-3">
+								<dt class="flex items-center gap-2 text-sm text-muted-foreground">
+									<GraduationCap class="size-4 shrink-0" aria-hidden="true" />นักเรียนทั้งหมด
+								</dt>
+								<dd class="text-lg font-semibold tabular-nums">
+									{numberFormatter.format(stats.totalStudents)}
+								</dd>
+							</div>
+							<div class="flex items-center justify-between gap-3 py-3">
+								<dt class="flex items-center gap-2 text-sm text-muted-foreground">
+									<Building2 class="size-4 shrink-0" aria-hidden="true" />ห้องเรียนที่เปิด
+								</dt>
+								<dd class="text-lg font-semibold tabular-nums">
+									{numberFormatter.format(stats.activeHomerooms)}
+								</dd>
+							</div>
+						</dl>
 					</CardContent>
 				</Card>
-				<Card class="gap-0 py-0">
-					<CardContent class="flex items-center justify-between gap-4 p-4">
-						<div>
-							<p class="text-sm text-muted-foreground">นักเรียนทั้งหมด</p>
-							<p class="text-2xl font-semibold">{numberFormatter.format(stats.totalStudents)}</p>
-						</div>
-						<GraduationCap class="h-5 w-5 text-emerald-600" />
-					</CardContent>
-				</Card>
-				<Card class="gap-0 py-0">
-					<CardContent class="flex items-center justify-between gap-4 p-4">
-						<div>
-							<p class="text-sm text-muted-foreground">ห้องเรียนที่เปิด</p>
-							<p class="text-2xl font-semibold">{numberFormatter.format(stats.activeHomerooms)}</p>
-						</div>
-						<Building2 class="h-5 w-5 text-amber-600" />
-					</CardContent>
-				</Card>
-			</div>
-		{/if}
-	</section>
+			{/if}
+		</section>
+	</div>
 </PageShell>

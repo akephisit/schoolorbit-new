@@ -65,6 +65,8 @@ for (const width of [375, 1440]) {
 		await page.goto(homePath());
 		const workspaces = page.getByTestId('staff-service-workspaces');
 		const cards = workspaces.locator('[data-workspace]');
+		await expect(workspaces.getByRole('link')).toHaveCount(4);
+		await page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true }).click();
 		await expect(cards).toHaveCount(4);
 		await expect(workspaces.getByRole('link')).toHaveCount(20);
 		const boxes = await Promise.all(Array.from({ length: 4 }, (_, i) => rect(cards.nth(i))));
@@ -89,6 +91,30 @@ for (const width of [375, 1440]) {
 		}
 		await noPageOverflow(page);
 		await captureThemes(page, testInfo, `dashboard-${width}`);
+	});
+
+	test(`dashboard service preview follows school order and reversibly expands at ${width}px`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 844 });
+		await mockStaffHome(page, { menuGroups });
+		await page.goto(homePath());
+		const services = page.getByTestId('staff-service-workspaces');
+		const links = services.getByRole('link');
+		await expect(links).toHaveText(menuGroups[0].items.slice(0, 4).map((item) => item.name));
+		const firstLink = await rect(links.first());
+		expect(firstLink.y + firstLink.height).toBeLessThan(844);
+		const toggle = page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true });
+		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+		await toggle.click();
+		await expect(page.getByRole('button', { name: 'แสดงบริการน้อยลง', exact: true })).toBeFocused();
+		await expect(links).toHaveText(
+			menuGroups.flatMap((group) => group.items.map((item) => item.name))
+		);
+		await page.getByRole('button', { name: 'แสดงบริการน้อยลง', exact: true }).click();
+		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+		await expect(links).toHaveCount(4);
+		await noPageOverflow(page);
 	});
 
 	test(`student sections remain separated and long values wrap at ${width}px`, async ({
