@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { MenuGroup } from '../../src/lib/api/menu';
 import type { SupervisionCalendarEntry } from '../../src/lib/api/supervision';
 import {
 	firstCycle,
@@ -14,6 +15,29 @@ test.use({ serviceWorkers: 'block' });
 const calendarApiPath = '/api/supervision/calendar';
 const term = id(8);
 const observedDate = '2026-10-01';
+const supervisionMenuItem = {
+	id: 'supervision',
+	code: 'supervision',
+	name: 'นิเทศการสอน',
+	path: supervisionRoot,
+	icon: 'ClipboardCheck'
+};
+
+function supervisionMenu(items = [supervisionMenuItem]): MenuGroup[] {
+	return [
+		{
+			code: 'academic_supervision',
+			name: 'นิเทศการสอน',
+			icon: 'ClipboardCheck',
+			workspaceCode: 'academic',
+			workspaceName: 'วิชาการ',
+			workspaceIcon: 'School',
+			workspaceOrder: 1,
+			displayOrder: 1,
+			items
+		}
+	];
+}
 
 function booking(
 	value: number,
@@ -53,26 +77,7 @@ test('staff without grants can discover the calendar and read only the selected 
 		permissions: [],
 		term: true,
 		denyStaffContext: true,
-		menuGroups: [
-			{
-				code: 'academic_supervision',
-				name: 'นิเทศการสอน',
-				icon: 'ClipboardCheck',
-				workspaceCode: 'academic',
-				workspaceName: 'วิชาการ',
-				workspaceOrder: 1,
-				displayOrder: 1,
-				items: [
-					{
-						id: 'supervision',
-						code: 'supervision',
-						name: 'นิเทศการสอน',
-						path: supervisionRoot,
-						icon: 'ClipboardCheck'
-					}
-				]
-			}
-		]
+		menuGroups: supervisionMenu()
 	});
 	const reads: URL[] = [];
 	await page.route(
@@ -89,7 +94,9 @@ test('staff without grants can discover the calendar and read only the selected 
 	);
 
 	await page.goto('/staff/profile');
-	const hubLink = page.locator('aside').getByRole('link', { name: 'นิเทศการสอน', exact: true });
+	const sidebar = page.locator('aside');
+	await sidebar.getByRole('button', { name: 'นิเทศการสอน', exact: true }).click();
+	const hubLink = sidebar.getByRole('link', { name: 'นิเทศการสอน', exact: true });
 	await expect(hubLink).toBeVisible();
 	await hubLink.click();
 	const hub = page.getByTestId('supervision-hub');
@@ -138,7 +145,7 @@ test('staff without grants can discover the calendar and read only the selected 
 
 	await page.getByTestId('academic-context-mobile-trigger').click();
 	await page.getByLabel('เลือกภาคเรียน (มือถือ)', { exact: true }).click();
-	await page.getByRole('option', { name: 'ภาคเรียนที่ 1', exact: true }).click();
+	await page.getByRole('option', { name: /ภาคเรียนที่ 1/ }).click();
 	await expect(page).toHaveURL(`${path('calendar')}&academicTermId=${term}`);
 	await expect(day.getByText('ครู เฉพาะภาคเรียน', { exact: true })).toBeVisible();
 	await expect(day.getByText('ครู ยืนยันนัด', { exact: true })).toHaveCount(0);
@@ -158,6 +165,57 @@ test('staff without grants can discover the calendar and read only the selected 
 	await expect(page).toHaveURL(/\/403\?/);
 	expect(api.reads.filter((read) => read.startsWith('/api/supervision/'))).toEqual([]);
 	expect(api.writes.filter((write) => write.includes('/api/supervision/'))).toEqual([]);
+});
+
+test('protected Sidebar links retain their own context when published options fail', async ({
+	page
+}) => {
+	const timetablePath = '/staff/academic/timetable';
+	const api = await mock(page, {
+		permissions: ['*'],
+		term: true,
+		menuGroups: supervisionMenu([
+			supervisionMenuItem,
+			{
+				id: 'timetable',
+				code: 'timetable',
+				name: 'ตารางสอนทดสอบ',
+				path: timetablePath,
+				icon: 'Calendar'
+			}
+		])
+	});
+	const published = Promise.withResolvers<void>();
+	const release = Promise.withResolvers<void>();
+	await page.route(
+		(url) => url.pathname === '/api/public/academic-context/options',
+		async (route) => {
+			published.resolve();
+			await release.promise;
+			await route.fulfill({
+				status: 503,
+				json: { success: false, error: 'published options unavailable' }
+			});
+		}
+	);
+	await page.goto(`${path('mine')}&academicTermId=${term}`);
+	const sidebar = page.locator('aside');
+	const timetable = sidebar.getByRole('link', { name: 'ตารางสอนทดสอบ', exact: true });
+	const destination = `${timetablePath}?academicYearId=${year}&academicTermId=${term}`;
+	await expect(timetable).toHaveAttribute('href', destination);
+	try {
+		await sidebar.getByRole('link', { name: 'นิเทศการสอน', exact: true }).click();
+		await published.promise;
+		await expect(page).toHaveURL(`${path('')}&academicTermId=${term}`);
+		await expect(timetable).toBeVisible();
+		await expect(timetable).toHaveAttribute('href', destination);
+	} finally {
+		release.resolve();
+	}
+	await expect(page.getByText('โหลดปีการศึกษาไม่สำเร็จ', { exact: true })).toBeVisible();
+	await expect(timetable).toBeVisible();
+	await expect(timetable).toHaveAttribute('href', destination);
+	expect(api.count('/api/academic/context/options')).toBe(1);
 });
 
 test('month changes supersede a delayed read and a failed month can retry in place', async ({
@@ -233,6 +291,12 @@ test('month changes supersede a delayed read and a failed month can retry in pla
 		schedule.getByRole('region').getByText('ครู เดือนพฤศจิกายน', { exact: true })
 	).toBeVisible();
 	expect(served).toHaveLength(5);
+	const overflowDay = schedule.locator('[data-calendar-date="2026-12-01"]');
+	await overflowDay.focus();
+	await overflowDay.press('Enter');
+	await expect(page).toHaveURL(/month=2026-12/);
+	await expect(overflowDay).toHaveAttribute('aria-pressed', 'true');
+	await expect(overflowDay).toBeFocused();
 });
 
 test('a non-staff session cannot load either supervision entry point', async ({ page }) => {

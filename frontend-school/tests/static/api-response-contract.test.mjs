@@ -970,6 +970,9 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	const supervisionMine = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/mine/+page.ts'
 	);
+	const supervisionCalendar = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/calendar/+page.ts'
+	);
 	const supervisionWorkspace = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
@@ -994,8 +997,15 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionApi, /ApiResponse<unknown>/);
 	assert.doesNotMatch(supervisionApi, /Record<string,\s*unknown>/);
 	assert.doesNotMatch(supervisionApi, /res\.data as/);
-	assert.match(supervisionRoute, /PERMISSION_MODULES\.SUPERVISION/);
+	assert.match(supervisionRoute, /menu:\s*\{[^}]*user_type:\s*'staff'/);
+	assert.doesNotMatch(supervisionRoute, /permission:/);
 	assert.match(supervisionMine, /PERMISSION_MODULES\.SUPERVISION/);
+	assert.match(supervisionCalendar, /access:\s*\{\s*user_type:\s*'staff'\s*\}/);
+	assert.match(supervisionCalendar, /user\?\.user_type !== _meta\.access\.user_type/);
+	assert.match(
+		supervisionApi,
+		/apiClient\.get<SupervisionCalendarItems>\('\/api\/supervision\/calendar'/
+	);
 	assert.match(supervisionWorkspace, /listSupervisionCycles/);
 	assert.match(supervisionWorkspace, /requestSupervisionObservation/);
 	assert.match(supervisionWorkspace, /updateSupervisionCycle/);

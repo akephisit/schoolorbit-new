@@ -176,7 +176,7 @@ async fn supervision_calendar_is_staff_only_tenant_scoped_and_schedule_only() {
     let other_term = Uuid::new_v4();
     sqlx::query("INSERT INTO academic_terms SELECT (jsonb_populate_record(NULL::academic_terms,to_jsonb(t)||jsonb_build_object(
         'id',$2::uuid,'code','CALENDAR_OTHER','sequence_no',(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=t.academic_year_id),
-        'name','Another calendar term','status','planning'))).* FROM academic_terms t WHERE id=$1")
+        'name','Another calendar term','status','planning','is_visible',true))).* FROM academic_terms t WHERE id=$1")
         .bind(f.academic_term_id).bind(other_term).execute(&pool).await.unwrap();
 
     let start: DateTime<Utc> = "2026-11-27T17:00:00Z".parse().unwrap();
@@ -352,6 +352,48 @@ async fn supervision_calendar_is_staff_only_tenant_scoped_and_schedule_only() {
             .await
             .is_empty()
     );
+
+    sqlx::query("UPDATE academic_terms SET is_visible=false WHERE id=$1")
+        .bind(other_term)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let year_path = calendar_url(year, None, date, date);
+    let hidden_term_path = calendar_url(year, Some(other_term), date, date);
+    assert_eq!(
+        items(get(&app, "tenant-a", &year_path, Some(&staff_token)).await).await,
+        result,
+        "only the visible term remains in the all-year calendar"
+    );
+    assert!(
+        items(get(&app, "tenant-a", &hidden_term_path, Some(&staff_token)).await)
+            .await
+            .is_empty()
+    );
+
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE academic_context_settings SET default_academic_year_id=NULL,
+        default_academic_term_id=NULL WHERE default_academic_year_id=$1",
+    )
+    .bind(year)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE academic_years SET is_visible=false WHERE id=$1")
+        .bind(year)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    for path in [&year_path, &path] {
+        assert!(
+            items(get(&app, "tenant-a", path, Some(&staff_token)).await)
+                .await
+                .is_empty(),
+            "a hidden year excludes even a visible term: {path}"
+        );
+    }
 }
 
 async fn test_user(pool: &PgPool, role: &str) -> Uuid {

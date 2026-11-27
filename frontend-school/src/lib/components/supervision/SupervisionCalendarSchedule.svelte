@@ -59,6 +59,8 @@
 
 	const descriptionId = $props.id();
 	let todayDate = $state(schoolCivilDate());
+	let grid = $state<HTMLDivElement>();
+	let focusDate = $state('');
 	const activeDate = $derived(selectedDate || todayDate);
 	const bookingsByDate = $derived(calendarBookingsByDate(bookings));
 	const bookingsForDay = $derived(bookingsByDate.get(activeDate) ?? []);
@@ -105,8 +107,21 @@
 				: 'ไม่มีรายการจองนิเทศในวันนี้'
 	);
 
-	function selectDate(date: string) {
+	$effect(() => {
+		if (!focusDate || !grid || loading || activeDate !== focusDate) return;
+		const day = grid.querySelector<HTMLButtonElement>(`[data-calendar-date="${focusDate}"]`);
+		if (day && document.activeElement === document.body) day.focus({ preventScroll: true });
+		focusDate = '';
+	});
+
+	function selectDate(date: string, anchor?: HTMLElement) {
 		todayDate = schoolCivilDate();
+		focusDate =
+			ondatechange &&
+			anchor === document.activeElement &&
+			date.slice(0, 7) !== monthStart.slice(0, 7)
+				? date
+				: '';
 		if (ondatechange) ondatechange(date);
 		else selectedDate = date;
 	}
@@ -197,7 +212,10 @@
 			aria-busy={loading}
 			data-testid={view === 'staff' ? 'supervision-calendar-schedule' : undefined}
 		>
-			<div class={cn('min-w-0 sm:h-[40rem]', view === 'staff' ? 'h-[27rem]' : 'h-[33rem]')}>
+			<div
+				bind:this={grid}
+				class={cn('min-w-0 sm:h-[40rem]', view === 'staff' ? 'h-[27rem]' : 'h-[33rem]')}
+			>
 				{#if loading}
 					<div class="h-full" role="status" aria-label="กำลังโหลดปฏิทินนิเทศ">
 						<Skeleton class="h-full w-full rounded-xl" />

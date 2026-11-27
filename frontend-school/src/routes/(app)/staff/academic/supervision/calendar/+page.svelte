@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { goto, invalidate } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { isValid, parseISO } from 'date-fns';
 	import { appIdentityKey } from '#lib/auth/settled-user.js';
@@ -67,10 +66,7 @@
 		const url = new URL(page.url.href);
 		url.searchParams.set('month', month);
 		url.searchParams.set('date', date);
-		void goto(resolve(`/staff/academic/supervision/calendar?${url.searchParams}`), {
-			keepFocus: true,
-			noScroll: true
-		});
+		void goto(url, { reset: false });
 	}
 </script>
 

@@ -18,7 +18,8 @@
 	import {
 		academicContextualMenuPath,
 		getAcademicContextOptionsSource,
-		getAcademicContextRequirement
+		getAcademicContextRequirement,
+		readAcademicContextFromUrl
 	} from '#lib/academic-context/route-context.js';
 	import {
 		buildSidebarNavigation,
@@ -36,6 +37,11 @@
 	const menuGroups = $derived(appMenu.groups);
 	const menuLoading = $derived(appMenu.loading);
 	const academicContext = getAcademicContextStore();
+	const menuContext = $derived(
+		getAcademicContextRequirement(page.route.id) === 'none'
+			? $academicContext.selected
+			: readAcademicContextFromUrl(new URL(page.url.href))
+	);
 
 	$effect(() => {
 		if ($authStore.user?.user_type === 'staff') void academicContext.primeOptions();
@@ -53,11 +59,12 @@
 					.map((section) => ({
 						...section,
 						items: section.items.filter((item) => {
-							const routeId = `/(app)${new URL(item.path, page.url.href).pathname}`;
+							const routeId = menuRouteId(item.path);
+							const source = getAcademicContextOptionsSource(routeId);
 							return (
-								$academicContext.options !== null ||
+								$academicContext.optionsBySource[source] !== null ||
 								getAcademicContextRequirement(routeId) === 'none' ||
-								getAcademicContextOptionsSource(routeId) === 'published'
+								source === 'published'
 							);
 						})
 					}))
@@ -131,11 +138,16 @@
 		);
 	}
 
+	function menuRouteId(path: string): string {
+		return `/(app)${new URL(path, page.url.href).pathname}`;
+	}
+
 	function menuHref(item: SidebarMenuItem): string {
+		const source = getAcademicContextOptionsSource(menuRouteId(item.path));
 		return academicContextualMenuPath(
 			item.path,
-			$academicContext.selected,
-			$academicContext.options
+			menuContext,
+			$academicContext.optionsBySource[source]
 		);
 	}
 

@@ -510,9 +510,10 @@ test('sidebar preloads and navigates to the same context-bearing destination', a
 	assert.match(sidebar, /academicContextualMenuPath/);
 	assert.match(sidebar, /getAcademicContextRequirement/);
 	assert.match(sidebar, /academicContext\.primeOptions\(\)/);
+	assert.match(sidebar, /\$academicContext\.selected\s*:\s*readAcademicContextFromUrl/);
 	assert.match(
 		sidebar,
-		/academicContextualMenuPath\([\s\S]*?\$academicContext\.selected[\s\S]*?\$academicContext\.options/
+		/academicContextualMenuPath\(\s*item\.path,\s*menuContext,\s*\$academicContext\.optionsBySource\[source\]/
 	);
 	assert.match(sidebar, /href=\{menuHref\(item\)\}/);
 	assert.match(sidebar, /preloadData\(resolve\(href/);

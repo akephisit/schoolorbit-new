@@ -66,6 +66,9 @@ pub async fn list_calendar(
                            )
                        ) ORDER BY p.position, p.id) AS periods
                 FROM supervision_observation_periods p
+                JOIN academic_years year ON year.id = p.academic_year_id AND year.is_visible
+                JOIN academic_terms term ON term.id = p.academic_term_id
+                    AND term.academic_year_id = year.id AND term.is_visible
                 WHERE p.academic_year_id = $1
                   AND ($2::uuid IS NULL OR p.academic_term_id = $2)
                   AND p.observed_at >= $3 AND p.observed_at < $4
