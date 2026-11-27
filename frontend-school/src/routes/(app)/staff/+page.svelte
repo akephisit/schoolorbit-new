@@ -23,18 +23,8 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card/index.js';
 	import { authStore } from '#lib/stores/auth.js';
-	import { workStore } from '#lib/stores/work.js';
 	import { getIconComponent } from '#lib/utils/icon-mapper.js';
-	import {
-		ArrowRight,
-		Building2,
-		ChevronRight,
-		CircleAlert,
-		Clock3,
-		GraduationCap,
-		Inbox,
-		Users
-	} from '@lucide/svelte';
+	import { Building2, ChevronRight, GraduationCap, Users } from '@lucide/svelte';
 
 	let { data }: PageProps = $props();
 	const appMenu = getAppMenuRegion();
@@ -158,7 +148,7 @@
 <PageShell title="หน้าหลักของฉัน">
 	<Card
 		class="relative isolate gap-0 rounded-2xl border-primary/20 bg-linear-to-br from-primary/10 via-card to-card py-0 shadow-none"
-		data-testid="staff-work-hero"
+		data-testid="staff-welcome"
 	>
 		<div
 			class="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-2xl"
@@ -166,72 +156,11 @@
 		>
 			<span class="dashboard-orbit"></span>
 		</div>
-		<CardContent
-			class="grid gap-5 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-x-10 lg:gap-y-6"
-		>
-			<div class="min-w-0 space-y-2">
-				<h2 class="text-2xl leading-snug font-semibold tracking-tight break-words sm:text-3xl">
-					สวัสดี {displayName}
-				</h2>
-				<p class="text-sm text-muted-foreground">{roleName}</p>
-			</div>
-			<section
-				data-testid="staff-work-counts"
-				aria-busy={$workStore.loadingCounts}
-				aria-labelledby="personal-summary-title"
-				class="min-w-0 space-y-3 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center"
-			>
-				<h3 id="personal-summary-title" class="sr-only">สรุปงานของฉัน</h3>
-				{#if $workStore.countsError}<PageState
-						title="โหลดจำนวนงานไม่สำเร็จ"
-						description={$workStore.countsError}
-						actionLabel="ลองใหม่"
-						onaction={() => void workStore.fetchCounts()}
-					/>{/if}
-				{#if $workStore.loadingCounts && !$workStore.loadedCounts}<p
-						role="status"
-						class="text-sm text-muted-foreground"
-					>
-						กำลังโหลดจำนวนงาน...
-					</p>{/if}
-				<dl class="grid grid-cols-2 items-center gap-x-4 gap-y-4">
-					<div class="row-span-2 min-w-0 space-y-3">
-						<dt class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-							<Inbox class="size-4 shrink-0 text-primary" aria-hidden="true" />งานที่เปิดอยู่
-						</dt>
-						<dd
-							class="text-5xl leading-none font-semibold tracking-tight text-primary tabular-nums break-all sm:text-6xl"
-						>
-							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.open) : '—'}
-						</dd>
-					</div>
-					<div class="space-y-1 border-s border-primary/15 ps-4 sm:ps-5">
-						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-							<Clock3 class="size-4 shrink-0 text-warning" aria-hidden="true" />ใกล้ครบกำหนด
-						</dt>
-						<dd class="text-2xl leading-tight font-semibold text-warning tabular-nums break-all">
-							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.dueSoon) : '—'}
-						</dd>
-					</div>
-					<div class="space-y-1 border-s border-primary/15 ps-4 sm:ps-5">
-						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-							<CircleAlert class="size-4 shrink-0 text-destructive" aria-hidden="true" />เกินกำหนด
-						</dt>
-						<dd
-							class="text-2xl leading-tight font-semibold text-destructive tabular-nums break-all"
-						>
-							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.overdue) : '—'}
-						</dd>
-					</div>
-				</dl>
-			</section>
-			<Button
-				href="/staff/work"
-				class="min-h-11 justify-self-start gap-3 rounded-lg px-4 lg:self-end"
-			>
-				เปิดงานของฉัน
-				<ArrowRight class="size-4" aria-hidden="true" />
-			</Button>
+		<CardContent class="space-y-2 px-5 py-5 sm:px-7">
+			<h2 class="text-2xl leading-snug font-semibold tracking-tight break-words sm:text-3xl">
+				สวัสดี {displayName}
+			</h2>
+			<p class="text-sm text-muted-foreground">{roleName}</p>
 		</CardContent>
 	</Card>
 	<div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">

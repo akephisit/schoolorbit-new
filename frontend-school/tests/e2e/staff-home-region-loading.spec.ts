@@ -17,18 +17,15 @@ test.beforeEach(async ({ page }) => {
 		route.fulfill({ status: 200, contentType: 'text/css', body: '' })
 	);
 });
-for (const hold of ['menu', 'counts', 'overview']) {
+for (const hold of ['menu', 'overview']) {
 	test(`home siblings render independently of ${hold}`, async ({ page }) => {
 		const api = await mockStaffHome(page, { hold });
 		await page.goto(homePath());
-		const ready = hold === 'overview' ? 'staff-work-counts' : 'staff-overview';
-		await expect(page.getByTestId(ready)).toContainText(hold === 'overview' ? '7' : '18');
-		const pending =
-			hold === 'menu'
-				? 'staff-services'
-				: hold === 'counts'
-					? 'staff-work-counts'
-					: 'staff-overview';
+		const ready = hold === 'overview' ? 'staff-services' : 'staff-overview';
+		await expect(page.getByTestId(ready)).toContainText(
+			hold === 'overview' ? 'โปรไฟล์ทดสอบ' : '18'
+		);
+		const pending = hold === 'menu' ? 'staff-services' : 'staff-overview';
 		await expect(page.getByTestId(pending).getByRole('status')).toBeVisible();
 		api.release();
 		await expect(page.getByTestId(pending).getByRole('status')).toHaveCount(0);
@@ -37,36 +34,45 @@ for (const hold of ['menu', 'counts', 'overview']) {
 		expect(api.count('/api/auth/me')).toBe(1);
 	});
 }
-for (const fail of ['menu', 'counts', 'overview']) {
+for (const fail of ['menu', 'overview']) {
 	test(`${fail} retry does not reload successful home siblings`, async ({ page }) => {
 		const api = await mockStaffHome(page, { fail });
 		await page.goto(homePath());
-		const region = page.getByTestId(
-			fail === 'menu'
-				? 'staff-services'
-				: fail === 'counts'
-					? 'staff-work-counts'
-					: 'staff-overview'
-		);
+		const region = page.getByTestId(fail === 'menu' ? 'staff-services' : 'staff-overview');
 		await expect(region.getByText('region ไม่พร้อม')).toBeVisible();
 		await region.getByRole('button', { name: /ลอง/ }).click();
-		const retriedPath =
-			fail === 'menu'
-				? '/api/menu/user'
-				: fail === 'counts'
-					? '/api/me/work-items/counts'
-					: '/api/staff/dashboard';
+		const retriedPath = fail === 'menu' ? '/api/menu/user' : '/api/staff/dashboard';
 		await expect.poll(() => api.count(retriedPath)).toBe(2);
 		await expect(region).toHaveAttribute('aria-busy', 'false');
 		await expect(
-			region.getByText(fail === 'menu' ? 'โปรไฟล์ทดสอบ' : fail === 'counts' ? '8' : '18', {
-				exact: true
-			})
+			region.getByText(fail === 'menu' ? 'โปรไฟล์ทดสอบ' : '18', { exact: true })
 		).toBeVisible();
 		await expect(region.getByText('region ไม่พร้อม')).toHaveCount(0);
 		expect(api.count('/api/menu/user')).toBe(fail === 'menu' ? 2 : 1);
-		expect(api.count('/api/me/work-items/counts')).toBe(fail === 'counts' ? 2 : 1);
+		expect(api.count('/api/me/work-items/counts')).toBe(1);
 		expect(api.count('/api/staff/dashboard')).toBe(fail === 'overview' ? 2 : 1);
+	});
+}
+for (const state of ['pending', 'failed']) {
+	test(`dashboard services and overview remain ready while shared work counts are ${state}`, async ({
+		page
+	}) => {
+		const api = await mockStaffHome(
+			page,
+			state === 'pending' ? { hold: 'counts' } : { fail: 'counts' }
+		);
+		await page.goto(homePath());
+		await expect(page.getByTestId('staff-services')).toContainText('โปรไฟล์ทดสอบ');
+		await expect(page.getByTestId('staff-overview')).toContainText('18');
+		await expect(
+			page.getByRole('main').getByText(/งานที่เปิดอยู่|ใกล้ครบกำหนด|เกินกำหนด|โหลดจำนวนงาน/)
+		).toHaveCount(0);
+		await expect(page.getByTestId('staff-services')).toHaveAttribute('aria-busy', 'false');
+		await expect(page.getByTestId('staff-overview')).toHaveAttribute('aria-busy', 'false');
+		await expect.poll(() => api.count('/api/me/work-items/counts')).toBe(1);
+		api.release();
+		expect(api.count('/api/menu/user')).toBe(1);
+		expect(api.count('/api/staff/dashboard')).toBe(1);
 	});
 }
 test('dashboard year supersession rejects a late aggregate', async ({ page }) => {
@@ -211,20 +217,4 @@ test('parent cannot start staff profile reads', async ({ page }) => {
 	await expect(page).toHaveURL(/403/);
 	expect(api.count(`/api/staff/${firstStaff}/public-profile`)).toBe(0);
 	expect(api.count('/api/achievements')).toBe(0);
-});
-
-test('shared counts keep a successful retry across child navigation', async ({ page }) => {
-	const api = await mockStaffHome(page, { fail: 'counts' });
-	await page.goto(homePath());
-	const region = page.getByTestId('staff-work-counts');
-	await expect(region).toContainText('region ไม่พร้อม');
-	await region.getByRole('button', { name: /ลอง/ }).click();
-	await expect(region).toContainText('8');
-	await navigate(page, '/staff/profile');
-	await expect(page.locator('#nickname')).toHaveValue('ชื่อเล่นเดิม');
-	await navigate(page, homePath());
-	await expect(region).toContainText('8');
-	await expect(region).not.toContainText('region ไม่พร้อม');
-	expect(api.count('/api/menu/user')).toBe(1);
-	expect(api.count('/api/me/work-items/counts')).toBe(2);
 });
