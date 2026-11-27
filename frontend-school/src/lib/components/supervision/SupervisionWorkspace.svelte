@@ -215,7 +215,7 @@
 
 	const sectionConfigByKey: Record<SupervisionWorkspaceSection, SectionConfig> = {
 		mine: {
-			title: 'นิเทศการสอน',
+			title: 'นิเทศของฉัน',
 			description: 'จองคาบเรียนจากตารางสอน ติดตามคำขอ และรับทราบผลนิเทศ'
 		},
 		evaluate: {
@@ -1967,6 +1967,7 @@
 <PageShell
 	title={sectionConfig.title}
 	description={sectionConfig.description}
+	class="pt-4 md:pt-(--school-page-padding)"
 	contentClass="flex flex-col gap-5 [&>*]:mt-0"
 	actions={(section === 'mine' && canRequest) ||
 	((section === 'cycles' || section === 'templates') && canManageSchool)

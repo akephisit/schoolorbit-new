@@ -8,6 +8,10 @@
 	import { createSupervisionRequestReview } from '#lib/supervision/request-review.svelte.js';
 	import { useSupervisionObservationWrites } from '#lib/supervision/observation-writes.js';
 	import {
+		supervisionHomeLabel,
+		supervisionHomePath
+	} from '#lib/supervision/workspace-navigation.js';
+	import {
 		schoolCivilDate,
 		cycleDateRangeError,
 		cycleDateRangeLabel,
@@ -244,7 +248,7 @@
 	);
 	const backHref = $derived(
 		academicContextualMenuPath(
-			'/staff/academic/supervision',
+			supervisionHomePath,
 			{
 				academicYearId: observation?.academicYearId ?? data.academicYearId,
 				academicTermId: observation?.academicTermId ?? data.academicTermId
@@ -868,7 +872,7 @@
 	}
 </script>
 
-<PageShell title={pageTitle} {backHref} backPreload={false} backLabel="กลับหน้านิเทศการสอน">
+<PageShell title={pageTitle} {backHref} backPreload={false} backLabel={supervisionHomeLabel}>
 	<div class="min-w-0 space-y-5" data-testid="supervision-detail" aria-busy={loading}>
 		{#if loading && !observation}
 			<div role="status" aria-label="กำลังโหลด"><PageSkeleton /></div>
