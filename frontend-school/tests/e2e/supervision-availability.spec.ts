@@ -201,8 +201,11 @@ test('date edits retain the draft on conflict and retry patches only the affecte
 }) => {
 	const api = await mock(page, { observationStartDate: null, observationEndDate: null });
 	await page.goto(path('cycles'));
-	const row = page.getByRole('row', { name: /รอบแรก/ });
-	await row.getByRole('button', { name: 'กำหนดช่วงวันที่ รอบแรก', exact: true }).click();
+	const cycle = page
+		.getByTestId('supervision-cycles-ready')
+		.getByRole('listitem')
+		.filter({ hasText: 'รอบแรก' });
+	await cycle.getByRole('button', { name: 'กำหนดช่วงวันที่ รอบแรก', exact: true }).click();
 	const dialog = page.getByRole('dialog');
 	await selectSupervisionDate(page, 'วันเริ่มนิเทศ', '2026-10-01');
 	await selectSupervisionDate(page, 'วันสุดท้ายที่นิเทศ', '2026-10-15');
@@ -220,7 +223,7 @@ test('date edits retain the draft on conflict and retry patches only the affecte
 	).toContainText('15 ต.ค. 2569');
 	await dialog.getByRole('button', { name: 'ลองบันทึกอีกครั้ง', exact: true }).click();
 	await expect(dialog).toHaveCount(0);
-	await expect(row).not.toContainText('ยังไม่กำหนดช่วงวันที่นิเทศ');
+	await expect(cycle).not.toContainText('ยังไม่กำหนดช่วงวันที่นิเทศ');
 	expect(api.count('/api/supervision/cycles')).toBe(1);
 	expect(api.payloads.at(-1)).toEqual({
 		observationStartDate: '2026-10-01',
@@ -267,9 +270,12 @@ test('date mutation cannot be closed or rebound by Escape while pending, and its
 	await expect(dialog).toHaveCount(0);
 	await (await refreshedCycles).finished();
 	const cycles = page.getByTestId('supervision-cycles');
-	const row = cycles.getByRole('row', { name: /รอบแรก/ });
+	const cycle = cycles
+		.getByTestId('supervision-cycles-ready')
+		.getByRole('listitem')
+		.filter({ hasText: 'รอบแรก' });
 	await expect(cycles).toHaveAttribute('aria-busy', 'false');
-	await expect(row).toContainText('31 ธ.ค. 2569');
+	await expect(cycle).toContainText('31 ธ.ค. 2569');
 	const response = page.waitForResponse(
 		(response) =>
 			new URL(response.url()).pathname === `/api/supervision/cycles/${firstCycle}` &&
@@ -283,7 +289,7 @@ test('date mutation cannot be closed or rebound by Escape while pending, and its
 				requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
 			)
 	);
-	await expect(row).toContainText('31 ธ.ค. 2569');
+	await expect(cycle).toContainText('31 ธ.ค. 2569');
 	await expect(
 		page.getByRole('button', { name: 'กำหนดช่วงวันที่ รอบแรก', exact: true })
 	).toBeEnabled();

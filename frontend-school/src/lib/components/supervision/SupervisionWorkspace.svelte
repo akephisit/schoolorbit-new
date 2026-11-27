@@ -2616,7 +2616,7 @@
 				<Card.Header
 					class="flex flex-wrap items-baseline justify-between gap-2 border-b bg-muted/25 px-4 py-3 sm:px-6"
 				>
-					<h2 class="text-base font-semibold">รายการรอบนิเทศ</h2>
+					<h2 id="supervision-cycles-heading" class="text-base font-semibold">รายการรอบนิเทศ</h2>
 					<p class="text-sm text-muted-foreground">{calendarAcademicLabel}</p>
 				</Card.Header>
 				<Card.Content class="px-0">
@@ -2625,116 +2625,126 @@
 						aria-busy={cyclesLoading}
 						data-testid="supervision-cycles"
 					>
-						{@render managementFeedback(
-							cyclesLoaded,
-							cyclesLoading,
-							cyclesError,
-							retryManagementCycles
-						)}
+						{#if cyclesLoading && !cyclesLoaded}
+							<div role="status" aria-label="กำลังโหลดรอบนิเทศ" class="divide-y">
+								{#each [0, 1] as row (row)}
+									<div class="space-y-2 px-4 py-4 sm:px-6">
+										<Skeleton class="h-5 w-36 max-w-full" />
+										<Skeleton class="h-4 w-56 max-w-full" />
+									</div>
+								{/each}
+							</div>
+						{/if}
+						{#if cyclesError}
+							<div class="px-4 py-4 sm:px-6">
+								{@render managementFeedback(true, false, cyclesError, retryManagementCycles)}
+							</div>
+						{/if}
 						{#if !routeData || cyclesLoaded}
 							<div data-testid="supervision-cycles-ready">
-								<Table.Root aria-label="รายการรอบนิเทศ">
-									<Table.Header>
-										<Table.Row>
-											<Table.Head>รอบนิเทศ</Table.Head>
-											<Table.Head>ปีการศึกษา / ภาคเรียน</Table.Head>
-											<Table.Head>สถานะ</Table.Head>
-											<Table.Head class="text-right">จัดการรอบ</Table.Head>
-										</Table.Row>
-									</Table.Header>
-									<Table.Body>
-										{#if cycles.length === 0}
-											<Table.Row>
-												<Table.Cell colspan={4} class="h-24 text-center text-muted-foreground">
-													ยังไม่มีรอบนิเทศ
-												</Table.Cell>
-											</Table.Row>
-										{:else}
-											{#each cycles as cycle (cycle.id)}
-												<Table.Row>
-													<Table.Cell class="min-w-40 whitespace-normal"
-														><p class="font-medium">{cycle.title}</p>
-														<p class="mt-1 text-xs text-muted-foreground">
-															{cycleDateRangeLabel(
-																cycle.observationStartDate,
-																cycle.observationEndDate
-															)}
-														</p></Table.Cell
-													>
-													<Table.Cell>
-														{cycleContextLabel(cycle)}
-													</Table.Cell>
-													<Table.Cell
-														><Badge variant="secondary">{statusLabel(cycle.status)}</Badge
-														></Table.Cell
-													>
-													<Table.Cell class="text-right">
-														<div class="flex flex-wrap justify-end gap-2">
-															<SupervisionCycleDates
-																{cycle}
-																allowed={canManageSchool}
-																disabled={mutationBusy}
-																onsave={(dates) => saveCycleDates(cycle.id, dates)}
-															/>
-															<SupervisionCycleDelete
-																{cycle}
-																allowed={canManageSchool}
-																beginObservationChange={observationWrites?.beginChange}
-																ondelete={(impact) => {
-																	cycles = cycles.filter((item) => item.id !== impact.cycleId);
-																	observations = observations.filter(
-																		(item) => item.cycleId !== impact.cycleId
-																	);
-																}}
-															/>
-															{#if cycle.status === 'draft'}
-																<LoadingButton
-																	size="sm"
-																	onclick={() => setCycleStatus(cycle, 'open')}
-																	loading={savingAction === `cycle-status:${cycle.id}:open`}
-																	loadingLabel="กำลังเปิด..."
-																	disabled={mutationBusy}
-																>
-																	เปิดรับคำขอ
-																</LoadingButton>
-															{:else if cycle.status === 'open'}
-																<LoadingButton
-																	size="sm"
-																	variant="outline"
-																	onclick={() => setCycleStatus(cycle, 'closed')}
-																	loading={savingAction === `cycle-status:${cycle.id}:closed`}
-																	loadingLabel="กำลังปิด..."
-																	disabled={mutationBusy}
-																>
-																	ปิดรับคำขอ
-																</LoadingButton>
-															{:else if cycle.status === 'closed'}
-																<LoadingButton
-																	size="sm"
-																	variant="outline"
-																	onclick={() => setCycleStatus(cycle, 'open')}
-																	loading={savingAction === `cycle-status:${cycle.id}:open`}
-																	loadingLabel="กำลังเปิด..."
-																	disabled={mutationBusy}
-																>
-																	เปิดรับคำขอ
-																</LoadingButton>
-																<LoadingButton
-																	size="sm"
-																	variant="outline"
-																	onclick={() => setCycleStatus(cycle, 'archived')}
-																	loading={savingAction === `cycle-status:${cycle.id}:archived`}
-																	loadingLabel="กำลังเก็บ..."
-																	disabled={mutationBusy}>เก็บถาวร</LoadingButton
-																>
-															{/if}
+								{#if cycles.length === 0}
+									<p class="px-4 py-8 text-center text-sm text-muted-foreground sm:px-6">
+										ยังไม่มีรอบนิเทศ
+									</p>
+								{:else}
+									<ul role="list" aria-labelledby="supervision-cycles-heading" class="divide-y">
+										{#each cycles as cycle (cycle.id)}
+											<li
+												class="grid min-w-0 gap-3 px-4 py-4 sm:px-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,4fr)] xl:items-center"
+											>
+												<div class="min-w-0 space-y-1.5">
+													<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+														<h3 class="min-w-0 text-sm font-semibold wrap-anywhere">
+															{cycle.title}
+														</h3>
+														<Badge variant="secondary">{statusLabel(cycle.status)}</Badge>
+													</div>
+													<dl class="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+														<div class="min-w-0">
+															<dt class="sr-only">ช่วงวันที่นิเทศ</dt>
+															<dd class="wrap-anywhere tabular-nums">
+																{cycleDateRangeLabel(
+																	cycle.observationStartDate,
+																	cycle.observationEndDate
+																)}
+															</dd>
 														</div>
-													</Table.Cell>
-												</Table.Row>
-											{/each}
-										{/if}
-									</Table.Body>
-								</Table.Root>
+														<div class="min-w-0">
+															<dt class="sr-only">ปีการศึกษาและภาคเรียน</dt>
+															<dd class="wrap-anywhere">{cycleContextLabel(cycle)}</dd>
+														</div>
+													</dl>
+												</div>
+												{#if canManageSchool}
+													<div
+														role="group"
+														aria-label="จัดการรอบนิเทศ"
+														class="flex min-w-0 flex-wrap gap-2 xl:justify-end"
+													>
+														<SupervisionCycleDates
+															{cycle}
+															allowed={canManageSchool}
+															disabled={mutationBusy}
+															onsave={(dates) => saveCycleDates(cycle.id, dates)}
+														/>
+														<SupervisionCycleDelete
+															{cycle}
+															allowed={canManageSchool}
+															beginObservationChange={observationWrites?.beginChange}
+															ondelete={(impact) => {
+																cycles = cycles.filter((item) => item.id !== impact.cycleId);
+																observations = observations.filter(
+																	(item) => item.cycleId !== impact.cycleId
+																);
+															}}
+														/>
+														{#if cycle.status === 'draft'}
+															<LoadingButton
+																size="sm"
+																onclick={() => setCycleStatus(cycle, 'open')}
+																loading={savingAction === `cycle-status:${cycle.id}:open`}
+																loadingLabel="กำลังเปิด..."
+																disabled={mutationBusy}
+															>
+																เปิดรับคำขอ
+															</LoadingButton>
+														{:else if cycle.status === 'open'}
+															<LoadingButton
+																size="sm"
+																variant="outline"
+																onclick={() => setCycleStatus(cycle, 'closed')}
+																loading={savingAction === `cycle-status:${cycle.id}:closed`}
+																loadingLabel="กำลังปิด..."
+																disabled={mutationBusy}
+															>
+																ปิดรับคำขอ
+															</LoadingButton>
+														{:else if cycle.status === 'closed'}
+															<LoadingButton
+																size="sm"
+																variant="outline"
+																onclick={() => setCycleStatus(cycle, 'open')}
+																loading={savingAction === `cycle-status:${cycle.id}:open`}
+																loadingLabel="กำลังเปิด..."
+																disabled={mutationBusy}
+															>
+																เปิดรับคำขอ
+															</LoadingButton>
+															<LoadingButton
+																size="sm"
+																variant="outline"
+																onclick={() => setCycleStatus(cycle, 'archived')}
+																loading={savingAction === `cycle-status:${cycle.id}:archived`}
+																loadingLabel="กำลังเก็บ..."
+																disabled={mutationBusy}>เก็บถาวร</LoadingButton
+															>
+														{/if}
+													</div>
+												{/if}
+											</li>
+										{/each}
+									</ul>
+								{/if}
 							</div>
 						{/if}
 					</div>

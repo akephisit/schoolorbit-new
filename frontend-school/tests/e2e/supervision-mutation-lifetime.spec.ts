@@ -95,7 +95,12 @@ for (const owner of ['workspace', 'detail'] as const) {
 				await expect(page.getByTestId('supervision-detail')).toHaveAttribute('aria-busy', 'false');
 				await expect(page.getByTestId('supervision-observations')).toHaveCount(0);
 			} else {
-				await expect(page.getByRole('row', { name: /รอบแรก/ })).toBeVisible();
+				await expect(
+					page
+						.getByTestId('supervision-cycles-ready')
+						.getByRole('listitem')
+						.filter({ hasText: 'รอบแรก' })
+				).toBeVisible();
 				await expect(page.getByTestId('supervision-detail')).toHaveCount(0);
 			}
 			const reads = api.count(availabilityPath);
