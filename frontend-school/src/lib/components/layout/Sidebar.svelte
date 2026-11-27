@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { ChevronDown, ChevronLeft, GraduationCap, Inbox } from '@lucide/svelte';
+	import { ChevronDown, ChevronLeft, GraduationCap, Inbox, X } from '@lucide/svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto, preloadData } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -30,9 +31,72 @@
 
 	let {
 		isCollapsed = $bindable($uiPreferences.sidebarCollapsed),
+		isMobileOpen = $bindable(false),
 		pendingPath = null
-	}: { isCollapsed?: boolean; pendingPath?: string | null } = $props();
-	let isMobileOpen = $state(false);
+	}: { isCollapsed?: boolean; isMobileOpen?: boolean; pendingPath?: string | null } = $props();
+	let isDesktop = $state(false);
+	const collapsed = $derived(isDesktop && isCollapsed);
+	let sidebarElement: HTMLElement;
+	let closeButton = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
+	let focusBeforeOpen: HTMLButtonElement | null = null;
+
+	onMount(() => {
+		const media = window.matchMedia('(min-width: 64rem)');
+		const updateViewport = () => {
+			isDesktop = media.matches;
+			if (isDesktop) isMobileOpen = false;
+		};
+		updateViewport();
+		media.addEventListener('change', updateViewport);
+		return () => media.removeEventListener('change', updateViewport);
+	});
+
+	$effect(() => {
+		if (!isMobileOpen || isDesktop) return;
+		const returnFocus = focusBeforeOpen;
+		void tick().then(() => {
+			if (isMobileOpen && !isDesktop) closeButton?.focus();
+		});
+		function handleKeydown(event: KeyboardEvent) {
+			if (event.key === 'Escape') {
+				event.preventDefault();
+				isMobileOpen = false;
+				return;
+			}
+			if (event.key !== 'Tab') return;
+			const controls = Array.from(
+				sidebarElement.querySelectorAll<HTMLElement>(
+					'a[href], button:not([disabled]), [tabindex="0"]'
+				)
+			).filter((element) => element.getClientRects().length > 0);
+			const first = controls[0];
+			const last = controls.at(-1);
+			if (
+				event.shiftKey &&
+				(document.activeElement === first || !sidebarElement.contains(document.activeElement))
+			) {
+				event.preventDefault();
+				last?.focus();
+			} else if (!event.shiftKey && document.activeElement === last) {
+				event.preventDefault();
+				first?.focus();
+			}
+		}
+		document.addEventListener('keydown', handleKeydown);
+		return () => {
+			document.removeEventListener('keydown', handleKeydown);
+			void tick().then(() => {
+				if (
+					!isMobileOpen &&
+					returnFocus instanceof HTMLElement &&
+					returnFocus.isConnected &&
+					returnFocus.getClientRects().length > 0 &&
+					!returnFocus.closest('[inert]')
+				)
+					returnFocus.focus();
+			});
+		};
+	});
 	const appMenu = getAppMenuRegion();
 	const menuGroups = $derived(appMenu.groups);
 	const menuLoading = $derived(appMenu.loading);
@@ -99,7 +163,7 @@
 	}
 
 	function sectionExpanded(section: SidebarMenuSection): boolean {
-		if (isCollapsed) return false;
+		if (collapsed) return false;
 
 		const savedValue = $uiPreferences.sidebarExpandedGroups[section.id];
 		if (savedValue !== undefined) return savedValue;
@@ -199,7 +263,8 @@
 		isCollapsed = !isCollapsed;
 	}
 
-	export function toggleMobileSidebar() {
+	export function toggleMobileSidebar(trigger: HTMLButtonElement) {
+		if (!isMobileOpen) focusBeforeOpen = trigger;
 		isMobileOpen = !isMobileOpen;
 	}
 </script>
@@ -208,28 +273,34 @@
 {#if isMobileOpen}
 	<div
 		class="fixed inset-0 bg-black/50 z-40 lg:hidden"
-		onclick={toggleMobileSidebar}
+		onclick={() => (isMobileOpen = false)}
 		onkeydown={(e) => {
 			if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
-				toggleMobileSidebar();
+				isMobileOpen = false;
 			}
 		}}
 		role="button"
-		tabindex="0"
+		tabindex="-1"
 		aria-label="Close sidebar"
 	></div>
 {/if}
 
 <!-- Sidebar Container -->
 <aside
-	class="fixed left-0 top-0 z-50 h-screen bg-card border-r border-border transition-[width,transform,translate] duration-300 ease-in-out
-  {isCollapsed ? 'w-[72px]' : 'w-64'}
+	id="app-sidebar"
+	bind:this={sidebarElement}
+	inert={!isDesktop && !isMobileOpen}
+	role={isMobileOpen ? 'dialog' : undefined}
+	aria-modal={isMobileOpen ? true : undefined}
+	aria-label="เมนูบริการ"
+	class="fixed left-0 top-0 z-50 h-dvh bg-card border-r border-border transition-[width,transform,translate] duration-300 ease-in-out
+  w-72 max-w-[calc(100vw-2rem)] {collapsed ? 'lg:w-[72px]' : 'lg:w-64'}
   {isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
   lg:translate-x-0 flex flex-col"
 >
 	<!-- Header -->
-	<div class="flex items-center justify-between p-4 border-b border-border h-16">
-		{#if !isCollapsed}
+	<div class="flex shrink-0 items-center justify-between p-4 border-b border-border h-16">
+		{#if !collapsed}
 			<div class="flex items-center gap-2 overflow-hidden">
 				<GraduationCap class="w-8 h-8 text-primary flex-shrink-0" />
 				<h1 class="text-lg font-bold text-foreground whitespace-nowrap">SchoolOrbit</h1>
@@ -237,13 +308,24 @@
 		{/if}
 
 		<Button
+			bind:ref={closeButton}
+			variant="ghost"
+			size="icon-lg"
+			onclick={() => (isMobileOpen = false)}
+			class="lg:hidden"
+			aria-label="ปิดเมนูบริการ"
+		>
+			<X class="size-5" />
+		</Button>
+
+		<Button
 			variant="ghost"
 			size="icon-sm"
 			onclick={toggleSidebar}
-			class="hidden rounded-lg lg:flex {isCollapsed ? 'mx-auto' : ''}"
-			aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+			class="hidden rounded-lg lg:flex {collapsed ? 'mx-auto' : ''}"
+			aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
 		>
-			<div class="transition-transform duration-300 {isCollapsed ? 'rotate-180' : ''}">
+			<div class="transition-transform duration-300 {collapsed ? 'rotate-180' : ''}">
 				<ChevronLeft class="w-5 h-5" />
 			</div>
 		</Button>
@@ -255,7 +337,7 @@
 			aria-busy={menuLoading}
 			class={cn(
 				'flex-1 overflow-y-auto overflow-x-hidden py-4 sidebar-nav',
-				isCollapsed ? 'flex flex-col items-center gap-1 px-4' : 'space-y-1 px-4'
+				collapsed ? 'flex flex-col items-center gap-1 px-4' : 'space-y-1 px-4'
 			)}
 		>
 			{#if appMenu.error}<PageState
@@ -275,14 +357,14 @@
 				</div>
 			{:else if !appMenu.error && menuGroups.length === 0}
 				<!-- No menus -->
-				{#if !isCollapsed}
+				{#if !collapsed}
 					<div class="p-4 text-center">
 						<p class="text-sm text-muted-foreground">ไม่มีเมนูที่สามารถเข้าถึงได้</p>
 						<p class="text-xs text-muted-foreground mt-1">กรุณาติดต่อผู้ดูแลระบบ</p>
 					</div>
 				{/if}
 			{:else if appMenu.loaded}
-				<Tooltip.Root delayDuration={0} disabled={!isCollapsed}>
+				<Tooltip.Root delayDuration={0} disabled={!collapsed}>
 					<Tooltip.Trigger class="w-full">
 						<Button
 							href="/staff/work"
@@ -292,7 +374,7 @@
 							onclick={handleNavClick}
 							class={cn(
 								'relative mb-3 h-11 rounded-lg px-0 transition-none',
-								isCollapsed ? 'mx-auto w-10' : 'w-full justify-start',
+								collapsed ? 'mx-auto w-10' : 'w-full justify-start',
 								isActive('/staff/work')
 									? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground dark:hover:bg-primary/90 dark:hover:text-primary-foreground'
 									: 'bg-accent/60 text-foreground hover:bg-accent'
@@ -306,7 +388,7 @@
 								/>
 							</div>
 							<span
-								class="font-semibold whitespace-nowrap overflow-hidden transition-[width,opacity] duration-300 {isCollapsed
+								class="font-semibold whitespace-nowrap overflow-hidden transition-[width,opacity] duration-300 {collapsed
 									? 'w-0 opacity-0 hidden'
 									: 'w-auto opacity-100 ml-1'}"
 							>
@@ -314,7 +396,7 @@
 							</span>
 							{#if activeWorkCount > 0}
 								<span
-									class="absolute flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none {isCollapsed
+									class="absolute flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold leading-none {collapsed
 										? '-right-1 -top-1'
 										: 'right-2'} {urgentWorkCount > 0
 										? 'bg-destructive text-destructive-foreground'
@@ -325,7 +407,7 @@
 							{/if}
 						</Button>
 					</Tooltip.Trigger>
-					{#if isCollapsed}
+					{#if collapsed}
 						<Tooltip.Content side="right" class="font-medium">งานของฉัน</Tooltip.Content>
 					{/if}
 				</Tooltip.Root>
@@ -333,7 +415,7 @@
 				<!-- Workspace Menu Sections -->
 				{#each workspaceSections as workspace (workspace.code)}
 					{@const WorkspaceIcon = getIconComponent(workspace.icon)}
-					{#if isCollapsed}
+					{#if collapsed}
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger
 								class={collapsedWorkspaceTriggerClass(workspace)}
@@ -371,7 +453,9 @@
 												)}
 											>
 												<Icon class="h-4 w-4" />
-												<span class="truncate">{item.name}</span>
+												<span class="min-w-0 whitespace-normal text-left lg:truncate"
+													>{item.name}</span
+												>
 											</DropdownMenu.Item>
 										{/each}
 									</DropdownMenu.Group>
@@ -399,7 +483,9 @@
 								aria-expanded={sectionExpanded(section)}
 							>
 								<SectionIcon class="h-4 w-4" />
-								<span class="min-w-0 flex-1 truncate text-left">{section.name}</span>
+								<span class="min-w-0 flex-1 whitespace-normal text-left lg:truncate"
+									>{section.name}</span
+								>
 								<ChevronDown
 									class={cn(
 										'ml-auto h-4 w-4 transition-transform',
@@ -421,7 +507,9 @@
 											class={navItemClass(item, true)}
 										>
 											<Icon class="h-4 w-4" />
-											<span class="truncate">{item.name}</span>
+											<span class="min-w-0 whitespace-normal text-left lg:truncate"
+												>{item.name}</span
+											>
 										</Button>
 									{/each}
 								</div>

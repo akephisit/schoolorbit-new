@@ -119,7 +119,7 @@ async function holdPageModule(page: Page, pathname: string) {
 }
 
 async function openSidebar(page: Page) {
-	const button = page.getByRole('button', { name: 'Open Menu', exact: true });
+	const button = page.getByRole('button', { name: 'บริการ', exact: true });
 	if (await button.isVisible()) await button.click();
 }
 
@@ -193,7 +193,9 @@ for (const width of [390, 1440])
 				await expect(source).toHaveText('งานของฉัน');
 				const sourceElement = await source.elementHandle();
 				await openSidebar(page);
-				const link = page.locator('aside').getByRole('link', { name: homeroomLabel, exact: true });
+				const link = page
+					.locator('aside')
+					.getByRole('link', { name: homeroomLabel, exact: true, includeHidden: true });
 				await expect(link).toHaveAttribute('href', `${homeroomPath}?academicYearId=${year}`);
 				await link.click();
 				await expect.poll(module.requested).toBe(true);
@@ -253,23 +255,30 @@ test('a superseded delayed module cannot replace the latest menu destination', a
 	}
 });
 
-test('canceling a real dirty form navigation retains the draft and committed selection', async ({
-	page
-}) => {
-	await mockNavigation(page);
-	await page.goto('/staff/correspondence/new');
-	const title = page.getByLabel('เรื่อง *', { exact: true });
-	await title.fill('ฉบับร่างที่ต้องเก็บไว้');
-	await page.locator('aside').getByRole('link', { name: homeroomLabel, exact: true }).click();
-	await expect(page.getByRole('alertdialog')).toContainText('มีข้อมูลที่ยังไม่ได้บันทึก');
-	await expect(page.getByTestId('menu-navigation-pending')).toHaveCount(0);
-	await page.getByRole('button', { name: 'อยู่หน้านี้ต่อ', exact: true }).click();
-	await expect(title).toHaveValue('ฉบับร่างที่ต้องเก็บไว้');
-	await expect(page).toHaveURL(/\/staff\/correspondence\/new$/);
-	await expect(
-		page.locator('aside').getByRole('link', { name: homeroomLabel, exact: true })
-	).not.toHaveAttribute('aria-busy');
-});
+for (const width of [390, 1440])
+	test(`${width}px: canceling a real dirty form navigation retains the draft and committed selection`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width, height: 900 });
+		await mockNavigation(page);
+		await page.goto('/staff/correspondence/new');
+		const title = page.getByLabel('เรื่อง *', { exact: true });
+		await title.fill('ฉบับร่างที่ต้องเก็บไว้');
+		const destination =
+			width === 390
+				? page
+						.getByRole('navigation', { name: 'เมนูหลักบุคลากร', exact: true })
+						.getByRole('link', { name: 'งานของฉัน', exact: true })
+				: page.locator('aside').getByRole('link', { name: homeroomLabel, exact: true });
+		await destination.click();
+		await expect(page.getByRole('alertdialog')).toContainText('มีข้อมูลที่ยังไม่ได้บันทึก');
+		await expect(page.getByTestId('menu-navigation-pending')).toHaveCount(0);
+		await page.getByRole('button', { name: 'อยู่หน้านี้ต่อ', exact: true }).click();
+		await expect(title).toHaveValue('ฉบับร่างที่ต้องเก็บไว้');
+		await expect(page).toHaveURL(/\/staff\/correspondence\/new$/);
+		await expect(destination).not.toHaveAttribute('aria-busy');
+		await expect(destination).not.toHaveAttribute('aria-current');
+	});
 
 test('same-path academic context and hash navigation keep the page-owned region', async ({
 	page

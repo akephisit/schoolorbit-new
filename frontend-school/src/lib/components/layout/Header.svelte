@@ -8,11 +8,18 @@
 	import { onMount } from 'svelte';
 
 	interface Props {
-		onMenuClick?: () => void;
+		onMenuClick?: (event: MouseEvent) => void;
 		sidebarCollapsed?: boolean;
+		showMobileMenu?: boolean;
+		mobileMenuOpen?: boolean;
 	}
 
-	let { onMenuClick, sidebarCollapsed = false }: Props = $props();
+	let {
+		onMenuClick,
+		sidebarCollapsed = false,
+		showMobileMenu = true,
+		mobileMenuOpen = false
+	}: Props = $props();
 
 	let isDarkMode = $state(false);
 
@@ -36,23 +43,25 @@
 </script>
 
 <header
-	class="sticky top-0 h-16 bg-card border-b border-border z-30 transition-[margin] duration-300 ease-in-out
+	class="sticky top-0 h-16 shrink-0 bg-card border-b border-border z-30 transition-[margin] duration-300 ease-in-out
 	{sidebarCollapsed ? 'lg:ml-0' : 'lg:ml-0'}"
 >
 	<div class="flex h-full items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
 		<!-- Left Section -->
-		<div class="flex shrink-0 items-center gap-3 lg:hidden">
-			<!-- Mobile Menu Button -->
-			<Button
-				variant="ghost"
-				size="icon"
-				onclick={onMenuClick}
-				class="lg:hidden"
-				aria-label="Open Menu"
-			>
-				<Menu class="w-5 h-5" />
-			</Button>
-		</div>
+		{#if showMobileMenu}<div class="flex shrink-0 items-center gap-3 lg:hidden">
+				<!-- Mobile Menu Button -->
+				<Button
+					variant="ghost"
+					size="icon"
+					onclick={onMenuClick}
+					class="lg:hidden"
+					aria-label="Open Menu"
+					aria-expanded={mobileMenuOpen}
+					aria-controls="app-sidebar"
+				>
+					<Menu class="w-5 h-5" />
+				</Button>
+			</div>{/if}
 
 		<div class="ml-auto min-w-0">
 			<AcademicContextSwitcher />

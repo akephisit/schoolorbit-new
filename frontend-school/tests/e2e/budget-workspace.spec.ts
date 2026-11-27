@@ -1111,7 +1111,7 @@ for (const viewport of [
 				await expect(page.getByTestId('budget-dashboard')).toContainText('9,928.00');
 				const sidebar = page.locator('aside');
 				const mobile = viewport.width === 390;
-				if (mobile) await page.getByRole('button', { name: 'Open Menu', exact: true }).tap();
+				if (mobile) await page.getByRole('button', { name: 'บริการ', exact: true }).tap();
 				const planning = sidebar.getByRole('button', { name: 'แผนงานและโครงการ', exact: true });
 				await expect(planning).toHaveAttribute('aria-expanded', 'true');
 				const finance = sidebar.getByRole('button', { name: 'การเงินและงบประมาณ', exact: true });
@@ -1130,7 +1130,7 @@ for (const viewport of [
 				await expect(
 					page.getByRole('navigation', { name: 'หน้ารายการงบประมาณ', exact: true })
 				).toBeVisible();
-				if (mobile) await page.getByRole('button', { name: 'Open Menu', exact: true }).tap();
+				if (mobile) await page.getByRole('button', { name: 'บริการ', exact: true }).tap();
 				await sidebar.getByRole('link', { name: 'ปรับงบประมาณและเงินยืม', exact: true }).focus();
 				await page.keyboard.press('Enter');
 				await expect(page).toHaveURL(/\/staff\/budget\/adjustments$/);
@@ -1138,7 +1138,7 @@ for (const viewport of [
 				await expect(
 					page.getByRole('navigation', { name: 'หน้ารายการงบประมาณ', exact: true })
 				).toBeVisible();
-				if (mobile) await page.getByRole('button', { name: 'Open Menu', exact: true }).tap();
+				if (mobile) await page.getByRole('button', { name: 'บริการ', exact: true }).tap();
 				if ((await planning.getAttribute('aria-expanded')) !== 'true')
 					await activate(planning, mobile);
 				await sidebar.getByRole('link', { name: 'รายงานงบประมาณ', exact: true }).focus();
