@@ -573,6 +573,16 @@
 			"notes": "Selected observation route region; cycle and minimal template summary depend only on identity, then read concurrently. Review rubric, timetable edit and evaluator options load on open with focused retries and stale/close supersession; typed actions patch only the observation."
 		},
 		{
+			"route": "staff/academic/supervision/calendar",
+			"wave": "admission-supervision",
+			"dataOwner": "route",
+			"preload": "none",
+			"context": "term_optional",
+			"status": "complete",
+			"backendOwner": "school-supervision",
+			"notes": "Staff-only read-only calendar uses published year and term options. The route loads one bounded Bangkok month grid with identity and scope fencing and a regional retry. Selection inside the month is local."
+		},
+		{
 			"route": "staff/academic/supervision/cycles",
 			"wave": "admission-supervision",
 			"dataOwner": "route",

@@ -140,7 +140,10 @@ async function mockAcademicContextApis(
 				return;
 			}
 
-			if (url.pathname === '/api/academic/context/options') {
+			if (
+				url.pathname === '/api/academic/context/options' ||
+				url.pathname === '/api/public/academic-context/options'
+			) {
 				await options.contextGate;
 				if (options.contextFailure) {
 					await fulfillJson(route, 'ไม่สามารถโหลดบริบทการศึกษาได้', 503);

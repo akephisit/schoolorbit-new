@@ -80,6 +80,8 @@ export async function mock(
 	page: Page,
 	options: {
 		permissions?: string[];
+		userType?: 'staff' | 'student' | 'parent';
+		denyStaffContext?: boolean;
 		menuGroups?: MenuGroup[];
 		cycleStatus?: SupervisionCycleStatus;
 		observationStartDate?: string | null;
@@ -270,7 +272,7 @@ export async function mock(
 					firstName: authFirstName,
 					displayName: `${authFirstName} ทดสอบ`,
 					lastName: 'ทดสอบ',
-					userType: 'staff',
+					userType: options.userType ?? 'staff',
 					status: 'active',
 					session: sessionState(Date.now(), { sessionId: authSessionId }),
 					profileImageFileId: null,
@@ -288,7 +290,12 @@ export async function mock(
 					contentType: 'text/event-stream',
 					body: ': connected\n\n'
 				});
-			if (resource === '/api/academic/context/options')
+			if (resource === '/api/academic/context/options' && options.denyStaffContext)
+				return reply(route, 'ไม่มีสิทธิ์ดูบริบทการศึกษา', 403);
+			if (
+				resource === '/api/academic/context/options' ||
+				resource === '/api/public/academic-context/options'
+			)
 				return reply(route, {
 					defaultAcademicYearId: year,
 					defaultAcademicTermId: options.term ? id(8) : null,

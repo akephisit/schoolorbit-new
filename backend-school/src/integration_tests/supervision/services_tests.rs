@@ -90,6 +90,270 @@ async fn migrated_pool_through(name: &str, connections: u32, version: i64) -> Pg
     pool
 }
 
+#[tokio::test]
+async fn supervision_calendar_is_staff_only_tenant_scoped_and_schedule_only() {
+    use crate::integration_tests::auth::session_http_tests::protected_router::ProtectedFixture;
+    use axum::{
+        body::{to_bytes, Body},
+        http::{header, Request, StatusCode},
+        response::Response,
+        Router,
+    };
+    use school_auth::session_crypto::RawSessionToken;
+    use serde_json::{json, Value};
+    use tower::ServiceExt;
+
+    async fn get(
+        app: &Router,
+        tenant: &str,
+        path: &str,
+        token: Option<&RawSessionToken>,
+    ) -> Response {
+        let mut request = Request::builder()
+            .uri(path)
+            .header(header::ORIGIN, format!("https://{tenant}.schoolorbit.test"));
+        if let Some(token) = token {
+            request = request.header(
+                header::COOKIE,
+                format!(
+                    "{}={}",
+                    school_auth::config::SESSION_COOKIE_NAME,
+                    token.encode().expose_for_cookie()
+                ),
+            );
+        }
+        app.clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn items(response: Response) -> Vec<Value> {
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, no-store"
+        );
+        let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let response: Value = serde_json::from_slice(&body).unwrap();
+        response["data"]["items"].as_array().unwrap().to_owned()
+    }
+
+    let pool = migrated_pool_with_connections("supervision_calendar_http", 4).await;
+    school_test_db::run_test_migrations(&pool).await;
+    let f = insert_fixture(&pool).await;
+    let auth =
+        ProtectedFixture::with_prepared_tenant_pool("supervision_calendar_http", pool.clone())
+            .await;
+    let app = crate::app::build_app(auth.application_state());
+    let staff = auth
+        .insert_user(&pool, "calendar-unprivileged-staff", "active")
+        .await;
+    let (_, staff_token) = auth.insert_session(&pool, staff, 222, false).await;
+
+    sqlx::query(
+        "UPDATE users SET title=NULL, first_name='', last_name='', title_en=NULL,
+        first_name_en=NULL, last_name_en=NULL, username='private-login-sentinel' WHERE id=$1",
+    )
+    .bind(f.second_evaluator_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE users SET title=NULL, first_name='Calendar', last_name='Teacher' WHERE id=$1",
+    )
+    .bind(f.teacher_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE users SET title=NULL, first_name='Calendar', last_name='Evaluator' WHERE id=$1",
+    )
+    .bind(f.evaluator_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let other_term = Uuid::new_v4();
+    sqlx::query("INSERT INTO academic_terms SELECT (jsonb_populate_record(NULL::academic_terms,to_jsonb(t)||jsonb_build_object(
+        'id',$2::uuid,'code','CALENDAR_OTHER','sequence_no',(SELECT max(sequence_no)+1 FROM academic_terms WHERE academic_year_id=t.academic_year_id),
+        'name','Another calendar term','status','planning'))).* FROM academic_terms t WHERE id=$1")
+        .bind(f.academic_term_id).bind(other_term).execute(&pool).await.unwrap();
+
+    let start: DateTime<Utc> = "2026-11-27T17:00:00Z".parse().unwrap();
+    let mut requested = None;
+    for (status, offset, term) in [
+        ("requested", 0, f.academic_term_id),
+        ("planned", 180, f.academic_term_id),
+        ("in_progress", 240, f.academic_term_id),
+        ("published", 300, f.academic_term_id),
+        ("acknowledged", 360, f.academic_term_id),
+        ("completed", 1439, f.academic_term_id),
+        ("returned", 60, f.academic_term_id),
+        ("cancelled", 120, f.academic_term_id),
+        ("planned", -1, f.academic_term_id),
+        ("planned", 1440, f.academic_term_id),
+        ("planned", 180, other_term),
+    ] {
+        let observed_user = if status == "completed" {
+            f.second_evaluator_id
+        } else {
+            f.teacher_id
+        };
+        let observation: Uuid = sqlx::query_scalar(
+            "INSERT INTO supervision_observations
+            (cycle_id,academic_year_id,academic_term_id,observed_user_id,template_id,status)
+            VALUES($1,$2,$3,$4,$5,$6) RETURNING id",
+        )
+        .bind(f.cycle.id)
+        .bind(f.cycle.academic_year_id)
+        .bind(term)
+        .bind(observed_user)
+        .bind(f.template.id)
+        .bind(status)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let period: Uuid = sqlx::query_scalar("INSERT INTO supervision_observation_periods
+            (observation_id,position,academic_year_id,academic_term_id,observed_at,manual_period_label,manual_reason,lesson_snapshot)
+            VALUES($1,1,$2,$3,$4,'Legacy label','private-reason-sentinel',
+            '{\"roomLabel\":\"private-room-sentinel\"}') RETURNING id")
+            .bind(observation).bind(f.cycle.academic_year_id).bind(term)
+            .bind(start + Duration::minutes(offset)).fetch_one(&pool).await.unwrap();
+        if status == "requested" {
+            requested = Some((observation, period));
+        }
+    }
+    let (requested_id, first_period) = requested.unwrap();
+    let second_period: Uuid = sqlx::query_scalar("INSERT INTO supervision_observation_periods
+        (observation_id,position,academic_year_id,academic_term_id,observed_at,ends_at,manual_period_label,lesson_snapshot)
+        VALUES($1,2,$2,$3,$4,$5,'Outdated label','{\"periodLabel\":\"Saved label\"}') RETURNING id")
+        .bind(requested_id).bind(f.cycle.academic_year_id).bind(f.academic_term_id)
+        .bind(start + Duration::minutes(30)).bind(start + Duration::minutes(75)).fetch_one(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO supervision_evaluators (observation_id,evaluator_user_id,role_label)
+        VALUES ($1,$2,'private-role-sentinel'),($1,$3,'private-role-sentinel')",
+    )
+    .bind(requested_id)
+    .bind(f.evaluator_id)
+    .bind(f.second_evaluator_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let calendar_url = |year, term: Option<Uuid>, from, to| {
+        let term = term
+            .map(|id| format!("&academicTermId={id}"))
+            .unwrap_or_default();
+        format!("/api/supervision/calendar?academicYearId={year}{term}&fromDate={from}&toDate={to}")
+    };
+    let year = f.cycle.academic_year_id;
+    let term = Some(f.academic_term_id);
+    let date = "2026-11-28";
+    let path = calendar_url(year, term, date, date);
+    let result = items(get(&app, "tenant-a", &path, Some(&staff_token)).await).await;
+    assert_eq!(result.len(), 6);
+    assert_eq!(
+        result[0],
+        json!({
+            "id": requested_id, "cycleId": f.cycle.id, "cycleTitle": f.cycle.title,
+            "observedDisplayName": "Calendar Teacher", "status": "requested",
+            "evaluatorDisplayNames": ["Calendar Evaluator"],
+            "periods": [
+                {"id":first_period,"position":1,"observedAt":"2026-11-27T17:00:00Z","endsAt":null,"periodLabel":"Legacy label"},
+                {"id":second_period,"position":2,"observedAt":"2026-11-27T17:30:00Z","endsAt":"2026-11-27T18:15:00Z","periodLabel":"Saved label"}
+            ]
+        })
+    );
+    assert!(result[1..]
+        .iter()
+        .all(|entry| entry["status"] == "confirmed"));
+    assert_eq!(result[5]["observedDisplayName"], Value::Null);
+    assert_eq!(
+        result[5]["periods"][0]["observedAt"],
+        "2026-11-28T16:59:00Z"
+    );
+
+    for (path, count) in [
+        (calendar_url(year, None, date, date), 7),
+        (calendar_url(year, Some(other_term), date, date), 1),
+        (calendar_url(Uuid::new_v4(), term, date, date), 0),
+        (calendar_url(year, term, date, "2027-01-08"), 7),
+    ] {
+        assert_eq!(
+            items(get(&app, "tenant-a", &path, Some(&staff_token)).await)
+                .await
+                .len(),
+            count,
+            "{path}"
+        );
+    }
+    for path in [
+        calendar_url(year, term, date, "2027-01-09"),
+        calendar_url(year, term, date, "2026-11-27"),
+        calendar_url(year, term, "2026-11-8", date),
+        format!("/api/supervision/calendar?academicYearId={year}&fromDate={date}"),
+        format!("{path}&tenantId=other-school"),
+    ] {
+        let response = get(&app, "tenant-a", &path, Some(&staff_token)).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+    }
+
+    assert_eq!(
+        get(&app, "tenant-a", &path, None).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        get(
+            &app,
+            "tenant-a",
+            &format!("/api/supervision/observations/{requested_id}"),
+            Some(&staff_token)
+        )
+        .await
+        .status(),
+        StatusCode::FORBIDDEN
+    );
+    for (user_type, token_byte) in [("student", 223), ("parent", 224)] {
+        let user = auth
+            .insert_user(&pool, &format!("calendar-{user_type}"), "active")
+            .await;
+        sqlx::query("UPDATE users SET user_type=$2 WHERE id=$1")
+            .bind(user)
+            .bind(user_type)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let (_, token) = auth.insert_session(&pool, user, token_byte, false).await;
+        assert_eq!(
+            get(&app, "tenant-a", &path, Some(&token)).await.status(),
+            StatusCode::FORBIDDEN
+        );
+    }
+    assert_eq!(
+        get(&app, "tenant-b", &path, Some(&staff_token))
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let other_pool = auth
+        .runtime
+        .pool_manager
+        .get_pool("test-pool://session-router-tenant-b", "tenant-b")
+        .await
+        .unwrap();
+    let other_staff = auth
+        .insert_user(&other_pool, "calendar-other-tenant-staff", "active")
+        .await;
+    let (_, other_token) = auth
+        .insert_session(&other_pool, other_staff, 225, false)
+        .await;
+    assert!(
+        items(get(&app, "tenant-b", &path, Some(&other_token)).await)
+            .await
+            .is_empty()
+    );
+}
+
 async fn test_user(pool: &PgPool, role: &str) -> Uuid {
     let unique = Uuid::new_v4();
     create_test_user(

@@ -10,6 +10,8 @@ export type { AcademicContextOptionsResponse, AcademicTermOption, AcademicYearOp
 export type AcademicContextRequirement =
 	'none' | 'year_required' | 'term_required' | 'term_optional';
 
+export type AcademicContextOptionsSource = 'staff' | 'published';
+
 export type SelectedAcademicContext = {
 	academicYearId: string | null;
 	academicTermId: string | null;

@@ -1,10 +1,18 @@
-import { listAcademicContextOptions } from '#lib/api/academic-context.js';
+import {
+	listAcademicContextOptions,
+	listPublicAcademicContextOptions
+} from '#lib/api/academic-context.js';
 import { createContext } from 'svelte';
 import { get, writable } from 'svelte/store';
-import { getAcademicContextRequirement, resolveAcademicContextUrl } from './route-context';
+import {
+	getAcademicContextOptionsSource,
+	getAcademicContextRequirement,
+	resolveAcademicContextUrl
+} from './route-context';
 import type {
 	AcademicContextNavigate,
 	AcademicContextOptionsResponse,
+	AcademicContextOptionsSource,
 	AcademicContextState,
 	AcademicContextStore
 } from './types';
@@ -48,19 +56,31 @@ function clearAcademicContextDirtySources(): void {
 type AcademicContextStoreDependencies = {
 	navigate: AcademicContextNavigate;
 	loadOptions?: () => Promise<AcademicContextOptionsResponse>;
+	loadPublishedOptions?: () => Promise<AcademicContextOptionsResponse>;
 };
 
 export function createAcademicContextStore({
 	navigate,
-	loadOptions = listAcademicContextOptions
+	loadOptions = listAcademicContextOptions,
+	loadPublishedOptions = listPublicAcademicContextOptions
 }: AcademicContextStoreDependencies): AcademicContextStore {
 	const state = writable<AcademicContextState>(initialState());
-	let cachedOptions: Promise<AcademicContextOptionsResponse> | null = null;
+	const sources: Record<
+		AcademicContextOptionsSource,
+		{
+			request: Promise<AcademicContextOptionsResponse> | null;
+			revision: number;
+			load: () => Promise<AcademicContextOptionsResponse>;
+		}
+	> = {
+		staff: { request: null, revision: 0, load: loadOptions },
+		published: { request: null, revision: 0, load: loadPublishedOptions }
+	};
+	let activeSource: AcademicContextOptionsSource = 'staff';
 	let latestRouteId: string | null = null;
 	let latestUrl: URL | null = null;
 	let revision = 0;
 	let sessionGeneration = 0;
-	let optionsRevision = 0;
 	type RepairNavigation = {
 		generation: number;
 		sourceUrl: string;
@@ -95,43 +115,53 @@ export function createAcademicContextStore({
 		return operation.promise;
 	}
 
-	function optionsForSession(): Promise<AcademicContextOptionsResponse> {
-		if (cachedOptions) return cachedOptions;
+	function optionsForSession(
+		source: AcademicContextOptionsSource
+	): Promise<AcademicContextOptionsResponse> {
+		const options = sources[source];
+		if (options.request) return options.request;
 		const currentGeneration = sessionGeneration;
-		const currentOptionsRevision = optionsRevision;
-		const request = loadOptions().then(
-			(options) =>
-				currentGeneration === sessionGeneration && currentOptionsRevision !== optionsRevision
-					? optionsForSession()
-					: options,
+		const sourceRevision = options.revision;
+		const request = options.load().then(
+			(response) =>
+				currentGeneration === sessionGeneration && sourceRevision !== options.revision
+					? optionsForSession(source)
+					: response,
 			(error: unknown) => {
-				if (currentGeneration === sessionGeneration && currentOptionsRevision !== optionsRevision)
-					return optionsForSession();
-				if (cachedOptions === request) cachedOptions = null;
+				if (currentGeneration === sessionGeneration && sourceRevision !== options.revision)
+					return optionsForSession(source);
+				if (options.request === request) options.request = null;
 				throw error;
 			}
 		);
-		cachedOptions = request;
+		options.request = request;
 		return request;
 	}
 
+	function invalidateOptions(source: AcademicContextOptionsSource): number {
+		const options = sources[source];
+		options.request = null;
+		return ++options.revision;
+	}
+
 	function replaceOptions(options: AcademicContextOptionsResponse): void {
-		optionsRevision += 1;
-		cachedOptions = Promise.resolve(options);
+		invalidateOptions('published');
+		sources.staff.revision += 1;
+		sources.staff.request = Promise.resolve(options);
 		// School settings never navigate an existing form or replace its explicit context.
-		state.update((current) => ({ ...current, options }));
+		if (activeSource === 'staff') state.update((current) => ({ ...current, options }));
 	}
 
 	async function refreshOptions(): Promise<boolean> {
 		const currentGeneration = sessionGeneration;
-		const refreshRevision = ++optionsRevision;
-		cachedOptions = null;
+		invalidateOptions('published');
+		const refreshRevision = invalidateOptions('staff');
 		try {
-			const options = await optionsForSession();
-			if (currentGeneration !== sessionGeneration || refreshRevision !== optionsRevision)
+			const options = await optionsForSession('staff');
+			if (currentGeneration !== sessionGeneration || refreshRevision !== sources.staff.revision)
 				return false;
 			// Refresh discovery only. Explicit selections and open drafts retain their owners.
-			state.update((current) => ({ ...current, options }));
+			if (activeSource === 'staff') state.update((current) => ({ ...current, options }));
 			return true;
 		} catch {
 			// The mutation already succeeded. Keep usable discovery and retry the read on
@@ -143,10 +173,12 @@ export function createAcademicContextStore({
 	async function primeOptions(): Promise<void> {
 		const currentGeneration = sessionGeneration;
 		try {
-			const options = await optionsForSession();
+			const options = await optionsForSession('staff');
 			if (currentGeneration !== sessionGeneration) return;
 			state.update((current) =>
-				current.requirement === 'none' ? { ...current, options } : current
+				current.requirement === 'none' && activeSource === 'staff'
+					? { ...current, options }
+					: current
 			);
 		} catch {
 			// An unrelated route stays hidden; a later prime or route sync retries the read.
@@ -159,13 +191,17 @@ export function createAcademicContextStore({
 		latestRouteId = routeId;
 		latestUrl = new URL(url);
 		const requirement = getAcademicContextRequirement(routeId);
+		const source = getAcademicContextOptionsSource(routeId);
+		const sourceChanged = activeSource !== source;
+		const previous = sourceChanged ? initialState() : get(state);
+		activeSource = source;
 
 		if (requirement === 'none') {
-			state.update((current) => ({ ...current, requirement: 'none', status: 'hidden' }));
+			state.set({ ...previous, requirement: 'none', status: 'hidden' });
+			if (sourceChanged && sources.staff.request) void primeOptions();
 			return;
 		}
 
-		const previous = get(state);
 		state.set({
 			requirement,
 			options: previous.options,
@@ -175,7 +211,7 @@ export function createAcademicContextStore({
 
 		let options: AcademicContextOptionsResponse;
 		try {
-			options = await optionsForSession();
+			options = await optionsForSession(source);
 		} catch {
 			if (currentRevision !== revision) return;
 			state.set({
@@ -248,8 +284,7 @@ export function createAcademicContextStore({
 	}
 
 	async function retry(): Promise<void> {
-		optionsRevision += 1;
-		cachedOptions = null;
+		invalidateOptions(activeSource);
 		if (latestUrl) await sync(latestRouteId, latestUrl);
 	}
 
@@ -257,8 +292,9 @@ export function createAcademicContextStore({
 		repairNavigation = null;
 		revision += 1;
 		sessionGeneration += 1;
-		optionsRevision += 1;
-		cachedOptions = null;
+		invalidateOptions('staff');
+		invalidateOptions('published');
+		activeSource = 'staff';
 		latestRouteId = null;
 		latestUrl = null;
 		clearAcademicContextDirtySources();

@@ -343,6 +343,66 @@ pub struct SupervisionObservationTimetableQuery {
     pub week_start_date: NaiveDate,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(IntoParams, ToSchema))]
+#[cfg_attr(feature = "api-docs", into_params(parameter_in = Query))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SupervisionCalendarQuery {
+    pub academic_year_id: Uuid,
+    pub academic_term_id: Option<Uuid>,
+    /// First Bangkok calendar date, inclusive.
+    #[serde(deserialize_with = "deserialize_calendar_date")]
+    pub from_date: NaiveDate,
+    /// Last Bangkok calendar date, inclusive. The range may contain up to 42 dates.
+    #[serde(deserialize_with = "deserialize_calendar_date")]
+    pub to_date: NaiveDate,
+}
+
+fn deserialize_calendar_date<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<NaiveDate, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    NaiveDate::parse_from_str(&value, "%Y-%m-%d")
+        .ok()
+        .filter(|date| value.len() == 10 && date.format("%Y-%m-%d").to_string() == value)
+        .ok_or_else(|| serde::de::Error::custom("expected a date in YYYY-MM-DD format"))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SupervisionCalendarStatus {
+    Requested,
+    Confirmed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionCalendarPeriod {
+    pub id: Uuid,
+    pub position: i32,
+    pub observed_at: DateTime<Utc>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub ends_at: Option<DateTime<Utc>>,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub period_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "api-docs", derive(ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisionCalendarEntry {
+    pub id: Uuid,
+    pub cycle_id: Uuid,
+    pub cycle_title: String,
+    #[cfg_attr(feature = "api-docs", schema(required = true))]
+    pub observed_display_name: Option<String>,
+    pub status: SupervisionCalendarStatus,
+    pub evaluator_display_names: Vec<String>,
+    pub periods: Vec<SupervisionCalendarPeriod>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "api-docs", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]

@@ -17,6 +17,7 @@
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import {
 		academicContextualMenuPath,
+		getAcademicContextOptionsSource,
 		getAcademicContextRequirement
 	} from '#lib/academic-context/route-context.js';
 	import {
@@ -51,13 +52,14 @@
 				sections: workspace.sections
 					.map((section) => ({
 						...section,
-						items: section.items.filter(
-							(item) =>
+						items: section.items.filter((item) => {
+							const routeId = `/(app)${new URL(item.path, page.url.href).pathname}`;
+							return (
 								$academicContext.options !== null ||
-								getAcademicContextRequirement(
-									`/(app)${new URL(item.path, page.url.href).pathname}`
-								) === 'none'
-						)
+								getAcademicContextRequirement(routeId) === 'none' ||
+								getAcademicContextOptionsSource(routeId) === 'published'
+							);
+						})
 					}))
 					.filter((section) => section.items.length > 0)
 			}))

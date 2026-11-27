@@ -6,6 +6,7 @@ use axum::{
 
 pub fn protected_routes() -> Router<SupervisionHttpState> {
     Router::new()
+        .route("/calendar", get(handlers::list_calendar))
         .route(
             "/cycles",
             get(handlers::list_cycles).post(handlers::create_cycle),
