@@ -106,7 +106,7 @@
 
 	type AuthStatus = 'checking' | 'authenticated' | 'unavailable' | 'redirecting';
 
-	let sidebarRef = $state<{ toggleMobileSidebar?: () => void }>();
+	let sidebarRef = $state<{ toggleMobileSidebar?: (trigger: HTMLButtonElement) => void }>();
 	let isSidebarCollapsed = $state($uiPreferences.sidebarCollapsed);
 	let isMobileSidebarOpen = $state(false);
 	const isStaff = $derived($authStore.user?.user_type === 'staff');
@@ -126,9 +126,12 @@
 		)
 	);
 
-	function handleMenuClick() {
-		if (sidebarRef?.toggleMobileSidebar) {
-			sidebarRef.toggleMobileSidebar();
+	function handleMenuClick(event: MouseEvent) {
+		if (event.currentTarget instanceof HTMLButtonElement) {
+			if (isStaff && !isMobileSidebarOpen && $academicContext.optionsBySource.staff === null) {
+				void academicContext.primeOptions();
+			}
+			sidebarRef?.toggleMobileSidebar?.(event.currentTarget);
 		}
 	}
 

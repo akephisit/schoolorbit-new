@@ -8,7 +8,7 @@
 	import { onMount } from 'svelte';
 
 	interface Props {
-		onMenuClick?: () => void;
+		onMenuClick?: (event: MouseEvent) => void;
 		sidebarCollapsed?: boolean;
 		showMobileMenu?: boolean;
 		mobileMenuOpen?: boolean;

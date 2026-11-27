@@ -12,7 +12,8 @@
 		academicContextualMenuPath,
 		getAcademicContextOptionsSource,
 		getAcademicContextRequirement,
-		readAcademicContextFromUrl
+		readAcademicContextFromUrl,
+		shouldHoldAcademicContextPage
 	} from '#lib/academic-context/route-context.js';
 	import { cn } from '#lib/utils.js';
 
@@ -21,7 +22,7 @@
 		servicesOpen = false,
 		pendingPath = null
 	}: {
-		onServicesClick: () => void;
+		onServicesClick: (event: MouseEvent) => void;
 		servicesOpen?: boolean;
 		pendingPath?: string | null;
 	} = $props();
@@ -69,6 +70,14 @@
 		);
 	}
 
+	function destinationPending(path: string, href: string): boolean {
+		return shouldHoldAcademicContextPage(
+			getAcademicContextRequirement(`/(app)${path}`),
+			new URL(href, page.url.href),
+			'loading'
+		);
+	}
+
 	function controlClass(selected: boolean): string {
 		return cn(
 			'h-auto min-h-14 min-w-0 w-full flex-col gap-1 rounded-lg px-1 py-2 text-xs transition-none',
@@ -86,9 +95,11 @@
 	<div class="grid grid-flow-col auto-cols-fr gap-1">
 		{#each visibleDestinations as item (item.path)}
 			{@const selected = isActive(item.path, selectedPath)}
+			{@const href = destinationHref(item.path)}
 			<Button
-				href={destinationHref(item.path)}
-				disabled={item.path === '/staff/timetable' && !appMenu.loaded}
+				{href}
+				disabled={(item.path === '/staff/timetable' && !appMenu.loaded) ||
+					destinationPending(item.path, href)}
 				variant="ghost"
 				class={controlClass(selected)}
 				aria-current={isActive(item.path, page.url.pathname) ? 'page' : undefined}

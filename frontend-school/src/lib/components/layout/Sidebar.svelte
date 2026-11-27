@@ -38,10 +38,10 @@
 	const collapsed = $derived(isDesktop && isCollapsed);
 	let sidebarElement: HTMLElement;
 	let closeButton = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
-	let focusBeforeOpen: Element | null = null;
+	let focusBeforeOpen: HTMLButtonElement | null = null;
 
 	onMount(() => {
-		const media = window.matchMedia('(min-width: 1024px)');
+		const media = window.matchMedia('(min-width: 64rem)');
 		const updateViewport = () => {
 			isDesktop = media.matches;
 			if (isDesktop) isMobileOpen = false;
@@ -177,7 +177,7 @@
 
 	function navItemClass(item: SidebarMenuItem, nested = false): string {
 		return cn(
-			'relative min-h-11 lg:min-h-9 h-auto w-full justify-start gap-2 rounded-md px-2 text-sm transition-none',
+			'relative h-9 w-full justify-start gap-2 rounded-md px-2 text-sm transition-none',
 			nested && 'pl-3',
 			isActive(item.path)
 				? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground dark:hover:bg-primary/90 dark:hover:text-primary-foreground'
@@ -187,7 +187,7 @@
 
 	function sectionTriggerClass(section: SidebarMenuSection): string {
 		return cn(
-			'min-h-11 lg:min-h-9 h-auto w-full justify-start gap-2 rounded-md px-2 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+			'h-9 w-full justify-start gap-2 rounded-md px-2 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-accent-foreground',
 			sectionHasActiveItem(section) && 'text-foreground'
 		);
 	}
@@ -263,8 +263,8 @@
 		isCollapsed = !isCollapsed;
 	}
 
-	export function toggleMobileSidebar() {
-		if (!isMobileOpen) focusBeforeOpen = document.activeElement;
+	export function toggleMobileSidebar(trigger: HTMLButtonElement) {
+		if (!isMobileOpen) focusBeforeOpen = trigger;
 		isMobileOpen = !isMobileOpen;
 	}
 </script>
@@ -273,10 +273,10 @@
 {#if isMobileOpen}
 	<div
 		class="fixed inset-0 bg-black/50 z-40 lg:hidden"
-		onclick={toggleMobileSidebar}
+		onclick={() => (isMobileOpen = false)}
 		onkeydown={(e) => {
 			if (e.key === 'Enter' || e.key === ' ' || e.key === 'Escape') {
-				toggleMobileSidebar();
+				isMobileOpen = false;
 			}
 		}}
 		role="button"
