@@ -21,6 +21,7 @@ export type SupervisionWorkspaceRouteData = {
 	cycles: Promise<RouteLoadResult<SupervisionCycle[]>> | null;
 	templates: Promise<RouteLoadResult<SupervisionTemplateSummary[]>> | null;
 	observations: Promise<RouteLoadResult<ObservationRegion>> | null;
+	observationsStartedAt?: number;
 	progress?: Promise<RouteLoadResult<CycleProgressRegion>> | null;
 	teacherStatus: Promise<RouteLoadResult<TeacherStatusRegion>> | null;
 };

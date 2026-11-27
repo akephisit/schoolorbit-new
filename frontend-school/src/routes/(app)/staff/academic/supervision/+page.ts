@@ -36,6 +36,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		access,
 		waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS)
 	]).then(([route, read]) => route && read);
+	const observationsStartedAt = performance.now();
 	const observations =
 		academicYearId && academicTermId
 			? captureRouteLoad(
@@ -84,6 +85,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		cycles,
 		templates,
 		observations,
+		observationsStartedAt,
 		teacherStatus: null
 	};
 };

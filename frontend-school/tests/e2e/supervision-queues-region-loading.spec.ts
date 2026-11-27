@@ -9,6 +9,7 @@ import {
 	nextYear,
 	templateId,
 	timetableOption,
+	savedPeriod,
 	path,
 	mock,
 	navigate
@@ -42,8 +43,7 @@ const supervisionMenu: MenuGroup[] = [
 				code: 'supervision',
 				name: 'นิเทศการสอน',
 				path: minePath,
-				icon: 'ClipboardCheck',
-				displayOrder: 1
+				icon: 'ClipboardCheck'
 			}
 		]
 	}
@@ -197,48 +197,157 @@ test('narrow Mine return keeps its list and counts through history and held read
 	await expect(list.locator('[data-supervision-own-list]')).toHaveCount(0);
 });
 
-test('Mine does not replay its old counts while a request change is pending in another tab', async ({
-	page
-}) => {
-	const api = await mock(page, { term: true, hold: 'patch' });
-	const navigation = page.getByRole('navigation', { name: 'เมนูนิเทศการสอน' });
-	const metrics = page.getByTestId('supervision-personal-status');
-	const list = page.getByTestId('supervision-observations');
-	const gate = deferred();
-	const returnPath = `${observationPath}/${id(30)}/return-request`;
-	await page.goto(personalHref);
-	await expect(
-		metrics.locator('dt', { hasText: /^รออนุมัติคำขอ$/ }).locator('xpath=following-sibling::dd')
-	).toHaveText('1');
-	await navigation.getByRole('link', { name: 'คำขอจอง', exact: true }).click();
-	const submitted = page.waitForRequest(
-		(request) => new URL(request.url()).pathname === returnPath
-	);
-	await page.getByRole('button', { name: 'ส่งกลับคำขอ', exact: true }).click();
-	await submitted;
-	await page.route(
-		(url) => url.pathname === observationPath,
-		async (route) => {
-			await gate.promise;
-			await route.fallback();
-		},
-		{ times: 1 }
-	);
-	try {
-		await navigation.getByRole('link', { name: 'ของฉัน', exact: true }).click();
-		await expect(list.getByRole('status', { name: 'กำลังโหลดรายการนิเทศ' })).toBeVisible();
-		await expect(list.locator('[data-supervision-own-list]')).toHaveCount(0);
-		const returned = page.waitForResponse(
-			(response) => new URL(response.url()).pathname === returnPath
+for (const first of ['read', 'write'] as const) {
+	test(`Mine reconciles a read overlapping a request change when the ${first} finishes first`, async ({
+		page
+	}) => {
+		const api = await mock(page, { term: true, hold: 'patch' });
+		const navigation = page.getByRole('navigation', { name: 'เมนูนิเทศการสอน' });
+		const metrics = page.getByTestId('supervision-personal-status');
+		const list = page.getByTestId('supervision-observations');
+		const gate = deferred();
+		const returnPath = `${observationPath}/${id(30)}/return-request`;
+		await page.goto(personalHref);
+		await expect(
+			metrics.locator('dt', { hasText: /^รออนุมัติคำขอ$/ }).locator('xpath=following-sibling::dd')
+		).toHaveText('1');
+		await navigation.getByRole('link', { name: 'คำขอจอง', exact: true }).click();
+		const submitted = page.waitForRequest(
+			(request) => new URL(request.url()).pathname === returnPath
 		);
-		api.release();
-		await returned;
-	} finally {
-		api.release();
-		gate.release();
-	}
-	await expect(list.getByText('ส่งกลับให้แก้ไข', { exact: true })).toBeVisible();
-});
+		await page.getByRole('button', { name: 'ส่งกลับคำขอ', exact: true }).click();
+		await submitted;
+		await page.route(
+			(url) => url.pathname === observationPath,
+			async (route) => {
+				await gate.promise;
+				await route.fallback();
+			},
+			{ times: 1 }
+		);
+		try {
+			await navigation.getByRole('link', { name: 'ของฉัน', exact: true }).click();
+			await expect(list.getByRole('status', { name: 'กำลังโหลดรายการนิเทศ' })).toBeVisible();
+			await expect(list.locator('[data-supervision-own-list]')).toHaveCount(0);
+			const returned = page.waitForResponse(
+				(response) => new URL(response.url()).pathname === returnPath
+			);
+			if (first === 'read') {
+				const received = page.waitForResponse(
+					(response) => new URL(response.url()).pathname === observationPath
+				);
+				gate.release();
+				await received;
+				await expect(list).toHaveAttribute('aria-busy', 'true');
+				await expect(list.locator('[data-supervision-own-list]')).toHaveCount(0);
+			}
+			api.release();
+			await returned;
+		} finally {
+			api.release();
+			gate.release();
+		}
+		await expect(list.getByText('ส่งกลับให้แก้ไข', { exact: true })).toBeVisible();
+		await expect(list).toHaveAttribute('aria-busy', 'false');
+		expect(api.count(observationPath)).toBe(4);
+	});
+}
+
+for (const warm of [false, true]) {
+	test(`booking patches Mine immediately with a ${warm ? 'warm' : 'fresh'} list`, async ({
+		page
+	}) => {
+		const api = await mock(page, {
+			term: true,
+			permissions: [...own, 'supervision.manage.school'],
+			bookingItems: [timetableOption(0)]
+		});
+		const initial = api.observation();
+		const booked = {
+			...initial,
+			id: id(81),
+			periods: [
+				savedPeriod({ observationId: id(81), lessonSnapshot: { subjectName: 'คาบที่เพิ่งจอง' } })
+			]
+		};
+		const other = {
+			...initial,
+			id: id(82),
+			periods: [
+				savedPeriod({
+					observationId: id(82),
+					lessonSnapshot: { subjectName: 'รายการอื่นจากการอ่านล่าสุด' }
+				})
+			]
+		};
+		const oldRead = deferred();
+		const newRead = deferred();
+		let bookedOnServer = false;
+		let holdNext = false;
+		let afterBookingReads = 0;
+		await page.route(`**${observationPath}/requests`, (route) => {
+			bookedOnServer = true;
+			return route.fulfill({ json: { success: true, data: booked } });
+		});
+		await page.route(
+			(url) => url.pathname === observationPath,
+			async (route) => {
+				if (bookedOnServer) {
+					afterBookingReads += 1;
+					await newRead.promise;
+					return route.fulfill({
+						json: { success: true, data: { items: [initial, booked, other] } }
+					});
+				}
+				if (holdNext) {
+					holdNext = false;
+					await oldRead.promise;
+					return route.fulfill({ json: { success: true, data: { items: [initial] } } });
+				}
+				await route.fallback();
+			}
+		);
+		const navigation = page.getByRole('navigation', { name: 'เมนูนิเทศการสอน' });
+		const list = page.getByTestId('supervision-observations');
+		const requested = page
+			.getByTestId('supervision-personal-status')
+			.locator('dt', { hasText: /^รออนุมัติคำขอ$/ })
+			.locator('xpath=following-sibling::dd');
+		await page.goto(personalHref);
+		await expect(requested).toHaveText('1');
+		try {
+			if (warm) {
+				await navigation.getByRole('link', { name: 'แบบประเมิน', exact: true }).click();
+				holdNext = true;
+				await navigation.getByRole('link', { name: 'ของฉัน', exact: true }).click();
+				await expect(list).toHaveAttribute('aria-busy', 'true');
+				await expect(requested).toHaveText('1');
+			}
+			await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
+			await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
+			await page.getByRole('button', { name: 'ส่งคำขอจอง', exact: true }).click();
+			await expect(
+				list.getByRole('heading', { name: 'คาบที่เพิ่งจอง', exact: true })
+			).toBeVisible();
+			await expect(requested).toHaveText('2');
+			if (warm) {
+				await expect(list).toHaveAttribute('aria-busy', 'true');
+				await expect.poll(() => afterBookingReads).toBe(1);
+			}
+		} finally {
+			oldRead.release();
+			newRead.release();
+		}
+		if (warm) {
+			await expect(
+				list.getByRole('heading', { name: 'รายการอื่นจากการอ่านล่าสุด', exact: true })
+			).toBeVisible();
+			await expect(requested).toHaveText('3');
+		}
+		await expect(list).toHaveAttribute('aria-busy', 'false');
+		expect(afterBookingReads).toBe(warm ? 1 : 0);
+	});
+}
 
 for (const hold of ['cycles', 'summaries'] as const) {
 	test(`requests list renders independently of delayed ${hold}`, async ({ page }) => {

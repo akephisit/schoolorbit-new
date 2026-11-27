@@ -18,8 +18,12 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import type { SupervisionWorkspaceRouteData } from '#lib/supervision/workspace-route-data.js';
+	import type {
+		ObservationRegion,
+		SupervisionWorkspaceRouteData
+	} from '#lib/supervision/workspace-route-data.js';
 	import { usePersonalSupervisionReturn } from '#lib/supervision/personal-return.js';
+	import { captureRouteLoad, type RouteLoadResult } from '#lib/navigation/route-load.js';
 	import {
 		resolveSupervisionRead,
 		SUPERVISION_SCHOOL_REPORT_PERMISSIONS
@@ -554,21 +558,16 @@
 			teacherStatusError = '';
 			progressError = '';
 			const observationRead = observationRequest.begin();
-			const applyRead = captureObservationRead(scope);
+			const applyRead = captureObservationRead(
+				scope,
+				() =>
+					observationRequest.isCurrent(observationRead.revision) &&
+					key === currentManagementContext(),
+				source.observationsStartedAt
+			);
 			if (source.observations)
 				void Promise.all([source.identity, source.observations]).then(([owner, result]) => {
-					if (
-						owner !== appIdentityKey() ||
-						key !== currentManagementContext() ||
-						!observationRequest.isCurrent(observationRead.revision)
-					)
-						return;
-					observationsLoading = false;
-					if (!result.ok) {
-						observationsError = result.error;
-						return;
-					}
-					applyRead(result.data.items, result.data.readable);
+					if (owner === appIdentityKey()) applyRead(result);
 				});
 			const cycleRead = managementCyclesRequest.begin();
 			const templateRead = managementTemplatesRequest.begin();
@@ -954,9 +953,32 @@
 	function shouldLoadObservations() {
 		return routeData.observations !== null;
 	}
-	function captureObservationRead(scope: string | null) {
-		const revision = personalReturn?.captureRead();
-		return (items: SupervisionObservation[], readable: boolean) => {
+	function captureObservationRead(
+		scope: string | null,
+		ownsRead: () => boolean,
+		startedAt?: number
+	) {
+		const revision = section === 'mine' ? personalReturn?.captureRead() : undefined;
+		return (result: RouteLoadResult<ObservationRegion>) => {
+			if (!ownsRead()) return;
+			const denied = result.ok && !result.data.readable;
+			if (
+				!denied &&
+				revision !== undefined &&
+				personalReturn &&
+				!personalReturn.isCurrentRead(revision, startedAt)
+			) {
+				void personalReturn.whenSettled().then(() => {
+					if (ownsRead()) void retryObservations();
+				});
+				return;
+			}
+			observationsLoading = false;
+			if (!result.ok) {
+				observationsError = result.error;
+				return;
+			}
+			const { items, readable } = result.data;
 			observationsFromSnapshot = false;
 			if (scope && scope === personalScope && revision !== undefined && personalReturn) {
 				if (readable) personalReturn.remember(scope, currentUserId, items, revision);
@@ -992,29 +1014,19 @@
 		if (!academicYearId || !canReadObservations) return;
 		const { revision, signal } = observationRequest.begin();
 		const owner = currentManagementContext();
-		const applyRead = captureObservationRead(personalScope);
+		const applyRead = captureObservationRead(
+			personalScope,
+			() => observationRequest.isCurrent(revision) && owner === currentManagementContext()
+		);
 		observationsLoading = true;
 		observationsError = '';
-		try {
-			const read = listSupervisionObservations(
+		const read = resolveSupervisionRead(
+			listSupervisionObservations(
 				{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
 				{ signal }
-			);
-			const items = await resolveSupervisionRead(read);
-
-			if (owner !== currentManagementContext() || !observationRequest.isCurrent(revision)) return;
-			applyRead(items ?? [], items !== null);
-		} catch (error) {
-			if (
-				!isAbortError(error) &&
-				owner === currentManagementContext() &&
-				observationRequest.isCurrent(revision)
 			)
-				observationsError = error instanceof Error ? error.message : 'โหลดรายการนิเทศไม่สำเร็จ';
-		} finally {
-			if (owner === currentManagementContext() && observationRequest.isCurrent(revision))
-				observationsLoading = false;
-		}
+		).then((items) => ({ items: items ?? [], readable: items !== null }));
+		applyRead(await captureRouteLoad(read, 'โหลดรายการนิเทศไม่สำเร็จ'));
 	}
 	function replaceCycle(cycle: SupervisionCycle) {
 		if (routeData) {
@@ -1105,6 +1117,7 @@
 			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
 		const ownsMutation = captureMutationOwner();
 		const finishChange = personalReturn?.beginChange();
+		let incomplete: boolean;
 		try {
 			const response = await requestSupervisionObservation({
 				cycleId: currentBookingCycle.id,
@@ -1112,10 +1125,15 @@
 				...selection
 			});
 			if (!ownsMutation() || !canRequest) return;
-			replaceObservation(requireMutationData(response, 'ส่งคำขอไม่สำเร็จ'));
+			const booking = requireMutationData(response, 'ส่งคำขอไม่สำเร็จ');
+			if (!canReadObservations) return;
+			incomplete = !observationsLoaded || observationsFromSnapshot;
+			replaceObservation(booking);
+			observationsFromSnapshot = incomplete;
 		} finally {
 			finishChange?.();
 		}
+		if (incomplete && ownsMutation()) void retryObservations();
 	}
 
 	function requestCycleLabel(observation: SupervisionObservation): string {
@@ -2272,7 +2290,6 @@
 						><CalendarDays aria-hidden="true" />ปฏิทิน</Tabs.Trigger
 					>
 				</Tabs.List>
-				{@render observationFeedback()}
 				{#if observationsLoaded && !observationsReadable}
 					<PageState
 						variant="permission"
@@ -2287,6 +2304,7 @@
 							observationsLoaded ? requestedObservations.length : null
 						)}
 					{/if}
+					{#if queueView === 'list'}{@render observationFeedback()}{/if}
 					{#if queueView === 'list' && observationsLoaded && observationsReadable}
 						{#if requestedObservations.length === 0}
 							<PageState
@@ -2316,7 +2334,8 @@
 						{/if}
 					{/if}
 				</Tabs.Content>
-				<Tabs.Content value="calendar">
+				<Tabs.Content value="calendar" class="space-y-3">
+					{#if queueView === 'calendar'}{@render observationFeedback()}{/if}
 					{#if queueView === 'calendar' && observationsLoaded && observationsReadable}
 						{@render referenceErrors(false)}
 						<SupervisionBookingCalendar
@@ -2386,12 +2405,12 @@
 							><CalendarDays aria-hidden="true" />ปฏิทิน</Tabs.Trigger
 						>
 					</Tabs.List>
-					{@render observationFeedback()}
 					<Tabs.Content value="list" class="space-y-4">
 						{@render sectionHeading(
 							'รายการที่ได้รับมอบหมายให้ประเมิน',
 							observationsLoaded ? activeAssignedObservations.length : null
 						)}
+						{#if queueView === 'list'}{@render observationFeedback()}{/if}
 						{#if observationsLoaded && (activeAssignedObservations.length || submittedAssignedObservations.length)}
 							{@render referenceErrors(true)}
 						{/if}
@@ -2545,7 +2564,8 @@
 							</div>
 						{/if}
 					</Tabs.Content>
-					<Tabs.Content value="calendar">
+					<Tabs.Content value="calendar" class="space-y-3">
+						{#if queueView === 'calendar'}{@render observationFeedback()}{/if}
 						{#if queueView === 'calendar' && observationsLoaded}
 							{@render referenceErrors(false)}
 							<SupervisionBookingCalendar
