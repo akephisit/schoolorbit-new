@@ -1,12 +1,17 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
 	import { requireApiData } from '#lib/api/client.js';
 	import { LatestRequest } from '#lib/async/latest-request.js';
 	import { menuPreloadPolicy } from '#lib/navigation/menu-preload.js';
 	import { getAppMenuRegion } from '#lib/navigation/app-menu.svelte.js';
-	import { academicContextualMenuPath } from '#lib/academic-context/route-context.js';
+	import {
+		academicContextualMenuPath,
+		getAcademicContextOptionsSource,
+		readAcademicContextFromUrl
+	} from '#lib/academic-context/route-context.js';
 	import { getAcademicContextStore } from '#lib/academic-context/store.js';
 	import { getStaffDashboard, type StaffDashboardOverview } from '#lib/api/staff.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
@@ -32,6 +37,7 @@
 	const appMenu = getAppMenuRegion();
 	const academicContext = getAcademicContextStore();
 	const academicYearId = $derived(data.academicYearId ?? '');
+	const menuContext = $derived(readAcademicContextFromUrl(new URL(page.url.href)));
 	let stats = $state<StaffDashboardOverview | null>(null);
 	const menuGroups = $derived(appMenu.groups);
 	let loadingStats = $state(true);
@@ -128,7 +134,10 @@
 	}
 
 	function serviceHref(path: string): string {
-		return academicContextualMenuPath(path, $academicContext.selected, $academicContext.options);
+		const source = getAcademicContextOptionsSource(
+			`/(app)${new URL(path, page.url.href).pathname}`
+		);
+		return academicContextualMenuPath(path, menuContext, $academicContext.optionsBySource[source]);
 	}
 </script>
 

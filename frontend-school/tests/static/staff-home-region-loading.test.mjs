@@ -45,5 +45,7 @@ test('dashboard and Sidebar use the same preload policy and contextual destinati
 		const page = await source(path);
 		assert.match(page, /menuPreloadPolicy/);
 		assert.match(page, /academicContextualMenuPath/);
+		assert.match(page, /getAcademicContextOptionsSource/);
+		assert.match(page, /\$academicContext\.optionsBySource\[source\]/);
 	}
 });

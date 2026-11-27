@@ -119,7 +119,7 @@ async function holdPageModule(page: Page, pathname: string) {
 }
 
 async function openSidebar(page: Page) {
-	const button = page.getByRole('button', { name: 'Open Menu', exact: true });
+	const button = page.getByRole('button', { name: 'บริการ', exact: true });
 	if (await button.isVisible()) await button.click();
 }
 
@@ -193,7 +193,9 @@ for (const width of [390, 1440])
 				await expect(source).toHaveText('งานของฉัน');
 				const sourceElement = await source.elementHandle();
 				await openSidebar(page);
-				const link = page.locator('aside').getByRole('link', { name: homeroomLabel, exact: true });
+				const link = page
+					.locator('aside')
+					.getByRole('link', { name: homeroomLabel, exact: true, includeHidden: true });
 				await expect(link).toHaveAttribute('href', `${homeroomPath}?academicYearId=${year}`);
 				await link.click();
 				await expect.poll(module.requested).toBe(true);

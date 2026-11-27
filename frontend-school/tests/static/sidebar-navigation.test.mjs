@@ -92,7 +92,7 @@ test('collapsed sidebar keeps the rail vertical during width transition', async 
 
 	assert.match(
 		sidebar,
-		/class=\{cn\(\s*'flex-1 overflow-y-auto overflow-x-hidden py-4 sidebar-nav',\s*isCollapsed\s*\?\s*'flex flex-col items-center gap-1 px-4'\s*:\s*'space-y-1 px-4'\s*\)\}/,
+		/class=\{cn\(\s*'flex-1 overflow-y-auto overflow-x-hidden py-4 sidebar-nav',\s*collapsed\s*\?\s*'flex flex-col items-center gap-1 px-4'\s*:\s*'space-y-1 px-4'\s*\)\}/,
 		'nav should become a flex column as soon as collapsed mode renders'
 	);
 	assert.match(
@@ -102,7 +102,8 @@ test('collapsed sidebar keeps the rail vertical during width transition', async 
 	);
 	assert.match(
 		sidebar,
-		/isCollapsed \? 'mx-auto w-10' : 'w-full justify-start'/,
+		/collapsed \? 'mx-auto w-10' : 'w-full justify-start'/,
 		'work shortcut should stay centered in the collapsed rail during the transition'
 	);
+	assert.match(sidebar, /collapsed = \$derived\(isDesktop && isCollapsed\)/);
 });

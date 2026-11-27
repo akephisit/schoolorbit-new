@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Sidebar from '#lib/components/layout/Sidebar.svelte';
 	import Header from '#lib/components/layout/Header.svelte';
+	import StaffBottomNavigation from '#lib/components/layout/StaffBottomNavigation.svelte';
 	import { beforeNavigate, goto, invalidate, onNavigate } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { navigating, page } from '$app/state';
@@ -63,7 +64,12 @@
 				const url = new URL(item.path, page.url.href);
 				return url.origin === target.url.origin && url.pathname === target.url.pathname;
 			});
-		const title = item?.name ?? (target.url.pathname === '/staff/work' ? 'งานของฉัน' : null);
+		const fixedTitles: Record<string, string> = {
+			'/staff': 'หน้าหลัก',
+			'/staff/work': 'งานของฉัน',
+			'/staff/timetable': 'ตารางสอน'
+		};
+		const title = item?.name ?? fixedTitles[target.url.pathname] ?? null;
 		return title ? { title, pathname: target.url.pathname } : null;
 	});
 	const sharedMenuRead = $derived(data.userMenu);
@@ -102,6 +108,8 @@
 
 	let sidebarRef = $state<{ toggleMobileSidebar?: () => void }>();
 	let isSidebarCollapsed = $state($uiPreferences.sidebarCollapsed);
+	let isMobileSidebarOpen = $state(false);
+	const isStaff = $derived($authStore.user?.user_type === 'staff');
 	let authStatus = $state<AuthStatus>('checking');
 	let sessionWarning = $state<SessionWarningState | null>(null);
 	let sessionActivity: ReturnType<typeof mountSessionActivity> | undefined;
@@ -236,21 +244,28 @@
 </script>
 
 {#if authStatus === 'authenticated'}
-	<div class="h-screen flex flex-col bg-background overflow-hidden">
+	<div class="h-dvh flex flex-col bg-background overflow-hidden">
 		<Sidebar
 			bind:this={sidebarRef}
 			bind:isCollapsed={isSidebarCollapsed}
+			bind:isMobileOpen={isMobileSidebarOpen}
 			pendingPath={pendingMenu?.pathname ?? null}
 		/>
 
 		<!-- Wrapper for Header and Main with sidebar offset -->
 		<div
-			class="flex flex-col flex-1 min-h-0 transition-[margin-left] duration-300 {isSidebarCollapsed
+			inert={isMobileSidebarOpen}
+			class="flex flex-col flex-1 min-h-0 min-w-0 transition-[margin-left] duration-300 {isSidebarCollapsed
 				? 'lg:ml-[72px]'
 				: 'lg:ml-64'}"
 		>
 			<!-- Fixed Header - ไม่ scroll -->
-			<Header onMenuClick={handleMenuClick} sidebarCollapsed={isSidebarCollapsed} />
+			<Header
+				onMenuClick={handleMenuClick}
+				sidebarCollapsed={isSidebarCollapsed}
+				showMobileMenu={!isStaff}
+				mobileMenuOpen={isMobileSidebarOpen}
+			/>
 			<SessionWarning
 				warning={sessionWarning}
 				oncontinue={(event) => sessionActivity?.continueSession(event)}
@@ -282,6 +297,13 @@
 					{/if}
 				</div>
 			</main>
+			{#if isStaff}
+				<StaffBottomNavigation
+					onServicesClick={handleMenuClick}
+					servicesOpen={isMobileSidebarOpen}
+					pendingPath={pendingMenu?.pathname ?? null}
+				/>
+			{/if}
 		</div>
 	</div>
 {:else if authStatus === 'unavailable'}
