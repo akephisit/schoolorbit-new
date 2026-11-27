@@ -65,8 +65,14 @@ for (const width of [375, 1440]) {
 		await page.goto(homePath());
 		const workspaces = page.getByTestId('staff-service-workspaces');
 		const cards = workspaces.locator('[data-workspace]');
-		await expect(workspaces.getByRole('link')).toHaveCount(4);
-		await page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true }).click();
+		if (width < 1024) {
+			await expect(workspaces.getByRole('link')).toHaveCount(4);
+			await page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true }).click();
+		} else {
+			await expect(page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true })).toHaveCount(
+				0
+			);
+		}
 		await expect(cards).toHaveCount(4);
 		await expect(workspaces.getByRole('link')).toHaveCount(20);
 		const boxes = await Promise.all(Array.from({ length: 4 }, (_, i) => rect(cards.nth(i))));
@@ -93,7 +99,7 @@ for (const width of [375, 1440]) {
 		await captureThemes(page, testInfo, `dashboard-${width}`);
 	});
 
-	test(`dashboard service preview follows school order and reversibly expands at ${width}px`, async ({
+	test(`dashboard services follow school order with responsive catalogue defaults at ${width}px`, async ({
 		page
 	}) => {
 		await page.setViewportSize({ width, height: 844 });
@@ -101,8 +107,11 @@ for (const width of [375, 1440]) {
 		await page.goto(homePath());
 		const services = page.getByTestId('staff-service-workspaces');
 		const links = services.getByRole('link');
-		await expect(links).toHaveText(menuGroups[0].items.slice(0, 4).map((item) => item.name));
-		await expect(services.locator('[data-workspace]')).toHaveCount(0);
+		const allServiceNames = menuGroups.flatMap((group) => group.items.map((item) => item.name));
+		await expect(links).toHaveText(
+			width < 1024 ? menuGroups[0].items.slice(0, 4).map((item) => item.name) : allServiceNames
+		);
+		await expect(services.locator('[data-workspace]')).toHaveCount(width < 1024 ? 0 : 4);
 		await expect(page.getByTestId('staff-welcome')).toContainText('เจ้าของ โปรไฟล์');
 		await expect(
 			page.getByRole('main').getByText(/งานที่เปิดอยู่|ใกล้ครบกำหนด|เกินกำหนด/)
@@ -112,24 +121,36 @@ for (const width of [375, 1440]) {
 		).toHaveCount(0);
 		const firstLink = await rect(links.first());
 		expect(firstLink.y + firstLink.height).toBeLessThan(844);
-		const previewBoxes = await Promise.all(Array.from({ length: 4 }, (_, i) => rect(links.nth(i))));
-		expect(new Set(previewBoxes.map((box) => Math.round(box.y))).size).toBe(width < 1280 ? 2 : 1);
+		if (width < 1024) {
+			const previewBoxes = await Promise.all(
+				Array.from({ length: 4 }, (_, i) => rect(links.nth(i)))
+			);
+			expect(new Set(previewBoxes.map((box) => Math.round(box.y))).size).toBe(2);
+		}
 		if (width >= 1280) {
 			const overview = page.getByTestId('staff-overview');
 			await expect(overview).toContainText('18');
 			const overviewCard = await rect(overview.locator('[data-slot="card"]').first());
-			expect(overviewCard.y).toBeCloseTo(firstLink.y, 0);
+			const workspaceCard = await rect(services.locator('[data-workspace]').first());
+			expect(overviewCard.y).toBeCloseTo(workspaceCard.y, 0);
 		}
 		const toggle = page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true });
-		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-		await toggle.click();
-		await expect(page.getByRole('button', { name: 'แสดงบริการน้อยลง', exact: true })).toBeFocused();
-		await expect(links).toHaveText(
-			menuGroups.flatMap((group) => group.items.map((item) => item.name))
-		);
-		await page.getByRole('button', { name: 'แสดงบริการน้อยลง', exact: true }).click();
-		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-		await expect(links).toHaveCount(4);
+		if (width < 1024) {
+			await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+			await toggle.click();
+			await expect(
+				page.getByRole('button', { name: 'แสดงบริการน้อยลง', exact: true })
+			).toBeFocused();
+			await expect(links).toHaveText(allServiceNames);
+			await page.getByRole('button', { name: 'แสดงบริการน้อยลง', exact: true }).click();
+			await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+			await expect(links).toHaveCount(4);
+		} else {
+			await expect(toggle).toHaveCount(0);
+			await expect(page.getByRole('button', { name: 'แสดงบริการน้อยลง', exact: true })).toHaveCount(
+				0
+			);
+		}
 		await noPageOverflow(page);
 	});
 
@@ -186,3 +207,38 @@ for (const width of [375, 1440]) {
 		await captureThemes(page, testInfo, `student-${width}`);
 	});
 }
+
+test('desktop catalogue follows the lg breakpoint and preserves the smaller-screen expansion choice', async ({
+	page
+}) => {
+	await page.setViewportSize({ width: 1023, height: 900 });
+	await mockStaffHome(page, { menuGroups });
+	await page.goto(homePath());
+	const services = page.getByTestId('staff-service-workspaces');
+	const links = services.getByRole('link');
+	const expand = page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true });
+	const collapse = page.getByRole('button', { name: 'แสดงบริการน้อยลง', exact: true });
+	await expect(links).toHaveCount(4);
+	await expect(expand).toHaveAttribute('aria-expanded', 'false');
+	await page.setViewportSize({ width: 1024, height: 900 });
+	await expect(links).toHaveCount(20);
+	await expect(services.locator('[data-workspace]')).toHaveCount(4);
+	await expect(expand).toHaveCount(0);
+	await expect(collapse).toHaveCount(0);
+	await page.setViewportSize({ width: 1023, height: 900 });
+	await expect(links).toHaveCount(4);
+	await expect(expand).toHaveAttribute('aria-expanded', 'false');
+	await expand.click();
+	await expect(collapse).toBeFocused();
+	await expect(links).toHaveCount(20);
+	await page.setViewportSize({ width: 1024, height: 900 });
+	await expect(links).toHaveCount(20);
+	await expect(collapse).toHaveCount(0);
+	await page.setViewportSize({ width: 1023, height: 900 });
+	await expect(collapse).toHaveAttribute('aria-expanded', 'true');
+	await expect(links).toHaveCount(20);
+	await collapse.click();
+	await expect(links).toHaveCount(4);
+	await expect(expand).toBeFocused();
+	await noPageOverflow(page);
+});

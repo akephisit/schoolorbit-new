@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { page } from '$app/state';
 	import type { PageProps } from './$types';
 	import { captureRouteLoad } from '#lib/navigation/route-load.js';
@@ -39,7 +40,9 @@
 	const menuError = $derived(appMenu.error);
 	const statsRequest = new LatestRequest();
 	let statsYear = '';
-	let showAllServices = $state(false);
+	const desktop = new MediaQuery('(min-width: 64rem)');
+	let mobileExpanded = $state(false);
+	const showAllServices = $derived(desktop.current || mobileExpanded);
 	const servicePreviewLimit = 4;
 
 	const numberFormatter = new Intl.NumberFormat('th-TH');
@@ -179,13 +182,13 @@
 
 			<div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 xl:min-h-11">
 				<h2 id="services-title" class="text-lg font-semibold">บริการของโรงเรียน</h2>
-				{#if appMenu.loaded && accessibleServiceCount > servicePreviewLimit}
+				{#if !desktop.current && appMenu.loaded && accessibleServiceCount > servicePreviewLimit}
 					<Button
 						variant="ghost"
 						class="min-h-11 gap-2 text-primary"
 						aria-expanded={showAllServices}
 						aria-controls="staff-service-catalogue"
-						onclick={() => (showAllServices = !showAllServices)}
+						onclick={() => (mobileExpanded = !mobileExpanded)}
 					>
 						{showAllServices ? 'แสดงบริการน้อยลง' : 'ดูบริการทั้งหมด'}
 						<ChevronRight
@@ -222,7 +225,7 @@
 					data-testid="staff-service-workspaces"
 				>
 					{#if !showAllServices}
-						<ul class="grid items-start gap-3 min-[360px]:grid-cols-2 xl:grid-cols-4">
+						<ul class="grid items-start gap-3 min-[360px]:grid-cols-2">
 							{#each previewServices as item (item.id)}<li class="min-w-0">
 									{@render serviceLink(item)}
 								</li>{/each}
