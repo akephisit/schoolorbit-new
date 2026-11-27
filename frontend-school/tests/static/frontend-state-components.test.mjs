@@ -120,7 +120,7 @@ test('academic curriculum and planning workspaces use shared frontend state comp
 test('academic large workspaces use shared frontend state components', async () => {
 	const pages = [
 		'src/routes/(app)/staff/academic/catalog/subjects/+page.svelte',
-		'src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'src/routes/(app)/staff/academic/supervision/mine/+page.svelte'
 	];
 
 	for (const page of pages) {

@@ -75,8 +75,8 @@ test('teaching supervision booking uses canonical dated options and an ordered r
 
 test('teaching supervision booking relies on required route context while management remains year-wide', async () => {
 	const root = 'frontend-school/src/routes/(app)/staff/academic/supervision';
-	const routePage = await readRepoFile(`${root}/+page.svelte`);
-	const routeLoader = await readRepoFile(`${root}/+page.ts`);
+	const routePage = await readRepoFile(`${root}/mine/+page.svelte`);
+	const routeLoader = await readRepoFile(`${root}/mine/+page.ts`);
 	assert.match(routeLoader, /academicContext:\s*'term_required'/);
 	assert.match(routePage, /<SupervisionWorkspace section="mine"/);
 	assert.doesNotMatch(routePage, /AcademicPrerequisiteNotice|bookingTermPrerequisite/);
@@ -356,7 +356,7 @@ test('teaching supervision published results retain the read-only rubric and eva
 	assert.match(detailPage, /ดูผลประเมินรายข้อ/);
 });
 
-test('supervision keeps separate workflow routes with an in-place requests calendar', async () => {
+test('supervision hub links separate workflows while requests keeps its in-place calendar', async () => {
 	const supervisionWorkspace = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
@@ -364,9 +364,18 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 	const supervisionLayout = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/+layout.svelte'
 	);
+	const supervisionHub = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+	);
+	const supervisionHubMeta = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.ts'
+	);
+	const supervisionNavigation = await readRepoFile(
+		'frontend-school/src/lib/supervision/workspace-navigation.ts'
+	);
 	const routeFiles = {
-		base: await readRepoFile(
-			'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
+		mine: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/mine/+page.svelte'
 		),
 		evaluate: await readRepoFile(
 			'frontend-school/src/routes/(app)/staff/academic/supervision/evaluate/+page.svelte'
@@ -385,6 +394,9 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 		)
 	};
 	const routeMetaFiles = {
+		mine: await readRepoFile(
+			'frontend-school/src/routes/(app)/staff/academic/supervision/mine/+page.ts'
+		),
 		evaluate: await readRepoFile(
 			'frontend-school/src/routes/(app)/staff/academic/supervision/evaluate/+page.ts'
 		),
@@ -421,8 +433,16 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 	assert.doesNotMatch(supervisionWorkspace, /bind:value=\{activeTab\}/);
 	assert.match(supervisionWorkspace, /export type SupervisionWorkspaceSection/);
 	assert.match(supervisionWorkspace, /section:/);
+	assert.match(supervisionHub, /visibleSupervisionDestinations/);
+	assert.match(supervisionHub, /academicContextualMenuPath/);
+	assert.match(supervisionHub, /data-sveltekit-preload-data=\{false\}/);
+	assert.doesNotMatch(supervisionHub, /SupervisionWorkspace|#lib\/api\/supervision/);
+	assert.match(supervisionHubMeta, /menu:/);
+	assert.match(supervisionHubMeta, /academicContext:\s*'term_optional'/);
+	assert.doesNotMatch(supervisionHubMeta, /export\s+(?:const|function)\s+load\b/);
+	assert.match(supervisionNavigation, /userCanAccessRoute/);
 	assert.match(supervisionLayout, /function sectionRoute[\s\S]*?academicContextualMenuPath/);
-	assert.match(supervisionLayout, /userCanAccessRoute/);
+	assert.match(supervisionLayout, /visibleSupervisionDestinations/);
 	assert.match(supervisionLayout, /aria-current=\{activePath === item\.path/);
 	assert.match(supervisionLayout, /data-sveltekit-preload-data=\{false\}/);
 	assert.doesNotMatch(supervisionWorkspace, /aria-label="เมนูนิเทศการสอน"/);
@@ -436,14 +456,18 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 
 	for (const [section, source] of Object.entries(routeFiles)) {
 		assert.match(source, /SupervisionWorkspace/);
-		assert.match(source, new RegExp(`section="${section === 'base' ? 'mine' : section}"`));
+		assert.match(source, new RegExp(`section="${section}"`));
 	}
 
 	for (const [section, source] of Object.entries(routeMetaFiles)) {
 		assert.match(source, /_meta/);
 		assert.match(source, /access/);
 		assert.doesNotMatch(source, /menu:/);
-		assert.match(source, /PERMISSIONS\./, `${section} route should use exact permission access`);
+		assert.match(
+			source,
+			/(?:PERMISSIONS|PERMISSION_MODULES)\./,
+			`${section} route should use exact permission access`
+		);
 	}
 });
 

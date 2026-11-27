@@ -625,9 +625,12 @@ test('academic admission workflow pages use shared app page shell', async () => 
 });
 
 test('academic supervision workspace uses shared app page shell', async () => {
-	const pages = ['src/lib/components/supervision/SupervisionWorkspace.svelte'];
+	const pages = [
+		'src/routes/(app)/staff/academic/supervision/+page.svelte',
+		'src/lib/components/supervision/SupervisionWorkspace.svelte'
+	];
 	const supervisionRoute = await readProjectFile(
-		'src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'src/routes/(app)/staff/academic/supervision/mine/+page.svelte'
 	);
 
 	for (const page of pages) {

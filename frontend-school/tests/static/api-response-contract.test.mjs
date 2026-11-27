@@ -967,6 +967,9 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	const supervisionRoute = await readRepoFile(
 		'frontend-school/src/routes/(app)/staff/academic/supervision/+page.ts'
 	);
+	const supervisionMine = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/mine/+page.ts'
+	);
 	const supervisionWorkspace = await readRepoFile(
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
@@ -992,6 +995,7 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.doesNotMatch(supervisionApi, /Record<string,\s*unknown>/);
 	assert.doesNotMatch(supervisionApi, /res\.data as/);
 	assert.match(supervisionRoute, /PERMISSION_MODULES\.SUPERVISION/);
+	assert.match(supervisionMine, /PERMISSION_MODULES\.SUPERVISION/);
 	assert.match(supervisionWorkspace, /listSupervisionCycles/);
 	assert.match(supervisionWorkspace, /requestSupervisionObservation/);
 	assert.match(supervisionWorkspace, /updateSupervisionCycle/);
@@ -1064,7 +1068,8 @@ test('teaching supervision frontend contract uses typed API and permission metad
 	assert.match(supervisionWorkspace, /moveTemplateItem/);
 	assert.match(supervisionWorkspace, /calculateRubricDraftSummary/);
 	assert.match(supervisionWorkspace, /sectionRubricProgress/);
-	assert.match(supervisionWorkspace, /overflow-x-hidden/);
+	assert.match(supervisionWorkspace, /from '#lib\/components\/ui\/table\/index\.js'/);
+	assert.match(supervisionWorkspace, /<Table\.Root\b/);
 	assert.match(supervisionWorkspace, /min-w-0/);
 	assert.match(supervisionWorkspace, /LoadingButton/);
 	assert.match(supervisionWorkspace, /savingAction/);

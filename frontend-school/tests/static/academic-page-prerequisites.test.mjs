@@ -66,7 +66,7 @@ test('dependent academic pages provide local next actions without a global readi
 		'src/routes/(app)/staff/academic/exam-schedules/[id]/+page.svelte'
 	);
 	const supervisionPage = await readProjectFile(
-		'src/routes/(app)/staff/academic/supervision/+page.svelte'
+		'src/routes/(app)/staff/academic/supervision/mine/+page.svelte'
 	);
 	const supervisionWorkspace = await readProjectFile(
 		'src/lib/components/supervision/SupervisionWorkspace.svelte'

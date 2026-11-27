@@ -147,7 +147,7 @@ for (const status of ['draft', 'open', 'closed', 'archived'] as const) {
 			cycleStatus: status,
 			term: true
 		});
-		await page.goto(path('').replace('/supervision/?', '/supervision?'));
+		await page.goto(path('mine'));
 		await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 		if (status === 'open') {
 			await expect(page.getByRole('combobox', { name: 'เลือกรอบนิเทศ', exact: true })).toHaveText(
@@ -271,7 +271,7 @@ test('own returned row names the next teacher action and links to correction', a
 		canManage: false,
 		observationStatus: 'returned'
 	});
-	await page.goto(path('').replace('/supervision/?', '/supervision?'));
+	await page.goto(path('mine'));
 	const row = page.locator('[data-supervision-own-list="cards"]');
 	await expect(row).toContainText('ขั้น 1/4 คำขอ');
 	await expect(row.getByText('ส่งกลับให้แก้ไข', { exact: true })).toBeVisible();
@@ -426,7 +426,7 @@ test('the last required submission publishes the rubric and the teacher complete
 	const yearAndTerm = `&academicTermId=${id(8)}`;
 	const evaluate = `${path('evaluate')}${yearAndTerm}`;
 	const detail = `${detailPath}${yearAndTerm}`;
-	const mine = `${path('').replace('/supervision/?', '/supervision?')}${yearAndTerm}`;
+	const mine = `${path('mine')}${yearAndTerm}`;
 	const submitted = page.locator('[data-supervision-submitted-assigned-list]');
 	const workflow = page.getByTestId('supervision-workflow');
 	const rubric = page.getByTestId('supervision-review');
@@ -512,7 +512,7 @@ test('acknowledgment keeps each draft across dismissals and allows retry after a
 		},
 		{ times: 1 }
 	);
-	await page.goto(`${path('').replace('/supervision/?', '/supervision?')}&academicTermId=${id(8)}`);
+	await page.goto(`${path('mine')}&academicTermId=${id(8)}`);
 	const acknowledgments = page.getByRole('button', { name: 'รับทราบผล', exact: true });
 	const dialog = page.getByRole('dialog');
 	const comment = dialog.getByLabel('ความคิดเห็นเพิ่มเติม (ถ้ามี)', { exact: true });

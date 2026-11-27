@@ -22,7 +22,7 @@ test.beforeEach(async ({ page }) => {
 	);
 });
 const permissions = ['supervision.read.own', 'supervision.request.own'];
-const root = `/staff/academic/supervision?academicYearId=${year}`;
+const mine = path('mine');
 const detail = `/staff/academic/supervision/${id(30)}?academicYearId=${year}`;
 const optionsPath = '/api/supervision/booking-options';
 const requestPath = '/api/supervision/observations/requests';
@@ -35,7 +35,7 @@ const reply = (route: Route, data: unknown, status = 200) =>
 const option = (index: number, patch: Partial<SupervisionTimetableOption> = {}) =>
 	timetableOption(index, patch);
 async function open(page: Page) {
-	await page.goto(root);
+	await page.goto(mine);
 	await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 }
 

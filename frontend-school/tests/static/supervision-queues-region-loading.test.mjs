@@ -3,9 +3,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const source = (path) => readFile(new URL(`../../${path}`, import.meta.url), 'utf8');
-for (const section of ['', 'requests', 'evaluate']) {
-	test(`supervision ${section || 'mine'} owns observations in the route`, async () => {
-		const base = `src/routes/(app)/staff/academic/supervision${section ? `/${section}` : ''}`;
+for (const section of ['mine', 'requests', 'evaluate']) {
+	test(`supervision ${section} owns observations in the route`, async () => {
+		const base = `src/routes/(app)/staff/academic/supervision/${section}`;
 		const [loader, page] = await Promise.all([
 			source(`${base}/+page.ts`),
 			source(`${base}/+page.svelte`)

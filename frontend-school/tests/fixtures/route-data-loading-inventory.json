@@ -555,12 +555,12 @@
 		{
 			"route": "staff/academic/supervision",
 			"wave": "admission-supervision",
-			"dataOwner": "route",
+			"dataOwner": "no-data",
 			"preload": "none",
 			"context": "term_optional",
 			"status": "complete",
 			"backendOwner": "school-supervision",
-			"notes": "Route starts own observation rows and minimal cycle/template references independently after exact read-scope and route gates. Booking timetable opens on explicit action with regional retry; writes patch typed rows and supersede pending lists/context. No component startup remains; unbounded list preload disabled."
+			"notes": "Permission-filtered hub links to supervision workflows with the selected academic context. No supervision data reads or destination data preload."
 		},
 		{
 			"route": "staff/academic/supervision/[id]",
@@ -591,6 +591,16 @@
 			"status": "complete",
 			"backendOwner": "school-supervision",
 			"notes": "Route owns assigned list and visible reference summaries after both route and observation-read permission gates; evaluation permission alone does not issue read APIs. Selected rubric is lazy with close-safe retry; submission patches returned observation without list/reference reload. Unbounded preload disabled."
+		},
+		{
+			"route": "staff/academic/supervision/mine",
+			"wave": "admission-supervision",
+			"dataOwner": "route",
+			"preload": "none",
+			"context": "term_required",
+			"status": "complete",
+			"backendOwner": "school-supervision",
+			"notes": "Route starts own observation rows and minimal cycle/template references independently after exact read-scope and route gates. Booking timetable opens on explicit action with regional retry; writes patch typed rows and supersede pending lists/context. No component startup remains; unbounded list preload disabled."
 		},
 		{
 			"route": "staff/academic/supervision/overview",
