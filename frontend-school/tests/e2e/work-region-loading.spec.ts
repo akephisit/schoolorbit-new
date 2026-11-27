@@ -210,10 +210,7 @@ test('late assignment cannot clear a draft for another selected window', async (
 	expect(api.count(windowsPath)).toBe(1);
 });
 
-for (const [route, testId] of [
-	['/staff', 'staff-work-counts'],
-	['/staff/work', 'work-counts']
-]) {
+for (const [route, testId] of [['/staff/work', 'work-counts']]) {
 	test(`${route}: notification counts refresh silently retains the loaded numbers`, async ({
 		page
 	}) => {
@@ -234,6 +231,51 @@ for (const [route, testId] of [
 		await expect(region).toHaveText(loadedText);
 	});
 }
+
+test('dashboard remains independent of a silent shared counts refresh', async ({ page }) => {
+	const api = await mockWork(page, { event: 'work_items_changed', hold: 'counts', holdAt: 2 });
+	await page.goto('/staff');
+	const services = page.getByTestId('staff-services');
+	const overview = page.getByTestId('staff-overview');
+	await expect(services).toContainText('โปรไฟล์ทดสอบ');
+	await expect(overview).toContainText('18');
+	await expect.poll(() => api.count(countsPath)).toBe(1);
+	const serviceText = await services.innerText();
+	const overviewText = await overview.innerText();
+	api.releaseEvent();
+	await expect.poll(() => api.count(countsPath)).toBe(2);
+	await expect(services).toHaveAttribute('aria-busy', 'false');
+	await expect(overview).toHaveAttribute('aria-busy', 'false');
+	await expect(services).toHaveText(serviceText);
+	await expect(overview).toHaveText(overviewText);
+	await expect(
+		page.getByRole('main').getByText(/งานที่เปิดอยู่|ใกล้ครบกำหนด|เกินกำหนด/)
+	).toHaveCount(0);
+	expect(api.count(itemsPath)).toBe(0);
+	api.release();
+	await expect(services).toHaveText(serviceText);
+	await expect(overview).toHaveText(overviewText);
+});
+
+test('shared counts keep a successful retry across child navigation', async ({ page }) => {
+	let menuReads = 0;
+	page.on('request', (request) => {
+		if (new URL(request.url()).pathname === '/api/menu/user') menuReads++;
+	});
+	const api = await mockWork(page, { fail: 'counts' });
+	await page.goto('/staff/work');
+	const region = page.getByTestId('work-counts');
+	await expect(region).toContainText('region counts ไม่พร้อม');
+	await region.getByRole('button', { name: /ลอง/ }).click();
+	await expect(region.getByText('1', { exact: true })).toBeVisible();
+	await navigate(page, '/staff/profile');
+	await expect(page.locator('#nickname')).toHaveValue('ชื่อเล่นเดิม');
+	await navigate(page, '/staff/work');
+	await expect(region.getByText('1', { exact: true })).toBeVisible();
+	await expect(region).not.toContainText('region counts ไม่พร้อม');
+	expect(menuReads).toBe(1);
+	expect(api.count(countsPath)).toBe(2);
+});
 
 for (const permissions of [
 	['achievement.read.own'],

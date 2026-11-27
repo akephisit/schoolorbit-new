@@ -513,7 +513,7 @@ for (const role of ['public', 'staff', 'student'] as const) {
 				await open(page, role === 'public' ? '/' : `/${role}`, mode, width);
 				if (role === 'student')
 					await expect(page.getByTestId('student-profile-region')).toBeVisible();
-				if (role === 'staff') await expect(page.getByTestId('staff-work-counts')).toBeVisible();
+				if (role === 'staff') await expect(page.getByTestId('staff-services')).toBeVisible();
 				if (role === 'public') await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 				expect(
 					await page.locator('body').evaluate((element) => getComputedStyle(element).fontFamily)

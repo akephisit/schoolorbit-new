@@ -313,7 +313,7 @@ for (const role of ['staff', 'student', 'parent']) {
 		await ready(page);
 		await expect(page.locator('html')).toHaveAttribute('data-schoolorbit-app-mounted', 'true');
 		await expect(
-			page.getByTestId(role === 'staff' ? 'staff-work-counts' : `${role}-profile-region`)
+			page.getByTestId(role === 'staff' ? 'staff-services' : `${role}-profile-region`)
 		).toBeVisible();
 		await expect.poll(async () => (await paints(page)).length).toBeGreaterThan(0);
 		const frames = await paints(page);
@@ -370,7 +370,7 @@ test('system dark preference applies initially and public-to-app SPA navigation 
 	await page.getByLabel('ชื่อผู้ใช้งาน (Username)', { exact: true }).fill('E2E-staff-home');
 	await page.getByLabel('รหัสผ่าน', { exact: true }).fill('synthetic-test-password');
 	await page.getByRole('button', { name: 'เข้าสู่ระบบ', exact: true }).click();
-	await expect(page.getByTestId('staff-work-counts')).toBeVisible();
+	await expect(page.getByTestId('staff-services')).toBeVisible();
 	await expect(page.locator('html')).toHaveClass(/dark/);
 	await navigate(page, '/staff/school-settings/appearance');
 	await expect(page.getByTestId('school-appearance-settings')).toBeVisible();

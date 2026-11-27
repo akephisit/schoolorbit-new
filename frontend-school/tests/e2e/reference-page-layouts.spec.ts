@@ -102,8 +102,24 @@ for (const width of [375, 1440]) {
 		const services = page.getByTestId('staff-service-workspaces');
 		const links = services.getByRole('link');
 		await expect(links).toHaveText(menuGroups[0].items.slice(0, 4).map((item) => item.name));
+		await expect(services.locator('[data-workspace]')).toHaveCount(0);
+		await expect(page.getByTestId('staff-welcome')).toContainText('เจ้าของ โปรไฟล์');
+		await expect(
+			page.getByRole('main').getByText(/งานที่เปิดอยู่|ใกล้ครบกำหนด|เกินกำหนด/)
+		).toHaveCount(0);
+		await expect(
+			page.getByRole('main').getByRole('link', { name: 'เปิดงานของฉัน', exact: true })
+		).toHaveCount(0);
 		const firstLink = await rect(links.first());
 		expect(firstLink.y + firstLink.height).toBeLessThan(844);
+		const previewBoxes = await Promise.all(Array.from({ length: 4 }, (_, i) => rect(links.nth(i))));
+		expect(new Set(previewBoxes.map((box) => Math.round(box.y))).size).toBe(width < 1280 ? 2 : 1);
+		if (width >= 1280) {
+			const overview = page.getByTestId('staff-overview');
+			await expect(overview).toContainText('18');
+			const overviewCard = await rect(overview.locator('[data-slot="card"]').first());
+			expect(overviewCard.y).toBeCloseTo(firstLink.y, 0);
+		}
 		const toggle = page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true });
 		await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 		await toggle.click();
