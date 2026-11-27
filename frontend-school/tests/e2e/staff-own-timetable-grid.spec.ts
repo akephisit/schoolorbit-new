@@ -352,12 +352,12 @@ async function expectNoOuterOverflow(page: Page) {
 	expect(geometry.docFullWidth).toBeLessThanOrEqual(geometry.docWidth + 1);
 	expect(geometry.top).toBe(0);
 }
-for (const [width, minimumVisiblePeriods] of [
-	[320, 3],
-	[390, 4],
-	[614, 7],
-	[1029, 2],
-	[1533, 9]
+for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
+	[320, 3, true],
+	[390, 4, true],
+	[614, 7, true],
+	[1029, 2, null],
+	[1533, 9, false]
 ] as const) {
 	for (const theme of ['light', 'dark'] as const) {
 		test(`shows one compact weekly grid at ${width}px in ${theme}`, async ({ page }, testInfo) => {
@@ -404,9 +404,22 @@ for (const [width, minimumVisiblePeriods] of [
 				expect(lineCount).toBe(1);
 			}
 			await expect(weekly.getByRole('columnheader')).toHaveCount(10);
+			const textSizes = await weekly
+				.locator('th, p, [data-timetable-class], [data-timetable-room]')
+				.evaluateAll((nodes) =>
+					nodes.map((node) => Number.parseFloat(getComputedStyle(node).fontSize))
+				);
+			expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(width >= 1029 ? 12 : 11.5);
 			const lastPeriod = weekly.getByRole('columnheader', { name: /คาบ 9.*16:00–17:00/ });
 			await expect(lastPeriod).toBeVisible();
 			await expectFullText(lastPeriod.getByText('16:00–17:00', { exact: true }));
+			for (const time of await weekly.locator('[data-timetable-time]').all()) {
+				await expectFullText(time);
+				for (const endpoint of await time.locator('span').all()) {
+					const lines = await endpoint.evaluate((node) => node.getClientRects().length);
+					expect(lines).toBe(1);
+				}
+			}
 			await expect(page.getByRole('radiogroup', { name: 'มุมมองตารางสอน' })).toHaveCount(0);
 			await expect(page.getByRole('radiogroup', { name: 'วันในตารางสอน' })).toHaveCount(0);
 			await expect(page.getByTestId('own-timetable-details')).toHaveCount(0);
@@ -442,6 +455,12 @@ for (const [width, minimumVisiblePeriods] of [
 				stacked.nth(1).boundingBox()
 			]);
 			expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height);
+			const mondayLabelY = await monday.getByRole('rowheader').evaluate((header) => {
+				const text = document.createRange();
+				text.selectNodeContents(header);
+				return text.getBoundingClientRect().top;
+			});
+			expect(mondayLabelY - first!.y).toBeLessThanOrEqual(16);
 			if (width >= 1029) {
 				const shortLabels = monday.locator('[data-timetable-block="collision"]');
 				const [classLabel, roomLabel] = await Promise.all([
@@ -469,6 +488,9 @@ for (const [width, minimumVisiblePeriods] of [
 
 			const firstDay = weekly.getByRole('rowheader').first();
 			const startDayX = (await firstDay.boundingBox())!.x;
+			const periodWidth = (await weekly.getByRole('columnheader').nth(1).boundingBox())!.width;
+			expect(periodWidth).toBeGreaterThanOrEqual(width >= 1029 ? 70 : 60);
+			expect((await firstDay.boundingBox())!.width).toBeGreaterThanOrEqual(52);
 			const visiblePeriods = await scroll.evaluate((pane) => {
 				const left = pane.getBoundingClientRect().left + pane.clientLeft;
 				const right = left + pane.clientWidth;
@@ -490,7 +512,10 @@ for (const [width, minimumVisiblePeriods] of [
 				animations: 'disabled'
 			});
 
-			if (width < 1533) {
+			if (shouldScrollHorizontally !== null) {
+				expect(overflowX > 0).toBe(shouldScrollHorizontally);
+			}
+			if (overflowX > 0) {
 				expect(overflowX).toBeGreaterThan(0);
 				await scroll.hover();
 				await page.mouse.wheel(10000, 0);

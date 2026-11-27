@@ -28,27 +28,26 @@
 		block.blockKind === 'structural'
 			? (block.title ?? 'กิจกรรม')
 			: (block.offeringName ?? block.title ?? 'กิจกรรม')}
-	<div class="min-w-0 px-1 py-1.5 md:px-2" data-timetable-block={block.id}>
+	<div class="min-w-0 px-1 py-1.5 lg:px-1.5" data-timetable-block={block.id}>
 		{#if block.blockKind === 'course' && block.offeringCode}
-			<p class="font-semibold wrap-break-word">{block.offeringCode}</p>
+			<p class="font-semibold text-primary wrap-break-word">
+				{block.offeringCode}
+			</p>
 		{/if}
-		<p
-			class="font-medium wrap-break-word whitespace-pre-line md:text-[0.8125rem]"
-			data-timetable-title
-		>
+		<p class="font-medium wrap-break-word whitespace-pre-line" data-timetable-title>
 			{title}
 		</p>
 		{#if display.classLabel || display.roomLabel}
 			<div class="mt-0.5 space-y-0.5 text-muted-foreground">
 				{#if display.classLabel}
 					<p class="flex min-w-0 items-start gap-1">
-						<School class="mt-0.5 hidden size-3 shrink-0 md:block" aria-hidden="true" />
+						<School class="mt-0.5 hidden size-3 shrink-0 xl:block" aria-hidden="true" />
 						<span class="min-w-0 wrap-break-word" data-timetable-class>{display.classLabel}</span>
 					</p>
 				{/if}
 				{#if display.roomLabel}
 					<p class="flex min-w-0 items-start gap-1">
-						<MapPin class="mt-0.5 hidden size-3 shrink-0 md:block" aria-hidden="true" />
+						<MapPin class="mt-0.5 hidden size-3 shrink-0 xl:block" aria-hidden="true" />
 						<span class="min-w-0 wrap-break-word" data-timetable-room>{display.roomLabel}</span>
 					</p>
 				{/if}
@@ -67,7 +66,7 @@
 		data-testid="own-timetable-week-scroll"
 	>
 		<table
-			class="w-full table-fixed border-separate border-spacing-0 bg-card text-left text-xs leading-snug [--day-width:3.5rem] [--period-width:4.5rem] md:[--day-width:4rem] md:[--period-width:7rem]"
+			class="w-full table-fixed border-separate border-spacing-0 bg-card text-left text-[0.82rem] leading-normal [--day-width:3.7rem] [--period-width:4.4rem] sm:[--day-width:4.2rem] sm:[--period-width:4.9rem] lg:text-[0.88rem] lg:[--day-width:4.5rem] lg:[--period-width:5.2rem]"
 			style:--period-count={periods.length}
 		>
 			<caption class="sr-only">ตารางสอนรายสัปดาห์</caption>
@@ -75,18 +74,20 @@
 				<tr>
 					<th
 						scope="col"
-						class="day-column sticky top-0 left-0 z-30 border-r border-b bg-muted px-0.5 py-1.5 text-center md:px-1"
+						class="day-column sticky top-0 left-0 z-30 border-r border-b border-b-primary/25 bg-muted px-0.5 py-1.5 text-center font-medium sm:px-1"
 					>
 						วัน / คาบ
 					</th>
 					{#each periods as period, index (period.id)}
 						<th
 							scope="col"
-							class="sticky top-0 z-20 border-r border-b bg-muted px-0.5 py-1.5 text-center wrap-break-word last:border-r-0 md:px-1"
+							class="sticky top-0 z-20 border-r border-b border-b-primary/25 bg-muted px-0.5 py-1.5 text-center wrap-break-word last:border-r-0 sm:px-1"
 						>
 							<p class="font-semibold">{period.name ?? `คาบ ${index + 1}`}</p>
-							<p class="text-[0.6875rem] font-normal text-muted-foreground tabular-nums md:text-xs">
-								{period.startTime.slice(0, 5)}–{period.endTime.slice(0, 5)}
+							<p class="mt-0.5 font-normal text-muted-foreground tabular-nums" data-timetable-time>
+								<span class="whitespace-nowrap">{period.startTime.slice(0, 5)}–</span><wbr /><span
+									class="whitespace-nowrap">{period.endTime.slice(0, 5)}</span
+								>
 							</p>
 						</th>
 					{/each}
@@ -97,7 +98,7 @@
 					<tr>
 						<th
 							scope="row"
-							class="sticky left-0 z-10 border-r border-b bg-muted px-0.5 py-2 text-center wrap-break-word md:px-1"
+							class="sticky left-0 z-10 border-r border-b bg-card px-0.5 py-1.5 text-center align-top font-semibold wrap-break-word sm:px-1"
 						>
 							{day.label}
 						</th>
@@ -106,7 +107,7 @@
 							<td
 								class={[
 									'border-r border-b last:border-r-0',
-									entries.length > 0 && 'bg-primary/5 align-top'
+									entries.length > 0 && 'bg-primary/5 align-top dark:bg-primary/10'
 								]}
 							>
 								{#if entries.length}
