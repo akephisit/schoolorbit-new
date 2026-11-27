@@ -222,7 +222,6 @@ test('shared counts keep a successful retry across child navigation', async ({ p
 	await expect(region).toContainText('8');
 	await navigate(page, '/staff/profile');
 	await expect(page.locator('#nickname')).toHaveValue('ชื่อเล่นเดิม');
-	await page.getByRole('link', { name: 'test navigation' }).evaluate((link) => link.remove());
 	await navigate(page, homePath());
 	await expect(region).toContainText('8');
 	await expect(region).not.toContainText('region ไม่พร้อม');
