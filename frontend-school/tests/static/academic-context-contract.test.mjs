@@ -307,11 +307,13 @@ test('menu destinations complete the context required by the target route', asyn
 	const requirement = (routeId) =>
 		routeId.endsWith('/delivery')
 			? 'term_required'
-			: routeId.endsWith('/supervision')
+			: routeId.endsWith('/supervision/mine')
 				? 'term_required'
-				: routeId.endsWith('/student-years')
-					? 'year_required'
-					: 'none';
+				: routeId.endsWith('/supervision')
+					? 'term_optional'
+					: routeId.endsWith('/student-years')
+						? 'year_required'
+						: 'none';
 
 	assert.equal(
 		academicContextualMenuPath('/staff/academic/delivery', selected, options, requirement),
@@ -341,12 +343,21 @@ test('menu destinations complete the context required by the target route', asyn
 	);
 	assert.equal(
 		academicContextualMenuPath(
+			'/staff/academic/supervision/mine',
+			{ academicYearId: 'year-active', academicTermId: null },
+			options,
+			requirement
+		),
+		'/staff/academic/supervision/mine?academicYearId=year-active&academicTermId=term-active'
+	);
+	assert.equal(
+		academicContextualMenuPath(
 			'/staff/academic/supervision',
 			{ academicYearId: 'year-active', academicTermId: null },
 			options,
 			requirement
 		),
-		'/staff/academic/supervision?academicYearId=year-active&academicTermId=term-active'
+		'/staff/academic/supervision?academicYearId=year-active'
 	);
 	assert.equal(
 		academicContextualMenuPath('/staff/work', selected, options, requirement),
@@ -357,7 +368,7 @@ test('menu destinations complete the context required by the target route', asyn
 test('supervision booking defaults only the matching school term and preserves explicit context', async () => {
 	const { academicContextualMenuPath, resolveAcademicContextUrl } = await importRouteContext();
 	const options = contextOptions();
-	const root = '/staff/academic/supervision';
+	const root = '/staff/academic/supervision/mine';
 	const loader = await readProjectFile(`src/routes/(app)${root}/+page.ts`);
 	const requirement = loader.match(/academicContext:\s*'([^']+)'/)[1];
 	const resolver = () => requirement;
@@ -530,7 +541,8 @@ test('application route metadata uses only supported academic context requiremen
 
 	assert.ok(Object.keys(routeModules).length > 0, 'expected route metadata fixtures');
 	const resolveRequirement = createAcademicContextRouteResolver(routeModules);
-	assert.equal(resolveRequirement('/(app)/staff/academic/supervision'), 'term_required');
+	assert.equal(resolveRequirement('/(app)/staff/academic/supervision'), 'term_optional');
+	assert.equal(resolveRequirement('/(app)/staff/academic/supervision/mine'), 'term_required');
 	for (const child of ['evaluate', 'requests', 'cycles', 'templates', 'overview', '[id]']) {
 		assert.equal(
 			resolveRequirement(`/(app)/staff/academic/supervision/${child}`),
@@ -678,7 +690,8 @@ test('existing staff academic consumers declare their exact context requirement'
 		['staff/academic/periods', 'year_required'],
 		['staff/academic/exam-schedules', 'term_required'],
 		['staff/academic/question-bank', 'none'],
-		['staff/academic/supervision', 'term_required'],
+		['staff/academic/supervision', 'term_optional'],
+		['staff/academic/supervision/mine', 'term_required'],
 		['staff/academic/supervision/evaluate', 'term_optional'],
 		['staff/academic/supervision/requests', 'term_optional'],
 		['staff/academic/supervision/cycles', 'term_optional'],
@@ -1233,11 +1246,11 @@ test('repeated old-URL sync shares an already-started repair navigation', async 
 		snapshot = value;
 	});
 	const url = new URL(
-		'https://school.test/staff/academic/supervision?academicYearId=year-active&view=calendar#booking'
+		'https://school.test/staff/academic/supervision/mine?academicYearId=year-active&view=calendar#booking'
 	);
-	const first = store.sync('/(app)/staff/academic/supervision', url);
+	const first = store.sync('/(app)/staff/academic/supervision/mine', url);
 	await started.promise;
-	const repeated = store.sync('/(app)/staff/academic/supervision', new URL(url));
+	const repeated = store.sync('/(app)/staff/academic/supervision/mine', new URL(url));
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.equal(destinations.length, 1);
 	assert.equal(snapshot.status, 'loading');
@@ -1270,16 +1283,18 @@ test('a shared repair failure publishes a retryable error and the next sync can 
 	const stop = store.subscribe((value) => {
 		snapshot = value;
 	});
-	const url = new URL('https://school.test/staff/academic/supervision?academicYearId=year-active');
-	const first = store.sync('/(app)/staff/academic/supervision', url);
+	const url = new URL(
+		'https://school.test/staff/academic/supervision/mine?academicYearId=year-active'
+	);
+	const first = store.sync('/(app)/staff/academic/supervision/mine', url);
 	await started.promise;
-	const repeated = store.sync('/(app)/staff/academic/supervision', url);
+	const repeated = store.sync('/(app)/staff/academic/supervision/mine', url);
 	await new Promise((resolve) => setImmediate(resolve));
 	release.resolve();
 	await Promise.all([first, repeated]);
 	assert.equal(navigations, 1);
 	assert.equal(snapshot.status, 'error');
-	await store.sync('/(app)/staff/academic/supervision', url);
+	await store.sync('/(app)/staff/academic/supervision/mine', url);
 	assert.equal(navigations, 2);
 	assert.equal(snapshot.status, 'ready');
 	stop();
@@ -1304,9 +1319,9 @@ for (const replacement of ['reset', 'different-target']) {
 		const stop = store.subscribe((value) => {
 			snapshot = value;
 		});
-		const route = '/(app)/staff/academic/supervision';
+		const route = '/(app)/staff/academic/supervision/mine';
 		const original = new URL(
-			'https://school.test/staff/academic/supervision?academicYearId=year-active&view=original'
+			'https://school.test/staff/academic/supervision/mine?academicYearId=year-active&view=original'
 		);
 		const first = store.sync(route, original);
 		await started[0].promise;
@@ -1349,16 +1364,16 @@ test('an explicit older term supersedes repair publication without another navig
 	const stop = store.subscribe((value) => {
 		snapshot = value;
 	});
-	const route = '/(app)/staff/academic/supervision';
+	const route = '/(app)/staff/academic/supervision/mine';
 	const pending = store.sync(
 		route,
-		new URL('https://school.test/staff/academic/supervision?academicYearId=year-active')
+		new URL('https://school.test/staff/academic/supervision/mine?academicYearId=year-active')
 	);
 	await started.promise;
 	await store.sync(
 		route,
 		new URL(
-			'https://school.test/staff/academic/supervision?academicYearId=year-planning&academicTermId=term-planning'
+			'https://school.test/staff/academic/supervision/mine?academicYearId=year-planning&academicTermId=term-planning'
 		)
 	);
 	release.resolve();
@@ -1388,8 +1403,8 @@ test('reset before a scheduled repair dispatch prevents obsolete navigation', as
 		snapshot = value;
 	});
 	const pending = store.sync(
-		'/(app)/staff/academic/supervision',
-		new URL('https://school.test/staff/academic/supervision?academicYearId=year-active')
+		'/(app)/staff/academic/supervision/mine',
+		new URL('https://school.test/staff/academic/supervision/mine?academicYearId=year-active')
 	);
 	queueMicrotask(() => store.reset());
 	await pending;

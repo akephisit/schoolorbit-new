@@ -21,8 +21,9 @@ export const nextYear = id(2);
 export const firstCycle = id(3);
 export const secondCycle = id(4);
 export const templateId = id(5);
+export const supervisionRoot = '/staff/academic/supervision';
 export const path = (section: string, academicYearId = year, cycleId = '') =>
-	`/staff/academic/supervision/${section}?academicYearId=${academicYearId}${cycleId ? `&cycleId=${cycleId}` : ''}`;
+	`${supervisionRoot}${section ? `/${section}` : ''}?academicYearId=${academicYearId}${cycleId ? `&cycleId=${cycleId}` : ''}`;
 
 export const savedPeriod = (
 	patch: Partial<SupervisionObservationPeriod> = {}

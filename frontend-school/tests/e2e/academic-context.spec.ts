@@ -341,7 +341,7 @@ test('year changes remove an incompatible term and term-optional routes offer al
 	await expect(page).toHaveURL(/view=calendar/);
 });
 
-test('year-only home navigation respects disabled supervision preload and restores matching term context through history', async ({
+test('year-only home reaches the supervision hub without reads and Mine resolves the matching term', async ({
 	page
 }) => {
 	const reads: URL[] = [];
@@ -359,7 +359,8 @@ test('year-only home navigation respects disabled supervision preload and restor
 	await expect(page.getByLabel('เลือกปีการศึกษา', { exact: true })).toContainText(
 		'ปีการศึกษา 2570'
 	);
-	const destination = `/staff/academic/supervision?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`;
+	const destination = `/staff/academic/supervision?academicYearId=${ids.activeYear}`;
+	const personal = `/staff/academic/supervision/mine?academicYearId=${ids.activeYear}&academicTermId=${ids.activeTerm}`;
 	const link = page.locator('aside').getByRole('link', { name: 'นิเทศทดสอบ', exact: true });
 	await expect(link).toHaveAttribute('href', destination);
 	await expect(link).toHaveAttribute('data-sveltekit-preload-data', 'false');
@@ -373,6 +374,13 @@ test('year-only home navigation respects disabled supervision preload and restor
 	expect(reads).toHaveLength(0);
 	await link.click();
 	await expect(page).toHaveURL(destination);
+	const mine = page
+		.getByTestId('supervision-hub')
+		.getByRole('link', { name: 'ของฉัน', exact: true });
+	await expect(mine).toHaveAttribute('href', personal);
+	expect(reads).toHaveLength(0);
+	await mine.click();
+	await expect(page).toHaveURL(personal);
 	await expect
 		.poll(() => reads.filter((url) => url.pathname === '/api/supervision/cycles').length)
 		.toBe(1);
@@ -386,9 +394,14 @@ test('year-only home navigation respects disabled supervision preload and restor
 		expect(url.searchParams.get('academicTermId')).toBe(ids.activeTerm);
 	}
 	await page.goBack();
+	await expect(page).toHaveURL(destination);
+	await expect(mine).toBeVisible();
+	await page.goBack();
 	await expect(page).toHaveURL(home);
 	await page.goForward();
 	await expect(page).toHaveURL(destination);
+	await page.goForward();
+	await expect(page).toHaveURL(personal);
 	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
 });
 
@@ -401,7 +414,9 @@ test('supervision year-only deep links select the matching school term while exp
 		if (url.pathname.startsWith('/api/supervision/')) reads.push(url);
 	});
 	await mockAcademicContextApis(page);
-	await page.goto(`/staff/academic/supervision?academicYearId=${ids.activeYear}&view=calendar`);
+	await page.goto(
+		`/staff/academic/supervision/mine?academicYearId=${ids.activeYear}&view=calendar`
+	);
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.activeTerm}`));
 	await expect(page).toHaveURL(/view=calendar/);
 	await expect
@@ -413,7 +428,7 @@ test('supervision year-only deep links select the matching school term while exp
 	expect(reads.some((url) => url.pathname.endsWith('/booking-options'))).toBe(false);
 	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 1');
 	await page.goto(
-		`/staff/academic/supervision?academicYearId=${ids.activeYear}&academicTermId=${ids.readyTerm}`
+		`/staff/academic/supervision/mine?academicYearId=${ids.activeYear}&academicTermId=${ids.readyTerm}`
 	);
 	await expect(page.getByLabel('เลือกภาคเรียน', { exact: true })).toContainText('ภาคเรียนที่ 2');
 	await expect(page).toHaveURL(new RegExp(`academicTermId=${ids.readyTerm}`));

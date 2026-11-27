@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { revalidatePage } from './fixtures/page-revalidation';
-import { mock, id, year, savedPeriod, timetableOption } from './fixtures/supervision-route-data';
+import { mock, id, path, savedPeriod, timetableOption } from './fixtures/supervision-route-data';
 import type {
 	RequestSupervisionObservationRequest,
 	SupervisionTimetableOption
@@ -8,7 +8,7 @@ import type {
 
 test.use({ serviceWorkers: 'block' });
 const permissions = ['supervision.request.own', 'supervision.read.own'];
-const root = `/staff/academic/supervision?academicYearId=${year}`;
+const mine = path('mine');
 const optionsPath = '/api/supervision/booking-options';
 const observationsPath = '/api/supervision/observations';
 const choices = () => [timetableOption(0), timetableOption(1), timetableOption(2)];
@@ -22,7 +22,7 @@ const reply = (route: Route, data: unknown, status = 200) =>
 async function openBooking(page: Page, items = choices()) {
 	await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
 	const api = await mock(page, { permissions, term: true, bookingItems: items, canManage: false });
-	await page.goto(root);
+	await page.goto(mine);
 	await expect(page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true })).toHaveCount(1);
 	await expect(page.getByTestId('supervision-lesson-picker')).toHaveCount(0);
 	expect(api.count(optionsPath)).toBe(0);
@@ -290,7 +290,7 @@ test('a booking in another cycle leaves the same dated lesson available in the s
 			]
 		}
 	});
-	await page.goto(root);
+	await page.goto(mine);
 	await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 	await expect(page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ })).toBeEnabled();
 	await page.getByRole('button', { name: /^เลือก คาบ 1 ม.1\/1/ }).click();
@@ -439,7 +439,7 @@ for (const change of ['permissions', 'session'] as const) {
 				]
 			});
 		});
-		await page.goto(root);
+		await page.goto(mine);
 		const region = page.getByTestId('supervision-observations');
 		await expect(
 			region.getByRole('heading', { name: 'ข้อมูลคำขอจากสิทธิ์เดิม', exact: true })

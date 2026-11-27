@@ -164,14 +164,86 @@ test('cycles starts with its own skeleton, keeps template choices lazy, and patc
 	).toHaveText('แบบประเมินทดสอบ');
 	expect(api.count('/api/supervision/templates/summaries')).toBe(1);
 	await page.getByRole('dialog').getByRole('button', { name: 'ยกเลิก', exact: true }).click();
-	await page
-		.getByRole('row', { name: /รอบแรก/ })
-		.getByRole('button', { name: 'ปิดรับคำขอ' })
-		.click();
-	await expect(
-		page.getByRole('row', { name: /รอบแรก/ }).getByRole('button', { name: 'เปิดรับคำขอ' })
-	).toBeVisible();
+	const cycle = page
+		.getByTestId('supervision-cycles-ready')
+		.getByRole('listitem')
+		.filter({ hasText: 'รอบแรก' });
+	await cycle.getByRole('button', { name: 'ปิดรับคำขอ' }).click();
+	await expect(cycle.getByRole('button', { name: 'เปิดรับคำขอ' })).toBeVisible();
 	expect(api.count('/api/supervision/cycles')).toBe(1);
+});
+
+test.describe('cycle management on a 320-pixel touch viewport', () => {
+	test.use({ viewport: { width: 320, height: 800 }, hasTouch: true });
+
+	test('the cycle list fits the page and its actions are reachable from the hub', async ({
+		page
+	}) => {
+		const api = await mock(page);
+		await page.goto(path(''));
+		await page
+			.getByTestId('supervision-hub')
+			.getByRole('link', { name: 'รอบนิเทศ', exact: true })
+			.tap();
+		await expect(page).toHaveURL(path('cycles'));
+		const navigation = page.getByTestId('supervision-workflow-nav');
+		await expect(navigation.getByRole('link')).toHaveCount(1);
+		await expect(
+			navigation.getByRole('link', { name: 'หน้าหลักนิเทศการสอน', exact: true })
+		).toHaveAttribute('href', path(''));
+		const list = page
+			.getByTestId('supervision-cycles-ready')
+			.getByRole('list', { name: 'รายการรอบนิเทศ', exact: true });
+		const cycle = list.getByRole('listitem').filter({ hasText: 'รอบแรก' });
+		await expect(cycle.getByText('เปิดรับคำขอ', { exact: true })).toBeVisible();
+		const date = cycle.getByRole('button', { name: 'กำหนดช่วงวันที่ รอบแรก', exact: true });
+		await expect(date).toBeVisible();
+		await expect(cycle.getByRole('button', { name: 'ปิดรับคำขอ', exact: true })).toBeVisible();
+		await expect(
+			cycle.getByRole('button', { name: 'ลบรอบ รอบแรก ถาวร', exact: true })
+		).toBeVisible();
+		const layout = await cycle.evaluate((item) => {
+			const ready = item.closest('[data-testid="supervision-cycles-ready"]')!;
+			const list = item.closest('ul')!;
+			const main = item.closest('main')!;
+			const bounds = item.getBoundingClientRect();
+			const content = main.getBoundingClientRect();
+			const viewportWidth = document.documentElement.clientWidth;
+			const left = Math.max(bounds.left, content.left, 0);
+			const right = Math.min(bounds.right, content.right, viewportWidth);
+			const actions = Array.from(item.querySelectorAll('button'), (button) =>
+				button.getBoundingClientRect()
+			);
+
+			return {
+				fits: [document.documentElement, main, ready, list, item].every(
+					(element) => element.scrollWidth <= element.clientWidth + 1
+				),
+				actionsFit: actions.every(
+					(rect) =>
+						rect.left >= left && rect.right <= right && rect.width >= 24 && rect.height >= 24
+				),
+				actionsDoNotOverlap: actions.every((rect, index) =>
+					actions
+						.slice(index + 1)
+						.every(
+							(other) =>
+								rect.right <= other.left ||
+								rect.left >= other.right ||
+								rect.bottom <= other.top ||
+								rect.top >= other.bottom
+						)
+				)
+			};
+		});
+		expect(layout).toEqual({ fits: true, actionsFit: true, actionsDoNotOverlap: true });
+		await date.tap();
+		const dialog = page.getByRole('dialog', { name: 'กำหนดช่วงวันที่นิเทศ' });
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'ยกเลิก', exact: true }).tap();
+		await expect(dialog).toHaveCount(0);
+		expect(api.writes.filter((request) => request.includes('/api/supervision/'))).toHaveLength(0);
+	});
 });
 
 test('cycles retains data through a failed refresh and retries only its list', async ({ page }) => {
@@ -277,14 +349,12 @@ test('a pending cycle mutation does not block or patch the next academic year', 
 }) => {
 	const api = await mock(page, { hold: 'patch' });
 	await page.goto(path('cycles'));
-	await page
-		.getByRole('row', { name: /รอบแรก/ })
-		.getByRole('button', { name: 'ปิดรับคำขอ' })
-		.click();
+	const cycles = page.getByTestId('supervision-cycles-ready').getByRole('listitem');
+	await cycles.filter({ hasText: 'รอบแรก' }).getByRole('button', { name: 'ปิดรับคำขอ' }).click();
 	await navigate(page, path('cycles', nextYear));
 	await expect(page.getByText('รอบปีใหม่', { exact: true })).toBeVisible();
 	await expect(
-		page.getByRole('row', { name: /รอบปีใหม่/ }).getByRole('button', { name: 'ปิดรับคำขอ' })
+		cycles.filter({ hasText: 'รอบปีใหม่' }).getByRole('button', { name: 'ปิดรับคำขอ' })
 	).toBeEnabled();
 	api.release();
 	await expect(page.getByText('รอบแรก', { exact: true })).toHaveCount(0);
