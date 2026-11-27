@@ -713,7 +713,7 @@
 		const workflowRevision = lessonWorkflowRevision;
 		const resubmitting = isReturnedOwnRequest;
 		savingAction = 'lesson';
-		const finishChange = observationWrites?.beginChange();
+		const finishChange = observationWrites?.beginChange(observation);
 		try {
 			const response =
 				canManageObservation && !canEditOwnRequested
@@ -794,7 +794,7 @@
 		const submittedId = observation.id;
 		const workflowRevision = evaluatorWorkflowRevision;
 		savingAction = 'evaluators';
-		const finishChange = observationWrites?.beginChange();
+		const finishChange = observationWrites?.beginChange(observation);
 		try {
 			const response = await replaceSupervisionObservationEvaluators(submittedId, {
 				evaluators: selectedEvaluatorIds.map((evaluatorUserId) => ({
@@ -824,7 +824,7 @@
 		const submittedId = observation.id;
 		savingAction = 'resubmit-saved';
 		resubmitError = '';
-		const finishChange = observationWrites?.beginChange();
+		const finishChange = observationWrites?.beginChange(observation);
 		try {
 			const response = await resubmitSupervisionObservationRequest(submittedId);
 			if (!ownsMutation()) return;
@@ -844,7 +844,7 @@
 		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'cancel';
-		const finishChange = observationWrites?.beginChange();
+		const finishChange = observationWrites?.beginChange(observation);
 		try {
 			const response =
 				canManageObservation && !canCancelOwnRequest

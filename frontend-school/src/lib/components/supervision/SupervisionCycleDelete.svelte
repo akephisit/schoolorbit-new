@@ -26,7 +26,7 @@
 	}: {
 		cycle: SupervisionCycle;
 		allowed: boolean;
-		beginObservationChange?: () => () => void;
+		beginObservationChange?: (cycle: SupervisionCycle) => () => void;
 		ondelete: (impact: SupervisionCycleDeletionImpact) => void;
 	} = $props();
 	let open = $state(false);
@@ -113,7 +113,7 @@
 		const sourceContext = ownerKey();
 		saving = true;
 		error = '';
-		const finishChange = beginObservationChange?.();
+		const finishChange = beginObservationChange?.(cycle);
 		try {
 			const response = await deleteSupervisionCycle(cycle.id, {
 				expectedRevision: impact.revision

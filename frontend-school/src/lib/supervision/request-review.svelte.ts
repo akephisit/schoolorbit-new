@@ -55,7 +55,7 @@ export function createSupervisionRequestReview({
 	getObservation: (id: string) => SupervisionObservation | null | undefined;
 	hasManagePermission: () => boolean;
 	captureOwner: () => () => boolean;
-	beginObservationChange?: () => () => void;
+	beginObservationChange?: (observation: SupervisionObservation) => () => void;
 	isBusy: () => boolean;
 	getSavingAction: () => string | null;
 	setSavingAction: (action: string | null) => void;
@@ -244,7 +244,7 @@ export function createSupervisionRequestReview({
 		const messages = actionMessages[action];
 		const actionKey = `${action}:${id}`;
 		setSavingAction(actionKey);
-		const finishChange = beginObservationChange?.();
+		const finishChange = beginObservationChange?.(observation);
 		try {
 			const evaluators = selectedEvaluators(observation).map(({ id, isRequired, roleLabel }) => ({
 				evaluatorUserId: id,

@@ -116,6 +116,7 @@ export async function mock(
 		failStatus?: number;
 		holdAt?: number;
 		term?: boolean | Pick<AcademicTermOption, 'name' | 'sequence' | 'termType'>;
+		additionalTerms?: AcademicTermOption[];
 		schoolDays?: AcademicTermOption['schoolDays'];
 		yearName?: string;
 		observationStatus?: SupervisionObservationStatus;
@@ -290,23 +291,26 @@ export async function mock(
 				return reply(route, {
 					defaultAcademicYearId: year,
 					defaultAcademicTermId: options.term ? id(8) : null,
-					terms: options.term
-						? [
-								{
-									id: id(8),
-									academicYearId: year,
-									blocksYearClosure: true,
-									code: String(options.term === true ? 1 : options.term.sequence),
-									includedInYearResult: true,
-									isVisible: true,
-									schoolDays: options.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI'],
-									status: 'active',
-									...(options.term === true
-										? { name: 'ภาคเรียนที่ 1', sequence: 1, termType: 'regular' }
-										: options.term)
-								} satisfies AcademicTermOption
-							]
-						: [],
+					terms: [
+						...(options.term
+							? [
+									{
+										id: id(8),
+										academicYearId: year,
+										blocksYearClosure: true,
+										code: String(options.term === true ? 1 : options.term.sequence),
+										includedInYearResult: true,
+										isVisible: true,
+										schoolDays: options.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+										status: 'active',
+										...(options.term === true
+											? { name: 'ภาคเรียนที่ 1', sequence: 1, termType: 'regular' }
+											: options.term)
+									} satisfies AcademicTermOption
+								]
+							: []),
+						...(options.additionalTerms ?? [])
+					],
 					years: [year, nextYear].map((value, index) => ({
 						isVisible: true,
 						id: value,

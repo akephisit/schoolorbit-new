@@ -33,7 +33,7 @@
 		{ path: `${basePath}/templates`, label: 'แบบประเมิน', icon: ClipboardList }
 	];
 	const activePath = $derived(links.find(({ path }) => `/(app)${path}` === page.route.id)?.path);
-	const selectedContext = $derived(readAcademicContextFromUrl(page.url));
+	const selectedContext = $derived(readAcademicContextFromUrl(new URL(page.url.href)));
 	const visibleLinks = $derived(
 		links.filter(({ path }) =>
 			userCanAccessRoute($authStore.user, $userPermissions, `/(app)${path}`)

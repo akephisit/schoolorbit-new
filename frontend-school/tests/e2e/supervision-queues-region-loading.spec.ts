@@ -350,6 +350,79 @@ for (const first of ['read', 'write'] as const) {
 	});
 }
 
+test('Mine reads another term while a request change from the year-wide queue is pending', async ({
+	page
+}) => {
+	const otherTerm = id(9);
+	const otherHref = `${minePath}?academicYearId=${year}&academicTermId=${otherTerm}`;
+	const api = await mock(page, {
+		term: true,
+		hold: 'patch',
+		additionalTerms: [
+			{
+				id: otherTerm,
+				academicYearId: year,
+				name: 'ภาคเรียนที่ 2',
+				sequence: 2,
+				code: '2',
+				termType: 'regular',
+				status: 'active',
+				blocksYearClosure: true,
+				includedInYearResult: true,
+				isVisible: true,
+				schoolDays: ['MON', 'TUE', 'WED', 'THU', 'FRI']
+			}
+		]
+	});
+	let otherTermReads = 0;
+	await page.route(
+		(url) =>
+			url.pathname === observationPath && url.searchParams.get('academicTermId') === otherTerm,
+		(route) => {
+			otherTermReads += 1;
+			return route.fulfill({
+				json: {
+					success: true,
+					data: {
+						items: [
+							{
+								...api.observation(),
+								id: id(81),
+								academicTermId: otherTerm,
+								periods: [
+									savedPeriod({
+										observationId: id(81),
+										lessonSnapshot: { subjectName: 'วิชาในภาคเรียนที่สอง' }
+									})
+								]
+							}
+						]
+					}
+				}
+			});
+		}
+	);
+	const returnPath = `${observationPath}/${id(30)}/return-request`;
+	await page.goto(path('requests'));
+	const submitted = page.waitForRequest(
+		(request) => new URL(request.url()).pathname === returnPath
+	);
+	await page.getByRole('button', { name: 'ส่งกลับคำขอ', exact: true }).click();
+	await submitted;
+	const list = page.getByTestId('supervision-observations');
+	try {
+		await navigate(page, otherHref);
+		await expect(page).toHaveURL(otherHref);
+		await expect(
+			list.getByRole('heading', { name: 'วิชาในภาคเรียนที่สอง', exact: true })
+		).toBeVisible();
+		await expect(list).toHaveAttribute('aria-busy', 'false');
+	} finally {
+		api.release();
+	}
+	expect(otherTermReads).toBe(1);
+});
+
 for (const waiting of [false, true]) {
 	test(`booking patches Mine immediately with a ${waiting ? 'pending' : 'fresh'} list`, async ({
 		page

@@ -971,12 +971,15 @@
 		return routeData.observations !== null;
 	}
 	function captureObservationRead(ownsRead: () => boolean, startedAt?: number) {
-		const isCurrent = section === 'mine' ? observationWrites?.guardRead(startedAt) : undefined;
+		const read =
+			section === 'mine' && academicYearId && academicTermId
+				? observationWrites?.guardRead({ academicYearId, academicTermId }, startedAt)
+				: undefined;
 		return (result: RouteLoadResult<ObservationRegion>) => {
 			if (!ownsRead()) return;
 			const denied = result.ok && !result.data.readable;
-			if (!denied && isCurrent && !isCurrent()) {
-				void observationWrites?.whenSettled().then(() => {
+			if (!denied && read && !read.isCurrent()) {
+				void read.whenSettled().then(() => {
 					if (ownsRead()) void retryObservations();
 				});
 				return;
@@ -1117,7 +1120,10 @@
 		if (!canRequest || !currentBookingCycle || !academicTermId)
 			throw new Error('รอบนิเทศยังไม่เปิดรับคำขอ');
 		const ownsMutation = captureMutationOwner();
-		const finishChange = observationWrites?.beginChange();
+		const finishChange = observationWrites?.beginChange({
+			academicYearId: currentBookingCycle.academicYearId,
+			academicTermId
+		});
 		let incomplete: boolean;
 		try {
 			const response = await requestSupervisionObservation({
@@ -1295,7 +1301,7 @@
 		savingEvaluation = submission;
 		const ownsMutation = captureMutationOwner();
 		const isCurrentSubmission = () => savingEvaluation === submission && ownsMutation();
-		const finishChange = observationWrites?.beginChange();
+		const finishChange = observationWrites?.beginChange(selectedEvaluation);
 		try {
 			const payload = evaluationPayload();
 			const response = await submitMySupervisionEvaluation(observationId, payload);
@@ -1329,11 +1335,12 @@
 
 	async function acknowledgeResult(id: string) {
 		const draft = acknowledgeDrafts[id];
-		if (!draft || mutationBusy || acknowledgeDialogId !== id) return;
+		const current = observations.find((observation) => observation.id === id);
+		if (!draft || !current || mutationBusy || acknowledgeDialogId !== id) return;
 		draft.error = '';
 		savingAction = `acknowledge-result:${id}`;
 		const ownsMutation = captureMutationOwner();
-		const finishChange = observationWrites?.beginChange();
+		const finishChange = observationWrites?.beginChange(current);
 		try {
 			const response = await acknowledgeSupervisionObservation(id, {
 				comment: draft.comment || null
