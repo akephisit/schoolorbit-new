@@ -361,6 +361,9 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 		'frontend-school/src/lib/components/supervision/SupervisionWorkspace.svelte'
 	);
 	const routeAccess = await readRepoFile('frontend-school/src/lib/auth/route-access.ts');
+	const supervisionLayout = await readRepoFile(
+		'frontend-school/src/routes/(app)/staff/academic/supervision/+layout.svelte'
+	);
 	const routeFiles = {
 		base: await readRepoFile(
 			'frontend-school/src/routes/(app)/staff/academic/supervision/+page.svelte'
@@ -418,7 +421,11 @@ test('supervision keeps separate workflow routes with an in-place requests calen
 	assert.doesNotMatch(supervisionWorkspace, /bind:value=\{activeTab\}/);
 	assert.match(supervisionWorkspace, /export type SupervisionWorkspaceSection/);
 	assert.match(supervisionWorkspace, /section:/);
-	assert.match(supervisionWorkspace, /function sectionRoute/);
+	assert.match(supervisionLayout, /function sectionRoute[\s\S]*?academicContextualMenuPath/);
+	assert.match(supervisionLayout, /userCanAccessRoute/);
+	assert.match(supervisionLayout, /aria-current=\{activePath === item\.path/);
+	assert.match(supervisionLayout, /data-sveltekit-preload-data=\{false\}/);
+	assert.doesNotMatch(supervisionWorkspace, /aria-label="เมนูนิเทศการสอน"/);
 	assert.match(supervisionWorkspace, /routeData\.templates/);
 	assert.doesNotMatch(supervisionWorkspace, /listSupervisionTemplates/);
 	assert.match(supervisionWorkspace, /shouldLoadObservations/);

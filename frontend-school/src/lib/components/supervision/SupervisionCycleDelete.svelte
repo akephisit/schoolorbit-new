@@ -21,10 +21,12 @@
 	let {
 		cycle,
 		allowed,
+		beginObservationChange,
 		ondelete
 	}: {
 		cycle: SupervisionCycle;
 		allowed: boolean;
+		beginObservationChange?: (cycle: SupervisionCycle) => () => void;
 		ondelete: (impact: SupervisionCycleDeletionImpact) => void;
 	} = $props();
 	let open = $state(false);
@@ -111,6 +113,7 @@
 		const sourceContext = ownerKey();
 		saving = true;
 		error = '';
+		const finishChange = beginObservationChange?.(cycle);
 		try {
 			const response = await deleteSupervisionCycle(cycle.id, {
 				expectedRevision: impact.revision
@@ -127,6 +130,7 @@
 			if (sourceEpoch === epoch && sourceContext === ownerKey())
 				error = failure instanceof Error ? failure.message : 'ลบรอบนิเทศไม่สำเร็จ';
 		} finally {
+			finishChange?.();
 			if (sourceEpoch === epoch && sourceContext === ownerKey()) saving = false;
 		}
 	}
@@ -147,13 +151,15 @@
 			{/snippet}
 		</AlertDialog.Trigger>
 	{/if}
-	<AlertDialog.Content class="sm:max-w-lg">
-		<AlertDialog.Header
-			><AlertDialog.Title>ลบรอบนิเทศถาวร</AlertDialog.Title><AlertDialog.Description
-				>รอบ “{cycle.title}” พร้อมคำขอ ผลประเมิน และข้อมูลของรอบนี้จะถูกลบออกจากฐานข้อมูล
-				กู้คืนจากหน้านี้ไม่ได้</AlertDialog.Description
-			></AlertDialog.Header
-		>
+	<AlertDialog.Content
+		class="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-4 sm:max-w-lg sm:p-6"
+	>
+		<AlertDialog.Header class="text-start">
+			<AlertDialog.Title>ลบรอบนิเทศถาวร</AlertDialog.Title>
+			<AlertDialog.Description class="wrap-anywhere">
+				รอบ “{cycle.title}” พร้อมคำขอ ผลประเมิน และข้อมูลของรอบนี้จะถูกลบถาวร
+			</AlertDialog.Description>
+		</AlertDialog.Header>
 		{#if loading}<PageSkeleton rows={3} columns={2} />{/if}
 		{#if error}<PageState
 				variant="error"
@@ -163,19 +169,21 @@
 				onaction={() => void preview()}
 			/>{/if}
 		{#if impact}
+			<h3 class="text-sm font-semibold">ข้อมูลที่จะถูกลบ</h3>
 			<dl
-				class="grid grid-cols-2 gap-3 rounded-lg border p-4 text-sm"
+				class="grid grid-cols-2 gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm sm:grid-cols-3 sm:p-4"
 				data-testid="supervision-delete-impact"
 			>
 				{#each [{ label: 'เป้าหมาย', count: impact.counts.targets }, { label: 'คำขอ/รายการนิเทศ', count: impact.counts.observations }, { label: 'คาบนิเทศ', count: impact.counts.periods }, { label: 'ผู้ประเมินที่มอบหมาย', count: impact.counts.evaluators }, { label: 'คำตอบประเมิน', count: impact.counts.responses }, { label: 'บันทึกการดำเนินการ', count: impact.counts.actions }] as item (item.label)}<div
 					>
 						<dt class="text-muted-foreground">{item.label}</dt>
-						<dd class="text-lg font-semibold">{item.count}</dd>
+						<dd class="text-lg font-semibold tabular-nums">{item.count}</dd>
 					</div>{/each}
 			</dl>
 			<p class="text-sm text-muted-foreground">แบบประเมินกลาง บัญชีครู และตารางสอนยังคงอยู่</p>
 			<div class="space-y-2">
-				<Label for={`delete-cycle-${cycle.id}`}>พิมพ์ชื่อรอบ “{cycle.title}” เพื่อยืนยัน</Label
+				<Label for={`delete-cycle-${cycle.id}`} class="wrap-anywhere"
+					>พิมพ์ชื่อรอบ “{cycle.title}” เพื่อยืนยัน</Label
 				><Input
 					id={`delete-cycle-${cycle.id}`}
 					bind:value={confirmation}
@@ -184,7 +192,7 @@
 				/>
 			</div>
 		{/if}
-		<AlertDialog.Footer
+		<AlertDialog.Footer class="border-t pt-4"
 			><AlertDialog.Cancel disabled={saving}>ยกเลิก</AlertDialog.Cancel><LoadingButton
 				variant="destructive"
 				loading={saving}

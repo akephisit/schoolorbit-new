@@ -12,6 +12,7 @@ import type {
 	UpdateRequestedObservationRequest
 } from '../../../src/lib/api/supervision';
 import type { AcademicTermOption } from '../../../src/lib/api/academic-context';
+import type { MenuGroup } from '../../../src/lib/api/menu';
 import { sessionState } from './session-state';
 import type { Page, Route } from '@playwright/test';
 export const id = (n: number) => `44000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -78,6 +79,7 @@ export async function mock(
 	page: Page,
 	options: {
 		permissions?: string[];
+		menuGroups?: MenuGroup[];
 		cycleStatus?: SupervisionCycleStatus;
 		observationStartDate?: string | null;
 		observationEndDate?: string | null;
@@ -114,6 +116,7 @@ export async function mock(
 		failStatus?: number;
 		holdAt?: number;
 		term?: boolean | Pick<AcademicTermOption, 'name' | 'sequence' | 'termType'>;
+		additionalTerms?: AcademicTermOption[];
 		schoolDays?: AcademicTermOption['schoolDays'];
 		yearName?: string;
 		observationStatus?: SupervisionObservationStatus;
@@ -288,23 +291,26 @@ export async function mock(
 				return reply(route, {
 					defaultAcademicYearId: year,
 					defaultAcademicTermId: options.term ? id(8) : null,
-					terms: options.term
-						? [
-								{
-									id: id(8),
-									academicYearId: year,
-									blocksYearClosure: true,
-									code: String(options.term === true ? 1 : options.term.sequence),
-									includedInYearResult: true,
-									isVisible: true,
-									schoolDays: options.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI'],
-									status: 'active',
-									...(options.term === true
-										? { name: 'ภาคเรียนที่ 1', sequence: 1, termType: 'regular' }
-										: options.term)
-								} satisfies AcademicTermOption
-							]
-						: [],
+					terms: [
+						...(options.term
+							? [
+									{
+										id: id(8),
+										academicYearId: year,
+										blocksYearClosure: true,
+										code: String(options.term === true ? 1 : options.term.sequence),
+										includedInYearResult: true,
+										isVisible: true,
+										schoolDays: options.schoolDays ?? ['MON', 'TUE', 'WED', 'THU', 'FRI'],
+										status: 'active',
+										...(options.term === true
+											? { name: 'ภาคเรียนที่ 1', sequence: 1, termType: 'regular' }
+											: options.term)
+									} satisfies AcademicTermOption
+								]
+							: []),
+						...(options.additionalTerms ?? [])
+					],
 					years: [year, nextYear].map((value, index) => ({
 						isVisible: true,
 						id: value,
@@ -313,7 +319,7 @@ export async function mock(
 						status: 'open'
 					}))
 				});
-			if (resource === '/api/menu/user') return reply(route, { groups: [] });
+			if (resource === '/api/menu/user') return reply(route, { groups: options.menuGroups ?? [] });
 			const cycles = () =>
 				[firstCycle, secondCycle].map((value, index) => ({
 					id: value,

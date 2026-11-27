@@ -50,12 +50,12 @@ test('school progress loads independently of cycle options and retains published
 	const api = await mock(page, { hold: 'cycles', permissions: ['supervision.read.school'] });
 	await page.goto(path('overview', year, firstCycle));
 	const progress = page.getByTestId('supervision-progress');
-	await expect(progress.getByText('รอครูรับทราบ', { exact: true }).locator('..')).toHaveText(
-		/^2\s*รอครูรับทราบ$/
-	);
-	await expect(progress.getByText('เสร็จสิ้น', { exact: true }).locator('..')).toHaveText(
-		/^3\s*เสร็จสิ้น$/
-	);
+	const pendingAcknowledgement = progress.locator('dt', { hasText: /^รอครูรับทราบ$/ });
+	const completed = progress.locator('dt', { hasText: /^เสร็จสิ้น$/ });
+	await expect(
+		pendingAcknowledgement.locator('xpath=following-sibling::*[1][self::dd]')
+	).toHaveText('2');
+	await expect(completed.locator('xpath=following-sibling::*[1][self::dd]')).toHaveText('3');
 	await expect(progress).toContainText('4.25');
 	await expect(page.getByTestId('supervision-cycle-selector').getByRole('status')).toBeVisible();
 	await expect(page.getByText(/รับรองผล|อนุมัติผล|รับรอง\/อนุมัติ/)).toHaveCount(0);

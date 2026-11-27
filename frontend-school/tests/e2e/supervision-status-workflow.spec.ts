@@ -76,7 +76,11 @@ for (const colorScheme of ['light', 'dark'] as const) {
 			await expect(dialog).toHaveCount(0);
 			await expect(page.getByTestId('supervision-workflow')).toContainText('ผู้รับผิดชอบตรวจคำขอ');
 			await expect(page.getByTestId('supervision-current-return-reason')).toHaveCount(0);
-			await expect(page.getByText('คาบ 2', { exact: true })).toBeVisible();
+			await expect(
+				page
+					.getByTestId('supervision-saved-periods')
+					.getByText('คาบ 2 · วิชาปัจจุบัน 2', { exact: true })
+			).toBeVisible();
 			expect(api.writes).toEqual([`PATCH ${observationPath}/request`]);
 			expect(api.payloads).toEqual([
 				expect.objectContaining({
@@ -136,6 +140,7 @@ for (const status of ['draft', 'open', 'closed', 'archived'] as const) {
 	test(`booking availability follows manual ${status} state regardless of today`, async ({
 		page
 	}) => {
+		await page.clock.setFixedTime(new Date('2026-10-01T03:00:00Z'));
 		await mock(page, {
 			permissions: teacherPermissions,
 			bookingItems: [timetableOption(0), timetableOption(1), timetableOption(2)],
@@ -145,9 +150,10 @@ for (const status of ['draft', 'open', 'closed', 'archived'] as const) {
 		await page.goto(path('').replace('/supervision/?', '/supervision?'));
 		await page.getByRole('button', { name: 'จองคาบนิเทศ', exact: true }).click();
 		if (status === 'open') {
-			await expect(
-				page.getByText('เปิดรับคำขอจนกว่าผู้ดูแลจะเปลี่ยนสถานะรอบนิเทศ', { exact: true })
-			).toBeVisible();
+			await expect(page.getByRole('combobox', { name: 'เลือกรอบนิเทศ', exact: true })).toHaveText(
+				'รอบแรก'
+			);
+			await expect(page.getByTestId('supervision-lesson-picker')).toBeVisible();
 			await expect(page.getByRole('button', { name: 'สัปดาห์ก่อน', exact: true })).toBeEnabled();
 			await expect(page.getByRole('button', { name: 'สัปดาห์ถัดไป', exact: true })).toBeEnabled();
 		} else {
@@ -268,11 +274,16 @@ test('own returned row names the next teacher action and links to correction', a
 	await page.goto(path('').replace('/supervision/?', '/supervision?'));
 	const row = page.locator('[data-supervision-own-list="cards"]');
 	await expect(row).toContainText('ขั้น 1/4 คำขอ');
-	await expect(row).toContainText('ถัดไป: ครูผู้ขอรับนิเทศ');
-	await expect(row.getByRole('link', { name: 'แก้ไขและส่งใหม่', exact: true })).toHaveAttribute(
-		'href',
-		new RegExp(id(30))
-	);
+	await expect(row.getByText('ส่งกลับให้แก้ไข', { exact: true })).toBeVisible();
+	const correction = row.getByRole('link', { name: 'แก้ไขและส่งใหม่', exact: true });
+	const destination = `${detailPath}&academicTermId=${id(8)}`;
+	await expect(correction).toBeVisible();
+	await expect(correction).toHaveAttribute('href', destination);
+	await correction.click();
+	await expect(page).toHaveURL(destination);
+	const workflow = page.getByTestId('supervision-workflow');
+	await expect(workflow.getByText('ถัดไป', { exact: true })).toBeVisible();
+	await expect(workflow.getByText('ครูผู้ขอรับนิเทศ', { exact: true })).toBeVisible();
 });
 
 test('submitted evaluator evidence prevents returning or reassigning a legacy request', async ({
@@ -475,6 +486,71 @@ test('the last required submission publishes the rubric and the teacher complete
 		`POST ${observationPath}/acknowledge`
 	]);
 	expect(api.payloads.at(-1)).toEqual({ comment: 'รับทราบผลแล้ว' });
+});
+
+test('acknowledgment keeps each draft across dismissals and allows retry after a failed save', async ({
+	page
+}) => {
+	const api = await mock(page, {
+		permissions: teacherPermissions,
+		canManage: false,
+		observationStatus: 'published',
+		additionalObservations: [{ id: id(34) }]
+	});
+	let release = () => {};
+	const held = new Promise<void>((resolve) => (release = resolve));
+	const refusal = 'ยังบันทึกการรับทราบผลไม่ได้';
+	await page.route(
+		`**${observationPath}/acknowledge`,
+		async (route) => {
+			await held;
+			await route.fulfill({
+				status: 409,
+				headers: { 'X-CSRF-Token': 'synthetic-csrf' },
+				json: { success: false, error: refusal }
+			});
+		},
+		{ times: 1 }
+	);
+	await page.goto(`${path('').replace('/supervision/?', '/supervision?')}&academicTermId=${id(8)}`);
+	const acknowledgments = page.getByRole('button', { name: 'รับทราบผล', exact: true });
+	const dialog = page.getByRole('dialog');
+	const comment = dialog.getByLabel('ความคิดเห็นเพิ่มเติม (ถ้ามี)', { exact: true });
+	const cancel = dialog.getByRole('button', { name: 'ยกเลิก', exact: true });
+	const submit = dialog.getByRole('button', { name: 'ยืนยันรับทราบ', exact: true });
+
+	await expect(acknowledgments).toHaveCount(2);
+	await acknowledgments.first().click();
+	await comment.fill('ความคิดเห็นของรายการแรก');
+	await cancel.click();
+	await expect(dialog).toHaveCount(0);
+	await acknowledgments.nth(1).click();
+	await expect(comment).toHaveValue('');
+	await comment.fill('ความคิดเห็นของรายการที่สอง');
+	await cancel.click();
+	await acknowledgments.first().click();
+	await expect(comment).toHaveValue('ความคิดเห็นของรายการแรก');
+
+	await submit.click();
+	try {
+		await expect(
+			dialog.getByRole('button', { name: 'กำลังบันทึก...', exact: true })
+		).toBeDisabled();
+		await expect(cancel).toBeDisabled();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toHaveAttribute('data-state', 'open');
+	} finally {
+		release();
+	}
+	await expect(dialog.getByRole('alert')).toHaveText(refusal);
+	await expect(comment).toHaveValue('ความคิดเห็นของรายการแรก');
+	await submit.click();
+	await expect(dialog).toHaveCount(0);
+	expect(api.payloads.at(-1)).toEqual({ comment: 'ความคิดเห็นของรายการแรก' });
+
+	await expect(acknowledgments).toHaveCount(1);
+	await acknowledgments.click();
+	await expect(comment).toHaveValue('ความคิดเห็นของรายการที่สอง');
 });
 
 for (const referenceState of ['pending', 'failed'] as const) {

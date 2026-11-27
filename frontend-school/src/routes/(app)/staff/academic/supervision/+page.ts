@@ -6,6 +6,7 @@ import {
 } from '#lib/api/supervision.js';
 import { captureRouteLoad } from '#lib/navigation/route-load.js';
 import {
+	resolveSupervisionRead,
 	waitForSupervisionAccess,
 	SUPERVISION_OBSERVATION_READ_PERMISSIONS
 } from '#lib/supervision/supervision-access.js';
@@ -35,18 +36,21 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		access,
 		waitForSupervisionAccess(SUPERVISION_OBSERVATION_READ_PERMISSIONS)
 	]).then(([route, read]) => route && read);
+	const observationsStartedAt = performance.now();
 	const observations =
 		academicYearId && academicTermId
 			? captureRouteLoad(
-					observationAccess.then(async (readable) => ({
-						readable,
-						items: readable
-							? await listSupervisionObservations(
-									{ academicYearId, ...(academicTermId ? { academicTermId } : {}) },
-									{ requestFetch: fetch }
+					observationAccess.then(async (allowed) => {
+						const items = allowed
+							? await resolveSupervisionRead(
+									listSupervisionObservations(
+										{ academicYearId, academicTermId },
+										{ requestFetch: fetch }
+									)
 								)
-							: []
-					})),
+							: null;
+						return { readable: items !== null, items: items ?? [] };
+					}),
 					'โหลดรายการนิเทศไม่สำเร็จ'
 				)
 			: null;
@@ -81,6 +85,7 @@ export const load: PageLoad = ({ fetch, url, depends }) => {
 		cycles,
 		templates,
 		observations,
+		observationsStartedAt,
 		teacherStatus: null
 	};
 };

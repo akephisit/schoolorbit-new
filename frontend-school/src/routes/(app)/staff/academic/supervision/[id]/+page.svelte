@@ -6,6 +6,7 @@
 	import SupervisionSavedPeriods from '#lib/components/supervision/SupervisionSavedPeriods.svelte';
 	import SupervisionRequestReview from '#lib/components/supervision/SupervisionRequestReview.svelte';
 	import { createSupervisionRequestReview } from '#lib/supervision/request-review.svelte.js';
+	import { useSupervisionObservationWrites } from '#lib/supervision/observation-writes.js';
 	import {
 		schoolCivilDate,
 		cycleDateRangeError,
@@ -30,10 +31,10 @@
 		SUPERVISION_OBSERVATION_READ_PERMISSIONS
 	} from '#lib/supervision/supervision-access.js';
 	import {
-		ArrowLeft,
 		CalendarClock,
 		Check,
 		ChevronsUpDown,
+		LockKeyhole,
 		RefreshCw,
 		Trash2,
 		UserCheck
@@ -94,6 +95,7 @@
 
 	let { data }: { data: PageData } = $props();
 	const academicContext = getAcademicContextStore();
+	const observationWrites = useSupervisionObservationWrites();
 	const academicContextOptions = $derived($academicContext.options);
 
 	let loading = $state(true);
@@ -204,6 +206,7 @@
 		getObservation: (id) => (observation?.id === id ? observation : null),
 		hasManagePermission: () => canManageObservation,
 		captureOwner: captureMutationOwner,
+		beginObservationChange: observationWrites?.beginChange,
 		isBusy: () => savingAction !== null,
 		getSavingAction: () => savingAction,
 		setSavingAction: (action) => (savingAction = action),
@@ -562,9 +565,6 @@
 
 	function lessonDetails(item: SupervisionObservation): DetailItem[] {
 		return [
-			{ label: 'วิชา', value: observationSubjectLabel(item) },
-			{ label: 'คาบ', value: observationPeriodLabel(item) },
-			{ label: 'ชั้น/ห้อง', value: observationClassroomLabel(item) },
 			{ label: 'ห้องเรียน', value: observationRoomLabel(item) },
 			{ label: 'วันที่/เวลา', value: formatDateTime(item.observedAt) },
 			{ label: 'ที่มา', value: lessonSourceLabel(item) }
@@ -713,6 +713,7 @@
 		const workflowRevision = lessonWorkflowRevision;
 		const resubmitting = isReturnedOwnRequest;
 		savingAction = 'lesson';
+		const finishChange = observationWrites?.beginChange(observation);
 		try {
 			const response =
 				canManageObservation && !canEditOwnRequested
@@ -725,6 +726,7 @@
 		} catch (saveError) {
 			if (ownsMutation()) throw saveError;
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}
@@ -792,6 +794,7 @@
 		const submittedId = observation.id;
 		const workflowRevision = evaluatorWorkflowRevision;
 		savingAction = 'evaluators';
+		const finishChange = observationWrites?.beginChange(observation);
 		try {
 			const response = await replaceSupervisionObservationEvaluators(submittedId, {
 				evaluators: selectedEvaluatorIds.map((evaluatorUserId) => ({
@@ -810,6 +813,7 @@
 			if (!ownsMutation()) return;
 			toast.error(saveError instanceof Error ? saveError.message : 'แก้ไขผู้ประเมินไม่สำเร็จ');
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}
@@ -820,6 +824,7 @@
 		const submittedId = observation.id;
 		savingAction = 'resubmit-saved';
 		resubmitError = '';
+		const finishChange = observationWrites?.beginChange(observation);
 		try {
 			const response = await resubmitSupervisionObservationRequest(submittedId);
 			if (!ownsMutation()) return;
@@ -829,6 +834,7 @@
 			if (ownsMutation())
 				resubmitError = failure instanceof Error ? failure.message : 'ส่งคำขอเดิมใหม่ไม่สำเร็จ';
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}
@@ -838,6 +844,7 @@
 		const ownsMutation = captureMutationOwner();
 		const submittedId = observation.id;
 		savingAction = 'cancel';
+		const finishChange = observationWrites?.beginChange(observation);
 		try {
 			const response =
 				canManageObservation && !canCancelOwnRequest
@@ -855,25 +862,14 @@
 				cancelError instanceof Error ? cancelError.message : 'ยกเลิกรายการนิเทศไม่สำเร็จ'
 			);
 		} finally {
+			finishChange?.();
 			if (ownsMutation()) savingAction = null;
 		}
 	}
 </script>
 
-<PageShell
-	title={pageTitle}
-	description="รายละเอียดคาบนิเทศ ผู้ประเมิน ผลประเมิน และการจัดการรายการเดียว"
-	{backHref}
-	backLabel="กลับหน้านิเทศการสอน"
->
-	{#snippet actions()}
-		<Button variant="outline" href={backHref} data-sveltekit-preload-data={false}>
-			<ArrowLeft class="h-4 w-4" />
-			กลับ
-		</Button>
-	{/snippet}
-
-	<div class="space-y-4" data-testid="supervision-detail" aria-busy={loading}>
+<PageShell title={pageTitle} {backHref} backPreload={false} backLabel="กลับหน้านิเทศการสอน">
+	<div class="min-w-0 space-y-5" data-testid="supervision-detail" aria-busy={loading}>
 		{#if loading && !observation}
 			<div role="status" aria-label="กำลังโหลด"><PageSkeleton /></div>
 		{:else if !observation && error}
@@ -889,6 +885,70 @@
 					variant="outline"
 					onclick={retryObservation}>ลองใหม่</Button
 				>{/if}
+			<section aria-labelledby="supervision-detail-subject" class="rounded-xl border bg-card">
+				<div class="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+					<div class="min-w-0 space-y-2">
+						<Badge
+							variant="outline"
+							class={cn(
+								(observation.status === 'requested' || observation.status === 'returned') &&
+									'border-warning/30 bg-warning/10 text-warning',
+								(observation.status === 'planned' ||
+									observation.status === 'in_progress' ||
+									observation.status === 'published') &&
+									'border-primary/30 bg-primary/10 text-primary',
+								(observation.status === 'acknowledged' || observation.status === 'completed') &&
+									'border-success/30 bg-success/10 text-success',
+								observation.status === 'cancelled' && 'bg-muted text-muted-foreground'
+							)}>{statusLabel(observation.status)}</Badge
+						>
+						<h2 id="supervision-detail-subject" class="text-xl font-semibold wrap-anywhere">
+							{observationSubjectLabel(observation)}
+						</h2>
+						<p class="text-sm wrap-anywhere text-muted-foreground">
+							{observationPeriodLabel(observation)} · {observationClassroomLabel(observation)}
+						</p>
+					</div>
+					{#if canResubmitSaved || canEditLesson || canReviewPendingRequest || canEditEvaluators || canCancelObservation}
+						<div class="flex flex-wrap items-center gap-2 lg:justify-end">
+							{#if canCancelObservation}
+								<Button variant="destructive" onclick={() => (cancelDialogOpen = true)}>
+									ยกเลิก
+								</Button>
+							{/if}
+							{#if canEditLesson}
+								<Button
+									variant={isReturnedOwnRequest ? 'default' : 'outline'}
+									onclick={() => void openLessonEditor()}
+								>
+									<CalendarClock class="size-4" />
+									{isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'แก้คาบ/วันเวลา'}
+								</Button>
+							{/if}
+							{#if canResubmitSaved}
+								<LoadingButton
+									onclick={resubmitSaved}
+									loading={savingAction === 'resubmit-saved'}
+									loadingLabel="กำลังส่งใหม่..."
+									disabled={!cycleAllowsResubmission || savingAction !== null}
+									>ส่งใหม่ด้วยคาบเดิม</LoadingButton
+								>
+							{/if}
+							{#if canReviewPendingRequest}
+								<Button onclick={() => setRequestReviewOpen(true)} disabled={savingAction !== null}>
+									<UserCheck class="size-4" />
+									ตรวจคำขอ
+								</Button>
+							{:else if canEditEvaluators}
+								<Button variant="outline" onclick={openEvaluatorEditor}>
+									<UserCheck class="size-4" />
+									แก้ผู้ประเมิน
+								</Button>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			</section>
 			<div class="space-y-3">
 				<SupervisionWorkflow {observation} />
 				{#if resubmitError}<div
@@ -907,11 +967,11 @@
 					</div>{/if}
 				{#if observation.status === 'returned'}
 					<div
-						class="rounded-lg border bg-muted/30 p-4"
+						class="rounded-lg border border-warning/30 bg-warning/5 p-4"
 						data-testid="supervision-current-return-reason"
 					>
-						<p class="text-sm font-medium">เหตุผลที่ส่งกลับ</p>
-						<p class="mt-1 whitespace-pre-wrap text-sm">
+						<p class="text-sm font-semibold text-warning">เหตุผลที่ส่งกลับ</p>
+						<p class="mt-1 text-sm wrap-anywhere whitespace-pre-wrap">
 							{currentReturnReason(observation) ?? 'ไม่ได้ระบุเหตุผล'}
 						</p>
 						{#if isReturnedOwnRequest && canEditOwnRequested && cycle && cycle.status !== 'open'}<p
@@ -926,172 +986,127 @@
 					</div>
 				{/if}
 			</div>
-			<div class="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-				<div class="min-w-0 space-y-4">
+			<div class="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(16rem,0.35fr)]">
+				<div class="min-w-0 space-y-5">
 					<Card.Root>
-						<Card.Header>
-							<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-								<div class="min-w-0 space-y-1">
-									<Card.Title class="flex flex-wrap items-center gap-2">
-										{observationSubjectLabel(observation)}
-										<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-									</Card.Title>
-									<Card.Description>
-										{observationPeriodLabel(observation)} · {observationClassroomLabel(observation)}
-									</Card.Description>
-									{#if hasDetachedTimetableSource(observation)}<p
-											class="text-sm text-muted-foreground"
-										>
-											คาบเดิมถูกนำออกจากตารางปัจจุบัน ข้อมูลคาบและผลการนิเทศที่บันทึกไว้ยังคงอยู่
-										</p>{/if}
-								</div>
-								<div class="flex flex-wrap gap-2">
-									{#if canResubmitSaved}<LoadingButton
-											variant="outline"
-											onclick={resubmitSaved}
-											loading={savingAction === 'resubmit-saved'}
-											loadingLabel="กำลังส่งใหม่..."
-											disabled={!cycleAllowsResubmission || savingAction !== null}
-											>ส่งใหม่ด้วยคาบเดิม</LoadingButton
-										>{/if}
-									{#if canEditLesson}
-										<Button variant="outline" onclick={() => void openLessonEditor()}>
-											<CalendarClock class="h-4 w-4" />
-											{isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'แก้คาบ/วันเวลา'}
-										</Button>
-									{/if}
-									{#if canReviewPendingRequest}
-										<Button
-											onclick={() => setRequestReviewOpen(true)}
-											disabled={savingAction !== null}
-										>
-											<UserCheck class="h-4 w-4" />
-											ตรวจคำขอ
-										</Button>
-									{:else if canEditEvaluators}
-										<Button variant="outline" onclick={openEvaluatorEditor}>
-											<UserCheck class="h-4 w-4" />
-											แก้ผู้ประเมิน
-										</Button>
-									{/if}
-									{#if canCancelObservation}
-										<Button variant="destructive" onclick={() => (cancelDialogOpen = true)}>
-											<Trash2 class="h-4 w-4" />
-											ยกเลิก
-										</Button>
-									{/if}
-								</div>
-							</div>
+						<Card.Header class="px-4 sm:px-6">
+							<h2 class="text-base font-semibold">กำหนดการนิเทศ</h2>
 						</Card.Header>
-						<Card.Content class="space-y-4">
-							<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+						<Card.Content class="space-y-4 px-4 sm:px-6">
+							<dl class="grid gap-3 border-b pb-4 text-sm sm:grid-cols-3">
 								{#each lessonDetails(observation) as detail (detail.label)}
-									<div class="rounded-md border bg-muted/20 p-3">
-										<p class="text-xs text-muted-foreground">{detail.label}</p>
-										<p class="font-medium">{detail.value}</p>
+									<div class="min-w-0 space-y-1">
+										<dt class="text-xs text-muted-foreground">{detail.label}</dt>
+										<dd class="font-medium wrap-anywhere">{detail.value}</dd>
 									</div>
 								{/each}
-							</div>
+							</dl>
+							{#if hasDetachedTimetableSource(observation)}
+								<p
+									class="rounded-lg border border-warning/25 bg-warning/5 p-3 text-sm text-warning"
+								>
+									คาบเดิมถูกนำออกจากตารางปัจจุบัน ข้อมูลคาบและผลการนิเทศที่บันทึกไว้ยังคงอยู่
+								</p>
+							{/if}
 							<SupervisionSavedPeriods {observation} />
 							{#if observation.periodsLocked}<p
-									class="mt-3 rounded-lg border bg-muted/30 p-3 text-sm"
+									class="flex items-start gap-2 rounded-lg border bg-muted/30 p-3 text-sm"
 									data-testid="supervision-periods-locked"
 								>
+									<LockKeyhole
+										class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+										aria-hidden="true"
+									/>
 									คาบนิเทศได้รับการอนุมัติแล้ว จึงเปลี่ยนวิชา ห้อง วันและช่วงคาบไม่ได้
-									ข้อมูลผู้ประเมินและการจัดการอื่นใช้สิทธิ์ของแต่ละรายการตามเดิม
 								</p>{/if}
 						</Card.Content>
 					</Card.Root>
 
 					<Card.Root>
-						<Card.Header>
-							<Card.Title>ผู้ประเมิน</Card.Title>
-							<Card.Description>ผู้ที่ได้รับมอบหมายให้ประเมินรายการนี้</Card.Description>
+						<Card.Header class="px-4 sm:px-6">
+							<h2 class="text-base font-semibold">ผู้ประเมิน</h2>
 						</Card.Header>
-						<Card.Content class="space-y-3">
+						<Card.Content class="px-4 sm:px-6">
 							{#if observation.evaluators.length === 0}
 								<PageState
 									title="ยังไม่มีผู้ประเมิน"
 									description="รายการนี้ยังไม่ได้มอบหมายผู้ประเมิน"
 								/>
 							{:else}
-								{#each observation.evaluators as evaluator (evaluator.id)}
-									<div
-										class="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
-									>
-										<div class="min-w-0">
-											<p class="font-medium">{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}</p>
-											<p class="text-sm text-muted-foreground">
-												{evaluator.roleLabel ?? 'ผู้ประเมิน'} · {evaluator.isRequired
-													? 'จำเป็น'
-													: 'ไม่จำเป็น'}
-											</p>
-										</div>
-										<div class="flex flex-wrap items-center gap-2">
-											<Badge
-												variant={evaluator.status === 'submitted'
-													? 'default'
-													: evaluator.status === 'draft'
-														? 'secondary'
-														: 'outline'}
-											>
-												{evaluatorStatusLabel(evaluator.status)}
-											</Badge>
-											{#if evaluator.status === 'submitted' && evaluator.submittedAt}
-												<time
-													datetime={evaluator.submittedAt}
-													class="text-sm text-muted-foreground"
+								<ul class="divide-y">
+									{#each observation.evaluators as evaluator (evaluator.id)}
+										<li
+											class="flex flex-col gap-2 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+										>
+											<div class="min-w-0">
+												<p class="font-medium wrap-anywhere">
+													{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+												</p>
+												<p class="text-sm text-muted-foreground">
+													{evaluator.roleLabel ?? 'ผู้ประเมิน'} · {evaluator.isRequired
+														? 'จำเป็น'
+														: 'ไม่จำเป็น'}
+												</p>
+											</div>
+											<div class="flex flex-wrap items-center gap-2">
+												<Badge
+													variant="outline"
+													class={cn(
+														evaluator.status === 'submitted' &&
+															'border-success/30 bg-success/10 text-success',
+														evaluator.status === 'draft' &&
+															'border-primary/30 bg-primary/10 text-primary'
+													)}
 												>
-													{formatDateTime(evaluator.submittedAt)}
-												</time>
-											{/if}
-										</div>
-									</div>
-								{/each}
+													{evaluatorStatusLabel(evaluator.status)}
+												</Badge>
+												{#if evaluator.status === 'submitted' && evaluator.submittedAt}
+													<time
+														datetime={evaluator.submittedAt}
+														class="text-sm text-muted-foreground"
+													>
+														{formatDateTime(evaluator.submittedAt)}
+													</time>
+												{/if}
+											</div>
+										</li>
+									{/each}
+								</ul>
 							{/if}
 						</Card.Content>
 					</Card.Root>
 
 					<Card.Root>
-						<Card.Header>
-							<Card.Title>แบบประเมินและผล</Card.Title>
-							<Card.Description>ดูคำตอบรายข้อและคะแนนเฉลี่ยของการนิเทศ</Card.Description>
+						<Card.Header class="px-4 sm:px-6">
+							<h2 class="text-base font-semibold">ผลการประเมิน</h2>
 						</Card.Header>
-						<Card.Content class="space-y-4">
-							<div class="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-								<div class="rounded-md border bg-muted/20 p-3">
-									<p class="text-xs text-muted-foreground">แบบประเมิน</p>
-									<p class="font-medium">
-										{review?.template.title ??
-											template?.title ??
-											(templateLoading ? 'กำลังโหลด...' : '-')}
-									</p>
-								</div>
-								<div class="rounded-md border bg-muted/20 p-3">
-									<p class="text-xs text-muted-foreground">คะแนนเฉลี่ยทั้งหมด</p>
-									<p class="font-medium">
-										{review
-											? reviewAverageScoreLabel(review.averageRating)
-											: observationAverageScoreLabel(observation)}
-									</p>
-								</div>
-								<div class="rounded-md border bg-muted/20 p-3">
-									<p class="text-xs text-muted-foreground">จำนวนผู้ประเมิน</p>
-									<p class="font-medium">{observation.evaluators.length} คน</p>
-								</div>
-								<div class="rounded-md border bg-muted/20 p-3">
-									<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
-									<p class="font-medium">{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '-')}</p>
-									{#if cycle}<p class="mt-1 text-xs text-muted-foreground">
-											{cycleDateRangeLabel(cycle.observationStartDate, cycle.observationEndDate)}
-										</p>{/if}
-								</div>
-							</div>
-
-							<div data-testid="supervision-review" aria-busy={loadingReview}>
-								{#if reviewOpen}<Button variant="outline" onclick={() => (reviewOpen = false)}
-										>ปิดผลรายข้อ</Button
-									>{/if}
+						<Card.Content class="space-y-4 px-4 sm:px-6">
+							{#if observationResultsReleased(observation.status) || (observation.canReview && observation.averageRating != null)}
+								<dl class="grid grid-cols-2 gap-4 rounded-lg border bg-muted/20 p-4">
+									<div class="space-y-1">
+										<dt class="text-xs text-muted-foreground">คะแนนเฉลี่ยทั้งหมด</dt>
+										<dd class="text-lg font-semibold tabular-nums">
+											{canViewReviewDetails && review
+												? reviewAverageScoreLabel(review.averageRating)
+												: observationAverageScoreLabel(observation)}
+										</dd>
+									</div>
+									<div class="space-y-1">
+										<dt class="text-xs text-muted-foreground">จำนวนผู้ประเมิน</dt>
+										<dd class="text-lg font-semibold tabular-nums">
+											{observation.evaluators.length} คน
+										</dd>
+									</div>
+								</dl>
+							{/if}
+							<div class="space-y-4" data-testid="supervision-review" aria-busy={loadingReview}>
+								{#if reviewOpen}
+									<div class="flex justify-end">
+										<Button variant="outline" onclick={() => (reviewOpen = false)}
+											>ปิดผลรายข้อ</Button
+										>
+									</div>
+								{/if}
 								{#if !observationResultsReleased(observation.status)}
 									<PageState
 										title="ยังไม่มีผลประเมินรายข้อ"
@@ -1159,11 +1174,16 @@
 											</div>
 										</div>
 
-										<div class="flex flex-wrap gap-2">
+										<div
+											class="flex flex-wrap gap-2"
+											role="group"
+											aria-label="เลือกมุมมองผลประเมิน"
+										>
 											<Button
 												type="button"
 												size="sm"
 												variant={selectedReviewEvaluatorId === 'summary' ? 'default' : 'outline'}
+												aria-pressed={selectedReviewEvaluatorId === 'summary'}
 												onclick={() => (selectedReviewEvaluatorId = 'summary')}
 											>
 												สรุปเฉลี่ย
@@ -1175,9 +1195,13 @@
 													variant={selectedReviewEvaluatorId === evaluator.evaluatorId
 														? 'default'
 														: 'outline'}
+													aria-pressed={selectedReviewEvaluatorId === evaluator.evaluatorId}
+													class="h-auto min-h-8 max-w-full whitespace-normal"
 													onclick={() => (selectedReviewEvaluatorId = evaluator.evaluatorId)}
 												>
-													{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}
+													<span class="min-w-0 wrap-anywhere"
+														>{evaluator.evaluatorDisplayName ?? 'ผู้ประเมิน'}</span
+													>
 													<Badge variant="secondary" class="ml-1">
 														{reviewAverageScoreLabel(evaluator.averageRating)}
 													</Badge>
@@ -1307,7 +1331,39 @@
 					</Card.Root>
 				</div>
 
-				<div class="min-w-0 space-y-4">
+				<aside class="min-w-0 space-y-4" aria-labelledby="supervision-detail-references">
+					<Card.Root>
+						<Card.Header class="px-4 sm:px-6">
+							<h2 id="supervision-detail-references" class="text-base font-semibold">
+								รอบนิเทศและแบบประเมิน
+							</h2>
+						</Card.Header>
+						<Card.Content class="px-4 sm:px-6">
+							<dl class="divide-y text-sm">
+								<div class="space-y-1 pb-3">
+									<dt class="text-xs text-muted-foreground">รอบนิเทศ</dt>
+									<dd class="font-medium wrap-anywhere">
+										{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '—')}
+									</dd>
+									{#if cycle}<dd class="text-xs text-muted-foreground">
+											{cycleDateRangeLabel(cycle.observationStartDate, cycle.observationEndDate)}
+										</dd>{/if}
+								</div>
+								<div class="space-y-1 py-3">
+									<dt class="text-xs text-muted-foreground">ภาคเรียน/ปีการศึกษา</dt>
+									<dd class="font-medium wrap-anywhere">{observationContextLabel(observation)}</dd>
+								</div>
+								<div class="space-y-1 pt-3">
+									<dt class="text-xs text-muted-foreground">แบบประเมิน</dt>
+									<dd class="font-medium wrap-anywhere">
+										{review?.template.title ??
+											template?.title ??
+											(templateLoading ? 'กำลังโหลด...' : '—')}
+									</dd>
+								</div>
+							</dl>
+						</Card.Content>
+					</Card.Root>
 					<div
 						class="space-y-3"
 						hidden={!cycleError && (!cycleLoading || !!cycle)}
@@ -1336,48 +1392,26 @@
 								description={templateError}
 							/><Button variant="outline" onclick={retryTemplate}>ลองใหม่</Button>{/if}
 					</div>
-					<Card.Root>
-						<Card.Header>
-							<Card.Title>ภาพรวม</Card.Title>
-						</Card.Header>
-						<Card.Content class="space-y-3 text-sm">
-							<div>
-								<p class="text-xs text-muted-foreground">ผู้รับการนิเทศ</p>
-								<p class="font-medium">{observation.observedDisplayName ?? '-'}</p>
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground">สถานะ</p>
-								<Badge variant="secondary">{statusLabel(observation.status)}</Badge>
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground">รอบนิเทศ</p>
-								<p class="font-medium">{cycle?.title ?? (cycleLoading ? 'กำลังโหลด...' : '-')}</p>
-								{#if cycle}<p class="mt-1 text-xs text-muted-foreground">
-										{cycleDateRangeLabel(cycle.observationStartDate, cycle.observationEndDate)}
-									</p>{/if}
-							</div>
-							<div>
-								<p class="text-xs text-muted-foreground">ภาคเรียน/ปีการศึกษา</p>
-								<p class="font-medium">{observationContextLabel(observation)}</p>
-							</div>
-						</Card.Content>
-					</Card.Root>
-				</div>
+				</aside>
 			</div>
 		{/if}
 	</div>
 </PageShell>
 
 <Dialog.Root bind:open={editLessonOpen}>
-	<Dialog.Content class="flex max-h-[92vh] flex-col sm:max-w-6xl">
-		<Dialog.Header
-			><Dialog.Title>แก้คาบ/วันเวลา</Dialog.Title><Dialog.Description
-				>เลือกช่วงคาบจากตารางสอนปัจจุบัน ข้อมูลคาบเดิมแสดงไว้เพื่ออ่านประกอบ</Dialog.Description
-			></Dialog.Header
-		>
-		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+	<Dialog.Content class="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-6xl">
+		<Dialog.Header class="shrink-0 border-b px-4 py-4 pe-12 text-start sm:px-6 sm:pe-12">
+			<Dialog.Title>แก้คาบ/วันเวลา</Dialog.Title>
+			<Dialog.Description
+				>เลือกคาบใหม่จากตารางสอนปัจจุบัน แล้วตรวจช่วงคาบก่อนบันทึก</Dialog.Description
+			>
+		</Dialog.Header>
+		<div class="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
 			{#if observation && editLessonOpen}
-				<SupervisionSavedPeriods {observation} />
+				<section class="space-y-2" aria-label="ช่วงคาบเดิม">
+					<h3 class="text-sm font-semibold">ช่วงคาบเดิม</h3>
+					<SupervisionSavedPeriods {observation} />
+				</section>
 				{#if cycle && !cycleDatesError}
 					<SupervisionLessonPicker
 						{cycle}
@@ -1389,6 +1423,7 @@
 						onreloadCycle={retryCycle}
 						disabled={isReturnedOwnRequest && cycle?.status !== 'open'}
 						onsubmit={saveLessonEdit}
+						oncancel={() => (editLessonOpen = false)}
 						submitLabel={isReturnedOwnRequest ? 'แก้ไขและส่งใหม่' : 'บันทึกคาบนิเทศ'}
 					/>
 				{:else if cycleLoading}<PageSkeleton />{:else}<PageState
@@ -1397,10 +1432,11 @@
 					/>{/if}
 			{/if}
 		</div>
-		<Dialog.Footer
-			><Button variant="outline" onclick={() => (editLessonOpen = false)}>ยกเลิก</Button
-			></Dialog.Footer
-		>
+		{#if !cycle || cycleDatesError}
+			<Dialog.Footer class="shrink-0 border-t px-4 py-3 sm:px-6">
+				<Button variant="outline" onclick={() => (editLessonOpen = false)}>ยกเลิก</Button>
+			</Dialog.Footer>
+		{/if}
 	</Dialog.Content>
 </Dialog.Root>
 
@@ -1409,8 +1445,10 @@
 	onOpenChange={setRequestReviewOpen}
 >
 	{#if observation && canReviewPendingRequest}
-		<Dialog.Content class="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
-			<Dialog.Header>
+		<Dialog.Content
+			class="max-h-[calc(100dvh-2rem)] max-w-[calc(100%-2rem)] overflow-y-auto overscroll-contain p-4 sm:max-w-2xl sm:p-6"
+		>
+			<Dialog.Header class="pe-8 text-start sm:pe-6">
 				<Dialog.Title>ตรวจคำขอจองนิเทศ</Dialog.Title>
 				<Dialog.Description
 					>{observation.observedDisplayName ?? 'ครูผู้ขอรับนิเทศ'}</Dialog.Description
@@ -1428,12 +1466,15 @@
 </Dialog.Root>
 
 <Dialog.Root bind:open={editEvaluatorsOpen}>
-	<Dialog.Content class="sm:max-w-2xl" aria-busy={loadingEvaluatorAvailability}>
-		<Dialog.Header>
+	<Dialog.Content
+		class="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-2xl"
+		aria-busy={loadingEvaluatorAvailability}
+	>
+		<Dialog.Header class="shrink-0 border-b px-4 py-4 pe-12 text-start sm:px-6 sm:pe-12">
 			<Dialog.Title>แก้ผู้ประเมิน</Dialog.Title>
 			<Dialog.Description>ผู้ประเมินที่ส่งผลแล้วจะถูกเก็บไว้เพื่อรักษาผลประเมิน</Dialog.Description>
 		</Dialog.Header>
-		<div class="space-y-3">
+		<div class="min-h-0 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
 			{#if loadingEvaluatorAvailability}<div role="status" aria-label="กำลังโหลด">
 					<PageSkeleton />
 				</div>{/if}
@@ -1443,24 +1484,32 @@
 				/><Button variant="outline" onclick={() => void loadEvaluatorAvailability(true)}
 					>ลองใหม่</Button
 				>{/if}
-			<div class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2">
-				{#if selectedEvaluators.length === 0}
-					<span class="text-sm text-muted-foreground">ยังไม่ได้เลือกผู้ประเมิน</span>
-				{:else}
-					{#each selectedEvaluators as staff (staff.id)}
-						<Badge variant="secondary" class="gap-1 pr-1">
-							<span>{staff.name}</span>
-							<button
-								type="button"
-								class="rounded-sm p-0.5 text-muted-foreground hover:bg-background hover:text-foreground"
-								aria-label={`ลบผู้ประเมิน ${staff.name}`}
-								onclick={() => removeEvaluator(staff.id)}
+			<div class="space-y-2">
+				<h3 class="text-sm font-semibold">ผู้ประเมินที่เลือก</h3>
+				<div class="flex min-h-10 flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2">
+					{#if selectedEvaluators.length === 0}
+						<span class="text-sm text-muted-foreground">ยังไม่ได้เลือกผู้ประเมิน</span>
+					{:else}
+						{#each selectedEvaluators as staff (staff.id)}
+							<Badge
+								variant="outline"
+								class="max-w-full gap-1 bg-background pr-1 whitespace-normal"
 							>
-								<Trash2 class="h-3 w-3" />
-							</button>
-						</Badge>
-					{/each}
-				{/if}
+								<span class="min-w-0 wrap-anywhere">{staff.name}</span>
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon-sm"
+									class="size-7 shrink-0"
+									aria-label={`ลบผู้ประเมิน ${staff.name}`}
+									onclick={() => removeEvaluator(staff.id)}
+								>
+									<Trash2 class="h-3 w-3" />
+								</Button>
+							</Badge>
+						{/each}
+					{/if}
+				</div>
 			</div>
 
 			<Popover.Root bind:open={evaluatorPickerOpen}>
@@ -1487,7 +1536,7 @@
 						</Button>
 					{/snippet}
 				</Popover.Trigger>
-				<Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+				<Popover.Content class="w-(--bits-popover-trigger-width) p-0">
 					<Command.Root>
 						<Command.Input placeholder="ค้นหาครูผู้ประเมินที่ว่าง..." />
 						<Command.Empty>ไม่พบครูผู้ประเมินที่ว่าง</Command.Empty>
@@ -1518,7 +1567,7 @@
 				</p>
 			{/if}
 		</div>
-		<Dialog.Footer>
+		<Dialog.Footer class="shrink-0 border-t px-4 py-3 sm:px-6">
 			<Button variant="outline" onclick={() => (editEvaluatorsOpen = false)}>ยกเลิก</Button>
 			<LoadingButton
 				onclick={saveEvaluatorEdit}
@@ -1536,14 +1585,21 @@
 
 <Dialog.Root bind:open={cancelDialogOpen}>
 	<Dialog.Content>
-		<Dialog.Header>
+		<Dialog.Header class="pe-6 text-start">
 			<Dialog.Title>ยกเลิกรายการนิเทศ</Dialog.Title>
-			<Dialog.Description>รายการจะเปลี่ยนเป็นยกเลิกและหยุดดำเนินการต่อ</Dialog.Description>
+			<Dialog.Description>การยืนยันจะยกเลิกคาบนิเทศและยุติรายการนี้</Dialog.Description>
 		</Dialog.Header>
-		<div class="space-y-2">
-			<Label>เหตุผล</Label>
-			<Textarea bind:value={cancelReason} rows={3} placeholder="ระบุเหตุผลการยกเลิก" />
-		</div>
+		{#if canManageObservation && !canCancelOwnRequest}
+			<div class="space-y-2">
+				<Label for="supervision-cancel-reason">เหตุผล (ถ้ามี)</Label>
+				<Textarea
+					id="supervision-cancel-reason"
+					bind:value={cancelReason}
+					rows={3}
+					placeholder="ระบุเหตุผลการยกเลิก"
+				/>
+			</div>
+		{/if}
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (cancelDialogOpen = false)}>ไม่ยกเลิก</Button>
 			<LoadingButton

@@ -3,7 +3,9 @@
 	import { supervisionStatusLabel } from '#lib/supervision/supervision-presentation.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { PageState } from '#lib/components/app-state/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import { cn } from '#lib/utils.js';
 	let {
 		result,
 		loading,
@@ -19,6 +21,10 @@
 		disabled: boolean;
 		onretry: () => void;
 	} = $props();
+	const availableCount = $derived(result?.items.filter((item) => item.available).length ?? 0);
+	const overlapCount = $derived(
+		(result?.overlap.pendingCount ?? 0) + (result?.overlap.confirmedCount ?? 0)
+	);
 	function timeLabel(value: string) {
 		return new Intl.DateTimeFormat('th-TH', {
 			timeZone: 'Asia/Bangkok',
@@ -28,8 +34,17 @@
 	}
 </script>
 
-<div class="mt-4 space-y-3" data-testid="supervision-request-availability" aria-busy={loading}>
-	{#if !result && loading}<PageSkeleton rows={2} columns={2} />{/if}
+<div class="min-w-0 space-y-2" data-testid="supervision-request-availability" aria-busy={loading}>
+	{#if !result && loading}
+		<div
+			class="space-y-2 rounded-md border px-3 py-2.5"
+			role="status"
+			aria-label="กำลังตรวจช่วงคาบและผู้ประเมิน"
+		>
+			<Skeleton class="h-4 w-2/3" />
+			<Skeleton class="h-3 w-1/2" />
+		</div>
+	{/if}
 	{#if error && showError}<PageState
 			variant="error"
 			title="ตรวจช่วงคาบและผู้ประเมินไม่สำเร็จ"
@@ -42,21 +57,35 @@
 			{/snippet}
 		</PageState>{/if}
 	{#if result}
-		<div class="space-y-2 rounded-lg border bg-muted/20 p-3 text-sm">
-			<div class="flex flex-wrap items-center gap-2">
-				<p class="font-medium">{error ? 'ผลการตรวจครั้งล่าสุด' : 'รายการที่ทับช่วงคาบนี้'}</p>
-				<Badge variant={result.overlap.blocked ? 'destructive' : 'outline'}
+		<div class="space-y-2 rounded-md border bg-muted/20 px-3 py-2.5 text-sm">
+			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+				{#if error || loading}<p class="text-xs font-medium text-muted-foreground">
+						ผลตรวจครั้งล่าสุด
+					</p>{/if}
+				<Badge
+					variant="outline"
+					class={cn(
+						'max-w-full whitespace-normal',
+						result.overlap.blocked
+							? 'border-destructive/30 bg-destructive/5 text-destructive'
+							: 'border-success/30 bg-success/10 text-success'
+					)}
 					>{result.overlap.blocked
 						? 'มีนัดทับกัน อนุมัติไม่ได้'
 						: 'ไม่พบรายการที่กีดกันการอนุมัติ'}</Badge
 				>
 			</div>
-			<p>
-				รออนุมัติ {result.overlap.pendingCount} รายการ · ยืนยันแล้ว {result.overlap.confirmedCount} รายการ
-			</p>
-			{#if !result.withinCycleDates}<p role="alert" class="text-destructive">
-					คาบเดิมอยู่นอกช่วงวันที่นิเทศหรือรอบยังไม่กำหนดวันที่
-					ปรับช่วงวันที่ของรอบหรือส่งกลับคำขอก่อนอนุมัติ
+			{#if overlapCount}
+				<p class="text-xs text-muted-foreground">
+					รออนุมัติ {result.overlap.pendingCount} รายการ · ยืนยันแล้ว {result.overlap
+						.confirmedCount} รายการ
+				</p>
+			{/if}
+			{#if !result.withinCycleDates}<p
+					role="alert"
+					class="rounded-md border border-destructive/20 bg-destructive/5 p-2.5 text-destructive"
+				>
+					คาบนี้อยู่นอกช่วงนิเทศหรือรอบยังไม่กำหนดวันที่ กำหนดช่วงวันที่ใหม่หรือส่งกลับคำขอ
 				</p>{/if}
 			{#if result.overlappingBookings.length}<ul
 					class="space-y-2 border-t pt-2"
@@ -81,15 +110,14 @@
 							<Badge variant="secondary">{supervisionStatusLabel(booking.status)}</Badge>
 						</li>{/each}
 				</ul>{/if}
-			{#if result.overlap.pendingCount + result.overlap.confirmedCount > result.overlappingBookings.length}<p
+			{#if overlapCount > result.overlappingBookings.length}<p
 					class="text-xs text-muted-foreground"
 				>
-					แสดงเฉพาะรายการในขอบเขตที่มีสิทธิ์ดู จำนวนรวมอาจมากกว่ารายการที่แสดง
+					รายละเอียดแสดงเฉพาะรายการที่มีสิทธิ์ดู
 				</p>{/if}
 			<p class="text-xs text-muted-foreground">
-				ผู้ประเมินว่าง {result.items.filter((item) => item.available).length} คน · ไม่ว่าง {result.items.filter(
-					(item) => !item.available
-				).length} คน ตรวจจากนัดนิเทศที่ยืนยันแล้วตลอดช่วงคาบที่เลือก
+				ผู้ประเมินว่างตลอดช่วงคาบ {availableCount} คน · ไม่ว่าง {result.items.length -
+					availableCount} คน ตรวจจากนัดนิเทศที่ยืนยันแล้วตลอดช่วงคาบที่เลือก
 			</p>
 		</div>
 	{/if}

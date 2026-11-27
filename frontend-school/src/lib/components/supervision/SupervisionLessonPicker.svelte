@@ -48,6 +48,7 @@
 		allowed,
 		onreloadCycle,
 		onsubmit,
+		oncancel,
 		submitLabel = 'ส่งคำขอจอง',
 		disabled = false
 	}: {
@@ -61,6 +62,7 @@
 		onreloadCycle?: () => Promise<void>;
 		disabled?: boolean;
 		onsubmit: (selection: SupervisionLessonSelection) => Promise<void>;
+		oncancel?: () => void;
 		submitLabel?: string;
 	} = $props();
 
@@ -334,15 +336,16 @@
 
 <div class="min-w-0 space-y-4" data-testid="supervision-lesson-picker" aria-busy={loading}>
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div>
-			<p class="font-medium">
+		<div class="space-y-1">
+			<h3 class="font-semibold">{observationId ? 'เลือกช่วงคาบใหม่' : 'เลือกช่วงคาบนิเทศ'}</h3>
+			<p class="text-sm font-medium tabular-nums" aria-live="polite">
 				{bookingDateLabel(weekStartDate)} – {bookingDateLabel(addCivilDays(weekStartDate, 6))}
 			</p>
 			<p class="text-sm text-muted-foreground">
-				เลือกคาบติดกันในวันและห้องเดียวกัน กดคาบที่เลือกซ้ำเพื่อยกเลิก
+				เลือกคาบติดกันในวันและห้องเดียวกัน กดคาบที่เลือกซ้ำเพื่อปรับช่วง
 			</p>
 		</div>
-		<div class="flex flex-wrap gap-1">
+		<div class="flex flex-wrap gap-2" role="group" aria-label="เลื่อนสัปดาห์">
 			<Button
 				variant="outline"
 				size="sm"
@@ -381,9 +384,10 @@
 			description="เลือกสัปดาห์อื่น หรือตรวจการจัดครูและห้องประจำชั้นในตารางสอน"
 		/>
 	{:else if options}
-		<p class="text-xs text-muted-foreground">
-			ว่าง / รออนุมัติ / จองขนานได้: เลือกได้ · จองไม่ได้: คาบนี้มีนัดนิเทศที่ทับกัน
-		</p>
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+			<p>เลือกได้เมื่อคาบว่าง รออนุมัติ หรือจองขนานได้</p>
+			<p class="sm:hidden">ปัดตารางเพื่อดูคาบอื่น</p>
+		</div>
 		<div class="min-w-0 rounded-xl border" data-testid="supervision-booking-grid">
 			<Table.Root
 				role="table"
@@ -395,7 +399,7 @@
 						><Table.Head
 							role="columnheader"
 							scope="col"
-							class="sticky left-0 z-10 flex h-auto min-h-10 items-center bg-background px-1.5 sm:px-2"
+							class="sticky left-0 z-10 flex h-auto min-h-10 items-center border-r bg-card px-1.5 sm:px-2"
 							>วันที่</Table.Head
 						>{#each periods as period (period.key)}<Table.Head
 								role="columnheader"
@@ -415,7 +419,7 @@
 							><Table.Head
 								role="rowheader"
 								scope="row"
-								class="sticky left-0 z-10 h-auto bg-background px-1.5 py-2 font-medium sm:px-2"
+								class="sticky left-0 z-10 h-auto border-r bg-card px-1.5 py-2 font-medium sm:px-2"
 								><time datetime={day}>
 									<span class="block">{weekdayLabel}</span>
 									<span class="block font-normal text-muted-foreground">{dateLabel}</span>
@@ -438,7 +442,7 @@
 										{@const chosen = selectedLessonIndex(item) >= 0}
 										<button
 											type="button"
-											class="min-h-20 w-full rounded-lg border p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:border-primary aria-pressed:bg-primary/10 sm:min-h-28 sm:p-3"
+											class="min-h-20 w-full rounded-lg border bg-card p-1.5 text-left leading-snug whitespace-normal wrap-anywhere transition-colors hover:border-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:ring-1 aria-pressed:ring-primary/30 sm:min-h-28 sm:p-3"
 											disabled={!canChangeCards || (!chosen && !selectable.has(item))}
 											aria-pressed={chosen}
 											aria-label={`เลือก ${item.periodName} ${item.homeroomName} ${bookingDateLabel(day)}`}
@@ -479,17 +483,15 @@
 			</Table.Root>
 		</div>
 	{/if}
-	<div
-		class="space-y-3 rounded-xl border bg-muted/20 p-4"
-		data-testid="supervision-booking-selection"
-	>
+	<div class="space-y-3 rounded-xl border bg-card p-4" data-testid="supervision-booking-selection">
+		<h3 class="text-sm font-semibold">ช่วงคาบที่เลือก</h3>
 		{#if ordered.length}
-			<div class="flex items-start justify-between gap-3">
-				<div>
-					<p class="font-semibold">
+			<div class="flex flex-wrap items-start justify-between gap-2">
+				<div class="min-w-0" aria-live="polite">
+					<p class="font-semibold wrap-anywhere">
 						{bookingDateLabel(ordered[0].observedDate)} · {ordered[0].homeroomName}
 					</p>
-					<p class="text-sm">
+					<p class="text-sm tabular-nums text-muted-foreground">
 						{ordered.length} คาบต่อเนื่อง · {ordered[0].startTime.slice(0, 5)}–{ordered[
 							ordered.length - 1
 						].endTime.slice(0, 5)}
@@ -502,15 +504,17 @@
 			<div class="flex flex-wrap gap-2">
 				{#each ordered as item, index (item.blockGroupId)}<Badge
 						variant="outline"
-						class="max-w-full gap-2 py-1.5 whitespace-normal"
+						class="min-h-8 max-w-full gap-1 bg-muted/25 py-0.5 whitespace-normal"
 						><span class="min-w-0 break-words"
 							>{item.periodName} · {item.subjectName ?? item.learningGroupName}</span
-						>{#if index === 0 || index === ordered.length - 1}<button
+						>{#if index === 0 || index === ordered.length - 1}<Button
 								type="button"
 								disabled={saving}
-								class="shrink-0"
+								variant="ghost"
+								size="icon-sm"
+								class="size-7 shrink-0"
 								aria-label={`นำ ${item.periodName} ออกจากช่วง`}
-								onclick={() => removeSelectedLesson(index)}><X class="size-3.5" /></button
+								onclick={() => removeSelectedLesson(index)}><X class="size-3.5" /></Button
 							>{/if}</Badge
 					>{/each}
 			</div>
@@ -537,11 +541,20 @@
 					>{/if}
 			</div>{/if}
 		{#if success}<p role="status" class="text-sm font-medium text-primary">{success}</p>{/if}
-		<LoadingButton
-			loading={saving}
-			loadingLabel="กำลังส่ง..."
-			disabled={disabled || loading || !!datesError || !!error || !!rangeError || stale || !allowed}
-			onclick={() => void submit()}><Send class="size-4" />{submitLabel}</LoadingButton
-		>
+		<div class="flex flex-col-reverse gap-2 border-t pt-3 sm:flex-row sm:justify-end">
+			{#if oncancel}<Button variant="outline" onclick={oncancel}>ยกเลิก</Button>{/if}
+			<LoadingButton
+				loading={saving}
+				loadingLabel={observationId ? 'กำลังบันทึก...' : 'กำลังส่ง...'}
+				disabled={disabled ||
+					loading ||
+					!!datesError ||
+					!!error ||
+					!!rangeError ||
+					stale ||
+					!allowed}
+				onclick={() => void submit()}><Send class="size-4" />{submitLabel}</LoadingButton
+			>
+		</div>
 	</div>
 </div>

@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { Check, ChevronsUpDown, Eye, Trash2 } from '@lucide/svelte';
 	import type { SupervisionObservation } from '#lib/api/supervision.js';
-	import { LoadingButton, PageSkeleton, PageState } from '#lib/components/app-state/index.js';
+	import { LoadingButton, PageState } from '#lib/components/app-state/index.js';
 	import SupervisionRequestAvailability from '#lib/components/supervision/SupervisionRequestAvailability.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Command from '#lib/components/ui/command/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
+	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import type { SupervisionRequestReview } from '#lib/supervision/request-review.svelte.js';
 	import {
@@ -43,6 +44,7 @@
 	const available = $derived(draft?.availability?.items.filter((item) => item.available) ?? []);
 	const unavailable = $derived(draft?.availability?.items.filter((item) => !item.available) ?? []);
 	const selectionUnverified = $derived(Boolean(draft?.error || draft?.loading));
+	const needsRequiredEvaluator = $derived(canChange && !selected.some((item) => item.isRequired));
 	let pickerOpen = $state(false);
 	$effect.pre(() => {
 		if (!canReview) pickerOpen = false;
@@ -62,14 +64,15 @@
 	}
 </script>
 
-<div class="space-y-3" data-testid="supervision-request-review">
+<div class="min-w-0 space-y-4" data-testid="supervision-request-review">
 	{#if schedule}
-		<div class="space-y-1 rounded-lg border border-primary/15 bg-primary/5 p-3 text-sm">
-			<p class="font-semibold text-primary">{schedule.periodTitle}</p>
-			<p>{schedule.dates.map(savedScheduleDateLabel).join(' · ') || 'ไม่ระบุวันนิเทศ'}</p>
-			{#if schedule.timeLabel}
-				<p class="tabular-nums">{schedule.timeLabel}</p>
-			{:else if schedule.periods.length}
+		<div class="rounded-lg border bg-muted/20 px-3 py-2.5 text-sm wrap-anywhere">
+			<p class="font-semibold">{schedule.periodTitle}</p>
+			<p class="text-muted-foreground">
+				{schedule.dates.map(savedScheduleDateLabel).join(' · ') || 'ไม่ระบุวันนิเทศ'}
+				{#if schedule.timeLabel}<span class="tabular-nums"> · {schedule.timeLabel}</span>{/if}
+			</p>
+			{#if !schedule.timeLabel && schedule.periods.length}
 				<ul class="space-y-1 tabular-nums">
 					{#each schedule.periods as period (period.id)}
 						<li>
@@ -83,34 +86,20 @@
 			{/if}
 		</div>
 	{/if}
-	{#if canReview}
-		{#if draft?.needsRecheck}
-			<p class="text-sm text-muted-foreground">
-				ช่วงคาบหรือรอบนิเทศเปลี่ยนแล้ว เปิด “เพิ่ม/เลือกผู้ประเมิน” เพื่อตรวจความพร้อมอีกครั้ง
-			</p>
-		{/if}
-		{#if draft?.availability || draft?.loading || (draft?.error && !pickerOpen)}
-			<SupervisionRequestAvailability
-				result={draft.availability}
-				loading={Boolean(draft.loading)}
-				error={draft.error ?? ''}
-				showError={!pickerOpen}
-				{disabled}
-				onretry={() => void review.loadAvailability(id)}
-			/>
-		{/if}
-	{/if}
-	<div class="grid gap-4 border-t pt-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-		<div class="min-w-0 space-y-2">
+	<div class="grid min-w-0 gap-y-4 border-t pt-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+		<section class="min-w-0 space-y-2.5 sm:pe-4" aria-label="มอบหมายผู้ประเมิน">
 			<Label for={`${fieldId}-evaluators`}>ผู้ประเมิน</Label>
-			<div class="flex min-h-10 flex-wrap items-center gap-2 rounded-md border p-2">
+			<div class="flex flex-wrap items-center gap-2 rounded-md bg-muted/35 px-2.5 py-2">
 				{#if selected.length === 0}
 					<span class="text-sm text-muted-foreground">ยังไม่ได้เลือกผู้ประเมิน</span>
 				{:else}
 					{#each selected as evaluator (evaluator.id)}
 						<Badge
-							variant={evaluator.blocked ? 'outline' : 'secondary'}
-							class="max-w-full gap-1 pr-1 whitespace-normal"
+							variant="outline"
+							class={cn(
+								'max-w-full gap-1 bg-background pr-1 whitespace-normal',
+								evaluator.blocked && 'border-warning/35 text-warning'
+							)}
 						>
 							<span class="min-w-0 break-words"
 								>{evaluator.name}{evaluator.blocked ? ' · ไม่ว่าง' : ''}</span
@@ -119,7 +108,7 @@
 								<Button
 									size="icon-sm"
 									variant="ghost"
-									class="size-6"
+									class="size-7 shrink-0"
 									aria-label={`ลบผู้ประเมิน ${evaluator.name}`}
 									{disabled}
 									onclick={() => review.removeEvaluator(id, evaluator.id)}
@@ -135,9 +124,6 @@
 					นำผู้ประเมินที่ไม่ว่างออกหรือเลือกคนอื่นก่อนบันทึกหรืออนุมัติ
 				</p>
 			{/if}
-			{#if canChange && selected.length > 0 && !selected.some((item) => item.isRequired)}
-				<p class="text-sm text-muted-foreground">เลือกผู้ประเมินหลักอย่างน้อย 1 คน</p>
-			{/if}
 			<Popover.Root open={canReview && pickerOpen} onOpenChange={setPickerOpen}>
 				<Popover.Trigger id={`${fieldId}-evaluators`} disabled={disabled || draft?.loading}>
 					{#snippet child({ props })}
@@ -147,6 +133,9 @@
 							role="combobox"
 							aria-label="เพิ่ม/เลือกผู้ประเมิน"
 							aria-expanded={canReview && pickerOpen}
+							aria-describedby={needsRequiredEvaluator
+								? `${fieldId}-required-evaluator`
+								: undefined}
 							class="w-full justify-between font-normal"
 							{...props}
 						>
@@ -162,7 +151,10 @@
 				{#if canReview}
 					<Popover.Content class="w-(--bits-popover-trigger-width) p-0">
 						{#if draft?.loading && !draft.availability}
-							<div role="status" aria-label="กำลังโหลดข้อมูล"><PageSkeleton variant="table" /></div>
+							<div role="status" aria-label="กำลังโหลดข้อมูล" class="space-y-3 px-3 py-4">
+								<Skeleton class="h-4 w-3/4" />
+								<Skeleton class="h-4 w-1/2" />
+							</div>
 						{/if}
 						{#if draft?.error}
 							<PageState
@@ -171,6 +163,7 @@
 								description={draft.error}
 								actionLabel="ลองใหม่"
 								onaction={() => void review.loadAvailability(id)}
+								class="p-2"
 							/>
 						{/if}
 						<Command.Root>
@@ -227,53 +220,79 @@
 					</Popover.Content>
 				{/if}
 			</Popover.Root>
-			{#if unavailable.length}
-				<p class="text-xs text-muted-foreground">
-					ผู้ประเมินไม่ว่าง {unavailable.length} คน ดูเหตุผลในกลุ่ม “ไม่ว่างในช่วงคาบนี้”
+			{#if needsRequiredEvaluator}
+				<p id={`${fieldId}-required-evaluator`} class="text-xs text-muted-foreground">
+					เลือกผู้ประเมินหลักอย่างน้อย 1 คนเพื่ออนุมัติ
 				</p>
 			{/if}
-		</div>
-		<div class="min-w-0 space-y-2">
+			{#if canReview && draft?.needsRecheck}
+				<p class="rounded-md border border-warning/30 bg-warning/5 p-2.5 text-sm text-warning">
+					ช่วงคาบเปลี่ยนแล้ว เปิดตัวเลือกผู้ประเมินเพื่อตรวจอีกครั้ง
+				</p>
+			{/if}
+			{#if canReview && (draft?.availability || draft?.loading || (draft?.error && !pickerOpen))}
+				<SupervisionRequestAvailability
+					result={draft.availability}
+					loading={Boolean(draft.loading)}
+					error={draft.error ?? ''}
+					showError={!pickerOpen}
+					{disabled}
+					onretry={() => void review.loadAvailability(id)}
+				/>
+			{/if}
+			<div class="flex flex-wrap gap-2 pt-1">
+				<LoadingButton
+					disabled={!review.canSubmit(observation, 'approve-request')}
+					loading={review.isSaving(id, 'approve-request')}
+					loadingLabel="กำลังอนุมัติ..."
+					onclick={() => review.submit(id, 'approve-request')}>อนุมัติและมอบหมาย</LoadingButton
+				>
+				{#if showSaveEvaluators}
+					<LoadingButton
+						variant="outline"
+						disabled={!review.canSubmit(observation, 'save-evaluators')}
+						loading={review.isSaving(id, 'save-evaluators')}
+						loadingLabel="กำลังบันทึก..."
+						onclick={() => review.submit(id, 'save-evaluators')}>บันทึกผู้ประเมิน</LoadingButton
+					>
+				{/if}
+			</div>
+		</section>
+		<section
+			class="min-w-0 space-y-2.5 border-t pt-4 sm:border-s sm:border-t-0 sm:ps-4 sm:pt-0"
+			aria-label="ส่งคำขอให้ครูแก้ไข"
+		>
 			<Label for={`${fieldId}-comment`}>ส่งกลับคำขอ</Label>
 			<Textarea
 				id={`${fieldId}-comment`}
+				aria-describedby={`${fieldId}-comment-help`}
 				value={draft?.comment ?? ''}
 				{disabled}
-				rows={3}
-				placeholder="ระบุเหตุผลส่งกลับ"
+				rows={2}
+				placeholder="ระบุสิ่งที่ต้องแก้ไข"
 				oninput={(event) => review.setComment(id, event.currentTarget.value)}
 			/>
-		</div>
-	</div>
-
-	<div class="flex flex-wrap items-center justify-end gap-2">
-		{#if onclose}<Button variant="outline" onclick={onclose}>ปิด</Button>{/if}
-		{#if detailHref}
-			<Button size="sm" variant="outline" href={detailHref} data-sveltekit-preload-data="tap">
-				<Eye class="size-4" />รายละเอียด
-			</Button>
-		{/if}
-		{#if showSaveEvaluators}
+			<p id={`${fieldId}-comment-help`} class="text-xs text-muted-foreground">
+				ครูจะเห็นเหตุผลนี้และส่งคำขอใหม่ได้
+			</p>
 			<LoadingButton
 				variant="outline"
-				disabled={!review.canSubmit(observation, 'save-evaluators')}
-				loading={review.isSaving(id, 'save-evaluators')}
-				loadingLabel="กำลังบันทึก..."
-				onclick={() => review.submit(id, 'save-evaluators')}>บันทึกผู้ประเมิน</LoadingButton
+				disabled={!review.canSubmit(observation, 'return-request')}
+				loading={review.isSaving(id, 'return-request')}
+				loadingLabel="กำลังส่งกลับ..."
+				onclick={() => review.submit(id, 'return-request')}>ส่งกลับคำขอ</LoadingButton
 			>
-		{/if}
-		<LoadingButton
-			variant="outline"
-			disabled={!review.canSubmit(observation, 'return-request')}
-			loading={review.isSaving(id, 'return-request')}
-			loadingLabel="กำลังส่งกลับ..."
-			onclick={() => review.submit(id, 'return-request')}>ส่งกลับคำขอ</LoadingButton
-		>
-		<LoadingButton
-			disabled={!review.canSubmit(observation, 'approve-request')}
-			loading={review.isSaving(id, 'approve-request')}
-			loadingLabel="กำลังอนุมัติ..."
-			onclick={() => review.submit(id, 'approve-request')}>อนุมัติและมอบหมาย</LoadingButton
-		>
+		</section>
 	</div>
+
+	{#if onclose || detailHref}
+		<div class="flex flex-wrap items-center justify-end gap-2 border-t pt-2.5">
+			{#if onclose}<Button variant="outline" size="sm" onclick={onclose}>ปิด</Button>{/if}
+			{#if detailHref}
+				<Button size="sm" variant="ghost" href={detailHref} data-sveltekit-preload-data="tap">
+					<Eye class="size-4" />รายละเอียด
+				</Button>
+			{/if}
+		</div>
+	{/if}
 </div>
