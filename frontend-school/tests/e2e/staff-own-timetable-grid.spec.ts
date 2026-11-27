@@ -352,12 +352,12 @@ async function expectNoOuterOverflow(page: Page) {
 	expect(geometry.docFullWidth).toBeLessThanOrEqual(geometry.docWidth + 1);
 	expect(geometry.top).toBe(0);
 }
-for (const [width, minimumVisiblePeriods] of [
-	[320, 3],
-	[390, 4],
-	[614, 7],
-	[1029, 2],
-	[1533, 9]
+for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
+	[320, 5, true],
+	[390, 7, true],
+	[614, 9, false],
+	[1029, 9, false],
+	[1533, 9, false]
 ] as const) {
 	for (const theme of ['light', 'dark'] as const) {
 		test(`shows one compact weekly grid at ${width}px in ${theme}`, async ({ page }, testInfo) => {
@@ -490,7 +490,7 @@ for (const [width, minimumVisiblePeriods] of [
 				animations: 'disabled'
 			});
 
-			if (width < 1533) {
+			if (shouldScrollHorizontally) {
 				expect(overflowX).toBeGreaterThan(0);
 				await scroll.hover();
 				await page.mouse.wheel(10000, 0);
@@ -523,6 +523,70 @@ for (const [width, minimumVisiblePeriods] of [
 			expect(reads()).toBe(1);
 		});
 	}
+}
+
+for (const theme of ['light', 'dark'] as const) {
+	test(`fits all seven periods and configured days on a typical phone in ${theme}`, async ({
+		page
+	}, testInfo) => {
+		await page.setViewportSize({ width: 390, height: 888 });
+		await page.addInitScript(
+			(mode) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: mode })),
+			theme
+		);
+		const entries = Array.from({ length: 7 }, (_, index) => ({
+			...makeTimetableBlock(`phone-course-${index}`, `phone-period-${index}`),
+			periodName: `คาบ ${index + 1}`,
+			startTime: `${String(8 + index).padStart(2, '0')}:00:00`,
+			endTime: `${String(9 + index).padStart(2, '0')}:00:00`
+		}));
+		await mockStaffTimetableApis(page, entries, ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']);
+		await page.goto('/staff/timetable');
+		const weekly = page.getByRole('table', { name: 'ตารางสอนรายสัปดาห์' });
+		const scroll = page.getByTestId('own-timetable-week-scroll');
+		await expect(weekly).toBeVisible();
+		await expect(weekly.getByRole('columnheader')).toHaveCount(8);
+		await expect(weekly.getByRole('rowheader')).toHaveText([
+			'จันทร์',
+			'อังคาร',
+			'พุธ',
+			'พฤหัสบดี',
+			'ศุกร์',
+			'เสาร์',
+			'อาทิตย์'
+		]);
+		const geometry = await scroll.evaluate((pane) => {
+			const box = pane.getBoundingClientRect();
+			const right = box.left + pane.clientLeft + pane.clientWidth;
+			const bottom = box.top + pane.clientTop + pane.clientHeight;
+			return {
+				overflow: pane.scrollWidth - pane.clientWidth,
+				allHeadersVisible: Array.from(pane.querySelectorAll('th')).every((header) => {
+					const rect = header.getBoundingClientRect();
+					return rect.left >= box.left && rect.right <= right + 0.5 && rect.bottom <= bottom + 0.5;
+				}),
+				fontSizes: Array.from(pane.querySelectorAll('th, [data-timetable-block] p')).map((node) =>
+					Number.parseFloat(getComputedStyle(node).fontSize)
+				)
+			};
+		});
+		expect(geometry.overflow).toBe(0);
+		expect(geometry.allHeadersVisible).toBe(true);
+		expect(Math.min(...geometry.fontSizes)).toBeGreaterThanOrEqual(11);
+		for (const time of await weekly.locator('[data-timetable-time]').all()) {
+			await expectFullText(time);
+			for (const endpoint of await time.locator('span').all()) {
+				const lines = await endpoint.evaluate((node) => node.getClientRects().length);
+				expect(lines).toBe(1);
+			}
+		}
+		await expectNoOuterOverflow(page);
+		await page.screenshot({
+			path: testInfo.outputPath(`timetable-seven-period-phone-${theme}.png`),
+			fullPage: true,
+			animations: 'disabled'
+		});
+	});
 }
 
 test('synchronized activity labels show only current teacher classes and rooms', async ({
