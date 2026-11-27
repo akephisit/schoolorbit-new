@@ -102,6 +102,13 @@ for (const width of [375, 1440]) {
 		const services = page.getByTestId('staff-service-workspaces');
 		const links = services.getByRole('link');
 		await expect(links).toHaveText(menuGroups[0].items.slice(0, 4).map((item) => item.name));
+		await expect(services.locator('[data-workspace]')).toHaveCount(0);
+		await expect(
+			page.getByTestId('staff-work-hero').getByTestId('staff-work-counts')
+		).toContainText('7');
+		await expect(
+			page.getByTestId('staff-work-hero').getByRole('link', { name: 'เปิดงานของฉัน', exact: true })
+		).toHaveCount(1);
 		const firstLink = await rect(links.first());
 		expect(firstLink.y + firstLink.height).toBeLessThan(844);
 		const toggle = page.getByRole('button', { name: 'ดูบริการทั้งหมด', exact: true });

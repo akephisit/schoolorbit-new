@@ -16,7 +16,10 @@
 	import { getStaffDashboard, type StaffDashboardOverview } from '#lib/api/staff.js';
 	import { PageShell } from '#lib/components/app-layout/index.js';
 	import { PageSkeleton, PageState } from '#lib/components/app-state/index.js';
-	import { buildSidebarNavigation } from '#lib/components/layout/sidebar-navigation.js';
+	import {
+		buildSidebarNavigation,
+		type SidebarMenuItem
+	} from '#lib/components/layout/sidebar-navigation.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '#lib/components/ui/card/index.js';
 	import { authStore } from '#lib/stores/auth.js';
@@ -78,22 +81,11 @@
 		)
 	);
 
-	const visibleServiceWorkspaces = $derived.by(() => {
-		if (showAllServices) return serviceWorkspaces;
-		let remaining = servicePreviewLimit;
-		return serviceWorkspaces
-			.map((workspace) => ({
-				...workspace,
-				sections: workspace.sections
-					.map((section) => {
-						const items = section.items.slice(0, remaining);
-						remaining -= items.length;
-						return { ...section, items };
-					})
-					.filter((section) => section.items.length > 0)
-			}))
-			.filter((workspace) => workspace.sections.length > 0);
-	});
+	const previewServices = $derived(
+		serviceWorkspaces
+			.flatMap((workspace) => workspace.sections.flatMap((section) => section.items))
+			.slice(0, servicePreviewLimit)
+	);
 
 	$effect.pre(() => {
 		const source = data;
@@ -141,71 +133,108 @@
 	}
 </script>
 
+{#snippet serviceLink(item: SidebarMenuItem)}
+	{@const ItemIcon = getIconComponent(item.icon)}
+	<Button
+		variant="outline"
+		href={serviceHref(item.path)}
+		data-sveltekit-preload-data={menuPreloadPolicy(item)}
+		class="group h-auto min-h-28 w-full flex-col items-start justify-between gap-4 rounded-xl border-border bg-card px-4 py-4 text-start whitespace-normal shadow-none hover:border-primary/30"
+	>
+		<span class="flex w-full items-center justify-between gap-2">
+			<span
+				class="inline-flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-foreground"
+				><ItemIcon class="size-5" aria-hidden="true" /></span
+			>
+			<ChevronRight
+				class="size-4 shrink-0 text-muted-foreground group-hover:text-primary"
+				aria-hidden="true"
+			/>
+		</span>
+		<span class="w-full text-base font-semibold break-words leading-snug">{item.name}</span>
+	</Button>
+{/snippet}
+
 <PageShell title="หน้าหลักของฉัน">
-	<Card class="gap-0 border-primary/20 bg-primary/5 py-0 shadow-none">
-		<CardContent class="flex flex-wrap items-center justify-between gap-3 p-4">
-			<div class="min-w-0 space-y-1">
-				<h2 class="text-lg font-semibold break-words">สวัสดี {displayName}</h2>
+	<Card
+		class="relative isolate gap-0 rounded-2xl border-primary/20 bg-linear-to-br from-primary/10 via-card to-card py-0 shadow-none"
+		data-testid="staff-work-hero"
+	>
+		<div
+			class="pointer-events-none absolute inset-0 -z-10 overflow-hidden rounded-2xl"
+			aria-hidden="true"
+		>
+			<span class="dashboard-orbit"></span>
+		</div>
+		<CardContent
+			class="grid gap-5 p-5 sm:p-7 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-x-10 lg:gap-y-6"
+		>
+			<div class="min-w-0 space-y-2">
+				<h2 class="text-2xl leading-snug font-semibold tracking-tight break-words sm:text-3xl">
+					สวัสดี {displayName}
+				</h2>
 				<p class="text-sm text-muted-foreground">{roleName}</p>
 			</div>
-			<Button href="/staff/work" class="gap-2">
-				<Inbox class="size-4" aria-hidden="true" />
+			<section
+				data-testid="staff-work-counts"
+				aria-busy={$workStore.loadingCounts}
+				aria-labelledby="personal-summary-title"
+				class="min-w-0 space-y-3 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center"
+			>
+				<h3 id="personal-summary-title" class="sr-only">สรุปงานของฉัน</h3>
+				{#if $workStore.countsError}<PageState
+						title="โหลดจำนวนงานไม่สำเร็จ"
+						description={$workStore.countsError}
+						actionLabel="ลองใหม่"
+						onaction={() => void workStore.fetchCounts()}
+					/>{/if}
+				{#if $workStore.loadingCounts && !$workStore.loadedCounts}<p
+						role="status"
+						class="text-sm text-muted-foreground"
+					>
+						กำลังโหลดจำนวนงาน...
+					</p>{/if}
+				<dl class="grid grid-cols-2 items-center gap-x-4 gap-y-4">
+					<div class="row-span-2 min-w-0 space-y-3">
+						<dt class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+							<Inbox class="size-4 shrink-0 text-primary" aria-hidden="true" />งานที่เปิดอยู่
+						</dt>
+						<dd
+							class="text-5xl leading-none font-semibold tracking-tight text-primary tabular-nums break-all sm:text-6xl"
+						>
+							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.open) : '—'}
+						</dd>
+					</div>
+					<div class="space-y-1 border-s border-primary/15 ps-4 sm:ps-5">
+						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+							<Clock3 class="size-4 shrink-0 text-warning" aria-hidden="true" />ใกล้ครบกำหนด
+						</dt>
+						<dd class="text-2xl leading-tight font-semibold text-warning tabular-nums break-all">
+							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.dueSoon) : '—'}
+						</dd>
+					</div>
+					<div class="space-y-1 border-s border-primary/15 ps-4 sm:ps-5">
+						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+							<CircleAlert class="size-4 shrink-0 text-destructive" aria-hidden="true" />เกินกำหนด
+						</dt>
+						<dd
+							class="text-2xl leading-tight font-semibold text-destructive tabular-nums break-all"
+						>
+							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.overdue) : '—'}
+						</dd>
+					</div>
+				</dl>
+			</section>
+			<Button
+				href="/staff/work"
+				class="min-h-11 justify-self-start gap-3 rounded-lg px-4 lg:self-end"
+			>
 				เปิดงานของฉัน
 				<ArrowRight class="size-4" aria-hidden="true" />
 			</Button>
 		</CardContent>
 	</Card>
-	<section
-		data-testid="staff-work-counts"
-		aria-busy={$workStore.loadingCounts}
-		aria-labelledby="personal-summary-title"
-		class="space-y-3"
-	>
-		<h2 id="personal-summary-title" class="text-lg font-semibold">สรุปงานของฉัน</h2>
-		{#if $workStore.countsError}<PageState
-				title="โหลดจำนวนงานไม่สำเร็จ"
-				description={$workStore.countsError}
-				actionLabel="ลองใหม่"
-				onaction={() => void workStore.fetchCounts()}
-			/>{/if}
-		{#if $workStore.loadingCounts && !$workStore.loadedCounts}<p
-				role="status"
-				class="text-sm text-muted-foreground"
-			>
-				กำลังโหลดจำนวนงาน...
-			</p>{/if}
-		<Card class="gap-0 py-0 shadow-none">
-			<CardContent class="p-0">
-				<dl class="grid grid-cols-3 divide-x">
-					<div class="min-w-0 space-y-2 p-3 sm:p-4">
-						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-							<Inbox class="size-4 shrink-0 text-primary" aria-hidden="true" />งานที่เปิดอยู่
-						</dt>
-						<dd class="text-2xl font-semibold tabular-nums">
-							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.open) : '—'}
-						</dd>
-					</div>
-					<div class="min-w-0 space-y-2 p-3 sm:p-4">
-						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-							<Clock3 class="size-4 shrink-0 text-warning" aria-hidden="true" />ใกล้ครบกำหนด
-						</dt>
-						<dd class="text-2xl font-semibold text-warning tabular-nums">
-							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.dueSoon) : '—'}
-						</dd>
-					</div>
-					<div class="min-w-0 space-y-2 p-3 sm:p-4">
-						<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-							<CircleAlert class="size-4 shrink-0 text-destructive" aria-hidden="true" />เกินกำหนด
-						</dt>
-						<dd class="text-2xl font-semibold text-destructive tabular-nums">
-							{$workStore.loadedCounts ? numberFormatter.format($workStore.counts.overdue) : '—'}
-						</dd>
-					</div>
-				</dl>
-			</CardContent>
-		</Card>
-	</section>
-	<div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_16rem]">
+	<div class="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]">
 		<section
 			data-testid="staff-services"
 			aria-busy={loadingMenu}
@@ -219,12 +248,22 @@
 					onaction={appMenu.retry}
 				/>{/if}
 
-			<div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+			<div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 				<h2 id="services-title" class="text-lg font-semibold">บริการของโรงเรียน</h2>
-				{#if appMenu.loaded}
-					<p class="text-sm text-muted-foreground">
-						{numberFormatter.format(accessibleServiceCount)} บริการ
-					</p>
+				{#if appMenu.loaded && accessibleServiceCount > servicePreviewLimit}
+					<Button
+						variant="ghost"
+						class="min-h-11 gap-2 text-primary"
+						aria-expanded={showAllServices}
+						aria-controls="staff-service-catalogue"
+						onclick={() => (showAllServices = !showAllServices)}
+					>
+						{showAllServices ? 'แสดงบริการน้อยลง' : 'ดูบริการทั้งหมด'}
+						<ChevronRight
+							class={showAllServices ? 'size-4 rotate-90' : 'size-4'}
+							aria-hidden="true"
+						/>
+					</Button>
 				{/if}
 			</div>
 
@@ -246,76 +285,54 @@
 					description="เมนูจะปรากฏที่นี่เมื่อบัญชีได้รับสิทธิ์ในระบบที่เกี่ยวข้อง"
 				/>
 			{:else}
-				{#if accessibleServiceCount > servicePreviewLimit}
-					<Button
-						variant="outline"
-						aria-expanded={showAllServices}
-						aria-controls="staff-service-catalogue"
-						onclick={() => (showAllServices = !showAllServices)}
-					>
-						{showAllServices ? 'แสดงบริการน้อยลง' : 'ดูบริการทั้งหมด'}
-					</Button>
-				{/if}
 				<div
 					id="staff-service-catalogue"
-					class={visibleServiceWorkspaces.length > 1
+					class={showAllServices && serviceWorkspaces.length > 1
 						? 'columns-1 gap-4 xl:columns-2'
-						: 'columns-1 gap-4'}
+						: undefined}
 					data-testid="staff-service-workspaces"
 				>
-					{#each visibleServiceWorkspaces as workspace (workspace.code)}
-						{@const WorkspaceIcon = getIconComponent(workspace.icon)}
-						<Card
-							class="mb-4 w-full break-inside-avoid gap-0 py-0 shadow-none"
-							data-workspace={workspace.code}
-						>
-							<CardHeader class="border-b px-3 py-3 sm:px-4">
-								<div class="flex items-center gap-3">
-									<WorkspaceIcon class="size-5 shrink-0 text-primary" aria-hidden="true" />
-									<CardTitle class="text-base leading-snug">{workspace.name}</CardTitle>
-								</div>
-							</CardHeader>
-							<CardContent class="space-y-4 p-3 sm:p-4">
-								{#each workspace.sections as section (section.id)}
-									{@const SectionIcon = getIconComponent(section.icon)}
-									<div class="space-y-2">
-										<div class="flex items-center gap-2">
-											<SectionIcon
-												class="size-4 shrink-0 text-muted-foreground"
-												aria-hidden="true"
-											/>
-											<h3 class="text-sm font-semibold">{section.name}</h3>
-										</div>
-										<ul class="grid items-start gap-2 min-[360px]:grid-cols-2">
-											{#each section.items as item (item.id)}
-												{@const ItemIcon = getIconComponent(item.icon)}
-												<li class="min-w-0">
-													<Button
-														variant="outline"
-														href={serviceHref(item.path)}
-														data-sveltekit-preload-data={menuPreloadPolicy(item)}
-														class="h-auto min-h-24 w-full flex-col items-start justify-start gap-2 rounded-xl px-3 py-3 text-start whitespace-normal shadow-none"
-													>
-														<span class="flex w-full items-center justify-between gap-2">
-															<span
-																class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground"
-																><ItemIcon class="size-4" aria-hidden="true" /></span
-															>
-															<ChevronRight
-																class="size-4 shrink-0 text-muted-foreground"
-																aria-hidden="true"
-															/>
-														</span>
-														<span class="break-words leading-snug">{item.name}</span>
-													</Button>
-												</li>
-											{/each}
-										</ul>
+					{#if !showAllServices}
+						<ul class="grid items-start gap-3 min-[360px]:grid-cols-2">
+							{#each previewServices as item (item.id)}<li class="min-w-0">
+									{@render serviceLink(item)}
+								</li>{/each}
+						</ul>
+					{:else}
+						{#each serviceWorkspaces as workspace (workspace.code)}
+							{@const WorkspaceIcon = getIconComponent(workspace.icon)}
+							<Card
+								class="mb-4 w-full break-inside-avoid gap-0 py-0 shadow-none"
+								data-workspace={workspace.code}
+							>
+								<CardHeader class="border-b px-3 py-3 sm:px-4">
+									<div class="flex items-center gap-3">
+										<WorkspaceIcon class="size-5 shrink-0 text-primary" aria-hidden="true" />
+										<CardTitle class="text-base leading-snug">{workspace.name}</CardTitle>
 									</div>
-								{/each}
-							</CardContent>
-						</Card>
-					{/each}
+								</CardHeader>
+								<CardContent class="space-y-4 p-3 sm:p-4">
+									{#each workspace.sections as section (section.id)}
+										{@const SectionIcon = getIconComponent(section.icon)}
+										<div class="space-y-2">
+											<div class="flex items-center gap-2">
+												<SectionIcon
+													class="size-4 shrink-0 text-muted-foreground"
+													aria-hidden="true"
+												/>
+												<h3 class="text-sm font-semibold">{section.name}</h3>
+											</div>
+											<ul class="grid items-start gap-2 min-[360px]:grid-cols-2">
+												{#each section.items as item (item.id)}
+													<li class="min-w-0">{@render serviceLink(item)}</li>
+												{/each}
+											</ul>
+										</div>
+									{/each}
+								</CardContent>
+							</Card>
+						{/each}
+					{/if}
 				</div>
 			{/if}
 		</section>
@@ -353,32 +370,39 @@
 					onaction={() => loadDashboard(academicYearId)}
 				/>
 			{:else if stats}
-				<Card class="gap-0 py-0 shadow-none">
-					<CardContent class="px-4 py-1">
-						<dl class="divide-y">
-							<div class="flex items-center justify-between gap-3 py-3">
-								<dt class="flex items-center gap-2 text-sm text-muted-foreground">
-									<Users class="size-4 shrink-0" aria-hidden="true" />บุคลากรทั้งหมด
+				<Card class="gap-0 rounded-2xl bg-secondary/40 py-0 shadow-none">
+					<CardContent class="p-5">
+						<dl>
+							<div class="space-y-4 pb-5">
+								<dt class="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+									นักเรียนทั้งหมด<GraduationCap
+										class="size-6 shrink-0 text-primary"
+										aria-hidden="true"
+									/>
 								</dt>
-								<dd class="text-lg font-semibold tabular-nums">
-									{numberFormatter.format(stats.totalStaff)}
-								</dd>
-							</div>
-							<div class="flex items-center justify-between gap-3 py-3">
-								<dt class="flex items-center gap-2 text-sm text-muted-foreground">
-									<GraduationCap class="size-4 shrink-0" aria-hidden="true" />นักเรียนทั้งหมด
-								</dt>
-								<dd class="text-lg font-semibold tabular-nums">
+								<dd
+									class="text-4xl leading-none font-semibold tracking-tight tabular-nums break-all"
+								>
 									{numberFormatter.format(stats.totalStudents)}
 								</dd>
 							</div>
-							<div class="flex items-center justify-between gap-3 py-3">
-								<dt class="flex items-center gap-2 text-sm text-muted-foreground">
-									<Building2 class="size-4 shrink-0" aria-hidden="true" />ห้องเรียนที่เปิด
-								</dt>
-								<dd class="text-lg font-semibold tabular-nums">
-									{numberFormatter.format(stats.activeHomerooms)}
-								</dd>
+							<div class="grid grid-cols-2 gap-4 border-t pt-4">
+								<div class="space-y-2">
+									<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+										<Users class="size-4 shrink-0" aria-hidden="true" />บุคลากรทั้งหมด
+									</dt>
+									<dd class="text-xl font-semibold tabular-nums break-all">
+										{numberFormatter.format(stats.totalStaff)}
+									</dd>
+								</div>
+								<div class="space-y-2">
+									<dt class="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+										<Building2 class="size-4 shrink-0" aria-hidden="true" />ห้องเรียนที่เปิด
+									</dt>
+									<dd class="text-xl font-semibold tabular-nums break-all">
+										{numberFormatter.format(stats.activeHomerooms)}
+									</dd>
+								</div>
 							</div>
 						</dl>
 					</CardContent>
@@ -387,3 +411,24 @@
 		</section>
 	</div>
 </PageShell>
+
+<style>
+	.dashboard-orbit {
+		position: absolute;
+		inset-block-start: -5rem;
+		inset-inline-start: -5rem;
+		width: 30rem;
+		height: 16rem;
+		border: 1px solid var(--primary);
+		border-radius: 50%;
+		opacity: 0.08;
+		transform: rotate(-25deg);
+	}
+	.dashboard-orbit::after {
+		content: '';
+		position: absolute;
+		inset: 1.5rem -2rem;
+		border: inherit;
+		border-radius: inherit;
+	}
+</style>
