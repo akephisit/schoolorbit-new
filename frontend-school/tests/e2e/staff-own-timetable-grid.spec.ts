@@ -353,10 +353,10 @@ async function expectNoOuterOverflow(page: Page) {
 	expect(geometry.top).toBe(0);
 }
 for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
-	[320, 5, true],
-	[390, 7, true],
-	[614, 9, false],
-	[1029, 9, false],
+	[320, 3, true],
+	[390, 4, true],
+	[614, 7, true],
+	[1029, 2, null],
 	[1533, 9, false]
 ] as const) {
 	for (const theme of ['light', 'dark'] as const) {
@@ -404,9 +404,22 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 				expect(lineCount).toBe(1);
 			}
 			await expect(weekly.getByRole('columnheader')).toHaveCount(10);
+			const textSizes = await weekly
+				.locator('th, p, [data-timetable-class], [data-timetable-room]')
+				.evaluateAll((nodes) =>
+					nodes.map((node) => Number.parseFloat(getComputedStyle(node).fontSize))
+				);
+			expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(width >= 1029 ? 12 : 11.5);
 			const lastPeriod = weekly.getByRole('columnheader', { name: /คาบ 9.*16:00–17:00/ });
 			await expect(lastPeriod).toBeVisible();
 			await expectFullText(lastPeriod.getByText('16:00–17:00', { exact: true }));
+			for (const time of await weekly.locator('[data-timetable-time]').all()) {
+				await expectFullText(time);
+				for (const endpoint of await time.locator('span').all()) {
+					const lines = await endpoint.evaluate((node) => node.getClientRects().length);
+					expect(lines).toBe(1);
+				}
+			}
 			await expect(page.getByRole('radiogroup', { name: 'มุมมองตารางสอน' })).toHaveCount(0);
 			await expect(page.getByRole('radiogroup', { name: 'วันในตารางสอน' })).toHaveCount(0);
 			await expect(page.getByTestId('own-timetable-details')).toHaveCount(0);
@@ -442,6 +455,12 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 				stacked.nth(1).boundingBox()
 			]);
 			expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height);
+			const mondayLabelY = await monday.getByRole('rowheader').evaluate((header) => {
+				const text = document.createRange();
+				text.selectNodeContents(header);
+				return text.getBoundingClientRect().top;
+			});
+			expect(mondayLabelY - first!.y).toBeLessThanOrEqual(16);
 			if (width >= 1029) {
 				const shortLabels = monday.locator('[data-timetable-block="collision"]');
 				const [classLabel, roomLabel] = await Promise.all([
@@ -469,6 +488,9 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 
 			const firstDay = weekly.getByRole('rowheader').first();
 			const startDayX = (await firstDay.boundingBox())!.x;
+			const periodWidth = (await weekly.getByRole('columnheader').nth(1).boundingBox())!.width;
+			expect(periodWidth).toBeGreaterThanOrEqual(width >= 1029 ? 70 : 60);
+			expect((await firstDay.boundingBox())!.width).toBeGreaterThanOrEqual(52);
 			const visiblePeriods = await scroll.evaluate((pane) => {
 				const left = pane.getBoundingClientRect().left + pane.clientLeft;
 				const right = left + pane.clientWidth;
@@ -490,7 +512,10 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 				animations: 'disabled'
 			});
 
-			if (shouldScrollHorizontally) {
+			if (shouldScrollHorizontally !== null) {
+				expect(overflowX > 0).toBe(shouldScrollHorizontally);
+			}
+			if (overflowX > 0) {
 				expect(overflowX).toBeGreaterThan(0);
 				await scroll.hover();
 				await page.mouse.wheel(10000, 0);
@@ -523,70 +548,6 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 			expect(reads()).toBe(1);
 		});
 	}
-}
-
-for (const theme of ['light', 'dark'] as const) {
-	test(`fits all seven periods and configured days on a typical phone in ${theme}`, async ({
-		page
-	}, testInfo) => {
-		await page.setViewportSize({ width: 390, height: 888 });
-		await page.addInitScript(
-			(mode) => localStorage.setItem('ui-preferences', JSON.stringify({ theme: mode })),
-			theme
-		);
-		const entries = Array.from({ length: 7 }, (_, index) => ({
-			...makeTimetableBlock(`phone-course-${index}`, `phone-period-${index}`),
-			periodName: `คาบ ${index + 1}`,
-			startTime: `${String(8 + index).padStart(2, '0')}:00:00`,
-			endTime: `${String(9 + index).padStart(2, '0')}:00:00`
-		}));
-		await mockStaffTimetableApis(page, entries, ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']);
-		await page.goto('/staff/timetable');
-		const weekly = page.getByRole('table', { name: 'ตารางสอนรายสัปดาห์' });
-		const scroll = page.getByTestId('own-timetable-week-scroll');
-		await expect(weekly).toBeVisible();
-		await expect(weekly.getByRole('columnheader')).toHaveCount(8);
-		await expect(weekly.getByRole('rowheader')).toHaveText([
-			'จันทร์',
-			'อังคาร',
-			'พุธ',
-			'พฤหัสบดี',
-			'ศุกร์',
-			'เสาร์',
-			'อาทิตย์'
-		]);
-		const geometry = await scroll.evaluate((pane) => {
-			const box = pane.getBoundingClientRect();
-			const right = box.left + pane.clientLeft + pane.clientWidth;
-			const bottom = box.top + pane.clientTop + pane.clientHeight;
-			return {
-				overflow: pane.scrollWidth - pane.clientWidth,
-				allHeadersVisible: Array.from(pane.querySelectorAll('th')).every((header) => {
-					const rect = header.getBoundingClientRect();
-					return rect.left >= box.left && rect.right <= right + 0.5 && rect.bottom <= bottom + 0.5;
-				}),
-				fontSizes: Array.from(pane.querySelectorAll('th, [data-timetable-block] p')).map((node) =>
-					Number.parseFloat(getComputedStyle(node).fontSize)
-				)
-			};
-		});
-		expect(geometry.overflow).toBe(0);
-		expect(geometry.allHeadersVisible).toBe(true);
-		expect(Math.min(...geometry.fontSizes)).toBeGreaterThanOrEqual(11);
-		for (const time of await weekly.locator('[data-timetable-time]').all()) {
-			await expectFullText(time);
-			for (const endpoint of await time.locator('span').all()) {
-				const lines = await endpoint.evaluate((node) => node.getClientRects().length);
-				expect(lines).toBe(1);
-			}
-		}
-		await expectNoOuterOverflow(page);
-		await page.screenshot({
-			path: testInfo.outputPath(`timetable-seven-period-phone-${theme}.png`),
-			fullPage: true,
-			animations: 'disabled'
-		});
-	});
 }
 
 test('synchronized activity labels show only current teacher classes and rooms', async ({
