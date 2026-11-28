@@ -40,7 +40,6 @@
 		onselect,
 		oneventselect,
 		fillHeight = false,
-		compactMobile = false,
 		hideMobileTimes = false,
 		hideDayStateLabels = false,
 		hidePendingPrefix = false
@@ -54,7 +53,6 @@
 		onselect?: (date: string, anchor: HTMLElement) => void;
 		oneventselect?: (event: CalendarDisplayEvent, date: string, anchor: HTMLElement) => void;
 		fillHeight?: boolean;
-		compactMobile?: boolean;
 		hideMobileTimes?: boolean;
 		hideDayStateLabels?: boolean;
 		hidePendingPrefix?: boolean;
@@ -104,8 +102,7 @@
 <div
 	class={cn(
 		'overflow-hidden rounded-xl border bg-card shadow-sm',
-		fillHeight && 'flex h-full flex-col sm:min-h-[28rem]',
-		fillHeight && (compactMobile ? 'min-h-[21rem]' : 'min-h-[26rem]')
+		fillHeight && 'flex h-full min-h-[26rem] flex-col sm:min-h-[28rem]'
 	)}
 >
 	<div
@@ -128,8 +125,6 @@
 						class={cn(
 							'group relative flex h-20 min-w-0 flex-col border-b border-r p-1.5 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:h-28 sm:p-2',
 							fillHeight && 'h-full min-h-0 sm:h-full',
-							compactMobile && 'max-sm:justify-center max-sm:p-0',
-							compactMobile && !fillHeight && 'max-sm:h-12',
 							!oneventselect && 'focus-visible:z-20',
 							!cell.inCurrentMonth && 'bg-muted/30 text-muted-foreground',
 							dayState?.active && 'bg-primary/15 hover:bg-primary/20',
@@ -156,28 +151,8 @@
 						>
 							{cell.dayNumber}
 						</span>
-						{#if compactMobile}
-							<span class="flex h-2 items-center justify-center gap-1 sm:hidden" aria-hidden="true">
-								{#if dayEvents[0]}
-									<span
-										class="size-1.5 rounded-full border border-foreground/50"
-										data-calendar-day-marker="event"
-										style:background-color={dayEvents[0].categoryColor ?? fallbackColor}
-									></span>
-								{/if}
-								{#if dayRequests.length}
-									<span
-										class="size-2 rounded-full border border-primary"
-										data-calendar-day-marker="pending"
-									></span>
-								{/if}
-							</span>
-						{/if}
 						{#if dayState && !hideDayStateLabels}<span
-								class={cn(
-									'mt-auto break-words text-[10px] font-medium leading-snug sm:text-xs',
-									compactMobile && 'max-sm:hidden'
-								)}
+								class="mt-auto break-words text-[10px] font-medium leading-snug sm:text-xs"
 								aria-hidden="true">{dayState.label}</span
 							>{/if}
 
@@ -185,8 +160,7 @@
 							<span
 								class={cn(
 									'absolute bottom-0.5 right-1 z-20 rounded bg-card/90 px-1 text-[9px] font-medium text-muted-foreground shadow-sm sm:bottom-1 sm:text-[10px]',
-									fillHeight && 'leading-[12px] sm:leading-[14px]',
-									compactMobile && 'max-sm:hidden'
+									fillHeight && 'leading-[12px] sm:leading-[14px]'
 								)}
 							>
 								+{week.hiddenEventCounts[dayIndex]}
@@ -197,8 +171,7 @@
 
 				<div
 					class={cn(
-						'pointer-events-none absolute inset-x-0 top-8 z-10 auto-rows-[13px] grid-cols-7 gap-y-0.5 sm:top-9 sm:auto-rows-[18px]',
-						compactMobile ? 'hidden sm:grid' : 'grid',
+						'pointer-events-none absolute inset-x-0 top-8 z-10 grid auto-rows-[13px] grid-cols-7 gap-y-0.5 sm:top-9 sm:auto-rows-[18px]',
 						fillHeight && 'top-8 auto-rows-[10px] gap-y-px sm:top-8 sm:auto-rows-[14px] sm:gap-y-px'
 					)}
 					aria-hidden={!oneventselect}

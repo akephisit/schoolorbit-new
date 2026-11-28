@@ -131,7 +131,6 @@ const toggle = (page: Page) =>
 const badge = (page: Page) => page.getByTestId('calendar-pending-count');
 const retryCount = (page: Page) =>
 	page.getByRole('button', { name: 'ลองโหลดจำนวนคำร้องรออนุมัติอีกครั้ง', exact: true });
-const agenda = (page: Page) => page.getByRole('region', { name: 'รายละเอียดปฏิทิน', exact: true });
 
 for (const width of [1280, 375]) {
 	test(`pending dates remain distinct from confirmed activities, with an optional overlay at ${width}px`, async ({
@@ -159,11 +158,6 @@ for (const width of [1280, 375]) {
 			name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ',
 			exact: true
 		});
-		if (width === 375) {
-			await expect(day.locator('[data-calendar-day-marker="event"]')).toBeVisible();
-			await expect(day.locator('[data-calendar-day-marker="pending"]')).toBeVisible();
-			await expect(page.getByRole('button', { name: /^ดูรายละเอียด / })).toHaveCount(0);
-		}
 		await day.click({ position: { x: 5, y: 5 } });
 		const selected = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 		await expect(selected).toContainText('คำร้องเวลาเช้า');
@@ -195,30 +189,18 @@ for (const width of [1280, 375]) {
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
 		).toBe(true);
-		const nextDay = page.getByRole('button', {
-			name: '2 ต.ค. 2569, 0 กิจกรรม, 1 คำร้องรออนุมัติ',
-			exact: true
-		});
-		if (width === 375) {
-			await expect(nextDay.locator('[data-calendar-day-marker="event"]')).toHaveCount(0);
-			await expect(nextDay.locator('[data-calendar-day-marker="pending"]')).toBeVisible();
-		}
-		await nextDay.click({ position: { x: 5, y: 5 } });
-		await expect(nextDay).toHaveAttribute('aria-pressed', 'true');
+		await page
+			.getByRole('button', { name: '2 ต.ค. 2569, 0 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
+			.click({ position: { x: 5, y: 5 } });
+		await expect(selected).toHaveCount(0);
+		await page
+			.getByRole('button', { name: '2 ต.ค. 2569, 0 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
+			.click({ position: { x: 5, y: 5 } });
 		await expect(selected).toContainText('คำร้องหลายวัน');
 		await expect(selected).not.toContainText('คำร้องเวลาเช้า');
-		if (width === 1280) {
-			await page.getByRole('button', { name: /^ดูรายละเอียด คำร้องเวลาเช้า,/ }).click();
-			await expect(agenda(page).getByRole('button', { name: 'ดูทั้งวัน' })).toBeVisible();
-			await expect(selected).not.toContainText('คำร้องหลายวัน');
-		}
+		await page.keyboard.press('Escape');
 		await toggle(page).click();
 		await expect(selected).toHaveCount(0);
-		await expect(agenda(page).getByRole('button', { name: 'ดูทั้งวัน' })).toHaveCount(0);
-		await expect(agenda(page).getByRole('heading', { level: 2 })).toHaveText(
-			width === 1280 ? '1 ต.ค. 2569' : '2 ต.ค. 2569'
-		);
-		await expect(page.locator('[data-calendar-day-marker="pending"]')).toHaveCount(0);
 		await expect(badge(page)).toHaveText('2');
 		await expect(
 			page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
@@ -311,11 +293,6 @@ test('the pending count loads while regular events and request markers are still
 	await expect(
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม', exact: true })
 	).toBeVisible();
-	await expect(
-		agenda(page)
-			.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
-			.getByRole('status')
-	).toHaveText('กำลังโหลดคำร้องรออนุมัติ...');
 	overlay.release();
 	await expect(
 		page.getByRole('button', { name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ', exact: true })
@@ -501,7 +478,8 @@ test('an own submission refreshes the hidden total and supersedes an older count
 	await expect(
 		page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
 	).toContainText('คำร้องของฉัน');
-	await expect(page.getByText('ไม่มีคำร้องรออนุมัติในวันที่เลือก', { exact: true })).toBeVisible();
+	await expect(page.getByText('วันนี้ไม่มีคำร้องรออนุมัติ', { exact: true })).toBeVisible();
+	await page.keyboard.press('Escape');
 	await toggle(page).click();
 	const dialog = await openOwnRequest(page);
 	await dialog.getByLabel('ชื่อกิจกรรม *', { exact: true }).fill('คำร้องของฉันใหม่');
@@ -661,16 +639,17 @@ for (const width of [1280, 375]) {
 		});
 		await page.goto(calendarPath());
 		await toggle(page).click();
-		if (width === 1280) {
-			await page.getByRole('button', { name: /^ดูรายละเอียด คำร้องเวลาเช้า,/ }).click();
-			await expect(agenda(page).getByRole('button', { name: 'ดูทั้งวัน' })).toBeVisible();
-		} else {
+		const morningRequest = page.getByRole('button', { name: /^ดูรายละเอียด คำร้องเวลาเช้า,/ });
+		if (width < 640) {
 			const day = page.getByRole('button', {
 				name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ',
 				exact: true
 			});
-			await expect(day.locator('[data-calendar-day-marker="pending"]')).toBeVisible();
-			await day.click();
+			await expect(day.getByText('+1', { exact: true })).toBeVisible();
+			await expect(morningRequest).toHaveCount(0);
+			await day.click({ position: { x: 5, y: 5 } });
+		} else {
+			await morningRequest.click();
 		}
 		const region = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 		expect(decisions.details).toHaveLength(0);
@@ -703,10 +682,9 @@ for (const width of [1280, 375]) {
 		await expect(region.getByRole('heading', { name: 'คำร้องเวลาเช้า', exact: true })).toHaveCount(
 			0
 		);
-		await expect(agenda(page).getByRole('button', { name: 'ดูทั้งวัน' })).toHaveCount(0);
-		await expect(
-			agenda(page).getByRole('heading', { name: 'กิจกรรมที่อนุมัติ', exact: true })
-		).toBeVisible();
+		await page
+			.getByRole('button', { name: '1 ต.ค. 2569, 2 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
+			.click({ position: { x: 5, y: 5 } });
 		await expect(region).toContainText('คำร้องหลายวัน');
 		await expect(
 			page.getByRole('button', { name: '1 ต.ค. 2569, 2 กิจกรรม, 1 คำร้องรออนุมัติ', exact: true })
@@ -826,9 +804,7 @@ for (const width of [1280, 375]) {
 		await page.keyboard.press('Escape');
 		await expect(searchDialog).toHaveCount(0);
 		await expect(page).not.toHaveURL(/q=/);
-		await expect(
-			agenda(page).getByRole('heading', { name: 'กิจกรรมแรก', exact: true })
-		).toBeVisible();
+		await expect(page.getByRole('button', { name: /^ดูรายละเอียด / }).first()).toBeVisible();
 		await filter.click();
 		await form.getByPlaceholder('ค้นหาชื่อ รายละเอียด สถานที่ หรือแท็ก').clear();
 		await form.getByRole('combobox').filter({ hasText: 'ทุกสถานะ' }).click();
@@ -842,9 +818,7 @@ for (const width of [1280, 375]) {
 		).toBe('public');
 		await expect(badge(page)).toHaveText('12345');
 		expect(count.reads).toHaveLength(1);
-		await expect(
-			agenda(page).getByRole('heading', { name: 'กิจกรรมแรก', exact: true })
-		).toBeVisible();
+		await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
 		expect(api.count('/api/calendar/categories')).toBe(1);
 		expect(api.count('/api/calendar/tags')).toBe(1);
 		expect(
