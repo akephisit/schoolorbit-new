@@ -501,7 +501,7 @@ test('an own submission refreshes the hidden total and supersedes an older count
 	await expect(
 		page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true })
 	).toContainText('คำร้องของฉัน');
-	await expect(page.getByText('วันนี้ไม่มีคำร้องรออนุมัติ', { exact: true })).toBeVisible();
+	await expect(page.getByText('ไม่มีคำร้องรออนุมัติในวันที่เลือก', { exact: true })).toBeVisible();
 	await toggle(page).click();
 	const dialog = await openOwnRequest(page);
 	await dialog.getByLabel('ชื่อกิจกรรม *', { exact: true }).fill('คำร้องของฉันใหม่');

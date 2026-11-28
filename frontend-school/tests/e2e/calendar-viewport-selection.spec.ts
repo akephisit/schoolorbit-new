@@ -47,30 +47,43 @@ test('staff calendar grows on desktop and places the agenda below the calendar o
 		await expect
 			.poll(() => agenda.evaluate((element) => element.scrollWidth - element.clientWidth))
 			.toBeLessThanOrEqual(1);
-		const regionBox = (await region.boundingBox())!;
-		const firstDayBox = (await days.first().boundingBox())!;
-		const lastDayBox = (await lastDay.boundingBox())!;
-		const agendaBox = (await agenda.boundingBox())!;
-		const gridRight = lastDayBox.x + lastDayBox.width;
-		const gridBottom = lastDayBox.y + lastDayBox.height;
-		expect(firstDayBox.x).toBeGreaterThanOrEqual(0);
-		expect(gridRight).toBeLessThanOrEqual(viewport.width);
-		expect(agendaBox.x).toBeGreaterThanOrEqual(0);
-		expect(agendaBox.x + agendaBox.width).toBeLessThanOrEqual(viewport.width);
+		const bounds = await region.evaluate((element) => {
+			const cells = element.querySelectorAll('[data-calendar-date]');
+			const first = cells[0].getBoundingClientRect();
+			const last = cells[cells.length - 1].getBoundingClientRect();
+			const panel = element.querySelector('[data-testid="staff-calendar-agenda"]')!;
+			const agendaBounds = panel.getBoundingClientRect();
+			return {
+				regionBottom: element.getBoundingClientRect().bottom,
+				gridLeft: first.left,
+				gridTop: first.top,
+				gridRight: last.right,
+				gridBottom: last.bottom,
+				dayHeight: first.height,
+				firstDayBottom: first.bottom,
+				agendaLeft: agendaBounds.left,
+				agendaRight: agendaBounds.right,
+				agendaTop: agendaBounds.top
+			};
+		});
+		expect(bounds.gridLeft).toBeGreaterThanOrEqual(0);
+		expect(bounds.gridRight).toBeLessThanOrEqual(viewport.width);
+		expect(bounds.agendaLeft).toBeGreaterThanOrEqual(0);
+		expect(bounds.agendaRight).toBeLessThanOrEqual(viewport.width);
 		if (viewport.width < 640) {
-			expect(agendaBox.y).toBeGreaterThanOrEqual(gridBottom);
-			expect(firstDayBox.height).toBeGreaterThanOrEqual(42);
+			expect(bounds.agendaTop).toBeGreaterThanOrEqual(bounds.gridBottom);
+			expect(bounds.dayHeight).toBeGreaterThanOrEqual(42);
 		} else {
-			expect(regionBox.y + regionBox.height).toBeGreaterThan(viewport.height - 40);
-			expect(regionBox.y + regionBox.height).toBeLessThanOrEqual(viewport.height + 1);
-			expect(agendaBox.x).toBeGreaterThan(gridRight);
-			expect(agendaBox.y).toBeLessThan(firstDayBox.y + firstDayBox.height);
+			expect(bounds.regionBottom).toBeGreaterThan(viewport.height - 40);
+			expect(bounds.regionBottom).toBeLessThanOrEqual(viewport.height + 1);
+			expect(bounds.agendaLeft).toBeGreaterThan(bounds.gridRight);
+			expect(bounds.agendaTop).toBeLessThan(bounds.firstDayBottom);
 			await lastDay.scrollIntoViewIfNeeded();
 			await expect(lastDay).toBeInViewport();
 			await agenda.getByRole('heading', { level: 2 }).scrollIntoViewIfNeeded();
 		}
 		if (viewport.width === 1543) {
-			const gridHeight = gridBottom - firstDayBox.y;
+			const gridHeight = bounds.gridBottom - bounds.gridTop;
 			expect(gridHeight).toBeGreaterThan(previousDesktopGridHeight);
 			previousDesktopGridHeight = gridHeight;
 		}
@@ -115,6 +128,13 @@ test('staff selection persists and switches with a single click, tap, or keyboar
 	await page.keyboard.press('Enter');
 	await expect(keyboardDay).toHaveAttribute('aria-pressed', 'true');
 	await expect(agenda.getByRole('heading', { name: '22 ต.ค. 2569', exact: true })).toBeVisible();
+	const currentMonthUrl = page.url();
+	const today = page.getByRole('button', { name: 'วันนี้', exact: true });
+	await today.click();
+	await expect(selectedDays).toHaveAttribute('data-calendar-date', '2026-10-01');
+	await expect(agenda.getByRole('heading', { name: '1 ต.ค. 2569', exact: true })).toBeVisible();
+	await expect(today).toBeDisabled();
+	await expect(page).toHaveURL(currentMonthUrl);
 	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page.locator('[data-calendar-date="2026-11-01"]')).toBeVisible();
 	await expect(selectedDays).toHaveCount(1);
@@ -143,11 +163,15 @@ test('short calendar rows keep event targets inside the day and expose every hid
 			route.fulfill({
 				json: {
 					success: true,
-					data: Array.from({ length: 8 }, (_, index) => ({
-						...base,
-						id: `dense-${index}`,
-						title: `กิจกรรมหนาแน่น ${index + 1}`
-					}))
+					data: ['2026-10-01', '2026-10-02'].flatMap((date) =>
+						Array.from({ length: 8 }, (_, index) => ({
+							...base,
+							id: `dense-${date}-${index}`,
+							startDate: date,
+							endDate: date,
+							title: `${date === '2026-10-01' ? 'กิจกรรมหนาแน่น' : 'กิจกรรมวันถัดไป'} ${index + 1}`
+						}))
+					)
 				}
 			})
 	);
@@ -200,6 +224,15 @@ test('short calendar rows keep event targets inside the day and expose every hid
 	}
 	await day.click({ position: { x: 5, y: 5 } });
 	await expect(agenda.getByRole('article')).toHaveCount(8);
+	await agenda.evaluate((element) => (element.scrollTop = element.scrollHeight));
+	await expect.poll(() => agenda.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+	const nextDay = page.locator('[data-calendar-date="2026-10-02"]');
+	await nextDay.click({ position: { x: 5, y: 5 } });
+	await expect(agenda.getByRole('heading', { name: '2 ต.ค. 2569', exact: true })).toBeInViewport();
+	await expect(
+		agenda.getByRole('heading', { name: 'กิจกรรมวันถัดไป 8', exact: true })
+	).toBeVisible();
+	await expect.poll(() => agenda.evaluate((element) => element.scrollTop)).toBe(0);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await expect(day.locator('[data-calendar-day-marker="event"]')).toBeVisible();
 	await expect(day.getByText(/^\+\d+$/)).toBeHidden();

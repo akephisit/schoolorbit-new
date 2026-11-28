@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { addMonths } from 'date-fns';
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import type { PageProps } from './$types';
@@ -118,6 +118,8 @@
 		trigger: HTMLElement;
 	} | null>(null);
 	let monthGrid = $state<HTMLDivElement>();
+	let agendaPanel = $state<HTMLElement>();
+	let agendaHeading = $state<HTMLHeadingElement>();
 	let search = $state('');
 	let searchOpen = $state(false);
 	let categoryId = $state('');
@@ -360,7 +362,7 @@
 	}
 	function togglePendingRequests() {
 		showPendingRequests = !showPendingRequests;
-		if (!showPendingRequests && entryDetail?.kind === 'request') entryDetail = null;
+		if (!showPendingRequests && entryDetail?.kind === 'request') showDayAgenda();
 	}
 	function overlapsPendingRange(request: CalendarEventRequest) {
 		const { from, to } = calendarGridRange(selectedMonth);
@@ -406,7 +408,7 @@
 		);
 	}
 	function commitFilters(month = selectedMonth) {
-		entryDetail = null;
+		showDayAgenda();
 		const url = new URL(currentUrl);
 		url.searchParams.delete('academicYearId');
 		url.searchParams.delete('academicTermId');
@@ -455,7 +457,7 @@
 			showPendingRequests = false;
 			filterOpen = false;
 			searchOpen = false;
-			entryDetail = null;
+			showDayAgenda();
 			reviewTarget = null;
 			reviewOpen = false;
 			categoryDialogOpen = false;
@@ -502,7 +504,7 @@
 			previousPendingSource = source;
 			if (changed) {
 				pendingOwner = owner;
-				if (entryDetail?.kind === 'request') entryDetail = null;
+				if (entryDetail?.kind === 'request') showDayAgenda();
 				pendingRequest.abort();
 				pendingRequests = [];
 				pendingLoading = !!owner;
@@ -533,7 +535,7 @@
 			const changed = activeEventOwner !== key;
 			if (changed) {
 				activeEventOwner = key;
-				entryDetail = null;
+				showDayAgenda();
 				ownerEpoch++;
 				events = [];
 				eventsLoaded = false;
@@ -644,12 +646,19 @@
 	});
 
 	$effect.pre(() => {
-		if (entryDetail && !detailEvent && !detailRequest) entryDetail = null;
+		if (entryDetail && !detailEvent && !detailRequest) showDayAgenda();
 	});
 
+	function resetAgendaScroll() {
+		if (agendaPanel) agendaPanel.scrollTop = 0;
+	}
+	function showDayAgenda() {
+		entryDetail = null;
+		resetAgendaScroll();
+	}
 	function selectDay(date: string) {
 		selectedDate = date;
-		entryDetail = null;
+		showDayAgenda();
 	}
 	function selectEntry(event: CalendarDisplayEvent, date: string, trigger: HTMLElement) {
 		selectedDate = date;
@@ -658,10 +667,17 @@
 			id: event.pending ? event.id.slice('request:'.length) : event.id,
 			trigger
 		};
+		resetAgendaScroll();
+		if (trigger.matches(':focus-visible')) {
+			const detail = entryDetail;
+			void tick().then(() => {
+				if (!disposed && entryDetail === detail) agendaHeading?.focus();
+			});
+		}
 	}
 	function returnToDay() {
 		const trigger = entryDetail?.trigger;
-		entryDetail = null;
+		showDayAgenda();
 		if (trigger?.getClientRects().length) trigger.focus();
 		else
 			monthGrid
@@ -1356,9 +1372,10 @@
 								onsubmit={(submitEvent) => {
 									submitEvent.preventDefault();
 									filterOpen = false;
-									entryDetail = null;
-									if (search.trim()) searchOpen = true;
-									else commitFilters();
+										if (search.trim()) {
+											showDayAgenda();
+											searchOpen = true;
+										} else commitFilters();
 								}}
 							>
 								<div class="relative sm:col-span-2">
@@ -1506,12 +1523,19 @@
 						</div>
 
 						<section
+							bind:this={agendaPanel}
 							aria-label="รายละเอียดปฏิทิน"
 							data-testid="staff-calendar-agenda"
 							class="min-w-0 space-y-3 rounded-xl border bg-card p-3 wrap-anywhere lg:max-h-full lg:overflow-y-auto lg:p-4"
 						>
 							<header class="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-								<h2 class="text-base font-semibold" aria-live="polite" aria-atomic="true">
+								<h2
+									bind:this={agendaHeading}
+									tabindex="-1"
+									class="rounded-sm text-base font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+									aria-live="polite"
+									aria-atomic="true"
+								>
 									{#if detailEvent}
 										รายละเอียดกิจกรรม <span class="sr-only">{detailEvent.title}</span>
 									{:else if detailRequest}
@@ -1628,7 +1652,7 @@
 										{:else if pendingLoaded && !pendingError}<p
 												class="text-sm text-muted-foreground"
 											>
-												วันนี้ไม่มีคำร้องรออนุมัติ
+												ไม่มีคำร้องรออนุมัติในวันที่เลือก
 											</p>{/if}
 									{/each}
 								</section>

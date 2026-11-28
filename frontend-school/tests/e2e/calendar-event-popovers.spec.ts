@@ -83,9 +83,15 @@ for (const width of [1280, 375]) {
 				await day.tap();
 				await expect(otherEvent).toBeVisible();
 				await expect(wholeDay).toHaveCount(0);
+				await day.focus();
+				await page.keyboard.press('Enter');
+				await expect(day).toBeFocused();
 			} else {
 				await entry.focus();
 				await page.keyboard.press('Enter');
+				await expect(
+					agenda.getByRole('heading', { name: /^รายละเอียดกิจกรรม/, level: 2 })
+				).toBeFocused();
 				await expect(wholeDay).toBeVisible();
 				await expect(otherEvent).toHaveCount(0);
 			}
@@ -124,7 +130,9 @@ for (const width of [1280, 375]) {
 			await expect(agenda).toBeVisible();
 			if (width >= 640) {
 				await expect(otherEvent).toHaveCount(0);
-				await wholeDay.press('Enter');
+				await page.keyboard.press('Tab');
+				await expect(wholeDay).toBeFocused();
+				await page.keyboard.press('Enter');
 				await expect(otherEvent).toBeVisible();
 				await expect(entry).toBeFocused();
 			}
