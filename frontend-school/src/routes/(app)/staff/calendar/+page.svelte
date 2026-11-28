@@ -1372,10 +1372,10 @@
 								onsubmit={(submitEvent) => {
 									submitEvent.preventDefault();
 									filterOpen = false;
-										if (search.trim()) {
-											showDayAgenda();
-											searchOpen = true;
-										} else commitFilters();
+									if (search.trim()) {
+										showDayAgenda();
+										searchOpen = true;
+									} else commitFilters();
 								}}
 							>
 								<div class="relative sm:col-span-2">
