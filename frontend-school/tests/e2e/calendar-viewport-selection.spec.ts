@@ -21,6 +21,23 @@ test('staff calendar grows with the available viewport and scrolls only on very 
 	const region = page.getByTestId('calendar-events');
 	const lastDay = page.locator('[data-calendar-date]').last();
 	await expect(lastDay).toBeVisible();
+	const readCalendarBounds = () =>
+		region.evaluate((element) => {
+			const calendar = element.getBoundingClientRect();
+			const lastDate = [...element.querySelectorAll('[data-calendar-date]')]
+				.at(-1)!
+				.getBoundingClientRect();
+			const main = element.closest('main')!.getBoundingClientRect();
+			const shell = element.closest('.school-page-shell')!;
+			return {
+				calendarBottom: calendar.bottom,
+				calendarHeight: calendar.height,
+				lastDateBottom: lastDate.bottom,
+				mainBottom: main.bottom,
+				shellBottom: shell.getBoundingClientRect().bottom,
+				shellPaddingBottom: Number.parseFloat(getComputedStyle(shell).paddingBottom)
+			};
+		});
 	let previousHeight = 0;
 	for (const viewport of [
 		{ width: 1543, height: 700 },
@@ -33,15 +50,15 @@ test('staff calendar grows with the available viewport and scrolls only on very 
 		await expect
 			.poll(() => region.evaluate((element) => element.scrollHeight - element.clientHeight))
 			.toBeLessThanOrEqual(1);
-		const box = (await region.boundingBox())!;
-		expect(box.y + box.height).toBeGreaterThan(viewport.height - 40);
-		expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-		const dayBox = (await lastDay.boundingBox())!;
-		expect(dayBox.y + dayBox.height).toBeLessThanOrEqual(box.y + box.height);
-		expect(dayBox.y + dayBox.height).toBeGreaterThan(box.y + box.height - 80);
+		const bounds = await readCalendarBounds();
+		const contentBottom = bounds.mainBottom - bounds.shellPaddingBottom;
+		expect(Math.abs(bounds.shellBottom - bounds.mainBottom)).toBeLessThanOrEqual(1);
+		expect(Math.abs(bounds.calendarBottom - contentBottom)).toBeLessThanOrEqual(1);
+		expect(bounds.lastDateBottom).toBeLessThanOrEqual(bounds.calendarBottom);
+		expect(bounds.lastDateBottom).toBeGreaterThan(bounds.calendarBottom - 80);
 		if (viewport.width === 1543) {
-			expect(box.height).toBeGreaterThan(previousHeight);
-			previousHeight = box.height;
+			expect(bounds.calendarHeight).toBeGreaterThan(previousHeight);
+			previousHeight = bounds.calendarHeight;
 		}
 	}
 	await page.setViewportSize({ width: 390, height: 480 });

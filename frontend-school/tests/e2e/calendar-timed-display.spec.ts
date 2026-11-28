@@ -64,6 +64,7 @@ for (const width of [1280, 375]) {
 		);
 		await page.goto(calendarPath());
 		const day = page.getByRole('button', { name: '1 ต.ค. 2569, 3 กิจกรรม', exact: true });
+		const details = page.getByRole('dialog', { name: 'รายละเอียดปฏิทิน', exact: true });
 		await day.click({ position: { x: 5, y: 5 } });
 		const centered = await day.evaluate((el) => {
 			const cell = el.getBoundingClientRect(),
@@ -71,11 +72,25 @@ for (const width of [1280, 375]) {
 			return Math.abs((cell.left + cell.right) / 2 - (number.left + number.right) / 2) < 1;
 		});
 		expect(centered).toBe(true);
+		if (width < 640) {
+			await expect(day.getByText('+1', { exact: true })).toBeVisible();
+			const afternoon = details.getByRole('article').filter({
+				has: page.getByRole('heading', { name: 'อบรมช่วงบ่าย', exact: true })
+			});
+			await expect(afternoon).toContainText('13:00-14:00');
+		}
 		await page.keyboard.press('Escape');
 		const bar = page.locator('[title="ค่ายทั้งวัน"]');
 		const timed = page.locator('[title="08:30 สอบช่วงเช้า"]');
 		await expect(timed).toHaveCount(1);
-		await expect(page.locator('[title="13:00 อบรมช่วงบ่าย"]')).toHaveCount(3);
+		await expect(page.locator('[title="13:00 อบรมช่วงบ่าย"]')).toHaveCount(width < 640 ? 2 : 3);
+		if (width < 640) {
+			for (const date of ['2 ต.ค. 2569', '3 ต.ค. 2569']) {
+				await expect(
+					page.getByRole('button', { name: `ดูรายละเอียด อบรมช่วงบ่าย, ${date}`, exact: true })
+				).toBeVisible();
+			}
+		}
 		const styles = await timed.evaluate((el) => ({
 			background: getComputedStyle(el).backgroundColor,
 			dot: getComputedStyle(el.firstElementChild!).backgroundColor,
@@ -102,9 +117,7 @@ for (const width of [1280, 375]) {
 			});
 		}
 		await timed.click();
-		await expect(page.getByRole('dialog', { name: 'รายละเอียดปฏิทิน', exact: true })).toContainText(
-			'08:30-09:30'
-		);
+		await expect(details).toContainText('08:30-09:30');
 		await page.getByRole('button', { name: 'แก้ไข สอบช่วงเช้า', exact: true }).click();
 		await expect(page.getByRole('checkbox', { name: 'ทั้งวัน', exact: true })).not.toBeChecked();
 		await expect(page.getByLabel('เวลาเริ่มต้น *', { exact: true })).toHaveValue('08:30');

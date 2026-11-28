@@ -639,7 +639,18 @@ for (const width of [1280, 375]) {
 		});
 		await page.goto(calendarPath());
 		await toggle(page).click();
-		await page.getByRole('button', { name: /^ดูรายละเอียด คำร้องเวลาเช้า,/ }).click();
+		const morningRequest = page.getByRole('button', { name: /^ดูรายละเอียด คำร้องเวลาเช้า,/ });
+		if (width < 640) {
+			const day = page.getByRole('button', {
+				name: '1 ต.ค. 2569, 1 กิจกรรม, 2 คำร้องรออนุมัติ',
+				exact: true
+			});
+			await expect(day.getByText('+1', { exact: true })).toBeVisible();
+			await expect(morningRequest).toHaveCount(0);
+			await day.click({ position: { x: 5, y: 5 } });
+		} else {
+			await morningRequest.click();
+		}
 		const region = page.getByRole('region', { name: 'คำร้องในวันที่เลือก', exact: true });
 		expect(decisions.details).toHaveLength(0);
 		expect(api.count('/api/calendar/target-options')).toBe(0);
