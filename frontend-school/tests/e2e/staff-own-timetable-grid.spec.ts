@@ -410,8 +410,8 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 					nodes.map((node) => Number.parseFloat(getComputedStyle(node).fontSize))
 				);
 			if (width < 640) {
-				expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(11);
-				expect(Math.max(...textSizes)).toBeLessThan(11.5);
+				expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(10);
+				expect(Math.max(...textSizes)).toBeLessThan(10.5);
 			} else {
 				expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(width >= 1029 ? 12 : 11.5);
 			}
