@@ -409,7 +409,12 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 				.evaluateAll((nodes) =>
 					nodes.map((node) => Number.parseFloat(getComputedStyle(node).fontSize))
 				);
-			expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(width >= 1029 ? 12 : 11.5);
+			if (width < 640) {
+				expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(11);
+				expect(Math.max(...textSizes)).toBeLessThan(11.5);
+			} else {
+				expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(width >= 1029 ? 12 : 11.5);
+			}
 			const lastPeriod = weekly.getByRole('columnheader', { name: /คาบ 9.*16:00–17:00/ });
 			await expect(lastPeriod).toBeVisible();
 			await expectFullText(lastPeriod.getByText('16:00–17:00', { exact: true }));
