@@ -201,7 +201,10 @@ test('downloads the loaded staff timetable from the PageShell action', async ({ 
 
 	await expect(downloadButton).toBeEnabled();
 	const week = page.getByRole('table', { name: 'ตารางสอนรายสัปดาห์' });
-	await expect(week.getByRole('rowheader')).toHaveText(['จันทร์', 'เสาร์']);
+	const rowHeaders = week.getByRole('rowheader');
+	await expect(rowHeaders).toHaveCount(2);
+	await expect(rowHeaders.nth(0)).toHaveAccessibleName('จันทร์');
+	await expect(rowHeaders.nth(1)).toHaveAccessibleName('เสาร์');
 	await expect(week.getByRole('row', { name: /เสาร์/ }).getByText('ค21101')).toBeVisible();
 
 	const downloadPromise = page.waitForEvent('download');
