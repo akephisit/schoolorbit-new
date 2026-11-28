@@ -92,6 +92,7 @@ test('public desktop details return keyboard focus to their day after close or E
 	page
 }) => {
 	await page.setViewportSize({ width: 1543, height: 884 });
+	await page.clock.setFixedTime(new Date('2026-10-01T02:00:00Z'));
 	await page.goto(`${fixture.baseUrl}/calendar?month=2026-10`);
 	const day = page.locator('[data-calendar-date="2026-10-01"]');
 	const close = page.getByRole('button', { name: 'ปิดรายละเอียดกิจกรรม', exact: true });
