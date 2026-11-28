@@ -102,7 +102,8 @@ test('staff selection persists and switches with a single click, tap, or keyboar
 	page
 }) => {
 	await page.setViewportSize({ width: 1280, height: 900 });
-	await page.goto(calendarPath());
+	const currentMonthPath = '/staff/calendar?month=2026-10';
+	await page.goto(currentMonthPath);
 	const selectedDays = page.locator('[data-calendar-date][aria-pressed="true"]');
 	const day = page.locator('[data-calendar-date="2026-10-20"]');
 	const nextDay = page.locator('[data-calendar-date="2026-10-21"]');
@@ -128,13 +129,12 @@ test('staff selection persists and switches with a single click, tap, or keyboar
 	await page.keyboard.press('Enter');
 	await expect(keyboardDay).toHaveAttribute('aria-pressed', 'true');
 	await expect(agenda.getByRole('heading', { name: '22 ต.ค. 2569', exact: true })).toBeVisible();
-	const currentMonthUrl = page.url();
 	const today = page.getByRole('button', { name: 'วันนี้', exact: true });
 	await today.click();
 	await expect(selectedDays).toHaveAttribute('data-calendar-date', '2026-10-01');
 	await expect(agenda.getByRole('heading', { name: '1 ต.ค. 2569', exact: true })).toBeVisible();
 	await expect(today).toBeDisabled();
-	await expect(page).toHaveURL(currentMonthUrl);
+	await expect(page).toHaveURL(currentMonthPath);
 	await page.getByRole('button', { name: 'เดือนถัดไป', exact: true }).click();
 	await expect(page.locator('[data-calendar-date="2026-11-01"]')).toBeVisible();
 	await expect(selectedDays).toHaveCount(1);
