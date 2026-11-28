@@ -66,7 +66,7 @@
 		data-testid="own-timetable-week-scroll"
 	>
 		<table
-			class="w-full table-fixed border-separate border-spacing-0 bg-card text-left text-[0.8rem] leading-normal [--day-width:3.7rem] [--period-width:4.4rem] sm:[--day-width:4.2rem] sm:[--period-width:4.9rem] lg:text-[0.85rem] lg:[--day-width:4.5rem] lg:[--period-width:5.2rem]"
+			class="w-full table-fixed border-separate border-spacing-0 bg-card text-left text-[0.77rem] leading-normal [--day-width:3.7rem] [--period-width:4.4rem] sm:text-[0.8rem] sm:[--day-width:4.2rem] sm:[--period-width:4.9rem] lg:text-[0.85rem] lg:[--day-width:4.5rem] lg:[--period-width:5.2rem]"
 			style:--period-count={periods.length}
 		>
 			<caption class="sr-only">ตารางสอนรายสัปดาห์</caption>
