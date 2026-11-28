@@ -150,11 +150,10 @@ async function expectConfiguredGrid(page: Page) {
 	await expect(page.getByRole('columnheader', { name: /คาบ 1/ })).toBeVisible();
 	await expect(page.getByRole('columnheader', { name: /คาบ 2/ })).toBeVisible();
 	await expect(page.getByRole('columnheader', { name: /คาบ 3/ })).toBeVisible();
-	await expect(
-		page.getByTestId('own-timetable-week').getByText('จันทร์', { exact: true })
-	).toBeVisible();
-	await expect(page.getByText('เสาร์', { exact: true })).toHaveCount(0);
-	await expect(page.getByText('อาทิตย์', { exact: true })).toHaveCount(0);
+	const week = page.getByTestId('own-timetable-week');
+	await expect(week.getByRole('rowheader', { name: 'จันทร์', exact: true })).toBeVisible();
+	await expect(week.getByRole('rowheader', { name: 'เสาร์', exact: true })).toHaveCount(0);
+	await expect(week.getByRole('rowheader', { name: 'อาทิตย์', exact: true })).toHaveCount(0);
 }
 
 test('shows configured periods that precede the teacher first lesson', async ({ page }) => {
@@ -383,22 +382,25 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 
 			const weekly = page.getByRole('table', { name: 'ตารางสอนรายสัปดาห์' });
 			const scroll = page.getByRole('region', { name: 'ตารางสอนรายสัปดาห์ เลื่อนเพื่อดูทุกคาบ' });
+			const mobile = width < 640;
 			await expect(weekly).toHaveCount(1);
 			await expect(weekly).toBeVisible();
-			await expect(weekly.getByRole('rowheader')).toHaveText([
-				'จันทร์',
-				'อังคาร',
-				'พุธ',
-				'พฤหัสบดี',
-				'ศุกร์',
-				'เสาร์',
-				'อาทิตย์'
-			]);
-			if (width <= 614) {
+			const rowHeaders = weekly.getByRole('rowheader');
+			const fullDays = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
+			await expect(rowHeaders).toHaveCount(fullDays.length);
+			for (const [index, day] of fullDays.entries()) {
+				await expect(rowHeaders.nth(index)).toHaveAccessibleName(day);
+			}
+			await expect(rowHeaders.locator('span:visible')).toHaveText(
+				mobile ? ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'] : fullDays
+			);
+			const corner = weekly.getByRole('columnheader', { name: 'วัน / คาบ', exact: true });
+			await expect(corner.locator('span:visible')).toHaveText(mobile ? 'วัน' : 'วัน / คาบ');
+			if (mobile) {
 				const thursday = weekly.getByRole('rowheader', { name: 'พฤหัสบดี', exact: true });
-				const lineCount = await thursday.evaluate((header) => {
+				const lineCount = await thursday.locator('span:visible').evaluate((label) => {
 					const text = document.createRange();
-					text.selectNodeContents(header);
+					text.selectNodeContents(label);
 					return text.getClientRects().length;
 				});
 				expect(lineCount).toBe(1);
@@ -409,7 +411,7 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 				.evaluateAll((nodes) =>
 					nodes.map((node) => Number.parseFloat(getComputedStyle(node).fontSize))
 				);
-			if (width < 640) {
+			if (mobile) {
 				expect(Math.min(...textSizes)).toBeGreaterThanOrEqual(10);
 				expect(Math.max(...textSizes)).toBeLessThan(10.5);
 			} else {
@@ -460,11 +462,14 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 				stacked.nth(1).boundingBox()
 			]);
 			expect(second!.y).toBeGreaterThanOrEqual(first!.y + first!.height);
-			const mondayLabelY = await monday.getByRole('rowheader').evaluate((header) => {
-				const text = document.createRange();
-				text.selectNodeContents(header);
-				return text.getBoundingClientRect().top;
-			});
+			const mondayLabelY = await monday
+				.getByRole('rowheader')
+				.locator('span:visible')
+				.evaluate((label) => {
+					const text = document.createRange();
+					text.selectNodeContents(label);
+					return text.getBoundingClientRect().top;
+				});
 			expect(mondayLabelY - first!.y).toBeLessThanOrEqual(16);
 			if (width >= 1029) {
 				const shortLabels = monday.locator('[data-timetable-block="collision"]');
@@ -492,10 +497,16 @@ for (const [width, minimumVisiblePeriods, shouldScrollHorizontally] of [
 			await expectNoOuterOverflow(page);
 
 			const firstDay = weekly.getByRole('rowheader').first();
-			const startDayX = (await firstDay.boundingBox())!.x;
+			const { x: startDayX, width: dayWidth } = (await firstDay.boundingBox())!;
 			const periodWidth = (await weekly.getByRole('columnheader').nth(1).boundingBox())!.width;
-			expect(periodWidth).toBeGreaterThanOrEqual(width >= 1029 ? 70 : 60);
-			expect((await firstDay.boundingBox())!.width).toBeGreaterThanOrEqual(52);
+			if (mobile) {
+				expect(dayWidth).toBeGreaterThanOrEqual(36);
+				expect(dayWidth).toBeLessThan(42);
+				expect(periodWidth).toBeGreaterThanOrEqual(66);
+			} else {
+				expect(dayWidth).toBeGreaterThanOrEqual(52);
+				expect(periodWidth).toBeGreaterThanOrEqual(width >= 1029 ? 70 : 60);
+			}
 			const visiblePeriods = await scroll.evaluate((pane) => {
 				const left = pane.getBoundingClientRect().left + pane.clientLeft;
 				const right = left + pane.clientWidth;
@@ -674,10 +685,10 @@ test('own timetable keeps a configured Saturday visible when it has no lessons',
 	await page.goto(
 		`/staff/timetable?academicYearId=${academicYearId}&academicTermId=${academicTermId}`
 	);
-	await expect(page.getByTestId('own-timetable-week').locator('tbody tr > th')).toHaveText([
-		'จันทร์',
-		'เสาร์'
-	]);
+	const rowHeaders = page.getByTestId('own-timetable-week').getByRole('rowheader');
+	await expect(rowHeaders).toHaveCount(2);
+	await expect(rowHeaders.nth(0)).toHaveAccessibleName('จันทร์');
+	await expect(rowHeaders.nth(1)).toHaveAccessibleName('เสาร์');
 	await expect(
 		page
 			.getByTestId('own-timetable-week')

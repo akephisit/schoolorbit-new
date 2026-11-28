@@ -25,13 +25,13 @@
 	import type { PageProps } from './$types';
 
 	const dayOptions = [
-		{ value: 'MON', label: 'จันทร์' },
-		{ value: 'TUE', label: 'อังคาร' },
-		{ value: 'WED', label: 'พุธ' },
-		{ value: 'THU', label: 'พฤหัสบดี' },
-		{ value: 'FRI', label: 'ศุกร์' },
-		{ value: 'SAT', label: 'เสาร์' },
-		{ value: 'SUN', label: 'อาทิตย์' }
+		{ value: 'MON', label: 'จันทร์', shortLabel: 'จ.' },
+		{ value: 'TUE', label: 'อังคาร', shortLabel: 'อ.' },
+		{ value: 'WED', label: 'พุธ', shortLabel: 'พ.' },
+		{ value: 'THU', label: 'พฤหัสบดี', shortLabel: 'พฤ.' },
+		{ value: 'FRI', label: 'ศุกร์', shortLabel: 'ศ.' },
+		{ value: 'SAT', label: 'เสาร์', shortLabel: 'ส.' },
+		{ value: 'SUN', label: 'อาทิตย์', shortLabel: 'อา.' }
 	];
 
 	let { data }: PageProps = $props();

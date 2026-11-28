@@ -11,7 +11,7 @@
 	}: {
 		blocks: TimetableBlock[];
 		periods: TimetablePeriodSummary[];
-		days: { value: string; label: string }[];
+		days: { value: string; label: string; shortLabel: string }[];
 		currentStaffId: string;
 	} = $props();
 
@@ -66,7 +66,7 @@
 		data-testid="own-timetable-week-scroll"
 	>
 		<table
-			class="w-full table-fixed border-separate border-spacing-0 bg-card text-left text-[0.7rem] leading-normal [--day-width:3.7rem] [--period-width:4.4rem] sm:text-[0.8rem] sm:[--day-width:4.2rem] sm:[--period-width:4.9rem] lg:text-[0.85rem] lg:[--day-width:4.5rem] lg:[--period-width:5.2rem]"
+			class="w-full table-fixed border-separate border-spacing-0 bg-card text-left text-[0.7rem] leading-normal [--day-width:2.65rem] [--period-width:4.65rem] sm:text-[0.8rem] sm:[--day-width:4.2rem] sm:[--period-width:4.9rem] lg:text-[0.85rem] lg:[--day-width:4.5rem] lg:[--period-width:5.2rem]"
 			style:--period-count={periods.length}
 		>
 			<caption class="sr-only">ตารางสอนรายสัปดาห์</caption>
@@ -74,9 +74,11 @@
 				<tr>
 					<th
 						scope="col"
+						aria-label="วัน / คาบ"
 						class="day-column sticky top-0 left-0 z-30 border-r border-b border-b-primary/25 bg-muted px-0.5 py-1.5 text-center font-medium sm:px-1"
 					>
-						วัน / คาบ
+						<span class="sm:hidden" aria-hidden="true">วัน</span>
+						<span class="hidden sm:inline">วัน / คาบ</span>
 					</th>
 					{#each periods as period, index (period.id)}
 						<th
@@ -98,9 +100,11 @@
 					<tr>
 						<th
 							scope="row"
+							aria-label={day.label}
 							class="sticky left-0 z-10 border-r border-b bg-card px-0.5 py-1.5 text-center align-top font-semibold wrap-break-word sm:px-1"
 						>
-							{day.label}
+							<span class="sm:hidden" aria-hidden="true">{day.shortLabel}</span>
+							<span class="hidden sm:inline">{day.label}</span>
 						</th>
 						{#each periods as period (period.id)}
 							{@const entries = cellBlocks(day.value, period.id)}
