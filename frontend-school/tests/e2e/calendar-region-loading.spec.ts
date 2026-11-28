@@ -245,7 +245,9 @@ for (const width of [1280, 375]) {
 		await page.setViewportSize({ width, height: 900 });
 		const api = await mockCalendar(page, { hold: 'events', holdAt: 2 });
 		await page.goto(calendarPath());
-		await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+		const calendar = page.getByTestId('calendar-events');
+		const agenda = page.getByRole('region', { name: 'รายละเอียดปฏิทิน', exact: true });
+		await expect(agenda.getByRole('heading', { name: 'กิจกรรมแรก', exact: true })).toBeVisible();
 		const previous = page.getByRole('button', { name: 'เดือนก่อนหน้า', exact: true });
 		const next = page.getByRole('button', { name: 'เดือนถัดไป', exact: true });
 		const previousBox = (await previous.boundingBox())!;
@@ -261,22 +263,25 @@ for (const width of [1280, 375]) {
 		await expect(page.getByRole('status', { name: 'กำลังโหลดกิจกรรม', exact: true })).toHaveCount(
 			0
 		);
-		await expect(page.getByTestId('calendar-events')).toHaveAttribute('aria-busy', 'true');
-		await expect(
-			page.getByRole('status').filter({ hasText: /กำลังโหลดกิจกรรม|กำลังอัปเดต/ })
-		).toHaveCount(0);
-		await expect(page.getByTestId('calendar-events')).not.toContainText('กิจกรรมแรก');
-		await expect(page.getByTestId('calendar-events')).not.toContainText('ยังไม่มีกิจกรรม');
+		await expect(calendar).toHaveAttribute('aria-busy', 'true');
+		await expect(agenda.getByRole('status')).toHaveText('กำลังโหลดกิจกรรม...');
+		await expect(agenda.getByRole('heading', { name: '1 พ.ย. 2569', exact: true })).toBeVisible();
+		await expect(calendar).not.toContainText('กิจกรรมแรก');
+		await expect(agenda).not.toContainText('ไม่มีกิจกรรมในวันที่เลือก');
 		const november = page.locator('[data-calendar-date="2026-11-01"]');
 		await expect(november).toBeVisible();
 		expect((await november.boundingBox())!.y).toBe(gridTop);
 		expect((await previous.boundingBox())!.x).toBe(previousBox.x);
 		expect((await next.boundingBox())!.x).toBe(nextBox.x);
 		api.release();
-		await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมพฤศจิกายน');
+		await expect(
+			agenda.getByRole('heading', { name: 'กิจกรรมพฤศจิกายน', exact: true })
+		).toBeVisible();
+		await expect(agenda.getByRole('status')).toHaveCount(0);
+		await expect(calendar).toHaveAttribute('aria-busy', 'false');
 		expect((await november.boundingBox())!.y).toBe(gridTop);
 		await previous.click();
-		await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+		await expect(agenda.getByRole('heading', { name: 'กิจกรรมแรก', exact: true })).toBeVisible();
 		expect(api.count(categoriesPath)).toBe(1);
 		expect(api.count(tagsPath)).toBe(1);
 	});

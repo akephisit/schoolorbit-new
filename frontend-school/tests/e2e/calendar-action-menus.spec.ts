@@ -21,7 +21,8 @@ for (const width of [1280, 375]) {
 				]
 			});
 			await page.goto(calendarPath());
-			await expect(page.getByTestId('calendar-events')).toContainText('กิจกรรมแรก');
+			const agenda = page.getByRole('region', { name: 'รายละเอียดปฏิทิน', exact: true });
+			await expect(agenda.getByRole('heading', { name: 'กิจกรรมแรก', exact: true })).toBeVisible();
 			const plus = page.getByRole('button', { name: 'เพิ่มรายการปฏิทิน', exact: true });
 			await expect(plus).toHaveCount(canCreate || canRequest ? 1 : 0);
 			if (canCreate || canRequest) {
@@ -53,10 +54,13 @@ for (const width of [1280, 375]) {
 			await page.evaluate(() => document.documentElement.classList.add('dark'));
 			await page.screenshot({ path: testInfo.outputPath(`settings-${scope}-${width}-dark.png`) });
 			await page.keyboard.press('Escape');
-			await page.locator('[data-calendar-date="2026-10-12"]').click();
-			const popup = page.getByRole('dialog', { name: 'รายละเอียดปฏิทิน', exact: true });
-			await expect(popup).toBeVisible();
-			const dayPlus = popup.getByRole('button', { name: 'เพิ่มรายการในวันที่เลือก', exact: true });
+			const day = page.locator('[data-calendar-date="2026-10-12"]');
+			await day.click();
+			await expect(day).toHaveAttribute('aria-pressed', 'true');
+			await expect(
+				agenda.getByRole('heading', { name: '12 ต.ค. 2569', exact: true })
+			).toBeVisible();
+			const dayPlus = agenda.getByRole('button', { name: 'เพิ่มรายการในวันที่เลือก', exact: true });
 			await expect(dayPlus).toHaveCount(canCreate || canRequest ? 1 : 0);
 			if (canCreate || canRequest) {
 				await dayPlus.click();
@@ -66,9 +70,9 @@ for (const width of [1280, 375]) {
 						exact: true
 					})
 					.click();
-				await expect(popup).toHaveCount(0);
 				const form = page.getByRole('dialog');
 				await expect(form).toBeVisible();
+				await expect(page.getByTestId('staff-calendar-agenda')).toHaveCount(1);
 				if (canRequest) {
 					await expect(
 						form.getByRole('button', { name: 'วันที่เริ่มกิจกรรม', exact: true })
@@ -95,6 +99,10 @@ for (const width of [1280, 375]) {
 						})
 						.toEqual({ academicYearId: year, date: null });
 				}
+				await form.getByRole('button', { name: 'ยกเลิก', exact: true }).click();
+				await expect(form).toHaveCount(0);
+				await expect(dayPlus).toBeVisible();
+				await expect(day).toHaveAttribute('aria-pressed', 'true');
 			}
 			expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
 				true
@@ -128,7 +136,9 @@ test('catalog failure disables direct creation and management while requests rem
 	).toHaveAttribute('aria-disabled', 'true');
 });
 
-test('empty month keeps the calendar without a second empty box below it', async ({ page }) => {
+test('empty month keeps the calendar and a single compact selected-day message', async ({
+	page
+}) => {
 	await mockCalendar(page);
 	await page.route(
 		(url) => url.pathname === eventsPath,
@@ -138,10 +148,14 @@ test('empty month keeps the calendar without a second empty box below it', async
 	await expect(page.locator('[data-calendar-date]')).toHaveCount(42);
 	await expect(page.getByRole('button', { name: /^ดูรายละเอียด / })).toHaveCount(0);
 	await expect(page.getByText('ยังไม่มีกิจกรรม', { exact: true })).toHaveCount(0);
+	const agenda = page.getByRole('region', { name: 'รายละเอียดปฏิทิน', exact: true });
+	await expect(agenda.getByRole('heading', { name: '1 ต.ค. 2569', exact: true })).toBeVisible();
 	await page.locator('[data-calendar-date="2026-10-12"]').click();
-	await expect(page.getByRole('dialog', { name: 'รายละเอียดปฏิทิน', exact: true })).toBeVisible();
+	await expect(agenda.getByRole('heading', { name: '12 ต.ค. 2569', exact: true })).toBeVisible();
+	await expect(agenda.getByText('ไม่มีกิจกรรมในวันที่เลือก', { exact: true })).toBeVisible();
+	await expect(page.getByText('ไม่มีกิจกรรมในวันที่เลือก', { exact: true })).toHaveCount(1);
 	await expect(
-		page.getByRole('button', { name: 'เพิ่มรายการในวันที่เลือก', exact: true })
+		agenda.getByRole('button', { name: 'เพิ่มรายการในวันที่เลือก', exact: true })
 	).toBeVisible();
 });
 
