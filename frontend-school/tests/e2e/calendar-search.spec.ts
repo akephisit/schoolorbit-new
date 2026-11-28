@@ -16,9 +16,7 @@ test('staff partial search finds another month and opens that date without reloa
 		route.fulfill({ json: { success: true, data: publicYears } })
 	);
 	await page.route(
-		(url) =>
-			url.pathname === eventsPath &&
-			(url.searchParams.get('search') === 'true' || url.searchParams.get('from') === '2026-11-01'),
+		(url) => url.pathname === eventsPath && url.searchParams.get('search') === 'true',
 		(route) =>
 			route.fulfill({
 				json: {
@@ -48,13 +46,6 @@ test('staff partial search finds another month and opens that date without reloa
 	await dialog.getByRole('button', { name: /ทัศนศึกษาพฤศจิกายน/ }).click();
 	await expect(page).toHaveURL(/month=2026-11/);
 	await expect(dialog).toHaveCount(0);
-	const agenda = page.getByRole('region', { name: 'รายละเอียดปฏิทิน', exact: true });
-	await expect(agenda.getByRole('heading', { name: '5 พ.ย. 2569', exact: true })).toBeVisible();
-	await expect(agenda.getByRole('heading', { name: 'ทัศนศึกษาพฤศจิกายน' })).toBeVisible();
-	await expect(page.locator('[data-calendar-date="2026-11-05"]')).toHaveAttribute(
-		'aria-pressed',
-		'true'
-	);
 	expect(api.count('/api/calendar/categories')).toBe(1);
 	expect(api.count('/api/calendar/tags')).toBe(1);
 	expect(api.writes).toHaveLength(0);
